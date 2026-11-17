@@ -9382,3 +9382,114 @@ def test_block_fp8_refuses_a_layout_it_cannot_price(tmp_path, edit, why):
     import derive_graph  # noqa: E402
     with pytest.raises(derive_graph.DeriveError, match=why):
         _derive_cfg(tmp_path, _r1_with(edit))
+
+# --- Qwen3.8-Flash-Next (Qwen4ExpForConditionalGeneration) ------------------------------------
+
+def _qwen4_cfg(fp8: bool = False, **edit) -> dict:
+    """A small config with Qwen3.8-Flash-Next's structure: eight layers, three Gated DeltaNet to one
+    QSA, hyper-connections, the per-layer embedding on layer 1, and an MTP module."""
+    text = {
+        "hidden_size": 256, "num_hidden_layers": 8, "num_attention_heads": 4, "num_key_value_heads": 2,
+        "head_dim": 64, "dtype": "bfloat16", "vocab_size": 1000, "num_experts": 16,
+        "num_experts_per_tok": 4, "moe_intermediate_size": 32, "shared_expert_intermediate_size": 32,
+        "layer_types": ["linear_attention"] * 3 + ["full_attention"] + ["linear_attention"] * 3
+        + ["full_attention"],
+        "linear_num_key_heads": 2, "linear_num_value_heads": 4, "linear_key_head_dim": 16,
+        "linear_value_head_dim": 16, "linear_conv_kernel_dim": 4, "mamba_ssm_dtype": "float32",
+        "hc_count": 4, "hc_lowrank": 20, "indexer_budget": 128, "indexer_compress_ratio": 4,
+        "indexer_n_heads": 2, "indexer_kv_heads": 1, "indexer_head_dim": 32, "output_gate_type": "sigmoid",
+        "ple_layer_ids": [2], "ple_embed_dim": 64, "ple_conv_kernel_size": 4, "ngram_size": 3,
+        "split_ngram_parts": 4, "mtp_num_hidden_layers": 1,
+    }
+    text.update(edit)
+    raw = {"architectures": ["Qwen4ExpForConditionalGeneration"], "text_config": text}
+    if fp8:
+        raw["quantization_config"] = {"quant_method": "fp8", "weight_block_size": [128, 128],
+                                      "modules_to_not_convert": ["lm_head"]}
+    return raw
+
+
+def _qwen4_headers(shards: int = 4) -> dict:
+    return {f"model.language_model.layers.1.ple.ple_embedding.ngram_embedding.shard_{i}.weight":
+            {"dtype": "BF16", "shape": [1000, 16]} for i in range(shards)}
+
+
+def _qwen4_derive(tmp_path, raw=None, headers="default"):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps(raw or _qwen4_cfg()))
+    return derive_graph.derive(p, "qwen4-test", headers=_qwen4_headers() if headers == "default" else headers)
+
+
+def test_qwen4_exp_full_attention_layers_are_sparse_gqa_with_the_configs_budget(tmp_path):
+    g = _qwen4_derive(tmp_path)
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    attn = [n for n in kinds["attn_moe"]["nodes"] if n["op"] == "Attention"]
+    main = [n for n in attn if n["holds_engine_kv"]]
+    scorer = [n for n in attn if not n["holds_engine_kv"]]
+    assert len(main) == len(scorer) == 1
+    assert (main[0]["kind"], main[0]["index_topk"], main[0]["n_kv"], main[0]["d_h"]) == ("sparse_gqa", 128, 2, 64)
+    assert (scorer[0]["kind"], scorer[0]["compress_ratio"], scorer[0]["n_q"], scorer[0]["d_h"]) == ("sparse_gqa", 4, 2, 32)
+    # The ring holds the open group and the speculative row, in whole groups of the ratio.
+    ring = [c for c in scorer[0]["caches"] if c["kind"] == "state"][0]
+    assert ring["entries"] == 8
+    index = [c for c in scorer[0]["caches"] if c["kind"] == "index"][0]
+    assert index["tokens_per_entry"] == 4
+
+
+def test_qwen4_exp_every_layer_has_two_gated_residuals_and_layer_one_the_embedding_branch(tmp_path):
+    g = _qwen4_derive(tmp_path)
+    seq = layer_sequence(g["stack"])
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    assert len(seq) == 8
+    for i, kid in enumerate(seq):
+        roles = [n["role"] for n in kinds[kid]["nodes"] if "role" in n]
+        for tag in ("attn", "mlp"):
+            for part in ("hc_down", "hc_inject", "hc_up"):
+                assert f"{tag}_{part}" in roles, (i, kid, tag, part)
+        assert ("ple_ngram_embedding" in roles) == (i == 1), (i, kid)
+    ple = _node(kinds[seq[1]], "ple_conv")
+    assert (ple["recurrent_kind"], ple["conv_dilation"], ple["intermediate_size"]) == ("short_conv", 3, 4 * 256)
+    emb = _node(kinds[seq[1]], "ple_ngram_embedding")
+    assert (emb["rows"], emb["residency"]) == (4 * 1000, "host")
+
+
+def test_qwen4_exp_the_embedding_table_size_comes_from_the_headers_or_the_derivation_is_refused(tmp_path):
+    with pytest.raises(deriver().DeriveError, match="shard headers"):
+        _qwen4_derive(tmp_path, headers=None)
+    with pytest.raises(deriver().DeriveError, match="equal shards"):
+        _qwen4_derive(tmp_path, headers=_qwen4_headers(shards=3))
+
+
+def test_qwen4_exp_mtp_module_is_one_qsa_layer_behind_an_embedding_mix(tmp_path):
+    g = _qwen4_derive(tmp_path)
+    assert g["speculator"]["method"] == "qwen4_exp_mtp" and g["speculator"]["num_spec_tokens"] == 1
+    draft = {k["id"]: k for k in g["layer_kinds"]}[g["speculator"]["stack"]["pattern"][0]]
+    roles = [n.get("role") for n in draft["nodes"]]
+    assert "mtp_fc_embedding" in roles and "mtp_fc_hidden" in roles
+    assert any(n["op"] == "Attention" and n["kind"] == "sparse_gqa" for n in draft["nodes"])
+
+
+def test_qwen4_exp_fp8_checkpoint_stores_only_the_routed_experts_at_fp8(tmp_path):
+    g = _qwen4_derive(tmp_path, raw=_qwen4_cfg(fp8=True))
+    assert g["global"]["weight_dtype"] == "fp8"
+    narrow = bf16 = 0
+    for k in g["layer_kinds"]:
+        for n in k["nodes"]:
+            if n["op"] == "GEMM":
+                assert n.get("weight_dtype") == "bf16", (k["id"], n["role"])
+                bf16 += 1
+            elif n["op"] == "GroupedGEMM":
+                narrow += 1
+                assert n.get("weight_dtype", "fp8") == "fp8"
+    assert narrow and bf16
+    assert all(n.get("weight_dtype") == "bf16" for n in g["head"] if n["op"] == "GEMM")
+
+
+def test_qwen4_exp_an_fp8_embedding_table_is_read_at_one_byte_a_value_and_written_at_the_activation_width(tmp_path):
+    headers = {k: dict(v, dtype="F8_E4M3") for k, v in _qwen4_headers().items()}
+    g = _qwen4_derive(tmp_path, headers=headers)
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    emb = _node(kinds[layer_sequence(g["stack"])[1]], "ple_ngram_embedding")
+    assert (emb["row_bytes"], emb["out_bytes_per_token"], emb["rows_per_token"]) == (16, 64 * 2, 4)
