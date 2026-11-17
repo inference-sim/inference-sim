@@ -7,7 +7,6 @@ package cluster
 
 import (
 	"bytes"
-	"fmt"
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"sort"
 	"strings"
@@ -155,49 +154,36 @@ func TestSharedGPUType_SpanBilledAtOwnPool(t *testing.T) {
 	}
 }
 
-// TestNewClusterSimulator_RejectsPerRoleTPWithNodePools (round-5 IMP-1): a per-role TP
-// override (--prefill-tp/--decode-tp) differing from the global TP would make the
-// simulated TP diverge from the placed/billed TP under node_pools. Reject the combo.
-func TestNewClusterSimulator_RejectsPerRoleTPWithNodePools(t *testing.T) {
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("expected panic on per-role TP override + node_pools, got none")
-		}
-		if !strings.Contains(fmt.Sprint(r), "per-role tensor parallelism") {
-			t.Errorf("panic message should mention per-role tensor parallelism, got: %v", r)
-		}
-	}()
+// TestPerRoleTP_PlacedAndBilledAtOwnDegree (#1543): with node_pools of 8-GPU nodes, a
+// prefill pool at TP=8 and a decode pool at TP=16, the prefill instance takes one node and
+// the decode instance spans two. Each is billed nodes-spanned x cost_per_hour and holds
+// exactly its own TP in GPUs.
+func TestPerRoleTP_PlacedAndBilledAtOwnDegree(t *testing.T) {
 	pools := []NodePoolConfig{
-		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
+		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 3, MinNodes: 3, MaxNodes: 3, GPUMemoryGiB: 80, CostPerHour: 10},
 	}
-	cfg := deploymentForPlacement(1, pools, 9999)
+	cfg := newTestDisaggDeploymentConfig(2, 1, 1)
+	cfg.NodePools = pools
 	cfg.TP = 8
-	prefillTP := 4
-	editPrefill(&cfg, func(c *simConfig) { c.TP = prefillTP }) // diverges from global TP=8
-	_ = newTestCluster(cfg, NewSliceRequestSource(nil), nil)
-}
-
-// TestNewClusterSimulator_RejectsDecodeTPWithNodePools (round-5 IMP-1, decode path):
-// the same guard covers a --decode-tp override diverging from the global TP.
-func TestNewClusterSimulator_RejectsDecodeTPWithNodePools(t *testing.T) {
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("expected panic on per-role (decode) TP override + node_pools, got none")
-		}
-		if !strings.Contains(fmt.Sprint(r), "decode pool TP") {
-			t.Errorf("panic message should name the decode pool, got: %v", r)
-		}
-	}()
-	pools := []NodePoolConfig{
-		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
+	editPrefill(&cfg, func(c *simConfig) { c.TP = 8 })
+	editDecode(&cfg, func(c *simConfig) { c.TP = 16 })
+	cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
+	if len(cs.instances) != 2 {
+		t.Fatalf("expected 2 placed instances, got %d", len(cs.instances))
 	}
-	cfg := deploymentForPlacement(1, pools, 9999)
-	cfg.TP = 8
-	decodeTP := 16
-	editDecode(&cfg, func(c *simConfig) { c.TP = decodeTP }) // diverges from global TP=8
-	_ = newTestCluster(cfg, NewSliceRequestSource(nil), nil)
+	want := []struct{ tp, nodes int }{{8, 1}, {16, 2}}
+	for i, w := range want {
+		inst := cs.instances[i]
+		if inst.TPDegree != w.tp {
+			t.Errorf("instance %d TPDegree = %d, want %d", i, inst.TPDegree, w.tp)
+		}
+		if got := len(inst.allocatedGPUIDs); got != w.tp {
+			t.Errorf("instance %d holds %d GPUs, want %d", i, got, w.tp)
+		}
+		if got, wantCost := inst.CostPerHour, float64(10*w.nodes); got != wantCost {
+			t.Errorf("instance %d CostPerHour = %v, want %v (%d node(s) x 10)", i, got, wantCost, w.nodes)
+		}
+	}
 }
 
 // TestNewClusterSimulator_PerRoleTPEqualToGlobalOK (round-8 M-5): the per-role-TP guard

@@ -356,25 +356,6 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 	// Phase 1A: initialize PlacementManager when node pools are configured.
 	// Must happen BEFORE the unified construction loop so cs.placement is set.
 	if len(config.NodePools) > 0 {
-		// #1529: placement uses the GLOBAL config.TP to decide single-node vs
-		// whole-node spanning and to bill nodes-spanned × cost. A per-role TP
-		// (a P/D pool's own, from its scenario pool's parallelism) would make the simulated TP diverge
-		// from the placed/billed TP — wrong span decision, wrong cost, wrong KV
-		// capacity. Per-role placement does not exist yet, so reject the combination
-		// loudly rather than produce silently-wrong numbers (mirrors the INV-13
-		// Fatalf-on-unsupported-combination policy). Lifting this guard (a per-role
-		// placement path) is tracked by #1543.
-		for _, ov := range []struct {
-			name string
-			cfg  *sim.InstanceConfig
-		}{{"prefill", config.Roles.Prefill}, {"decode", config.Roles.Decode}} {
-			if ov.cfg != nil && ov.cfg.TP != config.TP {
-				panic(fmt.Sprintf("ClusterSimulator: per-role tensor parallelism (%s pool TP=%d) is not supported with "+
-					"node_pools (global TP=%d): placement, node-span, and cost use the global TP, so a differing per-role "+
-					"TP would be simulated at one degree but placed/billed at another. Use a uniform TP across pools, or drop node_pools.",
-					ov.name, ov.cfg.TP, config.TP))
-			}
-		}
 		provisionRng := sim.NewStream(config.Seed, streamNodeProvisioning)
 		loadingRng := sim.NewStream(config.Seed, streamInstanceLoading)
 		cs.placement = NewPlacementManager(config.NodePools, provisionRng, loadingRng, 0)
@@ -383,10 +364,8 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 	// Unified construction+placement loop: construct each InstanceSimulator AFTER placement
 	// so the pool's GPU type (authoritative) is used instead of the CLI flag (SC-004).
 	// TP=0 in ModelHardwareConfig means "not configured" — treat as 1 GPU per instance.
-	tpDegree := config.TP
-	if tpDegree < 1 {
-		tpDegree = 1 // default to TP=1 when not explicitly set (R3: defensive correction with comment)
-	}
+	// Each instance is placed, billed and sized at its own role's TP (#1543): a P/D pool's
+	// tensor-parallel degree may differ from the global one.
 	// Deferral accounting (#1529): count instances that fail startup placement so we
 	// warn once after the loop instead of once per instance. NodeReadyEvent (the only
 	// path that retries pending instances) has no production caller in blis run, so a
@@ -400,6 +379,7 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 			role = prePoolMembership[string(id)]
 		}
 		simCfg := config.resolveConfigForRole(role)
+		tpDegree := max(simCfg.TP, 1) // R3: TP unset (0) means one GPU per instance
 
 		if cs.placement != nil {
 			// NodePools path: placement determines GPU type (authoritative).
