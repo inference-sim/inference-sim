@@ -568,3 +568,90 @@ func TestCapabilityExample_FSTierKeepsWhatTheCPUTierEvicts(t *testing.T) {
 		t.Errorf("the Result states no copy on the NVMe device's link: %v", pd)
 	}
 }
+
+// figureOf finds a named number anywhere in the Result document.
+func (d capDoc) figureOf(name string) (float64, bool) { return figure(d.doc, name) }
+
+// KV tier, peer-to-peer (p2p): a P/D run over vLLM's p2p tier hands every request off through the
+// prefill engines' CPU tier. The engines exchange control messages, every one is delivered, and the
+// run completes with each request disaggregated; the NIXL arm of the same deployment sends none.
+func TestCapabilityExample_PDOverTheP2PTier(t *testing.T) {
+	t.Parallel()
+	args := []string{"run", "--scenario", "pd-p2p.yaml", "--num-instances", "3", "--prefill-instances", "2",
+		"--decode-instances", "1", "--rate", "2", "--num-requests", "6", "--seed", "1"}
+	d := capExampleRun(t, capExamplesDir, args...)
+	sent, ok := d.figureOf("peer_messages_sent")
+	if !ok || sent == 0 {
+		t.Fatalf("the Result states no peer messages (%v, %v): the engines did not talk", sent, ok)
+	}
+	if got, _ := d.figureOf("peer_messages_delivered"); got != sent {
+		t.Errorf("%v peer messages sent, %v delivered", sent, got)
+	}
+	if got, _ := d.figureOf("peer_messages_dropped"); got != 0 {
+		t.Errorf("%v peer messages dropped", got)
+	}
+	if d.completed() != 6 || d.num("breakdowns.pd.disaggregated_requests") != 6 {
+		t.Errorf("completed %d, disaggregated %v, want 6 of each", d.completed(), d.num("breakdowns.pd.disaggregated_requests"))
+	}
+	nixl := capExampleRun(t, capExamplesDir, "run", "--scenario", "pd-unequal-tp.yaml", "--num-instances", "5",
+		"--prefill-instances", "4", "--decode-instances", "1", "--rate", "2", "--num-requests", "6", "--seed", "1")
+	if n, _ := nixl.figureOf("peer_messages_sent"); n != 0 {
+		t.Errorf("the NIXL control sent %v peer messages", n)
+	}
+}
+
+// KV tier, object store (obj): a bucket of the catalog's s3 class below the CPU tier keeps what the
+// CPU tier evicts. The Result states the bucket's link, and against the same deployment without it
+// the run hits the cache more.
+func TestCapabilityExample_ObjectStoreTierKeepsWhatTheCPUTierEvicts(t *testing.T) {
+	t.Parallel()
+	args := []string{"run", "--scenario", "obj-tier.yaml", "--num-instances", "1", "--horizon", "25000000",
+		"--workload-spec", filepath.Join(capExamplesDir, "spill-workload.yaml")}
+	with := capExampleRun(t, capExamplesDir, args...)
+	without := capExampleRun(t, exampleVariant(t, "obj-tier.yaml", "\n    - {tier: s3, bytes: 1099511627776}", ""), args...)
+	pd, _ := with.doc["breakdowns"].(map[string]any)["pd"].(map[string]any)
+	if _, ok := pd["link_peak_concurrent_transfers_tier-s3-to-node-0"]; !ok {
+		t.Errorf("the Result states no copy on the bucket's link: %v", pd)
+	}
+	if a, b := with.num("engine.cluster.cache_hit_rate"), without.num("engine.cluster.cache_hit_rate"); a <= b+0.02 {
+		t.Errorf("cache hit rate %.3f with the bucket, %.3f without: the bucket keeps nothing", a, b)
+	}
+}
+
+// P/D pools of different data-parallel width: four one-rank prefill pods and decode pods of two
+// ranks each. Every request is disaggregated and handed off once, and both decode ranks serve.
+func TestCapabilityExample_PDPoolsOfUnequalDataParallelWidth(t *testing.T) {
+	t.Parallel()
+	d := capExampleRun(t, capExamplesDir, "run", "--scenario", "pd-unequal-dp.yaml", "--num-instances", "6",
+		"--prefill-instances", "4", "--decode-instances", "2", "--rate", "5", "--num-requests", "20", "--seed", "3")
+	if d.completed() != 20 || d.num("breakdowns.pd.disaggregated_requests") != 20 || d.num("breakdowns.pd.kv_transfers") != 20 {
+		t.Fatalf("completed %d, disaggregated %v, handoffs %v: want 20 of each", d.completed(),
+			d.num("breakdowns.pd.disaggregated_requests"), d.num("breakdowns.pd.kv_transfers"))
+	}
+	for _, id := range []string{"instance_4", "instance_5"} {
+		if n, _ := d.instances()[id]["injected_requests"].(float64); n == 0 {
+			t.Errorf("decode rank %s served no request", id)
+		}
+	}
+}
+
+// MFU: every instance states its model-FLOPs utilization over the measured window, a fraction of the
+// peak that cannot exceed its busy share, and a heavier load raises it.
+func TestCapabilityExample_InstancesStateTheirMFU(t *testing.T) {
+	t.Parallel()
+	run := func(rate, n string) capDoc {
+		return capExampleRun(t, capExamplesDir, "run", "--scenario", "node-pools.yaml", "--num-instances", "4",
+			"--policy-config", filepath.Join(capExamplesDir, "node-pools-bundle.yaml"), "--rate", rate, "--num-requests", n)
+	}
+	light, heavy := run("2", "40"), run("40", "200")
+	for id, in := range light.instances() {
+		mw := in["measured_window"].(map[string]any)
+		mfu, ok := mw["mfu"].(float64)
+		if !ok || mfu <= 0 || mfu > mw["busy_share"].(float64) {
+			t.Errorf("instance %s mfu %v, want in (0, busy_share %v]", id, mw["mfu"], mw["busy_share"])
+		}
+	}
+	if a, b := light.num("engine.cluster.mfu"), heavy.num("engine.cluster.mfu"); b <= a {
+		t.Errorf("cluster mfu %.5f at 40 req/s, %.5f at 2 req/s: more load per weight read must raise it", b, a)
+	}
+}
