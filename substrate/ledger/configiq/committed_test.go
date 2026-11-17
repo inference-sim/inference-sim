@@ -3,7 +3,6 @@ package configiq_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -117,7 +116,7 @@ func TestAddingConfigiqMovesNoInferenceXRole(t *testing.T) {
 			}
 		}
 		if len(was[ledger.RoleFit]) == 0 {
-			t.Fatal(fmt.Sprintf("seed %s…: the InferenceX fit list is empty", seed[:4]))
+			t.Fatalf("seed %s…: the InferenceX fit list is empty", seed[:4])
 		}
 	}
 }
