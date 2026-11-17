@@ -16,6 +16,7 @@ var memoryUtilizationDefaults = map[string]MemoryUtilization{
 	"0.29.0": {0.92, "vLLM v0.29.0's default (vllm/config/cache.py:111@98dff2a8)"},
 	"0.31.0": {0.92, "vLLM v0.31.0's default (vllm/config/cache.py:103@db9527a4)"},
 	"0.32.0": {0.92, "vLLM v0.32.0's default (vllm/config/cache.py:102@5df63a72)"},
+	"0.33.0": {0.92, "vLLM v0.33.0's default (vllm/config/cache.py:215@4ba787ec)"},
 }
 
 // DefaultMemoryUtilization is the release's default gpu_memory_utilization, and false for a

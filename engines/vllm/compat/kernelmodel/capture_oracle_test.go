@@ -74,7 +74,7 @@ func openCapture(t *testing.T, c captureOracleCase, hardware string) *latencyker
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "0.32.0"`, 1)
+	body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "0.33.0"`, 1)
 	if n := len(engineLine.FindAllString(body, -1)); n != 3 {
 		t.Fatalf("fixture states %d of max_num_batched_tokens, max_num_seqs, compilation_config, want 3", n)
 	}

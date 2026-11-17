@@ -6,13 +6,15 @@ import (
 	"fmt"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+
+	"github.com/inference-sim/blis-vllm/internal/upstream"
 )
 
 // Kind is the engine kind this module registers with blis-schemas' factory registry.
 const Kind = "vllm"
 
-// Version is the vLLM release this engine models.
-const Version = "0.32.0"
+// Version is the vLLM release this engine models (internal/upstream).
+const Version = upstream.Version
 
 // CompatVersions are the releases of the scenario files written before this engine existed.
 // A scenario stating one runs inference-sim's extracted engine as an explicit compatibility
@@ -28,12 +30,12 @@ type Factory struct {
 	// Compat builds the compatibility engine for a CompatVersions release; nil refuses those
 	// releases with the reason.
 	Compat func(s engine.Spec) (engine.Engine, error)
-	// Prepare, when set, completes a v0.32.0 spec before its engine block is decoded: a
+	// Prepare, when set, completes a v0.33.0 spec before its engine block is decoded: a
 	// production caller fills in what the block does not state and the cost model knows (the KV
 	// block count, the pool's pipeline_parallel_size, the model runner), or the whole block from
 	// the scenario. Nil decodes the spec as given.
 	Prepare func(s engine.Spec) (engine.Spec, error)
-	// Open, when set, replaces Prepare and Pricer for a v0.32.0 spec: it completes the spec as
+	// Open, when set, replaces Prepare and Pricer for a v0.33.0 spec: it completes the spec as
 	// Prepare does and returns the function that makes the spec's pricer, which New calls once the
 	// engine block has resolved. A caller whose two steps read the same data (vllmengine opens a
 	// pool, and with it the catalog and registry) opens it once here, so one build has one
@@ -44,7 +46,7 @@ type Factory struct {
 // Kind implements engine.Factory.
 func (Factory) Kind() string { return Kind }
 
-// New implements engine.Factory: it builds the v0.32.0 engine from the Spec's engine block, a
+// New implements engine.Factory: it builds the v0.33.0 engine from the Spec's engine block, a
 // compatibility engine for an older release a scenario states, and refuses any other release
 // (#2021 B6: one build models one upstream release, and a version is a check, not a selector).
 func (f Factory) New(s engine.Spec) (engine.Engine, error) {

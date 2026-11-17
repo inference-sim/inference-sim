@@ -21,7 +21,7 @@ func TestDashboardDeploymentsKVEventsAreIndexable(t *testing.T) {
 		{"d027-032.yaml", false},
 		{"muse-h100-roce-armC.yaml", false},
 	} {
-		eng, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, c.scenario)})
+		eng, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, c.scenario)})
 		if err != nil {
 			t.Fatalf("%s: %v", c.scenario, err)
 		}
