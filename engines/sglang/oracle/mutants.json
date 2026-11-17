@@ -397,21 +397,6 @@
     }
   ],
   "known_gaps": {
-    "core/hicache/host.go:Alloc:>->>=#1:if needSize > len(p.freeSlots) {": "no test kills this mutant yet; tracked in blis-sglang#108 (M3.1)",
-    "core/hicache/host.go:Alloc:>->>=#1:if needSize > p.AvailableSize() {": "no test kills this mutant yet; tracked in blis-sglang#108 (M3.1)",
-    "core/hicache/host.go:NewHostPool:!=->==#1:if c <= 0 || c%p.pageSize != 0 {": "no test kills this mutant yet; tracked in blis-sglang#108 (M3.1)",
-    "core/hicache/host.go:NewHostPool:<=-><#1:if s.PageSize <= 0 {": "no test kills this mutant yet; tracked in blis-sglang#108 (M3.1)",
-    "core/hicache/host.go:NewHostPool:||->&&#1:if c <= 0 || c%p.pageSize != 0 {": "no test kills this mutant yet; tracked in blis-sglang#108 (M3.1)",
-    "core/hicache/host.go:mergeReleaseSlots:==->!=#1:if len(p.freeSlots) == 0 && len(p.releaseSlots) == 1 {": "no test kills this mutant yet; tracked in blis-sglang#108 (M3.1)",
-    "core/hicache/host.go:mergeReleaseSlots:==->!=#2:if len(p.freeSlots) == 0 && len(p.releaseSlots) == 1 {": "no test kills this mutant yet; tracked in blis-sglang#108 (M3.1)",
-    "core/hicache/controller.go:AppendHostMemRelease:<-><=#1:for i := 0; i < len(host); i += page {": "no test kills this mutant yet; tracked in blis-sglang#109 (M3.1)",
-    "core/hicache/controller.go:ParseStorageBackendExtraConfig:||->&&#1:if !isNum || err != nil {": "no test kills this mutant yet; tracked in blis-sglang#109 (M3.1)",
-    "core/hicache/controller.go:PrefetchRateLimited:>=->>#1:return c.PrefetchTokensOccupied >= c.PrefetchCapacityLimit": "no test kills this mutant yet; tracked in blis-sglang#109 (M3.1)",
-    "core/hicache/controller.go:pageBackup:<-><=#1:for i := 0; i < len(op.HashValue); i += StorageBatchSize {": "no test kills this mutant yet; tracked in blis-sglang#109 (M3.1)",
-    "core/hicache/counter.go:Complete:||->&&#1:if layer < 0 || layer >= len(l.LoadEvents) {": "no test kills this mutant yet; tracked in blis-sglang#110 (M3.1)",
-    "core/hicache/counter.go:WaitUntil:<-><=#1:if c.ConsumerIndex < 0 {": "no test kills this mutant yet; tracked in blis-sglang#110 (M3.1)",
-    "core/hicache/hicache.go:IsStorageWriter:==->!=#1:return !c.IsMLAModel || c.TPRank == c.DCPRank": "no test kills this mutant yet; tracked in blis-sglang#110 (M3.1)",
-    "core/hicache/hicache.go:IsStorageWriter:||->&&#1:return !c.IsMLAModel || c.TPRank == c.DCPRank": "no test kills this mutant yet; tracked in blis-sglang#110 (M3.1)",
     "lower/lower.go:Alignment:!=->==#1:if alignment%p.AttnCPSize != 0 {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
     "lower/lower.go:AttentionBackends:!=->==#2:if a.DecodeAttentionBackend != nil && *a.DecodeAttentionBackend != \"\" {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
     "lower/lower.go:AttentionBackends:!=->==#2:if a.PrefillAttentionBackend != nil && *a.PrefillAttentionBackend != \"\" {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
@@ -425,13 +410,8 @@
     "lower/lower.go:RequireMLPTPGather:>->>=#1:return *a.MoeDenseTpSize > p.TPSize/p.NumDPRanks, nil": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
     "core/cache/full.go:releaseLock:==->!=#1:if cur.lockRef == 0 {": "no test kills this mutant yet; tracked in blis-sglang#112 (M3.1)",
     "config/resolve.go:deref:==->!=#1:if *v == nil {": "no test kills this mutant yet; tracked in blis-sglang#114 (M3.1)",
-    "core/hicache/controller.go:pageBackup:!=->==#1:if prefix != nil {": "no test kills this mutant yet; tracked in blis-sglang#109 (M3.1)",
-    "core/hicache/counter.go:Complete:>=->>#1:if layer < 0 || layer >= len(l.LoadEvents) {": "no test kills this mutant yet; tracked in blis-sglang#110 (M3.1)",
-    "core/hicache/host.go:NewHostPool:<=-><#1:if c <= 0 || c%p.pageSize != 0 {": "no test kills this mutant yet; tracked in blis-sglang#108 (M3.1)",
-    "core/hicache/host.go:mergeReleaseSlots:&&->||#1:if len(p.freeSlots) == 0 && len(p.releaseSlots) == 1 {": "no test kills this mutant yet; tracked in blis-sglang#108 (M3.1)",
     "lower/lower.go:RequireMLPTPGather:==->!=#1:case b == \"none\":": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:CaptureBatchSizes:>->>=#1:if bs > largest {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "core/hicache/controller.go:ParseStorageBackendExtraConfig:!=->==#1:if !isNum || err != nil {": "no test kills this mutant yet; tracked in blis-sglang#109 (M3.1)"
+    "lower/lower.go:CaptureBatchSizes:>->>=#1:if bs > largest {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)"
   },
   "equivalent": {
     "core/sched/scheduler.go:getNextBatchToRun:!=->==#1:if last.ChunkedReq != nil {": "the last extend batch was formed by the previous call of getNewBatchPrefill, which ends by storing s.chunkedReq into that batch's ChunkedReq, and nothing assigns s.chunkedReq between two calls; so when last.ChunkedReq is not nil it is s.chunkedReq, which getNextBatchToRun has just put in exclude, and when it is nil exclude[nil] filters no request: with the test flipped the same set of requests is excluded",
@@ -503,6 +483,7 @@
     "core/metrics/metrics.go:Series:<-><=#1:for i := 0; i+1 < len(kv); i += 2 {": "base is only called with key and value pairs (the mode and priority labels), so len(kv) is even and i+1 <= len(kv) holds exactly when i+1 < len(kv) does, for i even; the odd length where they differ is never passed",
     "core/metrics/metrics.go:Series:<-><=#1:return labelKey(out[i].Labels) < labelKey(out[j].Labels)": "no two series share both name and labels (a test asserts it), so the labels of two series of one name are never equal and < and <= agree",
     "core/metrics/metrics.go:Series:<-><=#1:return out[i].Name < out[j].Name": "this return is reached only when the names differ, and for different names a < b and a <= b are the same test",
-    "core/metrics/metrics.go:prefillReport:>->>=#1:if d > 0 {": "effective holds input and device_hit from start-up, so adding a d of 0 to either adds 0.0 to a value that already exists and changes nothing"
+    "core/metrics/metrics.go:prefillReport:>->>=#1:if d > 0 {": "effective holds input and device_hit from start-up, so adding a d of 0 to either adds 0.0 to a value that already exists and changes nothing",
+    "core/hicache/host.go:Alloc:>->>=#1:if needSize > len(p.freeSlots) {": "Alloc takes from the front of free ++ release_1 .. release_k, and Free only ever appends a run to the release list, so merging early (needSize equal to the free count) or late changes only which private list holds the slots: the order of that queue, the slots handed out, AvailableSize and the double-free check are the same either way, and an Alloc of zero slots takes none. No call of the port can tell them apart."
   }
 }
