@@ -3,6 +3,8 @@ package cluster
 import (
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
@@ -25,6 +27,9 @@ type peerNetwork struct {
 	// an event queued.
 	due  map[int64][]engine.PeerMessage
 	wake map[int64]bool
+
+	// onNode counts the Peered instances registered on each node's hostname, for the ports.
+	onNode map[string]int
 
 	sent, delivered, dropped int
 }
@@ -54,8 +59,9 @@ func (cs *ClusterSimulator) registerPeer(inst *InstanceSimulator) {
 	}
 	if cs.peers == nil {
 		cs.peers = &peerNetwork{latency: cs.config.PeerMessageLatency, byAddr: map[string]*InstanceSimulator{},
-			due: map[int64][]engine.PeerMessage{}, wake: map[int64]bool{}}
+			due: map[int64][]engine.PeerMessage{}, wake: map[int64]bool{}, onNode: map[string]int{}}
 	}
+	cs.assignPeerAddr(inst)
 	addr := inst.drv.PeerAddr()
 	if prev, dup := cs.peers.byAddr[addr]; dup {
 		panic(fmt.Sprintf("ClusterSimulator: instances %s and %s both have the peer address %q", prev.id, inst.id, addr))
@@ -68,6 +74,37 @@ func (cs *ClusterSimulator) registerPeer(inst *InstanceSimulator) {
 		}
 	}
 	cs.peers.byAddr[addr] = inst
+}
+
+// assignPeerAddr gives inst's engine the address "blis-node-<node>:<port>": the hostname the router
+// is told for the instance (EndpointTopology.Hostname), and the port the engine's own address states
+// plus the instance's index among the Peered instances of that node (0 for the first). It runs
+// before the instance is placed with its peers, and so before any engine places a peer by address,
+// and before the engine's first Schedule. A engine that takes no address (no SetPeerAddr) keeps the
+// one it states; an instance with no single hostname (none stated, or one spanning nodes) keeps it
+// too, and registerPeer refuses two instances that then share one. A refused address stops the run.
+//
+// Named substitution (blis-vllm#204): this stands for the per-node VLLM_P2P_SIDE_CHANNEL_HOST a
+// deployment sets, and for the distinct side-channel port each engine of one node is given.
+func (cs *ClusterSimulator) assignPeerAddr(inst *InstanceSimulator) {
+	host := inst.endpointTopology.Hostname
+	if host == "" {
+		return
+	}
+	stated := inst.drv.PeerAddr()
+	i := strings.LastIndex(stated, ":")
+	port, err := strconv.Atoi(stated[i+1:])
+	if i < 0 || err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: instance %s states the peer address %q, which is not host:port", inst.id, stated))
+	}
+	addr := fmt.Sprintf("%s:%d", host, port+cs.peers.onNode[host])
+	taken, err := inst.drv.SetPeerAddr(addr)
+	if err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: instance %s refused the peer address %q: %v", inst.id, addr, err))
+	}
+	if taken {
+		cs.peers.onNode[host]++
+	}
 }
 
 // placePeer tells at's engine where peer sits, in the numbering of at's own pool.

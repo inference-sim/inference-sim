@@ -29,6 +29,17 @@ func (d *EngineDriver) PeerAddr() string {
 	return ""
 }
 
+// SetPeerAddr gives the engine the address its peers reach it at, when the engine takes one
+// (interface{ SetPeerAddr(string) error }, an engine-specific method of blis-vllm's v0.33.0
+// engine); false when it does not. It is called before the engine's first Schedule.
+func (d *EngineDriver) SetPeerAddr(addr string) (bool, error) {
+	s, ok := d.eng.(interface{ SetPeerAddr(string) error })
+	if !ok {
+		return false, nil
+	}
+	return true, s.SetPeerAddr(addr)
+}
+
 // SetPeerRouter installs the host's router for the engine's peer messages.
 func (d *EngineDriver) SetPeerRouter(r PeerRouter) { d.peerRouter = r }
 

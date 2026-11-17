@@ -130,3 +130,65 @@ func TestPeersArePlacedBothWaysBeforeTheRun(t *testing.T) {
 		}
 	}
 }
+
+// addressed is a talker that takes an address (SetPeerAddr), as blis-vllm's engine does.
+type addressed struct {
+	*talker
+	scheduled bool
+	setAfter  *bool
+}
+
+// Schedule runs the FIFO without the talker's messages: this engine only takes an address.
+func (e *addressed) Schedule(now engine.Time) (engine.Batch, error) {
+	e.scheduled = true
+	return e.talker.FIFO.Schedule(now)
+}
+
+func (e *addressed) SetPeerAddr(a string) error {
+	if e.scheduled {
+		*e.setAfter = true
+	}
+	e.addr = a
+	return nil
+}
+
+// Every Peered instance is given "<its node's hostname>:<port + index on the node>" before any
+// Schedule: two instances of one node get distinct addresses, an instance of another node starts its
+// ports again, and each engine places its peers by the addresses the peers now have.
+func TestPeerAddressesAreTheNodeHostnameAndAPortPerInstanceOnTheNode(t *testing.T) {
+	var engines []*addressed
+	late := false
+	cfg := newTestDeploymentConfig(3)
+	cfg.PeerEndpoint = func(id InstanceID) plan.Endpoint { return plan.Endpoint{} }
+	cfg.ScenarioEndpointTopology = StaticEndpointTopology(map[InstanceID]EndpointTopology{
+		"instance_0": {Hostname: "blis-node-3", NodeCount: 1}, "instance_1": {Hostname: "blis-node-3", NodeCount: 1},
+		"instance_2": {Hostname: "blis-node-5", NodeCount: 1}})
+	cfg.NewEngine = func(index int, _ sim.InstanceConfig) (*sim.EngineDriver, error) {
+		fifo, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 1, TokenBudget: 64, InFlight: 1, StepBaseUs: 10})
+		if err != nil {
+			return nil, err
+		}
+		eng := &addressed{talker: &talker{FIFO: fifo, addr: "stated:5710", arrivals: new([]arrival),
+			placed: map[string]plan.Endpoint{}}, setAfter: &late}
+		engines = append(engines, eng)
+		return sim.NewEngineDriver(eng, sim.EngineDriverConfig{Horizon: 1 << 40}), nil
+	}
+	reqs := []*sim.Request{{ID: "a", InputTokens: make([]sim.TokenID, 16), OutputTokens: make([]sim.TokenID, 1), State: sim.StateQueued}}
+	mustRun(t, newTestCluster(cfg, NewSliceRequestSource(reqs), nil))
+	want := []string{"blis-node-3:5710", "blis-node-3:5711", "blis-node-5:5710"}
+	for i, e := range engines {
+		if e.addr != want[i] {
+			t.Errorf("instance_%d has the address %q, want %q", i, e.addr, want[i])
+		}
+		for j, other := range engines {
+			if _, ok := e.placed[other.addr]; ok == (i == j) {
+				t.Errorf("instance_%d placed %q = %t; it must place every other instance by its new address and not itself (placed %v)",
+					i, other.addr, ok, e.placed)
+			}
+			_ = j
+		}
+	}
+	if late {
+		t.Error("an address was set after the engine's first Schedule")
+	}
+}
