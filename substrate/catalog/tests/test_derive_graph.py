@@ -8474,3 +8474,88 @@ def test_qwen35_nvfp4_refuses_a_quantized_deltanet_input_projection(tmp_path):
     q["ignore"] = [p for p in q["ignore"] if p != "model.language_model.layers.0.linear_attn*"]
     with pytest.raises(derive_graph.DeriveError, match="in_proj_qkvz"):
         _derive_raw(raw, tmp_path, "qwen-nvfp4-test")
+
+
+DSR1_FP4 = MODELS / "deepseek-r1-0528-fp4-v2"
+
+
+def _dsr1_fp4_headers(edit=None) -> dict:
+    """Headers in the layout nvidia/DeepSeek-R1-0528-FP4-V2's shards state (read from the pinned
+    headers; not committed): NVFP4 o_proj, dense MLPs, routed and shared experts; BF16 latent
+    projections, router and head; the MTP layer 61 BF16 throughout. Two experts a layer are
+    enough: a layer's experts share one width."""
+    t = config_of(DSR1_FP4)
+    n, dense, k = t["num_hidden_layers"], t["first_k_dense_replace"], t["hidden_size"]
+    h = {"lm_head.weight": {"dtype": "BF16", "shape": [t["vocab_size"], k]}}
+
+    def nvfp4(m):
+        h[m + ".weight"] = {"dtype": "U8", "shape": [2048, k // 2]}
+        h[m + ".weight_scale"] = {"dtype": "F8_E4M3", "shape": [2048, k // 16]}
+
+    def bf16(m):
+        h[m + ".weight"] = {"dtype": "BF16", "shape": [2048, k]}
+
+    for i in range(n + 1):
+        p = f"model.layers.{i}."
+        mtp = i == n
+        for a in ("q_a_proj", "kv_a_proj_with_mqa", "q_b_proj", "kv_b_proj"):
+            bf16(p + "self_attn." + a)
+        quant = bf16 if mtp else nvfp4
+        quant(p + "self_attn.o_proj")
+        if mtp:
+            bf16(p + "eh_proj")
+        if i < dense:
+            for a in ("gate_proj", "up_proj", "down_proj"):
+                quant(p + "mlp." + a)
+        else:
+            bf16(p + "mlp.gate")
+            for e in range(2):
+                for a in ("gate_proj", "up_proj", "down_proj"):
+                    quant(p + f"mlp.experts.{e}." + a)
+            for a in ("gate_proj", "up_proj", "down_proj"):
+                quant(p + "mlp.shared_experts." + a)
+    if edit:
+        edit(h)
+    return h
+
+
+def _derive_dsr1_fp4(headers, tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps(config_of(DSR1_FP4)))
+    return derive_graph.derive(p, "deepseek-r1-0528-fp4-v2", headers=headers)
+
+
+def test_dsr1_fp4_widths_come_from_its_shard_headers(tmp_path):
+    """DeepSeek-R1-0528-FP4-V2's config.json states no quantization; its headers store o_proj,
+    the dense MLPs and every expert NVFP4, the latent projections BF16, and the MTP layer BF16.
+    The draft layer is placed at its own names, so it does not mirror the decoder's NVFP4
+    experts, and the same config without headers derives no NVFP4 node at all."""
+    g = _derive_dsr1_fp4(_dsr1_fp4_headers(), tmp_path)
+    assert g["global"]["weight_dtype"] == "bf16"
+    dense = _widths(g, "attn_dense")
+    assert (dense["o_proj"][0], dense["mlp_gate_up"][0], dense["mlp_down"][0]) == ("nvfp4",) * 3
+    assert {dense[r][0] for r in ("qkv_a_proj", "q_b_proj", "kv_b_proj")} == {"bf16"}
+    moe = _widths(g, "attn_moe")
+    assert moe["experts"][0] == "nvfp4" and "shared_experts" not in moe   # shared at the same width
+    assert g["speculator"]["method"] == "deepseek_mtp"
+    assert g["speculator"]["stack"]["pattern"] == ["mtp_moe"]
+    assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
+    plain = _derive_dsr1_fp4(None, tmp_path)
+    assert "nvfp4" not in {w for k in plain["layer_kinds"] for n in k["nodes"]
+                           if (w := n.get("weight_dtype"))}
+
+
+def test_dsr1_fp4_refuses_a_draft_layer_its_one_node_cannot_price(tmp_path):
+    """An MTP layer whose experts are stored at two widths is refused, not priced at either."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    n = config_of(DSR1_FP4)["num_hidden_layers"]
+
+    def edit(h):
+        m = f"model.layers.{n}.mlp.experts.1.gate_proj"
+        h[m + ".weight"] = {"dtype": "U8", "shape": [2048, 7168 // 2]}
+        h[m + ".weight_scale"] = {"dtype": "F8_E4M3", "shape": [2048, 7168 // 16]}
+    with pytest.raises(derive_graph.DeriveError, match="one node cannot price both"):
+        _derive_dsr1_fp4(_dsr1_fp4_headers(edit), tmp_path)

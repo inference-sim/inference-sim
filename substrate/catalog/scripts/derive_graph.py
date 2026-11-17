@@ -493,6 +493,33 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
     # layers/fused_moe/utils.py:55-89), so on NVIDIA parts the two keep their own widths. The MTP
     # module is built under "mtp" (Qwen3_5MTP, qwen3_5_mtp.py:226-234; its layers at
     # mtp.layers.{i}, :122).
+    # DeepSeek-V3 and R1 (DeepseekV3ForCausalLM, vLLM v0.33.0
+    # model_executor/models/deepseek_v2.py): a DeepseekV2DecoderLayer at model.layers.{i} whose
+    # latent attention is self_attn.fused_qkv_a_proj (q_a_proj and kv_a_proj_with_mqa fused when
+    # q_lora_rank is set, :1052-1058, :1905-1912), q_b_proj, kv_b_proj and o_proj (:1083-1112); a
+    # dense layer's MLP is mlp.gate_up_proj and mlp.down_proj (:261-276), a sparse layer's experts
+    # mlp.experts with the shared experts at mlp.shared_experts (:360-380), and the router a
+    # GateLinear (:321), not a node. The MTP layer is built at model.layers.{num_hidden_layers + k}
+    # (deepseek_mtp.py:157-158, 245-246), its decoder block under that same prefix (:104-106) and
+    # its eh_proj an nn.Linear there (:87).
+    "DeepseekV3ForCausalLM": {
+        "layer": "model.layers.{i}.",
+        "draft_layer": "model.layers.{i}.",
+        "draft_roles": {"mtp_eh_proj": "model.layers.{i}.eh_proj"},
+        "head": "lm_head",
+        "roles": {
+            "qkv_a_proj": "self_attn.fused_qkv_a_proj",
+            "q_b_proj": "self_attn.q_b_proj",
+            "kv_b_proj": "self_attn.kv_b_proj",
+            "o_proj": "self_attn.o_proj",
+            "mlp_gate_up": "mlp.gate_up_proj",
+            "mlp_down": "mlp.down_proj",
+            "experts": "mlp.experts",
+        },
+        "shared": ("mlp.shared_experts.gate_up_proj", "mlp.shared_experts.down_proj"),
+        "prefix": {},
+        "stacked": {".gate_proj": ".gate_up_proj", ".up_proj": ".gate_up_proj"},
+    },
     # GLM-5's DSA family (GlmMoeDsaForCausalLM, vLLM v0.33.0 vllm/models/deepseek_v32): a
     # DeepseekV32DecoderLayer at model.layers.{i} (nvidia/model.py:57-120, 224) whose attention
     # is self_attn.fused_qkv_a_proj, q_b_proj, kv_b_proj and o_proj with the indexer's wq_b and
@@ -2499,7 +2526,9 @@ def handler_glm_moe_dsa(cfg, raw, model):
     """GLM-5's DSA family, priced by handler_moe, with a ModelOpt checkpoint's widths placed
     node by node. Its MTP layer, the draft kind handler_moe declares, is asked at the module
     names vLLM builds it under, model.layers.{num_hidden_layers + k}: GLM-5.2-NVFP4 excludes
-    that layer whole (model.layers.78*), so it is bf16 beside the decoder's NVFP4 experts."""
+    that layer whole (model.layers.78*), so it is bf16 beside the decoder's NVFP4 experts.
+    DeepSeek-V3 and R1 build their MTP layer at the same names, so they are placed the same way:
+    nvidia/DeepSeek-R1-0528-FP4-V2's headers store layer 61 BF16 beside NVFP4 experts."""
     result = handler_moe(cfg, raw, model)
     layers = int(require(cfg, "num_layers", model))
     spec = int(pick(cfg, "num_spec_tokens") or 0)
@@ -6396,7 +6425,7 @@ HANDLERS = {
     # would derive kind=swa window=128 and misprice every layer. See
     # handler_deepseek_v4, which reads the bound from compress_ratios and index_topk and
     # gives the indexer its own node.
-    "DeepseekV3ForCausalLM": handler_moe,
+    "DeepseekV3ForCausalLM": handler_glm_moe_dsa,
     "DeepseekV4ForCausalLM": handler_deepseek_v4,
     # Its own handler rather than V4's: V4.1 shares the compressed cache and the indexer
     # across layers, pools at ratios 1 and 2 where V4 asserts 4 or 128, and adds engram
