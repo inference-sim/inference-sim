@@ -21,6 +21,13 @@ deployment path as `blis run`.
     The header modes are `generated`, `replayed` and `converted`; any other value is refused.
     `mode: real` was written by `blis observe`, which v0.16.0 removed, and is refused.
 
+!!! note "Acceptance terms in the header"
+    A run whose workload states speculative-acceptance terms (a preset's `category`, `thinking`
+    and `value`) writes them to the header's `acceptance` key. A replay reads them as the
+    workload layer of the acceptance resolution, so with no `--speculative-*` flag it resolves
+    the profile the run did; a selector on the replay's command line overrides them
+    ([#2115](https://github.com/inference-sim/inference-sim/issues/2115)).
+
 ## The trace format
 
 A trace is in trace format version 4, the format blis-substrate's `contracts/spec/trace`
