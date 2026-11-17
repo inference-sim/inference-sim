@@ -221,7 +221,11 @@ func TestTowerlessMultimodalConfigsNameTheCatalogModels(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			m := tower.Find(graph)
+			// The graph's text decoder, not its encoder section: since blis-substrate#301-#303 a
+			// catalog graph states a vision tower under `encoder:`, which the kernel prices only where
+			// the lowering reports an Encoder (blis-vllm#233, a later cut) and otherwise discloses by name
+			// as the assumption "encoder"; the claim of this list is about the decoder.
+			m := tower.Find(withoutEncoderSection(graph))
 			if table.tower && m == nil {
 				t.Errorf("%s: listed as pricing a tower, and the graph names none", name)
 			}
@@ -265,4 +269,24 @@ func TestTowerlessMultimodalConfigsNameTheCatalogModels(t *testing.T) {
 
 func engineconfigStating(v bool) engineconfig.Engine {
 	return engineconfig.Engine{LanguageModelOnly: &v}
+}
+
+// withoutEncoderSection drops the top-level `encoder:` block of a catalog graph, where the vision
+// tower of a multimodal checkpoint is stated beside the text decoder's layer kinds.
+func withoutEncoderSection(graph []byte) []byte {
+	var out []string
+	skipping := false
+	for _, line := range strings.Split(string(graph), "\n") {
+		if strings.HasPrefix(line, "encoder:") {
+			skipping = true
+			continue
+		}
+		if skipping && line != "" && line[0] != ' ' && line[0] != '\t' && line[0] != '#' {
+			skipping = false
+		}
+		if !skipping {
+			out = append(out, line)
+		}
+	}
+	return []byte(strings.Join(out, "\n"))
 }
