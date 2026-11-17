@@ -1221,6 +1221,10 @@ clients:
 			}
 		}
 	}
+	if got := len(res.RequestRows) - res.Requests.Generated; got != res.Requests.PlannedNotIssued || got != notStarted {
+		t.Errorf("rows beyond generated %d, requests.planned_not_issued %d, planned not_started rows %d: want all equal",
+			got, res.Requests.PlannedNotIssued, notStarted)
+	}
 	if notStarted == 0 {
 		t.Errorf("no row for an unissued session round: the horizon cuts sessions that planned 4 rounds")
 	}

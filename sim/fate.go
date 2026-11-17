@@ -217,6 +217,9 @@ type fateEntry struct {
 	state  LifecycleState
 	record FateRecord
 	order  int // creation order, for reports
+	// planned marks a round the workload planned and never issued. It is not a generated
+	// request: no count of created requests or of fates includes it (CreatePlanned).
+	planned bool
 }
 
 // FateLedger records each request's lifecycle and fate. It is not safe for concurrent use; the
@@ -225,8 +228,10 @@ type FateLedger struct {
 	entries map[string]*fateEntry
 	created int
 	ended   int
-	counts  map[Fate]int
-	drops   map[string]int
+	// plannedEnded counts the planned rounds never issued, each ended not started.
+	plannedEnded int
+	counts       map[Fate]int
+	drops        map[string]int
 }
 
 // NewFateLedger returns an empty ledger.
@@ -240,8 +245,19 @@ func (l *FateLedger) Create(id string) error {
 	if _, ok := l.entries[id]; ok {
 		return fmt.Errorf("request %q created twice: a request identifier is never reused within a run (SIM-8)", id)
 	}
-	l.entries[id] = &fateEntry{state: LifecycleCreated, order: l.created}
+	l.entries[id] = &fateEntry{state: LifecycleCreated, order: len(l.entries)}
 	l.created++
+	return nil
+}
+
+// CreatePlanned registers a round the workload planned and never issued. It has a ledger entry,
+// so it ends not started and has a row, but it is not a generated request: Created, the fates'
+// counts and the conservation check leave it out, and Tally counts it as PlannedNotIssued.
+func (l *FateLedger) CreatePlanned(id string) error {
+	if _, ok := l.entries[id]; ok {
+		return fmt.Errorf("request %q created twice: a request identifier is never reused within a run (SIM-8)", id)
+	}
+	l.entries[id] = &fateEntry{state: LifecycleCreated, order: len(l.entries), planned: true}
 	return nil
 }
 
@@ -286,6 +302,13 @@ func (l *FateLedger) End(id string, f Fate, reason string, at int64) error {
 	}
 	e.state = LifecycleEnded
 	e.record = FateRecord{Fate: f, Reason: reason, At: at}
+	if e.planned {
+		if f != FateNotStarted {
+			return fmt.Errorf("planned round %q ended %s: a round never issued ends not started", id, f)
+		}
+		l.plannedEnded++
+		return nil
+	}
 	l.ended++
 	l.counts[f]++
 	if f == FateDropped {
@@ -342,8 +365,10 @@ func (l *FateLedger) Unended(s LifecycleState) []string {
 // Tally is the number of requests that ended in each fate, and of drops by reason.
 type Tally struct {
 	Created int
-	ByFate  map[Fate]int
-	Drops   map[string]int
+	// PlannedNotIssued counts the planned rounds never issued; they are not in Created or ByFate.
+	PlannedNotIssued int
+	ByFate           map[Fate]int
+	Drops            map[string]int
 }
 
 // Total is the number of fates written.
@@ -357,7 +382,7 @@ func (t Tally) Total() int {
 
 // Tally returns a copy of the ledger's counts.
 func (l *FateLedger) Tally() Tally {
-	t := Tally{Created: l.created, ByFate: make(map[Fate]int, len(l.counts)), Drops: make(map[string]int, len(l.drops))}
+	t := Tally{Created: l.created, PlannedNotIssued: l.plannedEnded, ByFate: make(map[Fate]int, len(l.counts)), Drops: make(map[string]int, len(l.drops))}
 	for f, n := range l.counts {
 		t.ByFate[f] = n
 	}
