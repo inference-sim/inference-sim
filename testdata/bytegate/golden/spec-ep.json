@@ -854,7 +854,7 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.2-0.20261117020456-c023676e25dd",
+    "substrate": "v0.14.2-0.20261117021403-7fe8544c54d9",
     "router": "v1.0.0-blis.4",
     "engine_module": "v0.32.1-0.20261116235522-d1c2a94cdeb2"
   },
