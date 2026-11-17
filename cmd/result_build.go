@@ -247,6 +247,17 @@ func standardMetrics(sum sim.MeasuredSummary, m *sim.Metrics, gpus, decodeGPUs i
 			put("itl_p95_ms", sum.ClientITLP95Ms, k)
 			put("itl_p99_ms", sum.ClientITLP99Ms, k)
 		}
+		// icl: the gaps between the chunks streamed to the client (Request.ClientITL), one per
+		// chunk after the first, over the whole run and unsplit as itl is. It is vllm bench
+		// serve's ITL; under speculative decoding a chunk carries a step's tokens, so it is the
+		// step interval as the client sees it while itl's gaps inside a chunk are zero (#2128).
+		if k := sum.ClientICLCount; k > 0 {
+			put("icl_mean_ms", sum.ClientICLMeanMs, k)
+			put("icl_p50_ms", sum.ClientICLP50Ms, k)
+			put("icl_p90_ms", sum.ClientICLP90Ms, k)
+			put("icl_p95_ms", sum.ClientICLP95Ms, k)
+			put("icl_p99_ms", sum.ClientICLP99Ms, k)
+		}
 		if steps := sum.StepIntervalCount; steps > 0 {
 			put("step_interval_mean_ms", sum.StepIntervalMeanMs, steps)
 			put("step_interval_p50_ms", sum.StepIntervalP50Ms, steps)
