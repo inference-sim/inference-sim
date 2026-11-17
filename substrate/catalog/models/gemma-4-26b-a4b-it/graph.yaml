@@ -1,0 +1,256 @@
+kind: ModelGraph
+name: gemma-4-26b-a4b-it
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: ed0c1eb3633de771906e9ba004a44cc5635bcc06ee2062077c3d2e88a50707d3
+  deriver_version: 1
+global:
+  hidden_size: 2816
+  vocab_size: 262144
+  tie_word_embeddings: true
+  weight_dtype: bf16
+  architecture: Gemma4ForConditionalGeneration
+layer_kinds:
+- id: swa_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 8192
+    k: 2816
+  - op: Elementwise
+    role: qkv_norm_rope
+    bytes_per_token: 32768
+  - op: Attention
+    holds_engine_kv: true
+    kind: swa
+    n_q: 16
+    n_kv: 8
+    d_h: 256
+    window: 1024
+  - op: GEMM
+    role: o_proj
+    n: 2816
+    k: 4096
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: Elementwise
+    role: pre_ffn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 4224
+    k: 2816
+  - op: GEMM
+    role: mlp_down
+    n: 2816
+    k: 2112
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_mlp_norm
+  - op: Elementwise
+    role: router_norm
+  - op: GEMM
+    role: router
+    n: 128
+    k: 2816
+    tp: replicated
+  - op: Elementwise
+    role: pre_experts_norm
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 704
+    k: 2816
+    experts: 128
+    top_k: 8
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: moe_out
+    emit: tensor_parallel_unless_sp_moe
+  - op: Elementwise
+    role: post_experts_norm
+  - op: Elementwise
+    role: post_ffn_norm
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
+  - - 18
+    - 19
+- id: full_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 10240
+    k: 2816
+  - op: Elementwise
+    role: qkv_norm_rope
+    bytes_per_token: 40960
+  - op: Attention
+    holds_engine_kv: true
+    kind: gqa
+    n_q: 16
+    n_kv: 2
+    d_h: 512
+  - op: GEMM
+    role: o_proj
+    n: 2816
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: Elementwise
+    role: pre_ffn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 4224
+    k: 2816
+  - op: GEMM
+    role: mlp_down
+    n: 2816
+    k: 2112
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_mlp_norm
+  - op: Elementwise
+    role: router_norm
+  - op: GEMM
+    role: router
+    n: 128
+    k: 2816
+    tp: replicated
+  - op: Elementwise
+    role: pre_experts_norm
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 704
+    k: 2816
+    experts: 128
+    top_k: 8
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: moe_out
+    emit: tensor_parallel_unless_sp_moe
+  - op: Elementwise
+    role: post_experts_norm
+  - op: Elementwise
+    role: post_ffn_norm
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
+  - - 18
+    - 19
+stack:
+  pattern:
+  - swa_moe
+  - swa_moe
+  - swa_moe
+  - swa_moe
+  - swa_moe
+  - full_moe
+  repeat: 5
+modality: text_decoder_of_multimodal
+embedding:
+- op: Gather
+  role: embed_tokens
+  rows: 262144
+  row_bytes: 5632
+  rows_per_token: 1
+  out_bytes_per_token: 5632
+  shard: rows
+- op: AllReduce
+  role: embed_out
+  emit: tensor_parallel
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 262144
+  k: 2816
+  aliases: embedding.embed_tokens

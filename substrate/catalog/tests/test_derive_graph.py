@@ -323,6 +323,11 @@ def test_attention_shape_matches_config(d: Path):
             # A latent cache holds one vector per token whatever the config's KV head
             # count says, so the engine pins it to one.
             assert n["n_kv"] == 1
+        elif (n["kind"] == "gqa" and t.get("attention_k_eq_v")
+              and t.get("num_global_key_value_heads") is not None):
+            # Gemma 4's full-attention layers take num_global_key_value_heads where
+            # attention_k_eq_v is set (transformers' per_layer_config, which vLLM reads).
+            assert n["n_kv"] == t["num_global_key_value_heads"]
         else:
             assert n["n_kv"] == t["num_key_value_heads"]
 
@@ -1579,7 +1584,8 @@ def test_expert_shape_matches_config(d: Path):
     if not nodes:
         assert not experts, "the config declares experts but the graph has no expert layer"
         return
-    top_k = t.get("num_experts_per_tok") or t.get("num_experts_per_token")
+    top_k = (t.get("num_experts_per_tok") or t.get("num_experts_per_token")
+             or t.get("top_k_experts"))
     for n in nodes:
         assert n["experts"] == experts
         assert n["top_k"] == top_k
@@ -8834,3 +8840,161 @@ def test_glm51_nvfp4_quantizes_the_routed_experts_and_nothing_else():
     assert {w for w, _ in _widths(g, "attn_dense").values()} == {"bf16"}
     assert g["speculator"]["method"] == "deepseek_mtp"
     assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
+
+
+# --- Gemma 4 ----------------------------------------------------------------------------
+# The three committed Gemma 4 configs, derived as vLLM v0.33.0 builds them (handler_gemma4).
+GEMMA4_DENSE = MODELS / "gemma-4-31b-it"
+GEMMA4_MOE = MODELS / "gemma-4-26b-a4b-it"
+GEMMA4_FP8 = MODELS / "gemma-4-26b-a4b-it-fp8-dynamic"
+
+
+def _gemma4(d: Path, tmp_path: Path, edit=None) -> dict:
+    """Derive a Gemma 4 entry's committed config, after `edit(raw, text_config)` if given."""
+    raw = config_of(d)
+    if edit:
+        edit(raw, raw["text_config"])
+    return _derive_raw(raw, tmp_path, d.name)
+
+
+def _gemma4_role(kind: dict, role: str) -> dict:
+    found = [n for n in kind["nodes"] if n.get("role") == role]
+    assert len(found) == 1, f"{kind['id']} has {len(found)} {role} nodes"
+    return found[0]
+
+
+@pytest.mark.parametrize("d", [GEMMA4_DENSE, GEMMA4_MOE, GEMMA4_FP8], ids=lambda d: d.name)
+def test_gemma4_layers_follow_the_layer_types(d, tmp_path):
+    """Each layer is the kind its layer_types entry names: a sliding layer reads the window
+    at head_dim and num_key_value_heads, a full layer reads the whole context at
+    global_head_dim and num_global_key_value_heads, and both project Q, K and V (vLLM loads
+    the full layer's K into the V shard as well)."""
+    g = _gemma4(d, tmp_path)
+    t = config_of(d)["text_config"]
+    seq = layer_sequence(g["stack"])
+    assert len(seq) == t["num_hidden_layers"]
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    for i, layer_type in enumerate(t["layer_types"]):
+        kind = kinds[seq[i]]
+        attn = [n for n in kind["nodes"] if n["op"] == "Attention"]
+        assert len(attn) == 1
+        a = attn[0]
+        if layer_type == "sliding_attention":
+            assert (a["kind"], a.get("window")) == ("swa", t["sliding_window"])
+            assert (a["n_kv"], a["d_h"]) == (t["num_key_value_heads"], t["head_dim"])
+        else:
+            assert a["kind"] == "gqa" and "window" not in a
+            assert (a["n_kv"], a["d_h"]) == (t["num_global_key_value_heads"],
+                                             t["global_head_dim"])
+        assert a["n_q"] == t["num_attention_heads"]
+        assert _gemma4_role(kind, "qkv_proj")["n"] == (a["n_q"] + 2 * a["n_kv"]) * a["d_h"]
+        assert _gemma4_role(kind, "o_proj")["k"] == a["n_q"] * a["d_h"]
+
+
+@pytest.mark.parametrize("d", [GEMMA4_MOE, GEMMA4_FP8], ids=lambda d: d.name)
+def test_gemma4_moe_layers_run_the_dense_mlp_beside_the_experts(d, tmp_path):
+    """Every MoE layer runs the dense MLP and the routed experts, top-k of num_experts at
+    moe_intermediate_size, behind a replicated router."""
+    g = _gemma4(d, tmp_path)
+    t = config_of(d)["text_config"]
+    for kind in g["layer_kinds"]:
+        assert _gemma4_role(kind, "mlp_gate_up")["n"] == 2 * t["intermediate_size"]
+        assert _gemma4_role(kind, "mlp_down")["k"] == t["intermediate_size"]
+        experts = _gemma4_role(kind, "experts")
+        assert (experts["experts"], experts["top_k"], experts["n"], experts["k"]) == (
+            t["num_experts"], t["top_k_experts"], t["moe_intermediate_size"], t["hidden_size"])
+        assert experts["shared"] is False
+        router = _gemma4_role(kind, "router")
+        assert (router["n"], router["k"], router["tp"]) == (t["num_experts"],
+                                                            t["hidden_size"], "replicated")
+
+
+def test_gemma4_dense_model_has_no_experts(tmp_path):
+    g = _gemma4(GEMMA4_DENSE, tmp_path)
+    assert not [n for k in g["layer_kinds"] for n in k["nodes"]
+                if n["op"] == "GroupedGEMM" or n.get("role") == "router"]
+
+
+def _gemma4_widths(g: dict) -> dict[str, set[str]]:
+    """The width each weight role is held at, over every layer kind."""
+    out: dict[str, set[str]] = collections.defaultdict(set)
+    for k in g["layer_kinds"]:
+        for n in k["nodes"]:
+            if n["op"] in ("GEMM", "GroupedGEMM"):
+                out[n["role"]].add(n.get("weight_dtype", g["global"]["weight_dtype"]))
+    return out
+
+
+def test_gemma4_fp8_dynamic_holds_its_linears_at_fp8_and_the_rest_at_bf16(tmp_path):
+    """The compressed-tensors FP8 checkpoint quantizes every Linear its ignore list does not
+    name: attention, the dense MLP and the experts are FP8; the router (a GateLinear vLLM
+    builds unquantized) is BF16; the head reads the BF16 embedding it is tied to. The BF16
+    checkpoint of the same model holds everything at BF16."""
+    g = _gemma4(GEMMA4_FP8, tmp_path)
+    w = _gemma4_widths(g)
+    for role in ("qkv_proj", "o_proj", "mlp_gate_up", "mlp_down", "experts"):
+        assert w[role] == {"fp8"}, role
+    assert w["router"] == {"bf16"}
+    head = _gemma4_role({"id": "head", "nodes": g["head"]}, "lm_head")
+    assert head["aliases"] == "embedding.embed_tokens"
+    table = _gemma4_role({"id": "embedding", "nodes": g["embedding"]}, "embed_tokens")
+    assert table["row_bytes"] == 2 * g["global"]["hidden_size"]
+    bf16 = _gemma4_widths(_gemma4(GEMMA4_MOE, tmp_path))
+    assert set().union(*bf16.values()) == {"bf16"}
+
+
+def test_gemma4_fp8_ignore_list_keeps_a_named_module_at_bf16(tmp_path):
+    """A module the ignore list names on every layer of a kind is held at BF16."""
+    def edit(raw, t):
+        raw["quantization_config"]["ignore"].append("re:.*self_attn\\.o_proj$")
+    w = _gemma4_widths(_gemma4(GEMMA4_FP8, tmp_path, edit))
+    assert w["o_proj"] == {"bf16"}
+    assert w["qkv_proj"] == {"fp8"}
+
+
+def _gemma4_layer_ignored(name):
+    def edit(raw, t):
+        raw["quantization_config"]["ignore"].append(f"model.language_model.layers.0.{name}")
+    return edit
+
+
+def _gemma4_quant_router(raw, t):
+    q = raw["quantization_config"]
+    q["ignore"] = [p for p in q["ignore"] if not p.endswith(".router.proj")]
+
+
+def _gemma4_set(**kv):
+    def edit(raw, t):
+        t.update(kv)
+    return edit
+
+
+def _gemma4_four_bit(raw, t):
+    w = raw["quantization_config"]["config_groups"]["group_0"]["weights"]
+    w.update(num_bits=4, group_size=16, strategy="tensor_group")
+
+
+@pytest.mark.parametrize("d,edit,why", [
+    (GEMMA4_DENSE, _gemma4_set(hidden_size_per_layer_input=256), "per-layer embeddings"),
+    (GEMMA4_DENSE, _gemma4_set(num_kv_shared_layers=20), "shares KV caches"),
+    (GEMMA4_DENSE, _gemma4_set(attn_logit_softcapping=50.0), "attn_logit_softcapping"),
+    (GEMMA4_DENSE, _gemma4_set(use_bidirectional_attention="all"), "bidirectional"),
+    (GEMMA4_DENSE, _gemma4_set(layer_types=["sliding_attention"] * 59), "59 entries for 60 layers"),
+    (GEMMA4_DENSE, _gemma4_set(layer_types=["chunked_attention"] * 60), "chunked_attention"),
+    (GEMMA4_DENSE, _gemma4_set(tie_word_embeddings=False), "untied"),
+    (GEMMA4_MOE, _gemma4_set(enable_moe_block=False), "enable_moe_block"),
+    (GEMMA4_FP8, _gemma4_quant_router, "router.proj"),
+    (GEMMA4_FP8, _gemma4_layer_ignored("self_attn.q_proj"), "splits layer 0's qkv_proj"),
+    (GEMMA4_FP8, _gemma4_layer_ignored("mlp.down_proj"), "mlp_down at"),
+    (GEMMA4_FP8, _gemma4_layer_ignored("experts.3.up_proj"), "expert 3"),
+    (GEMMA4_FP8, _gemma4_four_bit, "8-bit float"),
+], ids=["ple", "kv-shared", "attn-softcap", "bidirectional-all", "layer-types-length",
+        "layer-type-unknown", "untied-head", "moe-flag-disagrees", "router-quantized",
+        "qkv-shards-split", "down-proj-one-layer", "one-expert", "four-bit-group"])
+def test_gemma4_refuses_what_it_cannot_price(d, edit, why, tmp_path):
+    """A Gemma 4 config with a feature no node prices, or a quantization layout one node
+    cannot hold, is refused with its reason rather than priced as something else."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=re.escape(why)):
+        _gemma4(d, tmp_path, edit)
