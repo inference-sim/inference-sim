@@ -56,10 +56,36 @@ func TestTheHiCacheRadixCacheAnswersEveryTracedCallAsSGLangDoes(t *testing.T) {
 	}
 }
 
-// loadL2Traces is every HiCache trace: S20's and the host tier's own scenarios.
+// l2TraceDirs are the host tier's own trace directories under goldenDir and the kind each holds:
+// SGLang's scheduler running oracle/scenarios/hicache-l2/recorded, and the driver's sequences in
+// oracle/scenarios/hicache-l2/direct.
+var l2TraceDirs = [][2]string{{"l2-recorded", "recorded"}, {"l2-direct", "direct"}}
+
+// loadL2Traces is every HiCache trace: the framework's and the host tier's own.
 func loadL2Traces(t *testing.T) map[string]hiTrace {
 	t.Helper()
-	return loadTraces(t)
+	out := loadTraces(t)
+	for _, d := range l2TraceDirs {
+		paths, err := filepath.Glob(filepath.Join(goldenDir, d[0], "*.trace.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range paths {
+			raw, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var tr hiTrace
+			if err := json.Unmarshal(raw, &tr); err != nil {
+				t.Fatalf("%s: %v", p, err)
+			}
+			if tr.Kind != d[1] {
+				t.Fatalf("%s: a %q trace in the %s directory", p, tr.Kind, d[0])
+			}
+			out[d[0]+"/"+strings.TrimSuffix(filepath.Base(p), ".trace.json")] = tr
+		}
+	}
+	return out
 }
 
 type storageRefused struct{ err error }
@@ -874,9 +900,21 @@ func (s tracedStep) figure(m string) figure {
 
 // wantFigures is the calls at iface that the call numbered seq made itself, as figures in
 // SGLang's ids.
+//
+// The host pool's are the cache's at any depth outside its controller: FULL frees host values
+// through the component (components/full.py:519-523).
 func (r *l2Replay) wantFigures(seq int, iface cache.Interface) ([]figure, error) {
 	var out []figure
-	for _, x := range r.direct(seq, iface) {
+	calls := r.direct(seq, iface)
+	if iface == cache.Interface(HostPoolIface) {
+		calls = nil
+		for _, x := range r.within(seq, iface) {
+			if !r.under(x, cache.Interface(ControllerIface)) {
+				calls = append(calls, x)
+			}
+		}
+	}
+	for _, x := range calls {
 		f, skip, err := r.wantFigure(iface, x)
 		if err != nil {
 			return nil, fmt.Errorf("seq %d %s: %w", x.Seq, x.Method, err)
@@ -1603,6 +1641,9 @@ func loadSequence(tr hiTrace) (sequence, error) {
 // entry (an unrecorded cache method such as load_back) or inside a recorded cache call.
 func (r *l2Replay) madeByCache(c cache.Call) bool {
 	p := r.parent(c)
+	if c.Iface == cache.Interface(HostPoolIface) {
+		return !r.under(c, cache.Interface(ControllerIface))
+	}
 	return p == nil || p.Iface == cache.PrefixCacheIface
 }
 
