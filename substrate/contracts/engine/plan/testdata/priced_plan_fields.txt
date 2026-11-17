@@ -45,6 +45,7 @@ MoEPlan.Dispatch # kernel: TestEachResolvedPlanSettingMovesAPrice
 MoEPlan.Experts # kernel: TestEachResolvedPlanSettingMovesAPrice
 MoEPlan.Fused # kernel: TestEachResolvedPlanSettingMovesAPrice
 MoEPlan.RedundantExperts # kernel: TestEachResolvedPlanSettingMovesAPrice
+MoEPlan.Routing # kernel: TestEachResolvedPlanSettingMovesAPrice
 PoolPlan.Batch # kernel: TestEachResolvedPlanSettingMovesAPrice
 PoolPlan.Cache # kernel: TestEachResolvedPlanSettingMovesAPrice
 PoolPlan.Collectives # kernel: TestEachResolvedPlanSettingMovesAPrice

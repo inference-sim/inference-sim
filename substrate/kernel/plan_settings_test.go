@@ -206,6 +206,7 @@ func TestEachResolvedPlanSettingMovesAPrice(t *testing.T) {
 			l.Plan.MoE.Experts = pinnedBuild(t, d, "gemm_floor_fp8_grouped_triton", "h200")
 		}},
 		{"MoEPlan.Fused", muse, nil, func(l *plan.Lowered) { l.Plan.MoE.Fused = true }},
+		{"MoEPlan.Routing", routed, nil, func(l *plan.Lowered) { l.Plan.MoE.Routing = plan.RoutingSeparate }},
 		{"MoEPlan.RedundantExperts", routed, nil, func(l *plan.Lowered) { l.Plan.MoE.RedundantExperts = 16 }},
 		{"CollectivePlan.SequenceParallelMoE", spMoE, nil, func(l *plan.Lowered) { l.Plan.Collectives.SequenceParallelMoE = true }},
 		{"CollectivePlan.SequenceParallelModel", v41, nil, func(l *plan.Lowered) { l.Plan.Collectives.SequenceParallelModel = true }},
