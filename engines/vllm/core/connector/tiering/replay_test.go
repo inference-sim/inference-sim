@@ -188,8 +188,14 @@ type traceTier struct {
 
 type trace struct {
 	Spec []struct {
+		Args struct {
+			BlocksPerChunk int                       `json:"blocks_per_chunk"`
+			MaxModelLen    int                       `json:"max_model_len"`
+			Groups         []offloading.OffloadGroup `json:"groups"`
+		} `json:"args"`
 		Ret struct {
-			NumChunks int `json:"num_chunks"`
+			NumChunks       int   `json:"num_chunks"`
+			KVBytesPerChunk int64 `json:"kv_bytes_per_chunk"`
 		} `json:"ret"`
 	} `json:"spec"`
 	Tiers   []traceTier         `json:"tiers"`
@@ -306,7 +312,11 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 		fsTiers = append(fsTiers, ft)
 		tiers = append(tiers, &recTier{Tier: ft, idx: i, log: &tierLog})
 	}
-	mgr := tiering.New(tiering.CPU(offloading.NewCPUPrimary(tr.Spec[0].Ret.NumChunks)), tiers, nil)
+	spec := tr.Spec[0]
+	cpu := offloading.NewCPUPrimary(spec.Ret.NumChunks)
+	cpu.SetConfigInfo(offloading.ConfigInfo(spec.Ret.NumChunks, spec.Args.BlocksPerChunk, spec.Ret.KVBytesPerChunk,
+		spec.Args.MaxModelLen, spec.Args.Groups))
+	mgr := tiering.New(tiering.CPU(cpu), tiers, nil)
 	for label, want := range tr.Files {
 		for i, ft := range fsTiers {
 			got := strings.TrimPrefix(ft.FileName(keyOf(label)), "/")
@@ -369,6 +379,13 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 			mgr.OnScheduleEnd(tiering.ScheduleEnd{NewReqIDs: c.New, PreemptedReqIDs: c.Preempted})
 		case "has_pending_work":
 			ret = mgr.HasPendingWork()
+		case "get_stats":
+			// vLLM's None is a null answer.
+			if st := mgr.Stats(); st != nil {
+				ret = st.Values()
+			}
+		case "config_info":
+			ret = mgr.ConfigInfo()
 		case "take_events":
 			ret = eventsJSON(mgr.TakeEvents())
 			// The trace's monitor records the primary tier's take_events generator, which the manager's

@@ -231,6 +231,11 @@ type JobResult struct {
 	SuccessfulKeys []Key
 	// TransferBytes is transfer_bytes; 0 is unreported (None).
 	TransferBytes int64
+	// TransferTime is transfer_time in seconds, when HasTransferTime (unset is None, a tier that does
+	// not time its jobs). The fs tier times its jobs; the port's is zero, as the host's pool is not
+	// the simulator's (blis-vllm#190).
+	TransferTime    float64
+	HasTransferTime bool
 }
 
 // Detector is the part of BackpressureDetector (tiering/backpressure.py) the manager calls.

@@ -63,6 +63,7 @@ type Manager struct {
 	primary Primary
 	tiers   []Tier
 	clock   func() float64
+	metrics *tracker
 
 	jobCounter int
 	jobs       map[int]jobMeta
@@ -92,6 +93,15 @@ func New(primary Primary, tiers []Tier, clock func() float64) *Manager {
 	for i := range tiers {
 		m.parents = append(m.parents, &tierParent{m: m, origin: i})
 	}
+	types := make([]string, len(tiers))
+	for i, t := range tiers {
+		types[i] = t.Type()
+	}
+	chunkBytes := int64(0)
+	if len(tiers) > 0 {
+		chunkBytes = tiers[0].BlockBytes()
+	}
+	m.metrics = newTracker(types, primary.NumChunks(), chunkBytes, clock)
 	return m
 }
 
@@ -200,6 +210,7 @@ func (m *Manager) processFinished(tiers []int) {
 				panic(fmt.Sprintf("tiering: finished job %d reported by tier #%d but belongs to tier #%d", r.ID, i, jm.tier))
 			}
 			delete(m.jobs, r.ID)
+			m.metrics.onJobFinished(jm, r)
 			if jm.job.IsPromotion {
 				m.completePromotion(jm, r)
 			} else {
@@ -208,6 +219,13 @@ func (m *Manager) processFinished(tiers []int) {
 			}
 		}
 	}
+}
+
+// registerJob is _register_job (manager.py:440-443).
+func (m *Manager) registerJob(j *TransferJob, tier int) {
+	jm := jobMeta{job: j, tier: tier}
+	m.jobs[j.ID] = jm
+	m.metrics.onJobRegistered(jm)
 }
 
 // shouldStore is _should_store_to_tier (manager.py:551-557).
@@ -241,7 +259,9 @@ func (m *Manager) Lookup(k Key, c *ReqContext) Lookup { return m.lookup(k, c, -1
 
 func (m *Manager) lookup(k Key, c *ReqContext, exclude int) Lookup {
 	m.maybeProcessFinished()
-	switch m.primary.Lookup(k, c) {
+	primary := m.primary.Lookup(k, c)
+	m.metrics.onLookup(c, k, PrimaryLabel, primary)
+	switch primary {
 	case Hit:
 		return Hit
 	case HitPending:
@@ -255,15 +275,18 @@ func (m *Manager) lookup(k Key, c *ReqContext, exclude int) Lookup {
 		if i == exclude || !c.Filter.allows(t.Medium(), t.Locality()) {
 			continue
 		}
-		switch t.Lookup(k, c) {
-		case Hit:
+		r := t.Lookup(k, c)
+		if r == Hit {
+			m.metrics.onLookup(c, k, m.metrics.label(i), r)
 			if !m.initiatePromotion(i, k, c) {
 				return Miss
 			}
 			return HitPending
-		case Retry:
+		}
+		if r == Retry {
 			retry = true
 		}
+		m.metrics.onLookup(c, k, m.metrics.label(i), r)
 	}
 	if retry {
 		return Retry
@@ -284,6 +307,7 @@ func (m *Manager) LoadSource(k Key, c *ReqContext) string {
 func (m *Manager) initiatePromotion(tier int, k Key, c *ReqContext) bool {
 	stored, ids, _, ok := m.primary.PrepareStore([]Key{k}, c)
 	if !ok {
+		m.metrics.onPromotionAllocationFailure()
 		return false
 	}
 	src := m.loadSources[c.ReqID]
@@ -319,7 +343,7 @@ func (m *Manager) flushPendingPromotions() {
 			e := m.pendingLoads[tier][id]
 			j := &TransferJob{ID: m.nextJobID(), Keys: e.keys, ChunkIDs: e.chunkIDs, IsPromotion: true, Req: e.req,
 				SubmitTime: m.clock()}
-			m.jobs[j.ID] = jobMeta{job: j, tier: tier}
+			m.registerJob(j, tier)
 			m.tiers[tier].SubmitLoad(j)
 		}
 	}
@@ -457,7 +481,7 @@ func (m *Manager) CreateStoreJob(keys []Key, c *ReqContext, tier int) *TransferJ
 func (m *Manager) createStoreJob(keys []Key, c *ReqContext, tier int) *TransferJob {
 	ids := m.primary.PrepareRead(keys, c)
 	j := &TransferJob{ID: m.nextJobID(), Keys: append([]Key(nil), keys...), ChunkIDs: ids, Req: c, SubmitTime: m.clock()}
-	m.jobs[j.ID] = jobMeta{job: j, tier: tier}
+	m.registerJob(j, tier)
 	return j
 }
 
@@ -468,6 +492,7 @@ func (m *Manager) OnNewRequest(c *ReqContext) Policy { return m.onNewRequest(c, 
 
 func (m *Manager) onNewRequest(c *ReqContext, exclude int) Policy {
 	st := &reqState{req: c}
+	m.metrics.onNewRequest(c)
 	for i, t := range m.tiers {
 		if i == exclude {
 			continue
@@ -513,6 +538,7 @@ func (m *Manager) maybeFinalize(id string, exclude int) {
 			t.OnRequestFinished(st.req)
 		}
 	}
+	m.metrics.onRequestFinished(st.req)
 	delete(m.loadSources, id)
 	m.dropReq(id)
 }
@@ -538,6 +564,11 @@ func (m *Manager) OnScheduleEnd(e ScheduleEnd) {
 	m.flushPendingCascades()
 	for _, t := range m.tiers {
 		t.OnScheduleEnd(e)
+	}
+	for _, id := range e.NewReqIDs {
+		if st := m.reqs[id]; st != nil {
+			m.metrics.onRequestAllocated(st.req)
+		}
 	}
 }
 
@@ -582,6 +613,9 @@ func (m *Manager) ResetCache() {
 	m.pendingTierOrder = nil
 	m.pendingReqOrder = map[int][]string{}
 	m.loadSources = map[string]map[Key]string{}
+	if !m.metrics.idle() {
+		panic("tiering: transfers are still counted active after the tiers drained")
+	}
 	var done []string
 	for _, id := range m.reqOrder {
 		st := m.reqs[id]
@@ -593,6 +627,7 @@ func (m *Manager) ResetCache() {
 		for _, t := range m.tiers {
 			t.OnRequestFinished(st.req)
 		}
+		m.metrics.onRequestFinished(st.req)
 		done = append(done, id)
 	}
 	m.primary.ResetCache()

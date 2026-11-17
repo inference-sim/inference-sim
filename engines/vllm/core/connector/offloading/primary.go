@@ -12,7 +12,10 @@ import "fmt"
 // (CPUPrimaryTierOffloadingManager, vllm/v1/kv_offload/tiering/manager.py:114-173@4ba787ec): the
 // same CPUOffloadingManager and LRU policy this package's scheduler uses, exported for
 // core/connector/tiering. Each method is the cpuManager method it names; nothing here decides.
-type CPUPrimary struct{ m *cpuManager }
+type CPUPrimary struct {
+	m    *cpuManager
+	info map[string]any
+}
 
 // NewCPUPrimary is a CPU tier of numChunks chunks.
 func NewCPUPrimary(numChunks int) *CPUPrimary { return &CPUPrimary{m: newCPUManager(numChunks)} }
@@ -111,3 +114,23 @@ func (a *Access) Params() map[string]any { return a.params }
 
 // newAccess is a request's access state, for the request id.
 func newAccess(id string) *Access { return &Access{a: newReqAccess(), id: id} }
+
+// CPUStats are the CPU tier's get_stats values (cpu/manager.py:486-519@4ba787ec): its cache usage
+// and the shares of it in writes and reads, and the chunk counts of the prepare_store calls since the
+// last Stats.
+type CPUStats struct {
+	Usage, Write, Read float64
+	Allocations        []int
+}
+
+// Stats is get_stats; the allocation sizes start again.
+func (p *CPUPrimary) Stats() CPUStats {
+	st := p.m.stats()
+	return CPUStats{Usage: st.usage, Write: st.write, Read: st.read, Allocations: st.allocations}
+}
+
+// SetConfigInfo states the tier's config_info series (ConfigInfo), which the spec's sizes give.
+func (p *CPUPrimary) SetConfigInfo(info map[string]any) { p.info = info }
+
+// ConfigInfo is config_info's one series: nil until SetConfigInfo.
+func (p *CPUPrimary) ConfigInfo() map[string]any { return p.info }
