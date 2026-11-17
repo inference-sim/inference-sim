@@ -8585,3 +8585,22 @@ def test_qwen35_nvfp4_refuses_a_quantized_deltanet_input_projection(tmp_path):
     q["ignore"] = [p for p in q["ignore"] if p != "model.language_model.layers.0.linear_attn*"]
     with pytest.raises(derive_graph.DeriveError, match="in_proj_qkvz"):
         _derive_raw(raw, tmp_path, "qwen-nvfp4-test")
+
+
+# --- Qwen3.5's attention output gate (blis-substrate#199) -------------------------------
+
+def test_qwen35_full_attention_projects_its_output_gate(tmp_path):
+    """attn_output_gate true doubles the query rows of qkv_proj, as the checkpoint stores them
+    (q_proj 16384 x 4096 in Qwen3.5-397B's header: 32 heads x 256 x 2), and adds the sigmoid
+    gating multiply; the same config with the gate off derives the ungated projection."""
+    raw = config_of(MODELS / "qwen3.5-397b-a17b")
+    t = raw["text_config"]
+    nq, nkv, dh = t["num_attention_heads"], t["num_key_value_heads"], t["head_dim"]
+    def attn(g):
+        return {n.get("role"): n for n in {k["id"]: k for k in g["layer_kinds"]}["attn_moe"]["nodes"]}
+    gated = attn(_derive_raw(raw, tmp_path, "qwen-gate-test"))
+    assert gated["qkv_proj"]["n"] == (2 * nq + 2 * nkv) * dh == 16384 + 1024
+    assert gated["attn_output_gate"]["bytes_per_token"] == 3 * nq * dh * 2
+    t["attn_output_gate"] = False
+    plain = attn(_derive_raw(raw, tmp_path, "qwen-gate-test"))
+    assert plain["qkv_proj"]["n"] == (nq + 2 * nkv) * dh and "attn_output_gate" not in plain
