@@ -15,6 +15,10 @@ type DeploymentConfig struct {
 
 	NumInstances int
 
+	// ClusterAutoscaler configures the node-count loop (cluster_autoscaler.go, #740). The zero
+	// value is none: no node is ever provisioned beyond the pools' initial nodes.
+	ClusterAutoscaler ClusterAutoscalerConfig
+
 	// NewEngine builds an instance's engine through blis-schemas' engine.Engine contract, for a
 	// release the compatibility engine does not model (engine_version 0.33.0, GOAL.md); nil
 	// builds the compatibility engine (sim.NewEngine). It receives the instance's index in the

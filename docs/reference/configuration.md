@@ -390,6 +390,19 @@ instance_lifecycle:
   warm_start_initial_instances: false  # true = startup instances skip loading_delay (model pre-deployed); autoscaler-added instances always pay loading_delay
 ```
 
+### Cluster autoscaler
+
+The cluster autoscaler decides how many nodes each pool needs. It is separate from the model autoscaler: when the model autoscaler asks for a replica and no Ready node has room, the replica waits in a pending-placement queue, and the cluster autoscaler reads that queue.
+
+```yaml
+cluster_autoscaler:
+  policy: pending-driven        # empty = none: no node is provisioned beyond initial_nodes
+  pending_threshold_us: 60000000  # a placement must wait this long before a node is added for it
+  max_nodes_per_pool: 8         # 0 = only each pool's own max_nodes
+```
+
+`pending-driven` adds one node to a pool when a placement for its GPU type has waited the threshold, unless a node of the pool is already on its way or the pool is at its ceiling. The node is ready after the pool's `provisioning_delay`, and its arrival places the waiting replicas in arrival order.
+
 !!! note "Node pools and instance lifecycle are YAML-only"
     `node_pools` and `instance_lifecycle` have no corresponding CLI flags. They must be set via `--policy-config`. Omitting them is safe — the simulator falls back to single-pool, no-lifecycle mode for full backward compatibility.
 
