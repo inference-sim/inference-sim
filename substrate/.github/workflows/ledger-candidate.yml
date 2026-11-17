@@ -32,11 +32,14 @@ env:
 # One run per head, as in rederive.yml: a newer run for the same pull request replaces the one
 # in progress, and the gate reads the newest attempt.
 concurrency:
-  group: ledger-candidate-${{ github.ref }}
+  group: ledger-candidate-${{ github.ref }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: true
 
 jobs:
   candidate:
+    # Skipped for an edit of the title or body that leaves the base alone: the run in progress (or
+    # finished) for this head stays the newest attempt that counts (tools/prcheck/pathgates.go).
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

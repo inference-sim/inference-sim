@@ -36,17 +36,24 @@ on:
 permissions:
   contents: read
 
+# An edit to a pull request's title or body (not to its base) starts a run too, because a retarget is
+# an edit. That run does nothing: it has its own concurrency group, so it cancels no run in progress
+# and no push cancels it, and every job is skipped. Each job's name carries " (edit)" on that run, so
+# none of its check runs is named like a required check (a newer skipped `required` would otherwise
+# stand in for the run still in progress). The checks that read the text (blis.yml, private-names.yml)
+# are separate workflows and still run.
 # No build downloads a toolchain: every Go job installs exactly contracts/toolchain (LIF-2).
 env:
   GOTOOLCHAIN: local
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: true
 
 jobs:
   changes:
-    name: changed directories
+    name: "changed directories${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -107,7 +114,8 @@ jobs:
   # Formatting, vet and build for the whole module, on every change. They are fast, and a
   # change in one directory can break the build of another.
   go:
-    name: format, vet and build
+    name: "format, vet and build${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -141,7 +149,7 @@ jobs:
   # binary is built with contracts/toolchain, since a prebuilt one is built with an older Go
   # and refuses a newer module.
   lint:
-    name: golangci-lint
+    name: "golangci-lint${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.golang == 'true'
     runs-on: ubuntu-latest
@@ -183,7 +191,7 @@ jobs:
   # binary and run in contracts-checks; the job named "contracts and validators" is the
   # aggregate that the check-run names (.github/check-runs.yaml) and `required` point to.
   contracts-tests:
-    name: contracts and validators tests (leg ${{ matrix.leg }})
+    name: "contracts and validators tests (leg ${{ matrix.leg }})${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
@@ -272,7 +280,7 @@ jobs:
 
   # The checks of the contracts group that need no test binary. They run beside the test legs.
   contracts-checks:
-    name: contracts and validators checks
+    name: "contracts and validators checks${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
@@ -320,7 +328,7 @@ jobs:
   # only if the legs and the side checks all passed. It runs whenever the group was selected,
   # even when a leg failed or was cancelled, so that the failure is reported under this name.
   contracts:
-    name: contracts and validators
+    name: "contracts and validators${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: [changes, contracts-tests, contracts-checks]
     if: always() && needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
@@ -339,7 +347,7 @@ jobs:
   # (TestEveryCoefficientFamilyChangesSomePriceOrIsListed) prices every scenario on every CPU of
   # the runner. The steps that are not `go test` of the package run beside the legs.
   kernel-tests:
-    name: cost model tests (leg ${{ matrix.leg }})
+    name: "cost model tests (leg ${{ matrix.leg }})${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.kernel == 'true'
     runs-on: ubuntu-latest
@@ -388,7 +396,7 @@ jobs:
 
   # The cost model's checks that are not its package tests, in one job beside the legs.
   kernel-checks:
-    name: cost model vet, sub-packages, race and script tests
+    name: "cost model vet, sub-packages, race and script tests${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.kernel == 'true'
     runs-on: ubuntu-latest
@@ -440,7 +448,7 @@ jobs:
 
   # The aggregate, as for the contracts group: the check-run name stays "cost model".
   kernel:
-    name: cost model
+    name: "cost model${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: [changes, kernel-tests, kernel-checks]
     if: always() && needs.changes.outputs.kernel == 'true'
     runs-on: ubuntu-latest
@@ -460,7 +468,7 @@ jobs:
   # known-bad input of this check (X18). The sweep covers the listed properties, not every
   # changed function; widening it is a row in that file.
   mutants:
-    name: mutation check
+    name: "mutation check${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.kernel == 'true'
     runs-on: ubuntu-latest
@@ -474,7 +482,7 @@ jobs:
   # its vendor configuration. The validator is this repository's own, so the catalog and the
   # code that reads it are checked at the same commit.
   catalog:
-    name: catalog
+    name: "catalog${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.catalog == 'true'
     runs-on: ubuntu-latest
@@ -512,7 +520,7 @@ jobs:
   # The byte-for-byte regeneration from the pinned dump needs the 34 GB dump, so it runs in
   # ledger.yml's nightly job, not here.
   ledger:
-    name: ledger
+    name: "ledger${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.ledger == 'true'
     runs-on: ubuntu-latest
@@ -544,7 +552,7 @@ jobs:
   # Every coefficient set validates through the Go types, and the registry's derivation
   # tests pass. The full re-derivation with the AISimulate sweeps present is rederive.yml.
   registry:
-    name: registry
+    name: "registry${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.registry == 'true'
     runs-on: ubuntu-latest
@@ -589,7 +597,7 @@ jobs:
   # left out of the navigation. The hooks render the catalog's and the registry's reference
   # pages from the committed data, so a data change can break the site too.
   docs:
-    name: docs build
+    name: "docs build${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
@@ -625,8 +633,8 @@ jobs:
   # only if every workflow whose paths the change touched has a successful check run on the
   # pull request's head.
   required:
-    name: required
-    if: always()
+    name: "required${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ always() && (github.event.action != 'edited' || github.event.changes.base) }}
     needs: [changes, go, lint, contracts, contracts-tests, contracts-checks, kernel, kernel-tests, kernel-checks, mutants, catalog, ledger, registry, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 60

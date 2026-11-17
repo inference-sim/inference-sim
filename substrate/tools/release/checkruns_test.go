@@ -53,6 +53,9 @@ func TestEveryCICheckHasACheckRun(t *testing.T) {
 	})
 }
 
+// editSuffix ends a job name in ci.yml (see tools/prcheck/stackci_test.go).
+const editSuffix = "${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+
 // The check-run names the file asks for are names the repositories' workflows produce. The
 // substrate's are read from its own ci.yml and nightly.yml, so a renamed job fails here and not
 // at a release.
@@ -65,7 +68,10 @@ func TestSubstrateRunsAreJobsOfItsWorkflows(t *testing.T) {
 		}
 		for _, line := range strings.Split(string(raw), "\n") {
 			if n, ok := strings.CutPrefix(strings.TrimSpace(line), "name: "); ok && strings.HasPrefix(line, "    name:") {
-				names[strings.Trim(n, `"`)] = true
+				// On the run an edit of the title or body starts, every job's name ends with the
+				// edit suffix, so the check run it makes is not named like a required one. On every
+				// other run the suffix is empty and the name is what is left of it.
+				names[strings.TrimSuffix(strings.Trim(n, `"`), editSuffix)] = true
 			}
 		}
 	}

@@ -53,11 +53,14 @@ permissions:
 # attempt that was cancelled, so a cancelled run is never a pass (tools/prcheck/pathgates.go).
 # Nightly and manual runs are never cancelled.
 concurrency:
-  group: rederive-${{ github.event_name }}-${{ github.ref }}
+  group: rederive-${{ github.event_name }}-${{ github.ref }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   rederive:
+    # Skipped for an edit of the title or body that leaves the base alone: the run in progress (or
+    # finished) for this head stays the newest attempt that counts (tools/prcheck/pathgates.go).
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:

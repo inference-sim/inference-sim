@@ -762,6 +762,13 @@ func TestGateRunsUseTheNewestAttempt(t *testing.T) {
 		{"an older cancelled run and a newer success passes", []gateRunRecord{rec(5, "rederive", "completed", "cancelled"), rec(9, "rederive", "completed", "success"), rec(6, "candidate", "completed", "success")}, ""},
 		{"an older success and a newer cancelled run is no pass", []gateRunRecord{rec(5, "rederive", "completed", "success"), rec(9, "rederive", "completed", "cancelled"), rec(6, "candidate", "completed", "success")}, "concluded cancelled"},
 		{"a cancelled run alone is no pass", []gateRunRecord{rec(5, "rederive", "completed", "cancelled"), rec(6, "candidate", "completed", "success")}, "concluded cancelled"},
+		// An edit of the pull request's title or body starts the workflow again; the run it starts
+		// skips the gate's job. A skipped check run says the job did not run, so it neither passes
+		// nor hides the run for this head that did.
+		{"a newer skipped run does not hide an older success", []gateRunRecord{rec(5, "rederive", "completed", "success"), rec(9, "rederive", "completed", "skipped"), rec(6, "candidate", "completed", "success")}, ""},
+		{"a newer skipped run does not hide an older failure", []gateRunRecord{rec(5, "rederive", "completed", "failure"), rec(9, "rederive", "completed", "skipped"), rec(6, "candidate", "completed", "success")}, "concluded failure"},
+		{"a newer skipped run does not hide a run in progress", []gateRunRecord{rec(5, "rederive", "in_progress", ""), rec(9, "rederive", "completed", "skipped"), rec(6, "candidate", "completed", "success")}, "has not completed"},
+		{"a skipped run alone is no run", []gateRunRecord{rec(9, "rederive", "completed", "skipped"), rec(6, "candidate", "completed", "success")}, `no check run "rederive"`},
 		{"ids compare as numbers", []gateRunRecord{rec(9, "rederive", "completed", "failure"), rec(10, "rederive", "completed", "success"), rec(6, "candidate", "completed", "success")}, ""},
 	}
 	for _, c := range cases {
