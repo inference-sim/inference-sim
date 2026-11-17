@@ -31,6 +31,12 @@ def proof(name):
         return json.load(f)
 
 
+def read_in(spec, path):
+    """The proof's own `at` for the read in path: the line moves with the release, the file does not."""
+    (at,) = [rd["at"] for rd in spec["readers"] if rd["at"].startswith(path + ":")]
+    return at
+
+
 @unittest.skipUnless(ROOT, "VLLM_SOURCE is unset")
 class Controls(unittest.TestCase):
     def setUp(self):
@@ -127,9 +133,11 @@ class Controls(unittest.TestCase):
     def test_a_read_with_no_disposition_fails(self):
         spec = copy.deepcopy(proof("stream_interval"))
         spec["runs"] = []
+        dropped = spec["readers"][0]["at"]
+        self.assertTrue(dropped.startswith("vllm/engine/arg_utils.py:"), dropped)
         spec["readers"] = spec["readers"][1:]
         r = self.h.evaluate(ROOT, spec)
-        self.assertTrue([p for p in r["problems"] if "has no disposition: vllm/engine/arg_utils.py:2641" in p], r["problems"])
+        self.assertTrue([p for p in r["problems"] if "has no disposition: " + dropped in p], r["problems"])
 
     def test_a_listed_read_that_is_not_in_the_source_fails(self):
         spec = copy.deepcopy(proof("stream_interval"))
@@ -147,35 +155,37 @@ class Controls(unittest.TestCase):
     def test_a_pass_through_that_is_not_one_fails(self):
         spec = copy.deepcopy(proof("stream_interval"))
         spec["runs"] = []
+        at = read_in(spec, "vllm/v1/engine/async_llm.py")
         for rd in spec["readers"]:
-            if rd["at"] == "vllm/v1/engine/async_llm.py:174":
+            if rd["at"] == at:
                 rd["disposition"]["callee"] = "SomethingElse"
         r = self.h.evaluate(ROOT, spec)
-        self.assertTrue([p for p in r["problems"] if "async_llm.py:174 is not a keyword" in p], r["problems"])
+        self.assertTrue([p for p in r["problems"] if at + " is not a keyword" in p], r["problems"])
 
     def test_a_reviewed_read_the_source_no_longer_holds_fails(self):
         spec = copy.deepcopy(proof("stream_interval"))
         spec["runs"] = []
         for rd in spec["readers"]:
-            if rd.get("reviewed") and rd["at"].endswith(":324"):
+            if rd.get("reviewed") and rd.get("expr", "").startswith("if self.stream_interval >"):
                 rd["expr"] = "if self.stream_interval > 2:"
         r = self.h.evaluate(ROOT, spec)
         self.assertTrue([p for p in r["problems"] if "no longer holds" in p], r["problems"])
 
 
     def test_a_run_disposition_names_the_run_that_executed_the_line(self):
-        # arg_utils.py:2641 is executed by the config run (EngineArgs.create_engine_config) and by no other
+        # The arg_utils.py read is executed by the config run (EngineArgs.create_engine_config) and by no other
         # run. A proof that names the outputproc run for it must fail, though the config run came first:
         # coverage is per run, not the sum of the runs so far.
         spec = copy.deepcopy(proof("stream_interval"))
         spec["runs"] = [r for r in spec["runs"] if r["id"] in ("config", "outputproc")]
+        at = read_in(spec, "vllm/engine/arg_utils.py")
         for rd in spec["readers"]:
-            if rd["at"] == "vllm/engine/arg_utils.py:2641":
+            if rd["at"] == at:
                 rd["disposition"]["run"] = "outputproc"
         r = self.h.evaluate(ROOT, spec)
         self.assertTrue([p for p in r["problems"]
-                         if "arg_utils.py:2641 is marked run in outputproc and that run did not execute it" in p], r["problems"])
-        got = [rd for rd in r["readers"] if rd["at"] == "vllm/engine/arg_utils.py:2641"][0]
+                         if at + " is marked run in outputproc and that run did not execute it" in p], r["problems"])
+        got = [rd for rd in r["readers"] if rd["at"] == at][0]
         self.assertEqual(got["ran_in"], ["config"])
 
 
