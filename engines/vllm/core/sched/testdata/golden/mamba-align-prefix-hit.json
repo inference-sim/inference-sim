@@ -13,7 +13,7 @@
   "C": {
    "output_tokens": 4,
    "reason": "stop",
-   "step": 13
+   "step": 12
   },
   "D": {
    "output_tokens": 4,
@@ -51,9 +51,9 @@
   "scheduler_block_size": 8
  },
  "provenance": {
-  "blis_vllm_commit": "d855ac9d0501427f819cda43a5fbcde33966b640",
-  "lockfile_sha256": "8baca0cbd0f28f5455c4d2c1b39a81ac3c424089e4c875e93614794c77932167",
-  "mock_version": "gpu-mock/5+af60be80e293",
+  "blis_vllm_commit": "74a07eccbdafffe39f57b9738e49bee225f4bece",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/7+f4274aa648c4",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -87,20 +87,20 @@
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
   "oracle_inputs": {
-   "oracle/mocks.json": "29fec19aa8b5bd75e12b37893eea761684d4399a7e3bee1066cb749eac58769c",
-   "oracle/requirements.lock": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
-   "oracle/run_scheduler.py": "dd0cbc255201f6d63588c720f4e687276f4b73fec0f490e997afdaacc2a5a127",
+   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
    "oracle/scenarios/mamba-align-prefix-hit.json": "7566db9d02269f55844f5b992c65d5fec14546a77e5f3ef5257d1a8633a43221"
   },
   "platform": "linux-x86_64",
   "python": "3.12.16",
-  "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
   "scenario_sha256": "7566db9d02269f55844f5b992c65d5fec14546a77e5f3ef5257d1a8633a43221",
   "seed": null,
   "tier": 2,
-  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
-  "vllm_distribution": "0.32.0+cpu",
-  "vllm_version": "0.32.0"
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
  },
  "steps": [
   {
@@ -606,19 +606,19 @@
      [
       [
        "57b8e09086dc2fd1b83a3e88722694d1264dcef9269f57de76071c7d64efba5a00000000",
-       1
+       2
       ],
       [
        "207e2c5227cc1843df6c0c2d2cd8da20d15b858b88a874944b19e9ac43451dfb00000000",
-       1
+       2
       ],
       [
        "49c835deff45e65b65377fcdc71b0ca744add7d5e5599e0a4d1e6a1da064c01500000000",
-       1
+       2
       ],
       [
        "80508830ea252951632339baf6479ebffa903535f02c3b2be8c798a205eb86ef00000000",
-       1
+       2
       ],
       [
        null,
@@ -640,7 +640,53 @@
       ],
       [
        "80508830ea252951632339baf6479ebffa903535f02c3b2be8c798a205eb86ef00000001",
+       2
+      ],
+      [
+       null,
        1
+      ]
+     ]
+    ],
+    "C": [
+     [
+      [
+       "57b8e09086dc2fd1b83a3e88722694d1264dcef9269f57de76071c7d64efba5a00000000",
+       2
+      ],
+      [
+       "207e2c5227cc1843df6c0c2d2cd8da20d15b858b88a874944b19e9ac43451dfb00000000",
+       2
+      ],
+      [
+       "49c835deff45e65b65377fcdc71b0ca744add7d5e5599e0a4d1e6a1da064c01500000000",
+       2
+      ],
+      [
+       "80508830ea252951632339baf6479ebffa903535f02c3b2be8c798a205eb86ef00000000",
+       2
+      ],
+      [
+       "8fe7984266a4cd89e7637b517c74871d0da43937f8d921760d70ce008fe2392a00000000",
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "80508830ea252951632339baf6479ebffa903535f02c3b2be8c798a205eb86ef00000001",
+       2
       ],
       [
        null,
@@ -650,25 +696,30 @@
     ]
    },
    "finished": [],
-   "free_blocks": 192,
-   "kv_usage": 0.035175879396984966,
+   "free_blocks": 190,
+   "kv_usage": 0.045226130653266305,
    "num_computed": {
-    "B": 39
+    "B": 39,
+    "C": 40
    },
-   "num_running": 1,
+   "num_running": 2,
    "num_tokens": {
-    "B": 40
+    "B": 40,
+    "C": 41
    },
-   "num_waiting": 1,
+   "num_waiting": 0,
    "preempted": [],
    "prefix_hit": {
-    "B": 32
+    "B": 32,
+    "C": 32
    },
    "running": [
-    "B"
+    "B",
+    "C"
    ],
    "scheduled": {
-    "B": 7
+    "B": 7,
+    "C": 8
    },
    "step": 9
   },
@@ -741,6 +792,10 @@
       [
        "8fe7984266a4cd89e7637b517c74871d0da43937f8d921760d70ce008fe2392a00000000",
        1
+      ],
+      [
+       null,
+       1
       ]
      ],
      [
@@ -757,7 +812,11 @@
        0
       ],
       [
-       "80508830ea252951632339baf6479ebffa903535f02c3b2be8c798a205eb86ef00000001",
+       "null",
+       0
+      ],
+      [
+       null,
        1
       ],
       [
@@ -790,23 +849,22 @@
     ]
    },
    "finished": [],
-   "free_blocks": 187,
-   "kv_usage": 0.06030150753768848,
+   "free_blocks": 186,
+   "kv_usage": 0.0653266331658291,
    "num_computed": {
     "B": 40,
-    "C": 40,
+    "C": 41,
     "D": 16
    },
    "num_running": 3,
    "num_tokens": {
     "B": 41,
-    "C": 41,
+    "C": 42,
     "D": 30
    },
    "num_waiting": 0,
    "preempted": [],
    "prefix_hit": {
-    "C": 32,
     "D": 0
    },
    "running": [
@@ -816,7 +874,7 @@
    ],
    "scheduled": {
     "B": 1,
-    "C": 8,
+    "C": 1,
     "D": 16
    },
    "step": 10
@@ -868,8 +926,8 @@
        0
       ],
       [
-       null,
-       1
+       "null",
+       0
       ],
       [
        null,
@@ -925,16 +983,16 @@
    "finished": [
     "B"
    ],
-   "free_blocks": 184,
-   "kv_usage": 0.07537688442211055,
+   "free_blocks": 185,
+   "kv_usage": 0.07035175879396982,
    "num_computed": {
-    "C": 41,
+    "C": 42,
     "D": 24,
     "E": 8
    },
    "num_running": 3,
    "num_tokens": {
-    "C": 42,
+    "C": 43,
     "D": 30,
     "E": 12
    },
@@ -959,60 +1017,6 @@
   },
   {
    "blocks": {
-    "C": [
-     [
-      [
-       "57b8e09086dc2fd1b83a3e88722694d1264dcef9269f57de76071c7d64efba5a00000000",
-       1
-      ],
-      [
-       "207e2c5227cc1843df6c0c2d2cd8da20d15b858b88a874944b19e9ac43451dfb00000000",
-       1
-      ],
-      [
-       "49c835deff45e65b65377fcdc71b0ca744add7d5e5599e0a4d1e6a1da064c01500000000",
-       1
-      ],
-      [
-       "80508830ea252951632339baf6479ebffa903535f02c3b2be8c798a205eb86ef00000000",
-       1
-      ],
-      [
-       "8fe7984266a4cd89e7637b517c74871d0da43937f8d921760d70ce008fe2392a00000000",
-       1
-      ],
-      [
-       null,
-       1
-      ]
-     ],
-     [
-      [
-       "null",
-       0
-      ],
-      [
-       "null",
-       0
-      ],
-      [
-       "null",
-       0
-      ],
-      [
-       "null",
-       0
-      ],
-      [
-       "null",
-       0
-      ],
-      [
-       null,
-       1
-      ]
-     ]
-    ],
     "D": [
      [
       [
@@ -1074,17 +1078,17 @@
      ]
     ]
    },
-   "finished": [],
-   "free_blocks": 182,
-   "kv_usage": 0.085427135678392,
+   "finished": [
+    "C"
+   ],
+   "free_blocks": 189,
+   "kv_usage": 0.05025125628140703,
    "num_computed": {
-    "C": 42,
     "D": 30,
     "E": 12
    },
-   "num_running": 3,
+   "num_running": 2,
    "num_tokens": {
-    "C": 43,
     "D": 31,
     "E": 13
    },
@@ -1095,7 +1099,6 @@
     "E": 0
    },
    "running": [
-    "C",
     "D",
     "E"
    ],
@@ -1169,9 +1172,7 @@
      ]
     ]
    },
-   "finished": [
-    "C"
-   ],
+   "finished": [],
    "free_blocks": 191,
    "kv_usage": 0.04020100502512558,
    "num_computed": {
@@ -1191,7 +1192,6 @@
     "E"
    ],
    "scheduled": {
-    "C": 1,
     "D": 1,
     "E": 1
    },

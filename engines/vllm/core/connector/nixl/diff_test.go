@@ -189,7 +189,7 @@ func run(t *testing.T, sc scenario) trace {
 	if c.AsyncScheduling || pp > 1 {
 		queue = engine.MaxConcurrentBatches(pp, c.AsyncScheduling, v2)
 	}
-	s, err := sched.New(sched.Config{
+	s, err := sched.New(sched.Config{KVTransfer: true, // the connector this test installs (kv_transfer_config)
 		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: c.MaxModelLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 		EnableChunkedPrefill: chunked, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: caching,

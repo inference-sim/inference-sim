@@ -152,12 +152,15 @@ func TestAHostStatesTheMultiConnectorOrderInItsEngineBlock(t *testing.T) {
 	}
 }
 
-// The shipped scenario drafts with DSpark, and the engine does not model an offload tier beside a
-// drafter: it says so by name, rather than failing on the connector's children.
-func TestTheShippedMultiConnectorScenarioIsRefusedForItsDrafterByName(t *testing.T) {
+// The shipped scenario drafts with DSpark. At v0.33.0 DSpark no longer drops the trailing
+// prefix-cache block (needs_eagle_block_drop, vllm/config/speculative.py:2122-2129@4ba787ec), so
+// its KV cache group is not a drafter group to the offloading connector and is not refused as
+// one; the scenario is refused for its group's block size against the hash block size, by name,
+// rather than failing on the connector's children.
+func TestTheShippedMultiConnectorScenarioIsRefusedForItsBlockSizesByName(t *testing.T) {
 	Register()
 	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, shippedScenario), Pool: 0})
-	if err == nil || !strings.Contains(err.Error(), "drafter") || strings.Contains(err.Error(), "child(ren)") {
-		t.Fatalf("the shipped scenario: %v, want a refusal that names the drafter", err)
+	if err == nil || !strings.Contains(err.Error(), "hash block size") || strings.Contains(err.Error(), "child(ren)") {
+		t.Fatalf("the shipped scenario: %v, want a refusal that names the hash block size", err)
 	}
 }
