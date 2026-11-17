@@ -142,7 +142,8 @@ func writerFiles(t *testing.T, params map[string]any) tiering.MemFiles {
 	t.Helper()
 	files := tiering.MemFiles{}
 	w := newRig(t, files)
-	if err := w.s.Add(&sched.Request{ID: "w", Prompt: promptOf(3*block + 5), MaxTokens: 1, EOS: -1, KVTransferParams: params}); err != nil {
+	w.conn.SetRequestParams("w", params)
+	if err := w.s.Add(&sched.Request{ID: "w", Prompt: promptOf(3*block + 5), MaxTokens: 1, EOS: -1}); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 20 && (w.s.HasRequests() || w.conn.HasPendingPushWork()); i++ {
@@ -168,8 +169,8 @@ func TestARequestsLoadTiersDecideWhetherItReadsTheSharedStorage(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := newRig(t, writerFiles(t, nil))
-			if err := r.s.Add(&sched.Request{ID: "r", Prompt: promptOf(3*block + 5), MaxTokens: 1, EOS: -1,
-				KVTransferParams: c.params}); err != nil {
+			r.conn.SetRequestParams("r", c.params)
+			if err := r.s.Add(&sched.Request{ID: "r", Prompt: promptOf(3*block + 5), MaxTokens: 1, EOS: -1}); err != nil {
 				t.Fatal(err)
 			}
 			loaded := 0
@@ -205,7 +206,8 @@ func TestATierSeesTheRequestsTransferParams(t *testing.T) {
 	r := newRigWith(t, tiering.MemFiles{}, func(fs *tiering.FSTier) tiering.Tier { return paramsTier{fs, seen} })
 	params := map[string]any{"remote_kv_source": map[string]any{"host": "h"}, "kv_load_tiers": []any{}}
 	for id, p := range map[string]map[string]any{"a": params, "b": nil} {
-		if err := r.s.Add(&sched.Request{ID: id, Prompt: promptOf(block + 5), MaxTokens: 1, EOS: -1, KVTransferParams: p}); err != nil {
+		r.conn.SetRequestParams(id, p)
+		if err := r.s.Add(&sched.Request{ID: id, Prompt: promptOf(block + 5), MaxTokens: 1, EOS: -1}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -243,8 +245,8 @@ func TestARequestsTokenLimitsBoundWhatItLoadsAndOffloads(t *testing.T) {
 	} {
 		t.Run("load, "+c.name, func(t *testing.T) {
 			r := newRig(t, writerFiles(t, nil))
-			if err := r.s.Add(&sched.Request{ID: "r", Prompt: promptOf(3*block + 5), MaxTokens: 1, EOS: -1,
-				KVTransferParams: c.params}); err != nil {
+			r.conn.SetRequestParams("r", c.params)
+			if err := r.s.Add(&sched.Request{ID: "r", Prompt: promptOf(3*block + 5), MaxTokens: 1, EOS: -1}); err != nil {
 				t.Fatal(err)
 			}
 			loaded := 0
