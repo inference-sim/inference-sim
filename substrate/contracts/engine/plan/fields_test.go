@@ -123,7 +123,7 @@ func pricedFields(t *testing.T) map[string]string {
 			t.Errorf("%s is listed twice", field)
 		}
 		out[field] = proof
-		dir := map[string]string{"kernel": "../../../kernel"}[pkg]
+		dir := map[string]string{"kernel": "../../../kernel", "envtest": "../../conformance/envtest"}[pkg]
 		if dir == "" {
 			t.Errorf("%s: the proof is in package %q, which this check does not know where to find", field, pkg)
 			continue

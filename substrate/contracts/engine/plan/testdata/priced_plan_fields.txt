@@ -67,3 +67,11 @@ PoolPlan.Launches # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCha
 LaunchChange.FromTokens # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCharged
 LaunchChange.ToTokens # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCharged
 LaunchChange.PerLayer # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCharged
+Transfer.Nodes # envtest: TestNodeAndGroupMovesChangeTheReferenceDemand
+Transfer.Groups # envtest: TestNodeAndGroupMovesChangeTheReferenceDemand
+NodeMove.From # envtest: TestNodeAndGroupMovesChangeTheReferenceDemand
+NodeMove.To # envtest: TestNodeAndGroupMovesChangeTheReferenceDemand
+GroupMove.Group # envtest: TestNodeAndGroupMovesChangeTheReferenceDemand
+GroupMove.Tokens # envtest: TestNodeAndGroupMovesChangeTheReferenceDemand
+NodeMoves.Moves # envtest: TestNodeAndGroupMovesChangeTheReferenceDemand
+GroupMoves.Moves # envtest: TestNodeAndGroupMovesChangeTheReferenceDemand
