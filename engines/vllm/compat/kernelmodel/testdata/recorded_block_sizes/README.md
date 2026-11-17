@@ -48,7 +48,7 @@ and minimax-m3 have operator flags only.
 
 Each run row records `log_sha256` (the sha256 of the server log as the API served it) and `fetched`
 (the date). Re-running with `--from-rows` while the hashes still match writes the file byte for
-byte. A nightly job that runs `--check` is blis-vllm#91; it is not built.
+byte. The nightly job `.github/workflows/recorded-logs.yml` runs `--check` and fails, naming the row, when a log's hash differs or the log is gone (blis-vllm#91); it never rewrites the file.
 
 Source: InferenceX, https://inferencex.semianalysis.com/api/v1 (`/benchmarks?model=` for the rows,
 `/server-log?id=` for the logs). Rows are identified by their InferenceX row id.
