@@ -9,8 +9,8 @@
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "009a3ad46271b19f6856619d858bac687aa75f803386bbfcd75509a0ae3dd390",
-      "combined_hash": "009a3ad46271b19f6856619d858bac687aa75f803386bbfcd75509a0ae3dd390"
+      "hash": "fcb9d2e649e734e43a1d5e53521aa88c92377cc7f5f7430def02d2ac797ff634",
+      "combined_hash": "fcb9d2e649e734e43a1d5e53521aa88c92377cc7f5f7430def02d2ac797ff634"
     },
     "registry": {
       "source": "path",
@@ -898,7 +898,7 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.2-0.20261117021403-7fe8544c54d9",
+    "substrate": "v0.14.2-0.20261117033445-09a2a95931c0",
     "router": "v1.0.0-blis.4",
     "engine_module": "v0.32.1-0.20261116235522-d1c2a94cdeb2"
   },
