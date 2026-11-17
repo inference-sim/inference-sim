@@ -139,12 +139,21 @@ func TestTheSelectedEntryReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := d.Report()
-	if len(r.Selected) != 0 || len(r.Unloaded) != 11 {
+	if len(r.Selected) != 0 || len(r.Unloaded) != 12 {
 		t.Fatalf("a fresh load selects nothing and has loaded no file: %+v", r)
+	}
+	// Both acceptance sets are among the files no reader has loaded yet.
+	fresh := strings.Join(r.Unloaded, " ")
+	for _, f := range []string{"acceptance/inferencex-golden-al.yaml", "acceptance/internal-deployment-measurements.yaml"} {
+		if !strings.Contains(fresh, f) {
+			t.Errorf("%s is missing from the unloaded files of a fresh load", f)
+		}
 	}
 	d.RecordCoefficient("cost-model-fabric", "fabric_bandwidth_efficiency", coefficient.Scope{Fabric: []string{"ib-400g"}}, "literature")
 	acc := d.AcceptanceSets()
-	if len(acc) != 1 {
+	// Two acceptance sets are committed: InferenceX's golden curves and the internal deployment
+	// measurements. The acceptance reader loads every set it returns, so both leave the list.
+	if len(acc) != 2 || acc[0].Name != "inferencex-golden-al" || acc[1].Name != "internal-deployment-measurements" {
 		t.Fatalf("acceptance sets: %d", len(acc))
 	}
 	p := acc[0].Profiles[0]
@@ -158,6 +167,11 @@ func TestTheSelectedEntryReport(t *testing.T) {
 	for _, f := range r.Unloaded {
 		if f == "coefficients/cost-model-fabric.yaml" || f == "acceptance/inferencex-golden-al.yaml" {
 			t.Errorf("%s was read and is reported unloaded", f)
+		}
+	}
+	for _, f := range r.Unloaded {
+		if f == "acceptance/internal-deployment-measurements.yaml" {
+			t.Errorf("%s was read by the acceptance reader and is reported unloaded", f)
 		}
 	}
 	if len(r.Unloaded) != 9 || r.Unloaded[len(r.Unloaded)-1] != "routing/servingstudio-dsv41-flash.yaml" {
