@@ -14,7 +14,7 @@ Usage:
     python -I oracle/lower/extract.py <vllm source root> print            the cases and vLLM answers, as JSON
     python -I oracle/lower/extract.py <vllm source root> check <file>     fail unless <file> is what print gives
 
-<vllm source root> is a directory holding vllm/ at commit 5df63a7203cdb9328d824a27b682e77c7b9928be, run with a
+<vllm source root> is a directory holding vllm/ at commit 4ba787ec9959e566d3b587a796dff07673324da5, run with a
 Python that has torch installed (the oracle environment, oracle/requirements.lock).
 """
 import ast
@@ -29,7 +29,7 @@ import types
 from collections import defaultdict
 from itertools import groupby, product
 
-COMMIT = "5df63a7203cdb9328d824a27b682e77c7b9928be"
+COMMIT = "4ba787ec9959e566d3b587a796dff07673324da5"
 
 
 def parse(root, rel):
@@ -74,10 +74,9 @@ def ns_base():
 
 def load(root):
     import torch
-    import torch.distributed as dist
     from contextlib import nullcontext
     ns = ns_base()
-    ns.update(torch=torch, dist=dist, nullcontext=nullcontext)
+    ns.update(torch=torch, nullcontext=nullcontext)
     comp = parse(root, "vllm/config/compilation.py")
     # `from __future__ import annotations` is not needed: the pieces below use no forward reference.
     run(pick(comp, "CUDAGraphMode"), ns, "vllm/config/compilation.py")
@@ -133,7 +132,6 @@ def load(root):
     # Type names the signatures mention; annotations are evaluated when the def runs.
     ns.update(CudaGraphManager=object, ParallelConfig=object)
     run(pick(dp, "DPSyncState", "sync_cudagraph_and_dp_padding", "dispatch_cg_and_sync_dp"), ns, "vllm/v1/worker/gpu/dp_utils.py")
-    ns["get_dp_group"] = lambda: types.SimpleNamespace(cpu_group=None)
     ns["should_skip_dp_coordination"] = lambda: False
     df = parse(root, "vllm/v1/worker/gpu/spec_decode/dflash/speculator.py")
     ctx = method(df, "DFlashSpeculator", "_num_graph_context_tokens")[0]
@@ -367,7 +365,9 @@ def dp_cases(ns):
             else:
                 d = m.dispatch(k["reqs"], k["tokens"], k["uniform"], num_active_loras=0, max_query_len=k["mql"])
             descs.append(d)
-        g = torch.zeros(6, n, dtype=torch.int32)
+        # The function's own seven rows (vllm/v1/worker/gpu/dp_utils.py:68-75@4ba787ec); no rank
+        # here allows skipping the drafts (allow_skip_drafts, its default False).
+        g = torch.zeros(7, n, dtype=torch.int32)
         for i, k in enumerate(c["ranks"]):
             g[0][i] = k["tokens"]
             g[1][i] = descs[i].cg_mode.value
@@ -375,8 +375,11 @@ def dp_cases(ns):
             g[3][i] = k["mql"] or -1
             g[4][i] = 0
             g[5][i] = k["reqs"]
-        ns["dist"] = types.SimpleNamespace(all_reduce=lambda t, group=None, _g=g: t.copy_(_g))
-        ns["sync_cudagraph_and_dp_padding"].__globals__["dist"] = ns["dist"]
+            g[6][i] = 0
+        # The collective is the DP group's CPU all-reduce (dp_utils.py:78), which returns the
+        # tensor every rank would hold.
+        ns["get_dp_group"] = lambda _g=g: types.SimpleNamespace(cpu_all_reduce_=lambda t: t.copy_(_g))
+        ns["sync_cudagraph_and_dp_padding"].__globals__["get_dp_group"] = ns["get_dp_group"]
         for i, k in enumerate(c["ranks"]):
             if m is None and any(d.cg_mode.value for d in descs):
                 continue
@@ -614,8 +617,8 @@ def kv_pool_cases(root):
     from vllm.v1.attention.backend import MultipleOf
     from vllm.v1.attention.backends.utils import (_DEFAULT_LAYOUT_PREFERENCE, _layout_from_name,
                                                   get_supported_kv_cache_layouts, resolve_kv_cache_layout)
-    from vllm.v1.core.kv_cache_utils import (_get_kv_cache_bytes_per_block, _get_per_layer_spec,
-                                             get_kv_cache_groups)
+    from vllm.v1.core.kv_cache_planning import (_get_kv_cache_bytes_per_block, _get_per_layer_spec,
+                                                get_kv_cache_groups)
     from vllm.v1.core.single_type_kv_cache_manager import register_all_kvcache_specs
     from vllm.v1.kv_cache_interface import AttentionSpec
     from vllm.v1.worker.utils import customize_attention_spec
