@@ -791,6 +791,11 @@ func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 				if mask != nil && !anyIn(mask, idx*bpc, bpc) {
 					continue
 				}
+				// A reachable null block would leave part of the chunk unwritten
+				// (scheduler.py:2001-2012@4ba787ec).
+				if nullReachable(gs.blockIDs[k*bpc:(k+1)*bpc], mask, idx*bpc) {
+					continue
+				}
 				newKeys = append(newKeys, gs.keys[k])
 			}
 		}
@@ -859,6 +864,17 @@ func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 		}
 	}
 	return out
+}
+
+// nullReachable reports whether a chunk's blocks hold a null block (id 0) that the reachable mask
+// keeps (every block when the mask is nil).
+func nullReachable(blocks []int, mask []bool, off int) bool {
+	for b, id := range blocks {
+		if id == 0 && (mask == nil || mask[off+b]) {
+			return true
+		}
+	}
+	return false
 }
 
 func anyIn(mask []bool, from, n int) bool {
