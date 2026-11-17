@@ -168,11 +168,13 @@ func TestFP32GEMMsAreSlowerThanBF16(t *testing.T) {
 	}
 }
 
-// Marlin pads each tensor-parallel slice of an MXFP4 expert's intermediate width to a
-// multiple of 128: at TP8 without expert parallelism a rank holds more expert bytes than
-// its eighth of an expert-parallel layout's. On a part with a four-bit peak nothing is
-// padded, and the two layouts hold the same expert bytes.
-func TestMarlinPadsTensorParallelExperts(t *testing.T) {
+// vLLM rounds an MXFP4 expert's intermediate width up to 128 (and the hidden width to 128 or 256) on
+// every backend it runs on one rank (mxfp4_round_up_hidden_size_and_intermediate_size,
+// fused_moe/oracle/mxfp4.py:837-879@4ba787ec), so at TP8 without expert parallelism a rank holds
+// more expert bytes than its eighth of an expert-parallel layout's, on a part with a four-bit peak
+// as on one without (blis-substrate m3/mxfp4-moe-padding, 450fa171). Expert parallelism keeps each expert
+// whole and its width already a multiple of 128, so it pads nothing.
+func TestMxfp4PadsTensorParallelExperts(t *testing.T) {
 	held := func(chip string, ep bool) int64 {
 		in := fixtureInputs(t, v41)
 		if chip != "h200" {
@@ -181,13 +183,10 @@ func TestMarlinPadsTensorParallelExperts(t *testing.T) {
 		in.Deployment.Pools[0].Parallel.EnableExpertParallel = ep
 		return build(t, in).FixedBytes().Weights
 	}
-	if tp, ep := held("h200", false), held("h200", true); tp <= ep {
-		t.Errorf("on H200 a TP8 rank holds %d weight bytes, no more than an EP8 rank's %d",
-			tp, ep)
-	}
-	if tp, ep := held("b200", false), held("b200", true); tp > ep {
-		t.Errorf("on B200 a TP8 rank holds %d weight bytes, more than an EP8 rank's %d",
-			tp, ep)
+	for _, chip := range []string{"h200", "b200"} {
+		if tp, ep := held(chip, false), held(chip, true); tp <= ep {
+			t.Errorf("on %s a TP8 rank holds %d weight bytes, no more than an EP8 rank's %d", chip, tp, ep)
+		}
 	}
 }
 
