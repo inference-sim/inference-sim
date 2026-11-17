@@ -2390,7 +2390,11 @@ def test_nemotron_nvfp4_keeps_its_declared_mixed_precision_layout():
         "the base dtype stays global; the quantized widths ride on their own nodes")
 
     by_role = {}
+    # The decoder's layers; the MTP module, which the map leaves unquantized, is its own kind.
+    decoder = set(layer_sequence(g["stack"]))
     for k in g["layer_kinds"]:
+        if k["id"] not in decoder:
+            continue
         for n in k["nodes"]:
             if n["op"] in ("GEMM", "GroupedGEMM"):
                 by_role[n.get("role")] = n.get("weight_dtype")
@@ -6713,9 +6717,9 @@ def test_modelopt_refuses_what_vllm_reads_differently(tmp_path):
     # MIXED_PRECISION picks the algorithm per layer.
     with pytest.raises(d.DeriveError, match="MIXED_PRECISION picks the algorithm per layer"):
         _derive_raw(_kimi_k25_nvfp4_raw(quant_algo="MIXED_PRECISION"), tmp_path, "x-nvfp4")
-    # An algorithm other than NVFP4 is a different layout.
-    with pytest.raises(d.DeriveError, match="only the NVFP4 layout"):
-        _derive_raw(_kimi_k25_nvfp4_raw(quant_algo="FP8"), tmp_path, "x-nvfp4")
+    # An algorithm other than NVFP4 and FP8 is a layout this deriver does not place.
+    with pytest.raises(d.DeriveError, match="only the NVFP4 and FP8 layouts"):
+        _derive_raw(_kimi_k25_nvfp4_raw(quant_algo="INT8"), tmp_path, "x-nvfp4")
     # A 32-element group is not NVFP4's 16.
     bad = _kimi_k25_nvfp4_raw()
     bad["quantization_config"]["config_groups"] = {"group_0": {"weights": {"group_size": 32}}}
@@ -8612,6 +8616,148 @@ def test_nemotron_h_quantized_layers_place_the_input_projection(tmp_path):
     raw = config_of(MODELS / "nemotron-3.5-lightning-30b-a3b-nvfp4")
     del text_config(raw)["quantization_config"]["quantized_layers"][f"backbone.layers.{mamba[-1]}.mixer.in_proj"]
     with pytest.raises(derive_graph.DeriveError, match="one node cannot price both"):
+        _derive_raw(raw, tmp_path, "nemotron-test")
+
+
+# --- NemotronH under a uniform ModelOpt FP8 list (nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8) ---
+# That checkpoint's licence is off the allow-list, so its config.json is not committed. These
+# tests give the committed Nemotron-3-Ultra-BF16 config (the same architecture, a latent MoE
+# and an attention + MoE MTP module) the block Super-FP8 states: quant_algo FP8 and an `ignore`
+# list naming every conv1d, every latent projection, the attention layers whole, lm_head and
+# mtp*.
+
+NEMOTRON_ULTRA_BF16 = MODELS / "nemotron-3-ultra-550b-a55b-bf16"
+
+
+def _nemotron_fp8_raw(edit_ignore=None, **cfg_edits) -> dict:
+    raw = config_of(NEMOTRON_ULTRA_BF16)
+    raw.update(cfg_edits)
+    kinds = raw["layers_block_type"]
+    ignore = []
+    for i, kind in enumerate(kinds):
+        if kind == "mamba":
+            ignore.append(f"backbone.layers.{i}.mixer.conv1d")
+        elif kind == "moe":
+            ignore += [f"backbone.layers.{i}.mixer.fc1_latent_proj",
+                       f"backbone.layers.{i}.mixer.fc2_latent_proj"]
+        elif kind == "attention":
+            # As Super-FP8 writes them: "backbone.layers.16*", but "backbone.layers.7.*" where the
+            # bare index would also name layers 70-79 (vLLM matches a pattern as a substring).
+            ignore.append(f"backbone.layers.{i}.*" if i * 10 < len(kinds) else f"backbone.layers.{i}*")
+    ignore += ["lm_head", "mtp*"]
+    if edit_ignore:
+        ignore = edit_ignore(ignore)
+    eight = {"dynamic": False, "num_bits": 8, "type": "float"}
+    raw["quantization_config"] = {
+        "config_groups": {"group_0": {"input_activations": eight, "weights": dict(eight),
+                                      "targets": ["Linear"]}},
+        "quant_algo": "FP8", "kv_cache_scheme": eight, "quant_method": "modelopt",
+        "ignore": ignore}
+    return raw
+
+
+def _nemotron_role_widths(g: dict, kind: str) -> dict:
+    """role -> stored width, for every weight node of the kind (a shared expert merged into the
+    routed node is reported under its own role at the node's width)."""
+    k = {k["id"]: k for k in g["layer_kinds"]}[kind]
+    out = {}
+    for n in k["nodes"]:
+        if n["op"] in ("GEMM", "GroupedGEMM"):
+            out[n["role"]] = n.get("weight_dtype", g["global"]["weight_dtype"])
+            if n.get("shared_experts"):
+                out["shared_experts"] = out[n["role"]]
+    return out
+
+
+def test_nemotron_h_modelopt_fp8_places_each_module_at_its_stored_width(tmp_path):
+    """Under quant_algo FP8 vLLM quantizes every linear and routed-expert layer the list does not
+    exclude (ModelOptFp8Config, modelopt.py@v0.33.0). So the Mamba in_proj and out_proj and the
+    routed and shared experts are fp8; the latent projections, the attention layers, the head and
+    the whole MTP module, all excluded, stay bf16. The MTP MoE layer is therefore a kind of its
+    own, where the MTP attention layer is the decoder's."""
+    g = _derive_raw(_nemotron_fp8_raw(), tmp_path, "nemotron-fp8-test")
+    assert g["global"]["weight_dtype"] == "bf16"
+    assert _nemotron_role_widths(g, "mamba") == {"recurrent_in_proj": "fp8", "mixer_out": "fp8"}
+    assert _nemotron_role_widths(g, "moe") == {
+        "routed_expert_down_proj": "bf16", "experts": "fp8", "shared_experts": "fp8",
+        "routed_expert_up_proj": "bf16"}
+    assert _nemotron_role_widths(g, "attention") == {"qkv_proj": "bf16", "o_proj": "bf16"}
+    assert [n.get("weight_dtype", "bf16") for n in g["head"] if n["op"] == "GEMM"] == ["bf16"]
+    assert g["speculator"]["stack"]["pattern"] == ["attention", "mtp_moe"]
+    assert set(_nemotron_role_widths(g, "mtp_moe").values()) == {"bf16"}
+    # The draft MoE layer has the decoder MoE's shapes; only its stored width differs.
+    shapes = lambda kind: [(n["op"], n.get("n"), n.get("k"), n.get("experts"), n.get("latent_size"))
+                           for n in {k["id"]: k for k in g["layer_kinds"]}[kind]["nodes"]]
+    assert shapes("mtp_moe") == shapes("moe")
+
+
+def test_nemotron_h_mtp_layers_come_from_either_pattern_spelling(tmp_path):
+    """Super-FP8 states its MTP layers as mtp_hybrid_override_pattern "*E" where the Ultra configs
+    state mtp_layers_block_type [attention, moe]; vLLM builds one MTP layer per character
+    (nemotron_h_mtp.py:251-288@v0.33.0). Either spelling gives an attention layer then a MoE
+    layer; without a quantization block both are the decoder's own kinds."""
+    raw = _nemotron_fp8_raw()
+    del raw["mtp_layers_block_type"]
+    raw["mtp_hybrid_override_pattern"] = "*E"
+    g = _derive_raw(raw, tmp_path, "nemotron-fp8-test")
+    assert g["speculator"]["stack"]["pattern"] == ["attention", "mtp_moe"]
+    del raw["quantization_config"]
+    plain = _derive_raw(raw, tmp_path, "nemotron-fp8-test")
+    assert plain["speculator"]["stack"]["pattern"] == ["attention", "moe"]
+    assert {k["id"] for k in plain["layer_kinds"]} == {"mamba", "moe", "attention"}
+
+
+@pytest.mark.parametrize("edit,cfg,why", [
+    # One Mamba layer's in_proj excluded: one node cannot price fp8 and bf16.
+    (lambda ig: ig + ["backbone.layers.0.mixer.in_proj"], {}, "quantized on some of its layers"),
+    # The head left quantized: the head is priced at the base width.
+    (lambda ig: [p for p in ig if p != "lm_head"], {}, "lm_head"),
+    # Two MTP MoE layers, one excluded and one not.
+    (lambda ig: [p for p in ig if p != "mtp*"] + ["mtp.layers.0*", "mtp.layers.1*"],
+     {"mtp_layers_block_type": ["attention", "moe", "moe"]}, "quantized on some of its layers"),
+])
+def test_nemotron_h_modelopt_fp8_refuses_what_one_node_cannot_price(tmp_path, edit, cfg, why):
+    with pytest.raises(deriver().DeriveError, match=why):
+        _derive_raw(_nemotron_fp8_raw(edit, **cfg), tmp_path, "nemotron-fp8-test")
+
+
+def test_nemotron_h_modelopt_fp8_refuses_a_block_it_does_not_read(tmp_path):
+    """An FP8 algorithm beside a 4-bit weight group contradicts itself; a dense MLP layer ('-'),
+    whose module names this deriver has not read for NemotronH, has no placement."""
+    d = deriver()
+    raw = _nemotron_fp8_raw()
+    raw["quantization_config"]["config_groups"]["group_0"]["weights"]["num_bits"] = 4
+    with pytest.raises(d.DeriveError, match="not 8-bit float"):
+        _derive_raw(raw, tmp_path, "nemotron-fp8-test")
+    raw = _nemotron_fp8_raw()
+    raw["layers_block_type"] = ["mlp" if i == 1 else k for i, k in enumerate(raw["layers_block_type"])]
+    with pytest.raises(d.DeriveError, match="no recorded vLLM module"):
+        _derive_raw(raw, tmp_path, "nemotron-fp8-test")
+
+
+@pytest.mark.parametrize("name", ["nemotron-3-ultra-550b-a55b-nvfp4",
+                                  "nemotron-3.5-lightning-30b-a3b-nvfp4"])
+def test_nemotron_h_nvfp4_mtp_layers_stay_unquantized(name):
+    """The NVFP4 Nemotron checkpoints' quantized_layers maps name no MTP module, and vLLM leaves a
+    module the map does not name unquantized (ModelOptMixedPrecisionConfig.get_quant_method,
+    modelopt.py:1844-1915@v0.33.0). So the draft MoE layer is bf16 throughout, beside the decoder's
+    NVFP4 routed experts, with the decoder MoE's shapes."""
+    g = graph_of(MODELS / name)
+    pattern = g["speculator"]["stack"]["pattern"]
+    assert pattern[0] == "attention"
+    assert _nemotron_role_widths(g, "moe")["experts"] == "nvfp4"
+    assert set(_nemotron_role_widths(g, pattern[1]).values()) == {"bf16"}
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    routed = lambda kind: [(n["n"], n["k"], n["experts"], n["top_k"]) for n in kinds[kind]["nodes"]
+                           if n.get("role") == "experts"]
+    assert routed(pattern[1]) == routed("moe")
+
+
+def test_nemotron_h_quantized_layers_naming_an_mtp_module_are_refused(tmp_path):
+    raw = config_of(MODELS / "nemotron-3.5-lightning-30b-a3b-nvfp4")
+    text_config(raw)["quantization_config"]["quantized_layers"]["mtp.layers.1.mixer.experts"] = {
+        "quant_algo": "NVFP4"}
+    with pytest.raises(deriver().DeriveError, match="names MTP modules"):
         _derive_raw(raw, tmp_path, "nemotron-test")
 
 

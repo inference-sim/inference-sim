@@ -126,6 +126,45 @@ layer_kinds:
     - 3
   - - 3
     - 4
+- id: mtp_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: routed_expert_down_proj
+    n: 2048
+    k: 8192
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 5120
+    k: 8192
+    experts: 512
+    top_k: 22
+    shared_experts: 1
+    shared_intermediate_size: 10240
+    latent_size: 2048
+  - op: GEMM
+    role: routed_expert_up_proj
+    n: 8192
+    k: 2048
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
 stack:
   pattern:
   - mamba
@@ -176,5 +215,5 @@ speculator:
   stack:
     pattern:
     - attention
-    - moe
+    - mtp_moe
     repeat: 1

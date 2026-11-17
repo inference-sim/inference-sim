@@ -382,6 +382,7 @@ MODELOPT_PER_NODE_ARCHS = frozenset({
     "Qwen3_5MoeForConditionalGeneration",
     "GlmMoeDsaForCausalLM",
     "Glm5NextForConditionalGeneration",
+    "NemotronHForCausalLM",
 })
 
 # The per-node architectures whose MIXED_PRECISION checkpoints are placed from their
@@ -565,6 +566,39 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
                    "lm_head.": "language_model.lm_head.", "model.visual.": "visual."},
         "stacked": {".gate_proj": ".gate_up_proj", ".up_proj": ".gate_up_proj"},
     },
+    # NemotronH (vLLM v0.33.0 model_executor/models/nemotron_h.py): the decoder layers at
+    # model.layers.{i} (make_layers under the "model" prefix, :613-615 and :839), each layer's
+    # work under "mixer" (:313, 356, 405, 526). A Mamba layer's projections are mixer.in_proj and
+    # mixer.out_proj (MambaMixer2, layers/mamba/mamba_mixer2.py:359-371 and :498-505); an
+    # attention layer's are mixer.qkv_proj and mixer.o_proj (NemotronHAttention, :459-475); a MoE
+    # layer's routed experts are a FusedMoE at mixer.experts, its latent projections
+    # mixer.fc1_latent_proj and mixer.fc2_latent_proj (ReplicatedLinear, :197-213) and its shared
+    # expert a NemotronHMLP at mixer.shared_experts with up_proj and down_proj and no gate
+    # (:92-125, 185-193). The router is a GateLinear built without a quant config (:158-165), so
+    # it is not a node. The checkpoint's "backbone" is renamed "model" (hf_to_vllm_mapper,
+    # :734-743); v0.33.0 applies only that renaming half to a quantization list
+    # (get_rename_mapper, models/utils.py:180-200), so the stacked q/k/v renames are not applied,
+    # and "mtp": None is dropped from it. The MTP module is NemotronHMTP, built under "mtp" with
+    # its layers at mtp.layers.{i}, one per character of mtp_hybrid_override_pattern
+    # (nemotron_h_mtp.py:257-288, 366-370), from the same checkpoint's quantization config
+    # (get_draft_quant_config, models/utils.py:985-1007).
+    "NemotronHForCausalLM": {
+        "layer": "model.layers.{i}.",
+        "draft_layer": "mtp.layers.{i}.",
+        "head": "lm_head",
+        "roles": {
+            "recurrent_in_proj": "mixer.in_proj",
+            "mixer_out": "mixer.out_proj",
+            "qkv_proj": "mixer.qkv_proj",
+            "o_proj": "mixer.o_proj",
+            "routed_expert_down_proj": "mixer.fc1_latent_proj",
+            "routed_expert_up_proj": "mixer.fc2_latent_proj",
+            "experts": "mixer.experts",
+        },
+        "shared": ("mixer.shared_experts.up_proj", "mixer.shared_experts.down_proj"),
+        "prefix": {"backbone": "model"},
+        "stacked": {},
+    },
     "Qwen3_5MoeForConditionalGeneration": {
         "layer": "language_model.model.layers.{i}.",
         "draft_layer": "mtp.layers.{i}.",
@@ -631,7 +665,7 @@ def modelopt_placed_width(raw: dict[str, Any], model: str, arch: str):
     vLLM's rule (ModelOptQuantConfigBase.get_quant_method and is_layer_excluded,
     model_executor/layers/quantization/modelopt.py:191-262@v0.33.0): a module the exclusion
     list names stays unquantized. Under a uniform quant_algo every other linear and routed
-    expert layer is quantized at it; only NVFP4 is placed this way. Under MIXED_PRECISION
+    expert layer is quantized at it; NVFP4 and FP8 are placed this way. Under MIXED_PRECISION
     the algorithm is looked up per module in `quantized_layers`, and a module it does not
     name stays unquantized (ModelOptMixedPrecisionConfig, :1574-1890: _resolve_quant_algo
     and get_quant_method's "Layer not in quantized_layers -- leave unquantized")."""
@@ -722,12 +756,23 @@ def modelopt_placed_width(raw: dict[str, Any], model: str, arch: str):
     if width is None:
         raise DeriveError(f"{model}: ModelOpt quant_algo {algo!r} is not one this deriver "
                           f"maps")
-    if width != "nvfp4":
+    if width not in ("nvfp4", "fp8"):
         raise DeriveError(f"{model}: ModelOpt quant_algo {algo!r} is {width}; only the "
-                          f"NVFP4 layout is placed node by node")
-    # NVFP4 shares an FP8 scale over 16 elements; another group would store other bytes.
+                          f"NVFP4 and FP8 layouts are placed node by node")
     groups = [(g or {}).get("weights") or {}
               for g in (quant.get("config_groups") or {}).values()]
+    if width == "fp8":
+        # quant_algo FP8 is ModelOptFp8Config: E4M3 weights with one F32 scale a tensor, on
+        # every linear and routed expert layer the list does not exclude (LINEAR_ALGOS "FP8",
+        # modelopt.py:143-145, and FusedMoEMethodCls ModelOptFp8MoEMethod, :725@v0.33.0). A
+        # config_groups entry that states another weight width contradicts the algorithm.
+        if any((w.get("num_bits"), w.get("type")) not in ((None, None), (8, "float"))
+               for w in groups):
+            raise DeriveError(f"{model}: quant_algo FP8 beside config_groups weights "
+                              f"{sorted({(w.get('num_bits'), w.get('type')) for w in groups}, key=str)}, "
+                              f"not 8-bit float")
+        return lambda prefix: None if modelopt_excluded(prefix, excluded) else width
+    # NVFP4 shares an FP8 scale over 16 elements; another group would store other bytes.
     if any(w.get("group_size") not in (None, 16) for w in groups):
         raise DeriveError(f"{model}: an NVFP4 weight group of "
                           f"{sorted({w.get('group_size') for w in groups})}, not 16")
@@ -822,7 +867,8 @@ def header_width_of(spec: dict[str, Any], model: str):
 
 def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
                           raw: dict[str, Any], model: str,
-                          draft: tuple[str, list[int]] | None = None) -> list[dict[str, Any]]:
+                          draft: tuple[str, list[int]] | None = None,
+                          drafts: list[tuple[str, list[int]]] | None = None) -> list[dict[str, Any]]:
     """Give each weight node of a ModelOpt checkpoint the width vLLM stores it at.
 
     The global width stays the base dtype and a quantized node carries the quantized one,
@@ -838,7 +884,8 @@ def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
 
     `draft`, where given, is (kind id, module indices): a draft kind whose layers the engine
     builds under the architecture's draft_layer prefix at those indices, asked at those
-    modules' names."""
+    modules' names. `drafts` lists more than one, for a draft module whose layers are of
+    different kinds (NemotronH's MTP: an attention layer, then a MoE layer)."""
     arch = architecture_of(raw, model)
     spec = MODELOPT_MODULES[arch]
     width_of = (header_width_of(spec, model) if _HEADERS is not None
@@ -849,17 +896,17 @@ def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
     layers_of: dict[str, list[tuple[str, int]]] = {}
     for i, kid in enumerate(expand_stack(stack)):
         layers_of.setdefault(kid, []).append((spec["layer"], i))
-    draft_kind = draft[0] if draft else None
-    if draft:
-        kid, indices = draft
+    draft_kinds = set()
+    for kid, indices in ([draft] if draft else []) + list(drafts or []):
         if "draft_layer" not in spec:
             raise DeriveError(f"{model}: {arch} has no recorded vLLM prefix for its draft layers")
         layers_of[kid] = [(spec["draft_layer"], i) for i in indices]
+        draft_kinds.add(kid)
     base = base_dtype(raw, raw, model)
 
     def name(fmt, i, path, kind, role):
         # A draft module the engine builds outside its draft layer's prefix names its own path.
-        whole = spec.get("draft_roles", {}).get(role) if kind["id"] == draft_kind else None
+        whole = spec.get("draft_roles", {}).get(role) if kind["id"] in draft_kinds else None
         return whole.format(i=i) if whole else fmt.format(i=i) + path
 
     def uniform(kind, role, paths, idx):
@@ -882,7 +929,7 @@ def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
             if node["op"] not in ("GEMM", "GroupedGEMM") or not idx:
                 nodes.append(node)
                 continue
-            known = role in spec["roles"] or (kind["id"] == draft_kind
+            known = role in spec["roles"] or (kind["id"] in draft_kinds
                                                and role in spec.get("draft_roles", {}))
             if not known:
                 raise DeriveError(f"{model}: {arch} has no recorded vLLM module for the "
@@ -5099,24 +5146,112 @@ def handler_qwen3_5_moe(cfg, raw, model):
     return kinds, stack
 
 
+# NemotronH's layer characters (hybrid_override_pattern, mtp_hybrid_override_pattern): M
+# state-space, * attention, - MLP, E MoE.
+NEMOTRON_H_CHARS = {"M": "mamba", "*": "attention", "-": "mlp", "E": "moe"}
+
+
+def nemotron_h_vector(vector: Any, model: str, what: str) -> list[str]:
+    """A NemotronH layer vector as kind names, from either spelling: the list form
+    (layers_block_type, mtp_layers_block_type) or the character form."""
+    if isinstance(vector, str):
+        try:
+            return [NEMOTRON_H_CHARS[c] for c in vector]
+        except KeyError as exc:
+            raise DeriveError(f"{model}: unknown layer character {exc} in {what}") from exc
+    return list(vector)
+
+
 def handler_nemotron_h(cfg, raw, model):
     """NemotronH: a declared per-layer vector over state-space, MoE and attention
     layers, with no repeating unit and -- on one variant -- no stated layer count.
 
     Depth is the vector's length. The MoE entries are MLP layers rather than separate
     transformer blocks, which is why the vector is longer than a reader expecting
-    num_hidden_layers would guess."""
+    num_hidden_layers would guess.
+
+    The MTP module is its own stack, one layer per entry of mtp_layers_block_type or
+    mtp_hybrid_override_pattern (vLLM v0.33.0 NemotronHMultiTokenPredictor,
+    nemotron_h_mtp.py:251-288), built from the same quantization config at the module names
+    mtp.layers.{i}. Every committed quantized NemotronH checkpoint leaves it unquantized
+    (`mtp*` in its exclusion list, and no mtp key in a quantized_layers map), so its layers
+    can be stored at another width than the decoder's. Each is a layer kind of its own where
+    its nodes differ from the decoder kind of the same type, and the decoder kind where they
+    do not."""
+    catalogue, vector = nemotron_h_kinds(cfg, raw, model)
+    used = list(dict.fromkeys(vector))
+    kinds = [catalogue[n] for n in used]
+    stack = compress(list(vector))
+    quant = raw.get("quantization_config") or {}
+    method = str(quant.get("quant_method", "")).lower()
+    uniform = method == "modelopt" and str(quant.get("quant_algo", "")).upper() != "MIXED_PRECISION"
+
+    spec = int(pick(cfg, "num_spec_tokens") or 0)
+    mtp_vector = cfg.get("mtp_layers_block_type") or cfg.get("mtp_hybrid_override_pattern")
+    if spec and not mtp_vector:
+        raise DeriveError(f"{model}: num_nextn_predict_layers {spec} and no MTP layer pattern "
+                          f"(mtp_layers_block_type or mtp_hybrid_override_pattern)")
+    if not spec:
+        if uniform:
+            kinds = modelopt_place_widths(kinds, stack, raw, model)
+        return kinds, stack
+    mtp = nemotron_h_vector(mtp_vector, model, "the MTP layer pattern")
+    unknown = sorted(set(mtp) - set(catalogue))
+    if unknown:
+        raise DeriveError(f"{model}: the MTP layer pattern names {unknown}, which this "
+                          f"handler cannot price")
+
+    # The draft layers' own kinds, before placement. A uniform ModelOpt list is asked at their
+    # module names. A quantized_layers map quantizes only the modules it names, and leaves
+    # every other one unquantized (ModelOptMixedPrecisionConfig.get_quant_method,
+    # modelopt.py:1844-1915@v0.33.0); a map that names an MTP module is not one this handler
+    # has read, so it is refused.
+    draft_ids = {t: f"mtp_{t}" for t in mtp}
+
+    def copy_of(kind, kid):
+        return dict(kind, id=kid, nodes=[dict(n) for n in kind["nodes"]],
+                    edges=[list(e) for e in kind["edges"]])
+
+    if uniform:
+        drafts = [(draft_ids[t], [i for i, u in enumerate(mtp) if u == t]) for t in dict.fromkeys(mtp)]
+        draft_kinds = [copy_of(catalogue[t], draft_ids[t]) for t in dict.fromkeys(mtp)]
+        placed = modelopt_place_widths(kinds + draft_kinds, stack, raw, model, drafts=drafts)
+        kinds, mtp_kinds = placed[:len(kinds)], {k["id"]: k for k in placed[len(kinds):]}
+    elif quant.get("quantized_layers"):
+        if any(str(k).startswith("mtp.") for k in quant["quantized_layers"]):
+            raise DeriveError(f"{model}: quantized_layers names MTP modules, whose placement "
+                              f"this handler does not read")
+        plain = {k: v for k, v in cfg.items() if k != "quantization_config"}
+        unquantized, _ = nemotron_h_kinds(plain, plain, model)
+        mtp_kinds = {draft_ids[t]: copy_of(unquantized[t], draft_ids[t]) for t in mtp}
+    else:
+        mtp_kinds = {draft_ids[t]: copy_of(catalogue[t], draft_ids[t]) for t in mtp}
+
+    by_id = {k["id"]: k for k in kinds}
+    pattern = []
+    for t in mtp:
+        own = mtp_kinds[draft_ids[t]]
+        if t in by_id and own["nodes"] == by_id[t]["nodes"]:
+            pattern.append(t)
+            continue
+        if own["id"] not in {k["id"] for k in kinds}:
+            kinds.append(own)
+        pattern.append(own["id"])
+    return kinds, stack, {"speculator": {
+        "method": speculative_method(architecture_of(raw, model), model),
+        "num_spec_tokens": spec,
+        "stack": {"pattern": pattern, "repeat": 1},
+    }}
+
+
+def nemotron_h_kinds(cfg, raw, model):
+    """NemotronH's layer kinds by type name, and the layer vector, at the widths a
+    quantized_layers map states (the uniform ModelOpt placement is the caller's)."""
     hidden = int(require(cfg, "hidden_size", model))
     vector = cfg.get("layers_block_type") or cfg.get("hybrid_override_pattern")
     if not vector:
         raise DeriveError(f"{model}: no layers_block_type or hybrid_override_pattern")
-    if isinstance(vector, str):
-        # The character form: M state-space, * attention, - MLP, E MoE.
-        chars = {"M": "mamba", "*": "attention", "-": "mlp", "E": "moe"}
-        try:
-            vector = [chars[c] for c in vector]
-        except KeyError as exc:
-            raise DeriveError(f"{model}: unknown layer character {exc}") from exc
+    vector = nemotron_h_vector(vector, model, "the layer vector")
 
     stated = pick(cfg, "num_layers")
     if stated is not None and int(stated) != len(vector):
@@ -5196,13 +5331,10 @@ def handler_nemotron_h(cfg, raw, model):
         "attention": {"id": "attention", "nodes": attn, "edges": chain(attn)},
         "mlp": {"id": "mlp", "nodes": mlp, "edges": chain(mlp)},
     }
-    used = []
     for name in vector:
         if name not in catalogue:
             raise DeriveError(f"{model}: unknown layer type {name!r}")
-        if name not in used:
-            used.append(name)
-    return [catalogue[n] for n in used], compress(list(vector))
+    return catalogue, vector
 
 
 def kimi_k3_dsa_layers(cfg: dict[str, Any], raw: dict[str, Any], model: str,
