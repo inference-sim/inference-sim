@@ -70,6 +70,9 @@ type scenario struct {
 	} `json:"config"`
 	Requests []scenarioReq `json:"requests"`
 	MaxSteps int           `json:"max_steps"`
+	// RecordAdmissionStats makes the oracle record each step's admissions: the PrefillStats of
+	// the requests admitted and the prefix-cache and connector queries and hits counted.
+	RecordAdmissionStats bool `json:"record_admission_stats"`
 }
 
 type cpuState struct {
@@ -113,6 +116,12 @@ type step struct {
 	SpecScheduled map[string]int `json:"spec_scheduled,omitempty"`
 	Processed     bool           `json:"processed,omitempty"`
 	QueueLen      int            `json:"queue_len,omitempty"`
+	// PrefillStats is [prompt tokens, local cached, external cached] of each request this step
+	// admitted for the first time, running or parked on an asynchronous load; AdmissionStats is
+	// what the step counted at its admissions: prefix [queries, hits] and connector
+	// [queries, hits, hits by tier] (scenarios that set record_admission_stats only).
+	PrefillStats   map[string][]int `json:"prefill_stats,omitempty"`
+	AdmissionStats *admissionRecord `json:"admission_stats,omitempty"`
 }
 
 type finishRecord struct {
@@ -423,6 +432,11 @@ func run(t *testing.T, sc scenario) trace {
 		out := s.Schedule()
 		meta := out.KVConnectorMetadata.(Meta)
 		off := offRows(meta)
+		var prefill map[string][]int
+		var adm *admissionRecord
+		if sc.RecordAdmissionStats {
+			prefill, adm = admissionOf(s, conn, out)
+		}
 		o, done := w.execute(meta, i)
 		off.Completed = append([]int{}, done...)
 		mock := map[string][]int64{}
@@ -440,7 +454,8 @@ func run(t *testing.T, sc scenario) trace {
 		if len(aborts) > 0 {
 			s.Abort(aborts)
 		}
-		st := step{Step: i, Scheduled: out.Scheduled, Preempted: sortedStrings(out.Preempted), Aborted: append([]string{}, aborts...)}
+		st := step{Step: i, Scheduled: out.Scheduled, Preempted: sortedStrings(out.Preempted), Aborted: append([]string{}, aborts...),
+			PrefillStats: prefill, AdmissionStats: adm}
 		if len(spec) > 0 {
 			st.SpecScheduled = spec
 		}
@@ -465,6 +480,47 @@ func run(t *testing.T, sc scenario) trace {
 		tr.Steps = append(tr.Steps, st)
 	}
 	return tr
+}
+
+// admissionRecord is a step's admission_stats.
+type admissionRecord struct {
+	Prefix    [2]int `json:"prefix"`
+	Connector []any  `json:"connector"`
+}
+
+// admissionOf is what a schedule's admissions count, as the oracle records it (run_offloading.py
+// prefill_stats and admission_stats): each non-preempted request that took a prefix lookup has
+// PrefillStats [prompt, local, external] (scheduler.py:1251-1257@4ba787ec), counts one prefix-cache
+// query of its prompt and hit of its local part (:1508-1511), and, with a connector, one connector
+// query of the prompt past the local hit and hit of the external tokens split by tier (:1476-1503).
+func admissionOf(s *sched.Scheduler, conn *Scheduler, out sched.Output) (map[string][]int, *admissionRecord) {
+	prefill := map[string][]int{}
+	adm := &admissionRecord{}
+	var cq, ch int
+	tiers := map[string]any{}
+	for id, local := range out.PrefixHit {
+		r := s.Request(id)
+		if r.NumPreemptions > 0 {
+			continue
+		}
+		ext := out.PrefixExternal[id]
+		prefill[id] = []int{r.NumTokens(), local, ext}
+		if s.PrefixCaching() {
+			adm.Prefix[0] += r.NumTokens()
+			adm.Prefix[1] += local
+		}
+		if q := r.NumTokens() - local; q != 0 {
+			cq += q
+			ch += ext
+			for src, n := range conn.ExternalHitSources(r, ext) {
+				k := strings.ToLower(src)
+				prev, _ := tiers[k].(int)
+				tiers[k] = prev + n
+			}
+		}
+	}
+	adm.Connector = []any{cq, ch, tiers}
+	return prefill, adm
 }
 
 func addArrivals(t *testing.T, s *sched.Scheduler, reqs []scenarioReq, next, i int) int {
