@@ -3100,12 +3100,17 @@
   },
   "config:max_cpu_loras": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#5"
+    "traces": [
+     "core/lora/testdata/golden/default-cpu-equals-slots.json",
+     "core/lora/testdata/golden/eviction-and-reload.json",
+     "core/lora/testdata/golden/more-adapters-than-slots.json",
+     "core/lora/testdata/golden/one-slot-three-cached.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:max_cudagraph_capture_size": {
    "estimation": {

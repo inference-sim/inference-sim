@@ -583,6 +583,19 @@ func (m *Model) OffloadCopies() int64 {
 // (num_workers, vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:335@5df63a72).
 func (m *Model) WorldSize() int { return m.id.rankGPUs }
 
+// UsesMLA is model_config.use_mla: some attention layer of the graph stores a latent KV (multi-head
+// latent attention, dense or sparse).
+func (m *Model) UsesMLA() bool {
+	for _, k := range m.graph.LayerKinds {
+		for _, n := range k.Nodes {
+			if n.Op == model.OpAttention && n.AttentionKind.LatentKV() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // RankCapacity is how many data-parallel ranks the pool's nodes hold at its layout: the pool's
 // GPUs divided by the GPUs one rank occupies. A simulator running one replica per rank may run
 // at most this many in the pool.

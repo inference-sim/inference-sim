@@ -456,17 +456,26 @@ func (e *Engine) ShareTierStorage(s TierStorage) {
 
 // tierNamespace is what the fs tier's FileMapper reads from the spec (FileMapper.from_offloading_spec,
 // vllm/v1/kv_offload/file_mapper.py@4ba787ec), as the engine knows it: the hash and chunk sizes, each
-// KV cache group's block size, and the world size, collapsed by parallel_agnostic. A block file's
+// KV cache group's block size, and the world size, collapsed by parallel_agnostic, which is the
+// connector's is_parallelism_agnostic or replicated_layout (offloadLayout). A block file's
 // name is then the same for every engine of one KV layout; the model is the TierStorage's to keep
 // apart.
-func tierNamespace(s *sched.Scheduler, bpc, world int) kvtier.Namespace {
-	ns := kvtier.Namespace{TokensPerHash: s.KV.HashBlockSize(), BlocksPerFile: bpc, TPSize: world, PPSize: 1,
-		PCPSize: 1, DCPSize: 1, ParallelAgnostic: true}
+func tierNamespace(s *sched.Scheduler, bpc, world int, layout offloadLayoutFacts, mla bool) kvtier.Namespace {
+	ns := kvtier.Namespace{TokensPerHash: s.KV.HashBlockSize(), BlocksPerFile: bpc, PCPSize: 1, DCPSize: 1}
+	ns.TPSize, ns.PPSize, ns.ParallelAgnostic, ns.Replicated = layoutOf(layout, mla, world)
 	for g := 0; g < s.KV.NumGroups(); g++ {
 		ns.Groups = append(ns.Groups, kvtier.KVGroupName{TokensPerBlock: s.KV.GroupBlockSize(g),
 			LayerNames: []string{fmt.Sprintf("group%d", g)}})
 	}
 	return ns
+}
+
+// layoutOf is the parallel sizes a namespace names (world = tp x pp) and its two layout flags.
+func layoutOf(layout offloadLayoutFacts, mla bool, world int) (tp, pp int, agnostic, replicated bool) {
+	pp = max(layout.pp, 1)
+	tp = max(world/pp, 1)
+	agnostic, replicated = offloadLayout(layout, mla, world)
+	return tp, pp, agnostic, replicated
 }
 
 // tierTransferTime is a tier job's price, at least one microsecond, by a pricer that is a

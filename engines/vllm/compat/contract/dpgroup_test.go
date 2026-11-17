@@ -208,8 +208,7 @@ func TestAddRefusesWhatRequestValidateRefuses(t *testing.T) {
 
 // With api_server_count 2 the group's requests reach two balancing clients in turn, each with its
 // own scan start: on four idle ranks they go 0, 2, 1, 3; the group's default, one client, sends
-// them 0, 1, 2, 3. A host that keeps its own in-flight counts (PickRank) is refused for several
-// clients, whose counts are not the host's single vector.
+// them 0, 1, 2, 3. A host that picks the rank itself (PickRank) reaches the same clients in turn.
 func TestAPIServerCountSpreadsRequestsOverClients(t *testing.T) {
 	for _, c := range []struct {
 		clients int
@@ -235,7 +234,20 @@ func TestAPIServerCountSpreadsRequestsOverClients(t *testing.T) {
 	if err := g.SetClientCount(2); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := g.PickRank(0, make([]int, 4)); err == nil {
-		t.Error("PickRank answered for a group of two clients from one in-flight vector")
+	// A host that picks the rank itself (PickRank, then AddToRank on the rank's instance) reaches
+	// the same clients in turn, from each client's own in-flight counts.
+	var got []int
+	for _, id := range []string{"a", "b", "c", "d"} {
+		k, err := g.PickRank(0, make([]int, 4))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := g.AddToRank(k, req(id, 40, 3), 0); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, k)
+	}
+	if fmt.Sprint(got) != fmt.Sprint([]int{0, 2, 1, 3}) {
+		t.Errorf("PickRank through two clients routed %v, want [0 2 1 3]", got)
 	}
 }
