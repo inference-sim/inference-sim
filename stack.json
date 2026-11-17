@@ -9,8 +9,8 @@
     },
     {
       "path": "github.com/inference-sim/blis-vllm",
-      "version": "v0.32.1-0.20261117073624-bc5a9a97ee7b",
-      "commit": "bc5a9a97ee7b06e1adc84ae54bd7f95c70034872"
+      "version": "v0.32.1-0.20261117162711-50c139b8221b",
+      "commit": "50c139b8221b42bb1807de3f11fa44d3690792c8"
     },
     {
       "path": "github.com/inference-sim/llm-d-router",
