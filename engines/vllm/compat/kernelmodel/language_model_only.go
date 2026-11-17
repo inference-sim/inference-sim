@@ -31,6 +31,10 @@ import (
 var towerlessMultimodalConfigs = map[string]string{
 	"8be45ce0476004a3f529fd896115a4a2e800a129ad2d3ec05b16050f52e21879": "deepseek-v4.1-flash",
 	"bb8f01c42cb92a52ca72e65afb4d5bd8d11aef083cd210e8de25dfb904f23e9f": "glm-5.3-flash",
+	"41db2811023b40ba4c8f8bbba88bce7dff377af51ecd18b32469a2a07064ebaf": "glm-5.3-flash-nvfp4",
+	"ed0c1eb3633de771906e9ba004a44cc5635bcc06ee2062077c3d2e88a50707d3": "gemma-4-26b-a4b-it",
+	"9781d0d5918127cc95a0a9f76040ea11c6dfd356e18a2db8ab1fdc2e2941dd42": "gemma-4-26b-a4b-it-fp8-dynamic",
+	"e967dd38bc5cfd38bd09a995a7bf4a754075df2b46aba68f7fbb5a791e6d8dd1": "gemma-4-31b-it",
 	"58720f145bcecef9a7ab2b419ab346e7c634af8d2f3e7362e900d00f789ea46c": "inkling",
 	"acd5bb01a16f64b309599cd6ed196be056f613c99d6bc9300692b82cd10882f6": "kimi-k2.5",
 	"85825ca6e18cbe539eb83ee09eedfb3f4222265929f06e9f535a6d9364f55899": "kimi-k2.6",
@@ -43,6 +47,8 @@ var towerlessMultimodalConfigs = map[string]string{
 	"439857095414fb030946020aea144b8d3545ce95b704893b341548db2e466567": "muse-spark-open-816b-a42b-nvfp4",
 	"3ae7fa89c2f7d1354096418ddaf1331e9e0898a8ca11e804fb6dbaa087efb7da": "qwen3.5-397b-a17b",
 	"9a142fc6c2d67703255ce6120ee04c4c720ec58dba6ae44bebb29c4a2d6e5db8": "qwen3.5-397b-a17b-fp8",
+	"8058591f5ffb5bdacf6cdd87a0d1db126a12cf19259257aec25a91ec22918779": "qwen3.5-397b-a17b-nvfp4",
+	"9408a9e559cc2f05f0b357738213666353e6651160ce8ff477b1c26982bc4f63": "qwen3.5-397b-a17b-nvfp4-v2",
 	"93a4693fa9d8392fbfccd4b3c9873f4bfdcb14fdede978b123d07d19675efe99": "qwen3.6-35b-a3b",
 }
 

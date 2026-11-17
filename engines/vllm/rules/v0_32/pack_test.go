@@ -14,9 +14,9 @@ import (
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
-func graniteGraph() *model.Graph {
+func moe224Graph() *model.Graph {
 	return &model.Graph{
-		Kind: "ModelGraph", Name: "granite-5-230b",
+		Kind: "ModelGraph", Name: "moe-224e",
 		DerivedFrom: model.Derivation{Format: "hf_config_json", Path: "config.json",
 			SHA256:         strings.Repeat("a", 64),
 			DeriverVersion: 1},
@@ -53,7 +53,7 @@ func run(t *testing.T, d *deployment.Deployment, g *model.Graph) *rules.Problems
 		nodes += pl.Nodes
 	}
 	s := &scenario.Scenario{
-		Kind: "Scenario", Name: "t", Model: "granite-5-230b",
+		Kind: "Scenario", Name: "t", Model: "moe-224e",
 		Coefficients: []string{"c"}, EngineVersion: Version,
 		Cluster: scenario.Cluster{Hardware: "h200", Nodes: nodes, GPUsPerNode: 8},
 	}
@@ -145,7 +145,7 @@ func TestEveryRuleStatesItsReason(t *testing.T) {
 func TestUnknownBackendsRejected(t *testing.T) {
 	s := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1},
 		engineconfig.Engine{All2AllBackend: "telepathy", AllReduceBackend: "osmosis"}))
-	p := run(t, s, graniteGraph())
+	p := run(t, s, moe224Graph())
 	for _, rule := range []string{"all2all-backend-known", "allreduce-backend-known"} {
 		if !fired(p, rule) {
 			t.Errorf("%s did not fire on an unknown backend", rule)
@@ -158,12 +158,12 @@ func TestKnownBackendsAccepted(t *testing.T) {
 		engineconfig.Engine{All2AllBackend: "allgather_reducescatter",
 			AllReduceBackend: "nccl", CUDAGraphMode: "FULL",
 			CacheDType: "fp8", SchedulingPolicy: "priority"}))
-	if p := run(t, s, graniteGraph()); !p.OK() {
+	if p := run(t, s, moe224Graph()); !p.OK() {
 		t.Fatalf("accepted values were rejected:\n%s", p.Error())
 	}
 }
 
-// TestExpertDivisibility is the Granite case: 224 experts do not divide an
+// TestExpertDivisibility is the 224-expert case: 224 experts do not divide an
 // expert-parallel width of 72, and the rule must say how many redundant experts
 // would fix it.
 func TestExpertDivisibility(t *testing.T) {
@@ -171,7 +171,7 @@ func TestExpertDivisibility(t *testing.T) {
 	// With load balancing on, an indivisible layout is an error.
 	s := dep(colocated(pl, engineconfig.Engine{
 		EPLB: &engineconfig.EPLB{Enabled: true, NumRedundantExperts: 32}}))
-	p := run(t, s, graniteGraph())
+	p := run(t, s, moe224Graph())
 	if !fired(p, "expert-divisibility-under-eplb") {
 		t.Fatal("divisibility rule did not fire on 224+32 over 72")
 	}
@@ -181,7 +181,7 @@ func TestExpertDivisibility(t *testing.T) {
 	// 224 + 64 = 288 = 4 x 72.
 	ok := dep(colocated(pl, engineconfig.Engine{
 		EPLB: &engineconfig.EPLB{Enabled: true, NumRedundantExperts: 64}}))
-	if p := run(t, ok, graniteGraph()); fired(p, "expert-divisibility-under-eplb") {
+	if p := run(t, ok, moe224Graph()); fired(p, "expert-divisibility-under-eplb") {
 		t.Errorf("divisibility rule fired on a divisible layout:\n%s", p.Error())
 	}
 }
@@ -191,7 +191,7 @@ func TestExpertDivisibility(t *testing.T) {
 func TestExpertImbalanceWithoutEPLB(t *testing.T) {
 	pl := deployment.Parallelism{TP: 1, PP: 1, DP: 72, EnableExpertParallel: true}
 	s := dep(colocated(pl, engineconfig.Engine{}))
-	p := run(t, s, graniteGraph())
+	p := run(t, s, moe224Graph())
 	if !fired(p, "expert-imbalance-without-eplb") {
 		t.Fatal("imbalance rule did not fire on 224 over 72")
 	}
@@ -209,7 +209,7 @@ func TestExpertImbalanceWithoutEPLB(t *testing.T) {
 func TestExpertParallelWidthExceedsExperts(t *testing.T) {
 	pl := deployment.Parallelism{TP: 1, PP: 1, DP: 256, EnableExpertParallel: true}
 	s := dep(colocated(pl, engineconfig.Engine{}))
-	p := run(t, s, graniteGraph())
+	p := run(t, s, moe224Graph())
 	if p.OK() {
 		t.Fatal("expected an error when width exceeds the expert count")
 	}
@@ -220,13 +220,13 @@ func TestSequenceParallelMoEImplied(t *testing.T) {
 	// MoE, which changes which collectives the graph must emit.
 	pl := deployment.Parallelism{TP: 2, PP: 1, DP: 8, EnableExpertParallel: true}
 	s := dep(colocated(pl, engineconfig.Engine{All2AllBackend: "allgather_reducescatter"}))
-	if p := run(t, s, graniteGraph()); !fired(p, "sequence-parallel-moe-implied") {
+	if p := run(t, s, moe224Graph()); !fired(p, "sequence-parallel-moe-implied") {
 		t.Fatal("rule did not fire for tp=2, dp=8 on the default backend")
 	}
 	// tp=1 does not trigger it, which is why the design's own examples do not.
 	pl1 := deployment.Parallelism{TP: 1, PP: 1, DP: 8, EnableExpertParallel: true}
 	s1 := dep(colocated(pl1, engineconfig.Engine{All2AllBackend: "allgather_reducescatter"}))
-	if p := run(t, s1, graniteGraph()); fired(p, "sequence-parallel-moe-implied") {
+	if p := run(t, s1, moe224Graph()); fired(p, "sequence-parallel-moe-implied") {
 		t.Error("rule fired at tp=1, where the engine does not apply it")
 	}
 }
@@ -235,7 +235,7 @@ func TestCustomAllReduceReachability(t *testing.T) {
 	// A world size outside the supported set falls back.
 	s := dep(colocated(deployment.Parallelism{TP: 3, PP: 1, DP: 1},
 		engineconfig.Engine{AllReduceBackend: "custom"}))
-	if p := run(t, s, graniteGraph()); !fired(p, "custom-allreduce-reachable") {
+	if p := run(t, s, moe224Graph()); !fired(p, "custom-allreduce-reachable") {
 		t.Error("rule did not fire on tp=3")
 	}
 	// Spanning nodes needs multi-node NVLink.
@@ -243,13 +243,13 @@ func TestCustomAllReduceReachability(t *testing.T) {
 		colocated(deployment.Parallelism{TP: 16, PP: 1, DP: 1},
 			engineconfig.Engine{AllReduceBackend: "custom"}),
 	)
-	if p := run(t, s2, graniteGraph()); !fired(p, "custom-allreduce-reachable") {
+	if p := run(t, s2, moe224Graph()); !fired(p, "custom-allreduce-reachable") {
 		t.Error("rule did not fire on tp=16 across 8-GPU nodes")
 	}
 	// tp=8 inside one node is reachable.
 	s3 := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1},
 		engineconfig.Engine{AllReduceBackend: "custom"}))
-	if p := run(t, s3, graniteGraph()); fired(p, "custom-allreduce-reachable") {
+	if p := run(t, s3, moe224Graph()); fired(p, "custom-allreduce-reachable") {
 		t.Errorf("rule fired on a reachable layout:\n%s", p.Error())
 	}
 }
@@ -258,11 +258,11 @@ func TestMambaCacheModeMatchesModel(t *testing.T) {
 	// A mode on a model with no recurrent layer has no effect.
 	s := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1},
 		engineconfig.Engine{MambaCacheMode: "align"}))
-	if p := run(t, s, graniteGraph()); !fired(p, "mamba-cache-mode-matches-model") {
+	if p := run(t, s, moe224Graph()); !fired(p, "mamba-cache-mode-matches-model") {
 		t.Error("rule did not fire for a mode on a non-hybrid model")
 	}
 	// A hybrid model with no mode leaves the state unsized.
-	hybrid := graniteGraph()
+	hybrid := moe224Graph()
 	hybrid.LayerKinds[0].Nodes = append(hybrid.LayerKinds[0].Nodes, model.Node{
 		Op: model.OpRecurrentUpdate, RecurrentKind: model.RecurrentMamba2,
 		NumHeads: 128, StateSize: 128, NumGroups: 8, ConvKernel: 4,
@@ -277,11 +277,11 @@ func TestOffloadSpecKnown(t *testing.T) {
 	s := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1}, engineconfig.Engine{}))
 	s.Offload = &deployment.Offload{Spec: "MagicOffloadingSpec",
 		Tiers: []deployment.Tier{{Device: "cpu_dram", Bytes: 1 << 40}}}
-	if p := run(t, s, graniteGraph()); !fired(p, "offload-spec-known") {
+	if p := run(t, s, moe224Graph()); !fired(p, "offload-spec-known") {
 		t.Fatal("rule did not fire on an unregistered spec")
 	}
 	s.Offload.Spec = "CPUOffloadingSpec"
-	if p := run(t, s, graniteGraph()); fired(p, "offload-spec-known") {
+	if p := run(t, s, moe224Graph()); fired(p, "offload-spec-known") {
 		t.Error("rule fired on a registered spec")
 	}
 }
@@ -289,7 +289,7 @@ func TestOffloadSpecKnown(t *testing.T) {
 func TestDBOThresholdsStatedWhenEnabled(t *testing.T) {
 	s := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1},
 		engineconfig.Engine{DBO: &engineconfig.DBO{Enabled: true}}))
-	p := run(t, s, graniteGraph())
+	p := run(t, s, moe224Graph())
 	if !fired(p, "dbo-thresholds-stated-when-enabled") {
 		t.Fatal("rule did not fire when thresholds were omitted")
 	}
@@ -302,13 +302,13 @@ func TestSpeculativeMethodKnown(t *testing.T) {
 	s := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1},
 		engineconfig.Engine{Speculative: &engineconfig.Speculative{
 			Method: "crystal_ball", NumSpecTokens: 2}}))
-	if p := run(t, s, graniteGraph()); !fired(p, "speculative-method-known") {
+	if p := run(t, s, moe224Graph()); !fired(p, "speculative-method-known") {
 		t.Fatal("rule did not fire on an unknown method")
 	}
 	s2 := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1},
 		engineconfig.Engine{Speculative: &engineconfig.Speculative{
 			Method: "glm4_moe_mtp", NumSpecTokens: 1}}))
-	if p := run(t, s2, graniteGraph()); fired(p, "speculative-method-known") {
+	if p := run(t, s2, moe224Graph()); fired(p, "speculative-method-known") {
 		t.Error("rule fired on an accepted method")
 	}
 }
@@ -319,7 +319,7 @@ func TestSpeculativeMethodKnown(t *testing.T) {
 func TestQuantizationKnown(t *testing.T) {
 	s := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1},
 		engineconfig.Engine{Quantization: "fp8_but_misspelled"}))
-	p := run(t, s, graniteGraph())
+	p := run(t, s, moe224Graph())
 	if !fired(p, "quantization-known") {
 		t.Fatal("rule did not fire on an unrecognized quantization method")
 	}
@@ -330,7 +330,7 @@ func TestQuantizationKnown(t *testing.T) {
 	}
 	s2 := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1},
 		engineconfig.Engine{Quantization: "compressed-tensors"}))
-	if p := run(t, s2, graniteGraph()); fired(p, "quantization-known") {
+	if p := run(t, s2, moe224Graph()); fired(p, "quantization-known") {
 		t.Error("rule fired on an in-tree quantization method")
 	}
 }
@@ -343,7 +343,7 @@ func TestConnectorKnown(t *testing.T) {
 	s.Offload = &deployment.Offload{Connector: "TelepathyConnector",
 		Tiers: []deployment.Tier{{Device: "cpu_dram", Bytes: 1 << 40}}}
 	s.PDTransfer = &deployment.PDTransfer{Connector: "NixlConnector"}
-	p := run(t, s, graniteGraph())
+	p := run(t, s, moe224Graph())
 	if !fired(p, "connector-known") {
 		t.Fatal("rule did not fire on an unregistered offload connector")
 	}
@@ -357,14 +357,14 @@ func TestConnectorKnown(t *testing.T) {
 
 	// Both connectors registered: quiet.
 	s.Offload.Connector = "OffloadingConnector"
-	if p := run(t, s, graniteGraph()); fired(p, "connector-known") {
+	if p := run(t, s, moe224Graph()); fired(p, "connector-known") {
 		t.Errorf("rule fired on two registered connectors:\n%s", p.Error())
 	}
 
 	// A bad pd_transfer connector is caught on its own.
 	s2 := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1}, engineconfig.Engine{}))
 	s2.PDTransfer = &deployment.PDTransfer{Connector: "CarrierPigeonConnector"}
-	if p := run(t, s2, graniteGraph()); !fired(p, "connector-known") {
+	if p := run(t, s2, moe224Graph()); !fired(p, "connector-known") {
 		t.Fatal("rule did not fire on an unregistered pd_transfer connector")
 	}
 }
@@ -376,7 +376,7 @@ func TestEvictionPolicyKnown(t *testing.T) {
 	s := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1}, engineconfig.Engine{}))
 	s.Offload = &deployment.Offload{EvictionPolicy: "most_recently_used_typo",
 		Tiers: []deployment.Tier{{Device: "cpu_dram", Bytes: 1 << 40}}}
-	p := run(t, s, graniteGraph())
+	p := run(t, s, moe224Graph())
 	if !fired(p, "eviction-policy-known") {
 		t.Fatal("rule did not fire on an unrecognized eviction policy")
 	}
@@ -386,7 +386,7 @@ func TestEvictionPolicyKnown(t *testing.T) {
 
 	// An in-tree policy is quiet.
 	s.Offload.EvictionPolicy = "arc"
-	if p := run(t, s, graniteGraph()); fired(p, "eviction-policy-known") {
+	if p := run(t, s, moe224Graph()); fired(p, "eviction-policy-known") {
 		t.Errorf("rule fired on an in-tree policy:\n%s", p.Error())
 	}
 }
@@ -421,7 +421,7 @@ func TestDCPCommBackendKnown(t *testing.T) {
 
 // TestMLAPrefillBackendKnown: vLLM v0.32.0 looks attention_config.mla_prefill_backend up in
 // MLAPrefillBackendEnum after upper-casing it, and refuses a name that is not a member
-// (vllm/config/attention.py:195-201, vllm/v1/attention/backends/mla/prefill/registry.py:22-34@5df63a72).
+// (vllm/config/attention.py:232-238, vllm/v1/attention/backends/mla/prefill/registry.py:22-34@4ba787ec).
 // A plugin can make a new name a member before the flag is parsed, so a name outside the in-tree
 // members warns rather than refuses.
 func TestMLAPrefillBackendKnown(t *testing.T) {
@@ -430,7 +430,7 @@ func TestMLAPrefillBackendKnown(t *testing.T) {
 		want    bool
 		// severity is the finding's, when it fires: a warning for a name a plugin could register,
 		// an error for one no plugin can, since MLAPrefillBackendEnum.register refuses a name that
-		// is not a Python identifier (vllm/v1/attention/backends/mla/prefill/registry.py:85-86@5df63a72).
+		// is not a Python identifier (vllm/v1/attention/backends/mla/prefill/registry.py:85-86@4ba787ec).
 		severity rules.Severity
 	}{
 		{"", false, ""}, {"TRTLLM_RAGGED", false, ""}, {"FLASHINFER", false, ""}, {"ROCM_AITER_FA", false, ""},
@@ -473,10 +473,10 @@ func TestPythonIdentifier(t *testing.T) {
 	}
 }
 
-// hybridGraph is graniteGraph with one recurrent layer, which lets the platform re-align
+// hybridGraph is moe224Graph with one recurrent layer, which lets the platform re-align
 // a stated block size.
 func hybridGraph() *model.Graph {
-	g := graniteGraph()
+	g := moe224Graph()
 	g.LayerKinds[0].Nodes = append(g.LayerKinds[0].Nodes,
 		model.Node{Op: model.OpRecurrentUpdate, RecurrentKind: model.RecurrentMamba2})
 	return g
@@ -496,14 +496,14 @@ func TestCPKVCacheInterleaveFitsBlock(t *testing.T) {
 		g    *model.Graph
 		want bool
 	}{
-		{"interleave above block", dep(pool(8, 128, 64)), graniteGraph(), true},
-		{"interleave does not divide block", dep(pool(8, 24, 64)), graniteGraph(), true},
-		{"interleave divides block", dep(pool(8, 16, 64)), graniteGraph(), false},
-		{"interleave equals block", dep(pool(8, 64, 64)), graniteGraph(), false},
+		{"interleave above block", dep(pool(8, 128, 64)), moe224Graph(), true},
+		{"interleave does not divide block", dep(pool(8, 24, 64)), moe224Graph(), true},
+		{"interleave divides block", dep(pool(8, 16, 64)), moe224Graph(), false},
+		{"interleave equals block", dep(pool(8, 64, 64)), moe224Graph(), false},
 		// Where the assert does not run, or does not run on these values.
-		{"dcp off", dep(pool(1, 128, 64)), graniteGraph(), false},
-		{"interleave unstated", dep(pool(8, 0, 64)), graniteGraph(), false},
-		{"block size unstated", dep(pool(8, 128, 0)), graniteGraph(), false},
+		{"dcp off", dep(pool(1, 128, 64)), moe224Graph(), false},
+		{"interleave unstated", dep(pool(8, 0, 64)), moe224Graph(), false},
+		{"block size unstated", dep(pool(8, 128, 0)), moe224Graph(), false},
 		{"model unknown", dep(pool(8, 128, 64)), nil, false},
 		{"hybrid model", dep(pool(8, 128, 64)), hybridGraph(), false},
 		// Only NIXL skips the assert in this release; a MultiConnector may hide one.
@@ -511,24 +511,24 @@ func TestCPKVCacheInterleaveFitsBlock(t *testing.T) {
 			d := dep(pool(8, 128, 64))
 			d.PDTransfer = &deployment.PDTransfer{Connector: "NixlConnector"}
 			return d
-		}(), graniteGraph(), false},
+		}(), moe224Graph(), false},
 		{"multi connector", func() *deployment.Deployment {
 			d := dep(pool(8, 128, 64))
 			d.PDTransfer = &deployment.PDTransfer{Connector: "MultiConnector"}
 			return d
-		}(), graniteGraph(), false},
+		}(), moe224Graph(), false},
 		// Unlike v0.29.0, any other connector leaves the assert in force.
 		{"mooncake pd transfer", func() *deployment.Deployment {
 			d := dep(pool(8, 128, 64))
 			d.PDTransfer = &deployment.PDTransfer{Connector: "MooncakeConnector"}
 			return d
-		}(), graniteGraph(), true},
+		}(), moe224Graph(), true},
 		{"offload connector", func() *deployment.Deployment {
 			d := dep(pool(8, 128, 64))
 			d.Offload = &deployment.Offload{Connector: "OffloadingConnector",
 				Tiers: []deployment.Tier{{Device: "cpu_dram", Bytes: 1}}}
 			return d
-		}(), graniteGraph(), true},
+		}(), moe224Graph(), true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -558,17 +558,17 @@ func TestDBOThresholdsAtLeastMicrobatches(t *testing.T) {
 		// A stated 0 is not the default: the engine refuses it once DBO is on.
 		{"decode zero", &engineconfig.DBO{Enabled: true, DecodeTokenThreshold: intp(0)}, true},
 	} {
-		p := run(t, dep(colocated(pl, engineconfig.Engine{DBO: c.dbo})), graniteGraph())
+		p := run(t, dep(colocated(pl, engineconfig.Engine{DBO: c.dbo})), moe224Graph())
 		if got := fired(p, "dbo-thresholds-at-least-microbatches"); got != c.want {
 			t.Errorf("%s: rule fired=%v, want %v\n%s", c.name, got, c.want, p.Error())
 		}
 	}
 }
 
-// engramGraph is graniteGraph with an Engram lookup, which is how a graph says it is a
+// engramGraph is moe224Graph with an Engram lookup, which is how a graph says it is a
 // DeepSeek-V4.1 with engram layers.
 func engramGraph() *model.Graph {
-	g := graniteGraph()
+	g := moe224Graph()
 	g.Global.Architecture = rules.ArchDeepseekV41
 	g.LayerKinds[0].Nodes = append(g.LayerKinds[0].Nodes, model.Node{
 		Op: model.OpGather, Role: "engram_lookup", Rows: 384006168, RowBytes: 264,
@@ -583,7 +583,7 @@ func TestEngramExcludesDBO(t *testing.T) {
 	if p := run(t, dep(colocated(pl, on)), engramGraph()); !fired(p, "engram-excludes-dbo") {
 		t.Errorf("DBO beside Engram should be refused:\n%s", p.Error())
 	}
-	if p := run(t, dep(colocated(pl, on)), graniteGraph()); fired(p, "engram-excludes-dbo") {
+	if p := run(t, dep(colocated(pl, on)), moe224Graph()); fired(p, "engram-excludes-dbo") {
 		t.Errorf("DBO without Engram is allowed:\n%s", p.Error())
 	}
 	if p := run(t, dep(colocated(pl, engineconfig.Engine{})), engramGraph()); fired(p, "engram-excludes-dbo") {
@@ -637,7 +637,7 @@ func TestSequenceParallelArchitectureKnown(t *testing.T) {
 		"emit":                    {Op: model.OpAllGather, Emit: model.EmitSequenceParallel},
 		"under_sequence_parallel": {Op: model.OpElementwise, Role: "mhc_pre", TP: model.TPReplicated, UnderSequenceParallel: model.SPTokenSharded},
 	} {
-		g := graniteGraph()
+		g := moe224Graph()
 		g.LayerKinds[0].Nodes = append(g.LayerKinds[0].Nodes, n)
 		g.Global.Architecture = "GraniteMoeForCausalLM"
 		p := run(t, dep(colocated(pl, engineconfig.Engine{})), g)
@@ -663,7 +663,7 @@ func TestEnumValuesForMambaAndMoE(t *testing.T) {
 		{engineconfig.Engine{MoEBackend: "rdna3"}, false},
 		{engineconfig.Engine{MoEBackend: "megamoe"}, true},
 	} {
-		if got := fired(run(t, dep(colocated(pl, c.e)), graniteGraph()), "enum-values-known"); got != c.want {
+		if got := fired(run(t, dep(colocated(pl, c.e)), moe224Graph()), "enum-values-known"); got != c.want {
 			t.Errorf("%+v: rule fired=%v, want %v", c.e, got, c.want)
 		}
 	}
@@ -671,16 +671,16 @@ func TestEnumValuesForMambaAndMoE(t *testing.T) {
 
 func TestSequenceParallelMoEOnDefaultBackend(t *testing.T) {
 	pl := deployment.Parallelism{TP: 4, PP: 1, DP: 2, EnableExpertParallel: true}
-	if p := run(t, dep(colocated(pl, engineconfig.Engine{})), graniteGraph()); !fired(p, "sequence-parallel-moe-implied") {
+	if p := run(t, dep(colocated(pl, engineconfig.Engine{})), moe224Graph()); !fired(p, "sequence-parallel-moe-implied") {
 		t.Errorf("the default backend, allgather_reducescatter, is in the subset:\n%s", p.Error())
 	}
 }
 
 func TestMoonEPRequirements(t *testing.T) {
 	pl := deployment.Parallelism{TP: 1, PP: 1, DP: 8, EnableExpertParallel: true}
-	bf16 := graniteGraph()
+	bf16 := moe224Graph()
 	bf16.Global.WeightDType = model.DTypeBF16
-	mixed := graniteGraph()
+	mixed := moe224Graph()
 	mixed.Global.WeightDType = model.DTypeBF16
 	mixed.LayerKinds[0].Nodes[1].WeightDType = model.DTypeMXFP4
 	moon := engineconfig.Engine{All2AllBackend: "moonep"}
@@ -691,13 +691,13 @@ func TestMoonEPRequirements(t *testing.T) {
 		want bool
 	}{
 		{"bf16", moon, bf16, false},
-		{"fp16", moon, func() *model.Graph { g := graniteGraph(); g.Global.WeightDType = model.DTypeFP16; return g }(), true},
-		{"fp8 checkpoint", moon, graniteGraph(), true},
+		{"fp16", moon, func() *model.Graph { g := moe224Graph(); g.Global.WeightDType = model.DTypeFP16; return g }(), true},
+		{"fp8 checkpoint", moon, moe224Graph(), true},
 		{"mxfp4 experts", moon, mixed, true},
 		{"served quantized", engineconfig.Engine{All2AllBackend: "moonep", Quantization: "fp8"}, bf16, true},
 		{"eplb", engineconfig.Engine{All2AllBackend: "moonep",
 			EPLB: &engineconfig.EPLB{Enabled: true}}, bf16, true},
-		{"other backend", engineconfig.Engine{All2AllBackend: "deepep_low_latency"}, graniteGraph(), false},
+		{"other backend", engineconfig.Engine{All2AllBackend: "deepep_low_latency"}, moe224Graph(), false},
 	} {
 		p := run(t, dep(colocated(pl, c.e)), c.g)
 		if got := fired(p, "moonep-requirements"); got != c.want {
@@ -718,7 +718,7 @@ func TestEngramConfigValid(t *testing.T) {
 		{"defaults", 1, &engineconfig.EngramConfig{}, engramGraph(), false},
 		{"hbm", 1, &engineconfig.EngramConfig{CPUOffload: &no}, engramGraph(), false},
 		{"shared with dp", 4, &engineconfig.EngramConfig{DPSharedMemory: &yes}, engramGraph(), false},
-		{"model without engram", 1, &engineconfig.EngramConfig{}, graniteGraph(), true},
+		{"model without engram", 1, &engineconfig.EngramConfig{}, moe224Graph(), true},
 		{"shared without offload", 4, &engineconfig.EngramConfig{CPUOffload: &no, DPSharedMemory: &yes}, engramGraph(), true},
 		{"shared with one rank", 1, &engineconfig.EngramConfig{DPSharedMemory: &yes}, engramGraph(), true},
 		{"thp per rank", 1, &engineconfig.EngramConfig{UseTHP: &yes}, engramGraph(), false},
@@ -735,7 +735,7 @@ func TestEngramConfigValid(t *testing.T) {
 }
 
 func TestMaxModelLenWithinContextWindow(t *testing.T) {
-	g := graniteGraph()
+	g := moe224Graph()
 	g.Global.ContextWindow = 131072
 	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1}
 	for _, c := range []struct {
@@ -748,7 +748,7 @@ func TestMaxModelLenWithinContextWindow(t *testing.T) {
 		}
 	}
 	// A graph that states no window gives the rule nothing to compare.
-	if p := run(t, dep(colocated(pl, engineconfig.Engine{MaxModelLen: 1 << 30})), graniteGraph()); fired(p, "max-model-len-within-context-window") {
+	if p := run(t, dep(colocated(pl, engineconfig.Engine{MaxModelLen: 1 << 30})), moe224Graph()); fired(p, "max-model-len-within-context-window") {
 		t.Errorf("fired without a window:\n%s", p.Error())
 	}
 }
@@ -789,7 +789,7 @@ func TestSequenceParallelMoEAgreesWithItsRule(t *testing.T) {
 				continue // a field error, which stops rules before they run
 			}
 			want := p.SequenceParallelMoE(b, pl.EnableExpertParallel, pl.TP, pl.DP)
-			got := fired(run(t, dep(colocated(pl, engineconfig.Engine{All2AllBackend: b})), graniteGraph()),
+			got := fired(run(t, dep(colocated(pl, engineconfig.Engine{All2AllBackend: b})), moe224Graph()),
 				"sequence-parallel-moe-implied")
 			if got != want {
 				t.Fatalf("%+v backend %q: rule fired=%v, method says %v", pl, b, got, want)
@@ -835,9 +835,9 @@ func TestModelSequenceParallelProperties(t *testing.T) {
 // graph, and accepted for an architecture the engine serves MTP on; dspark is accepted.
 func TestDeepseekV41RefusesMTP(t *testing.T) {
 	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1}
-	v41 := graniteGraph()
+	v41 := moe224Graph()
 	v41.Global.Architecture = rules.ArchDeepseekV41
-	v3 := graniteGraph()
+	v3 := moe224Graph()
 	v3.Global.Architecture = "DeepseekV3ForCausalLM"
 	for _, m := range mtpMethods {
 		e := engineconfig.Engine{Speculative: &engineconfig.Speculative{Method: m, NumSpecTokens: 1}}
@@ -852,7 +852,7 @@ func TestDeepseekV41RefusesMTP(t *testing.T) {
 	if p := run(t, dep(colocated(pl, e)), v41); fired(p, "deepseek-v41-refuses-mtp") {
 		t.Errorf("dspark refused on V4.1:\n%s", p.Error())
 	}
-	g := graniteGraph()
+	g := moe224Graph()
 	g.Global.Architecture = rules.ArchDeepseekV41
 	g.Speculator = &model.Speculator{Method: "mtp", NumSpec: 1, Stack: g.Stack}
 	if p := run(t, dep(colocated(pl, engineconfig.Engine{})), g); !fired(p, "deepseek-v41-refuses-mtp") {
@@ -917,7 +917,7 @@ func TestNixlOffloadSkipsInterleaveAssert(t *testing.T) {
 	d := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1, DCP: 8},
 		engineconfig.Engine{CPKVCacheInterleaveSize: 128, BlockSize: 64}))
 	d.Offload = &deployment.Offload{Connector: "NixlConnector", Tiers: []deployment.Tier{{Device: "cpu_dram", Bytes: 1}}}
-	if p := run(t, d, graniteGraph()); fired(p, "cp-kv-cache-interleave-fits-block") {
+	if p := run(t, d, moe224Graph()); fired(p, "cp-kv-cache-interleave-fits-block") {
 		t.Errorf("a NIXL offload connector should skip the assert:\n%s", p.Error())
 	}
 }
@@ -925,7 +925,7 @@ func TestNixlOffloadSkipsInterleaveAssert(t *testing.T) {
 // A LongRoPE model's shorter starting window does not lower the limit: a stated length up
 // to the full window passes.
 func TestMaxModelLenAgainstLongRoPEWindow(t *testing.T) {
-	g := graniteGraph()
+	g := moe224Graph()
 	g.Global.ContextWindow, g.Global.DefaultContextWindow = 131072, 4096
 	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1}
 	if p := run(t, dep(colocated(pl, engineconfig.Engine{MaxModelLen: 65536})), g); fired(p, "max-model-len-within-context-window") {
@@ -938,7 +938,7 @@ func TestMaxModelLenAgainstLongRoPEWindow(t *testing.T) {
 func TestCacheRecordDTypesKnown(t *testing.T) {
 	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1}
 	withRecord := func(key string, inOverride bool) *model.Graph {
-		g := graniteGraph()
+		g := moe224Graph()
 		n := &g.LayerKinds[0].Nodes[0]
 		n.Caches = []model.Cache{{Name: "kv", Kind: model.CacheKV, Owned: true, BytesPerEntry: 256}}
 		if inOverride {
@@ -966,7 +966,7 @@ func TestCacheRecordDTypesKnown(t *testing.T) {
 func TestModelSequenceParallelCollectives(t *testing.T) {
 	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1}
 	graph := func(arch string, emit model.EmitCondition, inHead bool) *model.Graph {
-		g := graniteGraph()
+		g := moe224Graph()
 		g.Global.Architecture = arch
 		n := model.Node{Op: model.OpAllReduce, Role: "mlp_out", Emit: emit}
 		if inHead {
@@ -1016,7 +1016,7 @@ func TestDraftEmbeddingReductionIsNotADecoderLayerOne(t *testing.T) {
 		{Op: model.OpAllReduce, Role: "draft_embed_out", Emit: model.EmitTensorParallel},
 	}
 	graph := func(inSlot bool) *model.Graph {
-		g := graniteGraph()
+		g := moe224Graph()
 		g.Global.Architecture = rules.ArchDeepseekV41
 		g.Embedding = []model.Node{{Op: model.OpGather, Role: "embed_tokens", Rows: 49155,
 			RowBytes: 3072, RowsPerToken: 1, OutBytesPerToken: 3072, Shard: model.ShardRows}}
@@ -1057,7 +1057,7 @@ func TestRenamedAll2AllBackends(t *testing.T) {
 		}
 	}
 	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1}
-	r := run(t, dep(colocated(pl, engineconfig.Engine{All2AllBackend: "pplx"})), graniteGraph())
+	r := run(t, dep(colocated(pl, engineconfig.Engine{All2AllBackend: "pplx"})), moe224Graph())
 	if !fired(r, "all2all-backend-known") || !r.OK() || !strings.Contains(r.Error(), "allgather_reducescatter") {
 		t.Errorf("pplx should warn that allgather_reducescatter runs:\n%s", r.Error())
 	}
@@ -1067,7 +1067,7 @@ func TestRenamedAll2AllBackends(t *testing.T) {
 func TestMoEBackendIsNormalized(t *testing.T) {
 	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1}
 	for _, b := range []string{"deep-gemm-mega-moe", "DEEP_GEMM_MEGA_MOE", "Deep-Gemm"} {
-		if r := run(t, dep(colocated(pl, engineconfig.Engine{MoEBackend: b})), graniteGraph()); fired(r, "enum-values-known") {
+		if r := run(t, dep(colocated(pl, engineconfig.Engine{MoEBackend: b})), moe224Graph()); fired(r, "enum-values-known") {
 			t.Errorf("%q is accepted by the engine once normalized:\n%s", b, r.Error())
 		}
 	}
@@ -1082,7 +1082,7 @@ func TestMoEBackendIsNormalized(t *testing.T) {
 func TestSequenceParallelMoEImpliedSkipsOwnRule(t *testing.T) {
 	pl := deployment.Parallelism{TP: 2, PP: 2, DP: 2, EnableExpertParallel: true}
 	for arch, want := range map[string]bool{rules.ArchDeepseekV4: false, "DeepseekV3ForCausalLM": true} {
-		g := graniteGraph()
+		g := moe224Graph()
 		g.Global.Architecture = arch
 		if got := fired(run(t, dep(colocated(pl, engineconfig.Engine{})), g), "sequence-parallel-moe-implied"); got != want {
 			t.Errorf("%s: fired=%v, want %v", arch, got, want)
@@ -1097,7 +1097,7 @@ func TestInterleaveChecksTheEffectiveBlock(t *testing.T) {
 	pool := colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1, DCP: 8},
 		engineconfig.Engine{CPKVCacheInterleaveSize: 64, BlockSize: 256})
 	severity := func(kind model.CacheKind) string {
-		g := graniteGraph()
+		g := moe224Graph()
 		c := model.Cache{Name: "c", Kind: kind, Owned: true, BytesPerEntry: 584, BlockSize: 32}
 		if kind == model.CacheWindow {
 			c.Window = 128
@@ -1124,7 +1124,7 @@ func TestInterleaveChecksTheEffectiveBlock(t *testing.T) {
 	// certainly takes part and the failure is certain.
 	pcpPool := colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1, DCP: 8, PCP: 2},
 		engineconfig.Engine{CPKVCacheInterleaveSize: 64, BlockSize: 256})
-	g := graniteGraph()
+	g := moe224Graph()
 	g.LayerKinds[0].Nodes[0].Window = 128
 	g.LayerKinds[0].Nodes[0].Caches = []model.Cache{{Name: "w", Kind: model.CacheWindow, Owned: true, BytesPerEntry: 584, Window: 128, BlockSize: 32}}
 	if p := run(t, dep(pcpPool), g); p.OK() {
@@ -1136,7 +1136,7 @@ func TestInterleaveChecksTheEffectiveBlock(t *testing.T) {
 // does not record, so it warns where a quantized checkpoint is refused.
 func TestMoonEPOnFP16Warns(t *testing.T) {
 	pl := deployment.Parallelism{TP: 1, PP: 1, DP: 8, EnableExpertParallel: true}
-	g := graniteGraph()
+	g := moe224Graph()
 	g.Global.WeightDType = model.DTypeFP16
 	p := run(t, dep(colocated(pl, engineconfig.Engine{All2AllBackend: "moonep"})), g)
 	if !fired(p, "moonep-requirements") || !p.OK() {
@@ -1165,7 +1165,7 @@ func TestResolveCacheDType(t *testing.T) {
 		{v41, 9, 8, "fp8", "fp8_ds_mla"},
 		{"DeepseekV3ForCausalLM", 10, 8, "auto", "auto"},
 		// GlmMoeDsaForCausalLM: an unstated (auto) dtype becomes fp8_e4m3 on SM10x
-		// (vllm/model_executor/models/config.py:43-55@5df63a72); a stated one stands, and SM9x is unchanged.
+		// (vllm/model_executor/models/config.py:89-101@4ba787ec); a stated one stands, and SM9x is unchanged.
 		{ArchGlmMoeDsa, 10, 8, "", "fp8_e4m3"},
 		{ArchGlmMoeDsa, 10, 1, "auto", "fp8_e4m3"},
 		{ArchGlmMoeDsa, 10, 8, "fp8", "fp8"},
@@ -1222,7 +1222,7 @@ func TestCUDAGraphCaptureSizesRule(t *testing.T) {
 		{"ignored under NONE", engineconfig.Engine{CUDAGraphMode: "NONE", MaxCUDAGraphCaptureSize: n(64)}, rules.SeverityWarning},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			p := run(t, dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1}, c.e)), graniteGraph())
+			p := run(t, dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1}, c.e)), moe224Graph())
 			var got rules.Severity
 			for _, it := range p.All() {
 				if it.Rule == "cudagraph-capture-sizes" && (got == "" || it.Severity == rules.SeverityError) {
@@ -1247,7 +1247,7 @@ func TestLongPrefillThresholdWithinMaxModelLen(t *testing.T) {
 		{engineconfig.Engine{LongPrefillTokenThreshold: 1 << 20, MaxModelLen: engineconfig.MaxModelLenAuto}, false},
 		{engineconfig.Engine{LongPrefillTokenThreshold: 1 << 20}, false},
 	} {
-		p := run(t, dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1}, c.e)), graniteGraph())
+		p := run(t, dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1}, c.e)), moe224Graph())
 		if fired(p, "long-prefill-threshold-within-max-model-len") != c.fire {
 			t.Errorf("%+v: fired %v, want %v\n%s", c.e, !c.fire, c.fire, p.Error())
 		}
@@ -1257,7 +1257,7 @@ func TestLongPrefillThresholdWithinMaxModelLen(t *testing.T) {
 // The load-balancing mode is refused where the engine refuses it, and a hybrid mode the
 // engine runs as another is named with the mode that runs.
 func TestDataParallelLoadBalancing(t *testing.T) {
-	dense := graniteGraph()
+	dense := moe224Graph()
 	dense.LayerKinds[0].Nodes = dense.LayerKinds[0].Nodes[:1]
 	pl := func(mode deployment.DPLoadBalancing, dp, local int) deployment.Parallelism {
 		return deployment.Parallelism{TP: 1, PP: 1, DP: dp, DPLocal: local, DataParallelLoadBalancing: mode}
@@ -1269,14 +1269,14 @@ func TestDataParallelLoadBalancing(t *testing.T) {
 		sev  rules.Severity
 		runs deployment.DPLoadBalancing
 	}{
-		{"internal", pl("", 8, 0), graniteGraph(), "", deployment.DPLBInternal},
-		{"external on a MoE", pl(deployment.DPLBExternal, 8, 8), graniteGraph(), "", deployment.DPLBExternal},
+		{"internal", pl("", 8, 0), moe224Graph(), "", deployment.DPLBInternal},
+		{"external on a MoE", pl(deployment.DPLBExternal, 8, 8), moe224Graph(), "", deployment.DPLBExternal},
 		{"external on a dense model", pl(deployment.DPLBExternal, 8, 8), dense, rules.SeverityError, deployment.DPLBExternal},
-		{"hybrid across nodes", pl(deployment.DPLBHybrid, 16, 8), graniteGraph(), "", deployment.DPLBHybrid},
-		{"hybrid without dp_local", pl(deployment.DPLBHybrid, 16, 0), graniteGraph(), rules.SeverityError, deployment.DPLBHybrid},
-		{"hybrid with one rank per node", pl(deployment.DPLBHybrid, 8, 1), graniteGraph(), rules.SeverityWarning, deployment.DPLBExternal},
+		{"hybrid across nodes", pl(deployment.DPLBHybrid, 16, 8), moe224Graph(), "", deployment.DPLBHybrid},
+		{"hybrid without dp_local", pl(deployment.DPLBHybrid, 16, 0), moe224Graph(), rules.SeverityError, deployment.DPLBHybrid},
+		{"hybrid with one rank per node", pl(deployment.DPLBHybrid, 8, 1), moe224Graph(), rules.SeverityWarning, deployment.DPLBExternal},
 		{"hybrid with one rank per node, dense", pl(deployment.DPLBHybrid, 8, 1), dense, rules.SeverityError, deployment.DPLBExternal},
-		{"hybrid on one node", pl(deployment.DPLBHybrid, 8, 8), graniteGraph(), rules.SeverityWarning, deployment.DPLBInternal},
+		{"hybrid on one node", pl(deployment.DPLBHybrid, 8, 8), moe224Graph(), rules.SeverityWarning, deployment.DPLBInternal},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if got := Pack().ResolveDPLoadBalancing(c.pl); got != c.runs {
@@ -1300,7 +1300,7 @@ func TestDataParallelLoadBalancing(t *testing.T) {
 
 // The FlashInfer MoE-EP backends dispatch and combine themselves, so v0.32.0 binds
 // all2all_backend passthrough to them: it refuses any other explicit backend beside one,
-// and refuses passthrough beside any other MoE backend (vllm/config/kernel.py:194-227@5df63a72).
+// and refuses passthrough beside any other MoE backend (vllm/config/kernel.py:195-228@4ba787ec).
 // The default backend is rebound, not refused.
 func TestMoEEPBackendBindsPassthrough(t *testing.T) {
 	ep := deployment.Parallelism{TP: 8, DP: 1, EnableExpertParallel: true}
@@ -1313,12 +1313,12 @@ func TestMoEEPBackendBindsPassthrough(t *testing.T) {
 		{"an EP megakernel at allgather_reducescatter", "flashinfer_moe_ep_mega_deep_gemm", "allgather_reducescatter", false},
 		{"an EP megakernel stating passthrough", "flashinfer_moe_ep_cutedsl", "passthrough", false},
 		{"an EP megakernel beside another backend", "flashinfer_moe_ep_cutedsl", "deepep_low_latency", true},
-		// Both members of FLASHINFER_MOE_EP_BACKENDS (vllm/config/kernel.py:148-157@5df63a72) bind.
+		// Both members of FLASHINFER_MOE_EP_BACKENDS (vllm/config/kernel.py:149-158@4ba787ec) bind.
 		{"the DeepGEMM EP megakernel stating passthrough", "flashinfer_moe_ep_mega_deep_gemm", "passthrough", false},
 		{"the DeepGEMM EP megakernel beside another backend", "flashinfer_moe_ep_mega_deep_gemm", "deepep_low_latency", true},
 		// ParallelConfig renames the removed pplx and naive to allgather_reducescatter
-		// (vllm/config/parallel.py:532-538@5df63a72) before the binding runs, from
-		// VllmConfig's post-init (vllm/config/vllm.py:1777), so both start.
+		// (vllm/config/parallel.py:536-542@4ba787ec) before the binding runs, from
+		// VllmConfig's post-init (vllm/config/vllm.py:1852), so both start.
 		{"an EP megakernel beside the removed pplx", "flashinfer_moe_ep_cutedsl", "pplx", false},
 		{"an EP megakernel beside the removed naive", "flashinfer_moe_ep_mega_deep_gemm", "naive", false},
 		{"passthrough beside another MoE backend", "deep_gemm_mega_moe", "passthrough", true},
@@ -1326,7 +1326,7 @@ func TestMoEEPBackendBindsPassthrough(t *testing.T) {
 		{"neither", "triton", "deepep_low_latency", false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			r := run(t, dep(colocated(ep, engineconfig.Engine{MoEBackend: c.moe, All2AllBackend: c.a2a})), graniteGraph())
+			r := run(t, dep(colocated(ep, engineconfig.Engine{MoEBackend: c.moe, All2AllBackend: c.a2a})), moe224Graph())
 			if got := fired(r, "moe-ep-backend-binds-passthrough"); got != c.refused {
 				t.Errorf("moe_backend %q with all2all_backend %q: refused = %v, want %v\n%s", c.moe, c.a2a, got, c.refused, r.Error())
 			}
@@ -1337,7 +1337,7 @@ func TestMoEEPBackendBindsPassthrough(t *testing.T) {
 // Decode-context parallelism reuses the tensor-parallel ranks when prefill-context
 // parallelism is off, so the engine refuses a dcp that does not divide tp at startup; with
 // prefill-context parallelism on, dcp must be off, span the pcp axis, or span tp x pcp
-// (vllm/config/parallel.py:590-599@5df63a72).
+// (vllm/config/parallel.py:594-603@4ba787ec).
 func TestDCPDividesTP(t *testing.T) {
 	pool := func(tp, pcp, dcp int) deployment.Pool {
 		return colocated(deployment.Parallelism{TP: tp, PP: 1, DP: 1, PCP: pcp, DCP: dcp}, engineconfig.Engine{})
@@ -1359,7 +1359,7 @@ func TestDCPDividesTP(t *testing.T) {
 		{"pcp on, dcp spans tp x pcp", 4, 2, 8, false},
 		{"pcp on, dcp between the axes", 4, 2, 4, true},
 	} {
-		if got := fired(run(t, dep(pool(c.tp, c.pcp, c.dcp)), graniteGraph()), "dcp-divides-tp"); got != c.want {
+		if got := fired(run(t, dep(pool(c.tp, c.pcp, c.dcp)), moe224Graph()), "dcp-divides-tp"); got != c.want {
 			t.Errorf("%s (tp %d, pcp %d, dcp %d): fired %v, want %v", c.name, c.tp, c.pcp, c.dcp, got, c.want)
 		}
 	}
@@ -1380,31 +1380,31 @@ func ruleErrors(p *rules.Problems, rule string) int {
 }
 
 // vLLM refuses moe_backend flashinfer_moe_ep_mega_deep_gemm for a model that is not DeepSeek-V4
-// or V4.1 (validate_flashinfer_moe_ep_model, vllm/config/kernel.py:230-241@5df63a72).
+// or V4.1 (validate_flashinfer_moe_ep_model, vllm/config/kernel.py:231-242@4ba787ec).
 func TestFlashinferMegaDeepGemmNeedsDeepSeekV4(t *testing.T) {
 	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1, EnableExpertParallel: true}
 	d := dep(colocated(pl, engineconfig.Engine{MoEBackend: "flashinfer_moe_ep_mega_deep_gemm"}))
-	g := graniteGraph()
+	g := moe224Graph()
 	g.Global.Architecture = "GraniteMoeForCausalLM"
 	if p := run(t, d, g); !fired(p, "flashinfer-mega-deep-gemm-model") {
 		t.Errorf("a non-DeepSeek model was accepted with flashinfer_moe_ep_mega_deep_gemm:\n%s", p.Error())
 	}
 	for _, arch := range []string{"DeepseekV4ForCausalLM", "DeepSeekV4MTPModel", rules.ArchDeepseekV41} {
-		g := graniteGraph()
+		g := moe224Graph()
 		g.Global.Architecture = arch
 		if p := run(t, d, g); fired(p, "flashinfer-mega-deep-gemm-model") {
 			t.Errorf("%s was refused with flashinfer_moe_ep_mega_deep_gemm:\n%s", arch, p.Error())
 		}
 	}
 	// A graph that names no architecture is a warning, not an error: the refusal turns on it.
-	g = graniteGraph()
+	g = moe224Graph()
 	p := run(t, d, g)
 	if !fired(p, "flashinfer-mega-deep-gemm-model") || ruleErrors(p, "flashinfer-mega-deep-gemm-model") != 0 {
 		t.Errorf("an unnamed architecture should draw the rule's warning only:\n%s", p.Error())
 	}
 	// Another MoE backend is not the rule's business.
 	other := dep(colocated(pl, engineconfig.Engine{MoEBackend: "triton"}))
-	g = graniteGraph()
+	g = moe224Graph()
 	g.Global.Architecture = "GraniteMoeForCausalLM"
 	if p := run(t, other, g); fired(p, "flashinfer-mega-deep-gemm-model") {
 		t.Errorf("the rule fired for moe_backend triton:\n%s", p.Error())
@@ -1412,7 +1412,7 @@ func TestFlashinferMegaDeepGemmNeedsDeepSeekV4(t *testing.T) {
 }
 
 // vLLM refuses EPLB without expert parallelism or with tp, pcp and dp all 1
-// (vllm/config/parallel.py:559-581@5df63a72), and num_redundant_experts without EPLB (:583-589).
+// (vllm/config/parallel.py:563-585@4ba787ec), and num_redundant_experts without EPLB (:587-593).
 func TestEPLBNeedsExpertParallelism(t *testing.T) {
 	on := &engineconfig.EPLB{Enabled: true}
 	for _, c := range []struct {
@@ -1431,7 +1431,7 @@ func TestEPLBNeedsExpertParallelism(t *testing.T) {
 		{"no EPLB stated", deployment.Parallelism{TP: 8, PP: 1, DP: 1, EnableExpertParallel: true}, nil, false},
 	} {
 		d := dep(colocated(c.pl, engineconfig.Engine{EPLB: c.eplb}))
-		got := fired(run(t, d, graniteGraph()), "eplb-needs-expert-parallelism")
+		got := fired(run(t, d, moe224Graph()), "eplb-needs-expert-parallelism")
 		if got != c.bad {
 			t.Errorf("%s: rule fired %v, want %v", c.name, got, c.bad)
 		}
@@ -1439,23 +1439,23 @@ func TestEPLBNeedsExpertParallelism(t *testing.T) {
 }
 
 // CompilationConfig upper-cases a string before it parses cudagraph_mode
-// (vllm/config/compilation.py:873-879@5df63a72), so a lowercase mode is the same mode, and one
+// (vllm/config/compilation.py:873-879@4ba787ec), so a lowercase mode is the same mode, and one
 // that is no mode is still refused.
 func TestCUDAGraphModeIsCaseInsensitive(t *testing.T) {
 	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1}
 	for _, mode := range []string{"full", "Full_And_Piecewise", "none", "FULL_DECODE_ONLY"} {
 		d := dep(colocated(pl, engineconfig.Engine{CUDAGraphMode: mode}))
-		if p := run(t, d, graniteGraph()); fired(p, "enum-values-known") {
+		if p := run(t, d, moe224Graph()); fired(p, "enum-values-known") {
 			t.Errorf("cudagraph_mode %q was refused, which vLLM accepts:\n%s", mode, p.Error())
 		}
 	}
 	d := dep(colocated(pl, engineconfig.Engine{CUDAGraphMode: "partial"}))
-	if p := run(t, d, graniteGraph()); !fired(p, "enum-values-known") {
+	if p := run(t, d, moe224Graph()); !fired(p, "enum-values-known") {
 		t.Error("cudagraph_mode partial was accepted")
 	}
 	// A lowercase none captures no graph, so stated capture sizes are ignored, as for NONE.
 	d = dep(colocated(pl, engineconfig.Engine{CUDAGraphMode: "none", CUDAGraphCaptureSizes: []int{8, 16}}))
-	if p := run(t, d, graniteGraph()); !strings.Contains(p.Error(), "captures no graph") {
+	if p := run(t, d, moe224Graph()); !strings.Contains(p.Error(), "captures no graph") {
 		t.Errorf("lowercase none should draw the NONE warning for stated sizes:\n%s", p.Error())
 	}
 }

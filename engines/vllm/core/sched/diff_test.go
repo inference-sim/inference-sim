@@ -16,9 +16,10 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/blis-vllm/internal/upstream"
 )
 
-// eosToken is tests/v1/core/utils.py:43@5df63a72 (EOS_TOKEN_ID), which the oracle's GPU mock
+// eosToken is tests/v1/core/utils.py:49@4ba787ec (EOS_TOKEN_ID), which the oracle's GPU mock
 // samples as each request's last assigned token.
 const eosToken = 50256
 
@@ -67,7 +68,7 @@ type scenario struct {
 		// absent. The Mamba mode and block size are the kv_layers mamba runs' own.
 		CacheConfig struct {
 			// PrefixCacheRetentionInterval is prefix_cache_retention_interval (vllm/config/cache.py:
-			// 160-165@5df63a72): absent is vLLM's default 0 (semantic checkpoints only), a
+			// 170-175@4ba787ec): absent is vLLM's default 0 (semantic checkpoints only), a
 			// positive value a periodic checkpoint, the JSON null dense retention (the raw text
 			// keeps "absent" and "null" apart).
 			PrefixCacheRetentionInterval json.RawMessage `json:"prefix_cache_retention_interval"`
@@ -114,7 +115,8 @@ type step struct {
 	// SpecScheduled is the drafts each request verified this step, when any did.
 	SpecScheduled map[string]int `json:"spec_scheduled,omitempty"`
 	// KVEvents are the step's KV cache events, by content, when the scenario turns them on:
-	// ["stored", hashes, parent, tokens, block_size, lora_name] or ["removed", hashes].
+	// ["stored", hashes, parent, tokens, block_size, lora_name] or ["removed", hashes]. A stored
+	// event of a pool that hashes lookahead tokens ends with its lookahead_token_ids.
 	KVEvents []any `json:"kv_events,omitempty"`
 	// The fields below are recorded only for a hybrid Mamba model (oracle/README.md, "Trace"):
 	// per running request after the step, num_computed_tokens and num_tokens; and, for each
@@ -175,7 +177,7 @@ type trace struct {
 			Refused bool   `json:"refused"`
 			Message string `json:"message"`
 			// MaxConcurrentBatches is vLLM's max_concurrent_batches the check ran at, which
-			// sets max_in_flight_tokens (vllm/config/vllm.py:577-598@5df63a72).
+			// sets max_in_flight_tokens (vllm/config/vllm.py:588-609@4ba787ec).
 			MaxConcurrentBatches int `json:"max_concurrent_batches"`
 		} `json:"startup"`
 	} `json:"kv_pool"`
@@ -201,7 +203,7 @@ func run(t *testing.T, sc scenario) trace {
 		MaxNumScheduledTokens: c.MaxNumScheduledTokens, LongPrefillAdaptive: c.LongPrefillAdaptive,
 		Spec: spec, MaxLoRAs: c.MaxLoRAs, KVEvents: c.KVEvents,
 		KVGroups: kvGroups(t, c.KVGroups, c.KVLayers, kv.GroupOptions{DisableHybrid: c.DisableHybridKVCacheManager,
-			TrailingDrafter: c.Speculative != nil && trailingDrafter(c.Speculative.Method, c.KVLayers)}),
+			TagDraftGroups: c.Speculative != nil && trailingDrafter(c.Speculative.Method)}),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -246,7 +248,7 @@ func run(t *testing.T, sc scenario) trace {
 			req := &Request{ID: r.ID, Priority: r.Priority, ArrivalTime: float64(r.ArrivalStep),
 				Prompt: r.Prompt, MaxTokens: mt, EOS: eosToken}
 			if r.LoRA != "" {
-				// vLLM's LoRA block key (kv_cache_utils.py:578-595@5df63a72), with the oracle's
+				// vLLM's LoRA block key (kv_cache_utils.py:590-607@4ba787ec), with the oracle's
 				// adapter path.
 				req.LoRA = indexOfString(adapters, r.LoRA) + 1
 				req.LoRAName = r.LoRA
@@ -370,7 +372,7 @@ func run(t *testing.T, sc scenario) trace {
 
 // eventsJSON writes KV events as the oracle does: a block hash is the integer vLLM publishes
 // by default, the low 64 bits of the hash read big-endian (VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES,
-// vllm/envs.py:2033-2035 and kv_cache_utils.py:96-99@5df63a72), in decimal.
+// vllm/envs.py:2024-2026 and kv_cache_utils.py:82-85@4ba787ec), in decimal.
 func eventsJSON(evs []kv.Event) []any {
 	out := []any{}
 	h := func(b kv.BlockHash) any {
@@ -399,7 +401,19 @@ func eventsJSON(evs []kv.Event) []any {
 		if e.LoRA != "" {
 			lora = e.LoRA
 		}
-		out = append(out, []any{"stored", hs(e.Hashes), h(e.Parent), toks, float64(e.BlockSize), lora})
+		row := []any{"stored", hs(e.Hashes), h(e.Parent), toks, float64(e.BlockSize), lora}
+		if e.Lookahead != nil {
+			la := []any{}
+			for _, blk := range e.Lookahead {
+				ts := []any{}
+				for _, t := range blk {
+					ts = append(ts, float64(t))
+				}
+				la = append(la, ts)
+			}
+			row = append(row, la)
+		}
+		out = append(out, row)
 	}
 	return out
 }
@@ -531,6 +545,8 @@ type kvLayerRun struct {
 	ElemBytes      int    `json:"elem_bytes"`
 	Alignment      int    `json:"alignment"`
 	BoundedReplay  bool   `json:"bounded_replay"`
+	// Draft marks the drafter's layers (layer_specs sets KVCacheSpec.is_draft).
+	Draft bool `json:"draft"`
 	// A "mamba" run is MambaSpec (layer_specs): StateBytes is its state's bytes, BlockSize its
 	// mamba_block_size, and the fields below the rest of the spec.
 	PageSizePadded             int    `json:"page_size_padded"`
@@ -551,22 +567,11 @@ func hasMambaRun(runs []kvLayerRun) bool {
 	return false
 }
 
-// trailingDrafter is _uses_trailing_mtp_layers (vllm/v1/core/kv_cache_utils.py:1997-2013@5df63a72)
-// for a scenario: an MTP drafter, or an EAGLE-family drafter of DeepSeek V4/V4.1 (a layer of its
-// MLA, sliding-window MLA or circular-buffer specs), as core/vllm's factory decides it.
-func trailingDrafter(method string, runs []kvLayerRun) bool {
-	switch method {
-	case "mtp":
-		return true
-	case "eagle", "eagle3", "dflash", "dspark":
-		for _, r := range runs {
-			switch r.Spec {
-			case "mla", "sliding_window_mla", "circular_buffer":
-				return true
-			}
-		}
-	}
-	return false
+// trailingDrafter is use_eagle_block_drop for a scenario's method, as core/vllm's factory
+// decides whether get_kv_cache_groups tags the groups holding draft layers
+// (vllm/v1/core/kv_cache_planning.py:1650-1656@4ba787ec).
+func trailingDrafter(method string) bool {
+	return method == "eagle" || method == "eagle3" || method == "mtp"
 }
 
 // kvGroups is the scenario's KV cache groups for the scheduler: its "kv_layers" through
@@ -624,7 +629,7 @@ func TestDifferentialAgainstVLLM(t *testing.T) {
 				return
 			}
 			if d := earliestDivergence(want, run(t, sc)); d != "" {
-				t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+				t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 			}
 		})
 	}
@@ -674,8 +679,8 @@ func checkProvenance(t *testing.T, scenarioPath string, tr trace) {
 	for _, c := range []struct{ field, got, want string }{
 		{"scenario_sha256", p.ScenarioSHA256, hex.EncodeToString(sum[:])},
 		// A build may carry a local version label ("0.32.0+cpu"); the release is what counts.
-		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], "0.32.0"},
-		{"vllm_commit", p.VLLMCommit, "5df63a7203cdb9328d824a27b682e77c7b9928be"},
+		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], upstream.Version},
+		{"vllm_commit", p.VLLMCommit, upstream.Commit},
 		{"mock_version", p.MockVersion, mockVersion(t)},
 	} {
 		if c.got != c.want {
@@ -731,7 +736,7 @@ func TestFuzzCorpusAgainstVLLM(t *testing.T) {
 		checkProvenance(t, filepath.Join(dir, name+".json"), want)
 		if d := earliestDivergence(want, run(t, sc)); d != "" {
 			mismatches++
-			t.Errorf("%s: earliest divergence from vLLM v0.32.0: %s", name, d)
+			t.Errorf("%s: earliest divergence from vLLM v0.33.0: %s", name, d)
 		}
 	}
 	t.Logf("fuzz corpus: %d scenarios, %d mismatches", len(traces), mismatches)
@@ -751,7 +756,7 @@ func TestScenarioFromEnv(t *testing.T) {
 	readJSON(t, tp, &want)
 	checkProvenance(t, sp, want)
 	if d := earliestDivergence(want, run(t, sc)); d != "" {
-		t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+		t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 	}
 }
 
@@ -838,7 +843,7 @@ func TestKVStartupCheckAgainstVLLM(t *testing.T) {
 			if c.Speculative != nil {
 				lookahead = ResolveSpec(SpecOptions{Method: c.Speculative.Method,
 					NumTokens: c.Speculative.NumTokens, NextnPredictLayers: draftNextnLayers(t, c.Speculative.Draft)}).PrefillLookahead
-				o.TrailingDrafter = c.Speculative.Method == "mtp"
+				o.TagDraftGroups = trailingDrafter(c.Speculative.Method)
 			}
 			limits := kv.RequestLimits{MaxModelLen: c.MaxModelLen,
 				MaxInFlightTokens: max(want.KVPool.Startup.MaxConcurrentBatches, 1) * c.MaxNumBatchedTokens,
@@ -886,7 +891,7 @@ func scenarioLayers(t *testing.T, runs []kvLayerRun) []kv.Layer {
 		for i := 0; i < r.Count; i++ {
 			layers = append(layers, kv.Layer{Spec: spec, Window: r.SlidingWindow, KVHeads: heads, HeadSize: r.HeadSize,
 				BlockSize: r.BlockSize, TokensPerState: r.TokensPerState, StateBytes: r.StateBytes,
-				ElemBytes: elem, Alignment: r.Alignment, BoundedReplay: r.BoundedReplay,
+				ElemBytes: elem, Alignment: r.Alignment, BoundedReplay: r.BoundedReplay, Draft: r.Draft,
 				PageSizePadded: r.PageSizePadded, MambaCacheMode: r.MambaCacheMode,
 				NumSpeculativeBlocks: r.NumSpeculativeBlocks, NumPrefillCheckpointBlocks: r.NumPrefillCheckpointBlocks,
 				PrefillCheckpointAlignment: r.PrefillCheckpointAlignment})
@@ -920,7 +925,7 @@ func retentionInterval(t *testing.T, layers []kvLayerRun, raw json.RawMessage) *
 
 // newOrRefusePartialHashHits is New, except for a scenario whose prefix_match_unit puts the hash
 // block below the Mamba block: vLLM enables fine-grained partial hash hits there
-// (kv_cache_coordinator.py:684-706@5df63a72), which blis-vllm refuses by name, so the scenario
+// (kv_cache_coordinator.py:694-716@4ba787ec), which blis-vllm refuses by name, so the scenario
 // is skipped with the refusal asserted.
 func newOrRefusePartialHashHits(t *testing.T, unit int, cfg Config) (*Scheduler, error) {
 	t.Helper()

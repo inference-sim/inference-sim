@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/engine/core.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/v1/engine/core.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // Also vllm/v1/engine/core_client.py (DPLBAsyncMPClient.get_core_engine_for_request) and
 // vllm/v1/engine/coordinator.py (wave start).
 
@@ -8,14 +8,14 @@ package engine
 
 import "math"
 
-// Wave is one DP rank's wave state in DPEngineCoreProc (core.py:2160-2176): the step counter
+// Wave is one DP rank's wave state in DPEngineCoreProc (core.py:2298-2314): the step counter
 // the sync cadence and the prefill throttle read, the wave number, and whether the rank's
 // busy loop is stepping.
 type Wave struct {
 	// PrefillScheduleInterval is scheduler_config.prefill_schedule_interval
-	// (vllm/config/scheduler.py:203@5df63a72); 1 never throttles.
+	// (vllm/config/scheduler.py:203@4ba787ec); 1 never throttles.
 	PrefillScheduleInterval int
-	// SyncInterval is parallel_config.dp_sync_interval (vllm/config/parallel.py:162, default 16).
+	// SyncInterval is parallel_config.dp_sync_interval (vllm/config/parallel.py:163, default 16).
 	SyncInterval int
 
 	StepCounter int

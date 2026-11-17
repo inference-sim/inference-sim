@@ -13,10 +13,19 @@ package main
 var summaries = map[string]struct{ title, summary string }{
 	"internal/price/memory.go|KVBytesPerToken|Coverage limit": {
 		"KV cache layouts not sized",
-		"The kernel does not size every KV cache layout vLLM has. It refuses the per-token-head " +
-			"quantized formats rather than size them. Padded pages and a cache that compresses " +
+		"The kernel does not size every KV cache layout vLLM has. The engine's lowering refuses " +
+			"the per-token-head quantized formats rather than hand the kernel a width for them. Padded pages and a cache that compresses " +
 			"several tokens into one stored state are sized only where the model graph states " +
 			"its caches; a graph that does not is sized as one full-length cache per layer.",
+	},
+	"step_terms.go|(*Kernel).expertPadding|Coverage limit": {
+		"MXFP4 expert padding on other backends",
+		"The kernel pads the MXFP4 expert weights and work to the shapes the Marlin and TRTLLM " +
+			"backends allocate (hidden up to a multiple of 256, each rank's intermediate up to 128). " +
+			"The CUTLASS and DeepGEMM backends round the hidden size to 128, and the FlashInfer EP " +
+			"megakernel and b12x do not pad; the kernel does not know which backend the engine " +
+			"picked, so a deployment on those backends is priced with slightly too much expert " +
+			"weight and work.",
 	},
 	"draft.go|(*Kernel).draftHasOwnGraphs|Coverage limit": {
 		"An autoregressive drafter's own graphs",
@@ -123,12 +132,5 @@ var summaries = map[string]struct{ title, summary string }{
 			"charged for a 1/(dp × tp) slice of each expert, where vLLM gives it 1/(dp × pcp × " +
 			"tp). Dividing by pcp as well would leave out a reduction the kernel does not price, " +
 			"and make the experts cheaper than the engine runs them.",
-	},
-	"sparse_mla.go|sparseMLABackend|Coverage limit": {
-		"Choosing the sparse attention backend",
-		"For DeepSeek sparse attention, which backend vLLM chooses depends on facts the model " +
-			"graph does not state: whether the checkpoint quantizes its KV cache, the installed " +
-			"FlashInfer version, and one head dimension. The kernel assumes the common case for " +
-			"each, and the catalog has no chip of the SM120 generation, whose backend differs.",
 	},
 }

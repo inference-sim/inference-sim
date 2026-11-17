@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/worker/gpu/dp_utils.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be):
+// Derived from vllm/v1/worker/gpu/dp_utils.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
 // sync_cudagraph_and_dp_padding (:44-210) and dispatch_cg_and_sync_dp (:213-325). Also
 // vllm/v1/worker/gpu/model_runner.py (gather_batch_req_state, :1270-1355; _dummy_run, :815-905),
 // vllm/v1/worker/utils.py (get_uniform_decode_token_count, :967-975),
@@ -144,11 +144,9 @@ func SyncDP(m *GraphManager, ranks []RankBatch) ([]Launch, []Sync, error) {
 	for i, r := range ranks {
 		d := m.Dispatch(r.Reqs, maxTokens, uniform, bound)
 		out[i] = Launch{Mode: d.Mode, Tokens: d.Tokens}
-		reqs := maxReqs
-		if d.Mode == GraphFull && d.Reqs != nil {
-			reqs = *d.Reqs
-		}
-		syncs[i] = Sync{Reqs: reqs, Tokens: d.Tokens}
+		// The agreement's request bound is the ranks' largest request count, whatever graph runs
+		// (vllm/v1/worker/gpu/dp_utils.py:197-203@4ba787ec); v0.32.0 took a FULL graph's padded count.
+		syncs[i] = Sync{Reqs: maxReqs, Tokens: d.Tokens}
 	}
 	return out, syncs, nil
 }
@@ -159,7 +157,7 @@ func GraphContextTokens(steps, maxNumTokens, reqs int) int {
 	return min(reqs*(steps+1), maxNumTokens)
 }
 
-// MaxDecodeQueryLen is max_decode_query_len (vllm/v1/attention/backend.py:569-586@5df63a72): the
+// MaxDecodeQueryLen is max_decode_query_len (vllm/v1/attention/backend.py:572-589@4ba787ec): the
 // widest request a spec-as-decode attention builder treats as a decode, and so the threshold
 // above which a request launches the prefill kernels. It is 1 + num_speculative_tokens, and
 // model runner V1's parallel drafter appends that many mask slots again.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // Also vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py (the scheduler-role
 // dispatch), offloading/common.py (TransferJob, OffloadingWorkerMetadata), offloading/config.py
 // (blocks_per_chunk) and vllm/v1/core/single_type_kv_cache_manager.py (the sliding window's
@@ -25,9 +25,11 @@
 package offloading
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
@@ -38,6 +40,8 @@ import (
 const (
 	Issue      = "https://github.com/inference-sim/blis-vllm/issues/4"
 	GroupIssue = "https://github.com/inference-sim/blis-vllm/issues/7"
+	// BlockSizeIssue tracks a KV cache group whose block is not a multiple of the hash block.
+	BlockSizeIssue = "https://github.com/inference-sim/blis-vllm/issues/146"
 )
 
 // Group is one KV cache group as the connector sees it (GroupOffloadConfig,
@@ -71,6 +75,10 @@ type Config struct {
 	// (is_eagle_group, scheduler.py:226-287@5df63a72): its trailing chunk is volatile while
 	// decoding and a hit on it peeks one chunk past the boundary. nil is none.
 	EagleGroups []bool
+	// Manager builds the OffloadingManager over the CPU tier: TieringOffloadingSpec's
+	// TieringOffloadingManager with its secondary tiers (vllm/v1/kv_offload/tiering/spec.py@4ba787ec).
+	// nil is the CPU tier alone (CPUOffloadingSpec, or TieringOffloadingSpec with no secondary tier).
+	Manager func(cpu *CPUPrimary) (Manager, error)
 }
 
 // groupCfg is GroupOffloadConfig with its derived sizes.
@@ -135,20 +143,124 @@ type groupState struct {
 // reqState is RequestOffloadState (scheduler.py:358-501).
 type reqState struct {
 	req      *sched.Request
-	access   *reqAccess
+	access   *Access
 	groups   []*groupState
 	localHit int // num_locally_computed_tokens
 	jobs     map[int]bool
 	signaled bool
+	// policy is offloading_context.policy, the manager's answer to on_new_request.
+	policy Policy
+	// scheduled is whether a step has scheduled the request, so the next is not its first.
+	scheduled bool
+	// maxLoad and maxOffload are the request's max_load_tokens and max_offload_tokens
+	// (kv_transfer_params, scheduler.py:383-410@4ba787ec); -1 is unstated.
+	maxLoad, maxOffload int
+	// loadRanges are load_key_ranges: each loaded key with the token range it covers.
+	loadRanges []loadRange
 }
+
+// loadRange is one entry of load_key_ranges (scheduler.py:1440-1458@4ba787ec).
+type loadRange struct {
+	lo, hi int
+	key    Key
+}
+
+// LookupResult is LookupResult (vllm/v1/kv_offload/base.py:121-127@4ba787ec).
+type LookupResult int
+
+const (
+	Miss LookupResult = iota
+	Hit
+	// HitPending is found but not yet readable: its store is in flight.
+	HitPending
+	// Retry is a lookup the manager has not resolved yet (a tier's asynchronous lookup): the
+	// request is deferred and asked again at a later step.
+	Retry
+)
+
+// Policy is OffloadPolicy (base.py:130-137@4ba787ec).
+type Policy int
+
+const (
+	// ChunkLevel offloads only the chunks a request computes; its prefix hits are not stored again.
+	ChunkLevel Policy = iota
+	// RequestLevel offloads every chunk of the request, its prefix hits included.
+	RequestLevel
+)
+
+// ScheduleEnd is ScheduleEndContext (base.py:144-150@4ba787ec): the requests a step scheduled
+// for the first time, and those it preempted.
+type ScheduleEnd struct {
+	NewReqIDs, PreemptedReqIDs []string
+}
+
+// Manager is the OffloadingManager (vllm/v1/kv_offload/base.py:283-505@4ba787ec) as the
+// connector's scheduler side calls it (offloading/scheduler.py@4ba787ec). The CPU tier is one
+// (the default); TieringOffloadingManager, which fronts the CPU tier with secondary tiers, is
+// another, supplied through Config.Manager. Every call about one request gets that request's
+// Access.
+type Manager interface {
+	// OnNewRequest is on_new_request: how the request's chunks are offloaded.
+	OnNewRequest(a *Access) Policy
+	Lookup(k Key, a *Access) LookupResult
+	// LoadSource is get_load_source, asked only of a key whose lookup was a hit: the
+	// CacheHitSource member's name (vllm/v1/metrics/cache_hit_source.py@4ba787ec), as HOST, of the
+	// tier it came from.
+	LoadSource(k Key, a *Access) string
+	PrepareLoad(keys []Key, a *Access) []int
+	CompleteLoad(keys []Key, a *Access)
+	PrepareStore(keys []Key, a *Access) (stored []Key, chunkIDs []int, evicted []Key, ok bool)
+	CompleteStore(keys []Key, a *Access, success bool)
+	OnRequestFinished(a *Access)
+	// OnScheduleEnd is on_schedule_end, the last manager call of each step.
+	OnScheduleEnd(e ScheduleEnd)
+	// HasPendingWork is has_pending_work: while true the engine keeps stepping with no request.
+	HasPendingWork() bool
+}
+
+// cpuTier is the CPU tier as the connector's Manager (CPUOffloadingManager,
+// vllm/v1/kv_offload/cpu/manager.py@4ba787ec): each method is the cpuManager method it names. It
+// never answers Retry, offloads at chunk level, and keeps no work of its own.
+type cpuTier struct{ m *cpuManager }
+
+func (c cpuTier) OnNewRequest(a *Access) Policy {
+	c.m.onNewRequest(a.a)
+	return ChunkLevel
+}
+
+func (c cpuTier) Lookup(k Key, _ *Access) LookupResult {
+	switch c.m.lookup(k) {
+	case hit:
+		return Hit
+	case hitPending:
+		return HitPending
+	}
+	return Miss
+}
+
+func (c cpuTier) LoadSource(Key, *Access) string { return c.m.loadSource() }
+func (c cpuTier) PrepareLoad(keys []Key, a *Access) []int {
+	return c.m.prepareLoad(keys, a.a)
+}
+func (c cpuTier) CompleteLoad(keys []Key, _ *Access) { c.m.completeLoad(keys) }
+func (c cpuTier) PrepareStore(keys []Key, a *Access) (stored []Key, chunkIDs []int, evicted []Key, ok bool) {
+	return c.m.prepareStore(keys, a.a)
+}
+func (c cpuTier) CompleteStore(keys []Key, _ *Access, success bool) { c.m.completeStore(keys, success) }
+func (c cpuTier) OnRequestFinished(a *Access)                       { c.m.requestFinished(a.a) }
+func (c cpuTier) OnScheduleEnd(ScheduleEnd)                         {}
+func (c cpuTier) HasPendingWork() bool                              { return c.m.hasPendingWork() }
 
 // Scheduler is OffloadingConnectorScheduler for one engine.
 type Scheduler struct {
-	cfg        Config
-	groups     []groupCfg
-	full, swa  []int // _full_attention_groups, _sliding_window_groups (largest window first)
-	alignment  int   // alignment_tokens
-	manager    *cpuManager
+	cfg       Config
+	groups    []groupCfg
+	full, swa []int // _full_attention_groups, _sliding_window_groups (largest window first)
+	alignment int   // alignment_tokens
+	manager   Manager
+	// params are the kv_transfer_params of requests not yet started (SetRequestParams).
+	params     map[string]map[string]any
+	cpu        *cpuManager // the CPU tier, which manager is or fronts
 	reqs       map[string]*reqState
 	loadJobs   []Job
 	flush      map[int]bool
@@ -181,7 +293,15 @@ func New(cfg Config) (*Scheduler, error) {
 				"beside which the connector is not diff-tested (%s)", g, Issue)
 		}
 	}
-	s := &Scheduler{cfg: cfg, manager: newCPUManager(cfg.NumChunks), reqs: map[string]*reqState{},
+	cpu := newCPUManager(cfg.NumChunks)
+	var mgr Manager = cpuTier{cpu}
+	if cfg.Manager != nil {
+		var err error
+		if mgr, err = cfg.Manager(&CPUPrimary{m: cpu}); err != nil {
+			return nil, err
+		}
+	}
+	s := &Scheduler{cfg: cfg, manager: mgr, cpu: cpu, reqs: map[string]*reqState{},
 		flush: map[int]bool{}, allocated: map[int]bool{}, jobs: map[int]*jobStatus{}, pendingOf: map[int]map[int]bool{}}
 	if cfg.PrefixCaching {
 		s.loading = map[Key]bool{}
@@ -194,7 +314,10 @@ func New(cfg Config) (*Scheduler, error) {
 			return nil, fmt.Errorf("offloading: KV cache groups of several block sizes are not modelled (%s)", GroupIssue)
 		}
 		if g.BlockSize%cfg.TokensPerHash != 0 {
-			return nil, fmt.Errorf("offloading: block size %d is not a multiple of the hash block size %d", g.BlockSize, cfg.TokensPerHash)
+			// Whether vLLM accepts a group whose block is smaller than the hash block, and how it sizes
+			// its offload block then, is https://github.com/inference-sim/blis-vllm/issues/146.
+			return nil, fmt.Errorf("offloading: block size %d is not a multiple of the hash block size %d (%s)", g.BlockSize,
+				cfg.TokensPerHash, BlockSizeIssue)
 		}
 		gc := groupCfg{Group: g, tokensPerChunk: g.BlockSize * cfg.BlocksPerChunk}
 		gc.eagle = len(s.groups) < len(cfg.EagleGroups) && cfg.EagleGroups[len(s.groups)]
@@ -235,6 +358,9 @@ type Options struct {
 	SpecName string
 	// SecondaryTiers is len(secondary_tiers) (vllm/v1/kv_offload/tiering/spec.py:285).
 	SecondaryTiers int
+	// Manager is whether the caller supplies Config.Manager, the TieringOffloadingManager that
+	// builds the secondary tiers; the caller builds or refuses each by its type.
+	Manager bool
 	// EvictionPolicy is eviction_policy (cpu/spec.py:131, default lru).
 	EvictionPolicy string
 	// StoreThreshold is store_threshold (cpu/spec.py:139, default 0).
@@ -252,10 +378,11 @@ func Check(o Options) error {
 	switch {
 	case o.SpecName != "" && o.SpecName != "CPUOffloadingSpec" && o.SpecName != "TieringOffloadingSpec":
 		return fmt.Errorf("offloading: spec_name %q is not modelled; CPUOffloadingSpec and TieringOffloadingSpec are (%s)", o.SpecName, Issue)
-	case o.SecondaryTiers > 0:
-		// The secondary tiers' lookups, stores and promotions (tiering/manager.py:269-360) are
-		// https://github.com/inference-sim/blis-vllm/issues/63; their backpressure clocks
-		// (backpressure.py) are https://github.com/inference-sim/blis-vllm/issues/13.
+	case o.SecondaryTiers > 0 && !o.Manager:
+		// The secondary tiers' lookups, stores and promotions (tiering/manager.py@4ba787ec) run in
+		// the TieringOffloadingManager the caller supplies (Config.Manager), which builds or
+		// refuses each tier by its type. Without one only the CPU primary tier is modelled
+		// (https://github.com/inference-sim/blis-vllm/issues/63).
 		return fmt.Errorf("offloading: TieringOffloadingSpec with %d secondary tier(s) is not modelled, only its CPU "+
 			"primary tier (https://github.com/inference-sim/blis-vllm/issues/63)", o.SecondaryTiers)
 	case o.EvictionPolicy != "" && o.EvictionPolicy != "lru":
@@ -301,14 +428,52 @@ func (s *Scheduler) updateKeys(st *reqState) {
 		for i := g.hashesPerChunk*len(gs.keys) + g.hashesPerChunk - 1; i < len(hs); i += g.hashesPerChunk {
 			k := makeKey(hs[i], gi)
 			gs.keys = append(gs.keys, k)
-			st.access.positions[k] = len(gs.keys) * g.tokensPerChunk
+			st.access.a.positions[k] = len(gs.keys) * g.tokensPerChunk
 		}
 	}
 }
 
-// OnNewRequest is on_new_request (scheduler.py:1027-1037).
+// SetRequestParams states a request's kv_transfer_params (Request.kv_transfer_params) before it is
+// added to the scheduler: the connector reads max_load_tokens and max_offload_tokens from them
+// (scheduler.py:383-410@4ba787ec) and hands them to the manager's tiers (ReqContext).
+func (s *Scheduler) SetRequestParams(id string, params map[string]any) {
+	if s.params == nil {
+		s.params = map[string]map[string]any{}
+	}
+	s.params[id] = params
+}
+
+// tokenLimit is a request's max_load_tokens or max_offload_tokens: the stated value when it is a
+// non-negative int, else -1 (a negative value, or one that is not an int, is ignored with a
+// warning, scheduler.py:385-410@4ba787ec). A JSON number is an int when it has no fraction or
+// exponent, as Python's json.loads reads it.
+func tokenLimit(params map[string]any, key string) int {
+	switch v := params[key].(type) {
+	case int:
+		if v >= 0 {
+			return v
+		}
+	case int64:
+		if v >= 0 {
+			return int(v)
+		}
+	case json.Number:
+		if n, err := strconv.ParseInt(string(v), 10, 64); err == nil && n >= 0 {
+			return int(n)
+		}
+	}
+	return -1
+}
+
+// OnNewRequest is on_new_request (scheduler.py:1197-1208@4ba787ec): the manager's
+// on_new_request, whose answer is the request's offload policy.
 func (s *Scheduler) OnNewRequest(r *sched.Request) {
-	st := &reqState{req: r, access: newReqAccess(), jobs: map[int]bool{}}
+	a := newAccess(r.ID)
+	params := s.params[r.ID]
+	delete(s.params, r.ID)
+	a.params = params
+	st := &reqState{req: r, access: a, jobs: map[int]bool{}, policy: s.manager.OnNewRequest(a),
+		maxLoad: tokenLimit(params, "max_load_tokens"), maxOffload: tokenLimit(params, "max_offload_tokens")}
 	for range s.groups {
 		st.groups = append(st.groups, &groupState{})
 	}
@@ -328,6 +493,8 @@ func (s *Scheduler) MatchedTokensOrDefer(r *sched.Request, local int) (int, bool
 	st := s.reqs[r.ID]
 	for _, gs := range st.groups {
 		gs.blockIDs = gs.blockIDs[:0]
+		// Restarting at token 0: every chunk is offered again (:1243-1245@4ba787ec).
+		gs.nextStored = 0
 	}
 	if len(st.jobs) > 0 {
 		return 0, false, true
@@ -341,58 +508,71 @@ func (s *Scheduler) MatchedTokensOrDefer(r *sched.Request, local int) (int, bool
 	return n, n > 0, false
 }
 
-// prefixLookup is _maximal_prefix_lookup (scheduler.py:674-706) for the CPU tier: the leading
-// run of hits; deferred if one is still being stored (HIT_PENDING).
-func (s *Scheduler) prefixLookup(keys []Key) (int, bool) {
-	n, pending := 0, false
+// prefixLookup is _maximal_prefix_lookup (scheduler.py:773-803@4ba787ec): the leading run of
+// hits; deferred if one is still being stored (HIT_PENDING) or the manager has not resolved one
+// (RETRY). A RETRY is not a hit, and the scan goes on past it, so the manager is asked about
+// every key up to the first miss and can start each one's lookup.
+func (s *Scheduler) prefixLookup(keys []Key, a *Access) (int, bool) {
+	n, deferred := 0, false
 	for _, k := range keys {
-		switch s.manager.lookup(k) {
-		case hit:
+		switch s.manager.Lookup(k, a) {
+		case Hit:
 			n++
-		case hitPending:
-			pending = true
+		case HitPending:
+			deferred = true
 			n++
-		case miss:
-			return n, pending
+		case Retry:
+			deferred = true
+		case Miss:
+			return n, deferred
 		}
 	}
-	return n, pending
+	return n, deferred
 }
 
-// windowLookup is _sliding_window_lookup (scheduler.py:708-750): scanning from the end, the end
-// index of the last run of window consecutive hits, the first run allowed a larger window;
-// deferred when a pending chunk is in the run found.
-func (s *Scheduler) windowLookup(keys []Key, window, initial int) (int, bool) {
-	pending := false
+// windowLookup is _sliding_window_lookup (scheduler.py:805-847@4ba787ec): scanning from the
+// end, the end index of the last run of window consecutive hits, the first run allowed a larger
+// window; deferred when a pending chunk is in the run found, or when the manager answered RETRY
+// for any key scanned. A RETRY breaks the run as a miss does, and the scan goes on past it.
+func (s *Scheduler) windowLookup(keys []Key, window, initial int, a *Access) (int, bool) {
+	pending, retry := false, false
 	run := 0
 	need := window
 	if initial > 0 {
 		need = initial
 	}
 	for i := len(keys) - 1; i >= 0; i-- {
-		switch s.manager.lookup(keys[i]) {
-		case hit:
+		switch s.manager.Lookup(keys[i], a) {
+		case Hit:
 			run++
-		case hitPending:
+		case HitPending:
 			pending = true
 			run++
-		case miss:
+		case Retry:
+			retry = true
+			run = 0
+			pending = false
+			need = window
+		case Miss:
 			run = 0
 			pending = false
 			need = window
 		}
 		if run == need {
-			return i + need, pending
+			return i + need, pending || retry
 		}
 	}
-	return run, pending
+	return run, pending || retry
 }
 
-// lookupComplete is _lookup_complete_chunks (scheduler.py:752-952) without max_load_tokens, an
-// external bound or EAGLE groups.
+// lookupComplete is _lookup_complete_chunks (scheduler.py:752-952) without an external bound
+// (max_num_new_tokens); max_load_tokens bounds the hit (:866-871, 915-920).
 func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 	local := st.localHit
 	maxHit := st.req.NumTokens()
+	if st.maxLoad >= 0 {
+		maxHit = min(maxHit, local+st.maxLoad)
+	}
 	if len(s.swa) > 0 {
 		maxHit--
 	}
@@ -411,6 +591,9 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 			keys := st.groups[gi].keys
 			unverified := g.eagle && !eagleVerified[gi]
 			maxHit = min(maxHit, len(keys)*g.tokensPerChunk)
+			if st.maxLoad >= 0 {
+				maxHit -= maxHit % g.tokensPerChunk
+			}
 			if maxHit-local < g.tokensPerChunk {
 				return 0, false
 			}
@@ -425,7 +608,7 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 			var n int
 			var pend bool
 			if !g.sliding() {
-				n, pend = s.prefixLookup(ks)
+				n, pend = s.prefixLookup(ks, st.access)
 			} else {
 				window := g.windowChunks
 				drop := 0
@@ -433,7 +616,7 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 					window, drop = window+1, 1
 				}
 				end := min(maxHit, (numChunks-drop)*g.tokensPerChunk)
-				n, pend = s.windowLookup(ks, window, g.loadWindowChunks(end)+drop)
+				n, pend = s.windowLookup(ks, window, g.loadWindowChunks(end)+drop, st.access)
 			}
 			if n == 0 && !pend {
 				return 0, false
@@ -488,12 +671,23 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 }
 
 // AfterAlloc is update_state_after_alloc (scheduler.py:1146-1279): the load job for the hit's
-// chunks into the request's fresh blocks.
+// chunks into the request's fresh blocks. Every allocated block is noted first, with or without
+// a hit, so that re-allocation flush detection (BuildMeta) also sees the blocks allocated for a
+// request another connector of a MultiConnector loads
+// (vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1351-1363@4ba787ec).
 func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, external int) {
+	for _, gb := range blocks.Groups {
+		for _, id := range gb {
+			if id != 0 {
+				s.allocated[id] = true
+			}
+		}
+	}
 	if external == 0 {
 		return
 	}
 	st := s.reqs[r.ID]
+	st.loadRanges = st.loadRanges[:0]
 	local := st.localHit
 	cached := local + external
 	var keys []Key
@@ -501,11 +695,6 @@ func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, e
 	bpc := s.cfg.BlocksPerChunk
 	for gi, g := range s.groups {
 		gb := blocks.Groups[gi]
-		for _, id := range gb {
-			if id != 0 {
-				s.allocated[id] = true
-			}
-		}
 		numGPU := cdiv(cached, g.BlockSize)
 		first := cdiv(local, g.BlockSize)
 		start := numGPU
@@ -522,15 +711,25 @@ func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, e
 		pendingBlocks := numGPU - start
 		numChunks := cdiv(cached, g.tokensPerChunk)
 		if pendingBlocks > 0 {
-			keys = append(keys, st.groups[gi].keys[start/bpc:numChunks]...)
+			gk := st.groups[gi].keys[start/bpc : numChunks]
+			keys = append(keys, gk...)
+			// load_key_ranges (:1440-1459@4ba787ec): each key's tokens, from the load's first block.
+			for i, k := range gk {
+				c := start/bpc + i
+				st.loadRanges = append(st.loadRanges, loadRange{lo: max(start*g.BlockSize, c*g.tokensPerChunk),
+					hi: min(cached, (c+1)*g.tokensPerChunk), key: k})
+			}
 		}
 		job.GPU = append(job.GPU, gb[start:numGPU]...)
 		job.GroupSizes = append(job.GroupSizes, pendingBlocks)
 		job.BlockIndices = append(job.BlockIndices, start)
-		// CHUNK_LEVEL: the hit's chunks are not stored again (:1250-1254).
-		st.groups[gi].nextStored = numChunks
+		// CHUNK_LEVEL: the hit's chunks are not stored again; REQUEST_LEVEL stores every chunk of the
+		// request, the hit's too (:1468-1472@4ba787ec).
+		if st.policy == ChunkLevel {
+			st.groups[gi].nextStored = numChunks
+		}
 	}
-	job.CPU = s.manager.prepareLoad(keys, st.access)
+	job.CPU = s.manager.PrepareLoad(keys, st.access)
 	job.ID = s.newJob()
 	s.loadJobs = append(s.loadJobs, job)
 	st.jobs[job.ID] = true
@@ -554,6 +753,12 @@ func (s *Scheduler) FinishedAllGroups(r *sched.Request, _ [][]int) bool { return
 func (s *Scheduler) finished(r *sched.Request) bool {
 	st := s.reqs[r.ID]
 	if st == nil {
+		// An untracked request (:2351-2359@4ba787ec): the manager sees it start and finish.
+		a := newAccess(r.ID)
+		a.params = s.params[r.ID]
+		delete(s.params, r.ID)
+		s.manager.OnNewRequest(a)
+		s.manager.OnRequestFinished(a)
 		return false
 	}
 	s.updateKeys(st)
@@ -645,6 +850,9 @@ func (s *Scheduler) sortedReqIDs() []string {
 // offloadable is _calc_num_offloadable_tokens (scheduler.py:663-672).
 func (s *Scheduler) offloadable(r *sched.Request, computed int) int {
 	n := min(computed, r.NumTokens())
+	if st := s.reqs[r.ID]; st != nil && st.maxOffload >= 0 {
+		n = min(n, st.maxOffload)
+	}
 	if s.cfg.OffloadPromptOnly {
 		n = min(n, r.NumPromptTokens())
 	}
@@ -779,6 +987,11 @@ func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 				if mask != nil && !anyIn(mask, idx*bpc, bpc) {
 					continue
 				}
+				// A reachable null block would leave part of the chunk unwritten
+				// (scheduler.py:2001-2012@4ba787ec).
+				if nullReachable(gs.blockIDs[k*bpc:(k+1)*bpc], mask, idx*bpc) {
+					continue
+				}
 				newKeys = append(newKeys, gs.keys[k])
 			}
 		}
@@ -786,7 +999,7 @@ func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 			s.advanceStored(st, tokens)
 			continue
 		}
-		stored, chunkIDs, ok := s.manager.prepareStore(newKeys, st.access)
+		stored, chunkIDs, _, ok := s.manager.PrepareStore(newKeys, st.access)
 		if !ok {
 			// "cannot store chunks" (:1735-1740): nothing advances; the chunks are offered again.
 			continue
@@ -849,6 +1062,17 @@ func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 	return out
 }
 
+// nullReachable reports whether a chunk's blocks hold a null block (id 0) that the reachable mask
+// keeps (every block when the mask is nil).
+func nullReachable(blocks []int, mask []bool, off int) bool {
+	for b, id := range blocks {
+		if id == 0 && (mask == nil || mask[off+b]) {
+			return true
+		}
+	}
+	return false
+}
+
 func anyIn(mask []bool, from, n int) bool {
 	for i := from; i < from+n; i++ {
 		if mask[i] {
@@ -858,8 +1082,19 @@ func anyIn(mask []bool, from, n int) bool {
 	return false
 }
 
-// BuildMeta is build_connector_meta (scheduler.py:1846-1900).
+// BuildMeta is build_connector_meta (scheduler.py:2115-2196@4ba787ec). Its last manager call is
+// on_schedule_end, with the requests the step scheduled for the first time and those it preempted.
 func (s *Scheduler) BuildMeta(step sched.StepOutput) any {
+	end := ScheduleEnd{PreemptedReqIDs: step.Preempted}
+	for _, rq := range step.Reqs {
+		// scheduled_new_reqs: a request's first schedule. A resumed request is a cached one.
+		if st := s.reqs[rq.ID]; st != nil && !st.scheduled {
+			st.scheduled = true
+			if !rq.Resumed {
+				end.NewReqIDs = append(end.NewReqIDs, rq.ID)
+			}
+		}
+	}
 	s.updateReqStates(step)
 	for _, id := range step.Preempted {
 		if st := s.reqs[id]; st != nil {
@@ -884,7 +1119,7 @@ func (s *Scheduler) BuildMeta(step sched.StepOutput) any {
 			continue
 		}
 		st.signaled = true
-		s.manager.requestFinished(st.access)
+		s.manager.OnRequestFinished(st.access)
 		if len(st.jobs) == 0 {
 			delete(s.reqs, id)
 		}
@@ -892,11 +1127,13 @@ func (s *Scheduler) BuildMeta(step sched.StepOutput) any {
 	s.loadJobs = nil
 	s.flush = map[int]bool{}
 	s.allocated = map[int]bool{}
+	s.manager.OnScheduleEnd(end)
 	return m
 }
 
-// HasPendingPushWork is has_pending_push_work (scheduler.py:1902-1908).
-func (s *Scheduler) HasPendingPushWork() bool { return len(s.jobs) > 0 }
+// HasPendingPushWork is has_pending_push_work (scheduler.py:2198-2216@4ba787ec): jobs in flight,
+// or work the manager keeps of its own (a secondary tier's transfers or lookups).
+func (s *Scheduler) HasPendingPushWork() bool { return len(s.jobs) > 0 || s.manager.HasPendingWork() }
 
 // Completion is one job's count in OffloadingWorkerMetadata.completed_jobs: how many workers
 // reported it (offloading/common.py:76-104, merged across workers as KVOutputAggregator merges
@@ -921,9 +1158,9 @@ func (s *Scheduler) Completed(done []Completion) {
 		}
 		st := s.reqs[js.req]
 		if js.store {
-			s.manager.completeStore(js.keys)
+			s.manager.CompleteStore(js.keys, st.access, true)
 		} else {
-			s.manager.completeLoad(js.keys)
+			s.manager.CompleteLoad(js.keys, st.access)
 			for _, k := range js.keys {
 				delete(s.loading, k)
 			}
@@ -987,13 +1224,87 @@ type CPUChunk struct {
 	RefCnt int
 }
 
+// ExternalHitSources is get_external_cache_hit_sources (scheduler.py:1304-1349@4ba787ec): the
+// request's accepted external hit of external tokens, split by the CacheHitSource of the tier
+// each loaded key came from (get_load_source). Where keys overlap, the tier farthest from the
+// accelerator counts; tokens no loaded key covers are EXTERNAL_UNSPECIFIED. Keys are CacheHitSource
+// member names.
+func (s *Scheduler) ExternalHitSources(r *sched.Request, external int) map[string]int {
+	out := map[string]int{}
+	if external == 0 {
+		return out
+	}
+	st := s.reqs[r.ID]
+	start := st.localHit
+	end := start + external
+	type edge struct {
+		at, delta int
+		src       string
+	}
+	edges := []edge{{end, 0, unspecifiedSource}}
+	for _, lr := range st.loadRanges {
+		lo, hi := max(start, lr.lo), min(end, lr.hi)
+		if lo >= hi {
+			continue
+		}
+		src := s.manager.LoadSource(lr.key, st.access)
+		edges = append(edges, edge{lo, 1, src}, edge{hi, -1, src})
+	}
+	sort.SliceStable(edges, func(i, j int) bool {
+		a, b := edges[i], edges[j]
+		if a.at != b.at {
+			return a.at < b.at
+		}
+		if a.delta != b.delta {
+			return a.delta < b.delta
+		}
+		return sourceRank(a.src) < sourceRank(b.src)
+	})
+	active := map[string]int{}
+	pos := start
+	for _, e := range edges {
+		if e.at > pos {
+			tier, rank := unspecifiedSource, -1
+			for src, n := range active {
+				if n > 0 && sourceRank(src) > rank {
+					tier, rank = src, sourceRank(src)
+				}
+			}
+			out[tier] += e.at - pos
+		}
+		active[e.src] += e.delta
+		pos = e.at
+	}
+	return out
+}
+
+// unspecifiedSource is CacheHitSource.EXTERNAL_UNSPECIFIED.
+const unspecifiedSource = "EXTERNAL_UNSPECIFIED"
+
+// sourceRank is a CacheHitSource's order (vllm/v1/metrics/cache_hit_source.py:10-32@4ba787ec),
+// by member name, accelerator first; outermost is the highest. A source the enum does not name
+// ranks with EXTERNAL_UNSPECIFIED.
+func sourceRank(src string) int {
+	switch src {
+	case "DEVICE":
+		return 0
+	case "HOST":
+		return 1
+	case "P2P":
+		return 2
+	case "DISK":
+		return 3
+	}
+	return 4
+}
+
 // CPU is the CPU tier, least recent first, with its free and evictable chunk counts.
 func (s *Scheduler) CPU() (chunks []CPUChunk, free, evictable int) {
-	for _, k := range s.manager.lru.inRankOrder() {
-		c := s.manager.lru.chunks[k]
+	for _, k := range s.cpu.lru.inRankOrder() {
+		c := s.cpu.lru.chunks[k]
 		chunks = append(chunks, CPUChunk{Key: k, ID: c.id, RefCnt: c.refCnt})
 	}
-	return chunks, s.manager.numFree(), s.manager.numEvictable
+	return chunks, s.cpu.numFree(), s.cpu.numEvictable
 }
 
 // Group returns the key's group.

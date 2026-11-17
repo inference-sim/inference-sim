@@ -1,9 +1,11 @@
-# The oracle's full Python environment for CI (Linux x86_64, CPU only), every package pinned:
-# the environment CI run 40175821605 resolved from oracle/requirements.txt (its `pip freeze`,
-# uploaded as oracle-env.lock in the oracle-tier2 artifact). CI installs exactly this set with
-# --no-deps, so a transitive release cannot change a run; oracle/requirements.txt names the
-# direct pins it came from. Regenerate both together: install requirements.txt in a clean
-# python:3.12 venv with the PyTorch CPU index, then `pip freeze > oracle/requirements.lock`.
+# The oracle's full Python environment for CI (Linux x86_64, CPU only), every package pinned.
+# For vLLM v0.33.0 this is the v0.32.0 lock (CI run 40175821605's `pip freeze`) re-resolved with
+# `uv pip compile --python-version 3.12 --python-platform x86_64-unknown-linux-gnu` from
+# oracle/requirements.txt, taking the old pins as preferences, so only what v0.33.0 requires moved:
+# vllm, torch 2.14.0+cpu, torchvision 0.29.2+cpu and the new orjson. CI installs exactly this set
+# with --no-deps and then fails unless its `pip freeze` equals this file (oracle/check_lock.py), so
+# a transitive release cannot change a run. Regenerate both together: install requirements.txt in
+# a clean python:3.12 venv with the PyTorch CPU index, then `pip freeze > oracle/requirements.lock`.
 agent-detector==2.0.0
 aiohappyeyeballs==2.7.1
 aiohttp==3.14.5
@@ -92,6 +94,7 @@ opentelemetry-proto==1.45.1
 opentelemetry-sdk==1.45.1
 opentelemetry-semantic-conventions==0.66b1
 opentelemetry-semantic-conventions-ai==0.5.1
+orjson==3.13.0
 oss-harmony==0.0.11
 outlines_core==0.2.14
 packaging==26.3
@@ -140,10 +143,10 @@ supervisor==4.3.0
 sympy==1.14.0
 tiktoken==0.14.0
 tokenizers==0.23.3
-torch==2.13.0+cpu
+torch==2.14.0+cpu
 torchaudio==2.11.0+cpu
 torchcodec==0.17.0+cpu
-torchvision==0.28.0+cpu
+torchvision==0.29.2+cpu
 tqdm==4.70.1
 transformers==5.19.0
 triton @ https://github.com/triton-lang/triton-cpu/releases/download/v3.8.0/triton-3.8.0+cpu-cp312-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl#sha256=693f657501e6d791e889d5fd880d3b84a9bf4d8f3087dbb685534bb8533361fa
@@ -154,7 +157,7 @@ typing_extensions==4.16.0
 urllib3==2.8.0
 uvicorn==0.54.0
 uvloop==0.23.0
-vllm @ https://github.com/vllm-project/vllm/releases/download/v0.32.0/vllm-0.32.0+cpu-cp38-abi3-manylinux_2_39_x86_64.whl#sha256=e87a047cc5ab47eb14565dfcd060393876b33e913479982a56fca6fca73ed97a
+vllm @ https://github.com/vllm-project/vllm/releases/download/v0.33.0rc3/vllm-0.33.0+cpu-cp38-abi3-manylinux_2_39_x86_64.whl#sha256=0b50a79b0807e7e636b35b7a015c24f6f3555270aa1b7695ab8f7eb3f6b6fd21
 watchfiles==1.3.0
 websockets==17.3
 xgrammar==0.2.8

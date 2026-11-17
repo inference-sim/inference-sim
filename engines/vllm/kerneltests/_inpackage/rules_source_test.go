@@ -195,14 +195,14 @@ func TestEngramResidencyDefaultIsTheRules(t *testing.T) {
 	if ec := poolEngine(t, in).EngramConfig; ec != nil && ec.CPUOffload != nil {
 		t.Fatal("the fixture states cpu_offload; the default would not be read")
 	}
-	onHost := build(t, in).FixedBytes().Weights
+	onHost := vllmBuild(t, in).FixedBytes().Weights
 	in.Rules = hbmEngramRules{in.Rules}
-	byDefault := build(t, in).FixedBytes().Weights
+	byDefault := vllmBuild(t, in).FixedBytes().Weights
 
 	stated := fixtureInputs(t, v41)
 	off := false
 	editPoolEngine(t, &stated.Deployment.Pools[0], func(e *engineconfig.Engine) { e.EngramConfig = &engineconfig.EngramConfig{CPUOffload: &off} })
-	inHBM := build(t, stated).FixedBytes().Weights
+	inHBM := vllmBuild(t, stated).FixedBytes().Weights
 	if byDefault != inHBM || byDefault <= onHost {
 		t.Errorf("rules defaulting Engram to device memory hold %d bytes; stating cpu_offload: "+
 			"false holds %d and host-memory tables %d. The default was not read from the rules",

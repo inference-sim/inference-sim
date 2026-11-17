@@ -51,11 +51,11 @@ func dep8(t *testing.T, backend, mode string, mnbt int, entries map[string]float
 		in.Coefficients = append(append([]*coefficient.Set{}, in.Coefficients...), set)
 	}
 	setEngine(t, &in.Deployment.Pools[0], e)
-	return build(t, in)
+	return vllmBuild(t, in)
 }
 
-// moeLayers counts the MoE layers a step runs, the drafter's included while it speculates.
-func moeLayers(k *Kernel) int {
+// vllmMoeLayers counts the MoE layers a step runs, the drafter's included while it speculates.
+func vllmMoeLayers(k *Kernel) int {
 	n := 0
 	layers := k.plan.Layers
 	if d := k.plan.Draft; d != nil && k.speculating {
@@ -77,7 +77,7 @@ func priced(variant string, floorUS, rate float64) map[string]float64 {
 }
 
 // A measured DeepEP backend prices each MoE layer's dispatch and combine as its own floor
-// plus bytes over its own rate, not as NCCL's all-to-all (blis-latency-kernel#57): raising
+// plus bytes over its own rate, not as NCCL's all-to-all (https://github.com/inference-sim/blis-latency-kernel/issues/57): raising
 // the floor by 100 us raises a decode step by 100 us per MoE layer.
 func TestDeepEPDispatchIsPricedFromItsOwnMeasurement(t *testing.T) {
 	b := decodeBatch(32, 1, 20000)
@@ -85,11 +85,11 @@ func TestDeepEPDispatchIsPricedFromItsOwnMeasurement(t *testing.T) {
 		priced("deepep_low_latency", 100, 1e5))
 	hi := dep8(t, "deepep_low_latency", "FULL_AND_PIECEWISE", 256,
 		priced("deepep_low_latency", 200, 1e5))
-	want := time.Duration(moeLayers(lo)) * 100 * time.Microsecond
+	want := time.Duration(vllmMoeLayers(lo)) * 100 * time.Microsecond
 	got := hi.StepTime(b).NoOverlap - lo.StepTime(b).NoOverlap
 	if d := got - want; d < -time.Microsecond || d > time.Microsecond {
 		t.Errorf("100 us more floor moved the step by %v; %d MoE layers want %v",
-			got, moeLayers(lo), want)
+			got, vllmMoeLayers(lo), want)
 	}
 }
 
@@ -189,7 +189,7 @@ func TestTheLowLatencyBufferFollowsTheEnginesTokenBudget(t *testing.T) {
 	}
 	in := fixtureInputs(t, v41)
 	editEngine(t, &in, func(e *engineconfig.Engine) { e.All2AllBackend = "deepep_low_latency" })
-	if b := build(t, in).FixedBytes().CommBuffers; b != 0 {
+	if b := vllmBuild(t, in).FixedBytes().CommBuffers; b != 0 {
 		t.Errorf("tp8 dp1 dispatches nothing yet holds %d B of DeepEP buffer", b)
 	}
 }
@@ -208,7 +208,7 @@ func TestDeepEPLowLatencyTakesTheGraphPriceWhenTheStepIsCaptured(t *testing.T) {
 		return dep8(t, "deepep_low_latency", mode, 256, e)
 	}
 	lo, hi := with("FULL_AND_PIECEWISE", 50), with("FULL_AND_PIECEWISE", 150)
-	want := time.Duration(moeLayers(lo)) * 100 * time.Microsecond
+	want := time.Duration(vllmMoeLayers(lo)) * 100 * time.Microsecond
 	if got := hi.StepTime(b).NoOverlap - lo.StepTime(b).NoOverlap; got < want-time.Microsecond ||
 		got > want+time.Microsecond {
 		t.Errorf("100 us more graph floor moved a captured decode step by %v; want %v", got, want)

@@ -194,8 +194,8 @@ func TestTowerlessMultimodalConfigsNameTheCatalogModels(t *testing.T) {
 			multimodal[e.Name()] = true
 		}
 	}
-	if len(multimodal) < 15 {
-		t.Fatalf("%d catalog models have a vision_config, the pinned catalog has 15", len(multimodal))
+	if len(multimodal) < 18 {
+		t.Fatalf("%d catalog models have a vision_config, the pinned catalog has 18", len(multimodal))
 	}
 	listed := map[string]bool{}
 	for _, table := range []struct {
@@ -221,7 +221,11 @@ func TestTowerlessMultimodalConfigsNameTheCatalogModels(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			m := tower.Find(graph)
+			// The graph's text decoder, not its encoder section: since blis-substrate#301-#303 a
+			// catalog graph states a vision tower under `encoder:`, which the kernel prices only where
+			// the lowering reports an Encoder (blis-vllm#233, a later cut) and otherwise discloses by name
+			// as the assumption "encoder"; the claim of this list is about the decoder.
+			m := tower.Find(withoutEncoderSection(graph))
 			if table.tower && m == nil {
 				t.Errorf("%s: listed as pricing a tower, and the graph names none", name)
 			}
@@ -251,6 +255,7 @@ func TestTowerlessMultimodalConfigsNameTheCatalogModels(t *testing.T) {
 		}
 	}
 	for _, want := range []string{"minimax-m3", "minimax-m3-mxfp8", "minimax-m3-nvfp4", "kimi-k3", "deepseek-v4.1-flash", "glm-5.3-flash", "inkling",
+		"gemma-4-26b-a4b-it", "gemma-4-26b-a4b-it-fp8-dynamic", "gemma-4-31b-it",
 		"kimi-k2.5", "kimi-k2.6", "llama-4-scout-17b-16e-instruct-fp8-dynamic", "muse-spark-open-816b-a42b",
 		"muse-spark-open-816b-a42b-nvfp4", "qwen3.5-397b-a17b", "qwen3.5-397b-a17b-fp8", "qwen3.6-35b-a3b"} {
 		if !listed[want] {
@@ -264,4 +269,24 @@ func TestTowerlessMultimodalConfigsNameTheCatalogModels(t *testing.T) {
 
 func engineconfigStating(v bool) engineconfig.Engine {
 	return engineconfig.Engine{LanguageModelOnly: &v}
+}
+
+// withoutEncoderSection drops the top-level `encoder:` block of a catalog graph, where the vision
+// tower of a multimodal checkpoint is stated beside the text decoder's layer kinds.
+func withoutEncoderSection(graph []byte) []byte {
+	var out []string
+	skipping := false
+	for _, line := range strings.Split(string(graph), "\n") {
+		if strings.HasPrefix(line, "encoder:") {
+			skipping = true
+			continue
+		}
+		if skipping && line != "" && line[0] != ' ' && line[0] != '\t' && line[0] != '#' {
+			skipping = false
+		}
+		if !skipping {
+			out = append(out, line)
+		}
+	}
+	return []byte(strings.Join(out, "\n"))
 }

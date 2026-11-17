@@ -8,23 +8,47 @@ package latencykernel_test
 // longer computes. They read the catalog and registry blis-substrate embeds.
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-vllm/compat/lowering"
+	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-substrate/load"
-	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 )
 
 // --8<-- [start:repos]
 // The roots a scenario's names resolve against (its model, chip, fabric and coefficient
 // sets), and the engine rules its engine_version selects: vLLM's, from the engine model.
 var repos = latencykernel.Repos{
-	Scenarios:      "testdata",
-	Data:           exampleData(),
-	Rules:          latencykernel.RulesFrom(vllmrules.Lookup),
-	RulesVersions:  vllmrules.Versions,
-	RulesKind:      "vllm",
-	EngineSettings: vllmsettings.OfPool,
+	Scenarios:     "testdata",
+	Data:          exampleData(),
+	Rules:         latencykernel.RulesFrom(vllmrules.Lookup),
+	RulesVersions: vllmrules.Versions,
+	RulesKind:     "vllm",
+	DraftModel:    draftModelOf, // the drafter the pool's engine block names
+	Lower:         lowerPool,    // the pool's settings, resolved into its plan
+}
+
+// draftModelOf is the drafter a pool's engine block names, for Repos.DraftModel.
+func draftModelOf(dep *deployment.Deployment, pool int) (string, error) {
+	e, err := vllmsettings.Decode(dep.Pools[pool])
+	if err != nil || e.Speculative == nil {
+		return "", err
+	}
+	return e.Speculative.DraftModel, nil
+}
+
+// lowerPool is blis-vllm's lowering of the pool's engine block, for Repos.Lower.
+func lowerPool(in latencykernel.Inputs) (*plan.Lowered, error) {
+	s, err := vllmsettings.OfPool(in.Deployment, in.PoolIndex)
+	if err != nil {
+		return nil, err
+	}
+	return lowering.Lower(lowering.Input{Scenario: in.Scenario, Deployment: in.Deployment,
+		PoolIndex: in.PoolIndex, Model: in.Model, Draft: in.Draft, Chip: in.Chip, Rules: in.Rules,
+		Settings: s})
 }
 
 // exampleData is the catalog and registry this substrate release embeds, opened and checked by

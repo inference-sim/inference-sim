@@ -139,12 +139,15 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             scheduling_policy=cfg.get("scheduling_policy", "fcfs"),
         )
     # A fresh registry view per scenario: the logger unregisters earlier vllm:* collectors
-    # itself (unregister_vllm_metrics, vllm/v1/metrics/prometheus.py:56-69@5df63a72).
+    # itself (unregister_vllm_metrics, vllm/v1/metrics/prometheus.py:56-69@4ba787ec).
     logger = PrometheusStatLogger(scheduler.vllm_config, [0])
     frontend = OutputProcessor(None, log_stats=True)
 
     init_none_hash(sha256)
-    hasher = get_request_block_hasher(block_size, sha256)
+    # The engine core builds the hasher with vllm_config.num_hash_lookahead_tokens
+    # (vllm/v1/engine/core.py:220-230@4ba787ec), so an EAGLE-family drafter with prefix caching
+    # and no KV connector hashes the tokens past each block; the harness does the same.
+    hasher = get_request_block_hasher(block_size, sha256, scheduler.vllm_config.num_hash_lookahead_tokens)
     pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
     by_id = {r["id"]: r for r in sc["requests"]}
     sampled_so_far = {r["id"]: 0 for r in sc["requests"]}
@@ -197,11 +200,11 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         # An abort at this step, before the step runs. Two kinds, because only one reaches the
         # finish-reason counter:
         #  - "client" (the default): AsyncLLM.abort. The frontend's OutputProcessor forgets the
-        #    request (async_llm.py:918), then EngineCore finishes it in the scheduler
-        #    (core.py:554-559@5df63a72). No output carries the abort back, so the request is in
+        #    request (async_llm.py:955), then EngineCore finishes it in the scheduler
+        #    (core.py:564-569@4ba787ec). No output carries the abort back, so the request is in
         #    no vllm:request_success sample.
         #  - "engine": the engine ends the request itself (pause in abort mode, shutdown with a
-        #    zero timeout; core.py:1648-1651, 2089-2092@5df63a72). EngineCoreProc._send_abort_outputs,
+        #    zero timeout; core.py:1725-1728, 2209-2212@4ba787ec). EngineCoreProc._send_abort_outputs,
         #    vLLM's own method, queues an output with finish_reason ABORT, which the frontend
         #    processes while it still holds the request, so the abort is counted.
         client = sorted(rid for rid, r in by_id.items() if r.get("abort_step") == step

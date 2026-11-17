@@ -70,7 +70,7 @@ func TestEngineResolvesUnstatedBatchSettingsAt032(t *testing.T) {
 		{"both unstated", []string{"max_num_seqs: 256", "max_num_batched_tokens: 8192"}, 1024, 8192, false, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			m := openEdited(t, "0.32.0", c.drop...)
+			m := openEdited(t, "0.33.0", c.drop...)
 			e, err := m.Engine()
 			if err != nil {
 				t.Fatal(err)
@@ -111,7 +111,7 @@ func TestEngineResolvesTheTokenBudgetFromEnableChunkedPrefill(t *testing.T) {
 			if c.add != "" {
 				drop = append(drop, c.add)
 			}
-			m := openEdited(t, "0.32.0", drop...)
+			m := openEdited(t, "0.33.0", drop...)
 			e, err := m.Engine()
 			if err != nil {
 				t.Fatal(err)
@@ -129,7 +129,7 @@ func TestEngineResolvesTheTokenBudgetFromEnableChunkedPrefill(t *testing.T) {
 // An unstated block_size at 0.32.0 is still refused, naming the open issue (#68); at 0.31.0 the
 // block is returned as stated, and an unstated batch setting is refused, as before.
 func TestEngineRefusesWhatItDoesNotResolve(t *testing.T) {
-	_, err := openEdited(t, "0.32.0", "block_size: 64").Engine()
+	_, err := openEdited(t, "0.33.0", "block_size: 64").Engine()
 	if err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/68") {
 		t.Errorf("0.32.0 without block_size: %v, want a refusal citing blis-vllm#68", err)
 	}
@@ -211,9 +211,7 @@ func TestEngineResolvesAnUnstatedBlockSizeAt032(t *testing.T) {
 				t.Errorf("block_size source %q: names the FA3 assumption: %t", src, assumed)
 			}
 			// The kernel prices the size Engine reports.
-			if k, ok := m.Kernel().(*latencykernel.Kernel); !ok {
-				t.Errorf("the kernel is a %T, not the cost model", m.Kernel())
-			} else if got := k.Engine().BlockSize; got != c.size {
+			if got := m.Lowered().Plan.PageTokens; int(got) != c.size {
 				t.Errorf("the kernel prices block_size %d, Engine reports %d", got, c.size)
 			}
 		})
@@ -288,7 +286,7 @@ func TestEngineResolvesAnUnstatedMemoryUtilization(t *testing.T) {
 			if src := m.EngineSources()["gpu_memory_utilization"]; !strings.Contains(src, c.source) {
 				t.Errorf("source %q, want it to cite %s", src, c.source)
 			}
-			if k, ok := m.Kernel().(*latencykernel.Kernel); !ok || k.Engine().GPUMemoryUtilization != 0.92 {
+			if m.Lowered().Plan.MemoryFraction != 0.92 {
 				t.Errorf("the kernel does not price the resolved 0.92")
 			}
 			// The KV budget is sized from it: a stated 0.92 gives the same budget.
@@ -308,7 +306,7 @@ func TestEngineResolvesAnUnstatedMemoryUtilization(t *testing.T) {
 // A stated gpu_memory_utilization is kept and reported as stated; a stated value outside (0, 1]
 // is still refused, not replaced by the default.
 func TestEngineKeepsOrRefusesAStatedMemoryUtilization(t *testing.T) {
-	m, err := openWithMemoryUtilization(t, "0.32.0", "0.85")
+	m, err := openWithMemoryUtilization(t, "0.33.0", "0.85")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,13 +315,13 @@ func TestEngineKeepsOrRefusesAStatedMemoryUtilization(t *testing.T) {
 	}
 	// Document validation refuses a stated value outside [0, 1] before a model opens.
 	for _, v := range []string{"1.5", "-0.1"} {
-		if _, err := openWithMemoryUtilization(t, "0.32.0", v); err == nil {
+		if _, err := openWithMemoryUtilization(t, "0.33.0", v); err == nil {
 			t.Errorf("stated %s opened, want it refused", v)
 		}
 	}
 	// And the resolver never replaces such a value with the default, whatever reaches it: only
 	// 0, which the schema reads as unset (rules/engineconfig/validate.go:65), is replaced.
-	in := latencykernel.Inputs{Scenario: &scenario.Scenario{EngineVersion: "0.32.0"},
+	in := latencykernel.Inputs{Scenario: &scenario.Scenario{EngineVersion: "0.33.0"},
 		Deployment: &deployment.Deployment{Pools: []deployment.Pool{{}}}, Chip: &hardware.Chip{MemoryGiB: 141}, Model: &model.Graph{}}
 	for _, c := range []struct {
 		util float64
@@ -418,15 +416,11 @@ func TestKernelPricesTheEngineSettingsEngineReportsInBatchedDP(t *testing.T) {
 	if e.MaxNumSeqs != 256 || e.MaxNumBatchedTokens != 256 {
 		t.Fatalf("Engine: max_num_seqs %d, max_num_batched_tokens %d; want the batched-DP 256 and 256", e.MaxNumSeqs, e.MaxNumBatchedTokens)
 	}
-	k, ok := m.Kernel().(*latencykernel.Kernel)
-	if !ok {
-		t.Fatalf("the kernel is a %T, not the cost model", m.Kernel())
-	}
-	got := k.Engine()
-	if got.BlockSize != e.BlockSize || got.GPUMemoryUtilization != e.GPUMemoryUtilization ||
-		got.MaxNumSeqs != e.MaxNumSeqs || got.MaxNumBatchedTokens != e.MaxNumBatchedTokens {
+	got := m.Lowered().Plan
+	if int(got.PageTokens) != e.BlockSize || got.MemoryFraction != e.GPUMemoryUtilization ||
+		got.Batch.Requests != e.MaxNumSeqs || int(got.Batch.Tokens) != e.MaxNumBatchedTokens {
 		t.Errorf("the kernel prices block_size %d, gpu_memory_utilization %v, max_num_seqs %d, max_num_batched_tokens %d; "+
-			"Engine reports %d, %v, %d, %d", got.BlockSize, got.GPUMemoryUtilization, got.MaxNumSeqs, got.MaxNumBatchedTokens,
+			"Engine reports %d, %v, %d, %d", got.PageTokens, got.MemoryFraction, got.Batch.Requests, got.Batch.Tokens,
 			e.BlockSize, e.GPUMemoryUtilization, e.MaxNumSeqs, e.MaxNumBatchedTokens)
 	}
 }
@@ -550,8 +544,8 @@ func TestIndexerKVDTypeIsReadForMiniMaxM3Only(t *testing.T) {
 // rules/v0_32/testdata/vllm_indexer_kv_dtype.json is that function's output). auto and fp8 are the
 // 132-byte record the catalog graph states, so they are accepted and leave the KV layers unchanged;
 // bf16 and nvfp4 are refused with vLLM's reason, fp8_e4m3 is not a member of the dtype's type, and
-// mxfp4 is vLLM's refusal below SM10x and, on SM10x, the kernel's: its 68-byte record is not what
-// the graph (one cache dtype per index record) prices.
+// mxfp4 is vLLM's refusal below SM10x and, on SM10x, accepted with its 68-byte record in place of
+// every 132-byte one (lowerIndexerKV).
 func TestIndexerKVDTypeOnDeepSeekV4IsVLLMsOwnResolution(t *testing.T) {
 	open := func(fixture, chip, dtype string) ([]KVLayerRun, error) {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", fixture))
@@ -585,9 +579,8 @@ func TestIndexerKVDTypeOnDeepSeekV4IsVLLMsOwnResolution(t *testing.T) {
 		return m.KVLayers()
 	}
 	const (
-		kernel = "latency kernel keys the index record by one cache dtype"
-		vllm   = "is not supported by the DeepSeek sparse indexer (expected one of ('fp8', 'mxfp4'))."
-		sm10   = "requires Blackwell datacenter GPUs"
+		vllm = "is not supported by the DeepSeek sparse indexer (expected one of ('fp8', 'mxfp4'))."
+		sm10 = "requires Blackwell datacenter GPUs"
 	)
 	for _, f := range []struct {
 		name, fixture, chip string
@@ -625,8 +618,28 @@ func TestIndexerKVDTypeOnDeepSeekV4IsVLLMsOwnResolution(t *testing.T) {
 				{"bf16", []string{vllm}},
 				{"nvfp4", []string{vllm}},
 				{"fp8_e4m3", []string{"Input should be 'auto', 'bf16', 'fp8', 'mxfp4' or 'nvfp4'"}},
-				{"mxfp4", map[bool][]string{false: {sm10}, true: {kernel, "68 bytes"}}[f.blackwell]},
+				{"mxfp4", []string{sm10}},
 			} {
+				if c.dtype == "mxfp4" && f.blackwell {
+					got, err := open(f.fixture, f.chip, c.dtype)
+					if err != nil {
+						t.Errorf("indexer_kv_dtype mxfp4: %v", err)
+						continue
+					}
+					n68, n132 := 0, 0
+					for _, r := range got {
+						if r.Spec == "mla" && r.HeadSize == 68 {
+							n68++
+						}
+						if r.Spec == "mla" && r.HeadSize == 132 {
+							n132++
+						}
+					}
+					if n68 != index || n132 != 0 {
+						t.Errorf("indexer_kv_dtype mxfp4: %d 68-byte and %d 132-byte index runs, want %d and 0", n68, n132, index)
+					}
+					continue
+				}
 				_, err := open(f.fixture, f.chip, c.dtype)
 				if err == nil {
 					t.Errorf("indexer_kv_dtype %s: accepted", c.dtype)

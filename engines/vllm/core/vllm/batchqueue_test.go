@@ -94,7 +94,7 @@ func TestBatchQueueAgainstVLLM(t *testing.T) {
 			readT3(t, filepath.Join("..", "engine", "testdata", "golden", name+".json"), &want)
 			got := driveBatchQueue(t, sc)
 			if d := batchQueueDivergence(want, got); d != "" {
-				t.Errorf("earliest divergence from vLLM v0.32.0's step_with_batch_queue: %s", d)
+				t.Errorf("earliest divergence from vLLM v0.33.0's step_with_batch_queue: %s", d)
 			}
 		})
 	}

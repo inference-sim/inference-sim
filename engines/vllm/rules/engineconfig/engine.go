@@ -40,6 +40,10 @@ type Engine struct {
 	AllReduceBackend string `yaml:"allreduce_backend,omitempty"`
 	// CUDAGraphMode selects capture strategy, which sets the host launch term.
 	CUDAGraphMode string `yaml:"cudagraph_mode,omitempty"`
+	// EnforceEager is model_config.enforce_eager: vLLM sets compilation mode NONE and cudagraph
+	// mode NONE whatever was stated (vllm/config/vllm.py:1766-1769, :2004-2009 at 4ba787ec9959),
+	// so no step replays a graph and none is fused by torch.compile. False is the default.
+	EnforceEager bool `yaml:"enforce_eager,omitempty"`
 	// MaxCUDAGraphCaptureSize is compilation_config.max_cudagraph_capture_size: the
 	// largest step, in tokens, a CUDA graph is captured for. A larger step runs eager,
 	// so with DSpark at K=5, where a decode step verifies 6 tokens per request, a size of
@@ -353,7 +357,7 @@ type KVEvents struct {
 	Topic string `yaml:"topic,omitempty"`
 }
 
-// kvEventPublishers are the publishers vLLM v0.32.0 accepts (vllm/config/kv_events.py:18@5df63a72).
+// kvEventPublishers are the publishers vLLM v0.32.0 accepts (vllm/config/kv_events.py:18@4ba787ec).
 var kvEventPublishers = map[string]bool{"null": true, "zmq": true}
 
 // Speculative is the draft configuration. The method name is engine-version data,
@@ -367,7 +371,7 @@ type Speculative struct {
 	NumSpecTokens int    `yaml:"num_spec_tokens"`
 	// DraftModel names the catalog model whose graph is the drafter, where the drafter is a
 	// separate checkpoint, as an EAGLE3 head is: vLLM's speculative_config.model
-	// (vllm/config/speculative.py:396@5df63a72; blis-schemas#97). Empty means the target
+	// (vllm/config/speculative.py:396@5df63a72; https://github.com/inference-sim/blis-schemas/issues/97). Empty means the target
 	// graph's own speculator.
 	DraftModel string `yaml:"draft_model,omitempty"`
 	// KVCacheDType is the drafter's KV cache format where it differs from the target's,

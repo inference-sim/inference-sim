@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/sched/scheduler.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/v1/core/sched/scheduler.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // Also vllm/v1/kv_cache_interface.py (get_mamba_prefill_checkpoint_position and
 // is_mamba_prefill_checkpoint_valid, :1110-1148).
 
@@ -9,30 +9,34 @@ package sched
 import "github.com/inference-sim/blis-vllm/core/kv"
 
 // MambaSplitConfig is what Scheduler.__init__ reads to set up the Mamba block-aligned split
-// (vllm/v1/core/sched/scheduler.py:375-410@5df63a72), as plain inputs.
+// (vllm/v1/core/sched/scheduler.py:430-465@4ba787ec), as plain inputs.
 type MambaSplitConfig struct {
 	// Groups are the KV cache groups (kv_cache_config.kv_cache_groups); the Mamba ones have
 	// Kind kv.Mamba and carry MambaCacheMode, MambaCheckpointBlocks, MambaCheckpointAlignment.
 	Groups []kv.Group
-	// BlockSize is cache_config.block_size, the engine's block size (:451).
+	// BlockSize is cache_config.block_size, the engine's block size (:554).
 	BlockSize int
-	// SchedulerBlockSize is the Scheduler's self.block_size (:209), which differs from BlockSize
+	// SchedulerBlockSize is the Scheduler's self.block_size (:218), which differs from BlockSize
 	// only under context parallelism; 0 means BlockSize.
 	SchedulerBlockSize int
-	// HashBlockSize is hash_block_size (:325-327).
+	// HashBlockSize is hash_block_size (:348-350).
 	HashBlockSize int
-	// MaxNumScheduledTokens is max_num_scheduled_tokens, the per-step token budget (:137, :508).
+	// MaxNumScheduledTokens is max_num_scheduled_tokens, the per-step token budget (:139, :613).
 	MaxNumScheduledTokens int
 	// LongPrefillTokenThreshold is scheduler_config.long_prefill_token_threshold as configured
-	// (:509), not the per-step threshold schedule() derives.
+	// (:614), not the per-step threshold schedule() derives.
 	LongPrefillTokenThreshold int
-	// EagleBlockDrop is use_eagle_block_drop (:316).
+	// EagleBlockDrop is use_eagle_block_drop (:331).
 	EagleBlockDrop bool
+	// HashLookahead is num_hash_lookahead_tokens (scheduler.py:342-345@4ba787ec): the tokens past
+	// each block its hash covers, which the prompt's checkpoint must leave uncomputed
+	// (get_mamba_prefill_checkpoint_position, vllm/v1/kv_cache_interface.py:1169-1186@4ba787ec).
+	HashLookahead int
 	// PartialHashHits is kv_cache_manager.coordinator.enable_partial_hash_hits
-	// (kv_cache_coordinator.py:684-692@5df63a72), which the KV manager decides.
+	// (kv_cache_coordinator.py:694-702@4ba787ec), which the KV manager decides.
 	PartialHashHits bool
 	// SharedPrefixCheckpoint is kv_cache_manager.mamba_shared_prefix_checkpoint
-	// (kv_cache_manager.py:186-191@5df63a72): enable_mamba_shared_prefix_checkpoint, and an
+	// (kv_cache_manager.py:188-193@4ba787ec): enable_mamba_shared_prefix_checkpoint, and an
 	// eagle group, partial hash hits, and no re-prefillable tail. It is false by default.
 	SharedPrefixCheckpoint bool
 }
@@ -122,10 +126,10 @@ func (m *MambaSplit) Split(r MambaSplitRequest, numNew, newLocal, external int) 
 	if m.partialCacheHit {
 		ckptBlockSize = m.cfg.HashBlockSize
 	}
-	lastCachePosition := mambaPrefillCheckpointPosition(r.NumTokens, blockSize, m.cfg.EagleBlockDrop)
+	lastCachePosition := mambaPrefillCheckpointPosition(r.NumTokens, blockSize, m.cfg.EagleBlockDrop, m.cfg.HashLookahead)
 
 	end := start + numNew
-	checkpointPosition := mambaPrefillCheckpointPosition(prefillEnd, ckptBlockSize, m.cfg.EagleBlockDrop)
+	checkpointPosition := mambaPrefillCheckpointPosition(prefillEnd, ckptBlockSize, m.cfg.EagleBlockDrop, m.cfg.HashLookahead)
 	useInternalCheckpoint := m.hasCheckpointBlocks && end >= prefillEnd &&
 		mambaPrefillCheckpointValid(start, end, checkpointPosition, m.cfg.HashBlockSize, blockSize, m.alignment)
 	if useInternalCheckpoint {
@@ -147,7 +151,7 @@ func (m *MambaSplit) Split(r MambaSplitRequest, numNew, newLocal, external int) 
 	nextBlockBoundary := (start/blockSize + 1) * blockSize
 	tailBoundary := 0
 	if m.partialCacheHit && !useInternalCheckpoint {
-		tailBoundary = mambaPrefillCheckpointPosition(r.NumPrompt, m.cfg.HashBlockSize, m.cfg.EagleBlockDrop)
+		tailBoundary = mambaPrefillCheckpointPosition(r.NumPrompt, m.cfg.HashBlockSize, m.cfg.EagleBlockDrop, m.cfg.HashLookahead)
 	}
 	junction := r.SharedPrefixBoundary
 	// Block-floored: a sub-block junction's state is not separately cacheable. Python's //
@@ -187,11 +191,13 @@ func floorDiv(a, b int) int {
 }
 
 // mambaPrefillCheckpointPosition is get_mamba_prefill_checkpoint_position
-// (vllm/v1/kv_cache_interface.py:1110-1122@5df63a72). Unexported and local to this file: the
-// KV side may carry the same function; keep one.
-func mambaPrefillCheckpointPosition(numTokens, hashBlockSize int, dropEagleBlock bool) int {
-	// Without EAGLE, leave one token to recompute on resend; EAGLE's block drop already does.
-	proofLimit := numTokens - 1
+// (vllm/v1/kv_cache_interface.py:1169-1186@4ba787ec). Unexported and local to this file: the
+// KV side may carry the same function; keep one. hashLookahead is num_hash_lookahead_tokens.
+func mambaPrefillCheckpointPosition(numTokens, hashBlockSize int, dropEagleBlock bool, hashLookahead int) int {
+	// Leave tokens for logits recomputation and for the checkpoint's hash, which covers the
+	// hashLookahead tokens after it; EAGLE's block drop already leaves tokens to recompute.
+	// v0.32.0 left one token whatever the lookahead (:1110-1121@5df63a72).
+	proofLimit := numTokens - max(1, hashLookahead)
 	if dropEagleBlock {
 		proofLimit = numTokens
 	}
@@ -203,7 +209,7 @@ func mambaPrefillCheckpointPosition(numTokens, hashBlockSize int, dropEagleBlock
 }
 
 // mambaPrefillCheckpointValid is is_mamba_prefill_checkpoint_valid
-// (vllm/v1/kv_cache_interface.py:1125-1148@5df63a72): whether a backend can export the
+// (vllm/v1/kv_cache_interface.py:1189-1212@4ba787ec): whether a backend can export the
 // checkpoint in this query. alignment 0 stands for None. Unexported and local to this file.
 func mambaPrefillCheckpointValid(queryStart, queryEnd, checkpointPosition, hashBlockSize, mambaBlockSize, alignment int) bool {
 	if alignment <= 0 {

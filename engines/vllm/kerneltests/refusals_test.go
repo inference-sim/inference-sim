@@ -66,7 +66,7 @@ func TestWhatTheKernelCannotPriceItRefuses(t *testing.T) {
 		edit    func(*Inputs)
 		want    bool
 	}{
-		// Pipeline parallelism is priced per stage (blis-latency-kernel#90), on two nodes and
+		// Pipeline parallelism is priced per stage (https://github.com/inference-sim/blis-latency-kernel/issues/90), on two nodes and
 		// one alike; beside data parallelism it is still refused.
 		{"pp 1 on two nodes", dcpMLAFixture, twoNodes(1, 16), true},
 		{"pp 2 on two nodes", dcpMLAFixture, twoNodes(2, 8), true},

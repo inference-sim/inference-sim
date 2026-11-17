@@ -11,9 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 
 	"github.com/inference-sim/blis-vllm/compat/quantization"
+	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	"github.com/inference-sim/blis-vllm/internal/substratedata"
 )
 
@@ -165,15 +166,15 @@ func TestM3EveryValueVLLMListsIsPricedOrRefusedAsVLLMDoes(t *testing.T) {
 func TestM3LoweringStatesThePerLayerLayout(t *testing.T) {
 	for _, c := range []struct {
 		model, stated string
-		want          enginesettings.ServedWeights
+		want          plan.WeightLayout
 	}{
-		{"minimax-m3-mxfp8", "mxfp8", enginesettings.ServedWeights{Linear: "fp8", LinearScaleElements: 32,
+		{"minimax-m3-mxfp8", "mxfp8", plan.WeightLayout{Linear: "fp8", LinearScaleElements: 32,
 			RoutedExperts: "fp8", Router: "fp32", Head: "bf16", Embedding: "bf16"}},
-		{"minimax-m3-nvfp4", "modelopt_mixed", enginesettings.ServedWeights{Linear: "fp8", LinearScaleElements: 32,
+		{"minimax-m3-nvfp4", "modelopt_mixed", plan.WeightLayout{Linear: "fp8", LinearScaleElements: 32,
 			RoutedExperts: "nvfp4", Router: "fp32", Head: "bf16", Embedding: "bf16"}},
 	} {
 		g := mustOpenM3(t, c.model, "h200", c.stated).graph
-		s := enginesettings.Settings{Quantization: c.stated}
+		s := vllmsettings.Settings{Quantization: c.stated}
 		if _, err := lowerQuantization(g, c.stated, &s); err != nil {
 			t.Fatalf("%s: %v", c.model, err)
 		}

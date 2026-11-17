@@ -15,9 +15,11 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+
+	"github.com/inference-sim/blis-vllm/internal/upstream"
 )
 
-// The adapter against vLLM v0.32.0 itself. Each tier-2 scenario whose requests all arrive at
+// The adapter against the vLLM release this build models (internal/upstream). Each tier-2 scenario whose requests all arrive at
 // once, and whose configuration the factory builds, is driven through the engine.Engine
 // contract (Add, then Schedule and Complete one batch at a time) and compared step by step
 // with the trace vLLM's own Scheduler produced for it (core/sched/testdata/golden): the tokens
@@ -115,14 +117,14 @@ func TestAdapterAgainstVLLM(t *testing.T) {
 			}
 			sum := sha256.Sum256(raw)
 			if want.Provenance.ScenarioSHA256 != hex.EncodeToString(sum[:]) ||
-				want.Provenance.VLLMCommit != "5df63a7203cdb9328d824a27b682e77c7b9928be" ||
+				want.Provenance.VLLMCommit != upstream.Commit ||
 				strings.SplitN(want.Provenance.VLLMVersion, "+", 2)[0] != Version ||
 				want.Provenance.MockVersion != mockVersion {
 				t.Fatalf("golden provenance %+v does not match this scenario, vLLM %s and mock %s",
 					want.Provenance, Version, mockVersion)
 			}
 			if d := adapterDivergence(t, sc, want); d != "" {
-				t.Errorf("earliest divergence from vLLM v0.32.0: %s", d)
+				t.Errorf("earliest divergence from vLLM v0.33.0: %s", d)
 			}
 		})
 	}

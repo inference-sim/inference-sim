@@ -75,7 +75,7 @@ func TestAFixtureStatingOnlyTheEngineBlockFindsItsRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := `engine_version: "0.32.0"`
+	old := `engine_version: "0.33.0"`
 	if !strings.Contains(string(src), old) {
 		t.Fatalf("the fixture no longer states %s; update this test", old)
 	}

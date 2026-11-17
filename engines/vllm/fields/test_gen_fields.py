@@ -264,6 +264,83 @@ class GenFieldsTest(unittest.TestCase):
         code, _, _ = self.run_main(self.src, self.status_path, "--value-classes", path)
         self.assertIn("max_num_seqs", str(code))
 
+    def move_cli_args(self):
+        old = os.path.join(self.src, "vllm/entrypoints/launchers/cli_args.py")
+        new = os.path.join(self.src, "vllm/entrypoints/common/cli_args.py")
+        os.makedirs(os.path.dirname(new), exist_ok=True)
+        os.rename(old, new)
+
+    def test_frontend_args_are_read_where_the_release_keeps_cli_args(self):
+        # v0.33.0 moved cli_args.py from vllm/entrypoints/launchers/ to vllm/entrypoints/common/.
+        self.move_cli_args()
+        self.assertEqual(gen_fields.config_names(self.src), CONFIG)
+
+    def test_a_tree_with_no_or_two_cli_args_stops_the_generator(self):
+        self.write({"vllm/entrypoints/common/cli_args.py": "class FrontendArgs:\n    port: int = 1\n"})
+        with self.assertRaises(SystemExit) as e:
+            gen_fields.config_names(self.src)
+        self.assertIn("exactly one", str(e.exception))
+        os.remove(os.path.join(self.src, "vllm/entrypoints/common/cli_args.py"))
+        os.remove(os.path.join(self.src, "vllm/entrypoints/launchers/cli_args.py"))
+        with self.assertRaises(SystemExit) as e:
+            gen_fields.config_names(self.src)
+        self.assertIn("none", str(e.exception))
+
+    # v0.33.0's Rust front end reads variables through a closure it passes to a method
+    # (rust/src/cmd/src/cli.rs:636-661, 951) and through a helper's &str parameter
+    # (rust/src/text/src/lower/token_ids.rs:63-82).
+    RUST_FORWARD = (
+        "struct Args { k: Vec<String> }\n"
+        "impl Args {\n"
+        "    fn apply_env_fallbacks(\n"
+        "        &mut self,\n"
+        "        lookup: impl Fn(&str) -> Option<String>,\n"
+        "    ) -> Result<(), String> {\n"
+        "        if let Some(v) = lookup(\"R_FWD_A\") { self.k.push(v); }\n"
+        "        // lookup(\"W_FWD_COMMENT\")\n"
+        "        if let Some(v) = lookup(\"R_FWD_B\") { self.k.push(v); }\n"
+        "        Ok(())\n"
+        "    }\n"
+        "}\n"
+        "fn parse(mut args: Args) -> Result<Args, String> {\n"
+        "    args.apply_env_fallbacks(|name| std::env::var(name).ok())?;\n"
+        "    Ok(args)\n"
+        "}\n")
+    RUST_PARAM = (
+        "const LIMIT_ENV: &str = \"R_PARAM_CONST\";\n"
+        "fn env_limit(name: &str, default: usize) -> usize {\n"
+        "    std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)\n"
+        "}\n"
+        "fn a() -> usize { env_limit(LIMIT_ENV, 1) }\n"
+        "fn b() -> usize {\n"
+        "    env_limit(\n"
+        "        \"R_PARAM_LITERAL\",\n"
+        "        2,\n"
+        "    )\n"
+        "}\n")
+
+    def test_a_rust_closure_that_forwards_to_the_environment_reads_each_literal_it_is_called_with(self):
+        reads, _ = self.reads({"rust/src/cmd/src/fwd.rs": self.RUST_FORWARD})
+        self.assertEqual(reads["R_FWD_A"], ["rust/src/cmd/src/fwd.rs:7"])
+        self.assertEqual(reads["R_FWD_B"], ["rust/src/cmd/src/fwd.rs:9"])
+        self.assertNotIn("W_FWD_COMMENT", reads)
+        self.assertNotIn("name", reads)
+
+    def test_a_forwarded_lookup_called_with_a_variable_stops_the_generator(self):
+        with self.assertRaises(SystemExit) as e:
+            self.reads({"rust/src/cmd/src/fwd.rs": self.RUST_FORWARD.replace('lookup(\"R_FWD_B\")', "lookup(other)")})
+        self.assertIn("fwd.rs:9", str(e.exception))
+
+    def test_a_rust_read_through_a_str_parameter_reads_what_each_call_passes(self):
+        reads, _ = self.reads({"rust/src/text/src/lim.rs": self.RUST_PARAM})
+        self.assertEqual(reads["R_PARAM_CONST"], ["rust/src/text/src/lim.rs:5"])
+        self.assertEqual(reads["R_PARAM_LITERAL"], ["rust/src/text/src/lim.rs:7"])
+
+    def test_a_str_parameter_read_whose_call_passes_a_variable_stops_the_generator(self):
+        with self.assertRaises(SystemExit) as e:
+            self.reads({"rust/src/text/src/lim.rs": self.RUST_PARAM.replace("env_limit(LIMIT_ENV, 1)", "env_limit(s, 1)")})
+        self.assertIn("lim.rs:5", str(e.exception))
+
     def test_a_field_vllm_reads_without_a_status_is_refused(self):
         del self.status["fields"]["config:block_size"]
         self.write_status()

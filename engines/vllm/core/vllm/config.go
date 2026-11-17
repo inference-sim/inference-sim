@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/config/vllm.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/config/vllm.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // Also vllm/config/scheduler.py, vllm/config/cache.py and vllm/config/lora.py (the defaults a
 // launch inherits).
 
@@ -22,7 +22,7 @@ import (
 	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
-	"github.com/inference-sim/blis-vllm/rules/v0_32"
+	"github.com/inference-sim/blis-vllm/rules/v0_33"
 )
 
 // Config is the engine block of one pool, as the simulator hands it over in engine.Spec.Config.
@@ -96,6 +96,10 @@ type Config struct {
 	// states it (offload: connector, tiers, eviction_policy); a caller restates it here with the
 	// bytes a block its memory model sizes. Unstated is no offload.
 	KVOffload *offloadConfig `yaml:"kv_offload,omitempty"`
+	// SchedulerCls is vLLM's scheduler_cls, the qualified name it resolves the scheduler class from
+	// (vllm/config/scheduler.py:177, 228-253@5df63a72). The engine runs vLLM's own Scheduler or
+	// AsyncScheduler, so a stated one is refused (refuseNotVisible).
+	SchedulerCls string `yaml:"scheduler_cls,omitempty"`
 
 	// statedZero names the scheduler fields the block stated as 0 (max_num_seqs,
 	// max_num_batched_tokens). The settings struct reads 0 as unstated, and a block that states 0
@@ -191,6 +195,10 @@ const maxModelLenIssue = "https://github.com/inference-sim/blis-vllm/issues/69"
 func resolve(c Config) (settings, error) {
 	var s settings
 	e := c.Engine
+	// Code BLIS does not have is refused first: the reason takes precedence (design §11.4).
+	if err := refuseNotVisible(c); err != nil {
+		return s, err
+	}
 	if err := refuseUnmodelled(e, c.DataParallelSize > 1); err != nil {
 		return s, err
 	}
@@ -347,13 +355,20 @@ func resolve(c Config) (settings, error) {
 		return s, err
 	}
 	async := resolveAsync(e.AsyncScheduling, method, pp, v2)
-	if async && e.AsyncScheduling != nil && !asyncSpecMethod(method) {
-		// vLLM refuses a stated async_scheduling with a drafter that is not EAGLE-family, ngram_gpu,
-		// draft_model, DSpark or DFlash (vllm/config/vllm.py:1566-1576@5df63a72); the unstated
+	if async && e.AsyncScheduling != nil && !v2 && !asyncSpecMethod(method) {
+		// vLLM v0.33.0 refuses a stated async_scheduling with a drafter that is not EAGLE-family,
+		// ngram_gpu, draft_model, DSpark or DFlash only on the V1 model runner; the V2 runner takes
+		// any (v1_async_sched_incompat, vllm/config/vllm.py:1651-1680@4ba787ec). The unstated
 		// default falls back to synchronous instead (resolveAsync).
-		return s, fmt.Errorf("vllm: async_scheduling is only supported with EAGLE, MTP, draft_model, ngram_gpu, "+
-			"DSpark or DFlash speculative decoding, and speculative method %q is not one of them "+
-			"(vllm/config/vllm.py:1566-1576@5df63a72)", method)
+		return s, fmt.Errorf("vllm: async scheduling is not supported by the V1 model runner with %s-based "+
+			"speculative decoding: on V1 it is only supported with EAGLE, MTP, draft_model, ngram_gpu, DSpark or "+
+			"DFlash drafters (vllm/config/vllm.py:1651-1680@4ba787ec)", method)
+	}
+	if async && v2 && !asyncSpecMethod(method) {
+		// The V2 runner runs async scheduling with this drafter, stated or resolved, which is not
+		// diff-tested here: async with drafts is checked for MTP and DSpark only.
+		return s, fmt.Errorf("vllm: async scheduling with a %s drafter on the V2 model runner is not modelled (%s186)",
+			method, issueBase)
 	}
 	if err := engine.CheckConfig(pp, async, v2); err != nil {
 		return s, fmt.Errorf("vllm: %w", err)
@@ -377,7 +392,7 @@ func resolve(c Config) (settings, error) {
 		maxLoRAs = e.MaxLoRAs
 	}
 	groups, err := KVGroups(c.KVLayers, e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager,
-		trailingDrafter(method, c.KVLayers))
+		TagsDraftGroups(method))
 	if err != nil {
 		return settings{}, err
 	}
@@ -421,6 +436,11 @@ func resolve(c Config) (settings, error) {
 	}
 	s.connector, s.pp = c.KVTransfer, pp
 	s.offload, s.specMethod = c.KVOffload, method
+	if s.offload != nil {
+		o := *s.offload
+		o.env = e.Env
+		s.offload = &o
+	}
 	if c.Placement != nil {
 		if err := c.Placement.Validate(); err != nil {
 			return settings{}, fmt.Errorf("vllm: placement: %w", err)
@@ -591,27 +611,28 @@ func resolveV2Runner(c Config) (bool, error) {
 		"vLLM resolves it from whether the image has Triton (vllm/config/vllm.py:720-737@5df63a72)")
 }
 
-// asyncSpecMethod is whether async scheduling runs with a drafter of this method: none, an
-// EAGLE-family method, ngram_gpu, draft_model, DSpark or DFlash (vllm/config/vllm.py:1566-1576).
+// asyncSpecMethod is whether the V1 model runner runs async scheduling with a drafter of this
+// method: none, an EAGLE-family method (EagleModelTypes: eagle, eagle3, extract_hidden_states, the
+// MTP types, DFlash), ngram_gpu, draft_model or DSpark (vllm/config/vllm.py:1651-1662@4ba787ec;
+// vllm/config/speculative.py:68-73@4ba787ec). The V2 runner runs it with any.
 func asyncSpecMethod(method string) bool {
 	switch method {
-	case "", "eagle", "eagle3", "mtp", "dflash", "dspark", "draft_model", "ngram_gpu":
+	case "", "eagle", "eagle3", "extract_hidden_states", "mtp", "dflash", "dspark", "draft_model", "ngram_gpu":
 		return true
 	}
 	return false
 }
 
 // resolveAsync is SchedulerConfig.async_scheduling as VllmConfig resolves it
-// (vllm/config/vllm.py:1553-1644@5df63a72): a stated value stands (vLLM refuses an
-// incompatible one, which CheckConfig and resolve's own checks catch), and an unstated one is
-// on unless the draft method is not an EAGLE-family, draft_model or DSpark method, or PP runs
-// on the V1 runner. Pooling models, executor backends without async support and ROCm DeepEP
+// (vllm/config/vllm.py:1651-1719@4ba787ec): a stated value stands (vLLM refuses an incompatible
+// one, which CheckConfig and resolve's own checks catch), and an unstated one is on unless, on
+// the V1 runner, the draft method is not one asyncSpecMethod names or PP is above 1. Pooling models, executor backends without async support and ROCm DeepEP
 // DBO are not deployments this engine models.
 func resolveAsync(stated *bool, method string, pp int, v2 bool) bool {
 	if stated != nil {
 		return *stated
 	}
-	if !asyncSpecMethod(method) {
+	if !v2 && !asyncSpecMethod(method) {
 		return false
 	}
 	if pp > 1 && !v2 {
@@ -638,12 +659,18 @@ func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
 		// CacheConfig.prefix_cache_retention_interval: 0 (vllm/config/cache.py:159@5df63a72); a stated 0
 		// is the default and keeps only the semantic checkpoints, which this engine builds.
 		return fmt.Errorf("vllm: prefix_cache_retention_interval is not modelled (https://github.com/inference-sim/blis-vllm/issues/109)")
+	case e.PrefillScheduleInterval < 0:
+		// SchedulerConfig.prefill_schedule_interval: Field(default=1, ge=1)
+		// (vllm/config/scheduler.py:203@4ba787ec); 0 is the block's unstated.
+		return fmt.Errorf("vllm: prefill_schedule_interval %d is below 1, which vLLM refuses "+
+			"(vllm/config/scheduler.py:203@4ba787ec)", e.PrefillScheduleInterval)
 	case e.PrefillScheduleInterval > 1 && !dataParallel:
-		// _should_throttle_prefills is the DP engine core's (vllm/v1/engine/core.py:2318-2325@5df63a72):
-		// EngineCore's never throttles (:652-655), so on one engine the setting has no effect vLLM
-		// would show, and stating it is refused rather than dropped.
-		return fmt.Errorf("vllm: prefill_schedule_interval throttles a data-parallel group's ranks; this engine " +
-			"has data_parallel_size 1")
+		// Without a data-parallel group the Scheduler applies the interval itself: it holds prefill
+		// until the interval has passed since the last prefill-carrying step, with a capacity escape
+		// (local_prefill_interval, vllm/v1/core/sched/scheduler.py:395-425, 770-790, 1612-1629
+		// @4ba787ec). That cadence is not ported, so stating it is refused rather than dropped.
+		return fmt.Errorf("vllm: prefill_schedule_interval %d without a data-parallel group is the scheduler's local "+
+			"prefill cadence, which is not modelled (%s172)", e.PrefillScheduleInterval, issueBase)
 	case e.MaxCPULoRAs != 0 && e.MaxCPULoRAs != max(e.MaxLoRAs, 1):
 		// LoRAConfig.max_cpu_loras: None, which becomes max_loras (vllm/config/lora.py:42, 120-121@5df63a72),
 		// and max_loras defaults to 1 (:35); a stated value equal to that is the default.
@@ -762,7 +789,7 @@ func refuseUnreadSettings(e engineconfig.Engine) error {
 }
 
 // readEnv are the engine environment variables this engine reads (resolveV2Runner).
-var readEnv = []string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER", "UCX_CUDA_IPC_ENABLE_MNNVL"}
+var readEnv = append([]string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER", "UCX_CUDA_IPC_ENABLE_MNNVL"}, p2pEnvNames...)
 
 // inertEnv are the environment variables the engine accepts without reading: fields.json proves each
 // inert (oracle/inertness/<name>.json), so stating one changes nothing the engine decides. Python
@@ -825,7 +852,7 @@ func fullCUDAGraphs(mode string) bool {
 	return false
 }
 
-// checkRules runs the v0.32.0 rules pack (rules/v0_32) over the engine block, the startup check
+// checkRules runs the v0.33.0 rules pack (rules/v0_33) over the engine block, the startup check
 // #2021 B11 step 2 gives the engine: the values the release accepts and the refusals it makes.
 // The block is one pool's engine, and it is all the engine is given: the model graph, the cluster
 // and the pool's parallel widths other than pipeline_parallel_size are not in it. So a refusal
@@ -836,7 +863,7 @@ func fullCUDAGraphs(mode string) bool {
 // requires dp above 1" (vllm/config/engram.py@5df63a72), is left to the caller that validates
 // the whole document set, as is every rule that needs the model graph, which checks nothing
 // without one. Warnings are not refusals. pp is the pool's pipeline_parallel_size.
-func checkRules(e engineconfig.Engine, pp int) error { return checkRulesWith(v0_32.Pack(), e, pp) }
+func checkRules(e engineconfig.Engine, pp int) error { return checkRulesWith(v0_33.Pack(), e, pp) }
 
 // blockShapes are the parallel shapes checkRules runs the pack under: the tensor and data widths
 // each at 1 and at 2, so that a clause turning on either width, whichever way, is silent in one of

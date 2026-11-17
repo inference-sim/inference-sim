@@ -66,7 +66,7 @@ func decode(data []byte) (*connector.Registry, error) {
 }
 
 // UpstreamKVConnectorBaseV1 is vLLM's connector interface, KVConnectorBase_V1
-// (vllm/distributed/kv_transfer/kv_connector/v1/base.py:180@5df63a72), which every built-in
+// (vllm/distributed/kv_transfer/kv_connector/v1/base.py:181@4ba787ec), which every built-in
 // connector and every connector loaded through kv_connector_module_path implements. It moved
 // from blis-schemas' spec/connector at 2c38342, which now checks only that an entry names one.
 const UpstreamKVConnectorBaseV1 connector.Upstream = "KVConnectorBase_V1"

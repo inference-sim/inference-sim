@@ -18,19 +18,22 @@ import (
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // --8<-- [start:repos]
 // The roots a scenario's names resolve against (its model, chip, fabric and coefficient
 // sets), and the engine rules its engine_version selects: vLLM's, from the engine model.
 var repos = latencykernel.Repos{
-	Scenarios:      "../testdata",
-	Data:           exampleData(), // the pinned blis-substrate's embedded catalog and registry
-	Rules:          latencykernel.RulesFrom(vllmrules.Lookup),
-	RulesVersions:  vllmrules.Versions,
-	RulesKind:      "vllm",
-	EngineSettings: vllmsettings.OfPool,
+	Scenarios:     "../testdata",
+	Data:          exampleData(), // the pinned blis-substrate's embedded catalog and registry
+	Rules:         latencykernel.RulesFrom(vllmrules.Lookup),
+	RulesVersions: vllmrules.Versions,
+	RulesKind:     "vllm",
+	DraftModel:    kernelmodel.DraftModelOf, // the drafter the pool's engine block names
+	Lower:         kernelmodel.LowerPool,    // the pool's settings, resolved into its plan
 }
 
 // exampleData is the catalog and registry the pinned blis-substrate release embeds, opened and
@@ -73,11 +76,11 @@ func ExampleOpen() {
 	// --8<-- [end:open]
 
 	// Output:
-	// between 24.1 and 25.4 ms, bottleneck hbm
-	// sm        4.5 ms
-	// hbm      16.5 ms
+	// between 23.3 and 24.8 ms, bottleneck hbm
+	// sm        2.6 ms
+	// hbm      16.8 ms
 	// nvlink    0.9 ms
-	// host      3.5 ms
+	// host      4.5 ms
 }
 
 // Memory: what one rank holds before any request arrives, and what each request adds.
@@ -104,12 +107,12 @@ func ExampleKernel_FixedBytes() {
 	// --8<-- [end:memory]
 
 	// Output:
-	// weights       78.2 GiB
+	// weights       79.3 GiB
 	// activations    1.1 GiB
 	// CUDA graphs    0.8 GiB
 	// comm buffers   0.0 GiB
 	// EPLB           0.0 GiB
-	// total         80.1 GiB per rank
+	// total         81.2 GiB per rank
 	// before the budget  3.9 GiB
 	// a 4,096-token request: 137 MiB of KV cache per rank
 }
@@ -144,13 +147,14 @@ func ExampleKernel_Evidence() {
 	// --8<-- [end:evidence]
 
 	// Output:
-	// 115 of 157 values rest on evidence; 39 were assumed
-	//   assumed       39
+	// 115 of 161 values rest on evidence; 40 were assumed
+	//   assumed       40
 	//   measured     101
 	//   not_charged    1
-	//   transferred    2
+	//   transferred    5
 	//   vendor_spec   14
 	// the kernel assumed max_cudagraph_capture_size
+	// the kernel assumed nontorch_in_budget_bytes_8rank
 	// the kernel assumed engine_version
 }
 
@@ -168,10 +172,21 @@ func ExampleNew() {
 		panic(err)
 	}
 
-	// The same deployment with a 16-bit KV cache instead of fp8. The engine settings are the
-	// caller's decoding of the pool's engine block (Inputs.Engine), and New copied what it
-	// needed, so changing them now leaves base as it was.
-	in.Engine.CacheDType = "bfloat16"
+	// The same deployment with a 16-bit KV cache instead of fp8. The kernel prices the plan
+	// the engine's lowering resolved from the pool's engine block (Inputs.Lowered), and New
+	// copied what it needed, so lowering an edited block now leaves base as it was.
+	pool := &in.Deployment.Pools[in.PoolIndex]
+	e, err := vllmsettings.Decode(*pool)
+	if err != nil {
+		panic(err)
+	}
+	e.CacheDType = "bfloat16"
+	if pool.Engine, err = engineconfig.Encode(e); err != nil {
+		panic(err)
+	}
+	if in.Lowered, err = kernelmodel.LowerPool(in); err != nil {
+		panic(err)
+	}
 	wide, err := latencykernel.New(in)
 	if err != nil {
 		panic(err)

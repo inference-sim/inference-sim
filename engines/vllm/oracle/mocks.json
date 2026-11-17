@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/5+af60be80e293",
+  "version": "gpu-mock/9+2ee0b3b47a9c",
   "description": "Everything the oracle replaces. Only the GPU, the clock, transports and external services may be replaced; check_mocks.py fails if an entry names decision code.",
   "mocks": [
     {
@@ -160,11 +160,12 @@
     {
       "symbol": "DPLBAsyncMPClient construction",
       "kind": "environment",
-      "how": "oracle/run_dp.py only: the client is built with object.__new__ holding exactly the state get_core_engine_for_request and process_engine_outputs read (client_count 1, the in-flight maps, one engine identity per rank, the rotating start, a config naming the V1 runner and allgather_reducescatter), as vLLM's own tests build it (tests/v1/engine/test_engine_core_client.py:208-222@5df63a72); the method runs unmodified. The finished-request bookkeeping is process_engine_outputs' own two lines (core_client.py:1703-1710), applied by the harness when a request finishes",
+      "how": "oracle/run_dp.py only: the client is built with object.__new__ holding exactly the state get_core_engine_for_request and process_engine_outputs read (client_count 1, the in-flight maps, the empty set of open streaming-input sessions (core_client.py:1728-1729@4ba787ec), one engine identity per rank, the rotating start, a config naming the V1 runner and allgather_reducescatter), as vLLM's own tests build it (tests/v1/engine/test_engine_core_client.py:208-222@5df63a72); the method runs unmodified. The finished-request bookkeeping is process_engine_outputs' own two lines (core_client.py:1703-1710), applied by the harness when a request finishes",
       "sites": [
         "run_dp.py:object.__new__(DPLBAsyncMPClient)",
         "run_dp.py:client.client_count",
         "run_dp.py:client.reqs_in_flight",
+        "run_dp.py:client.streaming_reqs",
         "run_dp.py:client.engine_inflight",
         "run_dp.py:client.core_engines",
         "run_dp.py:client.eng_start_index",
@@ -175,10 +176,11 @@
     {
       "symbol": "DPEngineCoreProc construction",
       "kind": "environment",
-      "how": "oracle/run_dp.py only: each rank's DP engine core is built with object.__new__ holding exactly the state _should_throttle_prefills and _has_global_unfinished_reqs read (dp_group, dp_sync_interval, prefill_schedule_interval, step_counter, current_wave, pending_pause, ignore_start_dp_wave, engines_running), as vLLM's own tests build it (tests/v1/engine/test_engine_core.py:641-657@5df63a72); those two methods run unmodified",
+      "how": "oracle/run_dp.py only: each rank's DP engine core is built with object.__new__ holding exactly the state _should_throttle_prefills and _has_global_unfinished_reqs read (dp_group, the rank's own vllm_config, through which v0.33.0 reads the DP state (core.py:2560@4ba787ec), dp_sync_interval, prefill_schedule_interval, step_counter, current_wave, pending_pause, ignore_start_dp_wave, engines_running), as vLLM's own tests build it (tests/v1/engine/test_engine_core.py:641-657@5df63a72); those two methods run unmodified",
       "sites": [
         "run_dp.py:object.__new__(DPEngineCoreProc)",
         "run_dp.py:core.dp_group",
+        "run_dp.py:core.vllm_config",
         "run_dp.py:core.dp_sync_interval",
         "run_dp.py:core.prefill_schedule_interval",
         "run_dp.py:core.pending_pause",
@@ -234,6 +236,36 @@
       "how": "oracle/run_offloading.py only: the Scheduler's finished_req_ids is a set of request-id strings (vllm/v1/core/sched/scheduler.py:237, 2736), and str hashing is randomised per process (python -I ignores PYTHONHASHSEED), so vLLM's own iteration order over it is not reproducible from run to run. OffloadingConnectorScheduler iterates it to store a finished request's last chunks and to tell the CPU manager the request finished (offloading/scheduler.py:1576-1579, 1889-1896@5df63a72), which orders prepare_store (CPU evictions) and the LRU's recency updates when two or more requests finish between steps. Before each schedule() the runner replaces the attribute with a set holding the same ids that iterates in sorted order; membership and size are unchanged and the scheduler reads it only through iteration and membership. The Go side's offloading connector (core/connector/offloading, added after this mock) iterates the step's finished requests in the same sorted request-id order",
       "sites": [
         "run_offloading.py:scheduler.finished_req_ids"
+      ]
+    },
+    {
+      "symbol": "nixl._api.nixl_agent (OBJ and UCX backends)",
+      "kind": "transport",
+      "how": "oracle/run_tiering.py only: oracle/fake_nixl is NIXL's agent with an in-memory OBJ backend and UCX backend, imported by vllm.distributed.nixl_utils as nixl._api (nixl_utils.py:40-78@4ba787ec), because neither NIXL nor an S3 bucket is in the CPU environment. It stores and reads each block's bytes in a bucket shared by name, answers query_memory with None for a missing object, fails a READ of a missing object as a whole (state ERR), and finishes the transfers in flight in submission order after each driver call or inside the tier's drain_jobs, which blocks until NIXL finishes. The driver may hold an agent's transfers in flight across calls (a slow transfer), make a bucket refuse writes, or make an agent's next transfer() fail at submission, through the package's own functions. For the p2p tier's NixlTransport (tiering/p2p/data/nixl.py@4ba787ec) an agent's metadata is its name, add_remote_agent makes a peer's host blocks addressable, and a WRITE copies the local blocks into the peer's (both instances are in this process); a WRITE to an instance the driver took down ends ERR. A peer registration NixlTransport runs on its worker thread (add_remote_agent) waits until the driver's after-call transport rule, so it resolves between calls rather than when the thread scheduler lets it. ObjectStoreSecondaryTierManager and NixlTransport run unmodified. The Go side (core/connector/tiering ObjTier, MemBucket) follows the same rule",
+      "sites": []
+    },
+    {
+      "symbol": "zmq (pyzmq, as tiering/p2p/control/zmq.py uses it)",
+      "kind": "transport",
+      "how": "oracle/run_tiering.py only: the p2p control module's zmq is oracle/fake_zmq, in-memory ROUTER, DEALER and monitor sockets, because real loopback sockets deliver on the operating system's schedule. Messages, their encoding and their order are vLLM's (ZmqTransport, ZmqConnection and msgspec run unmodified); after each driver call every message on the wire reaches the ROUTER bound at its address, in send order, unless the sequence holds the wire, and a sequence may take an instance down, which unbinds its ROUTER, drops what was sent to it and reports EVENT_DISCONNECTED on every DEALER connected to it",
+      "sites": [
+        "run_tiering.py:zmq_control.zmq"
+      ]
+    },
+    {
+      "symbol": "time.monotonic",
+      "kind": "clock",
+      "how": "oracle/run_tiering.py only: a virtual clock that stands still until the sequence advances it, installed before any vLLM module is imported so default_factory fields that captured time.monotonic read it too. The p2p tier's deadlines (handshake, load, abort, lookup, store and unbound-store timeouts, idle reaps, reconnect backoff) run on it (#13); the driver's own waits use time.perf_counter",
+      "sites": [
+        "run_tiering.py:time.monotonic"
+      ]
+    },
+    {
+      "symbol": "vLLM environment variables of a tiering sequence",
+      "kind": "environment",
+      "how": "oracle/run_tiering.py only: a sequence's \"env\" (such as VLLM_P2P_HANDSHAKE_TIMEOUT_S or VLLM_P2P_MAX_PEERS) is set in os.environ for that sequence and restored after it; vllm.envs reads each when used",
+      "sites": [
+        "run_tiering.py:os.environ[]"
       ]
     }
   ]

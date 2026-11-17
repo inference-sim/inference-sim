@@ -15,7 +15,7 @@ import (
 // publishes in its KV events are the ones vLLM publishes under that variable. The expected hashes
 // are vLLM's own, from testdata written by oracle/gen_seeded_block_hashes.py: the same 64 tokens
 // in blocks of 16, as the cases' "plain" chain, published as the low 64 bits big-endian in
-// decimal (maybe_convert_block_hash, vllm/v1/core/kv_cache_utils.py:96-99@5df63a72).
+// decimal (maybe_convert_block_hash, vllm/v1/core/kv_cache_utils.py:82-85@4ba787ec).
 func TestKVEventHashesFollowThePythonHashSeed(t *testing.T) {
 	raw, err := os.ReadFile("../kv/testdata/seeded_block_hashes.json")
 	if err != nil {

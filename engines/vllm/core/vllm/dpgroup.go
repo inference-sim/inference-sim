@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/engine/core.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/v1/engine/core.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // Also vllm/v1/engine/core_client.py (DPLBAsyncMPClient, the internal load balancer) and
 // vllm/v1/engine/coordinator.py (the stats publication and the wave start).
 
@@ -135,7 +135,7 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 		e.queued = func(id string) bool { return g.inFlight(rank, id) }
 		if e.pd != nil {
 			// Each rank is its own engine core with its own connector (vLLM gives each its own
-			// engine_id and side-channel port, nixl/base_scheduler.py:76-80@5df63a72), so each states
+			// engine_id and side-channel port, nixl/base_scheduler.py:76-80@4ba787ec), so each states
 			// its own transfers. The group tells them apart by ID alone (TransferDone).
 			e.pd.stride, e.pd.lane = n, i
 		}
@@ -149,7 +149,7 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 
 // publish is the coordinator's stats update at now: the balancer's counts become the ranks'
 // [waiting, running, kv_cache_usage] at the first routing of each publication interval
-// (coordinator.py:154-162, 267-269; core_client.py:1562-1575@5df63a72).
+// (coordinator.py:152-160, 265-267; core_client.py:1587-1600@4ba787ec).
 func (g *DPGroup) publish(now engine.Time) {
 	epoch := int64(now) / g.statsIntervalUs
 	if epoch == g.epoch {
@@ -190,7 +190,7 @@ func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
 // tokens applies it at once: it has no forward pass to wait for. A rank whose step blocks on a
 // batch that runs tokens waits for it: with one batch in flight (step()) that is the batch it
 // just scheduled, with a batch queue (step_with_batch_queue) the one it queued the iteration
-// before (vllm/v1/engine/core.py:754-766@5df63a72). The iteration ends, with its dummy batches
+// before (vllm/v1/engine/core.py:764-776@4ba787ec). The iteration ends, with its dummy batches
 // and the wave's all-reduce, when no rank waits any longer.
 //
 // No iteration starts while one is under way, while an iteration of dummy batches is still
@@ -208,8 +208,14 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 	it := &dpIter{rank: map[int]core.Batch{}}
 	open := &dpOpen{steps: steps, waits: make([]bool, len(steps))}
 	waiting := false
+	// skip_drafts across the group: the drafters propose nothing only when every rank allows it
+	// (dp_utils.py:75-88@4ba787ec). A rank that runs a dummy batch passes an empty scheduler
+	// output, whose skip_drafts is false (SchedulerOutput.make_empty,
+	// vllm/v1/worker/gpu/model_runner.py:897-929), so it keeps the group drafting.
+	skipDrafts := true
 	for i, st := range steps {
 		e := g.ranks[i].e
+		executed := false
 		if st.Step.Scheduled != nil {
 			cb := *st.Step.Scheduled
 			rb, err := e.batchOf(cb)
@@ -220,6 +226,8 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 			if core.Executed(cb) {
 				it.batch.Reqs = append(it.batch.Reqs, rb.Reqs...)
 				it.rank[i] = cb
+				executed = true
+				skipDrafts = skipDrafts && rb.SkipDrafts
 			}
 			it.batch.Preempted = append(it.batch.Preempted, rb.Preempted...)
 			// The pulls this rank's schedule began, in rank order, whether or not it ran tokens: a
@@ -227,6 +235,7 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 			// runs none.
 			it.batch.TransfersStarted = append(it.batch.TransfersStarted, rb.TransfersStarted...)
 		}
+		skipDrafts = skipDrafts && executed
 		if !st.Block {
 			continue
 		}
@@ -244,6 +253,7 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 		it.batch.Finished = append(it.batch.Finished, fins...)
 		g.retire(fins)
 	}
+	it.batch.SkipDrafts = skipDrafts && !it.batch.Empty()
 	if !it.batch.Empty() {
 		g.nextID++
 		it.id, it.batch.ID = g.nextID, g.nextID
@@ -339,6 +349,9 @@ func (g *DPGroup) inFlight(r int, id string) bool {
 // rankBatches splits an iteration's batch into the ranks' own batches.
 func (g *DPGroup) rankBatches(b engine.Batch) []engine.Batch {
 	per := make([]engine.Batch, len(g.ranks))
+	for r := range per {
+		per[r].SkipDrafts = b.SkipDrafts
+	}
 	for _, s := range b.Reqs {
 		r := g.rankOf[s.ID]
 		per[r].Reqs = append(per[r].Reqs, s)

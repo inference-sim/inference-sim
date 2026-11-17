@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/model_executor/models/gpt_oss.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/model_executor/models/gpt_oss.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // The KV cache spec each attention layer builds: gpt_oss.py:176 (per_layer_sliding_window),
 // vllm/models/minimax_m3/nvidia/model.py:562-571 (MiniMaxM3SparseAttention.get_kv_cache_spec)
 // and vllm/models/minimax_m3/common/indexer.py:145-154 (the indexer's), whose dtype is
@@ -43,6 +43,11 @@ type KVLayerRun struct {
 	Alignment       int
 	StrideAlignment int
 	BoundedReplay   bool
+	// Draft marks a run of the drafter's layers: vLLM marks every attention layer the drafter
+	// registers is_draft_layer (vllm/v1/worker/gpu/spec_decode/speculator.py:225-242@4ba787ec),
+	// and its spec is_draft (vllm/v1/worker/gpu/attn_utils.py:150-151), which tags the groups that
+	// hold it as the drafter's (core/vllm KVLayerRun.Draft).
+	Draft bool
 	// A "mamba" run is MambaSpec (core/vllm KVLayerRun): StateBytes per rank, BlockSize the
 	// mamba_block_size, and the rest of the spec.
 	PageSizePadded             int
@@ -154,7 +159,7 @@ func kvLayersOf(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine
 		for _, r := range runs {
 			indexer = indexer || r.Spec == "indexer"
 		}
-		if !indexer {
+		if !indexer && !hasSparseGQA(g) {
 			return nil, fmt.Errorf("indexer_kv_dtype=%q is read only for MiniMax-M3's indexer cache, and this model has none, so a "+
 				"stated value would be dropped (https://github.com/inference-sim/blis-vllm/issues/84)", d)
 		}
@@ -240,6 +245,22 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 			if n.Op != model.OpAttention {
 				continue
 			}
+			if n.AttentionKind == sparseGQA {
+				// Qwen4Exp's QSA layer registers the K/V cache and its indexer's two caches.
+				qr, err := qsaLayerRuns(id, kinds[id], n, tp, engine, false)
+				if err != nil {
+					return nil, err
+				}
+				plain = plain && len(qr) == 0
+				for _, r := range qr {
+					if l := len(runs) - 1; l >= 0 && sameRun(runs[l], r) {
+						runs[l].Count++
+					} else {
+						runs = append(runs, r)
+					}
+				}
+				continue
+			}
 			r := KVLayerRun{Count: 1, Spec: "full", NumKVHeads: max(n.NumKVHeads/tp, 1), HeadSize: n.HeadDim}
 			for _, c := range n.Caches {
 				switch {
@@ -283,10 +304,27 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 				if n.Op != model.OpAttention {
 					continue
 				}
+				if n.AttentionKind == sparseGQA {
+					// The MTP module's QSA layer registers the caches a target layer does.
+					qr, err := qsaLayerRuns(id, kinds[id], n, tp, engine, true)
+					if err != nil {
+						return nil, err
+					}
+					plain = false
+					for _, r := range qr {
+						if l := len(runs) - 1; l >= 0 && sameRun(runs[l], r) {
+							runs[l].Count++
+						} else {
+							runs = append(runs, r)
+						}
+					}
+					continue
+				}
 				if len(n.Caches) > 0 {
 					return nil, fmt.Errorf("drafter layer kind %s states caches, which are not mapped to a KV cache spec", id)
 				}
-				r := KVLayerRun{Count: 1, Spec: "full", NumKVHeads: max(n.NumKVHeads/tp, 1), HeadSize: n.HeadDim}
+				r := KVLayerRun{Count: 1, Spec: "full", NumKVHeads: max(n.NumKVHeads/tp, 1), HeadSize: n.HeadDim,
+					Draft: true}
 				if n.AttentionKind == model.AttentionSWA {
 					r.Spec, r.SlidingWindow = "sliding_window", n.Window
 				}
@@ -404,8 +442,11 @@ func deepseekKVLayers(g *model.Graph, pool deployment.Pool, engine engineconfig.
 		kinds[lk.ID] = lk
 	}
 	var runs []KVLayerRun
+	// inDrafter is whether the layers being added are the drafter's: each of their caches is
+	// marked (KVLayerRun.Draft).
+	inDrafter := false
 	add := func(r KVLayerRun) {
-		r.Count = 1
+		r.Count, r.Draft = 1, inDrafter
 		if l := len(runs) - 1; l >= 0 && sameRun(runs[l], r) {
 			runs[l].Count++
 			return
@@ -502,6 +543,7 @@ func deepseekKVLayers(g *model.Graph, pool deployment.Pool, engine engineconfig.
 		}
 	}
 	if sp := g.Speculator; sp != nil && e.Speculative != nil && e.Speculative.NumSpecTokens > 0 {
+		inDrafter = true
 		for _, id := range sp.Stack.Expand() {
 			if err := layer(id, true); err != nil {
 				return nil, err

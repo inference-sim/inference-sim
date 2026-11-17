@@ -277,7 +277,7 @@ func runDPNixl(t *testing.T, sc dpnScenario) dpnTrace {
 	var gpus []*dpnGPU
 	var conns []*nixl.Scheduler
 	for i := 0; i < n; i++ {
-		s, err := sched.New(sched.Config{
+		s, err := sched.New(sched.Config{KVTransfer: true, // the connector this test installs (kv_transfer_config)
 			MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 			NumBlocks: c.NumBlocks, MaxModelLen: c.MaxModelLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 			EnableChunkedPrefill: chunked, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: caching,
@@ -573,7 +573,7 @@ func TestDPNixlAgainstVLLM(t *testing.T) {
 			p.Provenance.ScenarioSHA256, p.Provenance.MockVersion = want.Provenance.ScenarioSHA256, want.Provenance.MockVersion
 			checkDPProvenance(t, path, p)
 			if d := dpnDivergence(want, runDPNixl(t, sc)); d != "" {
-				t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+				t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 			}
 		})
 	}

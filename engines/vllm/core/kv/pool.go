@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/block_pool.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/v1/core/block_pool.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // Also vllm/v1/core/kv_cache_utils.py (KVCacheBlock, FreeKVCacheBlockQueue).
 
 package kv
@@ -10,22 +10,22 @@ import (
 	"fmt"
 )
 
-// Block is one KV block: vLLM's KVCacheBlock (kv_cache_utils.py:178-235). A block's ID
+// Block is one KV block: vLLM's KVCacheBlock (kv_cache_utils.py:164-221). A block's ID
 // is an allocator detail; what a block holds is its hash and reference count.
 type Block struct {
 	ID     int
 	RefCnt int
 	// Hash is set while the block is a full, cached prefix block, nil otherwise. It is the
 	// block hash with its KV cache group ID appended as 4 big-endian bytes, as vLLM keys
-	// its cache (make_block_hash_with_group_id, kv_cache_utils.py:74-84).
+	// its cache (make_block_hash_with_group_id, kv_cache_utils.py:60-70).
 	Hash []byte
 	// HashTokens is the prefix length Hash covers: a full block's end, or inside the block for a
-	// partial entry (block_hash_num_tokens, kv_cache_utils.py:192-224@5df63a72). Valid while
+	// partial entry (block_hash_num_tokens, kv_cache_utils.py:178-210@4ba787ec). Valid while
 	// Hash is set.
 	HashTokens int
 	// extra holds the further hash keys that also reach this block, which a partial entry adds
 	// to a block that already has a primary hash (cached_block_hashes_by_block,
-	// block_pool.py:176-178@5df63a72).
+	// block_pool.py:180-182@4ba787ec).
 	extra [][]byte
 	// Null marks the pool's reserved null block, which never holds KV.
 	Null bool
@@ -47,6 +47,8 @@ type Pool struct {
 	// events, when non-nil, collects the KV cache events vLLM's BlockPool queues
 	// (kv_event_queue, block_pool.py:179-185) until TakeEvents.
 	events *[]Event
+	// hashLookahead is the pool's num_hash_lookahead_tokens (SetHashLookahead).
+	hashLookahead int
 }
 
 // Event is one KV cache event (vllm/distributed/kv_events.py:56-138@5df63a72), by content.
@@ -66,6 +68,20 @@ type Event struct {
 	LoRA string
 	// Group is the event's group_idx: the KV cache group whose blocks it reports.
 	Group uint32
+	// Lookahead is BlockStored's lookahead_token_ids (vLLM v0.33.0,
+	// vllm/distributed/kv_events.py:56-98@4ba787ec): for each stored block, the tokens after it
+	// that its hash covers, all_token_ids[block_end : block_end + num_hash_lookahead_tokens]
+	// (_lookahead_token_ids, vllm/v1/core/block_pool.py:368-371), fewer where the request has not
+	// reached them. It is nil when the pool hashes no lookahead. BlockStored's extra_keys, which
+	// cover the block and its lookahead (_generate_event_extra_keys, :358-366), are not reported:
+	// the LoRA and cache-salt keys this port models do not depend on the window.
+	Lookahead [][]int64
+	// LoRAID is BlockStored's lora_id, the adapter's lora_int_id; 0 for the base model.
+	LoRAID int
+	// Extra are the extra keys that keyed each stored block's hash, one entry per hash: the
+	// LoRA key on every block and the cache salt on the request's first block
+	// (BlockKeys.ExtraFor). A nil entry is a block with none.
+	Extra [][]ExtraKey
 }
 
 // EnableEvents makes the pool record KV cache events (enable_kv_cache_events). Turning them on
@@ -213,11 +229,34 @@ type StoredRun struct {
 	Tokens []int64
 	// LoRA is the request's adapter name, "" for the base model.
 	LoRA string
+	// LoRAID is the adapter's lora_int_id, 0 for the base model.
+	LoRAID int
+	// Keys are the request's hash keys, whose extra keys a BlockStored event reports per block.
+	Keys BlockKeys
 	// NumPromptTokens is request.num_prompt_tokens, which a Mamba align group reads to place its
 	// prompt checkpoint (single_type_kv_cache_manager.py:2033-2040@5df63a72); no event reports it.
 	NumPromptTokens int
 	// SharedPrefixBoundary is request.shared_prefix_boundary, read by a Mamba align group.
 	SharedPrefixBoundary int
+}
+
+// SetHashLookahead sets the pool's num_hash_lookahead_tokens, n >= 0: the tokens after each block
+// its hash covers, which each BlockStored event then reports per block (Event.Lookahead). vLLM's
+// BlockPool takes it from the Scheduler (vllm/v1/core/sched/scheduler.py:342-358@4ba787ec).
+func (p *Pool) SetHashLookahead(n int) {
+	if n < 0 {
+		panic(fmt.Sprintf("kv: a negative hash lookahead %d", n))
+	}
+	p.hashLookahead = n
+}
+
+// lookaheadAfter is _lookahead_token_ids (block_pool.py:368-371@4ba787ec): the run's tokens from
+// end, at most hashLookahead of them.
+func (p *Pool) lookaheadAfter(run StoredRun, end int) []int64 {
+	if end >= len(run.Tokens) {
+		return []int64{}
+	}
+	return append([]int64{}, run.Tokens[end:min(end+p.hashLookahead, len(run.Tokens))]...)
 }
 
 // CacheFull records blocks[numCached:numFull] as cached under their hashes in KV cache
@@ -238,6 +277,10 @@ func (p *Pool) CacheFullIn(g uint32, blocks []*Block, hashes []BlockHash, numCac
 func (p *Pool) CacheFullMaskedIn(g uint32, blocks []*Block, hashes []BlockHash, numCached, numFull int, run StoredRun,
 	blockSize int, mask []bool) {
 	var stored []BlockHash
+	var lookahead [][]int64
+	if p.events != nil && p.hashLookahead > 0 {
+		lookahead = [][]int64{}
+	}
 	for i := numCached; i < numFull; i++ {
 		b := blocks[i]
 		if b.Null || mask != nil && !mask[i-numCached] {
@@ -248,15 +291,25 @@ func (p *Pool) CacheFullMaskedIn(g uint32, blocks []*Block, hashes []BlockHash, 
 		}
 		p.insert(WithGroup(hashes[i], g), b, (i+1)*blockSize)
 		stored = append(stored, hashes[i])
+		if lookahead != nil {
+			lookahead = append(lookahead, p.lookaheadAfter(run, (i+1)*blockSize))
+		}
 	}
 	if p.events != nil {
 		var parent BlockHash
 		if numCached > 0 {
 			parent = hashes[numCached-1]
 		}
+		var extra [][]ExtraKey
+		for i := numCached; i < numFull; i++ {
+			if b := blocks[i]; b.Null || mask != nil && !mask[i-numCached] {
+				continue
+			}
+			extra = append(extra, run.Keys.ExtraFor(i))
+		}
 		*p.events = append(*p.events, Event{Hashes: stored, Parent: parent,
 			Tokens:    append([]int64(nil), run.Tokens[numCached*blockSize:numFull*blockSize]...),
-			BlockSize: blockSize, LoRA: run.LoRA, Group: g})
+			BlockSize: blockSize, LoRA: run.LoRA, LoRAID: run.LoRAID, Extra: extra, Group: g, Lookahead: lookahead})
 	}
 }
 
@@ -266,7 +319,7 @@ func WithGroup(h BlockHash, group uint32) []byte {
 	return append(append(make([]byte, 0, len(h)+4), h...), byte(group>>24), byte(group>>16), byte(group>>8), byte(group))
 }
 
-// insert is _insert_block_hash (block_pool.py:575-609@5df63a72): the first hash a block
+// insert is _insert_block_hash (block_pool.py:615-649@4ba787ec): the first hash a block
 // takes is its primary one, with the prefix length it covers; a later one is an extra key to
 // the same block.
 func (p *Pool) insert(h []byte, b *Block, tokens int) {
@@ -324,11 +377,11 @@ func (p *Pool) evict(b *Block) bool {
 	return true
 }
 
-// MaybeEvictCached is _maybe_evict_cached_block (block_pool.py:729-750@5df63a72): it drops
+// MaybeEvictCached is _maybe_evict_cached_block (block_pool.py:769-790@4ba787ec): it drops
 // every cache entry that reaches b and reports whether there was one.
 func (p *Pool) MaybeEvictCached(b *Block) bool { return p.evict(b) }
 
-// IsBlockWritable is is_block_writable (block_pool.py:770-772@5df63a72): a sole owner may
+// IsBlockWritable is is_block_writable (block_pool.py:812-814@4ba787ec): a sole owner may
 // write a block that is not null and holds no cached hash.
 func (p *Pool) IsBlockWritable(b *Block) bool { return !b.Null && b.RefCnt == 1 && b.Hash == nil }
 
@@ -364,9 +417,15 @@ func (p *Pool) CachePartialBlock(g uint32, b *Block, hashes []BlockHash, numToke
 			parent = hashes[n-2]
 		}
 		start := (n - 1) * hashBlockSize
-		*p.events = append(*p.events, Event{Hashes: []BlockHash{hashes[n-1]}, Parent: parent,
+		ev := Event{Hashes: []BlockHash{hashes[n-1]}, Parent: parent,
 			Tokens:    append([]int64(nil), run.Tokens[start:numTokens]...),
-			BlockSize: numTokens - start, LoRA: run.LoRA, Group: g})
+			BlockSize: numTokens - start, LoRA: run.LoRA, LoRAID: run.LoRAID,
+			Extra: [][]ExtraKey{run.Keys.ExtraFor(n - 1)}, Group: g}
+		if p.hashLookahead > 0 {
+			// cache_partial_block's one block (block_pool.py:486-603, :598-600@4ba787ec).
+			ev.Lookahead = [][]int64{p.lookaheadAfter(run, numTokens)}
+		}
+		*p.events = append(*p.events, ev)
 	}
 	return key
 }

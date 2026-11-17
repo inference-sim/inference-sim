@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/engine/core.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/v1/engine/core.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // Also vllm/config/vllm.py (max_concurrent_batches) and the DP engine core's wave loop.
 
 // Package engine is vLLM's EngineCore over core/sched: the batch queue that keeps up to
@@ -119,16 +119,16 @@ func (c *Core) schedule() Batch {
 }
 
 // TransferGPU is a GPU whose worker also reports the KV transfers it finished with a batch's
-// output: ModelRunnerOutput.kv_connector_output (vllm/v1/outputs.py:215-233@5df63a72), which
-// update_from_output applies (vllm/v1/core/sched/scheduler.py:2058-2071, 2342-2343).
+// output: ModelRunnerOutput.kv_connector_output (vllm/v1/outputs.py:215-233@4ba787ec), which
+// update_from_output applies (vllm/v1/core/sched/scheduler.py:2292-2305, 2594-2595).
 type TransferGPU interface {
 	GPU
 	Transfers(b Batch) sched.TransferOutcome
 }
 
 // Abort queues client aborts for the next applied output: EngineCore drains its aborts queue
-// after it has a batch's output and before update_from_output (vllm/v1/engine/core.py:680,
-// 780-783, 814-822@5df63a72).
+// after it has a batch's output and before update_from_output (vllm/v1/engine/core.py:690,
+// 790-793, 824-832@4ba787ec).
 func (c *Core) Abort(ids []string) { c.aborts = append(c.aborts, ids...) }
 
 func (c *Core) process(b Batch) []sched.Finished {
@@ -215,7 +215,7 @@ func Executed(b Batch) bool { return total(b) > 0 }
 // simulator does through blis-schemas' engine.Engine: it schedules one batch and queues it, and
 // the caller completes the batches in order with Complete. Step is both halves under EngineCore's
 // own loop; both keep the queue in the order vLLM's batch_queue does
-// (vllm/v1/engine/core.py:738-760@5df63a72).
+// (vllm/v1/engine/core.py:748-770@4ba787ec).
 func (c *Core) Schedule() Batch {
 	b := c.schedule()
 	c.queue = append(c.queue, b)

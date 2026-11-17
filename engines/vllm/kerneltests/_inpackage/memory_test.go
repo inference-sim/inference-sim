@@ -4,6 +4,7 @@ package latencykernel
 
 import (
 	"fmt"
+	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	"math"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,7 @@ import (
 )
 
 // Fixed memory occupancy is the registry's magnitudes in NVIDIA's composition, with nothing
-// the kernel hardcodes and nothing Provenance cannot see (inference-sim/blis-latency-kernel#22).
+// the kernel hardcodes and nothing Provenance cannot see (https://github.com/inference-sim/blis-latency-kernel/issues/22).
 // liftMemory states the form and its sources.
 
 // memoryFixture is the deployment #22 measured: deepseek-v3, tp=8, fp8 on h200, 8,192
@@ -200,7 +201,27 @@ func TestAnUnstatedTokenBudgetIsTheEnginesDefaultForThePart(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := defaultMaxNumBatchedTokens(*chip); got != budget {
+		on := fixtureInputs(t, memoryFixture)
+		editEngine(t, &on, func(e *engineconfig.Engine) { e.MaxNumBatchedTokens = 0 })
+		on.Chip = chip
+		sc := *on.Scenario
+		sc.Cluster.Hardware = name
+		if chip.GPUsPerNode > 0 {
+			sc.Cluster.GPUsPerNode = 0 // the catalog entry fixes it
+		}
+		if chip.GPUsPerRack > 0 {
+			sc.Cluster.GPUsPerRack = 0
+		}
+		on.Scenario = &sc
+		eng, err := vllmsettings.OfPool(on.Deployment, on.PoolIndex)
+		if err != nil {
+			t.Fatal(err)
+		}
+		low, err := lower(on, eng)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := int(low.Plan.Batch.Tokens); got != budget {
 			t.Errorf("%s (%.1f GiB): default budget %d, want %d", name, chip.MemoryGiB, got,
 				budget)
 		}
@@ -258,7 +279,7 @@ func TestASparseMLALayersIndexerIsAPiecewiseSplitPoint(t *testing.T) {
 // head), a 64-token page -- the block a DSA model runs -- must hold exactly that times its
 // layers.
 //
-// A plain "fp8" is whatever the chosen backend makes of it (sparseMLABackend): on h200,
+// A plain "fp8" is whatever the chosen backend makes of it (blis-vllm's compat/lowering): on h200,
 // FlashMLA-sparse serves it as fp8_ds_mla, 656; on the same chip marked data-center
 // Blackwell, FlashInfer serves it as stated, 576. "fp8_e4m3" stays 576 on h200, because
 // FlashMLA-sparse does not list it and FlashInfer's SM90 sparse MLA does.
@@ -279,7 +300,7 @@ func TestAPackedSparseMLACacheIsItsOwnSize(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return k.SequenceVariableBytes(dsaBlockSize)
+		return k.SequenceVariableBytes(dsaPage)
 	}
 	layers := int64(fixture(t, dcpSparseFixture).kvLayers)
 	for _, c := range []struct {
@@ -293,7 +314,7 @@ func TestAPackedSparseMLACacheIsItsOwnSize(t *testing.T) {
 		{"fp8", true, 576},
 		{"fp8_e4m3", false, 576},
 	} {
-		if got, want := page(c.cache, c.blackwell), dsaBlockSize*c.cell*layers; got != want {
+		if got, want := page(c.cache, c.blackwell), dsaPage*c.cell*layers; got != want {
 			t.Errorf("%s (blackwell %v): a 64-token page holds %d bytes, want %d (%d a "+
 				"token per layer)", c.cache, c.blackwell, got, want, c.cell)
 		}
@@ -309,8 +330,11 @@ func TestAPackedSparseMLACacheIsItsOwnSize(t *testing.T) {
 //
 // Asserted as a contrast on one deployment: minimax-m2.5 on h200, and the same chip marked as
 // data-center Blackwell (native NVFP4, which nothing else in this fp8-served deployment
-// reads). Decode-only and prefill-only steps must price identically on both; a mixed step
-// must be cheaper on the FlashAttention part by exactly the smaller floor per attention layer.
+// reads). A decode-only step must price identically on both; the two backends' prefill kernels have
+// their own rates (blis-substrate#217), so what is compared is the rebate, what the decode and the
+// prefill priced alone cost over the mixed step they make: FlashAttention's must exceed FlashInfer's
+// by the smaller floor per attention layer, within 5% (the rates of the two prefill kernels differ
+// by a little more than the floors do).
 func TestAMixedStepIsOneAttentionLaunchOnFlashAttention(t *testing.T) {
 	build := func(blackwell bool) *Kernel {
 		t.Helper()
@@ -338,11 +362,10 @@ func TestAMixedStepIsOneAttentionLaunchOnFlashAttention(t *testing.T) {
 	prefill := decodeBatch(1, 256, 256)
 	mixed := kernel.Batch{DecodeThreshold: 8, Reqs: append(append([]kernel.ReqShape{},
 		decode.Reqs...), prefill.Reqs...)}
-	for name, b := range map[string]kernel.Batch{"decode": decode, "prefill": prefill} {
-		if a, c := busy(fa, b), busy(fi, b); a != c {
-			t.Errorf("a %s-only step priced %v on FlashAttention and %v on FlashInfer", name, a, c)
-		}
+	if a, c := busy(fa, decode), busy(fi, decode); a != c {
+		t.Errorf("a decode-only step priced %v on FlashAttention and %v on FlashInfer", a, c)
 	}
+	rebate := func(k *Kernel) time.Duration { return busy(k, decode) + busy(k, prefill) - busy(k, mixed) }
 	// The decode floor is the layer kind's own where the registry carries one, the
 	// part-wide one otherwise; the smaller of it and the prefill floor is what one launch
 	// saves.
@@ -357,9 +380,9 @@ func TestAMixedStepIsOneAttentionLaunchOnFlashAttention(t *testing.T) {
 			attnLayers += l.Count
 		}
 	}
-	saved := busy(fi, mixed) - busy(fa, mixed)
+	saved := rebate(fa) - rebate(fi)
 	want := time.Duration(float64(smaller) * float64(attnLayers))
-	if d := saved - want; d < -2 || d > 2 {
+	if d := saved - want; d < -want/20 || d > want/20 {
 		t.Errorf("a mixed step saved %v on FlashAttention, want one smaller floor per "+
 			"attention layer, %v", saved, want)
 	}
@@ -381,7 +404,7 @@ func TestAMixedStepIsOneAttentionLaunchOnFlashAttention(t *testing.T) {
 //     window x 64 FP32 values, whatever the context bound.
 func TestV41EngineBuffersAreChargedAtTheEnginesFigures(t *testing.T) {
 	in := fixtureInputs(t, v41)
-	k := build(t, in)
+	k := vllmBuild(t, in)
 	generic := math.Max(
 		registryValue(t, in, k, "activation_buffer_count_moe_8rank")*8192*5120*2,
 		registryValue(t, in, k, "activation_scratch_floor_bytes"))
@@ -393,7 +416,7 @@ func TestV41EngineBuffersAreChargedAtTheEnginesFigures(t *testing.T) {
 	}
 }
 
-// A STATED CAPTURE SIZE IS THE CEILING (inference-sim/blis-latency-kernel#54). vLLM v0.31.0
+// A STATED CAPTURE SIZE IS THE CEILING (https://github.com/inference-sim/blis-latency-kernel/issues/54). vLLM v0.31.0
 // captures up to max_cudagraph_capture_size and runs a larger step with no graph
 // (vllm/v1/worker/gpu/cudagraph_utils.py:499-529). Stated at 64 with DSpark's K = 5, a
 // uniform decode of n requests verifies 6n tokens, so ten requests replay a graph and eleven
@@ -404,7 +427,7 @@ func TestAStatedCaptureSizeIsTheCeiling(t *testing.T) {
 	with := func(edit func(*engineconfig.Engine)) *Kernel {
 		in := fixtureInputs(t, v41)
 		editEngine(t, &in, edit)
-		return build(t, in)
+		return vllmBuild(t, in)
 	}
 	size := 64
 	stated := with(func(e *engineconfig.Engine) { e.MaxCUDAGraphCaptureSize = &size })
@@ -488,7 +511,7 @@ func v41Engine(t *testing.T, entries []coefficient.Entry, seqs, mnbt, capture in
 			&coefficient.Set{Kind: "CoefficientSet", Name: "test-capture", Coefficients: entries})
 	}
 	setEngine(t, &in.Deployment.Pools[0], e)
-	return build(t, in)
+	return vllmBuild(t, in)
 }
 
 // THE UNIFORM-DECODE CEILING IS vLLM's. Each capture size is rounded up to a multiple of
@@ -523,7 +546,7 @@ func TestTPScalesOnlyTheShardedWeightsAndTheActivationKey(t *testing.T) {
 		in.Coefficients = append(append([]*coefficient.Set{}, in.Coefficients...),
 			&coefficient.Set{Kind: "CoefficientSet", Name: "test-capture",
 				Coefficients: captureContract()})
-		k := build(t, in)
+		k := vllmBuild(t, in)
 		return k.FixedBytes(), k, in.Model
 	}
 	f4, k4, g := at(4)
@@ -563,7 +586,7 @@ func TestTheDrafterCeilingIsTheLargestRoundedSize(t *testing.T) {
 				e.CUDAGraphMode = mode
 			}
 			setEngine(t, &in.Deployment.Pools[0], e)
-			return build(t, in)
+			return vllmBuild(t, in)
 		}
 		stated, none := at(""), at("NONE")
 		host := func(k *Kernel, n int) time.Duration {
@@ -588,3 +611,6 @@ func TestTheDrafterCeilingIsTheLargestRoundedSize(t *testing.T) {
 		}
 	}
 }
+
+// dsaPage is the 64-token page a DSA deployment's indexer runs on.
+const dsaPage = 64

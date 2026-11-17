@@ -13,9 +13,10 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/blis-vllm/internal/upstream"
 )
 
-// eosToken is tests/v1/core/utils.py:43@5df63a72, which the GPU mock samples last.
+// eosToken is tests/v1/core/utils.py:49@4ba787ec, which the GPU mock samples last.
 const eosToken = 50256
 
 type scenario struct {
@@ -386,8 +387,8 @@ func checkProvenance(t *testing.T, scenarioPath string, tr trace) {
 	p := tr.Provenance
 	for _, c := range []struct{ field, got, want string }{
 		{"scenario_sha256", p.ScenarioSHA256, hex.EncodeToString(sum[:])},
-		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], "0.32.0"},
-		{"vllm_commit", p.VLLMCommit, "5df63a7203cdb9328d824a27b682e77c7b9928be"},
+		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], upstream.Version},
+		{"vllm_commit", p.VLLMCommit, upstream.Commit},
 		{"mock_version", p.MockVersion, mocks.Version},
 	} {
 		if c.got != c.want {
@@ -433,7 +434,7 @@ func TestEngineCoreAgainstVLLM(t *testing.T) {
 				t.Fatalf("max_concurrent_batches: vLLM %d, blis-vllm %d", want.Provenance.Engine.MaxConcurrentBatches, q)
 			}
 			if d := earliestDivergence(want, got); d != "" {
-				t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+				t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 			}
 		})
 	}
@@ -462,7 +463,7 @@ func TestEngineCoreFuzzCorpusAgainstVLLM(t *testing.T) {
 		if d := earliestDivergence(want, run(t, sc)); d != "" {
 			mismatches++
 			if mismatches <= 20 {
-				t.Errorf("%s: earliest divergence from vLLM v0.32.0: %s", name, d)
+				t.Errorf("%s: earliest divergence from vLLM v0.33.0: %s", name, d)
 			}
 		}
 	}
@@ -484,7 +485,7 @@ func TestScenarioFromEnv(t *testing.T) {
 	var want trace
 	readJSON(t, tp, &want)
 	if d := earliestDivergence(want, run(t, sc)); d != "" {
-		t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+		t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 	}
 }
 

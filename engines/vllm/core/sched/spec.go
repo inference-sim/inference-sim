@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/config/speculative.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/config/speculative.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // Also vllm/config/vllm.py (num_lookahead_tokens, num_prefill_lookahead_tokens).
 
 package sched
@@ -19,8 +19,17 @@ type Spec struct {
 	// PrefillLookahead is num_prefill_lookahead_tokens: prefill tokens past the computed
 	// range the drafter reads (vllm/config/vllm.py:643-665@5df63a72).
 	PrefillLookahead int
-	// EagleBlockDrop is use_eagle_block_drop (vllm/config/speculative.py:1950-1952@5df63a72).
+	// EagleBlockDrop is use_eagle_block_drop (vllm/config/speculative.py:2147-2149@4ba787ec): the
+	// drafter's KV at a position depends on the next token, so the trailing prefix-cache block
+	// is volatile. It holds for eagle, eagle3 and mtp only (needs_eagle_block_drop, :2122-2129);
+	// dflash and dspark build that KV from the target's hidden state alone. The scheduler turns
+	// it off when the block hashes cover the lookahead instead (HashLookahead).
 	EagleBlockDrop bool
+	// DraftQueryPass is use_dflash() or use_dspark() (vllm/config/speculative.py@4ba787ec): the
+	// drafter runs a pass of num_lookahead_tokens query rows a request inside
+	// max_num_batched_tokens, which caps max_num_active_seqs (VllmConfig._set_max_num_scheduled_tokens,
+	// vllm/config/vllm.py:2377-2396@4ba787ec).
+	DraftQueryPass bool
 }
 
 // SpecOptions are the speculative-decoding settings a deployment states, and the drafter
@@ -32,12 +41,12 @@ type SpecOptions struct {
 	// NumTokens is num_speculative_tokens.
 	NumTokens int
 	// ParallelDrafting is parallel_drafting (P-EAGLE, PARD); dflash and dspark always draft
-	// in parallel (vllm/config/speculative.py:1468-1469@5df63a72).
+	// in parallel (vllm/config/speculative.py:1581-1582@4ba787ec).
 	ParallelDrafting bool
 	// NextnPredictLayers is an MTP drafter's num_nextn_predict_layers; 0 means 1.
 	NextnPredictLayers int
 	// SampleFromAnchor is a DSpark drafter's sample_from_anchor; nil means true, vLLM's
-	// default (vllm/config/vllm.py:628-630@5df63a72).
+	// default (vllm/config/vllm.py:639-641@4ba787ec).
 	SampleFromAnchor *bool
 	// DisableEagleBlockDrop is disable_eagle_block_drop.
 	DisableEagleBlockDrop bool
@@ -54,12 +63,15 @@ func ResolveSpec(o SpecOptions) Spec {
 		o.Method == "dflash" || o.Method == "dspark" // use_eagle, speculative.py:1944-1948
 	draftModel := o.Method == "draft_model" // uses_draft_model, :1963-1964
 	parallel := o.ParallelDrafting || o.Method == "dflash" || o.Method == "dspark"
-	s := Spec{NumTokens: k, EagleBlockDrop: useEagle && !o.DisableEagleBlockDrop}
+	needsDrop := useEagle && o.Method != "dflash" && o.Method != "dspark" // needs_eagle_block_drop
+	s := Spec{NumTokens: k, EagleBlockDrop: needsDrop && !o.DisableEagleBlockDrop,
+		DraftQueryPass: o.Method == "dflash" || o.Method == "dspark"}
 
-	// max_num_new_slots_for_drafting (speculative.py:1907-1926).
+	// max_num_new_slots_for_drafting (vllm/config/speculative.py:2058-2097@4ba787ec). DFlash and
+	// DSpark draft in a separate query pass and take no slots; v0.32.0 gave them K and K-1.
 	switch {
-	case o.Method == "dflash":
-		s.DraftSlots = k
+	case o.Method == "dflash" || o.Method == "dspark":
+		s.DraftSlots = 0
 	case parallel && draftModel:
 		s.DraftSlots = k
 	case parallel:

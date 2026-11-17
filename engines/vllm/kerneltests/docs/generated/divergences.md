@@ -34,14 +34,15 @@ A parallel-block drafter such as DSpark is charged under its own CUDA graphs and
 
 *Coverage limit, in `KVBytesPerToken` in [`kernel/internal/price/memory.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/internal/price/memory.go).*
 
-The kernel does not size every KV cache layout vLLM has. It refuses the per-token-head quantized formats rather than size them. Padded pages and a cache that compresses several tokens into one stored state are sized only where the model graph states its caches; a graph that does not is sized as one full-length cache per layer.
+The kernel does not size every KV cache layout vLLM has. The engine's lowering refuses the per-token-head quantized formats rather than hand the kernel a width for them. Padded pages and a cache that compresses several tokens into one stored state are sized only where the model graph states its caches; a graph that does not is sized as one full-length cache per layer.
 
 ??? quote "The note in the source"
     The layouts that state their own size are applied by the kernel where a deployment names
-    them, or where its backend repacks the cache (the packed ds\_mla caches; see Kernel.lift and
-    sparseMLABackend in the root package). COVERAGE LIMIT: per-token-head quantization adds two
-    fp32 scales a token (vllm/model\_executor/layers/attention/mla\_attention.py:1580-1593), so
-    the kernel refuses those cache dtypes rather than size them here; padded pages are sized by
+    them, or where its backend repacks the cache (the packed ds\_mla caches, whose cell the plan
+    states; see Kernel.lift in the root package). COVERAGE LIMIT: per-token-head quantization adds
+    two fp32 scales a token (vllm/model\_executor/layers/attention/mla\_attention.py:1580-1593), so
+    the engine's lowering refuses those cache dtypes rather than hand the kernel a width it does
+    not describe (for vLLM, blis-vllm's compat/lowering); padded pages are sized by
     their own specs (vllm/v1/kv\_cache\_interface.py:527-536), and a compressed cache (a
     compress\_ratio layer) holds fewer states than tokens. Neither is modelled HERE: a graph
     that states its caches (blis-schemas model.Cache) is sized from them in the root package
@@ -220,24 +221,6 @@ A model whose graph states its KV caches -- DeepSeek-V4 and V4.1, MiniMax-M3 -- 
     vllm/models/deepseek\_v4/nvidia/model.py:1406-1424, deepseek\_v41/nvidia/model.py:
     885-910@v0.32.0).
 
-### Choosing the sparse attention backend
-
-*Coverage limit, in `sparseMLABackend` in [`kernel/sparse_mla.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/sparse_mla.go).*
-
-For DeepSeek sparse attention, which backend vLLM chooses depends on facts the model graph does not state: whether the checkpoint quantizes its KV cache, the installed FlashInfer version, and one head dimension. The kernel assumes the common case for each, and the catalog has no chip of the SM120 generation, whose backend differs.
-
-??? quote "The note in the source"
-    COVERAGE LIMITS: an "auto" cache is taken as 16-bit, which it is unless the checkpoint
-    states a KV quantization -- a ModelOpt checkpoint's kv\_cache\_quant\_algo turns "auto" into
-    fp8\_e4m3 or nvfp4 before any backend is chosen (MODELOPT\_TO\_VLLM\_KV\_CACHE\_DTYPE\_MAP and
-    resolve\_kv\_cache\_dtype\_string, vllm/utils/torch\_utils.py:67-70, :448-521, called from
-    vllm/engine/arg\_utils.py:2199-2202), and the graph does not record it; FlashInfer's SM90
-    backend needs FlashInfer 0.6.18 or later (flashinfer\_mla\_sparse\_sm90.py:194-199), which
-    this assumes is installed; FlashInfer (SM100) checks the model's qk\_nope\_head\_dim, which
-    the DSA family satisfies (128 and 192, within its \[128, 192\]) and
-    the graph does not state; and the SM120 parts' backend, which repacks "auto" too, has no
-    part in the catalog.
-
 ### Routed experts under tensor parallelism
 
 *Known over-charge, in `(*Kernel).priceLayers` in [`kernel/step.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/step.go).*
@@ -254,5 +237,24 @@ Under tensor parallelism each rank is charged the arithmetic of whole routed exp
     compute by the tensor-parallel width on the 400 of 591 InferenceX scenarios
     that are pure TP. The BYTES do divide by it (routedWeightBytes, below), so the
     two terms disagree about the same experts.
+
+### MXFP4 expert padding on other backends
+
+*Coverage limit, in `(*Kernel).expertPadding` in [`kernel/step_terms.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/step_terms.go).*
+
+The kernel pads the MXFP4 expert weights and work to the shapes the Marlin and TRTLLM backends allocate (hidden up to a multiple of 256, each rank's intermediate up to 128). The CUTLASS and DeepGEMM backends round the hidden size to 128, and the FlashInfer EP megakernel and b12x do not pad; the kernel does not know which backend the engine picked, so a deployment on those backends is priced with slightly too much expert weight and work.
+
+??? quote "The note in the source"
+    MXFP4, on every part: vLLM v0.33.0 rounds the layer's hidden size up to a multiple of 256
+    and each rank's intermediate size up to a multiple of 128 before it creates the weights,
+    for the Marlin and TRTLLM backends that serve MXFP4 experts on Hopper and Blackwell
+    (mxfp4\_round\_up\_hidden\_size\_and\_intermediate\_size, vllm/model\_executor/layers/fused\_moe/
+    oracle/mxfp4.py:837-879@v0.33.0, called from Mxfp4MoEMethod.maybe\_roundup\_sizes,
+    quantization/mxfp4.py:184-197). The per-rank intermediate is the expert's width over the
+    ranks that split it, the whole width under expert parallelism. gpt-oss-120b's 2,880 hidden
+    pads to 3,072 and its 1,440 at TP2 to 1,536: 13.8% more expert weight and work a rank holds.
+    COVERAGE LIMIT: the CUTLASS and DeepGEMM MXFP4 backends round the hidden size to 128 rather
+    than 256, and the FlashInfer EP megakernel and b12x do not pad; this kernel does not know
+    which backend the engine picked, and prices the Marlin and TRTLLM rule.
 
 *17 notes: 1 known divergence, 3 known over-charges, 13 coverage limits.*

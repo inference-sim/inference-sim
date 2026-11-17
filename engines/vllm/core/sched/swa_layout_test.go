@@ -66,7 +66,7 @@ func TestSWALayoutScenariosAgainstVLLM(t *testing.T) {
 				t.Fatal("the scenario has no sliding_window_mla run")
 			}
 			if d := earliestDivergence(want, run(t, sc)); d != "" {
-				t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+				t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 			}
 		})
 	}

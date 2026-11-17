@@ -40,14 +40,17 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/load"
 
@@ -244,13 +247,13 @@ const cpuTier = "cpu_dram"
 // offloadOf maps a deployment's offload block onto the engine block's kv_offload, or refuses what
 // the engine does not model. The OffloadingConnector's kv_connector_extra_config is its CPU tier:
 // cpu_bytes_to_use is the tier's bytes, the engine's, which vLLM divides among its workers'
-// copies (vllm/v1/kv_offload/cpu/spec.py:103-121@5df63a72), as the compatibility engine reads the
+// copies (vllm/v1/kv_offload/cpu/spec.py:107-125@4ba787ec), as the compatibility engine reads the
 // same tier (compat/build KVOffloadBlockFromDeployment), so one deployment's 0.31.0 and 0.32.0
 // runs hold one CPU tier. eviction_policy and spec_name pass through, and blocks_per_chunk comes from the connector options. What vLLM derives at start-up
 // the kernel states: one worker's KV bytes for one GPU block over the offloaded groups
-// (worker_kv_bytes_per_block, offloading/config.py:136-151), the engine's world size (num_workers,
-// offloading/scheduler.py:335) and how many workers' copies of a block the tier holds
-// (OffloadCopies: one for the replicated latent layout, offloading/config.py:158-171).
+// (worker_kv_bytes_per_block, offloading/config.py:174-189), the engine's world size (num_workers,
+// offloading/scheduler.py:313) and how many workers' copies of a block the tier holds
+// (OffloadCopies: one for the replicated latent layout, offloading/config.py:196-209).
 func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) {
 	if o == nil {
 		return nil, nil
@@ -264,16 +267,25 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 			"when the scheduler admits the request (%s)", o.PrefetchDepth, prefetchIssue)
 	}
 	var cpu int64
+	var secondary []map[string]any
 	for i, t := range o.Tiers {
-		if t.Device != cpuTier || i > 0 {
-			return nil, fmt.Errorf("offload.tiers[%d] (%q): only one %s tier, the OffloadingConnector's CPU tier, is "+
-				"modelled; secondary tiers (TieringOffloadingSpec's) are not (%s)", i, t.Device, cpuTier, secondaryTierIssue)
+		if i == 0 && t.Device == cpuTier {
+			cpu = t.Bytes
+			continue
 		}
-		cpu = t.Bytes
+		if i == 0 || o.Spec != "TieringOffloadingSpec" {
+			return nil, fmt.Errorf("offload.tiers[%d] (%q): the first tier is the OffloadingConnector's %s tier, and a "+
+				"tier below it is TieringOffloadingSpec's (%s)", i, t.Device, cpuTier, secondaryTierIssue)
+		}
+		tier, err := deviceTierOf(m, i, t)
+		if err != nil {
+			return nil, err
+		}
+		secondary = append(secondary, tier)
 	}
 	if cpu <= 0 {
 		return nil, fmt.Errorf("offload states no %s tier: the OffloadingConnector's tier is host DRAM "+
-			"(cpu_bytes_to_use, required by vLLM, cpu/spec.py:97-101@5df63a72)", cpuTier)
+			"(cpu_bytes_to_use, required by vLLM, cpu/spec.py:101-105@4ba787ec)", cpuTier)
 	}
 	opts, err := engineconfig.DecodeConnectorOptions(o.ConnectorOptions)
 	if err != nil {
@@ -282,10 +294,24 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 	bpc := 0
 	if opts != nil {
 		bpc = opts.BlocksPerChunk
-		*opts = engineconfig.ConnectorOptions{BlocksPerChunk: opts.BlocksPerChunk}
+		// A p2p tier sits on no device, so it is stated in the connector's own options, as vLLM states it
+		// (kv_connector_extra_config.secondary_tiers), and passed through unchanged; the engine builds it
+		// (core/vllm offloadtiers_p2p.go) and refuses what it cannot run.
+		for i, t := range opts.SecondaryTiers {
+			if t["type"] != "p2p" {
+				return nil, fmt.Errorf("offload.connector_options.secondary_tiers[%d]: %v is not a tier on no device: only "+
+					"p2p is stated here, and a tier on a catalog device is one of offload.tiers (%s)", i, t["type"], secondaryTierIssue)
+			}
+			if o.Spec != "TieringOffloadingSpec" {
+				return nil, fmt.Errorf("offload.connector_options.secondary_tiers[%d]: a p2p tier is TieringOffloadingSpec's, "+
+					"and the offload's spec is %q (%s)", i, o.Spec, secondaryTierIssue)
+			}
+			secondary = append(secondary, t)
+		}
+		*opts = engineconfig.ConnectorOptions{BlocksPerChunk: opts.BlocksPerChunk, SecondaryTiers: opts.SecondaryTiers}
 		if again, _ := engineconfig.DecodeConnectorOptions(o.ConnectorOptions); again != nil && !reflect.DeepEqual(*again, *opts) {
-			return nil, fmt.Errorf("offload.connector_options: only blocks_per_chunk is an OffloadingConnector option (%s)",
-				offloadIssue)
+			return nil, fmt.Errorf("offload.connector_options: only blocks_per_chunk and secondary_tiers are OffloadingConnector "+
+				"options (%s)", offloadIssue)
 		}
 	}
 	perBlock, err := offloadBytesPerBlock(m)
@@ -312,11 +338,53 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 	if bpc > 0 {
 		c["block_size"] = bpc * e.BlockSize
 	}
+	if len(secondary) > 0 {
+		c["secondary_tiers"] = secondary
+	}
 	var n yaml.Node
 	if err := n.Encode(c); err != nil {
 		return nil, err
 	}
 	return &n, nil
+}
+
+// objectStores are the catalog's storage classes that are object stores (catalog/devices/storage.yaml:
+// s3, "an object store reached over the network"), which vLLM reaches through its obj tier; every
+// other storage class is a file system, reached through its fs tier. compat/build names the same set.
+var objectStores = map[string]bool{"s3": true}
+
+// deviceTierOf is a deployment's tier below the CPU tier as one of TieringOffloadingSpec's tiers on
+// that catalog device (core/vllm offloadtiers.go), refused unless the kernel prices the device's
+// moves both ways (its offload_tier_<device>_* coefficients), as compat/build refuses an unpriced
+// tier. The tier's bytes are the device's capacity, which neither tier bounds: neither evicts, and a
+// block file or object is present until something outside vLLM removes it
+// (vllm/v1/kv_offload/tiering/fs/manager.py:86-104, obj/manager.py@4ba787ec).
+//
+// On a file system it is the fs tier. The deployment states no root_dir: the tier's files are under
+// one named by the device, and which engines share them is the simulator's (core/vllm.TierStorage).
+//
+// On an object store it is the obj tier (obj/manager.py:106-117@4ba787ec), in a bucket named by the
+// device, which the simulator shares between engines as it shares an fs tier's files
+// (core/vllm.TierBuckets). ObjStoreConfig requires an endpoint_override (obj/config.py:19); a
+// simulated bucket is reached at no address, so the engine is given the device's name as one, a
+// value no simulated outcome depends on.
+func deviceTierOf(m *kernelmodel.Model, i int, t deployment.Tier) (map[string]any, error) {
+	for _, toTier := range []bool{true, false} {
+		dir := kernel.DirectionFromTier
+		if toTier {
+			dir = kernel.DirectionToTier
+		}
+		if d := m.Kernel().TierTime(t.Device, dir, 1<<20, 1); d >= time.Duration(math.MaxInt64/2) {
+			return nil, fmt.Errorf("offload.tiers[%d] (%q): the kernel cannot price a move %s it: the catalog names no "+
+				"such device, or the coefficients carry no offload_tier_%s_* entries for the hardware (%s)", i, t.Device,
+				map[bool]string{true: "to", false: "from"}[toTier], t.Device, secondaryTierIssue)
+		}
+	}
+	if objectStores[t.Device] {
+		return map[string]any{"type": "obj", "device_class": t.Device,
+			"store_config": map[string]any{"bucket": t.Device, "endpoint_override": t.Device}}, nil
+	}
+	return map[string]any{"type": "fs", "root_dir": "/" + t.Device, "device_class": t.Device}, nil
 }
 
 // offloadBytesPerBlock is one worker's KV bytes for one GPU block: the kernel's per-block KV bytes
@@ -325,8 +393,8 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 // pipeline rank 0's, not the binding stage's: the scheduler's KV cache config, which its
 // OffloadingConnector sizes the CPU tier from (worker_kv_bytes_per_block, offloading/config.py:
 // 137-147), is a copy of worker 0's (generate_scheduler_kv_cache_config, vllm/v1/core/
-// kv_cache_utils.py:2289; vllm/v1/engine/core.py:339@5df63a72), whose KV tensor is the shared
-// block count times rank 0's own bytes a block (get_kv_cache_configs step 5, :2664-2675).
+// kv_cache_utils.py:1109; vllm/v1/engine/core.py:334@4ba787ec), whose KV tensor is the shared
+// block count times rank 0's own bytes a block (get_kv_cache_configs step 5, :2807-2818).
 func offloadBytesPerBlock(m *kernelmodel.Model) (int64, error) {
 	runs, err := m.KVLayers()
 	if err != nil {
@@ -342,7 +410,7 @@ func offloadBytesPerBlock(m *kernelmodel.Model) (int64, error) {
 	}
 	if p.perBlock[0] <= 0 {
 		return 0, fmt.Errorf("vllmengine: pipeline rank 0 holds no KV layer, so vLLM's scheduler sizes no CPU tier " +
-			"(worker_kv_bytes_per_block 0, offloading/config.py:137-152@5df63a72)")
+			"(worker_kv_bytes_per_block 0, offloading/config.py:175-190@4ba787ec)")
 	}
 	return p.perBlock[0], nil
 }
@@ -465,7 +533,7 @@ func stagePoolsOf(m *kernelmodel.Model, runs []kernelmodel.KVLayerRun) (stagePoo
 
 // poolBlocks is the KV pool's block count. vLLM sizes the pool over its KV cache groups: the
 // memory left for KV over the widest group's bytes per block (get_kv_cache_config_from_groups,
-// vllm/v1/core/kv_cache_utils.py:1622-1628@5df63a72), because every group draws its blocks from
+// vllm/v1/core/kv_cache_planning.py:676-682@4ba787ec), because every group draws its blocks from
 // one shared pool. A model of one full-attention group is the compatibility engine's count, the
 // kernel's allocatable bytes over its bytes for one block of every layer; a hybrid model's
 // groups each hold a share of the layers, so its pool holds more blocks than that
@@ -563,7 +631,7 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 	if p.model.HasRecurrentLayers() {
 		// A hybrid model's block size is vLLM's aligned one even over a stated size: the platform
 		// raises the attention block until its page covers the recurrent state's
-		// (update_block_size_for_backend, vllm/platforms/interface.py:759-800@5df63a72), which
+		// (update_block_size_for_backend, vllm/platforms/interface.py:759-800@4ba787ec), which
 		// resolved.BlockSize holds as the larger of that and the stated size.
 		deleteKey(&block, "block_size")
 	}
@@ -588,10 +656,14 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 	setIfAbsent(&block, "use_v2_model_runner", fmt.Sprint(runner == "v2"))
 	if n := p.model.MTPDraftLayers(); n > 0 {
 		// An MTP drafter's prefill lookahead turns on its checkpoint's layer count
-		// (vllm/config/vllm.py:644-664@5df63a72), which the catalog's model graph holds.
+		// (vllm/config/vllm.py:655-675@4ba787ec), which the catalog's model graph holds.
 		setIfAbsent(&block, "mtp_nextn_predict_layers", fmt.Sprint(n))
 	}
-	if role := kvRoleOf(p.role); role != "" && p.connector != "" {
+	// vLLM's P/D deployment over its p2p tier states the OffloadingConnector as its only KV connector
+	// (docs/features/kv_offloading_usage.md "P2P (Including P/D)" at vLLM v0.33.0): the engine runs it
+	// as kv_offload, whose p2p tier loads the decode's prompt, so the pool states no kv_transfer.
+	p2pHandoff := p.connector == offloadChild && p.offload != nil
+	if role := kvRoleOf(p.role); role != "" && p.connector != "" && !p2pHandoff {
 		// A P/D pool's kv_transfer_config: the deployment's pd_transfer.connector, and the pool's
 		// role as vLLM's kv_role (a prefill pool produces KV, a decode pool consumes it).
 		kt := yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
@@ -623,7 +695,7 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 	}
 	if runs, err := p.model.KVLayers(); err == nil && len(runs) > 0 {
 		// The model's attention layers by the KV cache spec vLLM builds for each, which the
-		// factory groups as get_kv_cache_groups does (vllm/v1/core/kv_cache_utils.py:2159@5df63a72).
+		// factory groups as get_kv_cache_groups does (vllm/v1/core/kv_cache_planning.py:1113@4ba787ec).
 		setNodeIfAbsent(&block, "kv_layers", kvLayersNode(runs))
 	}
 	return block
@@ -656,7 +728,7 @@ func vllmRuns(runs []kernelmodel.KVLayerRun) []vllm.KVLayerRun {
 		out[i] = vllm.KVLayerRun{Count: r.Count, Spec: r.Spec, SlidingWindow: r.SlidingWindow,
 			NumKVHeads: r.NumKVHeads, HeadSize: r.HeadSize, BlockSize: r.BlockSize, TokensPerState: r.TokensPerState,
 			StateBytes: r.StateBytes, ElemBytes: r.ElemBytes, Alignment: r.Alignment,
-			StrideAlignment: r.StrideAlignment, BoundedReplay: r.BoundedReplay,
+			StrideAlignment: r.StrideAlignment, BoundedReplay: r.BoundedReplay, Draft: r.Draft,
 			PageSizePadded: r.PageSizePadded, MambaCacheMode: r.MambaCacheMode,
 			NumSpeculativeBlocks: r.NumSpeculativeBlocks, NumPrefillCheckpointBlocks: r.NumPrefillCheckpointBlocks,
 			PrefillCheckpointAlignment: r.PrefillCheckpointAlignment}
@@ -701,7 +773,7 @@ type kernelPricer struct {
 
 // StepTime implements core/vllm.Pricer.
 func (k kernelPricer) StepTime(b engine.Batch) engine.Duration {
-	return engine.Duration(k.m.StepTimeOfShapes(shapes(b)))
+	return engine.Duration(k.m.StepTimeOfStep(shapes(b), b.SkipDrafts))
 }
 
 // VerifiedDrafts implements core/vllm.VerifyingPricer: how many of each request's scheduled
@@ -720,10 +792,18 @@ func (k kernelPricer) TransferTime(t engine.Transfer) engine.Duration {
 		int64(t.Blocks)))
 }
 
+// TierTransferTime implements core/vllm.TierPricer: a secondary tier's job of bytes between the CPU
+// tier and its catalog device, t.Move.Tier, as the kernel prices that device (TierTime, one at a
+// time). TierTime's contract is a GPU<->tier move; the job crosses the same device and host link,
+// as compat/build prices the compatibility engine's tier jobs.
+func (k kernelPricer) TierTransferTime(t engine.Transfer, bytes int64) engine.Duration {
+	return engine.Duration(k.m.TierTransferTicksOf(t.Move.Tier, t.Kind == engine.TransferStore, bytes, int64(t.Blocks)))
+}
+
 // GroupTransferTime implements core/vllm.GroupTransferPricer: an offload job of groupBlocks[g]
 // GPU blocks of each KV cache group moves, on each worker, those blocks' pages of the group's
 // layers on that worker (vLLM's CPU offload worker copies one (block, layer) page at a time,
-// _fill_direct_ops, vllm/v1/kv_offload/cpu/gpu_worker.py:395-416@5df63a72), and the job ends
+// _fill_direct_ops, vllm/v1/kv_offload/cpu/gpu_worker.py:424-445@4ba787ec), and the job ends
 // when the worker moving the most bytes does. A group of fewer layers than the widest moves
 // fewer bytes a block than the pool's stride.
 func (k kernelPricer) GroupTransferTime(t engine.Transfer, groupBlocks []int) engine.Duration {
@@ -742,9 +822,9 @@ func (k kernelPricer) GroupTransferTime(t engine.Transfer, groupBlocks []int) en
 }
 
 // StageTimes implements core/vllm.StagePricer: the batch's price split by pipeline stage
-// (compat/kernelmodel.StageTimesOfShapes), summing to StepTime.
+// (compat/kernelmodel.StageTimesOfStep), summing to StepTime.
 func (k kernelPricer) StageTimes(b engine.Batch) []engine.Duration {
-	got := k.m.StageTimesOfShapes(shapes(b))
+	got := k.m.StageTimesOfStep(shapes(b), b.SkipDrafts)
 	out := make([]engine.Duration, len(got))
 	for i, d := range got {
 		out[i] = engine.Duration(d)
@@ -773,14 +853,19 @@ func (k kernelPricer) RecordSelected(d *load.Data) { k.m.RecordSelected(d) }
 // through; CachedTokens is zero because a prefix hit is already in Computed, and the kernel
 // subtracts CachedTokens from Scheduled only for a caller that has not.
 // StepTimesAcrossDP implements core/vllm.DPPricer: one lockstep step of a data-parallel group,
-// each rank priced with the group's padding (compat/kernelmodel.StepTimesAcrossDPOfShapes, the
+// each rank priced with the group's padding (compat/kernelmodel.StepTimesAcrossDPOfStep, the
 // rule the compatibility engine prices its lockstep with), an empty rank as vLLM's dummy batch.
 func (k kernelPricer) StepTimesAcrossDP(ranks []engine.Batch) []engine.Duration {
 	in := make([][]kernelmodel.ReqShape, len(ranks))
 	for i, b := range ranks {
 		in[i] = shapes(b)
 	}
-	got := k.m.StepTimesAcrossDPOfShapes(in)
+	// The group's skip_drafts is every rank's (core/vllm DPGroup states it on each).
+	skip := len(ranks) > 0
+	for _, b := range ranks {
+		skip = skip && b.SkipDrafts
+	}
+	got := k.m.StepTimesAcrossDPOfStep(in, skip)
 	out := make([]engine.Duration, len(got))
 	for i, d := range got {
 		out[i] = engine.Duration(d)
@@ -860,7 +945,7 @@ const (
 // states pd_transfer.connector: MultiConnector and an offload block: a NIXL child in the pool's
 // kv_role, then the OffloadingConnector as kv_both. The schema does not state the children or their
 // order (the startup warning says so), so llm-d's composition is assumed, NIXL first, the first
-// connector that reports tokens loading them (multi_connector.py:434-456@5df63a72). A pool that
+// connector that reports tokens loading them (multi_connector.py:451-473@4ba787ec). A pool that
 // states its own kv_transfer in its engine block states the order itself.
 func multiChildren(role string) *yaml.Node {
 	var n yaml.Node

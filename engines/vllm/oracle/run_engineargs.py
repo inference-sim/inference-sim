@@ -9,7 +9,7 @@ pack gets wrong, or states from a misreading of the source, shows as a differenc
 (core/vllm TestEngineArgsAgainstVLLM) resolves the same cases with the factory.
 
 async_scheduling is not recorded as a resolved value: the CPU platform turns it off after the
-configuration resolves it (vllm/platforms/cpu.py:329-331@5df63a72, listed in oracle/mocks.json),
+configuration resolves it (vllm/platforms/cpu.py:346-348@4ba787ec, listed in oracle/mocks.json),
 so the CPU answer is the platform's and not the engine's. Its refusals are recorded.
 
 Usage: python -I oracle/run_engineargs.py <vllm checkout> <cases.json> > trace.json
@@ -66,6 +66,9 @@ def main() -> None:
     if vllm_root not in sys.path:
         sys.path.append(vllm_root)
     os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
+    # The runner is vLLM's own default, as a real CUDA run gets it: unstated VLLM_USE_V2_MODEL_RUNNER
+    # is V2 wherever Triton is installed (vllm/config/vllm.py:731-767@4ba787ec), as the oracle's
+    # triton-cpu is, and core/vllm TestEngineArgsAgainstVLLM's engine block states V2 to match.
     here = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, here)
     from vllm.engine.arg_utils import EngineArgs  # noqa: E402

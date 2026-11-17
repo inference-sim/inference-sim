@@ -1,6 +1,6 @@
 {
   "generator": "blis-vllm cmd/metricsmanifest",
-  "vllm": "0.32.0",
+  "vllm": "0.33.0",
   "families": [
     {
       "name": "vllm:\u003ckvcr DURATION_METRIC\u003e",
@@ -9,7 +9,7 @@
         "scope",
         "result"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:125",
+      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:126",
       "module": "kv_offload",
       "class": "unavailable",
       "reason": "a metric of the KVCR secondary tier (vllm/v1/kv_offload/tiering/kvcr/manager.py:119-140@5df63a72), whose name is defined in the external kvcr package, not in vLLM; the tier requires that package, which no source installs",
@@ -21,7 +21,7 @@
       "labels": [
         "resource"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:137",
+      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:138",
       "module": "kv_offload",
       "class": "unavailable",
       "reason": "a metric of the KVCR secondary tier (vllm/v1/kv_offload/tiering/kvcr/manager.py:119-140@5df63a72), whose name is defined in the external kvcr package, not in vLLM; the tier requires that package, which no source installs",
@@ -33,7 +33,7 @@
       "labels": [
         "operation"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:133",
+      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:134",
       "module": "kv_offload",
       "class": "unavailable",
       "reason": "a metric of the KVCR secondary tier (vllm/v1/kv_offload/tiering/kvcr/manager.py:119-140@5df63a72), whose name is defined in the external kvcr package, not in vLLM; the tier requires that package, which no source installs",
@@ -45,7 +45,7 @@
       "labels": [
         "operation"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:129",
+      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:130",
       "module": "kv_offload",
       "class": "unavailable",
       "reason": "a metric of the KVCR secondary tier (vllm/v1/kv_offload/tiering/kvcr/manager.py:119-140@5df63a72), whose name is defined in the external kvcr package, not in vLLM; the tier requires that package, which no source installs",
@@ -433,17 +433,29 @@
       "name": "vllm:kv_offload_allocation_failure",
       "type": "counter",
       "labels": [],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:124",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:141",
       "module": "kv_connector",
       "class": "exact",
       "reason": "offload-tier allocations that failed, a decision of the offload manager given the tier's fixed capacity",
       "enabled_by": "OffloadingConnector"
     },
     {
+      "name": "vllm:kv_offload_config_info",
+      "type": "gauge",
+      "labels": [
+        "(self._info_keys)"
+      ],
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:396",
+      "module": "kv_connector",
+      "class": "exact",
+      "reason": "the offload tier's static facts (chunks, blocks a chunk, bytes, and tokens at max_model_len), set once from the spec's own sizing (vllm/v1/kv_offload/cpu/common.py:34-72@4ba787ec9959e566d3b587a796dff07673324da5), which blis-vllm computes the same way",
+      "enabled_by": "OffloadingConnector"
+    },
+    {
       "name": "vllm:kv_offload_cpu_allocation_size",
       "type": "histogram",
       "labels": [],
-      "defined": "vllm/v1/kv_offload/cpu/spec.py:73",
+      "defined": "vllm/v1/kv_offload/cpu/spec.py:77",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the CPU tier's occupancy and allocation sizes, set from the offload manager's own block accounting (vllm/v1/kv_offload/cpu/manager.py:459-478@5df63a72)",
@@ -453,7 +465,7 @@
       "name": "vllm:kv_offload_cpu_cache_read_usage_perc",
       "type": "gauge",
       "labels": [],
-      "defined": "vllm/v1/kv_offload/cpu/spec.py:66",
+      "defined": "vllm/v1/kv_offload/cpu/spec.py:70",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the CPU tier's occupancy and allocation sizes, set from the offload manager's own block accounting (vllm/v1/kv_offload/cpu/manager.py:459-478@5df63a72)",
@@ -463,7 +475,7 @@
       "name": "vllm:kv_offload_cpu_cache_usage_perc",
       "type": "gauge",
       "labels": [],
-      "defined": "vllm/v1/kv_offload/cpu/spec.py:51",
+      "defined": "vllm/v1/kv_offload/cpu/spec.py:55",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the CPU tier's occupancy and allocation sizes, set from the offload manager's own block accounting (vllm/v1/kv_offload/cpu/manager.py:459-478@5df63a72)",
@@ -473,7 +485,7 @@
       "name": "vllm:kv_offload_cpu_cache_write_usage_perc",
       "type": "gauge",
       "labels": [],
-      "defined": "vllm/v1/kv_offload/cpu/spec.py:59",
+      "defined": "vllm/v1/kv_offload/cpu/spec.py:63",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the CPU tier's occupancy and allocation sizes, set from the offload manager's own block accounting (vllm/v1/kv_offload/cpu/manager.py:459-478@5df63a72)",
@@ -483,7 +495,7 @@
       "name": "vllm:kv_offload_load_bytes",
       "type": "counter",
       "labels": [],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:65",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:82",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices",
@@ -493,7 +505,7 @@
       "name": "vllm:kv_offload_load_size",
       "type": "histogram",
       "labels": [],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:71",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:88",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices",
@@ -503,7 +515,7 @@
       "name": "vllm:kv_offload_load_time",
       "type": "counter",
       "labels": [],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:68",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:85",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices",
@@ -513,7 +525,7 @@
       "name": "vllm:kv_offload_lookup_async_delay_seconds",
       "type": "histogram",
       "labels": [],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:104",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:121",
       "module": "kv_connector",
       "class": "derived",
       "reason": "how long a scheduler-side offload lookup blocked or waited: a duration on virtual time, given the tier's lookup cost",
@@ -523,7 +535,7 @@
       "name": "vllm:kv_offload_lookup_sync_delay_seconds",
       "type": "histogram",
       "labels": [],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:85",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:102",
       "module": "kv_connector",
       "class": "derived",
       "reason": "how long a scheduler-side offload lookup blocked or waited: a duration on virtual time, given the tier's lookup cost",
@@ -533,7 +545,7 @@
       "name": "vllm:kv_offload_size",
       "type": "histogram",
       "labels": [],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:147",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:164",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices",
@@ -543,7 +555,7 @@
       "name": "vllm:kv_offload_store_bytes",
       "type": "counter",
       "labels": [],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:75",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:92",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices",
@@ -553,7 +565,7 @@
       "name": "vllm:kv_offload_store_size",
       "type": "histogram",
       "labels": [],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:81",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:98",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices",
@@ -563,7 +575,7 @@
       "name": "vllm:kv_offload_store_time",
       "type": "counter",
       "labels": [],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:78",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:95",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices",
@@ -573,7 +585,7 @@
       "name": "vllm:kv_offload_stores_skipped",
       "type": "counter",
       "labels": [],
-      "defined": "vllm/v1/kv_offload/cpu/spec.py:84",
+      "defined": "vllm/v1/kv_offload/cpu/spec.py:88",
       "module": "kv_offload",
       "class": "exact",
       "reason": "stores the CPU offload manager skipped below its reuse threshold, a decision of the manager",
@@ -583,9 +595,9 @@
       "name": "vllm:kv_offload_tiering_active_cascade_jobs",
       "type": "gauge",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:235",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:244",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -595,9 +607,9 @@
       "name": "vllm:kv_offload_tiering_active_promotion_jobs",
       "type": "gauge",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:228",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:237",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -607,9 +619,9 @@
       "name": "vllm:kv_offload_tiering_backpressure_blocks_dropped",
       "type": "counter",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:269",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:300",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -619,9 +631,9 @@
       "name": "vllm:kv_offload_tiering_backpressure_store_latency_ema",
       "type": "gauge",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:251",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:282",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -631,9 +643,9 @@
       "name": "vllm:kv_offload_tiering_backpressure_stores_dropped",
       "type": "counter",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:260",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:291",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -643,9 +655,9 @@
       "name": "vllm:kv_offload_tiering_cascade_job_failures",
       "type": "counter",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:184",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:193",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -655,9 +667,9 @@
       "name": "vllm:kv_offload_tiering_chunk_hits",
       "type": "counter",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:197",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:206",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -667,9 +679,9 @@
       "name": "vllm:kv_offload_tiering_chunk_queries",
       "type": "counter",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:191",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:200",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -679,9 +691,9 @@
       "name": "vllm:kv_offload_tiering_lookup_async_delay_seconds",
       "type": "histogram",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:125",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:130",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -691,9 +703,9 @@
       "name": "vllm:kv_offload_tiering_lookup_sync_delay_seconds",
       "type": "histogram",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:103",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:108",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -703,9 +715,9 @@
       "name": "vllm:kv_offload_tiering_primary_read_usage_perc",
       "type": "gauge",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:219",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:228",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -715,9 +727,9 @@
       "name": "vllm:kv_offload_tiering_primary_write_usage_perc",
       "type": "gauge",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:210",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:219",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -727,7 +739,7 @@
       "name": "vllm:kv_offload_tiering_promotion_allocation_failures",
       "type": "counter",
       "labels": [],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:202",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:211",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -737,9 +749,21 @@
       "name": "vllm:kv_offload_tiering_promotion_job_failures",
       "type": "counter",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:176",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:185",
+      "module": "kv_offload",
+      "class": "derived",
+      "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec"
+    },
+    {
+      "name": "vllm:kv_offload_tiering_promotion_latency_seconds",
+      "type": "histogram",
+      "labels": [
+        "result"
+      ],
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:251",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -749,9 +773,9 @@
       "name": "vllm:kv_offload_tiering_read_bytes",
       "type": "counter",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:147",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:152",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -761,9 +785,9 @@
       "name": "vllm:kv_offload_tiering_read_time",
       "type": "counter",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:154",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:159",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -773,9 +797,9 @@
       "name": "vllm:kv_offload_tiering_write_bytes",
       "type": "counter",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:161",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:169",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -785,9 +809,9 @@
       "name": "vllm:kv_offload_tiering_write_time",
       "type": "counter",
       "labels": [
-        "tier"
+        "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:168",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:176",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -797,7 +821,7 @@
       "name": "vllm:kv_offload_total_bytes",
       "type": "counter",
       "labels": [],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:141",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:158",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices",
@@ -807,7 +831,7 @@
       "name": "vllm:kv_offload_total_time",
       "type": "counter",
       "labels": [],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:144",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:161",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV offload tier's statistics: block counts follow the offload manager's decisions; bytes and times follow the tier's transfer cost, which the latency kernel prices",
@@ -846,6 +870,66 @@
       "module": "engine",
       "class": "unavailable",
       "reason": "the multimodal processor cache: no source serves multimodal requests (feature-matrix exclusion of multimodal encoder scheduling)"
+    },
+    {
+      "name": "vllm:mooncake_bytes_transferred",
+      "type": "histogram",
+      "labels": [
+        "labelnames"
+      ],
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py:215",
+      "module": "kv_connector",
+      "class": "derived",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
+      "enabled_by": "MooncakeConnector"
+    },
+    {
+      "name": "vllm:mooncake_num_descriptors",
+      "type": "histogram",
+      "labels": [
+        "labelnames"
+      ],
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py:225",
+      "module": "kv_connector",
+      "class": "derived",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
+      "enabled_by": "MooncakeConnector"
+    },
+    {
+      "name": "vllm:mooncake_num_failed_recvs",
+      "type": "counter",
+      "labels": [
+        "labelnames"
+      ],
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py:243",
+      "module": "kv_connector",
+      "class": "derived",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
+      "enabled_by": "MooncakeConnector"
+    },
+    {
+      "name": "vllm:mooncake_num_failed_transfers",
+      "type": "counter",
+      "labels": [
+        "labelnames"
+      ],
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py:235",
+      "module": "kv_connector",
+      "class": "derived",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
+      "enabled_by": "MooncakeConnector"
+    },
+    {
+      "name": "vllm:mooncake_num_kv_expired_reqs",
+      "type": "counter",
+      "labels": [
+        "labelnames"
+      ],
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py:251",
+      "module": "kv_connector",
+      "class": "derived",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
+      "enabled_by": "MooncakeConnector"
     },
     {
       "name": "vllm:mooncake_store_operation_bytes_total",
@@ -904,6 +988,18 @@
       "class": "derived",
       "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
       "enabled_by": "MooncakeStoreConnector"
+    },
+    {
+      "name": "vllm:mooncake_xfer_time_seconds",
+      "type": "histogram",
+      "labels": [
+        "labelnames"
+      ],
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py:205",
+      "module": "kv_connector",
+      "class": "derived",
+      "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
+      "enabled_by": "MooncakeConnector"
     },
     {
       "name": "vllm:nixl_bytes_transferred",
@@ -1442,6 +1538,55 @@
       "reason": "tool-call parser invocations in the API server: response parsing, which the feature matrix excludes (it has no scheduling, KV or timing effect)"
     },
     {
+      "name": "vllm:umbp_transfer_bytes_total",
+      "type": "counter",
+      "labels": [
+        "(labels)"
+      ],
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/umbp/stats.py:109",
+      "module": "kv_connector",
+      "class": "unavailable",
+      "reason": "the UMBP store connector, in vLLM's tree but registered with no connector name, so it runs only through kv_transfer_config.kv_connector_module_path, which no source uses",
+      "enabled_by": "UMBPStoreConnector"
+    },
+    {
+      "name": "vllm:umbp_transfer_completed_total",
+      "type": "counter",
+      "labels": [
+        "(labels)"
+      ],
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/umbp/stats.py:99",
+      "module": "kv_connector",
+      "class": "unavailable",
+      "reason": "the UMBP store connector, in vLLM's tree but registered with no connector name, so it runs only through kv_transfer_config.kv_connector_module_path, which no source uses",
+      "enabled_by": "UMBPStoreConnector"
+    },
+    {
+      "name": "vllm:umbp_transfer_failed_total",
+      "type": "counter",
+      "labels": [
+        "(labels)"
+      ],
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/umbp/stats.py:104",
+      "module": "kv_connector",
+      "class": "unavailable",
+      "reason": "the UMBP store connector, in vLLM's tree but registered with no connector name, so it runs only through kv_transfer_config.kv_connector_module_path, which no source uses",
+      "enabled_by": "UMBPStoreConnector"
+    },
+    {
+      "name": "vllm:umbp_transfer_submitted_total",
+      "type": "counter",
+      "labels": [
+        "labelnames",
+        "operation"
+      ],
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/umbp/stats.py:94",
+      "module": "kv_connector",
+      "class": "unavailable",
+      "reason": "the UMBP store connector, in vLLM's tree but registered with no connector name, so it runs only through kv_transfer_config.kv_connector_module_path, which no source uses",
+      "enabled_by": "UMBPStoreConnector"
+    },
+    {
       "name": "vllm:watermark_requests",
       "type": "counter",
       "labels": [
@@ -1483,9 +1628,9 @@
     }
   ],
   "counts": {
-    "total": 130,
-    "exact": 49,
-    "derived": 48,
-    "unavailable": 33
+    "total": 142,
+    "exact": 50,
+    "derived": 55,
+    "unavailable": 37
   }
 }

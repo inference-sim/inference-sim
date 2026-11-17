@@ -3,6 +3,7 @@ all2all_backend: deepep_low_latency
 disable_custom_all_reduce: true
 allreduce_backend: nccl
 max_cudagraph_capture_size: 512
+enforce_eager: true
 cudagraph_capture_sizes: [1, 8, 512]
 linear_backend: cutlass
 env: {VLLM_X: "1", A_B: "two", VLLM_USE_RUST_FRONTEND: "1"}

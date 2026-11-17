@@ -1,5 +1,5 @@
 {
- "engine_version": "0.32.0",
+ "engine_version": "0.33.0",
  "estimation_sources": {
   "config:attention_backend": "AD33 \u00a715, explicit attention backend",
   "config:attention_config.backend": "AD33 \u00a715, explicit attention backend",
@@ -14,17 +14,21 @@
   "config:kv_offloading_backend": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:130 marks it inert, read with kv_offloading_size; a run that does not state it leaves vLLM's default, \"native\" (vllm/config/cache.py:272@5df63a72), which the engine resolves",
   "config:speculative_config.model": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:278 marks it inert, role drafter; a run that does not state it leaves vLLM's default, None (no separate drafter checkpoint), which the engine resolves",
   "env:VLLM_USE_SIMPLE_KV_OFFLOAD": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:348 marks it inert; a run that does not set it leaves vLLM's default, off (vllm/envs.py:2243@5df63a72), which the engine resolves",
-  "env:VLLM_FLASHINFER_ALLREDUCE_BACKEND": "vllm/distributed/device_communicators/flashinfer_all_reduce.py:143-178@5df63a72 resolves an unset (auto) backend to mnnvl, with a trtllm fallback allowed, on one node, and to mnnvl without fallback on compute capability 10.0 and up across nodes, so a recipe that states mnnvl across nodes on such a part runs as the default does, while one that states it on one node does not (no fallback); the latency kernel prices every tensor-parallel all-reduce from the NCCL sweep whichever FlashInfer backend runs (it has no implementation-keyed all-reduce entry), so the stand-in changes no price. The field's valid_when says for which values and groups the stand-in is exact; fields/stand_in_vectors.json holds it to _resolve_fi_ar_backend",
+  "env:VLLM_FLASHINFER_ALLREDUCE_BACKEND": "vllm/distributed/device_communicators/flashinfer_all_reduce.py:143-178@5df63a72 resolves an unset (auto) backend to mnnvl, with a trtllm fallback allowed, on one node, and to mnnvl without fallback on compute capability 10.0 and up across nodes, so a recipe that states mnnvl across nodes on such a part runs as the default does, while one that states it on one node does not (no fallback); the latency kernel prices every tensor-parallel all-reduce from the NCCL sweep whichever FlashInfer backend runs (it has no implementation-keyed all-reduce entry), so the stand-in changes no price. The field's valid_when says for which values and groups the stand-in is exact; fields/stand_in_vectors.json holds it to _resolve_fi_ar_backend; a single-node group on compute capability 10.0 and up is exact under the assumption that the node has NVSwitch multicast (a stated mnnvl on a node without it disables the FlashInfer all-reduce, auto falls back to trtllm, flashinfer_all_reduce.py:196-232@4ba787ec), true of every Blackwell part in the catalog (owner _resolve_fi_ar_backend+multicast)",
   "env:UCX_RCACHE_MAX_UNRELEASED": "vllm/distributed/nixl_utils.py:20-36@5df63a72 sets UCX_RCACHE_MAX_UNRELEASED to 1024 itself when the environment does not state it, so a run that states 1024 runs as an unset one does; UCX's variable (src/ucs/memory/rcache.c:114-118 at UCX v1.19.0, the version inside the nixl 1.5.0 wheel is not known) only sets when invalidated registration regions are cleaned up and does not choose a transport or a rate; the field's valid_when says for which values the stand-in is exact; fields/stand_in_vectors.json holds it to _maybe_set_ucx_rcache_limit",
-  "env:UCX_TLS": "NIXL's UCX backend is the default (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:525-526@5df63a72) and UCX_TLS restricts the transports it may use (UCX FAQ). The engine prices a handoff between nodes over the NIC at the cluster fabric's rate unless UCX_CUDA_IPC_ENABLE_MNNVL=y is stated (compat/kernelmodel, rackHandoff), which is the path a list of RDMA transports without cuda_ipc takes, so unset stands in exactly for such a list; the field's valid_when says for which lists the stand-in is exact"
+  "env:UCX_TLS": "NIXL's UCX backend is the default (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:525-526@5df63a72) and UCX_TLS restricts the transports it may use (UCX FAQ). The engine prices a handoff between nodes over the NIC at the cluster fabric's rate unless UCX_CUDA_IPC_ENABLE_MNNVL=y is stated (compat/kernelmodel, rackHandoff), which is the path a list of RDMA transports without cuda_ipc takes, so unset stands in exactly for such a list; the field's valid_when says for which lists the stand-in is exact",
+  "env:NCCL_CUMEM_ENABLE": "vLLM's serving process does not read NCCL_CUMEM_ENABLE (it names it only in vllm/distributed/weight_transfer/sharded_rdt_trainer.py:1156@4ba787ec); NCCL does. NCCL autodetects cuMem since 2.19 and the variable only overrides that, so a stated 1 on a run that completed is NCCL's default and the unset stand-in is exact for it; a stated 0 disables cuMem (and with it NVLS and MNNVL), changes the buffers NCCL registers, and is not exact. The field's valid_when says for which values; fields/stand_in_vectors.json holds it (owner nccl-user-guide)",
+  "env:NCCL_NVLS_ENABLE": "vLLM's serving process does not read NCCL_NVLS_ENABLE (it names it only in vllm/model_executor/determinism/batch_invariant.py:1409@4ba787ec, where it sets 0); NCCL does. The default is 2 and 1 differs from it only in making a failed NVLS allocation fatal (NCCL user guide), so a stated 1 or 2 on a run that completed runs as the unset stand-in does; 0 disables NVLink SHARP, which changes the collectives' algorithm, and is not exact. The field's valid_when says for which values; fields/stand_in_vectors.json holds it (owner nccl-user-guide)"
  },
  "extra_env": [
   "MC_ENABLE_DEST_DEVICE_AFFINITY",
   "MC_SLICE_SIZE",
   "MC_WORKERS_PER_CTX",
+  "NCCL_MNNVL_ENABLE",
   "NVSHMEM_QP_DEPTH",
   "PYTHONNOUSERSITE",
   "PYTHONUNBUFFERED",
+  "UCX_CUDA_IPC_ENABLE_MNNVL",
   "UCX_TLS"
  ],
  "dynamic_reads": {
@@ -122,12 +126,6 @@
     "CPU_VISIBLE_MEMORY_NODES"
    ]
   },
-  "vllm/v1/executor/ray_executor.py: name in os.environ": {
-   "reason": "the Ray workers' environment: copies to a Ray worker each variable get_env_vars_to_copy chooses (ray/ray_env.py:56): every key of environment_variables, every variable present whose name starts with VLLM_, FLASH_ATTENTION_, LMCACHE_, NCCL_, UCX_, HF_ or HUGGING_FACE_, PYTHONHASHSEED, and the names VLLM_RAY_EXTRA_ENV_VARS_TO_COPY lists; it passes a value on and decides nothing with it"
-  },
-  "vllm/v1/executor/ray_executor.py: os.environ[name]": {
-   "reason": "the Ray workers' environment: copies to a Ray worker each variable get_env_vars_to_copy chooses (ray/ray_env.py:56): every key of environment_variables, every variable present whose name starts with VLLM_, FLASH_ATTENTION_, LMCACHE_, NCCL_, UCX_, HF_ or HUGGING_FACE_, PYTHONHASHSEED, and the names VLLM_RAY_EXTRA_ENV_VARS_TO_COPY lists; it passes a value on and decides nothing with it"
-  },
   "vllm/v1/executor/ray_executor_v2.py: os.environ.setdefault(key, value)": {
    "reason": "sets in a Ray worker each driver variable not already set there (get_driver_env_vars, v1/executor/ray_env_utils.py:10-20, all of the driver's environment but the worker-specific names); it passes values on"
   },
@@ -156,7 +154,25 @@
   },
   "config:all2all_backend": {
    "estimation": {
-    "rule": "none"
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "all2all_backend": "flashinfer_nvlink_one_sided"
+     },
+     "evidence": "no allowed table measures FlashInfer's NVLink one-sided all-to-all: the AISimulate moe_a2a_perf collections for b200, b300, gb200 and gb300 (vLLM 0.24.0 and TRT-LLM 1.3.0rc11) hold only the DeepEP high-throughput and low-latency backends (checked 2026-11-17); the cost model prices a dispatch with no measured kernel as NCCL's all-to-all over top_k bytes (kernel/deepep.go liftDeepEP, recorded as an assumption)",
+     "differs": "the backend is FlashInfer's NVLinkOneSidedAlltoAll (FlashInferNVLinkOneSidedManager, vllm/distributed/device_communicators/all2all.py:759 at 4ba787ec9959), a one-sided NVLink put kernel that NCCL's all-to-all is not; the dispatch and combine are priced at NCCL's all-to-all floor and rate, not at the kernel's own, which no allowed data measures",
+     "when": [
+      {
+       "value_in": [
+        "flashinfer_nvlink_one_sided"
+       ],
+       "compute_capability": {
+        "gte": "10.0",
+        "lt": "11.0"
+       }
+      }
+     ]
+    }
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#75"
@@ -396,6 +412,24 @@
    },
    "status": "not_modelled"
   },
+  "config:attention_config.indexer_tp_shard_min_rows": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#55"
+   },
+   "status": "not_modelled"
+  },
+  "config:attention_config.minimax_m3_indexer_cp": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#55"
+   },
+   "status": "not_modelled"
+  },
   "config:attention_config.minimax_m3_msa_decode_backend": {
    "estimation": {
     "rule": "leave_unset"
@@ -407,7 +441,25 @@
   },
   "config:attention_config.mla_prefill_backend": {
    "estimation": {
-    "rule": "none"
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "attention_config.mla_prefill_backend": null
+     },
+     "evidence": "the registry's attention lanes, fitted on AISimulate attention timings of vLLM's MLA kernels on b200 and b300, with the engine's attention implementation unreported so the pooled lanes price",
+     "differs": "a stated TRTLLM_RAGGED runs FlashInfer's trtllm-gen ragged MLA prefill (TrtllmRaggedPrefillBackend, vllm/v1/attention/backends/mla/prefill/trtllm_ragged.py:36 at 4ba787ec9959) where auto picks another prefill kernel; the prefill is priced at the pooled lanes' speed, not at that kernel's",
+     "when": [
+      {
+       "value_in": [
+        "trtllm_ragged"
+       ],
+       "compute_capability": {
+        "gte": "10.0",
+        "lt": "11.0"
+       }
+      }
+     ]
+    }
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#80"
@@ -450,6 +502,15 @@
    },
    "status": "inert_unproven"
   },
+  "config:attention_config.trtllm_ragged_backend": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#55"
+   },
+   "status": "not_modelled"
+  },
   "config:attention_config.use_non_causal": {
    "estimation": {
     "rule": "leave_unset"
@@ -470,7 +531,25 @@
   },
   "config:attention_config.use_trtllm_attention": {
    "estimation": {
-    "rule": "none"
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "attention_config.use_trtllm_attention": null
+     },
+     "evidence": "the registry's attention lanes, fitted on AISimulate attention timings on b200 and b300 of vLLM's FlashInfer kernels, among them the trtllm-gen prefill rows (vllm_flashinfer_trtllmprefill, 12360 of the 27574 prefill rows the pooled pair is fitted on), with the engine's attention implementation unreported so the pooled pair prices",
+     "differs": "a stated true forces FlashInfer's trtllm-gen kernels for prefill and decode (vllm/utils/flashinfer.py:724-812 at 4ba787ec9959); auto uses trtllm-gen for decode when the query is fp8-quantised (an fp8 KV cache) but for prefill only with an auto KV dtype, so on the fp8-KV recipes the prefill kernel differs; the pooled prefill pair averages the trtllm-gen and the other rows, so the prefill is priced at their mean speed, not trtllm-gen's",
+     "when": [
+      {
+       "value_in": [
+        "true"
+       ],
+       "compute_capability": {
+        "gte": "10.0",
+        "lt": "11.0"
+       }
+      }
+     ]
+    }
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#80"
@@ -688,7 +767,25 @@
   },
   "config:compilation_config.custom_ops": {
    "estimation": {
-    "rule": "none"
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "compilation_config.custom_ops": null
+     },
+     "evidence": "the lowering's launch counts and elementwise fusions are those of the default compiled model (custom_ops unset), priced from the registry's per-kernel rates",
+     "differs": "a stated list switches named ops (+rms_norm, +quant_fp8, +rotary_embedding) from the inductor-generated kernel to vLLM's custom CUDA kernel, or all of them with all, which changes those ops' launches and bytes; the step is priced with the default choice",
+     "when": [
+      {
+       "value_list_has_any": [
+        "+rms_norm",
+        "+quant_fp8",
+        "+rotary_embedding",
+        "all",
+        "+all"
+       ]
+      }
+     ]
+    }
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#80"
@@ -829,7 +926,22 @@
   },
   "config:compilation_config.mode": {
    "estimation": {
-    "rule": "none"
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "compilation_config.mode": null
+     },
+     "evidence": "the lowering's launch counts and fusions are those of the default VLLM_COMPILE mode, priced from the registry's per-kernel rates",
+     "differs": "a stated mode 0 (NONE) runs the model as plain PyTorch with no torch.compile fusion, so the step launches more, smaller kernels than the lowering counts; the step is priced faster than it ran",
+     "when": [
+      {
+       "value_in": [
+        "0",
+        "none"
+       ]
+      }
+     ]
+    }
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#59"
@@ -1124,9 +1236,9 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#55"
+    "proof": "oracle/inertness/data_parallel_rpc_port.json"
    },
-   "status": "not_modelled"
+   "status": "proven_inert"
   },
   "config:data_parallel_size": {
    "estimation": {
@@ -1932,7 +2044,21 @@
   },
   "config:enforce_eager": {
    "estimation": {
-    "rule": "none"
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "enforce_eager": true
+     },
+     "evidence": "the engine prices the step with no CUDA graph, as vLLM runs it under enforce_eager (vllm/config/vllm.py:2004-2009 at 4ba787ec9959: cudagraph_mode NONE), from the registry's per-kernel rates, fitted on AISimulate kernel timings of single operators, which compilation does not change",
+     "differs": "enforce_eager also sets compilation_config.mode NONE (vllm/config/vllm.py:1766-1769), so no torch.compile fusion runs and the step launches more, smaller kernels than the lowering counts, whose launch counts and elementwise fusions are those of the default VLLM_COMPILE mode; the step is priced faster than eager runs by the fusion saving that eager mode loses",
+     "when": [
+      {
+       "value_in": [
+        "true"
+       ]
+      }
+     ]
+    }
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#59"
@@ -2385,7 +2511,25 @@
   },
   "config:kernel_config.linear_backend": {
    "estimation": {
-    "rule": "none"
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "kernel_config.linear_backend": "auto"
+     },
+     "evidence": "the registry's NVFP4 dense ramp (gemm_eps_max_nvfp4, gemm_m_half_nvfp4 on b200 and b300), fitted on AISimulate's vLLM FlashInferCuteDslNvFp4LinearKernel rows, the kernel vLLM v0.33.0 runs at linear_backend auto (vllm/model_executor/kernels/linear/__init__.py:592-596 at v0.33.0); no allowed table measures FlashInferCutlassNvFp4LinearKernel",
+     "differs": "the NVFP4 linears run FlashInfer's CUTLASS FP4 GEMM, priced at the CuteDSL kernel's measured speed; BF16 linears are unaffected, since v0.33.0 maps only flashinfer_cutedsl to a FlashInfer BF16 GEMM (vllm/model_executor/layers/utils.py:148-154 at v0.33.0)",
+     "when": [
+      {
+       "value_in": [
+        "flashinfer_cutlass"
+       ],
+       "compute_capability": {
+        "gte": "10.0",
+        "lt": "11.0"
+       }
+      }
+     ]
+    }
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#80"
@@ -2406,7 +2550,16 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-registry#75"
+    "issue": "inference-sim/blis-substrate#150"
+   },
+   "status": "not_modelled"
+  },
+  "config:kernel_config.monokernel": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -2678,7 +2831,25 @@
   },
   "config:linear_backend": {
    "estimation": {
-    "rule": "none"
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "kernel_config.linear_backend": "auto"
+     },
+     "evidence": "the registry's NVFP4 dense ramp (gemm_eps_max_nvfp4, gemm_m_half_nvfp4 on b200 and b300), fitted on AISimulate's vLLM FlashInferCuteDslNvFp4LinearKernel rows, the kernel vLLM v0.33.0 runs at linear_backend auto (vllm/model_executor/kernels/linear/__init__.py:592-596 at v0.33.0); no allowed table measures FlashInferCutlassNvFp4LinearKernel",
+     "differs": "the NVFP4 linears run FlashInfer's CUTLASS FP4 GEMM, priced at the CuteDSL kernel's measured speed; BF16 linears are unaffected, since v0.33.0 maps only flashinfer_cutedsl to a FlashInfer BF16 GEMM (vllm/model_executor/layers/utils.py:148-154 at v0.33.0)",
+     "when": [
+      {
+       "value_in": [
+        "flashinfer_cutlass"
+       ],
+       "compute_capability": {
+        "gte": "10.0",
+        "lt": "11.0"
+       }
+      }
+     ]
+    }
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#80"
@@ -3269,10 +3440,41 @@
   },
   "config:moe_backend": {
    "estimation": {
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "moe_backend": null
+     },
+     "evidence": "the registry prices a routed expert group by weight format on the ramp fitted for it (blis-substrate#150, #285), and records that the stated backend is not the one it measured",
+     "differs": "a stated backend (FlashInfer TRT-LLM or CUTLASS, DeepGEMM mega-MoE, Marlin) runs its own kernel with its own ramp; the experts are priced by weight format at the cost model's choice for that format, so the step carries that backend's difference",
+     "when": [
+      {
+       "value_in": [
+        "flashinfer_trtllm",
+        "flashinfer_cutlass",
+        "deep_gemm_mega_moe",
+        "deep_gemm_amxf4_mega_moe",
+        "marlin"
+       ],
+       "compute_capability": {
+        "gte": "10.0",
+        "lt": "11.0"
+       }
+      }
+     ]
+    }
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-substrate#150"
+   },
+   "status": "not_modelled"
+  },
+  "config:monokernel": {
+   "estimation": {
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-registry#75"
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -3943,6 +4145,15 @@
    },
    "status": "not_modelled"
   },
+  "config:reasoning_effort_map": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#54"
+   },
+   "status": "not_modelled"
+  },
   "config:reasoning_parser": {
    "estimation": {
     "rule": "leave_unset"
@@ -4144,6 +4355,15 @@
    },
    "status": "inert_unproven"
   },
+  "config:sleep_mode_backend": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#54"
+   },
+   "status": "not_modelled"
+  },
   "config:sleep_mode_offload_cudagraph": {
    "estimation": {
     "rule": "none"
@@ -4234,7 +4454,25 @@
    },
    "status": "not_modelled"
   },
+  "config:speculative_config.disable_lookahead_block_hashes": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#58"
+   },
+   "status": "not_modelled"
+  },
   "config:speculative_config.disable_padded_drafter_batch": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#58"
+   },
+   "status": "not_modelled"
+  },
+  "config:speculative_config.draft_lm_head_quantization": {
    "estimation": {
     "rule": "none"
    },
@@ -4378,6 +4616,33 @@
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#58"
+   },
+   "status": "not_modelled"
+  },
+  "config:speculative_config.fly_entropy_threshold": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#29"
+   },
+   "status": "not_modelled"
+  },
+  "config:speculative_config.fly_entropy_top_k": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#29"
+   },
+   "status": "not_modelled"
+  },
+  "config:speculative_config.fly_window_size": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#29"
    },
    "status": "not_modelled"
   },
@@ -4605,6 +4870,15 @@
     "note": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml marks it inert; no inertness proof yet (VLM-3, due in M2)"
    },
    "status": "inert_unproven"
+  },
+  "config:speculative_config.xpress_topc": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#58"
+   },
+   "status": "not_modelled"
   },
   "config:sse_keep_alive_interval": {
    "estimation": {
@@ -4918,6 +5192,33 @@
    },
    "status": "not_modelled"
   },
+  "config:watchdog_config.check_interval": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#55"
+   },
+   "status": "not_modelled"
+  },
+  "config:watchdog_config.dump_dir": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#55"
+   },
+   "status": "not_modelled"
+  },
+  "config:watchdog_config.timeout": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#55"
+   },
+   "status": "not_modelled"
+  },
   "config:watermark": {
    "estimation": {
     "rule": "leave_unset"
@@ -5028,6 +5329,15 @@
    },
    "status": "not_modelled"
   },
+  "env:ARCH": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:AWS_ENDPOINT_URL": {
    "estimation": {
     "rule": "none"
@@ -5047,6 +5357,15 @@
    "status": "not_modelled"
   },
   "env:CMAKE_BUILD_TYPE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:COMPILE_ONLY": {
    "estimation": {
     "rule": "none"
    },
@@ -5460,6 +5779,24 @@
    },
    "status": "proven_inert"
   },
+  "env:MC_FORCE_MNNVL": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:MC_INTRANODE_NVLINK": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:MC_SLICE_SIZE": {
    "estimation": {
     "rule": "none"
@@ -5468,6 +5805,24 @@
     "proof": "oracle/inertness/MC_SLICE_SIZE.json"
    },
    "status": "proven_inert"
+  },
+  "env:MC_USE_TENT": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:MC_USE_TEV1": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
   },
   "env:MC_WORKERS_PER_CTX": {
    "estimation": {
@@ -5552,7 +5907,15 @@
   },
   "env:NCCL_CUMEM_ENABLE": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset",
+    "preserves": "NCCL's own choice: since NCCL 2.19 it allocates with the CUDA cuMem functions whenever the system supports them (NCCL user guide, NCCL_CUMEM_ENABLE), and a stated 1 only overrides the autodetection with the same choice. The latency kernel prices every collective from the NCCL sweep at NCCL's defaults",
+    "valid_when": [
+     {
+      "value_in": [
+       "1"
+      ]
+     }
+    ]
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#62"
@@ -5613,6 +5976,24 @@
    },
    "status": "not_modelled"
   },
+  "env:NCCL_MNNVL_ENABLE": {
+   "estimation": {
+    "rule": "leave_unset",
+    "preserves": "NCCL's own choice: the default is 2, use multi-node NVLink where the system supports it and fall back to the network where it does not, and 1 differs only in failing communicator initialization when MNNVL is unsupported or cannot be enabled (NCCL user guide, NCCL_MNNVL_ENABLE), which a run that completed did not do. The latency kernel prices every collective from the NCCL sweep at NCCL's defaults, and a stated cluster's NVLink domain is a catalog fact, not a setting",
+    "valid_when": [
+     {
+      "value_in": [
+       "1",
+       "2"
+      ]
+     }
+    ]
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
   "env:NCCL_NO_CACHE": {
    "estimation": {
     "rule": "none"
@@ -5633,7 +6014,16 @@
   },
   "env:NCCL_NVLS_ENABLE": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset",
+    "preserves": "NCCL's own choice: the default is 2, use NVLink SHARP where the system supports it, and 1 differs only in failing communicator initialization when the NVLS resources cannot be allocated (NCCL user guide, NCCL_NVLS_ENABLE), which a run that completed did not do. The latency kernel prices every collective from the NCCL sweep at NCCL's defaults",
+    "valid_when": [
+     {
+      "value_in": [
+       "1",
+       "2"
+      ]
+     }
+    ]
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#62"
@@ -5650,6 +6040,15 @@
    "status": "not_modelled"
   },
   "env:NCCL_PROTO": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
+  "env:NCCL_RAS_ENABLE": {
    "estimation": {
     "rule": "none"
    },
@@ -5813,6 +6212,15 @@
    },
    "status": "not_modelled"
   },
+  "env:PYTORCH_ROCM_ARCH": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:ProgramFiles": {
    "estimation": {
     "rule": "none"
@@ -5823,15 +6231,6 @@
    "status": "not_modelled"
   },
   "env:RANK": {
-   "estimation": {
-    "rule": "none"
-   },
-   "evidence": {
-    "issue": "inference-sim/blis-vllm#53"
-   },
-   "status": "not_modelled"
-  },
-  "env:RAY_CGRAPH_get_timeout": {
    "estimation": {
     "rule": "none"
    },
@@ -6083,6 +6482,18 @@
    },
    "status": "not_modelled"
   },
+  "env:UCX_CUDA_IPC_ENABLE_MNNVL": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "traces": [
+     "compat/kernelmodel/packaging_test.go",
+     "compat/kernelmodel/group_placement_test.go"
+    ]
+   },
+   "status": "modelled"
+  },
   "env:UCX_MEMTYPE_CACHE": {
    "estimation": {
     "rule": "none"
@@ -6295,6 +6706,15 @@
    },
    "status": "not_modelled"
   },
+  "env:VLLM_BEAM_ALWAYS_CONSTRAIN_OUTPUT": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER": {
    "estimation": {
     "rule": "none"
@@ -6340,7 +6760,25 @@
    },
    "status": "not_modelled"
   },
+  "env:VLLM_CHAT_TEMPLATE_FUEL": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:VLLM_CHAT_TEMPLATE_RENDER_TIMEOUT": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_COHERE2_ATTN_MOE_DUAL_STREAM_TOKEN_THRESHOLD": {
    "estimation": {
     "rule": "none"
    },
@@ -6937,7 +7375,7 @@
   "env:VLLM_FLASHINFER_ALLREDUCE_BACKEND": {
    "estimation": {
     "rule": "leave_unset",
-    "preserves": "the backend vLLM's _resolve_fi_ar_backend picks for the tensor-parallel group (flashinfer_all_reduce.py:143-178@5df63a72). One node: auto picks mnnvl with a trtllm fallback when the multicast workspace cannot be created, and a stated mnnvl picks mnnvl with no fallback, so the two differ on a node without NVSwitch multicast, which the stand-in cannot be told: a stated mnnvl on one node is not exact. Several nodes: auto picks mnnvl without fallback on compute capability 10.0 and up, and turns FlashInfer all-reduce off below it.",
+    "preserves": "the backend vLLM's _resolve_fi_ar_backend picks for the tensor-parallel group (flashinfer_all_reduce.py:143-178@5df63a72). One node: auto picks mnnvl with a trtllm fallback when the multicast workspace cannot be created, and a stated mnnvl picks mnnvl with no fallback, so the two differ on a node without NVSwitch multicast, which the stand-in cannot be told. On compute capability 10.0 and up every node the recorded runs used has NVSwitch multicast (HGX B200 and B300, the GB200 and GB300 NVL72 trays), the fallback is never taken, and a stated mnnvl on one node is exact under that assumption, which the point's estimation text states; on a lower capability it is not exact. Several nodes: auto picks mnnvl without fallback on compute capability 10.0 and up, and turns FlashInfer all-reduce off below it.",
     "valid_when": [
      {
       "value_in": [
@@ -6950,6 +7388,17 @@
       ],
       "tp_group_nodes": {
        "gt": 1
+      },
+      "compute_capability": {
+       "gte": "10.0"
+      }
+     },
+     {
+      "value_in": [
+       "mnnvl"
+      ],
+      "tp_group_nodes": {
+       "eq": 1
       },
       "compute_capability": {
        "gte": "10.0"
@@ -7080,6 +7529,15 @@
    "status": "not_modelled"
   },
   "env:VLLM_HOST_IP": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_HTTP_MAX_REQUEST_BODY_SIZE": {
    "estimation": {
     "rule": "none"
    },
@@ -7439,6 +7897,24 @@
    },
    "status": "not_modelled"
   },
+  "env:VLLM_MAX_MEDIA_REQUEST_DECODE_BYTES": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_MAX_MEDIA_REQUEST_DOWNLOAD_SIZE_MB": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:VLLM_MAX_NUM_BAD_WORDS": {
    "estimation": {
     "rule": "none"
@@ -7539,6 +8015,15 @@
    "status": "not_modelled"
   },
   "env:VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_MINIMAX_M3_MSA_CUTLASS_MIN_BATCH": {
    "estimation": {
     "rule": "none"
    },
@@ -8006,6 +8491,15 @@
    },
    "status": "not_modelled"
   },
+  "env:VLLM_REQUEST_BODY_LOG_LEVEL": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:VLLM_RINGBUFFER_WARNING_INTERVAL": {
    "estimation": {
     "rule": "none"
@@ -8015,25 +8509,7 @@
    },
    "status": "not_modelled"
   },
-  "env:VLLM_ROCM_AITER_MEGA_MOE_FUSE_SHARED_EXPERTS": {
-   "estimation": {
-    "rule": "none"
-   },
-   "evidence": {
-    "issue": "inference-sim/blis-vllm#53"
-   },
-   "status": "not_modelled"
-  },
   "env:VLLM_ROCM_AITER_MLA_ASM_PADDING": {
-   "estimation": {
-    "rule": "none"
-   },
-   "evidence": {
-    "issue": "inference-sim/blis-vllm#53"
-   },
-   "status": "not_modelled"
-  },
-  "env:VLLM_ROCM_AITER_MLA_DCP_VERIFY": {
    "estimation": {
     "rule": "none"
    },
@@ -8078,7 +8554,16 @@
    },
    "status": "not_modelled"
   },
-  "env:VLLM_ROCM_MONO_DECODE": {
+  "env:VLLM_ROCM_MUSE_MOE_ONLINE_QUANT": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_ROCM_MUSE_MOE_REDUCE_DTYPE": {
    "estimation": {
     "rule": "none"
    },
@@ -8169,15 +8654,6 @@
    "status": "not_modelled"
   },
   "env:VLLM_ROCM_USE_AITER_FP4BMM": {
-   "estimation": {
-    "rule": "none"
-   },
-   "evidence": {
-    "issue": "inference-sim/blis-vllm#53"
-   },
-   "status": "not_modelled"
-  },
-  "env:VLLM_ROCM_USE_AITER_FP4_ASM_GEMM": {
    "estimation": {
     "rule": "none"
    },
@@ -8474,6 +8950,15 @@
    },
    "status": "not_modelled"
   },
+  "env:VLLM_STEP5_SHARD_SP_SHARED_EXPERT": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:VLLM_SYSTEM_START_DATE": {
    "estimation": {
     "rule": "none"
@@ -8755,7 +9240,24 @@
   },
   "env:VLLM_USE_NCCL_SYMM_MEM": {
    "estimation": {
-    "rule": "none"
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "env.VLLM_USE_NCCL_SYMM_MEM": null
+     },
+     "evidence": "the registry's all-reduce floors and rates, fitted on AISimulate's NCCL sweep at NCCL's defaults (cost-model-collectives)",
+     "differs": "a stated 1 registers the all-reduce buffers as NCCL symmetric memory so the all-reduce can use the NVLS symmetric kernels, which the sweep did not run; the all-reduce is priced at the default NCCL algorithm; a stated 0 is the default",
+     "when": [
+      {
+       "value_in": [
+        "1",
+        "0",
+        "true",
+        "false"
+       ]
+      }
+     ]
+    }
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#53"
@@ -8781,42 +9283,6 @@
    "status": "not_modelled"
   },
   "env:VLLM_USE_PRECOMPILED_RUST": {
-   "estimation": {
-    "rule": "none"
-   },
-   "evidence": {
-    "issue": "inference-sim/blis-vllm#53"
-   },
-   "status": "not_modelled"
-  },
-  "env:VLLM_USE_RAY_COMPILED_DAG_CHANNEL_TYPE": {
-   "estimation": {
-    "rule": "none"
-   },
-   "evidence": {
-    "issue": "inference-sim/blis-vllm#53"
-   },
-   "status": "not_modelled"
-  },
-  "env:VLLM_USE_RAY_COMPILED_DAG_OVERLAP_COMM": {
-   "estimation": {
-    "rule": "none"
-   },
-   "evidence": {
-    "issue": "inference-sim/blis-vllm#53"
-   },
-   "status": "not_modelled"
-  },
-  "env:VLLM_USE_RAY_V2_EXECUTOR_BACKEND": {
-   "estimation": {
-    "rule": "none"
-   },
-   "evidence": {
-    "issue": "inference-sim/blis-vllm#53"
-   },
-   "status": "not_modelled"
-  },
-  "env:VLLM_USE_RAY_WRAPPED_PP_COMM": {
    "estimation": {
     "rule": "none"
    },

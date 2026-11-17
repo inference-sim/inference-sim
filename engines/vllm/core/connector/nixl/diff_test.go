@@ -15,9 +15,10 @@ import (
 	"github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/blis-vllm/internal/upstream"
 )
 
-// eosToken is tests/v1/core/utils.py:43@5df63a72, which the GPU mock samples last.
+// eosToken is tests/v1/core/utils.py:49@4ba787ec, which the GPU mock samples last.
 const eosToken = 50256
 
 // scenario is a connector scenario (oracle/README.md, "Connector scenarios").
@@ -188,7 +189,7 @@ func run(t *testing.T, sc scenario) trace {
 	if c.AsyncScheduling || pp > 1 {
 		queue = engine.MaxConcurrentBatches(pp, c.AsyncScheduling, v2)
 	}
-	s, err := sched.New(sched.Config{
+	s, err := sched.New(sched.Config{KVTransfer: true, // the connector this test installs (kv_transfer_config)
 		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: c.MaxModelLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 		EnableChunkedPrefill: chunked, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: caching,
@@ -903,8 +904,8 @@ func checkProvenance(t *testing.T, scenarioPath string, tr trace) {
 	p := tr.Provenance
 	for _, c := range []struct{ field, got, want string }{
 		{"scenario_sha256", p.ScenarioSHA256, hex.EncodeToString(sum[:])},
-		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], "0.32.0"},
-		{"vllm_commit", p.VLLMCommit, "5df63a7203cdb9328d824a27b682e77c7b9928be"},
+		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], upstream.Version},
+		{"vllm_commit", p.VLLMCommit, upstream.Commit},
 		{"mock_version", p.MockVersion, mocks.Version},
 	} {
 		if c.got != c.want {
@@ -946,7 +947,7 @@ func TestNIXLAgainstVLLM(t *testing.T) {
 			readJSON(t, filepath.Join("testdata", "golden", name+".json"), &want)
 			checkProvenance(t, path, want)
 			if d := earliestDivergence(want, run(t, sc)); d != "" {
-				t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+				t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 			}
 		})
 	}
@@ -974,7 +975,7 @@ func TestNIXLFuzzCorpusAgainstVLLM(t *testing.T) {
 		checkProvenance(t, filepath.Join(dir, name+".json"), want)
 		if d := earliestDivergence(want, run(t, sc)); d != "" {
 			mismatches++
-			t.Errorf("%s: earliest divergence from vLLM v0.32.0: %s", name, d)
+			t.Errorf("%s: earliest divergence from vLLM v0.33.0: %s", name, d)
 		}
 	}
 	t.Logf("connector fuzz corpus: %d scenarios, %d mismatches", len(traces), mismatches)

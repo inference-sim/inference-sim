@@ -39,8 +39,8 @@ type AdoptInputs struct {
 type Adopted struct {
 	Shape         kernelmodel.Shape
 	Disaggregated bool
-	// CoreEngine is set for a scenario stating vLLM 0.32.0, which runs on blis-vllm's v0.32.0
-	// engine (core/vllm) built through blis-schemas' engine registry (vllmengine), not on the
+	// CoreEngine is set for a scenario stating the release blis-vllm models (vllm.Version), which
+	// runs on blis-vllm's engine for it (core/vllm) built through blis-schemas' engine registry (vllmengine), not on the
 	// compatibility engine. The kernel opened for the first pool still sizes the host's side of
 	// the run (the model, hardware and parallelism), and prices 0.32.0 with its 0.31.0 tuning,
 	// which it discloses.
@@ -84,8 +84,8 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 		return Adopted{}, fmt.Errorf("scenario %q: %v", in.Scenario, err)
 	}
 	// One build models one engine release (#2021 B6): the compatibility engine is inference-sim's
-	// engine as it ran for the releases its scenarios state, and a 0.32.0 deployment runs on
-	// blis-vllm's v0.32.0 engine (core/vllm). Any other release is refused rather than run as one
+	// engine as it ran for the releases its scenarios state, and a deployment stating vllm.Version
+	// runs on blis-vllm's engine for it (core/vllm). Any other release is refused rather than run as one
 	// of those.
 	core := shape.EngineVersion == vllm.Version
 	if !core && !slices.Contains(CompatVersions(), shape.EngineVersion) {
@@ -94,8 +94,8 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 			stated = "states no engine release (engine.version, or the deprecated engine_version)"
 		}
 		return Adopted{}, fmt.Errorf("scenario %q %s; blis-vllm models the releases %s and %s: the "+
-			"compatibility engine runs the first ones and the v0.32.0 engine %s",
-			in.Scenario, stated, strings.Join(CompatVersions(), ", "), vllm.Version, vllm.Version)
+			"compatibility engine runs the first ones and the v%s engine %s",
+			in.Scenario, stated, strings.Join(CompatVersions(), ", "), vllm.Version, vllm.Version, vllm.Version)
 	}
 	// The compatibility engine models the settings the 0.29/0.31 releases had, as inference-sim's
 	// engine did. A setting blis-schemas added with the v0.32.0 engine would be dropped without a
@@ -104,7 +104,7 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 	// issue (docs/feature-matrix.md).
 	for i, names := range shape.Unmodelled {
 		if len(names) == 0 || core {
-			// The v0.32.0 engine reads or refuses each of these settings itself.
+			// blis-vllm's engine reads or refuses each of these settings itself.
 			continue
 		}
 		stated := make([]string, len(names))
@@ -116,6 +116,21 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 			"simulator does not build yet (inference-sim#2027; docs/feature-matrix.md in blis-vllm gives each setting's status "+
 			"there). Drop the setting to run on the compatibility engine",
 			in.Scenario, shape.Roles[i], strings.Join(stated, ", "), strings.Join(CompatVersions(), " and "))
+	}
+	// vLLM's p2p tier (connector_options.secondary_tiers) came with the v0.33.0 engine, which builds
+	// it (core/vllm offloadtiers_p2p.go); the compatibility engine has no such tier, and the offload
+	// it resolves drops the option (KVOffloadBlockFromDeployment), so a release it runs is refused.
+	if !core && StatesP2PTier(shape.Offload) {
+		return Adopted{}, fmt.Errorf("scenario %q: offload.connector_options.secondary_tiers states vLLM's p2p tier, "+
+			"which the %s releases the compatibility engine models do not have; it runs on the v%s engine, so state engine.version %q",
+			in.Scenario, strings.Join(CompatVersions(), " and "), vllm.Version, vllm.Version)
+	}
+	// vLLM's obj tier, on an object store, came with the v0.33.0 engine too (vllmengine); the
+	// compatibility engine models the fs tier only.
+	if !core && StatesObjectStoreTier(shape.Offload) {
+		return Adopted{}, fmt.Errorf("scenario %q: offload states a tier on an object store, which vLLM reaches through its obj "+
+			"tier; the compatibility engine (the %s releases) models the fs tier only, and the v%s engine runs it, so state "+
+			"engine.version %q", in.Scenario, strings.Join(CompatVersions(), " and "), vllm.Version, vllm.Version)
 	}
 	// A colocated run simulates one pool's engine; a second colocated pool would be dropped.
 	if !slices.Contains(shape.Roles, deployment.RolePrefill) && len(shape.Roles) > 1 {

@@ -196,7 +196,7 @@ func TestMambaCheckpointPositionAndValidity(t *testing.T) {
 	}{
 		{100, 16, false, 96}, {97, 16, false, 96}, {96, 16, false, 80}, {100, 16, true, 80}, {10, 16, true, 0}, {0, 16, false, 0},
 	} {
-		if got := mambaPrefillCheckpointPosition(c.tokens, c.hash, c.eagle); got != c.want {
+		if got := mambaPrefillCheckpointPosition(c.tokens, c.hash, c.eagle, 0); got != c.want {
 			t.Errorf("position(%d,%d,%v) = %d, want %d", c.tokens, c.hash, c.eagle, got, c.want)
 		}
 	}

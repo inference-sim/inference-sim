@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/engine/arg_utils.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/engine/arg_utils.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // The translation covers get_batch_defaults and _set_default_max_num_seqs_and_batched_tokens_args.
 
 package vllm
@@ -17,14 +17,14 @@ type BatchInput struct {
 
 	// DeviceMemoryBytes and DeviceName are the GPU's total memory and name, which vLLM reads
 	// from the platform (current_platform.get_device_total_memory and get_device_name,
-	// :2912-2914).
+	// :2958-2960).
 	DeviceMemoryBytes int64
 	DeviceName        string
 	// BatchedDPMoE is ParallelConfig.use_batched_dp_moe: all2all_backend deepep_low_latency or
 	// nixl_ep, with expert parallelism, at data_parallel_size above 1
-	// (vllm/config/parallel.py:792-801@5df63a72).
+	// (vllm/config/parallel.py:796-805@4ba787ec).
 	BatchedDPMoE bool
-	// ThroughputMode is performance_mode "throughput" (vllm/config/vllm.py:433@5df63a72,
+	// ThroughputMode is performance_mode "throughput" (vllm/config/vllm.py:441@4ba787ec,
 	// default "balanced"). The deployment schema has no field for it, so a deployment always
 	// resolves as balanced.
 	ThroughputMode bool
@@ -54,7 +54,7 @@ const (
 		"vllm/config/scheduler.py:42@5df63a72; vllm/engine/arg_utils.py:3112-3116)"
 )
 
-const gib = int64(1) << 30 // GiB_bytes (vllm/utils/mem_constants.py:18@5df63a72)
+const gib = int64(1) << 30 // GiB_bytes (vllm/utils/mem_constants.py:18@4ba787ec)
 
 // ResolveBatch resolves max_num_seqs and max_num_batched_tokens as vLLM v0.32.0's vllm serve
 // does, in the OpenAI-API-server usage context (vllm/entrypoints/cli/serve.py:191@5df63a72).

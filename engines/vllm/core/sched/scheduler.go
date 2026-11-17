@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/sched/scheduler.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/v1/core/sched/scheduler.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // Also vllm/v1/core/sched/request_queue.py, vllm/v1/core/sched/utils.py (check_stop) and
 // vllm/v1/core/sched/async_scheduler.py (AsyncScheduler). SWA bounded replay: scheduler.py:290-305,
 // 1047-1066, 1103-1124, 1253-1256 and 3103-3121.
@@ -48,7 +48,12 @@ type Config struct {
 	BlockSize                 int
 	NumBlocks                 int // the fixed KV capacity
 	EnablePrefixCaching       bool
-	Watermark                 float64
+	// KVTransfer is whether the engine has a kv_transfer_config, a KV connector or offload that
+	// SetConnector will install. It keeps the block hashes legacy (num_hash_lookahead_tokens is
+	// 0 with a KV connector, vllm/config/vllm.py:688-690@4ba787ec), which is why it is known at
+	// construction: the hashes and the block drop are fixed before the first request.
+	KVTransfer bool
+	Watermark  float64
 	// ReserveFullSequence is scheduler_reserve_full_isl (vllm/config/scheduler.py:190,
 	// default true): admit a new request only if its whole sequence fits.
 	ReserveFullSequence bool
@@ -86,7 +91,7 @@ const (
 	Running
 	Preempted
 	// WaitingForRemoteKVs is a request whose prompt KV a connector is loading
-	// asynchronously (vllm/v1/request.py:375@5df63a72).
+	// asynchronously (vllm/v1/request.py:375@4ba787ec).
 	WaitingForRemoteKVs
 	FinishedStopped
 	FinishedLength
@@ -163,8 +168,12 @@ func (r *Request) allTokens() []int64 {
 // updateHashes appends the hashes of newly full blocks (update_block_hashes), with each
 // block's extra keys from kv.BlockKeys.ExtraFor, as kv.BlockHashes keys them. It reads only
 // the new blocks' tokens, so a decode step costs one block, not the whole context.
-func (r *Request) updateHashes(blockSize int) {
-	for (len(r.hashes)+1)*blockSize <= r.NumTokens() {
+//
+// With lookahead L > 0 (num_hash_lookahead_tokens, vllm/config/vllm.py:678-692@4ba787ec) a
+// block's hash also covers the L tokens after it, so it is emitted only once they exist
+// (get_request_block_hasher, vllm/v1/core/kv_cache_utils.py:953-1037@4ba787ec).
+func (r *Request) updateHashes(blockSize, lookahead int) {
+	for (len(r.hashes)+1)*blockSize <= r.NumTokens()-lookahead {
 		i := len(r.hashes)
 		var parent kv.BlockHash
 		if i > 0 {
@@ -173,7 +182,13 @@ func (r *Request) updateHashes(blockSize int) {
 		if r.root == nil {
 			r.root = kv.NoneHashFor(r.Keys.Seed)
 		}
-		r.hashes = append(r.hashes, kv.HashBlockUnder(r.root, parent, r.tokenRange(i*blockSize, (i+1)*blockSize), r.Keys.ExtraFor(i)))
+		end := (i + 1) * blockSize
+		if lookahead > 0 {
+			r.hashes = append(r.hashes, kv.HashBlockLookahead(r.root, parent, r.tokenRange(i*blockSize, end),
+				r.Keys.ExtraFor(i), r.tokenRange(end, end+lookahead)))
+			continue
+		}
+		r.hashes = append(r.hashes, kv.HashBlockUnder(r.root, parent, r.tokenRange(i*blockSize, end), r.Keys.ExtraFor(i)))
 	}
 }
 
@@ -207,6 +222,14 @@ type Output struct {
 	// KVConnectorMetadata is kv_connector_metadata: what a MetaBuilder connector's
 	// build_connector_meta returned for the step (scheduler.py:1527-1530), nil otherwise.
 	KVConnectorMetadata any
+	// SkipDrafts is skip_drafts (vllm/v1/core/sched/output.py:334@4ba787ec): no request this
+	// step schedules can use the drafts proposed after it, so the V2 model runner proposes none
+	// (K=0, vllm/v1/worker/gpu/model_runner.py:2117-2135@4ba787ec), on every DP rank only when
+	// all ranks allow it (vllm/v1/worker/gpu/dp_utils.py:75-88). It is set only for a drafter
+	// with its own forward pass (num_lookahead_tokens > 0) on the V2 runner. The engine states it
+	// on its batch (engine.Batch.SkipDrafts), a DPGroup ANDed across its ranks, and the cost model
+	// prices the step without the passes that propose.
+	SkipDrafts bool
 }
 
 // Finished is one request update_from_output finished.
@@ -219,7 +242,9 @@ type Finished struct {
 // Scheduler is vLLM's Scheduler.
 type Scheduler struct {
 	cfg Config
-	KV  *kv.Manager
+	// hashLookahead is num_hash_lookahead_tokens: the tokens after each block its hash covers.
+	hashLookahead int
+	KV            *kv.Manager
 	// mamba is the aligned split's state (scheduler.py:375-410@5df63a72).
 	mamba    *MambaSplit
 	requests map[string]*Request
@@ -279,16 +304,40 @@ func New(cfg Config) (*Scheduler, error) {
 	if cfg.Policy != FCFS && cfg.Policy != Priority {
 		return nil, fmt.Errorf("sched: unknown policy %q; vLLM accepts fcfs and priority", cfg.Policy)
 	}
-	// vllm/config/vllm.py:2285-2290@5df63a72 refuses a budget no larger than the draft slots.
-	if cfg.MaxNumBatchedTokens <= cfg.Spec.DraftSlots {
-		return nil, fmt.Errorf("sched: max_num_batched_tokens %d leaves no room beside %d draft slots",
-			cfg.MaxNumBatchedTokens, cfg.Spec.DraftSlots)
+	// VllmConfig._set_max_num_scheduled_tokens (vllm/config/vllm.py:2368-2396@4ba787ec) refuses a
+	// budget no larger than num_lookahead_tokens, which is at least every method's draft slots
+	// and covers the DFlash/DSpark draft pass's query rows. v0.32.0 compared the draft slots
+	// (vllm/config/vllm.py:2285-2290@5df63a72).
+	if cfg.Spec.NumTokens > 0 && cfg.MaxNumBatchedTokens <= cfg.Spec.Lookahead {
+		return nil, fmt.Errorf("sched: max_num_batched_tokens %d leaves no room beside %d lookahead tokens "+
+			"(vllm/config/vllm.py:2370-2376@4ba787ec)", cfg.MaxNumBatchedTokens, cfg.Spec.Lookahead)
+	}
+	// Then DFlash and DSpark lower max_num_active_seqs to the requests whose draft pass fits in
+	// max_num_batched_tokens, num_lookahead_tokens query rows each (:2377-2396).
+	if cfg.Spec.DraftQueryPass && cfg.Spec.Lookahead > 0 {
+		active := cfg.MaxNumActiveSeqs
+		if active == 0 {
+			active = cfg.MaxNumSeqs
+		}
+		if d := cfg.MaxNumBatchedTokens / cfg.Spec.Lookahead; d < active {
+			cfg.MaxNumActiveSeqs = d
+		}
 	}
 	wm := int(cfg.Watermark * float64(cfg.NumBlocks))
+	// num_hash_lookahead_tokens (vllm/config/vllm.py:678-692@4ba787ec): with the EAGLE block drop
+	// called for, prefix caching on and no KV connector, each block's hash covers the
+	// num_prefill_lookahead_tokens tokens after it, and the scheduler then turns the drop off
+	// (Scheduler.__init__, vllm/v1/core/sched/scheduler.py:243-248@4ba787ec): the trailing block
+	// is safe to reuse once its hash covers what the drafter reads past it.
+	lookahead := 0
+	if cfg.Spec.EagleBlockDrop && cfg.EnablePrefixCaching && !cfg.KVTransfer {
+		lookahead = cfg.Spec.PrefillLookahead
+	}
+	drop := cfg.Spec.EagleBlockDrop && lookahead == 0
 	s := &Scheduler{
-		cfg: cfg,
+		cfg: cfg, hashLookahead: lookahead,
 		KV: kv.NewManagerWith(cfg.NumBlocks, cfg.BlockSize, cfg.MaxModelLen, cfg.EnablePrefixCaching, wm,
-			kv.Options{RetentionInterval: cfg.RetentionInterval, PrefixMatchUnit: cfg.PrefixMatchUnit, EagleBlockDrop: cfg.Spec.EagleBlockDrop, PrefillLookahead: cfg.Spec.PrefillLookahead,
+			kv.Options{RetentionInterval: cfg.RetentionInterval, PrefixMatchUnit: cfg.PrefixMatchUnit, EagleBlockDrop: drop, PrefillLookahead: cfg.Spec.PrefillLookahead, HashLookahead: lookahead,
 				Groups: cfg.KVGroups, MaxInFlightTokens: max(cfg.MaxConcurrentBatches, 1) * cfg.MaxNumBatchedTokens}),
 		requests: map[string]*Request{},
 		waiting:  queue{priority: cfg.Policy == Priority},
@@ -298,7 +347,7 @@ func New(cfg Config) (*Scheduler, error) {
 	}
 	s.mamba = NewMambaSplit(MambaSplitConfig{Groups: cfg.KVGroups, BlockSize: cfg.BlockSize,
 		HashBlockSize: s.KV.HashBlockSize(), MaxNumScheduledTokens: s.maxScheduled(),
-		LongPrefillTokenThreshold: cfg.LongPrefillTokenThreshold, EagleBlockDrop: cfg.Spec.EagleBlockDrop,
+		LongPrefillTokenThreshold: cfg.LongPrefillTokenThreshold, EagleBlockDrop: drop, HashLookahead: lookahead,
 		PartialHashHits: s.KV.EnablePartialHashHits()})
 	if cfg.KVEvents {
 		s.KV.Pool.EnableEvents()
@@ -325,7 +374,7 @@ func (s *Scheduler) Add(r *Request) error {
 	r.Status = Waiting
 	s.seq++
 	r.seq = s.seq
-	r.updateHashes(s.KV.HashBlockSize())
+	r.updateHashes(s.KV.HashBlockSize(), s.hashLookahead)
 	// A new request holds no blocks, so _enqueue_waiting_request queues it in waiting
 	// (scheduler.py:2457-2462, 2633).
 	s.waiting.add(r)
@@ -348,6 +397,11 @@ func (s *Scheduler) Add(r *Request) error {
 // drafter. The rest is refused, citing connectorCapabilityIssue or connectorGroupIssue
 // (docs/feature-matrix.md, "KV connectors and offload").
 func (s *Scheduler) SetConnector(c Connector, conf ConnectorConfig) error {
+	if s.hashLookahead > 0 {
+		// The hashes and the block drop were fixed for an engine with no kv_transfer_config;
+		// with one, vLLM keeps the legacy hashes and the drop (Config.KVTransfer).
+		return fmt.Errorf("sched: a KV connector on a scheduler built with lookahead block hashes; set Config.KVTransfer")
+	}
 	var caps Capabilities
 	if cc, ok := c.(ConnectorCapabilities); ok {
 		caps = cc.ConnectorModels()
@@ -551,6 +605,12 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 	draftSlots := s.cfg.Spec.DraftSlots
 	k := s.cfg.Spec.NumTokens
 	prefillScheduled := false
+	// drafts_needed (scheduler.py:731-734@4ba787ec): whether a request this step schedules can
+	// use the drafts proposed after it. It stays set if that request is preempted later in the
+	// step. It starts as not can_skip_drafts: only a drafter with its own forward pass, on the V2
+	// model runner, skips (:316-321).
+	canSkipDrafts := s.cfg.Spec.Lookahead > 0 && s.cfg.UseV2ModelRunner
+	draftsNeeded := !canSkipDrafts
 
 	// The long-prefill cap is waived when one request is all there is (:640-655).
 	nr, nw := s.Counts()
@@ -649,6 +709,13 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			}
 		}
 		if !ok {
+			if s.cfg.Policy == Priority && r.Status == Preempted {
+				// The request was the lowest-priority running one and preempted itself. The
+				// requests after it have higher priority and may fit in the blocks it just freed;
+				// it left s.running, so reqIndex already names the next one
+				// (vllm/v1/core/sched/scheduler.py:983-992@4ba787ec). v0.32.0 stopped here.
+				continue
+			}
 			break
 		}
 		scheduledRunning = append(scheduledRunning, r)
@@ -657,6 +724,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 		tokenBudget -= numNew
 		inputBudget -= numNew + draftSlots
 		reqIndex++
+		draftsNeeded = draftsNeeded || !draftsUnused(r, r.NumComputed, numNew) // :1005-1007
 		// Speculative decode (:860-876): the drafts this step verifies are those beyond the
 		// request's known tokens; the rest wait for update_draft_token_ids.
 		if len(r.SpecTokens) > 0 {
@@ -671,10 +739,12 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 		}
 	}
 
-	// The LoRAs the scheduled running requests hold (:888-897).
+	// The LoRAs every running request holds, scheduled this step or not: one left out of this
+	// step can join a later batch (vllm/v1/core/sched/scheduler.py:1038-1047@4ba787ec; v0.32.0
+	// counted only the scheduled ones).
 	scheduledLoRAs := map[int]bool{}
 	if s.cfg.MaxLoRAs > 0 {
-		for _, r := range scheduledRunning {
+		for _, r := range s.running {
 			if r.LoRA > 0 {
 				scheduledLoRAs[r.LoRA] = true
 			}
@@ -810,7 +880,11 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 				}
 				numNew = s.reservePrefillLookahead(r, numComputed, numNew)
 				if numNew <= 0 {
-					break
+					// v0.33.0 requeues a request the lookahead leaves nothing to schedule, so it does not
+					// stall the requests behind it (vLLM #59030,
+					// vllm/v1/core/sched/scheduler.py:1394-1398@4ba787ec); v0.32.0 stopped here.
+					skip(q)
+					continue
 				}
 			}
 			// An asynchronous load computes nothing this step, allocates no lookahead slots
@@ -855,6 +929,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			inputBudget -= numNew + draftSlots
 			r.Status = Running
 			r.NumComputed = numComputed
+			draftsNeeded = draftsNeeded || !draftsUnused(r, numComputed, numNew) // :1575-1577
 			s.setFetchStage(r, fetchNone)
 			if pad {
 				drafts := make([]int64, k)
@@ -896,6 +971,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 	if s.connector != nil {
 		s.buildConnectorMeta(&out, scheduledRunning, admitted)
 	}
+	out.SkipDrafts = !draftsNeeded // skip_drafts=not drafts_needed (:1748)
 	// The fence advances only for steps that write KV (:1549-1552).
 	if s.deferBlockFree && len(out.Scheduled) > 0 {
 		s.schedSeq++
@@ -933,6 +1009,24 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 		}
 	}
 	return out
+}
+
+// draftsUnused is Scheduler._drafts_unused (vllm/v1/core/sched/scheduler.py:502-544@4ba787ec):
+// whether the drafts proposed for r after a step that runs numNew tokens from computed are sure
+// to go unused. They are when the step is a non-final prefill chunk, which samples nothing, or
+// when it samples r's last output token: drafts may all be rejected, so only the output tokens
+// r is sure to have count, and reaching max_tokens finishes r before any step verifies them.
+// Stop tokens also end requests but cannot be known in advance.
+func draftsUnused(r *Request, computed, numNew int) bool {
+	if computed+numNew < r.NumTokens() {
+		return true
+	}
+	minOutput := len(r.Output) + 1
+	if r.Placeholders > 0 {
+		// Async scheduling: a step that samples is still in flight and adds one more.
+		minOutput++
+	}
+	return minOutput >= r.MaxTokens
 }
 
 // inflightReserved is _inflight_prefill_reserved_blocks plus _spec_decode_step_blocks
@@ -980,11 +1074,11 @@ func (s *Scheduler) run(r *Request) kv.StoredRun {
 	if !s.cfg.KVEvents {
 		return kv.StoredRun{NumPromptTokens: len(r.Prompt), SharedPrefixBoundary: r.sharedPrefixBoundary}
 	}
-	return kv.StoredRun{Tokens: r.allTokens(), LoRA: r.LoRAName, NumPromptTokens: len(r.Prompt),
+	return kv.StoredRun{Tokens: r.allTokens(), LoRA: r.LoRAName, LoRAID: r.LoRA, Keys: r.Keys, NumPromptTokens: len(r.Prompt),
 		SharedPrefixBoundary: r.sharedPrefixBoundary}
 }
 
-// prefillEnd is max(num_prompt_tokens, num_tokens - 1) (kv_cache_manager.py:520@5df63a72).
+// prefillEnd is max(num_prompt_tokens, num_tokens - 1) (kv_cache_manager.py:529@4ba787ec).
 func (r *Request) prefillEnd() int { return max(len(r.Prompt), r.NumTokens()-1) }
 
 // mambaSplitRequest is the request's part of the aligned split's input.
@@ -1079,12 +1173,13 @@ func (s *Scheduler) UpdateWith(out Output, sampled map[string][]int64, o Transfe
 			continue
 		}
 		running := r.Status == Running
+		hadPlaceholders := r.Placeholders > 0
 		var status Status
 		stop := false
 		emitted := 0
 		for _, tok := range toks {
 			r.Output = append(r.Output, tok)
-			r.updateHashes(s.KV.HashBlockSize())
+			r.updateHashes(s.KV.HashBlockSize(), s.hashLookahead)
 			emitted++
 			switch {
 			case tok == r.EOS:
@@ -1096,16 +1191,24 @@ func (s *Scheduler) UpdateWith(out Output, sampled map[string][]int64, o Transfe
 				break
 			}
 		}
-		if s.cfg.Async {
-			// AsyncScheduler._update_request_with_output (async_scheduler.py:60-78): the
-			// sampled tokens replace their placeholders, unless the output is stale, and a
-			// running request caches the blocks its now-known tokens fill.
-			if !stale {
-				r.Placeholders -= emitted
+		// Scheduler._update_request_with_output (vllm/v1/core/sched/scheduler.py:2744-2770@4ba787ec),
+		// which v0.33.0 moved here from AsyncScheduler: a stop trims the tokens after it and
+		// uncounts them from num_computed_tokens, so a resumable request resumes from what it
+		// kept; every returned token, trimmed or not, resolves its placeholder; stale output
+		// changes neither.
+		if !stale {
+			if stop {
+				r.NumComputed -= len(toks) - emitted
 			}
-			if running {
-				s.KV.CacheUpTo(r.ID, r.hashes, r.NumComputed-r.Placeholders, s.run(r))
+			if r.Placeholders > 0 {
+				r.Placeholders -= len(toks)
 			}
+		}
+		// update_from_output then caches the blocks the now-known tokens fill, for a request
+		// that was running and had output placeholders, or whenever speculative decoding is on,
+		// up to what is computed and no longer in flight (:2401-2415).
+		if !stale && running && (hadPlaceholders || s.cfg.Spec.NumTokens > 0) {
+			s.KV.CacheUpTo(r.ID, r.hashes, r.NumComputed-r.numInFlight, s.run(r))
 		}
 		if !stop {
 			continue
@@ -1142,8 +1245,8 @@ func (s *Scheduler) UpdateWith(out Output, sampled map[string][]int64, o Transfe
 }
 
 // placeholderDrafts are k draft placeholders, -1 each: the AsyncScheduler's
-// _spec_token_placeholders (async_scheduler.py:17, 29-31@5df63a72). The rejection sampler always
-// rejects one, as a real draft it never verified (vllm/v1/sample/rejection_sampler.py:762-763).
+// _spec_token_placeholders (async_scheduler.py:16, 28-30@4ba787ec). The rejection sampler always
+// rejects one, as a real draft it never verified (vllm/v1/sample/rejection_sampler.py:829-830).
 func placeholderDrafts(k int) []int64 {
 	d := make([]int64, k)
 	for i := range d {

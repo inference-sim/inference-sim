@@ -7,6 +7,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 
@@ -15,10 +16,12 @@ import (
 
 func boolPtr(b bool) *bool { return &b }
 
-// DeepSeek-V4.1's DSpark draft layers own only a window cache, so vLLM v0.31.0 flags a window
-// group as the EAGLE group and the 64-token full-attention group never drops a block. With
-// SWA bounded replay the window groups leave the lookup and a hit replays its last 128
-// tokens; without it they cut the hit to a retained window tail.
+// DeepSeek-V4.1 with DSpark: DSpark drops no EAGLE block at vLLM v0.33.0
+// (needs_eagle_block_drop, vllm/config/speculative.py:2122-2129@4ba787ec), so no group is an
+// EAGLE group and the replay boundary stays at the prompt's end, as without speculation. v0.31.0
+// tagged the window group of DSpark's draft layers and dropped its block. With SWA bounded replay
+// the window groups leave the lookup and a hit replays its last 128 tokens; without it they cut
+// the hit to a retained window tail.
 func TestPrefixHit_DeepSeekV41LayoutFollowsTheDraftsWindowCache(t *testing.T) {
 	m, err := openDrafting(t, dspark, &engineconfig.Speculative{Method: "dspark", NumSpecTokens: 5})
 	if err != nil {
@@ -28,7 +31,7 @@ func TestPrefixHit_DeepSeekV41LayoutFollowsTheDraftsWindowCache(t *testing.T) {
 	if r.Hit != (sim.KVPrefixHit{ReplayTokens: 128}) || r.Runner != "v2" || r.BoundedReplay == nil || !*r.BoundedReplay {
 		t.Errorf("default: got %+v, want the V2 runner with only a 128-token replay", r)
 	}
-	want := sim.KVPrefixHit{Window: 128, WindowBlock: 32, WindowEagle: true, EagleBoundaries: true}
+	want := sim.KVPrefixHit{Window: 128, WindowBlock: 32}
 	if r := m.PrefixHit(boolPtr(false)); r.Hit != want || r.BoundedReplayFrom != "--swa-bounded-replay" {
 		t.Errorf("override false: got %+v, want %+v from the override", r, want)
 	}
@@ -42,7 +45,7 @@ func TestPrefixHit_DeepSeekV41LayoutFollowsTheDraftsWindowCache(t *testing.T) {
 	}
 }
 
-// Each feature vLLM v0.31.0's V2 model runner does not support (config/vllm.py:3051-3103)
+// Each feature vLLM v0.33.0's V2 model runner does not support (vllm/config/vllm.py:3053-3087@4ba787ec)
 // that a deployment can state forces the V1 runner, which turns SWA bounded replay off
 // (deepseek_v41/attention.py:520-526), and so does prefill context parallelism
 // (attention.py:528-537) under the V2 runner.
@@ -56,14 +59,11 @@ func TestPrefixHit_V1RunnerAndPCPTurnBoundedReplayOff(t *testing.T) {
 	}{
 		{"V1-only speculative method", func(p *deployment.Pool) {
 			editPoolEngine(t, p, func(e *engineconfig.Engine) {
-				e.Speculative = &engineconfig.Speculative{Method: "ngram", NumSpecTokens: 3}
+				e.Speculative = &engineconfig.Speculative{Method: "suffix", NumSpecTokens: 3}
 			})
 		}, "v1"},
 		{"dual batch overlap", func(p *deployment.Pool) {
 			editPoolEngine(t, p, func(e *engineconfig.Engine) { e.DBO = &engineconfig.DBO{Enabled: true} })
-		}, "v1"},
-		{"mamba cache mode all", func(p *deployment.Pool) {
-			editPoolEngine(t, p, func(e *engineconfig.Engine) { e.MambaCacheMode = "all" })
 		}, "v1"},
 		{"prefill context parallelism", func(p *deployment.Pool) { p.Parallel.PCP = 2 }, "v2"},
 	} {
@@ -137,4 +137,81 @@ func mustDecode(t testing.TB, pool deployment.Pool) engineconfig.Engine {
 		t.Fatal(err)
 	}
 	return e
+}
+
+// An MTP drafter drops the last block of a prefix hit at vLLM v0.33.0 only beside a KV
+// connector. Without one, with prefix caching on, each block's hash covers the tokens the
+// drafter reads past it (num_hash_lookahead_tokens, vllm/config/vllm.py:677-692@4ba787ec) and the
+// scheduler turns the drop off (vllm/v1/core/sched/scheduler.py:342-345), so a colocated pool's
+// hit keeps its last block. An offload connector, or a P/D connector on a prefill or decode pool,
+// keeps the legacy hashes and the drop. glm-5 is MLA only: one full-attention group kind.
+func TestPrefixHit_MTPDropsTheLastBlockOnlyBesideAKVConnector(t *testing.T) {
+	r := repos()
+	r.Scenarios = "../../testdata/scenarios"
+	for _, tt := range []struct {
+		name string
+		edit func(d *deployment.Deployment)
+		drop bool
+	}{
+		{"colocated, no connector", func(*deployment.Deployment) {}, false},
+		{"an offload connector", func(d *deployment.Deployment) {
+			d.Offload = &deployment.Offload{Connector: "OffloadingConnector"}
+		}, true},
+		{"a P/D connector on a prefill pool", func(d *deployment.Deployment) {
+			d.PDTransfer = &deployment.PDTransfer{Connector: "NixlConnector"}
+			d.Pools[0].Role = deployment.RolePrefill
+		}, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			in, err := latencykernel.OpenInputs("glm-5-h200-tp8-mtp3.yaml", r, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The connector is edited in after the documents validated, so the layout is built as
+			// the pool's open builds it, from the edited deployment.
+			tt.edit(in.Deployment)
+			pool := in.Deployment.Pools[0]
+			e := mustDecode(t, pool)
+			m := &Model{k: fixedDeployment{pool: pool}, engine: e,
+				id: identity{prefix: prefixLayoutOf(in.Model, in.Deployment, pool, e)}}
+			got := m.PrefixHit(nil)
+			if want := (sim.KVPrefixHit{FullEagle: tt.drop}); got.Hit != want {
+				t.Errorf("got %+v (%s), want %+v", got.Hit, got.Note, want)
+			}
+		})
+	}
+}
+
+// vLLM v0.33.0 picks the model runner by its own list (vllm/config/vllm.py:3053-3087@4ba787ec).
+// ngram and the Mamba cache mode "all", which v0.31.0's list sent to V1, now run on V2. suffix,
+// custom_class and dual batch overlap still force V1.
+func TestModelRunner_V033List(t *testing.T) {
+	spec := func(method string) func(e *engineconfig.Engine) {
+		return func(e *engineconfig.Engine) {
+			e.Speculative = &engineconfig.Speculative{Method: method, NumSpecTokens: 3}
+		}
+	}
+	for _, tt := range []struct {
+		name   string
+		edit   func(e *engineconfig.Engine)
+		runner string
+	}{
+		{"no feature", func(*engineconfig.Engine) {}, "v2"},
+		{"ngram", spec("ngram"), "v2"},
+		{"ngram_gpu", spec("ngram_gpu"), "v2"},
+		{"eagle3", spec("eagle3"), "v2"},
+		{"mamba cache mode all", func(e *engineconfig.Engine) { e.MambaCacheMode = "all" }, "v2"},
+		{"suffix", spec("suffix"), "v1"},
+		{"custom_class", spec("custom_class"), "v1"},
+		{"dual batch overlap", func(e *engineconfig.Engine) { e.DBO = &engineconfig.DBO{Enabled: true} }, "v1"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := engineconfig.Engine{BlockSize: 64}
+			tt.edit(&e)
+			got, forcedBy := (&Model{engine: e}).ModelRunner()
+			if got != tt.runner {
+				t.Errorf("runner %q (forced by %v), want %q", got, forcedBy, tt.runner)
+			}
+		})
+	}
 }

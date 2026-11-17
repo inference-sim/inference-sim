@@ -61,8 +61,8 @@ import (
 	"time"
 
 	blisschemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
@@ -71,6 +71,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/blis-vllm/compat/lowering"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	"github.com/inference-sim/blis-vllm/core/placement"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
@@ -87,6 +88,29 @@ import (
 // supplies the engine rules a literal leaves unset (withEngineRules).
 type Repos = latencykernel.Repos
 
+// DraftModelOf is the drafter a pool's engine block names, "" for none: what a caller of the
+// kernel's own Open passes as Repos.DraftModel.
+func DraftModelOf(dep *deployment.Deployment, pool int) (string, error) {
+	e, err := vllmsettings.Decode(dep.Pools[pool])
+	if err != nil || e.Speculative == nil {
+		return "", err
+	}
+	return e.Speculative.DraftModel, nil
+}
+
+// LowerPool is the lowering of a pool's engine block as the block states it, without the
+// resolution of block size, memory budget, batch and cache settings that a Model applies first
+// (resolveEngine): what a caller of the kernel's own Open passes as Repos.Lower.
+func LowerPool(in latencykernel.Inputs) (*plan.Lowered, error) {
+	s, err := vllmsettings.OfPool(in.Deployment, in.PoolIndex)
+	if err != nil {
+		return nil, err
+	}
+	return lowering.Lower(lowering.Input{Scenario: in.Scenario, Deployment: in.Deployment,
+		PoolIndex: in.PoolIndex, Model: in.Model, Draft: in.Draft, Chip: in.Chip, Rules: in.Rules,
+		Settings: s})
+}
+
 // withEngineRules returns r with the vLLM engine rules filled in where r states none: the
 // packs of github.com/inference-sim/blis-vllm/rules, which the kernel takes from its caller
 // rather than looking up itself (inference-sim#2021 B4). It is the one place this repository
@@ -98,10 +122,11 @@ func withEngineRules(r Repos) Repos {
 		r.RulesVersions = vllmrules.Versions
 		r.RulesKind = "vllm"
 	}
-	if r.EngineSettings == nil {
-		// The kernel prices the engine settings its caller decodes, as it takes its rules from
-		// its caller: vLLM's engine block, read by the kernel module's one conversion.
-		r.EngineSettings = vllmsettings.OfPool
+	if r.DraftModel == nil {
+		// The kernel opens no engine block: the drafter the block names is read here, so the
+		// kernel's loader opens its graph, and the pool's settings reach the kernel only as the
+		// plan the lowering resolves them to (fromDecoded).
+		r.DraftModel = DraftModelOf
 	}
 	return r
 }
@@ -118,6 +143,9 @@ type Model struct {
 	// prices the settings converted from it (Inputs.Engine), and the simulator's settings and
 	// sizing read the rest (Engine).
 	engine engineconfig.Engine
+	// lowered is the plan the kernel prices: the pool's settings as the lowering resolved them
+	// (package lowering).
+	lowered plan.Lowered
 	// assumed are the pricing assumptions this package discloses beside the kernel's own
 	// (EngineAssumptions), each "name = value: reason".
 	assumed []string
@@ -170,7 +198,7 @@ type Model struct {
 // the model's name, the chip, and the routed expert geometry.
 //
 // It is NOT configuration the kernel resolved, so it is not read from the kernel: the
-// kernel deliberately does not re-export identity (blis-schemas#36 draws that line --
+// kernel deliberately does not re-export identity (https://github.com/inference-sim/blis-schemas/issues/36 draws that line --
 // identity for comparison is the harness's concern, not the cost model's). It is taken
 // from the same Inputs the kernel was built from, so it describes the chip and graph the
 // kernel priced rather than a second load of files that could resolve differently.
@@ -251,7 +279,7 @@ func identityOf(in latencykernel.Inputs, engine engineconfig.Engine, pk scenario
 		tpRanks:         max(1, pl.TP),
 		latentKV:        allLatent(in.Model),
 		prefillBackoff:  prefillBackoffOf(in.Model, engine.Speculative),
-		prefix:          prefixLayoutOf(in.Model, pool, engine),
+		prefix:          prefixLayoutOf(in.Model, in.Deployment, pool, engine),
 		capabilityMajor: func() int { f, _ := in.Chip.CapabilityMajor(); return f }(),
 	}
 }
@@ -374,6 +402,12 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	if err := checkMuseSparkParallel(architectureOf(in.Model), in.Chip, pool.Parallel); err != nil {
 		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
 	}
+	// A KV connector is the deployment's P/D transfer or its offload tiers.
+	if err := checkQwen4Exp(qsaSettings{Arch: architectureOf(in.Model), TP: pool.Parallel.TP, PP: pool.Parallel.PP,
+		DCP: pool.Parallel.DCP, PCP: pool.Parallel.PCP, BlockSize: engine.BlockSize, CacheDType: engine.CacheDType,
+		KVConnector: in.Deployment.PDTransfer != nil || in.Deployment.Offload != nil}); err != nil {
+		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
+	}
 	settings := vllmsettings.Of(engine)
 	// The quantization vLLM serves is the checkpoint's recipe's, not what --quantization names
 	// (lowerQuantization).
@@ -401,9 +435,17 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	if r.engine.MaxNumBatchedTokens > 0 {
 		settings.MaxNumBatchedTokens = r.engine.MaxNumBatchedTokens
 	}
-	in.Engine = &settings
-	// How an autoregressive drafter's passes run is the engine's to state (SUB-6): vLLM v0.32.0's
-	// speculator for eagle, eagle3 and mtp; any other method is left unstated and the kernel refuses it.
+	// The lowering resolves every setting into the plan the kernel prices (SUB-6): the kernel
+	// reads no engine setting and applies no default.
+	low, err := lowering.Lower(lowering.Input{Scenario: in.Scenario, Deployment: in.Deployment,
+		PoolIndex: in.PoolIndex, Model: in.Model, Draft: in.Draft, Chip: in.Chip, Rules: in.Rules,
+		Settings: settings})
+	if err != nil {
+		return nil, err
+	}
+	in.Lowered = low
+	// How a drafter's passes run is the engine's to state (SUB-6): vLLM's speculator for eagle,
+	// eagle3 and mtp, and DFlash and DSpark; any other method is left unstated and the kernel refuses it.
 	in.DraftFirstPassRows, in.DraftPassRequests = vllmsettings.DraftPasses(engine)
 	// The indexer cache's record under the indexer_kv_dtype stated (lowerIndexerKV).
 	in.Model = lowerIndexerKV(in.Model, engine.IndexerKVDType)
@@ -418,6 +460,7 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	if err != nil {
 		return nil, err
 	}
+	m.lowered = *low
 	// Every reader below sees the engine as its release resolves it (resolveEngine): the block
 	// size, the memory budget and the batch settings the deployment left unstated.
 	m.resolved = resolveEngine(in, engine)
@@ -732,6 +775,9 @@ func (m *Model) PDTransferTicks(tokens int64, from, to kernel.Placement) int64 {
 	return max(1, (d.Nanoseconds()+999)/1000)
 }
 
+// Lowered is the plan the kernel prices: the pool's settings as the lowering resolved them.
+func (m *Model) Lowered() plan.Lowered { return m.lowered }
+
 // Kernel exposes the adapted kernel. A caller that needs a memory or provenance answer
 // asks the kernel directly rather than having this adapter grow a passthrough per method.
 func (m *Model) Kernel() kernel.Kernel { return m.k }
@@ -857,8 +903,15 @@ type ReqShape = kernel.ReqShape
 // BLIS batch once batchOf has translated it: the kernel's NoOverlap step time in ticks, at
 // least one. The shapes are the caller's: under speculation a decode's Scheduled is already
 // its verify width.
-func (m *Model) StepTimeOfShapes(reqs []ReqShape) int64 {
-	b := m.replay.tail(kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget})
+func (m *Model) StepTimeOfShapes(reqs []ReqShape) int64 { return m.StepTimeOfStep(reqs, false) }
+
+// StepTimeOfStep is StepTimeOfShapes for a step that states whether its drafter proposes drafts:
+// skipDrafts is vLLM v0.33.0's skip_drafts, already agreed across the data-parallel group, and
+// the kernel then prices the drafter's work that keeps its KV in step but not the passes that
+// propose (kernel.Batch.SkipDrafts).
+func (m *Model) StepTimeOfStep(reqs []ReqShape, skipDrafts bool) int64 {
+	b := m.replay.tail(kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget,
+		SkipDrafts: skipDrafts})
 	return max(1, ticks(m.k.StepTime(b).NoOverlap))
 }
 
@@ -888,8 +941,13 @@ func (m *Model) VerifiedDraftsOfShapes(reqs []ReqShape) []int {
 // pool runs more than one (the kernel's StepEstimate.Stages): each stage's NoOverlap figure in
 // ticks, at least one, the last carrying the rounding so the stages sum exactly to
 // StepTimeOfShapes. A single-stage pool returns that one figure.
-func (m *Model) StageTimesOfShapes(reqs []ReqShape) []int64 {
-	b := m.replay.tail(kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget})
+func (m *Model) StageTimesOfShapes(reqs []ReqShape) []int64 { return m.StageTimesOfStep(reqs, false) }
+
+// StageTimesOfStep is StageTimesOfShapes for a step that states whether its drafter proposes
+// drafts (StepTimeOfStep).
+func (m *Model) StageTimesOfStep(reqs []ReqShape, skipDrafts bool) []int64 {
+	b := m.replay.tail(kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget,
+		SkipDrafts: skipDrafts})
 	e := m.k.StepTime(b)
 	total := max(1, ticks(e.NoOverlap))
 	if len(e.Stages) == 0 {
@@ -953,17 +1011,8 @@ func (m *Model) batchOf(batch []*sim.Request) kernel.Batch {
 	return b
 }
 
-// specTokensOf is the draft length of the pool a kernel prices, from the engine settings it
-// prices with.
+// specTokensOf is the draft length of the pool a kernel prices, from the pool's engine block.
 func specTokensOf(k kernel.Kernel) int {
-	if e, ok := k.(interface {
-		Engine() enginesettings.Settings
-	}); ok {
-		if sp := e.Engine().Speculative; sp != nil && sp.NumSpecTokens > 0 {
-			return sp.NumSpecTokens
-		}
-		return 0
-	}
 	if e, err := decodeEngine(k.Deployment()); err == nil && e.Speculative != nil && e.Speculative.NumSpecTokens > 0 {
 		return e.Speculative.NumSpecTokens
 	}
@@ -1012,7 +1061,7 @@ func shapeOf(req *sim.Request) kernel.ReqShape {
 func ticks(d interface{ Microseconds() int64 }) int64 { return d.Microseconds() }
 
 // DPLoadBalancing is the pool's parallel.data_parallel_load_balancing as stated ("" is
-// internal; blis-schemas#76).
+// internal; https://github.com/inference-sim/blis-schemas/issues/76).
 func (m *Model) DPLoadBalancing() deployment.DPLoadBalancing {
 	return m.k.Deployment().Parallel.DataParallelLoadBalancing
 }
@@ -1120,7 +1169,7 @@ type Shape struct {
 	// Offload is the deployment's offload block, nil when it states none.
 	Offload *deployment.Offload
 	// LongPrefillTokenThresholds and DPLoadBalancings are each pool's
-	// engine.long_prefill_token_threshold (blis-schemas#75; 0 = unstated) and
+	// engine.long_prefill_token_threshold (https://github.com/inference-sim/blis-schemas/issues/75; 0 = unstated) and
 	// parallel.data_parallel_load_balancing (#76; "" = unstated), in pool order.
 	LongPrefillTokenThresholds []int
 	DPLoadBalancings           []deployment.DPLoadBalancing
@@ -1144,7 +1193,7 @@ type Shape struct {
 }
 
 // unmodelledSettings are the engine settings a deployment states that the compatibility engine
-// does not model: the ones blis-schemas added with the v0.32.0 engine (blis-schemas#102), which
+// does not model: the ones blis-schemas added with the v0.32.0 engine (https://github.com/inference-sim/blis-schemas/issues/102), which
 // core/vllm reads. It returns their scenario field names, in declaration order.
 func unmodelledSettings(e engineconfig.Engine) []string {
 	var out []string

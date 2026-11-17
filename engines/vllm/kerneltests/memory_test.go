@@ -21,7 +21,7 @@ import (
 )
 
 // Fixed memory occupancy is the registry's magnitudes in NVIDIA's composition, with nothing
-// the kernel hardcodes and nothing Provenance cannot see (inference-sim/blis-latency-kernel#22).
+// the kernel hardcodes and nothing Provenance cannot see (https://github.com/inference-sim/blis-latency-kernel/issues/22).
 // liftMemory states the form and its sources.
 
 // memoryFixture is the deployment #22 measured: deepseek-v3, tp=8, fp8 on h200, 8,192
@@ -82,6 +82,13 @@ func TestMemoryMagnitudesMoveOccupancyAndNoStepTime(t *testing.T) {
 		for j := range c.Coefficients {
 			if memory(c.Coefficients[j].Name) {
 				c.Coefficients[j].Value *= 3
+				if iv := c.Coefficients[j].CI95; iv != nil {
+					// A fitted entry states the interval its value lies in, so the interval scales too.
+					scaledIv := *iv
+					scaledIv.Low *= 3
+					scaledIv.High *= 3
+					c.Coefficients[j].CI95 = &scaledIv
+				}
 			}
 		}
 		scaled.Coefficients[i] = &c
@@ -117,7 +124,7 @@ func TestMemoryMagnitudesMoveOccupancyAndNoStepTime(t *testing.T) {
 }
 
 // ACTIVATION SCRATCH DOES NOT FOLLOW THE SERVED WEIGHT FORMAT. #22 proposed sizing it at the
-// served width, which would halve it for fp8. blis-registry#33 established the opposite and
+// served width, which would halve it for fp8. https://github.com/inference-sim/blis-registry/issues/33 established the opposite and
 // this kernel follows it: vLLM's fp8 linears return out_dtype=x.dtype
 // (vllm/model_executor/kernels/linear/scaled_mm/cutlass.py at v0.31.0), so the residual
 // stream and the inter-layer buffers stay bf16 under fp8 weights.
@@ -239,8 +246,10 @@ func TestProvenanceSeesEveryFigureFixedBytesReports(t *testing.T) {
 		}
 	}
 	for _, o := range k.Provenance() {
+		// nontorch_in_budget_bytes_<N>rank is the named gap of blis-substrate#299: a (model, part,
+		// tensor-parallel width) with no fit-unit group is charged nothing and says so (#294).
 		if o.Set == KernelAssumptionSet && o.Name != "max_cudagraph_capture_size" &&
-			o.Name != "engine_version" {
+			o.Name != "engine_version" && !strings.HasPrefix(o.Name, "nontorch_in_budget_bytes_") {
 			t.Errorf("a deployment stating every engine setting reported the kernel "+
 				"assumption %s", o.Name)
 		}
@@ -570,8 +579,11 @@ func TestABatchPastTheCaptureCeilingRunsWithNoGraph(t *testing.T) {
 // parallelism FlashAttention runs _forward_with_dcp instead of its one varlen kernel
 // (vllm/v1/attention/backends/flash_attn.py:1344-1357 at v0.31.0): a context pass and a
 // query pass over the whole step, then a merge (:1543-1717). So the one-launch rebate the
-// previous test asserts must not apply: at dcp=2 the same mixed step prices identically on
-// the h200 and on the h200 marked data-center Blackwell.
+// previous test asserts must not apply. The two backends' attention kernels have their own rates,
+// so the mixed step itself prices differently on each; what must agree is the rebate: what the
+// decode and the prefill priced alone cost over the mixed step they make together. At dcp=2 the
+// h200 and the h200 marked data-center Blackwell get the same rebate, within 2%, where at dcp=1
+// FlashAttention's is more than 10% larger.
 func TestUnderDCPAMixedStepGetsNoOneLaunchRebate(t *testing.T) {
 	const fixture = "minimax-m25-h200-tp8.yaml"
 	build := func(blackwell bool) *Kernel {
@@ -592,11 +604,29 @@ func TestUnderDCPAMixedStepGetsNoOneLaunchRebate(t *testing.T) {
 		p := k.StepTime(b).PerResource
 		return p[kernel.ResourceSM] + p[kernel.ResourceHBM]
 	}
-	mixed := kernel.Batch{DecodeThreshold: 8, Reqs: append(append([]kernel.ReqShape{},
-		decodeBatch(8, 1, 4096).Reqs...), decodeBatch(1, 256, 256).Reqs...)}
-	if a, c := busy(fa, mixed), busy(fi, mixed); a != c {
-		t.Errorf("at dcp=2 a mixed step priced %v on FlashAttention and %v on FlashInfer; "+
-			"_forward_with_dcp is two launches on both", a, c)
+	dec, pre := decodeBatch(8, 1, 4096), decodeBatch(1, 256, 256)
+	mixed := kernel.Batch{DecodeThreshold: 8, Reqs: append(append([]kernel.ReqShape{}, dec.Reqs...), pre.Reqs...)}
+	dec.DecodeThreshold, pre.DecodeThreshold = 8, 8
+	rebate := func(k *Kernel) float64 {
+		return (busy(k, dec) + busy(k, pre) - busy(k, mixed)).Seconds()
+	}
+	if a, c := rebate(fa), rebate(fi); a <= 0 || math.Abs(a-c) > 0.02*c {
+		t.Errorf("at dcp=2 a mixed step gains %.3f ms by running as one step on FlashAttention and "+
+			"%.3f ms on FlashInfer; _forward_with_dcp is two launches on both, so the two agree",
+			a*1e3, c*1e3)
+	}
+	one := func(blackwell bool) *Kernel {
+		return mustDCPVariant(t, fixture, 8, 1, 1, func(in *Inputs) {
+			if blackwell {
+				chip := *in.Chip
+				chip.NVFP4Peak = 2 * chip.FP8Peak
+				in.Chip = &chip
+			}
+		})
+	}
+	if a, c := rebate(one(false)), rebate(one(true)); a < 1.1*c {
+		t.Errorf("at dcp=1 FlashAttention's one-launch rebate is %.3f ms against FlashInfer's %.3f ms; "+
+			"the test cannot tell the two apart", a*1e3, c*1e3)
 	}
 }
 

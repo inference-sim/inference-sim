@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be):
+// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
 // get_kv_cache_groups (:2159-2253), which the engine core runs over the model's layer specs
 // before it builds the scheduler (vllm/v1/engine/core.py:292-330), and _uses_trailing_mtp_layers
 // (:1997-2013), which decides whether the drafter's group is the last layer's.
@@ -34,6 +34,9 @@ type KVLayerRun struct {
 	Alignment       int    `yaml:"alignment,omitempty"`
 	StrideAlignment int    `yaml:"stride_alignment,omitempty"`
 	BoundedReplay   bool   `yaml:"bounded_replay,omitempty"`
+	// Draft marks a drafter's layers (KVCacheSpec.is_draft, vllm/v1/kv_cache_interface.py:215
+	// @4ba787ec): the groups holding them are the drafter's (kv.GroupOptions.TagDraftGroups).
+	Draft bool `yaml:"draft,omitempty"`
 	// A "mamba" run is MambaSpec (kv.LayerMamba): StateBytes is its state_content_bytes per
 	// rank, BlockSize its mamba_block_size, and the fields below the rest of the spec.
 	PageSizePadded             int    `yaml:"page_size_padded,omitempty"`
@@ -45,10 +48,10 @@ type KVLayerRun struct {
 
 // KVGroups is the scheduler's KV cache groups for a model's layers, as vLLM groups them
 // (kv.GroupLayers); nil for no layers. disableHybrid is disable_hybrid_kv_cache_manager, and
-// trailingDrafter is _uses_trailing_mtp_layers (kv_cache_utils.py:1997-2013@5df63a72): the
-// drafter's layers are the last ones, so the group holding the last layer is the drafter's.
-func KVGroups(runs []KVLayerRun, disableHybrid, trailingDrafter bool) ([]kv.Group, error) {
-	return KVGroupsWith(runs, kv.GroupOptions{DisableHybrid: disableHybrid, TrailingDrafter: trailingDrafter})
+// tagDraftGroups is use_eagle_block_drop (TagsDraftGroups): the groups holding a run marked
+// draft are then the drafter's (vllm/v1/core/kv_cache_planning.py:1650-1656@4ba787ec).
+func KVGroups(runs []KVLayerRun, disableHybrid, tagDraftGroups bool) ([]kv.Group, error) {
+	return KVGroupsWith(runs, kv.GroupOptions{DisableHybrid: disableHybrid, TagDraftGroups: tagDraftGroups})
 }
 
 // KVGroupsWith is KVGroups with every option get_kv_cache_groups reads (kv.GroupOptions), among
@@ -70,7 +73,7 @@ func KVGroupsWith(runs []KVLayerRun, o kv.GroupOptions) ([]kv.Group, error) {
 }
 
 // KVPoolBlocks is the KV pool's block count over the layers' KV cache groups, as
-// get_kv_cache_config_from_groups sizes it (vllm/v1/core/kv_cache_utils.py:1622-1628@5df63a72):
+// get_kv_cache_config_from_groups sizes it (vllm/v1/core/kv_cache_planning.py:676-682@4ba787ec):
 // availableBytes, the memory the KV cache may take, over the widest group's bytes per block
 // (kv.PoolBytesPerBlock).
 //
@@ -79,7 +82,7 @@ func KVGroupsWith(runs []KVLayerRun, o kv.GroupOptions) ([]kv.Group, error) {
 // every layer's page, block_size x the layers' elements a token x each layer's dtype bytes. A
 // layer that states its element size keeps it -- MiniMax-M3's indexer key cache, whose dtype is
 // attention_config.indexer_kv_dtype rather than the cache dtype (bf16 unless stated,
-// vllm/models/minimax_m3/nvidia/model.py:505-509@5df63a72) -- and the others share what remains
+// vllm/models/minimax_m3/nvidia/model.py:505-509@4ba787ec) -- and the others share what remains
 // of kernelPerBlock. One group of every layer is then kernelPerBlock exactly, so it keeps the
 // memory model's count. A remainder that is not a whole number of bytes for each of the other
 // layers' elements is refused, naming both, rather than sized from a guessed dtype. Layers that
@@ -96,7 +99,7 @@ func KVPoolBlocks(runs []KVLayerRun, disableHybrid bool, blockSize int, kernelPe
 // KV cache group's (kv.PoolBytesPerBlock), with the layers' element sizes resolved from
 // kernelPerBlock as KVPoolBlocks resolves them. It is the worker_kv_bytes_per_block an
 // OffloadingConnector sizes its CPU tier from (the KV tensor's bytes over its blocks,
-// vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:136-147@5df63a72).
+// vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:174-185@4ba787ec).
 func KVPoolBytesPerBlock(runs []KVLayerRun, disableHybrid bool, blockSize int, kernelPerBlock int64) (int64, error) {
 	layers, err := KVLayers(runs)
 	if err != nil {
@@ -277,7 +280,7 @@ func KVLayers(runs []KVLayerRun) ([]kv.Layer, error) {
 			layers = append(layers, kv.Layer{Spec: spec, Window: r.SlidingWindow, KVHeads: r.NumKVHeads,
 				HeadSize: r.HeadSize, BlockSize: r.BlockSize, TokensPerState: r.TokensPerState,
 				StateBytes: r.StateBytes, ElemBytes: r.ElemBytes, Alignment: r.Alignment,
-				StrideAlignment: r.StrideAlignment, BoundedReplay: r.BoundedReplay,
+				StrideAlignment: r.StrideAlignment, BoundedReplay: r.BoundedReplay, Draft: r.Draft,
 				PageSizePadded: r.PageSizePadded, MambaCacheMode: r.MambaCacheMode,
 				NumSpeculativeBlocks: r.NumSpeculativeBlocks, NumPrefillCheckpointBlocks: r.NumPrefillCheckpointBlocks,
 				PrefillCheckpointAlignment: r.PrefillCheckpointAlignment})
@@ -286,22 +289,17 @@ func KVLayers(runs []KVLayerRun) ([]kv.Layer, error) {
 	return layers, nil
 }
 
-// trailingDrafter is _uses_trailing_mtp_layers (vllm/v1/core/kv_cache_utils.py:1997-2013@5df63a72):
-// an EAGLE-family drafter (use_eagle, vllm/config/speculative.py:1944-1948) whose KV layers
-// register after the target's, which is MTP on any model and every EAGLE-family method on
-// DeepSeek V4 and V4.1. The engine block does not name the model, so a DeepSeek V4 layer spec
-// stands for its model type.
-func trailingDrafter(method string, runs []KVLayerRun) bool {
+// TagsDraftGroups is whether get_kv_cache_groups tags the drafter's groups for a speculative
+// method: the speculative config's use_eagle_block_drop, which holds for eagle, eagle3 and mtp
+// (needs_eagle_block_drop, vllm/config/speculative.py:2122-2149@4ba787ec;
+// vllm/v1/core/kv_cache_planning.py:1650-1656). The drafter's groups are then the ones holding
+// a run marked draft, whatever the model. v0.32.0 found the drafter's group by position instead,
+// the one holding the model's last layer, for MTP and DeepSeek V4 drafters only
+// (_uses_trailing_mtp_layers, vllm/v1/core/kv_cache_utils.py:1997-2013@5df63a72).
+func TagsDraftGroups(method string) bool {
 	switch method {
-	case "mtp":
+	case "eagle", "eagle3", "mtp":
 		return true
-	case "eagle", "eagle3", "dflash", "dspark":
-		for _, r := range runs {
-			switch r.Spec {
-			case "mla", "sliding_window_mla", "circular_buffer":
-				return true
-			}
-		}
 	}
 	return false
 }
@@ -323,7 +321,7 @@ func checkKVLayersFit(c Config, blockSize, maxModelLen, inFlight, prefillLookahe
 		return err
 	}
 	o := kv.GroupOptions{DisableHybrid: c.DisableHybridKVCacheManager != nil && *c.DisableHybridKVCacheManager,
-		TrailingDrafter: trailingDrafter(method, c.KVLayers)}
+		TagDraftGroups: TagsDraftGroups(method)}
 	var perBlock int64
 	if c.KVAvailableBytes > 0 {
 		if _, err = kv.PoolBytesPerBlock(layers, o, blockSize); err != nil {

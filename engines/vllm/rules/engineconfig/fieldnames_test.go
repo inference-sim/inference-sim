@@ -27,6 +27,7 @@ func TestEngineFieldNames(t *testing.T) {
 		"disable_custom_all_reduce":    "--disable-custom-all-reduce",
 		"allreduce_backend":            "resolved override, not an engine field",
 		"cudagraph_mode":               "-O/--compilation-config cudagraph_mode",
+		"enforce_eager":                "--enforce-eager / --no-enforce-eager",
 		"max_cudagraph_capture_size":   "-O/--compilation-config max_cudagraph_capture_size",
 		"cudagraph_capture_sizes":      "-O/--compilation-config cudagraph_capture_sizes",
 		"async_scheduling":             "--async-scheduling",

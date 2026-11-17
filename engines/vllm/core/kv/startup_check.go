@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be):
+// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
 // the start-up memory check of get_kv_cache_configs (:2627-2646), _check_enough_kv_cache_memory
 // (:1003-1040), _max_memory_usage_bytes_from_groups (:2337-2366) and
 // _estimate_max_model_len_from_groups (:2369-2412); with each spec's max_memory_usage_bytes
@@ -83,7 +83,7 @@ func groupRequestPages(g Group, blockSize int, limits RequestLimits) int {
 	}
 }
 
-// MaxNumBlocksPerReq is MambaSpec.max_num_blocks_per_req (kv_cache_interface.py:1085-1092@5df63a72)
+// MaxNumBlocksPerReq is MambaSpec.max_num_blocks_per_req (kv_cache_interface.py:1144-1151@4ba787ec)
 // for a Mamba group of block size blockSize: the width of its block-table row. In align mode the
 // row is position-indexed over the whole sequence, cdiv(maxLen, block size) + num_speculative_blocks,
 // though only 2 + num_speculative_blocks states are resident; in none mode it is the pages the
@@ -180,7 +180,7 @@ func CheckEnoughKVCacheMemory(layers []Layer, o GroupOptions, blockSize int, lim
 }
 
 // pyFloat is a float as Python's repr prints it for these figures: shortest digits, and ".0" on a
-// whole number (format_gib returns round(x, 2), vllm/utils/mem_utils.py:30-31@5df63a72).
+// whole number (format_gib returns round(x, 2), vllm/utils/mem_utils.py:30-31@4ba787ec).
 func pyFloat(f float64) string {
 	s := strconv.FormatFloat(f, 'f', -1, 64)
 	if !strings.Contains(s, ".") {

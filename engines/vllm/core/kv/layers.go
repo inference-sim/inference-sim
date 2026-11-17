@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be):
+// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
 // get_kv_cache_groups (:2159-2253) and _get_kv_cache_groups_uniform_page_size (:1362-1502),
 // with UniformTypeKVCacheSpecs.is_uniform_type (vllm/v1/kv_cache_interface.py:1282-1295), and
 // the DeepSeek V4 specs: MLAAttentionSpec with tokens_per_state (:686-760),
@@ -53,6 +53,10 @@ const (
 // Layer is one attention layer's KV cache spec, at the engine's one block size.
 type Layer struct {
 	Spec LayerSpec
+	// Draft is KVCacheSpec.is_draft (vllm/v1/kv_cache_interface.py:215@4ba787ec): the layer is a
+	// drafter's, registered by an attention module the model runner marks is_draft_layer
+	// (vllm/v1/worker/gpu/attn_utils.py:150, 168-213@4ba787ec).
+	Draft bool
 	// Window is SlidingWindowSpec.sliding_window, in tokens.
 	Window int
 	// KVHeads and HeadSize set the layer's page size with its spec.
@@ -121,12 +125,14 @@ func GroupsOfLayers(layers []Layer, disableHybrid bool) ([]Group, error) {
 type GroupOptions struct {
 	// DisableHybrid is disable_hybrid_kv_cache_manager.
 	DisableHybrid bool
-	// TrailingDrafter is _uses_trailing_mtp_layers with EAGLE block drop on
-	// (kv_cache_utils.py:2017-2033@5df63a72): an MTP drafter, or any EAGLE-family drafter of
-	// DeepSeek V4/V4.1, whose KV layers register after the target's. The group holding the
-	// model's last layer is then the drafter's (_annotate_eagle_groups, :2051-2109), and only
-	// it drops the EAGLE block.
-	TrailingDrafter bool
+	// TagDraftGroups is speculative_config.use_eagle_block_drop(): get_kv_cache_groups then
+	// flags as is_eagle_group each group that holds a draft layer (Layer.Draft), and only those
+	// drop the EAGLE block (vllm/v1/core/kv_cache_planning.py:1650-1656@4ba787ec). With none
+	// flagged the coordinator flags every group (kv_cache_coordinator.py:129-135). v0.32.0 found
+	// the drafter's group by position instead, the group of the model's last layer, for MTP and
+	// DeepSeek V4 drafters only (_uses_trailing_mtp_layers and _annotate_eagle_groups,
+	// vllm/v1/core/kv_cache_utils.py:1997-2109@5df63a72).
+	TagDraftGroups bool
 	// BlockSize is the engine's block size, in tokens: the one a layer that states none has.
 	// Layers whose pages are compared or packed in bytes (a Mamba layer beside attention, packed
 	// groups) read it; 0 is unknown, and a comparison that needs it is then skipped or refused.
@@ -156,8 +162,14 @@ func (o GroupOptions) blockOuter(layers []Layer) bool {
 
 // GroupLayers is GroupsOfLayers with the drafter's position.
 func GroupLayers(layers []Layer, o GroupOptions) ([]Group, error) {
-	groups, _, err := groupLayers(layers, o)
-	return groups, err
+	groups, members, err := groupLayers(layers, o)
+	if err != nil || !o.TagDraftGroups {
+		return groups, err
+	}
+	for i, m := range members {
+		groups[i].Eagle = slices.ContainsFunc(m, func(l int) bool { return layers[l].Draft })
+	}
+	return groups, nil
 }
 
 // groupLayers is GroupLayers with each group's layers, by index: vLLM's KVCacheGroupSpec
@@ -204,15 +216,6 @@ func groupLayers(layers []Layer, o GroupOptions) ([]Group, [][]int, error) {
 			return nil, nil, err
 		}
 		if g != nil {
-			if o.TrailingDrafter {
-				// _groups_partition_layers_exactly holds: every layer is in one group.
-				for i, m := range members {
-					if slices.Contains(m, len(work)-1) {
-						g[i].Eagle = true
-						break
-					}
-				}
-			}
 			return g, members, nil
 		}
 	}
@@ -304,10 +307,10 @@ func unifyHybrid(layers []Layer) ([]Layer, error) {
 // checkEqualPages refuses what vLLM's uniform-page-size grouping assumes and this port does not
 // unify: the attention layers are of one page in elements per token at the engine's one block
 // size, and a Mamba layer's page, padded to the attention page at start-up
-// (vllm/platforms/interface.py:1118-1126@5df63a72), is that page. Mamba against attention can be
+// (vllm/platforms/interface.py:1130-1138@4ba787ec), is that page. Mamba against attention can be
 // compared only where the engine's block size and every attention layer's element size are
 // known; otherwise the padded page is taken as stated. Unequal pages are unify_kv_cache_spec_page_size's
-// (:1292-1354), which pads a smaller Mamba page and scales an attention block: not modelled.
+// (:1304-1366), which pads a smaller Mamba page and scales an attention block: not modelled.
 func checkEqualPages(layers []Layer, blockSize int) error {
 	var first *Layer
 	known := blockSize > 0
@@ -337,7 +340,7 @@ func checkEqualPages(layers []Layer, blockSize int) error {
 	for _, l := range layers {
 		if l.Spec == LayerMamba && pageBytes(l) != attnPage {
 			return fmt.Errorf("kv: a Mamba layer's page of %d bytes beside attention pages of %d bytes: vLLM unifies "+
-				"them with unify_kv_cache_spec_page_size (vllm/v1/core/kv_cache_utils.py:1292-1354@5df63a72), "+
+				"them with unify_kv_cache_spec_page_size (vllm/v1/core/kv_cache_planning.py:346-408@4ba787ec), "+
 				"which is not modelled", pageBytes(l), attnPage)
 		}
 	}
@@ -372,7 +375,7 @@ func deepseek(layers []Layer) bool {
 
 // uniformType is whether every layer is one spec type: UniformTypeKVCacheSpecs.is_uniform_type
 // at one block size, where full attention takes its indexers and a sliding window only windows
-// of its own size (vllm/v1/kv_cache_interface.py:898-903@5df63a72).
+// of its own size (vllm/v1/kv_cache_interface.py:957-962@4ba787ec).
 func uniformType(layers []Layer) bool {
 	for _, l := range layers {
 		if groupOf(l) != groupOf(layers[0]) {

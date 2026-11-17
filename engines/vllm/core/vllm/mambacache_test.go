@@ -97,9 +97,9 @@ func TestResolveAppliesTheMambaCheckToAMambaModel(t *testing.T) {
 	}
 }
 
-// mamba_ssm_cache_dtype: the initializer is "auto" (cache.py:185). NemotronH and Qwen3.5 replace a
+// mamba_ssm_cache_dtype: the initializer is "auto" (cache.py:300). NemotronH and Qwen3.5 replace a
 // stated "auto" with the checkpoint's value and keep any other stated value
-// (config.py:716-732, 850-866@5df63a72), so a stated value equal to that checkpoint value is the
+// (config.py:816-832, 950-966@4ba787ec), so a stated value equal to that checkpoint value is the
 // default; another is away from it. A model with no such hook keeps what is stated.
 func TestMambaSSMCacheDTypeIsComparedWithTheResolvedDefault(t *testing.T) {
 	for _, c := range []struct {

@@ -27,6 +27,13 @@ import stand_in  # noqa: E402
 
 SOURCE = os.environ.get("VLLM_SOURCE")
 VECTORS = os.path.join(HERE, "stand_in_vectors.json")
+# NCCL's own documentation (no vLLM function resolves them): cuMem is auto-enabled by default since 2.19 and 1 overrides
+# the autodetection with the same choice; NVLS defaults to 2 and 1 differs only in failing when allocation fails.
+CUMEM = [("1", True), ("0", False), ("", False), ("2", False)]
+NVLS = [("1", True), ("2", True), ("0", False), ("", False)]
+# NCCL_MNNVL_ENABLE (NCCL user guide): 2 is the default (use multi-node NVLink where the system has it, else the network);
+# 1 differs only in failing communicator initialization when MNNVL is unsupported, which a completed run did not do.
+MNNVL = [("1", True), ("2", True), ("0", False), ("", False)]
 TLS = [("cuda_copy,rc", True), ("cuda_copy,cuda_ipc,rc", True), ("all", True), ("cuda_copy,cuda_ipc,tcp", False),
        ("tcp", False), ("^rc", False), ("sm,self", False)]
 
@@ -68,14 +75,25 @@ def rcache_final():
 def vectors_from_upstream():
     rows = []
     for value, nodes, cap in itertools.product(["auto", "mnnvl", "trtllm", "nccl"], [1, 2, 4], ["8.0", "9.0", "9.10", "10.0", "10.3"]):
-        rows.append({"field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND", "value": value, "tp_group_nodes": nodes,
-                     "compute_capability": cap, "owner": "_resolve_fi_ar_backend",
-                     "exact": fi_backend(value, nodes, cap) == fi_backend("auto", nodes, cap)})
+        got, auto = fi_backend(value, nodes, cap), fi_backend("auto", nodes, cap)
+        row = {"field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND", "value": value, "tp_group_nodes": nodes,
+               "compute_capability": cap, "owner": "_resolve_fi_ar_backend", "exact": got == auto}
+        if nodes == 1 and stand_in._cap(cap)[0] >= 10:
+            # Blackwell nodes (HGX B200/B300, the GB200/GB300 NVL72 trays) have NVSwitch multicast, so auto's trtllm
+            # fallback is never taken and auto and a stated mnnvl run the same backend; the stand-in is exact
+            # under that assumption, which the point's estimation text states. The fallback flag is the only
+            # difference the upstream function shows.
+            row["owner"] = "_resolve_fi_ar_backend+multicast"
+            row["exact"] = got[0] == auto[0]
+        rows.append(row)
     for value in ["1024", "0", "inf", "2048"]:
         rows.append({"field": "UCX_RCACHE_MAX_UNRELEASED", "value": value, "owner": "_maybe_set_ucx_rcache_limit",
                      "exact": value == rcache_final()})
     for value, exact in TLS:
         rows.append({"field": "UCX_TLS", "value": value, "owner": "ucx-faq", "exact": exact})
+    for field, values in (("NCCL_CUMEM_ENABLE", CUMEM), ("NCCL_NVLS_ENABLE", NVLS), ("NCCL_MNNVL_ENABLE", MNNVL)):
+        for value, exact in values:
+            rows.append({"field": field, "value": value, "owner": "nccl-user-guide", "exact": exact})
     return rows
 
 
@@ -98,8 +116,12 @@ class Vectors(unittest.TestCase):
     def test_a_stated_mnnvl_on_one_node_is_not_the_default(self):
         # auto on one node is (mnnvl, may fall back to trtllm); a stated mnnvl is (mnnvl, no fallback). They differ on a
         # node without NVSwitch multicast, which the caller cannot state, so the stand-in is not exact there.
-        for cap in ("8.0", "9.0", "10.0", "10.3"):
+        for cap in ("8.0", "9.0"):
             self.assertFalse(stand_in.exact("VLLM_FLASHINFER_ALLREDUCE_BACKEND", "mnnvl", tp_group_nodes=1, compute_capability=cap))
+        # On Blackwell nodes, which all have NVSwitch multicast, the fallback is never taken: exact under that assumption.
+        for cap in ("10.0", "10.3"):
+            self.assertTrue(stand_in.exact("VLLM_FLASHINFER_ALLREDUCE_BACKEND", "mnnvl", tp_group_nodes=1, compute_capability=cap))
+            self.assertFalse(stand_in.exact("VLLM_FLASHINFER_ALLREDUCE_BACKEND", "trtllm", tp_group_nodes=1, compute_capability=cap))
         self.assertTrue(stand_in.exact("VLLM_FLASHINFER_ALLREDUCE_BACKEND", "mnnvl", tp_group_nodes=2, compute_capability="10.0"))
 
     def test_an_unlisted_field_has_no_exact_stand_in(self):

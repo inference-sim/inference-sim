@@ -19,7 +19,7 @@ case_() {
 	[[ -z "$input" ]] || input+=$'\n--\n'
 	input+="$(printf '%s\n' "$@")"
 }
-ALL="bench go goldens inpackage kerneltests lint metrics oracle packs_v0_29 packs_v0_31 packs_v0_32 race race_guard rest"
+ALL="bench go goldens inpackage kerneltests lint metrics oracle packs_v0_29 packs_v0_31 packs_v0_32 packs_v0_33 race race_guard rest"
 CENSUS="kernelmodel-census-0 kernelmodel-census-1 kernelmodel-census-2 kernelmodel-census-3"
 ENGINE="vllmengine-0 vllmengine-1"
 EVERY_LEG="core compat $ENGINE $CENSUS"
@@ -31,19 +31,22 @@ case_ "another workflow (blis, mutation)"       "-" "-" -- .github/workflows/bli
 case_ "a Python file of the oracle"             "goldens oracle" "-" -- oracle/gen_fuzz.py
 case_ "the oracle's fuzz cache action"          "oracle" "-" -- .github/actions/oracle-fuzz/action.yml
 case_ "fields.json only"                        "bench go inpackage kerneltests metrics oracle race rest" "$EVERY_LEG" -- fields.json
+case_ "a harness copy (check_mocks.py)"          "goldens oracle rest" "-" -- oracle/check_mocks.py
+case_ "the harness configuration"               "goldens oracle rest" "-" -- oracle/harness.json
 case_ "a fields generator"                      "metrics" "-" -- fields/gen_fields.py
-case_ "an oracle golden only"                   "bench goldens oracle race rest" "core" -- core/sched/testdata/golden/dashboard-deepseek-v4-pro-layers.json
-case_ "an oracle scenario"                      "goldens oracle race rest" "$EVERY_LEG" -- oracle/scenarios/connector/nixl-d-abort-waiting.json
-case_ "a rules pack's source"                   "bench go inpackage kerneltests lint oracle packs_v0_32 race race_guard rest" "core $ENGINE $CENSUS" -- rules/v0_32/pack.go
-case_ "a rules pack's test"                     "go lint packs_v0_32 rest" "-" -- rules/v0_32/source_test.go
+case_ "the surface list's status file"           "metrics" "-" -- tools/surface/status.json
+case_ "an oracle golden only"                   "bench goldens metrics oracle race rest" "core" -- core/sched/testdata/golden/dashboard-deepseek-v4-pro-layers.json
+case_ "an oracle scenario"                      "goldens metrics oracle race rest" "$EVERY_LEG" -- oracle/scenarios/connector/nixl-d-abort-waiting.json
+case_ "a rules pack's source"                   "bench go inpackage kerneltests lint oracle packs_v0_33 race race_guard rest" "core $ENGINE $CENSUS" -- rules/v0_33/pack.go
+case_ "a rules pack's test"                     "go lint packs_v0_33 rest" "-" -- rules/v0_33/source_test.go
 case_ "a kernelmodel Go file"                   "go kerneltests lint race race_guard rest" "$ENGINE $CENSUS" -- compat/kernelmodel/acceptance.go
 case_ "a kernelmodel test"                      "go lint race rest" "$CENSUS" -- compat/kernelmodel/blocksize_census_test.go
 case_ "a kernel-test fixture"                   "inpackage kerneltests race rest" "$EVERY_LEG" -- kerneltests/testdata/direct/x.yaml
 case_ "a kernel test in the kernel package"     "go inpackage" "-" -- kerneltests/_inpackage/caches_test.go
 case_ "the kernel tests' documents"             "kerneltests" "-" -- kerneltests/docs/index.md
 case_ "a vllmengine Go file"                    "go lint race race_guard rest" "$ENGINE" -- vllmengine/engine.go
-case_ "go.mod"                                  "bench go inpackage kerneltests lint metrics oracle packs_v0_29 packs_v0_31 packs_v0_32 race rest" "$EVERY_LEG" -- go.mod
-case_ "the lint configuration"                  "lint" "-" -- .golangci.yml
+case_ "go.mod"                                  "bench go inpackage kerneltests lint metrics oracle packs_v0_29 packs_v0_31 packs_v0_32 packs_v0_33 race rest" "$EVERY_LEG" -- go.mod
+case_ "the lint configuration (a harness copy)"  "lint rest" "-" -- .golangci.yml
 case_ "the CI workflow"                         "$ALL" "$EVERY_LEG" -- .github/workflows/ci.yml
 case_ "the shard tool"                          "inpackage kerneltests oracle race rest" "$EVERY_LEG" -- .github/scripts/shard.py
 case_ "the inertness shard weights"             "oracle" "-" -- .github/shards/weights-inertness.txt
@@ -98,7 +101,7 @@ PY
 		cp -R "$here/../scripts/." .github/scripts/ && cp -R "$here/../shards/." .github/shards/ && cp "$here/../workflows/ci.yml" .github/workflows/ci.yml
 		git add -A; git commit -q --allow-empty -m "base"
 		base="$(git rev-parse HEAD)"
-		for case in "docs/testing.md:-" "core/sched/testdata/golden/dashboard-deepseek-v4-pro-layers.json:goldens oracle race rest"; do
+		for case in "docs/testing.md:-" "core/sched/testdata/golden/dashboard-deepseek-v4-pro-layers.json:goldens metrics oracle race rest"; do
 			f="${case%%:*}"; want="${case#*:}"
 			git checkout -q -B "pr" "$base"; echo "edit" >> "$f"; git add -A; git commit -q -m "pr"
 			git checkout -q -B "merge" "$base"; git merge --no-ff -q pr -m "merge"
@@ -116,5 +119,7 @@ pr_event
 
 python3 -I "$here/audit_triggers.py" || fail=1
 python3 -I "$here/test_shard.py" || fail=1
+python3 -I "$here/test_fuzz_provenance.py" || fail=1
+python3 -I "$here/test_fetch_check.py" || fail=1
 python3 -I "$here/check_race_legs.py" || fail=1
 exit "$fail"

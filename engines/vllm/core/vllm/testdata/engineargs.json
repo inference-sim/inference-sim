@@ -292,7 +292,7 @@
    "accepted": true,
    "name": "default-block-size-unstated",
    "resolved": {
-    "block_size": 128,
+    "block_size": 16,
     "enable_chunked_prefill": true,
     "enable_prefix_caching": true,
     "long_prefill_token_threshold": 0,
@@ -423,9 +423,20 @@
    "name": "refused-negative-watermark"
   },
   {
-   "accepted": false,
-   "error": "ValidationError: 1 validation error for VllmConfig | Value error, Currently, async scheduling is only supported with EAGLE/MTP/Draft Model/NGram GPU/DSpark/DFlash kind of speculative decoding [type=value_error, input_value=ArgsKwargs((), {'model_co... 'shutdown_timeout': 0}), input_type=ArgsKwargs] | For further information visit https://errors.pydantic.dev/2.14/v/value_error",
-   "name": "refused-async-with-ngram-stated"
+   "accepted": true,
+   "name": "not-modelled-async-with-ngram-stated",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
   },
   {
    "accepted": false,
@@ -434,14 +445,14 @@
   },
   {
    "accepted": false,
-   "error": "ValidationError: 1 validation error for SpeculativeConfig | method | Input should be 'ngram', 'medusa', 'mlp_speculator', 'draft_model', 'suffix', 'custom_class', 'eagle', 'eagle3', 'extract_hidden_states', 'deepseek_mtp', 'dots3_note_mtp', 'mimo_mtp', 'mimo_v2_mtp', 'glm4_moe_mtp', 'glm4_moe_lite_mtp', 'glm_ocr_mtp', 'ernie_mtp', 'nemotron_h_mtp', 'exaone_moe_mtp', 'exaone4_5_mtp', 'qwen3_next_mt",
+   "error": "ValidationError: 1 validation error for SpeculativeConfig | method | Input should be 'ngram', 'draft_model', 'suffix', 'custom_class', 'eagle', 'eagle3', 'extract_hidden_states', 'deepseek_mtp', 'dots3_note_mtp', 'mimo_mtp', 'mimo_v2_mtp', 'glm4_moe_mtp', 'glm4_moe_lite_mtp', 'glm_ocr_mtp', 'ernie_mtp', 'nemotron_h_mtp', 'exaone_moe_mtp', 'exaone4_5_mtp', 'qwen3_next_mtp', 'qwen4_exp_mtp', 'qwen3_",
    "name": "refused-unknown-speculative-method"
   }
  ],
  "provenance": {
-  "blis_vllm_commit": "79a23776cef9065445f3588d720d882c087129ad+dirty",
-  "lockfile_sha256": "4d719a16c9f869f71dbb64aef90aede8cc3920b973cc81479e10a67c2d408748",
-  "mock_version": "gpu-mock/5+af60be80e293",
+  "blis_vllm_commit": "d9819f63d82430b328609b5826b76a5e3ae31116",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/7+f4274aa648c4",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -456,6 +467,7 @@
    "vllm.config.vllm.HAS_TRITON",
    "KV event publisher",
    "tests.v1.core.utils.KVCacheConfig",
+   "tests.v1.core.utils.CacheConfig",
    "vllm.v1.executor.abstract.Executor",
    "EngineCore construction",
    "vllm.platforms.cpu async override",
@@ -473,14 +485,21 @@
   ],
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
-  "platform": "darwin-arm64",
-  "python": "3.12.13",
-  "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
-  "scenario_sha256": "4132e1e00e6b33c1e1c0e11cd0619192afaeb64cde1ff6c65f5f535d71a3f44d",
+  "oracle_inputs": {
+   "oracle/engineargs-cases.json": "577758f6823e7b0b7ab22065520a9ea412a3f25b479f57b9eb965e4be516d782",
+   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_engineargs.py": "7c3391fa0fbe161278442832f14a655967473db952bf3bd8dd36d8d552fe000d",
+   "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+  "scenario_sha256": "577758f6823e7b0b7ab22065520a9ea412a3f25b479f57b9eb965e4be516d782",
   "seed": null,
   "tier": 1,
-  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
-  "vllm_distribution": "0.32.0+cpu",
-  "vllm_version": "0.32.0"
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
  }
 }

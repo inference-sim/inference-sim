@@ -31,6 +31,12 @@ def proof(name):
         return json.load(f)
 
 
+def read_in(spec, path):
+    """The proof's own `at` for the read in path: the line moves with the release, the file does not."""
+    (at,) = [rd["at"] for rd in spec["readers"] if rd["at"].startswith(path + ":")]
+    return at
+
+
 @unittest.skipUnless(ROOT, "VLLM_SOURCE is unset")
 class Controls(unittest.TestCase):
     def setUp(self):
@@ -95,14 +101,48 @@ class Controls(unittest.TestCase):
         self.assertEqual(r["verdict"], "not_inert")
         self.assertTrue([p for p in r["problems"] if "decisions of run outputproc differ" in p], r["problems"])
 
+    def handshake_spec(self, field, probes, expect_port=True, **extra):
+        base = {"data_parallel_size": 2, "data_parallel_size_local": 1, "data_parallel_address": "10.0.0.1"}
+        base.pop(field, None)
+        run = {"id": "launch", "kind": "handshake", "entry": "launch_core_engines", "apply": {"engine_args": field},
+               "base": base, "echo": field, "expect_port": expect_port, **extra}
+        return {"field": field, "release": "x", "readers": [], "probes": [{"label": str(v), "value": v} for v in probes],
+                "runs": [run]}
+
+    def test_a_handshake_run_sees_a_field_that_changes_how_the_cores_are_started(self):
+        # data_parallel_size_local 1 against 2 changes how many engine cores the front end starts itself and
+        # whether they handshake over a local socket: engine-facing, so the run must report it.
+        r = self.h.evaluate(ROOT, self.handshake_spec("data_parallel_size_local", [1, 2], expect_port=False,
+                                                      ignore=["parallel_config.data_parallel_master_port",
+                                                              "parallel_config._data_parallel_master_port_list"]))
+        self.assertEqual(r["verdict"], "not_inert")
+        self.assertTrue([p for p in r["problems"] if "decisions of run launch differ" in p], r["problems"])
+
+    def test_a_handshake_run_requires_the_endpoint_to_carry_the_stated_port(self):
+        # A run that claims to probe a port through data_parallel_size_local finds an endpoint that does not
+        # carry the stated value, and says so instead of passing.
+        r = self.h.evaluate(ROOT, self.handshake_spec("data_parallel_size_local", [1, 1],
+                                                      ignore=["parallel_config.data_parallel_master_port",
+                                                              "parallel_config._data_parallel_master_port_list"]))
+        self.assertTrue([p for p in r["problems"] if "does not carry the stated port" in p], r["problems"])
+
+    def test_a_handshake_run_ignores_only_the_paths_it_is_told_to(self):
+        # The config draws free ports for the data-parallel master at random: without "ignore" two probes of
+        # the rpc port differ in them, and the run says so rather than passing.
+        r = self.h.evaluate(ROOT, self.handshake_spec("data_parallel_rpc_port", [29550, 13345]))
+        self.assertEqual(r["verdict"], "not_inert")
+        self.assertTrue([p for p in r["problems"] if "decisions of run launch differ" in p], r["problems"])
+
     def test_a_disposition_the_harness_does_not_check_is_refused(self):
         spec = copy.deepcopy(proof("stream_interval"))
         spec["runs"] = []
-        for rd in spec["readers"]:
-            if rd["at"] == "vllm/v1/engine/async_llm.py:174":
-                rd["disposition"] = {"kind": "gpu_replaced"}
+        # The reader is the proof's own async_llm.py read, at whatever line the pinned release has it.
+        readers = [rd for rd in spec["readers"] if rd["at"].startswith("vllm/v1/engine/async_llm.py:")]
+        self.assertEqual(len(readers), 1, [rd["at"] for rd in spec["readers"]])
+        readers[0]["disposition"] = {"kind": "gpu_replaced"}
         r = self.h.evaluate(ROOT, spec)
-        self.assertTrue([p for p in r["problems"] if "async_llm.py:174: unknown disposition 'gpu_replaced'" in p], r["problems"])
+        want = "%s: unknown disposition 'gpu_replaced'" % readers[0]["at"]
+        self.assertTrue([p for p in r["problems"] if want in p], r["problems"])
 
     def test_a_file_that_names_the_field_and_the_proof_does_not_list_fails(self):
         spec = copy.deepcopy(proof("stream_interval"))
@@ -125,9 +165,11 @@ class Controls(unittest.TestCase):
     def test_a_read_with_no_disposition_fails(self):
         spec = copy.deepcopy(proof("stream_interval"))
         spec["runs"] = []
+        dropped = spec["readers"][0]["at"]
+        self.assertTrue(dropped.startswith("vllm/engine/arg_utils.py:"), dropped)
         spec["readers"] = spec["readers"][1:]
         r = self.h.evaluate(ROOT, spec)
-        self.assertTrue([p for p in r["problems"] if "has no disposition: vllm/engine/arg_utils.py:2641" in p], r["problems"])
+        self.assertTrue([p for p in r["problems"] if "has no disposition: " + dropped in p], r["problems"])
 
     def test_a_listed_read_that_is_not_in_the_source_fails(self):
         spec = copy.deepcopy(proof("stream_interval"))
@@ -145,35 +187,37 @@ class Controls(unittest.TestCase):
     def test_a_pass_through_that_is_not_one_fails(self):
         spec = copy.deepcopy(proof("stream_interval"))
         spec["runs"] = []
+        at = read_in(spec, "vllm/v1/engine/async_llm.py")
         for rd in spec["readers"]:
-            if rd["at"] == "vllm/v1/engine/async_llm.py:174":
+            if rd["at"] == at:
                 rd["disposition"]["callee"] = "SomethingElse"
         r = self.h.evaluate(ROOT, spec)
-        self.assertTrue([p for p in r["problems"] if "async_llm.py:174 is not a keyword" in p], r["problems"])
+        self.assertTrue([p for p in r["problems"] if at + " is not a keyword" in p], r["problems"])
 
     def test_a_reviewed_read_the_source_no_longer_holds_fails(self):
         spec = copy.deepcopy(proof("stream_interval"))
         spec["runs"] = []
         for rd in spec["readers"]:
-            if rd.get("reviewed") and rd["at"].endswith(":324"):
+            if rd.get("reviewed") and rd.get("expr", "").startswith("if self.stream_interval >"):
                 rd["expr"] = "if self.stream_interval > 2:"
         r = self.h.evaluate(ROOT, spec)
         self.assertTrue([p for p in r["problems"] if "no longer holds" in p], r["problems"])
 
 
     def test_a_run_disposition_names_the_run_that_executed_the_line(self):
-        # arg_utils.py:2641 is executed by the config run (EngineArgs.create_engine_config) and by no other
+        # The arg_utils.py read is executed by the config run (EngineArgs.create_engine_config) and by no other
         # run. A proof that names the outputproc run for it must fail, though the config run came first:
         # coverage is per run, not the sum of the runs so far.
         spec = copy.deepcopy(proof("stream_interval"))
         spec["runs"] = [r for r in spec["runs"] if r["id"] in ("config", "outputproc")]
+        at = read_in(spec, "vllm/engine/arg_utils.py")
         for rd in spec["readers"]:
-            if rd["at"] == "vllm/engine/arg_utils.py:2641":
+            if rd["at"] == at:
                 rd["disposition"]["run"] = "outputproc"
         r = self.h.evaluate(ROOT, spec)
         self.assertTrue([p for p in r["problems"]
-                         if "arg_utils.py:2641 is marked run in outputproc and that run did not execute it" in p], r["problems"])
-        got = [rd for rd in r["readers"] if rd["at"] == "vllm/engine/arg_utils.py:2641"][0]
+                         if at + " is marked run in outputproc and that run did not execute it" in p], r["problems"])
+        got = [rd for rd in r["readers"] if rd["at"] == at][0]
         self.assertEqual(got["ran_in"], ["config"])
 
 
@@ -227,6 +271,41 @@ class CoverageMatching(unittest.TestCase):
             self.assertTrue(cov.ran("vllm/v1/engine/tiny.py:2", 2))
             cov.reset()
             self.assertFalse(cov.ran("vllm/v1/engine/tiny.py:2", 2))
+
+
+class HostIndependence(unittest.TestCase):
+    """A proof's hashes are computed on whatever runner the job lands on, so they must not carry a value that
+    the runner's CPU decides: vLLM's CPU platform resolves cache_config.mamba_ssm_cache_dtype to float32 on a
+    CPU with AVX512-BF16 and leaves it auto on one without (vllm/platforms/cpu.py), and CI's runners are of both
+    kinds (the proof's hashes failed on a runner without it)."""
+
+    def test_a_handshake_run_hashes_the_same_config_on_a_cpu_with_and_without_avx512_bf16(self):
+        import dataclasses
+        h = load()
+
+        @dataclasses.dataclass
+        class Cache:
+            block_size: int = 16
+            mamba_ssm_cache_dtype: str = "auto"
+
+        @dataclasses.dataclass
+        class Section:
+            max_num_seqs: int = 128
+            data_parallel_rpc_port: int = 29550
+
+        class Cfg:
+            def __init__(self, dtype):
+                self.parallel_config = Section()
+                self.scheduler_config = Section()
+                self.cache_config = Cache(mamba_ssm_cache_dtype=dtype)
+
+        runs = [r for r in proof("data_parallel_rpc_port")["runs"] if r["kind"] == "handshake"]
+        self.assertTrue(runs)
+        for run in runs:
+            with self.subTest(run=run["id"]):
+                with_bf16 = h.handshake_config(Cfg("float32"), "data_parallel_rpc_port", run.get("ignore", []))
+                without = h.handshake_config(Cfg("auto"), "data_parallel_rpc_port", run.get("ignore", []))
+                self.assertEqual(h.digest(with_bf16), h.digest(without))
 
 
 class CommittedProofs(unittest.TestCase):

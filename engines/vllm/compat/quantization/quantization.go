@@ -15,7 +15,7 @@
 //
 // The kernel prices a layer by the dtype its weights are stored in, and its catalog graph records
 // that dtype for each class of layers. The engine model therefore states the layout vLLM serves
-// (enginesettings.ServedWeights) and the kernel proves the graph stores exactly it, refusing
+// (plan.WeightLayout, which the lowering hands the kernel as plan.Lowered.ServedLayout) and the kernel proves the graph stores exactly it, refusing
 // otherwise. This package computes that statement. It reads no file at run time: the answers are
 // oracle/quantization/oracle.py's, which runs vLLM's own ModelConfig and quantization configs over
 // each checkpoint's config.json and is embedded here as resolved.json; the checkpoint is named by
@@ -30,11 +30,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 )
 
 // Upstream is the vLLM commit the recorded answers are for.
-const Upstream = "5df63a7203cdb9328d824a27b682e77c7b9928be"
+const Upstream = "4ba787ec9959e566d3b587a796dff07673324da5"
 
 // unlisted is the stated value oracle.py uses for "a string no vLLM release names"; vLLM's answer to
 // it is its answer to every value the oracle did not list.
@@ -104,7 +104,7 @@ type Lowered struct {
 	// Method is the quantization method vLLM settles on, the checkpoint's own.
 	Method string
 	// Served is the layout vLLM serves the checkpoint in, class by class.
-	Served enginesettings.ServedWeights
+	Served plan.WeightLayout
 	// Requested is the stated value when vLLM replaces it with Method (the checkpoint's recipe is
 	// claimed by another class, :1416-1437), and empty when the value was unset or already Method.
 	Requested string
@@ -199,12 +199,12 @@ func (c checkpoint) rowFor(stated string) (row, error) {
 // (vllm/models/minimax_m3/nvidia/model.py:231-238@5df63a72), and no ModelOpt config quantizes the token
 // embedding (get_quant_method returns None for it, modelopt.py:244-257, 1810-1860@5df63a72), so it stays
 // in the model dtype.
-func (l layout) served() (enginesettings.ServedWeights, error) {
+func (l layout) served() (plan.WeightLayout, error) {
 	model, err := dtypeWord(l.UnquantizedDType)
 	if err != nil {
-		return enginesettings.ServedWeights{}, err
+		return plan.WeightLayout{}, err
 	}
-	var sw enginesettings.ServedWeights
+	var sw plan.WeightLayout
 	for _, c := range []struct {
 		class string
 		dtype *string

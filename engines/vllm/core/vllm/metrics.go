@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/sched/scheduler.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/v1/core/sched/scheduler.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // Also vllm/v1/metrics/loggers.py (PrometheusStatLogger.record) and vllm/v1/metrics/stats.py.
 
 package vllm
@@ -17,9 +17,9 @@ import (
 )
 
 // The engine records its metrics in two halves, as vLLM does: a batch's admissions are its
-// schedule's PrefillStats (scheduler.py:1074-1080, 1314-1317@5df63a72), and its outputs,
+// schedule's PrefillStats (scheduler.py:1251-1257, 1508-1511@4ba787ec), and its outputs,
 // finishes and the scheduler gauges are what update_from_output reports for it
-// (:2395-2422@5df63a72). core/metrics takes both in one Step; the admissions wait here until
+// (:2647-2674@4ba787ec). core/metrics takes both in one Step; the admissions wait here until
 // their batch completes.
 
 // scheduled is what a schedule decided that its batch's metrics step reports.

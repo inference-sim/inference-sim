@@ -12,8 +12,6 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
 	blisschemas "github.com/inference-sim/blis-substrate/contracts"
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
@@ -63,8 +61,13 @@ func TestTheEngineCopyIsTheKernelsDeploymentEngine(t *testing.T) {
 				if !reflect.DeepEqual(m.engine, file) {
 					t.Errorf("%s pool %d: the engine copy is not the pool's engine block", path, pool)
 				}
-				if s := m.k.(*latencykernel.Kernel).Engine(); !reflect.DeepEqual(s, vllmsettings.Of(m.engine)) {
-					t.Errorf("%s pool %d: the kernel prices settings other than the copy's", path, pool)
+				if n := m.engine.MaxNumBatchedTokens; n > 0 && int(m.Lowered().Plan.Batch.Tokens) != n {
+					t.Errorf("%s pool %d: the kernel prices max_num_batched_tokens %d, the copy states %d",
+						path, pool, m.Lowered().Plan.Batch.Tokens, n)
+				}
+				if n := m.engine.MaxNumSeqs; n > 0 && m.Lowered().Plan.Batch.Requests != n {
+					t.Errorf("%s pool %d: the kernel prices max_num_seqs %d, the copy states %d",
+						path, pool, m.Lowered().Plan.Batch.Requests, n)
 				}
 				// The block the kernel's deployment carried is the same block, read the same way.
 				kernelBlock, err := engineconfig.Decode(mustBlock(t, m.k.Deployment()))
@@ -130,9 +133,8 @@ func TestEachPoolsEngineCopyIsItsOwn(t *testing.T) {
 			t.Errorf("pool %d: engine copy states max_num_batched_tokens %d and max_num_seqs %d, want its "+
 				"own %d and %d", pool, e.MaxNumBatchedTokens, e.MaxNumSeqs, want.tokens, want.seqs)
 		}
-		if s := m.k.(*latencykernel.Kernel).Engine(); s.MaxNumBatchedTokens != want.tokens {
-			t.Errorf("pool %d: the kernel prices max_num_batched_tokens %d, want %d", pool,
-				s.MaxNumBatchedTokens, want.tokens)
+		if got := m.Lowered().Plan.Batch.Tokens; int(got) != want.tokens {
+			t.Errorf("pool %d: the kernel prices max_num_batched_tokens %d, want %d", pool, got, want.tokens)
 		}
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/blis-vllm/internal/upstream"
 )
 
 // eosToken is tests/v1/core/utils.py:43@5df63a72, which the GPU mock samples last.
@@ -188,7 +189,7 @@ func configure(t *testing.T, sc scenario) setup {
 	if c.AsyncScheduling || pp > 1 {
 		queue = engine.MaxConcurrentBatches(pp, c.AsyncScheduling, v2)
 	}
-	s, err := sched.New(sched.Config{
+	s, err := sched.New(sched.Config{KVTransfer: true, // the connector this test installs (kv_transfer_config)
 		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: c.MaxModelLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 		EnableChunkedPrefill: chunked, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: caching,
@@ -786,8 +787,8 @@ func checkProvenance(t *testing.T, scenarioPath string, tr trace) {
 	p := tr.Provenance
 	for _, c := range []struct{ field, got, want string }{
 		{"scenario_sha256", p.ScenarioSHA256, hex.EncodeToString(sum[:])},
-		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], "0.32.0"},
-		{"vllm_commit", p.VLLMCommit, "5df63a7203cdb9328d824a27b682e77c7b9928be"},
+		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], upstream.Version},
+		{"vllm_commit", p.VLLMCommit, upstream.Commit},
 		{"mock_version", p.MockVersion, mocks.Version},
 	} {
 		if c.got != c.want {
@@ -818,7 +819,7 @@ func TestOffloadingAgainstVLLM(t *testing.T) {
 			readJSON(t, filepath.Join("testdata", "golden", name+".json"), &want)
 			checkProvenance(t, path, want)
 			if d := earliestDivergence(want, run(t, sc)); d != "" {
-				t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+				t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 			}
 		})
 	}
@@ -847,7 +848,7 @@ func TestOffloadingFuzzCorpusAgainstVLLM(t *testing.T) {
 		if d := earliestDivergence(want, run(t, sc)); d != "" {
 			mismatches++
 			if mismatches <= 20 {
-				t.Errorf("%s: earliest divergence from vLLM v0.32.0: %s", name, d)
+				t.Errorf("%s: earliest divergence from vLLM v0.33.0: %s", name, d)
 			}
 		}
 	}
@@ -911,5 +912,24 @@ func TestCapabilitiesAndTheDrafterGroupRefusal(t *testing.T) {
 	if _, err := New(Config{Groups: []Group{{BlockSize: 4}, {BlockSize: 8}}, TokensPerHash: 4, NumChunks: 4}); err == nil ||
 		!strings.Contains(err.Error(), GroupIssue) {
 		t.Errorf("groups of several block sizes: %v, want refused with %s", err, GroupIssue)
+	}
+}
+
+// A drafter whose method drops its last block (EAGLE-3) on a scheduler with prefix caching is
+// built with lookahead block hashes unless the engine states a kv_transfer_config
+// (vllm/config/vllm.py:678-692@4ba787ec); the offloading connector is one, so the scenario
+// must run. The seeded fuzz corpus draws EAGLE-3 scenarios from oracle/gen_offloading_fuzz.py.
+func TestAnEagle3ScenarioWithPrefixCachingRunsBesideTheConnector(t *testing.T) {
+	var sc scenario
+	readJSON(t, "../../../oracle/scenarios/offloading/offloading-async.json", &sc)
+	caching := true
+	sc.Config.EnablePrefixCaching = &caching
+	sc.Config.Speculative = &struct {
+		Method    string `json:"method"`
+		NumTokens int    `json:"num_speculative_tokens"`
+		Draft     string `json:"draft"`
+	}{Method: "eagle3", NumTokens: 2, Draft: "llama-eagle"}
+	if tr := run(t, sc); len(tr.Steps) == 0 {
+		t.Fatal("the scenario ran no step")
 	}
 }

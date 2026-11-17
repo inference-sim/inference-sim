@@ -47,7 +47,7 @@ func TestADecodeStepDoesNotLaunchPrefillOnlyNodes(t *testing.T) {
 		if (want > 0) != c.prefill {
 			t.Fatalf("%s: %d prefill-only nodes in the graph", c.scenario, want)
 		}
-		k := build(t, in)
+		k := vllmBuild(t, in)
 		dec := decodeBatch(4, 6, 90000)
 		mixed := dec
 		mixed.Reqs = append(append([]kernel.ReqShape{}, dec.Reqs...),
@@ -102,7 +102,7 @@ func TestAModelScopedEagerCostWinsWhateverItsOrder(t *testing.T) {
 		default:
 			in.Coefficients = append(append([]*coefficient.Set{}, in.Coefficients...), set)
 		}
-		k := build(t, in)
+		k := vllmBuild(t, in)
 		b := decodeBatch(1, 6, 90000)
 		host := k.StepTime(b).PerResource[kernel.ResourceHost]
 		_, draft := k.priceDraft(b, &stepShape{}, &[numResources]float64{})
@@ -154,7 +154,7 @@ func TestTheDrafterRunsUnderItsOwnGraphs(t *testing.T) {
 		e := mustDecode(t, in.Deployment.Pools[0])
 		e.CUDAGraphMode, e.MaxCUDAGraphCaptureSize = mode, &size
 		setEngine(t, &in.Deployment.Pools[0], e)
-		k = build(t, in)
+		k = vllmBuild(t, in)
 		_, kernels := k.priceDraft(b, &stepShape{}, &[numResources]float64{})
 		host := k.StepTime(b).PerResource[kernel.ResourceHost]
 		target := k.targetHost(b, 0) + seconds(k.launchSeconds(b, kernels))
@@ -273,7 +273,7 @@ func TestTheVendoredHostSetResolvesTheSameUnderBothRules(t *testing.T) {
 			}
 		}
 		in.Coefficients = append(in.Coefficients, set)
-		k := build(t, in)
+		k := vllmBuild(t, in)
 		if want := time.Duration(93.8 * float64(time.Microsecond)); k.launchEager != want {
 			t.Errorf("%s: eager launch %v, want the model's %v", c.chip, k.launchEager, want)
 		}
@@ -315,7 +315,7 @@ func eagerAt(t *testing.T, us float64, mode string, spec bool, capture int) *Ker
 			Name: "host_launch_eager_per_kernel", Value: us, Units: "us_per_transfer",
 			Method: "assumed", Rationale: "test", Scope: coefficient.Scope{
 				Hardware: []string{"h200"}, Model: []string{"deepseek-v4.1-flash"}}}}})
-	return build(t, in)
+	return vllmBuild(t, in)
 }
 
 // ANCHOR, decode, eager: H200 TP8 under cudagraph_mode NONE, no speculation, one request at

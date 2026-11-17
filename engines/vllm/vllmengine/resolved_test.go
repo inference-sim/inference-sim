@@ -9,8 +9,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-
 	"github.com/inference-sim/blis-substrate/contracts/engine"
 )
 
@@ -72,7 +70,7 @@ func TestAnEngineBuildsFromAnUnstatedDeploymentWithOneSetOfValues(t *testing.T) 
 	Register()
 	const fixture = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
 	roots := scenarioWithout(t, fixture, "block_size", "max_num_seqs", "max_num_batched_tokens", "gpu_memory_utilization")
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots, Pool: 0}
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots, Pool: 0}
 	p, err := open(spec, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -82,15 +80,11 @@ func TestAnEngineBuildsFromAnUnstatedDeploymentWithOneSetOfValues(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	k, ok := p.model.Kernel().(*latencykernel.Kernel)
-	if !ok {
-		t.Fatalf("the kernel is a %T", p.model.Kernel())
-	}
 	for _, c := range []struct {
 		key           string
 		model, kernel int
 	}{
-		{"block_size", e.BlockSize, k.Engine().BlockSize},
+		{"block_size", e.BlockSize, int(p.model.Lowered().Plan.PageTokens)},
 		{"max_num_seqs", e.MaxNumSeqs, p.resolved.MaxNumSeqs},
 		{"max_num_batched_tokens", e.MaxNumBatchedTokens, p.resolved.MaxNumBatchedTokens},
 	} {
@@ -106,7 +100,7 @@ func TestAnEngineBuildsFromAnUnstatedDeploymentWithOneSetOfValues(t *testing.T) 
 // A value the file states wins: complete never replaces it.
 func TestAStatedEngineSettingIsNeverReplaced(t *testing.T) {
 	Register()
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Pool: 0,
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Pool: 0,
 		Roots: scenarioWithout(t, "gpt-oss-120b-h200-fp4-vllm-tp4.yaml", "max_num_seqs", "max_num_batched_tokens")}
 	p, err := open(spec, nil)
 	if err != nil {

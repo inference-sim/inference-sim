@@ -12,8 +12,6 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
-
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 )
 
 // populate sets every settable field of v, recursively, to a non-zero value, so a conversion that
@@ -79,7 +77,7 @@ func zeroes(v reflect.Value, path string, out *[]string) {
 }
 
 // Every setting the kernel prices is filled from the vLLM engine block: Of over an
-// engineconfig.Engine with every field stated leaves no field of enginesettings.Settings at its zero value. A field added to the
+// engineconfig.Engine with every field stated leaves no field of Settings at its zero value. A field added to the
 // kernel's settings and not to the conversion fails here rather than pricing as unstated.
 func TestOfFillsEverySetting(t *testing.T) {
 	var e engineconfig.Engine
@@ -189,7 +187,7 @@ func TestOfPoolDecodesThePoolsBlock(t *testing.T) {
 	if !reflect.DeepEqual(got, Of(want)) || !reflect.DeepEqual(want, e) {
 		t.Errorf("OfPool = %+v, want Of of the pool's decoded block %+v", got, Of(e))
 	}
-	if empty, err := OfPool(dep, 0); err != nil || !reflect.DeepEqual(empty, enginesettings.Settings{}) {
+	if empty, err := OfPool(dep, 0); err != nil || !reflect.DeepEqual(empty, Settings{}) {
 		t.Errorf("an unstated block: OfPool = %+v, %v; want no settings and no error", empty, err)
 	}
 }
@@ -221,11 +219,11 @@ func mustBlock(t *testing.T, src string) deployment.EngineBlock {
 	return deployment.NewEngineBlock(n.Content[0])
 }
 
-// vLLM v0.32.0 runs EAGLE, EAGLE3 and MTP through one speculator: its first pass covers every
-// scheduled token and the head and later passes run for every request of the step. Any other
-// method, and no speculation, is left unstated, so the kernel refuses an autoregressive drafter this
-// engine model has not read (draft_passes_unstated) rather than pricing a guess; a parallel-block
-// drafter ignores both fields.
+// vLLM runs EAGLE, EAGLE3 and MTP through one speculator: its first pass covers every scheduled
+// token and the head and later passes run for every request of the step. DFlash and DSpark, the
+// parallel-block drafters, state no first pass and propose for every request of the input batch.
+// Any other method, and no speculation, is left unstated, so the kernel refuses a drafter this
+// engine model has not read (draft_passes_unstated) rather than pricing a guess.
 func TestDraftPassesAreStatedForTheSpeculatorVLLMSharesOnly(t *testing.T) {
 	for _, method := range []string{"eagle", "eagle3", "mtp"} {
 		e := engineconfig.Engine{Speculative: &engineconfig.Speculative{Method: method, NumSpecTokens: 3}}
@@ -234,7 +232,13 @@ func TestDraftPassesAreStatedForTheSpeculatorVLLMSharesOnly(t *testing.T) {
 			t.Errorf("%s: FirstPassRows %q, PassRequests %q; want scheduled and all", method, rows, reqs)
 		}
 	}
-	for _, method := range []string{"dspark", "draft_model", "ngram", "dflash", ""} {
+	for _, method := range []string{"dspark", "dflash"} {
+		e := engineconfig.Engine{Speculative: &engineconfig.Speculative{Method: method, NumSpecTokens: 3}}
+		if rows, reqs := DraftPasses(e); rows != "" || reqs != plan.PassRequestsAll {
+			t.Errorf("%s: FirstPassRows %q, PassRequests %q; want none and all", method, rows, reqs)
+		}
+	}
+	for _, method := range []string{"draft_model", "ngram", ""} {
 		e := engineconfig.Engine{Speculative: &engineconfig.Speculative{Method: method, NumSpecTokens: 3}}
 		if rows, reqs := DraftPasses(e); rows != "" || reqs != "" {
 			t.Errorf("%q: states FirstPassRows %q, PassRequests %q; want neither", method, rows, reqs)

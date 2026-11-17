@@ -11,7 +11,6 @@ import (
 
 	schemas "github.com/inference-sim/blis-substrate/contracts"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
@@ -28,9 +27,9 @@ func ppInputs(t *testing.T, fix string, pp, tp int) Inputs {
 	in := fixtureInputs(t, fix)
 	p := &in.Deployment.Pools[0]
 	p.Parallel.PP, p.Parallel.TP = pp, tp
-	if in.Engine.Speculative != nil && in.Engine.Speculative.DraftModel != "" {
+	if s := poolEngine(t, in).Speculative; s != nil && s.DraftModel != "" {
 		d, err := schemas.LoadModelGraph(filepath.Join(catalogRoot, "models",
-			in.Engine.Speculative.DraftModel, "graph.yaml"))
+			s.DraftModel, "graph.yaml"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -106,7 +105,7 @@ func TestPPCapacityIsTheSmallestStagesPool(t *testing.T) {
 			t.Fatalf("%s pp %d tp %d: %v", c.fix, c.pp, c.tp, err)
 		}
 		// Each worker's budget is the deployment's share of its GPU (gpu_worker.py:535-540@v0.32.0).
-		util := k.engine.GPUMemoryUtilization
+		util := k.low.MemoryFraction
 		if util <= 0 {
 			t.Fatalf("%s pp %d tp %d: the kernel was given gpu_memory_utilization %v; fixtureInputs resolves an unstated one", c.fix, c.pp, c.tp, util)
 		}
@@ -318,8 +317,8 @@ func TestPPEPLBRedundancyIsPerStage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		eng.EPLB = &enginesettings.EPLB{Enabled: true, NumRedundantExperts: 32}
-		in.Engine = &eng
+		eng.EPLB = &vllmsettings.EPLB{Enabled: true, NumRedundantExperts: 32}
+		in.Lowered = mustLower(t, in, eng)
 		k, err := New(in)
 		if err != nil {
 			t.Fatalf("pp %d: %v", pp, err)
@@ -501,15 +500,15 @@ func TestPPBindingStageFollowsTheDeploymentsUtilization(t *testing.T) {
 	e.GPUMemoryUtilization = 0
 	setEngine(t, &in.Deployment.Pools[0], e)
 	eng, _ := vllmsettings.OfPool(in.Deployment, 0)
-	in.Engine = &eng // as stated: newKernel would resolve it, the cost model does not
+	in.Lowered = mustLower(t, in, eng) // as stated: newKernel would resolve it, the cost model does not
 	if _, err := New(in); err == nil || !strings.Contains(err.Error(), "gpu_memory_utilization") ||
 		!strings.Contains(err.Error(), "SUB-6") {
 		t.Errorf("util 0: err %v, want a refusal naming gpu_memory_utilization and SUB-6", err)
 	}
 
-	// The default comes from the resolver, with its source: 0.92, vllm/config/cache.py:102 at 5df63a7203.
+	// The default comes from the resolver, with its source: 0.92, vllm/config/cache.py:215 at 4ba787ec99.
 	v, src := resolvedMemoryUtilization(t, ppInputs(t, "minimax-m25-h200-tp8.yaml", 3, 2))
-	if v != 0.92 || !strings.Contains(src, "vllm/config/cache.py:102@5df63a72") {
-		t.Errorf("the resolver's default is %v (%q), want 0.92 from vllm/config/cache.py:102@5df63a72", v, src)
+	if v != 0.92 || !strings.Contains(src, "vllm/config/cache.py:215@4ba787ec") {
+		t.Errorf("the resolver's default is %v (%q), want 0.92 from vllm/config/cache.py:215@4ba787ec", v, src)
 	}
 }

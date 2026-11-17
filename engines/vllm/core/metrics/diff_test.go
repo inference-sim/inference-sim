@@ -13,9 +13,10 @@ import (
 
 	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/blis-vllm/internal/upstream"
 )
 
-// eosToken is tests/v1/core/utils.py:43@5df63a72, which the GPU mock samples last.
+// eosToken is tests/v1/core/utils.py:49@4ba787ec, which the GPU mock samples last.
 const eosToken = 50256
 
 type scenario struct {
@@ -84,8 +85,8 @@ func checkProvenance(t *testing.T, scenarioPath string, tr metricsTrace) {
 	p := tr.Provenance
 	for _, c := range []struct{ field, got, want string }{
 		{"scenario_sha256", p.ScenarioSHA256, hex.EncodeToString(sum[:])},
-		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], "0.32.0"},
-		{"vllm_commit", p.VLLMCommit, "5df63a7203cdb9328d824a27b682e77c7b9928be"},
+		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], upstream.Version},
+		{"vllm_commit", p.VLLMCommit, upstream.Commit},
 		{"mock_version", p.MockVersion, mocks.Version},
 	} {
 		if c.got != c.want {
@@ -124,7 +125,7 @@ func histogramBounds(t *testing.T, maxModelLen int) []Bucketed {
 		out = append(out, Bucketed{Family: name, Bounds: b[name]})
 	}
 	// request_tokens: a 1-2-5 series capped at max_model_len (vllm/v1/metrics/buckets.py:172-203,
-	// 223-228@5df63a72).
+	// 223-228@4ba787ec).
 	tokens := build125(maxModelLen)
 	for _, name := range []string{"vllm:request_prompt_tokens", "vllm:request_generation_tokens",
 		"vllm:request_max_num_generation_tokens", "vllm:request_params_max_tokens",
@@ -400,7 +401,7 @@ func TestMetricsAgainstVLLM(t *testing.T) {
 				}
 			}).Series()
 			if first != "" {
-				t.Errorf("earliest divergence from vLLM v0.32.0: %s", first)
+				t.Errorf("earliest divergence from vLLM v0.33.0: %s", first)
 			}
 			if steps != want.Steps {
 				t.Errorf("blis-vllm ran %d steps, vLLM %d", steps, want.Steps)
@@ -482,7 +483,7 @@ func TestMetricsFuzzCorpusAgainstVLLM(t *testing.T) {
 		}
 		if first != "" {
 			mismatches++
-			t.Errorf("%s: earliest divergence from vLLM v0.32.0: %s", name, first)
+			t.Errorf("%s: earliest divergence from vLLM v0.33.0: %s", name, first)
 		}
 	}
 	t.Logf("metrics fuzz corpus: %d scenarios, %d samples compared, %d mismatches", len(goldens), compared, mismatches)

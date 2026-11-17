@@ -58,6 +58,10 @@ type offloadConfig struct {
 	// BlockSize is block_size, the CPU chunk's tokens, a multiple of the GPU block size; 0 is one
 	// GPU block a chunk (config.py:98-134).
 	BlockSize int `yaml:"block_size,omitempty"`
+	// BlocksPerChunk is blocks_per_chunk, the chunk size in GPU blocks; vLLM refuses it beside
+	// block_size and refuses a value of 0 or less (offloading/config.py:121-135@4ba787ec). Nil is
+	// unstated, which is one block a chunk unless block_size says otherwise.
+	BlocksPerChunk *int `yaml:"blocks_per_chunk,omitempty"`
 	// EvictionPolicy is eviction_policy, lru unstated (cpu/spec.py:131).
 	EvictionPolicy string `yaml:"eviction_policy,omitempty"`
 	// OffloadPromptOnly is offload_prompt_only, true unstated (vllm/v1/kv_offload/base.py:617-623).
@@ -76,6 +80,30 @@ type offloadConfig struct {
 	// Workers unstated. The oracle runs num_copies = world size only (its CPU platform has no
 	// shared region, cpu/spec.py:161-166); 1 changes only the chunk count.
 	Copies int `yaml:"copies,omitempty"`
+	// ModulePath is kv_connector_module_path; SpecModulePath, CachePolicyModulePath, SecondaryTiers and
+	// Backpressure are kv_connector_extra_config's spec_module_path (vllm/v1/kv_offload/factory.py:30-51),
+	// cache_policy_module_path (cpu/spec.py:135-137), secondary_tiers and backpressure
+	// (tiering/spec.py:285-313@5df63a72). They choose the code vLLM runs: what it would load from
+	// outside the release is refused (refuseNotVisible), and a secondary tier is refused by its type.
+	ModulePath            *string          `yaml:"kv_connector_module_path,omitempty"`
+	SpecModulePath        string           `yaml:"spec_module_path,omitempty"`
+	CachePolicyModulePath string           `yaml:"cache_policy_module_path,omitempty"`
+	SecondaryTiers        []map[string]any `yaml:"secondary_tiers,omitempty"`
+	Backpressure          map[string]any   `yaml:"backpressure,omitempty"`
+	// TierPollIntervalS is the extra config's tier_poll_interval_s: the pause between rounds of the
+	// tier-poll thread, 1 ms unstated; zero or negative runs no thread (tiering/manager.py:65-70,
+	// 312-314@4ba787ec). Only a tier that asks for polling (p2p) reads it.
+	TierPollIntervalS *float64 `yaml:"tier_poll_interval_s,omitempty"`
+
+	// env is the engine's environment (the engine block's env:), which the p2p tier reads its
+	// VLLM_P2P_* limits and the hash seed from. It is not a key of the block.
+	env map[string]string
+}
+
+// offloadKeys are the block's code-choosing keys.
+func (c *offloadConfig) offloadKeys() offloadKeys {
+	return offloadKeys{spec: c.Spec, specModulePath: c.SpecModulePath, policy: c.EvictionPolicy,
+		policyModulePath: c.CachePolicyModulePath, tiers: c.SecondaryTiers, backpressure: c.Backpressure}
 }
 
 // offload is an engine's KV offload side: its connector, the jobs in flight as transfers, and
@@ -112,6 +140,8 @@ type offload struct {
 	loadReq map[int]string
 	// lastFlush are the last schedule's jobs_to_flush, for a test.
 	lastFlush []int
+	// tiers are TieringOffloadingSpec's secondary tiers (offloadtiers.go); nil with none.
+	tiers *tierSet
 }
 
 // buildOffload installs the OffloadingConnector on the scheduler, refusing what it does not
@@ -131,12 +161,35 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 		return nil, fmt.Errorf("vllm: kv_offload.bytes_per_block must be stated: one worker's KV bytes a GPU block, " +
 			"which sizes the CPU tier in chunks (offloading/config.py:136-151@5df63a72); the caller's memory model states it")
 	}
+	if c.Spec == "TieringOffloadingSpec" {
+		// Each secondary tier type vLLM v0.33.0 registers is built if modelledTiers holds it and
+		// refused by name otherwise; refuseNotVisible has refused any other. CPUOffloadingSpec reads
+		// no secondary_tiers.
+		for i, t := range c.SecondaryTiers {
+			typ, _ := t["type"].(string)
+			if modelledTiers[typ] {
+				continue
+			}
+			return nil, fmt.Errorf("vllm: kv_offload secondary_tiers[%d] type %q is not modelled: TieringOffloadingSpec runs only "+
+				"its CPU primary tier here (vllm/v1/kv_offload/tiering/factory.py:146-174@4ba787ec; %s)", i, typ, issueBase+"63")
+		}
+	}
 	if err := offloading.Check(offloading.Options{SpecName: c.Spec, EvictionPolicy: c.EvictionPolicy}); err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
 	bs := s.BlockSize()
 	bpc := 1
-	if c.BlockSize != 0 {
+	if c.BlocksPerChunk != nil && c.BlockSize != 0 {
+		return nil, fmt.Errorf("vllm: kv_offload states both block_size and blocks_per_chunk: vLLM accepts only " +
+			"one of them (vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:125-129@4ba787ec)")
+	}
+	if c.BlocksPerChunk != nil {
+		if *c.BlocksPerChunk <= 0 {
+			return nil, fmt.Errorf("vllm: kv_offload.blocks_per_chunk %d must be greater than 0, which vLLM requires "+
+				"(vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:131-135@4ba787ec)", *c.BlocksPerChunk)
+		}
+		bpc = *c.BlocksPerChunk
+	} else if c.BlockSize != 0 {
 		if c.BlockSize < 0 || c.BlockSize%bs != 0 {
 			return nil, fmt.Errorf("vllm: kv_offload.block_size %d must be a multiple of the GPU block size %d "+
 				"(offloading/config.py:121-134@5df63a72)", c.BlockSize, bs)
@@ -186,13 +239,18 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 	for g := range eagle {
 		eagle[g] = spec.EagleBlockDrop && s.KV.GroupSpec(g).Eagle
 	}
+	tiers, err := buildTiers(c, bpc, bs, offloading.ChunkBytes(c.BytesPerBlock, copies, bpc, page), chunks, tierNamespace(s, bpc, world))
+	if err != nil {
+		return nil, err
+	}
 	conn, err := offloading.New(offloading.Config{Groups: groups, BlocksPerChunk: bpc, TokensPerHash: s.KV.HashBlockSize(),
-		NumChunks: chunks, OffloadPromptOnly: promptOnly, PrefixCaching: prefixCaching, Workers: world, EagleGroups: eagle})
+		NumChunks: chunks, OffloadPromptOnly: promptOnly, PrefixCaching: prefixCaching, Workers: world, EagleGroups: eagle,
+		Manager: tiers.manager()})
 	if err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
 	o := &offload{conn: conn, blockSize: bs, at: at, next: new(engine.TransferID), early: map[engine.TransferID]bool{}, jobs: map[engine.TransferID]int{}, ids: map[int]engine.TransferID{},
-		groups: map[engine.TransferID][]int{}, flushed: map[int][]int{}, recv: map[string]bool{}, loadReq: map[int]string{}}
+		groups: map[engine.TransferID][]int{}, flushed: map[int][]int{}, recv: map[string]bool{}, loadReq: map[int]string{}, tiers: tiers}
 	// kv_both: the CPU tier is both stored to and loaded from.
 	if err := install(conn, sched.ConnectorConfig{Consumer: true, Producer: true}); err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
@@ -242,6 +300,7 @@ func (o *offload) started(batch int, cb any) []engine.Transfer {
 	for _, j := range m.Stores {
 		add(j, engine.TransferStore)
 	}
+	out = append(out, o.tierTransfers()...)
 	if len(m.Flush) > 0 {
 		o.flushed[batch] = append([]int(nil), m.Flush...)
 	}
@@ -267,6 +326,9 @@ func (o *offload) done(id engine.TransferID, ok bool) error {
 	if o.early[id] {
 		delete(o.early, id)
 		return nil
+	}
+	if tier, err := o.tierDone(id, ok); tier {
+		return err
 	}
 	j, known := o.jobs[id]
 	if !known {
@@ -307,6 +369,7 @@ func (o *offload) take(batch int) (jobs []offloading.Completion, recv []string) 
 		}
 	}
 	delete(o.flushed, batch)
+	o.tierStep()
 	sort.Ints(o.completed)
 	for _, j := range o.completed {
 		jobs = append(jobs, offloading.Completion{Job: j, Workers: o.conn.Workers()})
@@ -326,7 +389,8 @@ func offloadTiers(c *offloadConfig) []plan.KVTier {
 	if c == nil {
 		return nil
 	}
-	return []plan.KVTier{{Device: placement.CPUDRAM, Bytes: units.Rank(units.Bytes(c.CPUBytes / int64(max(c.Workers, 1))))}}
+	cpu := plan.KVTier{Device: placement.CPUDRAM, Bytes: units.Rank(units.Bytes(c.CPUBytes / int64(max(c.Workers, 1))))}
+	return append([]plan.KVTier{cpu}, secondaryPlanTiers(c)...)
 }
 
 // workerMeta is the worker metadata the next applied output carries for the jobs completed: the

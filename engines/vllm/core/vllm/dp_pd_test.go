@@ -13,7 +13,7 @@ import (
 )
 
 // A vLLM data-parallel engine runs one EngineCore per rank, each with its own scheduler, KV cache and NIXL
-// connector (vllm/v1/engine/core.py:1417-1426, nixl/base_scheduler.py:76-80@5df63a72). A decode rank pulls the
+// connector (vllm/v1/engine/core.py:1488-1497, nixl/base_scheduler.py:76-80@4ba787ec). A decode rank pulls the
 // whole KV of one request from the prefill rank that computed it. These tests drive a data-parallel group as a
 // P/D pool through the engine contract and assert what the host sees.
 

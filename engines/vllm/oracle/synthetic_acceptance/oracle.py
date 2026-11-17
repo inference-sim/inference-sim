@@ -27,7 +27,7 @@ import os
 import sys
 import warnings
 
-COMMIT = "5df63a7203cdb9328d824a27b682e77c7b9928be"
+COMMIT = "4ba787ec9959e566d3b587a796dff07673324da5"
 
 
 def lengths(k):

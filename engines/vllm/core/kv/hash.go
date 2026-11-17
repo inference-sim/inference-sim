@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // Also vllm/utils/hashing.py (sha256). Hashes byte-identical to vLLM's, checked against
 // hashes vLLM itself computed (testdata/block_hashes.json).
 
@@ -26,12 +26,12 @@ type ExtraKey []string
 type BlockKeys struct {
 	// Seed is the PYTHONHASHSEED the engine process was started with; nil is unset. NONE_HASH, the
 	// parent of every prefix's first block, is derived from it when it is set
-	// (resolve_none_hash_seed, kv_cache_utils.py:131-146@5df63a72), an empty string included: an
+	// (resolve_none_hash_seed, kv_cache_utils.py:117-132@4ba787ec), an empty string included: an
 	// empty variable is set. Nil is DEFAULT_NONE_HASH_SEED.
 	Seed *string
 	// Extra applies to every block (the LoRA key).
 	Extra []ExtraKey
-	// CacheSalt applies to the first block only (kv_cache_utils.py:647-651).
+	// CacheSalt applies to the first block only (kv_cache_utils.py:659-663).
 	CacheSalt string
 }
 
@@ -64,6 +64,39 @@ func HashBlock(parent BlockHash, tokens []int64, extra []ExtraKey) BlockHash {
 // (NoneHashFor).
 func HashBlockUnder(root, parent BlockHash, tokens []int64, extra []ExtraKey) BlockHash {
 	return hashBlockUnder(root, parent, tokens, extra)
+}
+
+// HashBlockLookahead is the block hash v0.33.0 computes when the hash covers the tokens after
+// the block (num_hash_lookahead_tokens > 0, get_request_block_hasher,
+// vllm/v1/core/kv_cache_utils.py:953-1037@4ba787ec): the block's own tokens stay the hashed
+// tokens, and the extra keys become the tuple (E, *lookahead), where E is the extra keys of the
+// block and its lookahead tokens (generate_lookahead_block_hash_extra_keys, :1039-1058), or None.
+func HashBlockLookahead(root, parent BlockHash, tokens []int64, extra []ExtraKey, lookahead []int64) BlockHash {
+	if len(parent) == 0 {
+		parent = root
+	}
+	var p pickler
+	p.frame(func() {
+		p.markTuple(func() { // (parent, tokens, (E, *lookahead))
+			p.bytes(parent)
+			p.intTuple(tokens)
+			p.markTuple(func() {
+				if len(extra) == 0 {
+					p.none()
+				} else {
+					p.markTuple(func() {
+						for _, k := range extra {
+							p.stringTuple(k)
+						}
+					}, len(extra))
+				}
+				for _, t := range lookahead {
+					p.int(t)
+				}
+			}, 1+len(lookahead))
+		}, 3)
+	})
+	return sha256Pickle(p.out)
 }
 
 func hashBlockUnder(root, parent BlockHash, tokens []int64, extra []ExtraKey) BlockHash {

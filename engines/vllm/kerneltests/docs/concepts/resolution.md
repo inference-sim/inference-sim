@@ -80,17 +80,18 @@ the deployment on [Pricing a step](step.md):
 ```
 
 ```text
-115 of 157 values rest on evidence; 39 were assumed
-  assumed       39
+115 of 161 values rest on evidence; 40 were assumed
+  assumed       40
   measured     101
   not_charged    1
-  transferred    2
+  transferred    5
   vendor_spec   14
 the kernel assumed max_cudagraph_capture_size
+the kernel assumed nontorch_in_budget_bytes_8rank
 the kernel assumed engine_version
 ```
 
-Most of the 38 assumed values are not the kernel's: they are registry coefficients whose
+Most of the 39 assumed values are not the kernel's: they are registry coefficients whose
 method is recorded as `assumed`. Twenty-four are collective coefficients for 16-GPU groups,
 which this eight-GPU deployment never forms; most of the rest are host overheads and CUDA
 graph memory. The one

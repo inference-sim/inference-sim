@@ -27,10 +27,10 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "d855ac9d0501427f819cda43a5fbcde33966b640",
+  "blis_vllm_commit": "e299646714d8134a0eea8409fa6ebeafd9e1af37",
   "cpu_chunks": 6,
-  "lockfile_sha256": "8baca0cbd0f28f5455c4d2c1b39a81ac3c424089e4c875e93614794c77932167",
-  "mock_version": "gpu-mock/5+af60be80e293",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/9+2ee0b3b47a9c",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -59,27 +59,31 @@
    "KV-transfer parameters on a request",
    "OffloadingConnector scheduler config",
    "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
-   "finished_req_ids iteration order (per-process hash seed)"
+   "finished_req_ids iteration order (per-process hash seed)",
+   "nixl._api.nixl_agent (OBJ and UCX backends)",
+   "zmq (pyzmq, as tiering/p2p/control/zmq.py uses it)",
+   "time.monotonic",
+   "vLLM environment variables of a tiering sequence"
   ],
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
   "oracle_inputs": {
-   "oracle/mocks.json": "29fec19aa8b5bd75e12b37893eea761684d4399a7e3bee1066cb749eac58769c",
-   "oracle/requirements.lock": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
-   "oracle/run_enginecore.py": "52f5ca457d4f046679d0ca364c599a8015a4c30c8cf197a5eaf0b8829e4e1a71",
-   "oracle/run_offloading.py": "5d2d5c98b38e0f4b08a2d3402b2e2f89dd2f2e96ffb2dad905eb1dc63595f48e",
-   "oracle/run_scheduler.py": "dd0cbc255201f6d63588c720f4e687276f4b73fec0f490e997afdaacc2a5a127",
+   "oracle/mocks.json": "9521f9f69e212f249e79b33614003c43dea5642e45499afa48b893737fc49f9b",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_enginecore.py": "35315709f7f99ceaa0dc0d01ec57997b92524b1825cb990ed27ba8417500461c",
+   "oracle/run_offloading.py": "b5cc5476778c43785049ded33a01789ac273c7a111c7365cafec3ec3a32d4cdc",
+   "oracle/run_scheduler.py": "8aeea68a1dce3a32b9b8458ce710812c7851769e67bc3cc28414750054916b3a",
    "oracle/scenarios/offloading/offloading-lru-evict.json": "8f3ade8ea268dbff42af5ae62e2f02cf9fa7445e8e6caa6441008ef6248c9a96"
   },
   "platform": "linux-x86_64",
   "python": "3.12.16",
-  "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
   "scenario_sha256": "8f3ade8ea268dbff42af5ae62e2f02cf9fa7445e8e6caa6441008ef6248c9a96",
   "seed": null,
   "tier": 4,
-  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
-  "vllm_distribution": "0.32.0+cpu",
-  "vllm_version": "0.32.0"
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
  },
  "steps": [
   {
@@ -105,13 +109,8 @@
     "cpu": {
      "chunks": [
       [
-       "a2621334354fadfa/0",
-       0,
-       -1
-      ],
-      [
-       "f816bd041daedc97/0",
-       1,
+       "33183cad707c05fa/0",
+       3,
        -1
       ],
       [
@@ -120,8 +119,13 @@
        -1
       ],
       [
-       "33183cad707c05fa/0",
-       3,
+       "f816bd041daedc97/0",
+       1,
+       -1
+      ],
+      [
+       "a2621334354fadfa/0",
+       0,
        -1
       ]
      ],
@@ -321,13 +325,8 @@
        0
       ],
       [
-       "60d5582cb90052b5/0",
-       4,
-       -1
-      ],
-      [
-       "43d2c1d3a9318a53/0",
-       5,
+       "bd150221b72d1c7c/0",
+       3,
        -1
       ],
       [
@@ -336,8 +335,13 @@
        -1
       ],
       [
-       "bd150221b72d1c7c/0",
-       3,
+       "43d2c1d3a9318a53/0",
+       5,
+       -1
+      ],
+      [
+       "60d5582cb90052b5/0",
+       4,
        -1
       ]
      ],
@@ -557,13 +561,8 @@
        0
       ],
       [
-       "f4727e680ccb8ff8/0",
-       2,
-       -1
-      ],
-      [
-       "bdb414f7ec4d2c31/0",
-       3,
+       "ed499d52a6d324a3/0",
+       1,
        -1
       ],
       [
@@ -572,8 +571,13 @@
        -1
       ],
       [
-       "ed499d52a6d324a3/0",
-       1,
+       "bdb414f7ec4d2c31/0",
+       3,
+       -1
+      ],
+      [
+       "f4727e680ccb8ff8/0",
+       2,
        -1
       ]
      ],
@@ -814,13 +818,8 @@
        0
       ],
       [
-       "a2621334354fadfa/0",
-       0,
-       -1
-      ],
-      [
-       "f816bd041daedc97/0",
-       1,
+       "33183cad707c05fa/0",
+       5,
        -1
       ],
       [
@@ -829,8 +828,13 @@
        -1
       ],
       [
-       "33183cad707c05fa/0",
-       5,
+       "f816bd041daedc97/0",
+       1,
+       -1
+      ],
+      [
+       "a2621334354fadfa/0",
+       0,
        -1
       ]
      ],
@@ -914,13 +918,8 @@
        0
       ],
       [
-       "a2621334354fadfa/0",
-       0,
-       -1
-      ],
-      [
-       "f816bd041daedc97/0",
-       1,
+       "33183cad707c05fa/0",
+       5,
        -1
       ],
       [
@@ -929,8 +928,13 @@
        -1
       ],
       [
-       "33183cad707c05fa/0",
-       5,
+       "f816bd041daedc97/0",
+       1,
+       -1
+      ],
+      [
+       "a2621334354fadfa/0",
+       0,
        -1
       ]
      ],
@@ -1077,13 +1081,8 @@
        0
       ],
       [
-       "60d5582cb90052b5/0",
-       4,
-       -1
-      ],
-      [
-       "43d2c1d3a9318a53/0",
-       5,
+       "bd150221b72d1c7c/0",
+       3,
        -1
       ],
       [
@@ -1092,8 +1091,13 @@
        -1
       ],
       [
-       "bd150221b72d1c7c/0",
-       3,
+       "43d2c1d3a9318a53/0",
+       5,
+       -1
+      ],
+      [
+       "60d5582cb90052b5/0",
+       4,
        -1
       ]
      ],
@@ -1177,13 +1181,8 @@
        0
       ],
       [
-       "60d5582cb90052b5/0",
-       4,
-       -1
-      ],
-      [
-       "43d2c1d3a9318a53/0",
-       5,
+       "bd150221b72d1c7c/0",
+       3,
        -1
       ],
       [
@@ -1192,8 +1191,13 @@
        -1
       ],
       [
-       "bd150221b72d1c7c/0",
-       3,
+       "43d2c1d3a9318a53/0",
+       5,
+       -1
+      ],
+      [
+       "60d5582cb90052b5/0",
+       4,
        -1
       ]
      ],

@@ -53,7 +53,7 @@ func loadCaptureOracle(t *testing.T) []captureOracleCase {
 	if err := json.Unmarshal(raw, &f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Commit != "5df63a7203cdb9328d824a27b682e77c7b9928be" {
+	if f.Commit != "4ba787ec9959e566d3b587a796dff07673324da5" {
 		t.Fatalf("the oracle file is for commit %s, not the pinned release", f.Commit)
 	}
 	return f.Capture
@@ -74,7 +74,7 @@ func openCapture(t *testing.T, c captureOracleCase, hardware string) *latencyker
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "0.32.0"`, 1)
+	body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "0.33.0"`, 1)
 	if n := len(engineLine.FindAllString(body, -1)); n != 3 {
 		t.Fatalf("fixture states %d of max_num_batched_tokens, max_num_seqs, compilation_config, want 3", n)
 	}

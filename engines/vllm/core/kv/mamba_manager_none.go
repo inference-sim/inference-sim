@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/single_type_kv_cache_manager.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be):
+// Derived from vllm/v1/core/single_type_kv_cache_manager.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
 // MambaManager with mamba_cache_mode "none" (:1415-2112): get_num_blocks_to_allocate (:1676-1716),
 // allocate_new_blocks (:1780-1800) and get_num_skipped_tokens (:1954-1960), over the
 // SingleTypeKVCacheManager they extend (:174-251, 672-710).
@@ -19,7 +19,7 @@ func (g *group) mambaAligned() bool {
 // noneSpeculativeBlocks is the blocks a Mamba group in mode "none" holds beyond the ones its
 // tokens fill: num_speculative_blocks. get_num_blocks_to_allocate and allocate_new_blocks each add
 // block_size x num_speculative_blocks to the tokens that need a slot before the base class
-// counts blocks (single_type_kv_cache_manager.py:1692-1699, 1790-1795@5df63a72), which is
+// counts blocks (single_type_kv_cache_manager.py:1708-1715, 1807-1812@4ba787ec), which is
 // exactly cdiv(tokens, block_size) + num_speculative_blocks blocks. Align mode and every other
 // group add none here.
 func (g *group) noneSpeculativeBlocks() int {
@@ -31,7 +31,7 @@ func (g *group) noneSpeculativeBlocks() int {
 
 // slotBlocks is the blocks a group needs for numTokens tokens that need a slot:
 // cdiv(num_tokens, block_size) (SingleTypeKVCacheManager.get_num_blocks_to_allocate,
-// single_type_kv_cache_manager.py:212 and allocate_new_blocks, :487-488@5df63a72), and a
+// single_type_kv_cache_manager.py:213 and allocate_new_blocks, :488-489@4ba787ec), and a
 // Mamba group's speculative blocks besides.
 func (g *group) slotBlocks(numTokens int) int {
 	return cdiv(numTokens, g.blockSize) + g.noneSpeculativeBlocks()

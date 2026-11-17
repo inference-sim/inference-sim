@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/metrics/loggers.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/v1/metrics/loggers.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // Also vllm/v1/core/sched/scheduler.py (make_stats) and vllm/v1/engine/core.py (step).
 
 package vllm
@@ -15,8 +15,8 @@ import (
 // The server time series (a simulator's --server-series-interval-s) is the vllm:* series a
 // benchmark client scrapes from /metrics, binned on the simulation clock. PrometheusStatLogger
 // .record sets or increments each of them once per engine step (loggers.py:1138-1177,
-// 1259-1275@5df63a72), from the SchedulerStats that make_stats builds at the end of
-// update_from_output (scheduler.py:2408-2420, 2915-2965@5df63a72) and the IterationStats of
+// 1259-1275@4ba787ec), from the SchedulerStats that make_stats builds at the end of
+// update_from_output (scheduler.py:2660-2672, 3259-3309@4ba787ec) and the IterationStats of
 // that step's outputs. A step's change therefore lands at the instant its output is applied,
 // its end, and core/metrics' Model records exactly that change per step: the series bins the
 // Model's own values, so its bins sum to the engine's Metrics.
@@ -25,7 +25,7 @@ import (
 // value until the next: each bin carries the time-weighted mean of that step function and, as
 // <name>_last, the value set by the last step that ended in the bin or before it. Counters are
 // each bin's increments. vLLM labels each engine core's series engine="<index>"
-// (loggers.py:499-506@5df63a72), so a data-parallel group reports one engine per rank.
+// (loggers.py:499-506@4ba787ec), so a data-parallel group reports one engine per rank.
 
 // seriesGauges and seriesCounters are the Model series the server series bins, in
 // ServerSeriesEngine's order.

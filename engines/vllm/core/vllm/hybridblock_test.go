@@ -9,7 +9,7 @@ import (
 
 // The aligned block size is the smallest multiple of the kernel block alignment whose attention
 // page holds one Mamba page. Each case is worked by hand from the formula in
-// Platform._align_hybrid_block_size (vllm/platforms/interface.py:1086-1126@5df63a72):
+// Platform._align_hybrid_block_size (vllm/platforms/interface.py:1098-1138@4ba787ec):
 //
 //	Kimi-K3 at tp 8, bf16 cache: one MLA token is 576 x 2 = 1152 bytes, the KDA page 814080;
 //	  alignment max(64, 16, 128) = 128; 128 x ceil(814080 / (128 x 1152)) = 128 x 6 = 768;
@@ -111,7 +111,7 @@ func TestHybridBlockSizeRefusesInputsItCannotAlign(t *testing.T) {
 // the memory model's bytes for one block of the attention layers, as before, and a Mamba layer
 // does not count among them. Twelve bf16 attention layers of 8 heads x 64 beside six Mamba layers
 // whose page was padded to the attention page make groups of six layers (the fewest of a type,
-// _get_kv_cache_groups_uniform_page_size, kv_cache_utils.py:1362-1502@5df63a72), so one block is
+// _get_kv_cache_groups_uniform_page_size, kv_cache_planning.py:416-556@4ba787ec), so one block is
 // the 6 pages of the widest group; counting the Mamba layers' stated state bytes as a packed state
 // left the attention layers at one byte an element, which halves the page again.
 func TestKVPoolBytesPerBlockOfAHybridModelKeepsTheAttentionElementSize(t *testing.T) {

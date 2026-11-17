@@ -1,0 +1,102 @@
+{
+ "description": "Two chunks found on disk are promoted in one job, but another process deletes the second file before the load runs: the first chunk is kept in the CPU tier, the second's slot is freed and its cached lookup becomes a miss, so it is not promoted again.",
+ "spec": {
+  "name": "TieringOffloadingSpec",
+  "cpu_bytes_to_use": 32768,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1,
+  "extra": {
+   "secondary_tiers": [
+    {
+     "type": "fs",
+     "root_dir": "@root",
+     "n_read_threads": 1,
+     "n_write_threads": 0
+    }
+   ]
+  }
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "put",
+   "tier": 0,
+   "key": "k1"
+  },
+  {
+   "m": "put",
+   "tier": 0,
+   "key": "k2"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k2"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "a"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k2"
+  },
+  {
+   "m": "rm",
+   "tier": 0,
+   "key": "k2"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k2"
+  },
+  {
+   "m": "get_load_source",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k2"
+  },
+  {
+   "m": "has_pending_work"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  }
+ ]
+}

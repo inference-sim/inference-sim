@@ -7,7 +7,7 @@ kind: ConnectorRegistry
 name: blis-vllm-v0.32.0
 connectors:
   # NixlConnector resolves to the pull scheduler
-  # (vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py@5df63a72).
+  # (vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py@4ba787ec).
   NixlConnector:
     upstream: KVConnectorBase_V1
     behaves_like: nixl-pull
@@ -20,14 +20,14 @@ connectors:
     evidence: "diff-test @ vLLM v0.32.0: core/connector/nixl, 42 scenarios + 3300 fuzz seeds at 0 mismatches"
   # The OffloadingConnector's scheduler side over the CPU tier (CPUOffloadingSpec, or
   # TieringOffloadingSpec with no secondary tiers), LRU eviction
-  # (vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:53@5df63a72).
+  # (vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:53@4ba787ec).
   OffloadingConnector:
     upstream: KVConnectorBase_V1
     behaves_like: offloading-cpu
     roles: [offload]
     evidence: "diff-test @ vLLM v0.32.0: core/connector/offloading, 13 scenarios + 3600 fuzz seeds at 0 mismatches (CPU tier, LRU, full attention and sliding-window groups, several workers, async scheduling and PP, DSpark and EAGLE-3 drafters)"
   # MultiConnector composes an ordered list of children behind one connector
-  # (vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py:135@5df63a72). The schema's
+  # (vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py:133@4ba787ec). The schema's
   # "composite" role is for it: it names no transfer or offload of its own, so it is served as
   # neither pd_transfer nor offload. The children modelled are NixlConnector and
   # OffloadingConnector (docs/multiconnector.md); any other child is refused where the engine

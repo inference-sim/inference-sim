@@ -33,9 +33,9 @@ func pdKernels(t *testing.T, scenario, fabric string) (prefill, decode *Kernel) 
 		in.Fabric = f
 	}
 	in.PoolIndex = 0
-	prefill = build(t, in)
+	prefill = vllmBuild(t, in)
 	in.PoolIndex = 1
-	decode = build(t, in)
+	decode = vllmBuild(t, in)
 	return prefill, decode
 }
 

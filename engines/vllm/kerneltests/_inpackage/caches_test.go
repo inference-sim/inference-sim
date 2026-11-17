@@ -36,7 +36,7 @@ func engineCapacity(k *Kernel, gib float64, maxModelLen int) (tokens, slack floa
 // DSpark K=5, --max-model-len 1048576, --max-num-batched-tokens 8192, --block-size 64,
 // max_cudagraph_capture_size 64) reported 61.18 GiB of KV cache and 28,706,997 tokens
 // (vllm:cache_config_info of our calibration runs,
-// and inference-sim/blis-latency-kernel#46). From the same 61.18 GiB the kernel's figures give
+// and https://github.com/inference-sim/blis-latency-kernel/issues/46). From the same 61.18 GiB the kernel's figures give
 // the same count, to the rounding of the logged GiB; sized at the steady decode hold they
 // would give 25% more.
 func TestKVCapacityIsTheEnginesOwnFigureOnH200(t *testing.T) {
@@ -46,7 +46,7 @@ func TestKVCapacityIsTheEnginesOwnFigureOnH200(t *testing.T) {
 	capture := 64
 	e.MaxModelLen, e.BlockSize, e.MaxCUDAGraphCaptureSize = 1<<20, 64, &capture
 	setEngine(t, &in.Deployment.Pools[0], e)
-	tokens, slack := engineCapacity(build(t, in), 61.18, 1<<20)
+	tokens, slack := engineCapacity(vllmBuild(t, in), 61.18, 1<<20)
 	if d := tokens - 28706997; d > slack || d < -slack {
 		t.Errorf("the kernel sizes %.0f tokens in vLLM's 61.18 GiB, against its logged "+
 			"28,706,997 (slack %.0f)", tokens, slack)
@@ -89,7 +89,7 @@ func TestInternalH200ArmsAreTheEnginesFigures(t *testing.T) {
 			e.Speculative = nil
 		}
 		setEngine(t, &in.Deployment.Pools[0], e)
-		k := build(t, in)
+		k := vllmBuild(t, in)
 		tokens, slack := engineCapacity(k, a.kvGiB, 1<<20)
 		if d := tokens - a.tokens; d > slack || d < -slack {
 			t.Errorf("%s: the kernel sizes %.0f tokens in vLLM's %.2f GiB, against its "+
@@ -121,7 +121,7 @@ func TestKVCapacityIsTheEnginesOwnFigureOnH100(t *testing.T) {
 	e.MaxModelLen, e.MaxNumBatchedTokens, e.MaxNumSeqs = 1<<20, 4096, 2
 	e.GPUMemoryUtilization, e.MaxCUDAGraphCaptureSize = 0.92, &capture
 	setEngine(t, &in.Deployment.Pools[0], e)
-	tokens, slack := engineCapacity(build(t, in), 13.47, 1<<20)
+	tokens, slack := engineCapacity(vllmBuild(t, in), 13.47, 1<<20)
 	if d := tokens - 7022899; d > slack || d < -slack {
 		t.Errorf("the kernel sizes %.0f tokens in vLLM's 13.47 GiB, against its logged "+
 			"7,022,899 (slack %.0f)", tokens, slack)
@@ -140,11 +140,11 @@ func (ungroupedRules) KVCacheGroups(rules.KVCacheGroupsInput) (rules.KVCacheGrou
 func TestAnUngroupedPoolIsRecorded(t *testing.T) {
 	in := fixtureInputs(t, v41)
 	in.Rules = ungroupedRules{in.Rules}
-	k := build(t, in)
+	k := vllmBuild(t, in)
 	if !recorded(k, "kv_cache_grouping") {
 		t.Error("the caches were sized per cache with nothing in Provenance saying so")
 	}
-	if pooled := build(t, fixtureInputs(t, v41)); k.SequenceFixedBytes() >= pooled.SequenceFixedBytes() {
+	if pooled := vllmBuild(t, fixtureInputs(t, v41)); k.SequenceFixedBytes() >= pooled.SequenceFixedBytes() {
 		t.Errorf("per-cache pages hold %d B a sequence, not less than the pool's %d",
 			k.SequenceFixedBytes(), pooled.SequenceFixedBytes())
 	}

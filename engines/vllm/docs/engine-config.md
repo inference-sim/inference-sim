@@ -226,7 +226,7 @@ The answers are not computed at run time. `oracle/quantization/oracle.py` runs v
 checkpoint's `config.json` for every method name vLLM lists, and its quantization config over the model's layer
 prefixes, and its output is `compat/quantization/resolved.json`, embedded in the package and checked against vLLM
 in CI. The checkpoint is named by the SHA-256 of its `config.json`, which its catalog graph records. The kernel
-then proves the graph stores exactly the stated layout (`enginesettings.ServedWeights`) and refuses otherwise, so
+then proves the graph stores exactly the stated layout (`plan.Lowered.ServedLayout`, which the lowering states) and refuses otherwise, so
 a catalog graph that drifts from the recipe is caught. A checkpoint the file has no layout for (every other
 model) keeps its stated value, which the kernel prices as before.
 

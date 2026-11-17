@@ -13,8 +13,8 @@ import (
 
 // multiBlock states vLLM's MultiConnector over the named children, in the order vLLM tries them: the
 // first that reports matched tokens loads a request's KV (vllm/distributed/kv_transfer/kv_connector/v1/
-// multi_connector.py:434-456@5df63a72). Each child is a KVTransferConfig object under
-// kv_connector_extra_config.connectors (:235-240), the offloading child with its CPU tier as
+// multi_connector.py:451-473@4ba787ec). Each child is a KVTransferConfig object under
+// kv_connector_extra_config.connectors (:244-249), the offloading child with its CPU tier as
 // cpu_bytes_to_use; kv_offload carries only what vLLM derives from the model.
 func multiBlock(order string) string {
 	var kids []string
@@ -270,7 +270,7 @@ func TestMultiConnectorRefusals(t *testing.T) {
 // kv_connector_extra_config.connectors, a list of child KVTransferConfig objects. Every connector
 // the MultiConnector oracle runs on vLLM's real MultiConnector (oracle/scenarios/multiconnector) is
 // taken verbatim, only its top-level key spelling (connector for kv_connector) changed, and must
-// reach the children and order vLLM builds from it (multi_connector.py:226-249@5df63a72), each
+// reach the children and order vLLM builds from it (multi_connector.py:235-258@4ba787ec), each
 // child under its own kv_role.
 func TestMultiConnectorTakesVLLMsNestedChildConfigs(t *testing.T) {
 	files, err := filepath.Glob("../../oracle/scenarios/multiconnector/*.json")

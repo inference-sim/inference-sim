@@ -7,13 +7,13 @@ import (
 )
 
 // chunkedBase is an engine block whose token budget equals max_model_len, which vLLM requires
-// of a block with chunked prefill off (vllm/config/scheduler.py:314-327@5df63a72), and which
+// of a block with chunked prefill off (vllm/config/scheduler.py:317-330@4ba787ec), and which
 // matches the oracle scenario chunked-prefill-off: a 64-token budget, four sequences.
 const chunkedBase = "max_num_batched_tokens: 64\nmax_model_len: 64\nnum_gpu_blocks: 120\nblock_size: 4\n" +
 	"enable_prefix_caching: false\n"
 
 // The stated enable_chunked_prefill reaches the scheduler's configuration, and unstated is
-// vLLM's default, true (vllm/config/scheduler.py:134@5df63a72).
+// vLLM's default, true (vllm/config/scheduler.py:134@4ba787ec).
 func TestEnableChunkedPrefillReachesTheScheduler(t *testing.T) {
 	for _, c := range []struct {
 		name, extra string
@@ -142,7 +142,7 @@ func TestChunkedPrefillOffBuildsWhatTheOracleCovers(t *testing.T) {
 }
 
 // The batch defaults read the resolved value: with chunked prefill off an unstated token budget
-// is raised to max_model_len (vllm/engine/arg_utils.py:3136-3141@5df63a72), which the engine
+// is raised to max_model_len (vllm/engine/arg_utils.py:3190-3195@4ba787ec), which the engine
 // block's stated enable_chunked_prefill decides.
 func TestBatchDefaultsReadTheResolvedChunkedPrefill(t *testing.T) {
 	const g = int64(1) << 30

@@ -80,7 +80,7 @@ func TestAResumedRequestIsNotCountedAgain(t *testing.T) {
 }
 
 // With prefix caching off no lookup runs, so nothing is counted as a prefix-cache query
-// or hit (prefix_cache_lookup_enabled, vllm/v1/core/kv_cache_manager.py:249-262@5df63a72),
+// or hit (prefix_cache_lookup_enabled, vllm/v1/core/kv_cache_manager.py:251-264@4ba787ec),
 // though the prompt still is.
 func TestNoLookupNoPrefixCacheQueries(t *testing.T) {
 	m := New(nil)

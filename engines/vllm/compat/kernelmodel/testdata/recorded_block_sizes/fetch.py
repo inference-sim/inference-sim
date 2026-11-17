@@ -36,7 +36,7 @@ only vLLM rows that are not disaggregated or multi-node. One row for each distin
 each (model, GPU, precision, tensor-parallel width, speculative method), the latest first, up to
 PER_KEY.
 
-A nightly job that runs --check is blis-vllm issue 91, not built (it is deferred beyond M4).
+The nightly job .github/workflows/recorded-logs.yml runs --check (blis-vllm issue 91).
 """
 import argparse
 import concurrent.futures as cf
@@ -193,7 +193,7 @@ def check(path):
         for r, digest in ex.map(lambda r: (r, server_log(r["row"])[1]), recorded["runs"]):
             if digest != r["log_sha256"]:
                 bad.append(r["row"])
-                print("row %d: log sha256 is %s, recorded %s" % (r["row"], digest, r["log_sha256"]))
+                print("row %d: %s, recorded %s" % (r["row"], "the log is gone" if digest is None else "log sha256 is " + digest, r["log_sha256"]))
     print("%d rows checked, %d differ" % (len(recorded["runs"]), len(bad)))
     return 1 if bad else 0
 

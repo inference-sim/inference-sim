@@ -49,7 +49,9 @@ def layer_specs(cfg: dict) -> dict:
     a Mamba-2, GDN or KDA layer: one uint8 tensor of the run's "state_bytes" (so the state's
     content size is state_bytes), the run's "block_size" (mamba_block_size, in tokens), and its
     "page_size_padded", "mamba_cache_mode" ("none" unless stated), "num_speculative_blocks",
-    "num_prefill_checkpoint_blocks" and "prefill_checkpoint_alignment" as the spec states them."""
+    "num_prefill_checkpoint_blocks" and "prefill_checkpoint_alignment" as the spec states them.
+
+    A run stating "draft": true is the drafter's layers, whose specs are is_draft."""
     import torch  # noqa: E402
     from vllm.v1.kv_cache_interface import (  # noqa: E402
         CircularBufferSpec,
@@ -102,6 +104,11 @@ def layer_specs(cfg: dict) -> dict:
                 )
             else:
                 raise ValueError(f"unknown KV layer spec {kind!r}")
+            if run.get("draft"):
+                # A drafter's layer: the model runner marks every attention layer the drafter
+                # registers, and its spec is_draft (vllm/v1/worker/gpu/spec_decode/speculator.py:
+                # 225-242, vllm/v1/worker/gpu/attn_utils.py:150-151@4ba787ec).
+                spec = dataclasses.replace(spec, is_draft=True)
             out[f"run{r}.layer{i}"] = spec
     return out
 
@@ -112,18 +119,17 @@ def has_mamba(cfg: dict) -> bool:
 
 
 def layer_groups(cfg: dict, vllm_config) -> list:
-    """vLLM's own grouping of the layers (get_kv_cache_groups, vllm/v1/core/kv_cache_utils.py:
-    2159-2253@5df63a72), with the spec registry the engine registers before it groups
+    """vLLM's own grouping of the layers as the engine core groups them (get_global_kv_cache_groups,
+    vllm/v1/core/kv_cache_planning.py:1607-1657@4ba787ec; vllm/v1/engine/core.py:292): every
+    sliding window tagged with extra_retained_tokens, get_kv_cache_groups (:1113-1200), and under
+    use_eagle_block_drop the groups holding a draft layer flagged is_eagle_group. With the spec registry the engine registers before it groups
     (register_all_kvcache_specs, vllm/v1/core/single_type_kv_cache_manager.py:2633). The
     layers are named in run order. vLLM buckets layers by spec in order of first appearance and
     splits each bucket by stride, so only which spec comes first matters: a run order that
     starts with the model's first layer's spec (gpt-oss's layer 0 is windowed) groups as the
     model does."""
-    import dataclasses  # noqa: E402
-
-    from vllm.v1.core.kv_cache_utils import get_kv_cache_groups  # noqa: E402
+    from vllm.v1.core.kv_cache_planning import get_global_kv_cache_groups  # noqa: E402
     from vllm.v1.core.single_type_kv_cache_manager import register_all_kvcache_specs  # noqa: E402
-    from vllm.v1.kv_cache_interface import SlidingWindowSpec  # noqa: E402
 
     from vllm.v1.attention.backends.utils import (  # noqa: E402
         _DEFAULT_LAYOUT_PREFERENCE,
@@ -134,10 +140,6 @@ def layer_groups(cfg: dict, vllm_config) -> list:
 
     register_all_kvcache_specs(vllm_config)
     layers = layer_specs(cfg)
-    extra_retained = max(0, vllm_config.num_prefill_lookahead_tokens - 1)
-    for name, layer in layers.items():
-        if isinstance(layer, SlidingWindowSpec):
-            layers[name] = dataclasses.replace(layer, extra_retained_tokens=extra_retained)
     # The engine core resolves the KV cache layout from the backends' supported layouts before
     # it groups (vllm/v1/engine/core.py:292-301@5df63a72), and resolve_kv_cache_layout records it
     # on the cache config (vllm/v1/attention/backends/utils.py:348). These layers' backends state
@@ -154,37 +156,44 @@ def layer_groups(cfg: dict, vllm_config) -> list:
 
         supported = [m.name for m in get_supported_kv_cache_layouts([DeepseekV4IndexerBackend])]
     resolve_kv_cache_layout(vllm_config, [supported], layers.values())
-    groups = get_kv_cache_groups(vllm_config, layers)
+    groups = get_global_kv_cache_groups(vllm_config, [layers])
     if cfg.get("kv_available_bytes"):
         # The pool vLLM sizes from that much KV memory over these groups: its own
-        # get_kv_cache_config_from_groups (vllm/v1/core/kv_cache_utils.py:1588-1628@5df63a72) on the
-        # groups it just built, as the engine core calls it per worker (get_kv_cache_configs,
-        # :2687-2695). Recorded beside the trace; the scenario's num_blocks still runs the
+        # get_kv_cache_config_from_groups (vllm/v1/core/kv_cache_planning.py:642-741@4ba787ec) on the
+        # groups it just built, as the engine core's default builder calls it per worker
+        # (get_kv_cache_configs, :1574-1577; DefaultKVCacheConfigBuilder, :1698-1719). Recorded beside the trace; the scenario's num_blocks still runs the
         # scheduler, so no decision moves.
-        from vllm.v1.core.kv_cache_utils import get_kv_cache_config_from_groups  # noqa: E402
+        from vllm.v1.core.kv_cache_planning import get_kv_cache_config_from_groups  # noqa: E402
 
         sized = get_kv_cache_config_from_groups(vllm_config, groups, cfg["kv_available_bytes"])
         pool = {"available_bytes": cfg["kv_available_bytes"], "num_blocks": sized.num_blocks,
                 "kv_cache_layout": vllm_config.cache_config.kv_cache_layout}
         if cfg.get("kv_startup_check"):
             # The engine core's start-up check on the same layers and memory: vLLM's own
-            # get_kv_cache_configs (vllm/v1/core/kv_cache_utils.py:2531-2690@5df63a72), whose
-            # _check_enough_kv_cache_memory (:2636-2646) refuses a worker whose KV cache cannot hold
+            # get_kv_cache_configs (vllm/v1/core/kv_cache_planning.py:1461-1604@4ba787ec), whose
+            # _check_enough_kv_cache_memory (:1550-1559) refuses a worker whose KV cache cannot hold
             # one max_model_len request across every group. The verdict, vLLM's message and the
             # max_concurrent_batches its sliding windows' admission caps were counted at
             # (max_in_flight_tokens, vllm/config/vllm.py:577-598) are recorded; the scenario's
-            # num_blocks still runs the scheduler.
-            from vllm.v1.core.kv_cache_utils import get_kv_cache_configs  # noqa: E402
+            # num_blocks still runs the scheduler. The engine core groups every worker's layers
+            # first and passes those global groups in (get_global_kv_cache_groups, :1607-1657;
+            # vllm/v1/engine/core.py:292 and 321-323@4ba787ec).
+            from vllm.v1.core.kv_cache_planning import (  # noqa: E402
+                get_global_kv_cache_groups,
+                get_kv_cache_configs,
+            )
 
             try:
-                get_kv_cache_configs(vllm_config, [layer_specs(cfg)], [cfg["kv_available_bytes"]])
+                specs = [layer_specs(cfg)]
+                get_kv_cache_configs(vllm_config, specs, [cfg["kv_available_bytes"]],
+                                     get_global_kv_cache_groups(vllm_config, specs))
                 pool["startup"] = {"refused": False}
             except ValueError as e:
                 pool["startup"] = {"refused": True, "message": str(e)}
             pool["startup"]["max_concurrent_batches"] = vllm_config.max_concurrent_batches
         pool_sizes.append(pool)
     # The scheduler's view: a uniform-type group is represented by one of its layers' specs
-    # (generate_scheduler_kv_cache_config, vllm/v1/core/kv_cache_utils.py:2276-2297@5df63a72).
+    # (generate_scheduler_kv_cache_config, vllm/v1/core/kv_cache_utils.py:1096-1117@4ba787ec).
     projected = generate_scheduler_kv_cache_config(
         [KVCacheConfig(num_blocks=cfg["num_blocks"], kv_cache_tensors=[], kv_cache_groups=groups)])
     return projected.kv_cache_groups
@@ -289,7 +298,11 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     # Request block hashes are computed at the scheduler's hash_block_size, as the engine core
     # builds the hasher (vllm/v1/engine/core.py:233-240@5df63a72): the block size, or for groups
     # of several block sizes the one vLLM resolved for them.
-    hasher = get_request_block_hasher(scheduler.hash_block_size, sha256)
+    # The engine core builds the hasher with vllm_config.num_hash_lookahead_tokens
+    # (vllm/v1/engine/core.py:220-230@4ba787ec), so an EAGLE-family drafter with prefix caching
+    # and no KV connector hashes the tokens past each block; the harness does the same.
+    hasher = get_request_block_hasher(scheduler.hash_block_size, sha256,
+                                      scheduler.vllm_config.num_hash_lookahead_tokens)
     pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
     # LoRA adapter ids, numbered from 1 in name order (vllm/lora/request.py:37-39 refuses 0).
     lora_ids = {n: i + 1 for i, n in enumerate(sorted({r["lora"] for r in sc["requests"] if r.get("lora")}))}
@@ -332,7 +345,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     while step < max_steps:
         add_arrivals(step)
         # An abort at this step, before the step runs: the scheduler finishes the request
-        # (finish_requests, EngineCore.abort_requests, core.py:554-559@5df63a72). Tier 5 tells a
+        # (finish_requests, EngineCore.abort_requests, core.py:564-569@4ba787ec). Tier 5 tells a
         # client's abort from one the engine sends; the scheduler's decisions are the same.
         aborts = sorted(rid for rid, r in by_id.items() if r.get("abort_step") == step)
         if aborts:
@@ -465,7 +478,7 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
     # vary a field this way); vLLM's own class validates them.
     sched_extra.update(cfg.get("scheduler_config", {}))
     if cfg.get("kv_layers") and "disable_hybrid_kv_cache_manager" in cfg:
-        # vLLM's own field, which get_kv_cache_groups reads (kv_cache_utils.py:2173@5df63a72). A
+        # vLLM's own field, which get_kv_cache_groups reads (kv_cache_planning.py:1127@4ba787ec). A
         # "kv_groups" scenario states it too, but there the promotion is called directly below.
         sched_extra["disable_hybrid_kv_cache_manager"] = cfg["disable_hybrid_kv_cache_manager"]
     real_vllm_config, real_scheduler_config = helpers.VllmConfig, helpers.SchedulerConfig
@@ -537,8 +550,8 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
             retention = {}
             if has_mamba(cfg):
                 # The engine's KVCacheConfig carries the retention policy the CacheConfig states
-                # (get_kv_cache_config_from_groups, vllm/v1/core/kv_cache_utils.py:1611-1613 and
-                # 1684-1686@5df63a72): vLLM's default 0 keeps only semantic checkpoints of Mamba
+                # (get_kv_cache_config_from_groups, vllm/v1/core/kv_cache_planning.py:665-667 and
+                # 738-740@4ba787ec): vLLM's default 0 keeps only semantic checkpoints of Mamba
                 # states, where the dataclass's own default (None) keeps every one.
                 retention = {"prefix_cache_retention_interval":
                              built["config"].cache_config.prefix_cache_retention_interval}
@@ -577,7 +590,7 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
             # (get_kv_cache_groups, kv_cache_utils.py:2173-2174, unify_hybrid_kv_cache_specs,
             # :1799-1822), so all layers form one uniform group (:2185-2189). Both calls are
             # vLLM's own.
-            from vllm.v1.core.kv_cache_utils import (  # noqa: E402
+            from vllm.v1.core.kv_cache_planning import (  # noqa: E402
                 _get_kv_cache_groups_uniform_spec,
                 is_kv_cache_spec_uniform,
                 unify_hybrid_kv_cache_specs,
@@ -587,13 +600,13 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
             assert is_kv_cache_spec_uniform(layers)
             specs = _get_kv_cache_groups_uniform_spec(layers)
         else:
-            from vllm.v1.core.kv_cache_utils import (  # noqa: E402
+            from vllm.v1.core.kv_cache_planning import (  # noqa: E402
                 _get_kv_cache_groups_uniform_spec,
                 is_kv_cache_spec_uniform,
             )
 
             # Layers that share one spec form one group, as get_kv_cache_groups gives them
-            # (kv_cache_utils.py:2185-2189@5df63a72); otherwise each layer is its own group.
+            # (kv_cache_planning.py:1139-1143@4ba787ec); otherwise each layer is its own group.
             if is_kv_cache_spec_uniform(layers):
                 specs = _get_kv_cache_groups_uniform_spec(layers)
             else:
@@ -702,9 +715,15 @@ class KVEventTap:
             for ev in batch.events:
                 name = type(ev).__name__
                 if name == "BlockStored":
-                    out.append(["stored", [h(x) for x in ev.block_hashes],
-                                h(ev.parent_block_hash) if ev.parent_block_hash is not None else None,
-                                list(ev.token_ids), ev.block_size, ev.lora_name])
+                    row = ["stored", [h(x) for x in ev.block_hashes],
+                           h(ev.parent_block_hash) if ev.parent_block_hash is not None else None,
+                           list(ev.token_ids), ev.block_size, ev.lora_name]
+                    # v0.33.0's lookahead_token_ids (vllm/distributed/kv_events.py:95-98), one list
+                    # per stored block, is None unless the pool hashes lookahead tokens; only then
+                    # does the row carry it, so no other scenario's trace gains a field.
+                    if ev.lookahead_token_ids is not None:
+                        row.append([list(t) for t in ev.lookahead_token_ids])
+                    out.append(row)
                 elif name == "BlockRemoved":
                     out.append(["removed", [h(x) for x in ev.block_hashes]])
                 else:

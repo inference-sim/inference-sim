@@ -88,7 +88,7 @@ def scenario(seed: int) -> dict:
             r["store_delay"] = rng.randint(0, 4)
         reqs.append(r)
     # No two aborts land in one step: finish_requests builds a set of the ids and frees the
-    # requests in its iteration order (vllm/v1/core/sched/scheduler.py:2662-2668@5df63a72), which
+    # requests in its iteration order (vllm/v1/core/sched/scheduler.py:2977-2983@4ba787ec), which
     # depends on the interpreter's hash seed, and the free order decides which block a later
     # request gets. Either order is vLLM's, so a scenario must not depend on one.
     taken = set()
