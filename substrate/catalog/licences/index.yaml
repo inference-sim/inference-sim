@@ -68,6 +68,13 @@ models:
         source: https://raw.githubusercontent.com/spdx/license-list-data/279b7e997a87c09be00dd6bdda189519ade502cf/text/MIT.txt
         sha256: b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5
     note: "The card names MIT, and the repository holds no licence file and names no copyright holder, so the text is SPDX's MIT licence."
+  - model: glm-5-nvfp4
+    licence: MIT
+    texts:
+      - file: MIT.txt
+        source: https://raw.githubusercontent.com/spdx/license-list-data/279b7e997a87c09be00dd6bdda189519ade502cf/text/MIT.txt
+        sha256: b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5
+    note: "The card names MIT, and the repository holds no licence file and names no copyright holder, so the text is SPDX's MIT licence."
   - model: glm-5.1-fp8
     licence: MIT
     texts:
