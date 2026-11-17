@@ -76,11 +76,11 @@ func ExampleOpen() {
 	// --8<-- [end:open]
 
 	// Output:
-	// between 23.1 and 24.6 ms, bottleneck hbm
+	// between 23.3 and 24.8 ms, bottleneck hbm
 	// sm        2.6 ms
 	// hbm      16.8 ms
 	// nvlink    0.9 ms
-	// host      4.3 ms
+	// host      4.5 ms
 }
 
 // Memory: what one rank holds before any request arrives, and what each request adds.
@@ -147,13 +147,14 @@ func ExampleKernel_Evidence() {
 	// --8<-- [end:evidence]
 
 	// Output:
-	// 115 of 160 values rest on evidence; 39 were assumed
-	//   assumed       39
+	// 115 of 161 values rest on evidence; 40 were assumed
+	//   assumed       40
 	//   measured     101
 	//   not_charged    1
 	//   transferred    5
 	//   vendor_spec   14
 	// the kernel assumed max_cudagraph_capture_size
+	// the kernel assumed nontorch_in_budget_bytes_8rank
 	// the kernel assumed engine_version
 }
 

@@ -32,11 +32,11 @@ The batch is 32 requests, each decoding one token against a 4,096-token context.
 ```
 
 ```text
-between 23.1 and 24.6 ms, bottleneck hbm
+between 23.3 and 24.8 ms, bottleneck hbm
 sm        2.6 ms
 hbm      16.8 ms
 nvlink    0.9 ms
-host      4.3 ms
+host      4.5 ms
 ```
 
 The first number assumes the GPU's resources (arithmetic, memory, interconnect and CPU) work

@@ -82,6 +82,13 @@ func TestMemoryMagnitudesMoveOccupancyAndNoStepTime(t *testing.T) {
 		for j := range c.Coefficients {
 			if memory(c.Coefficients[j].Name) {
 				c.Coefficients[j].Value *= 3
+				if iv := c.Coefficients[j].CI95; iv != nil {
+					// A fitted entry states the interval its value lies in, so the interval scales too.
+					scaledIv := *iv
+					scaledIv.Low *= 3
+					scaledIv.High *= 3
+					c.Coefficients[j].CI95 = &scaledIv
+				}
 			}
 		}
 		scaled.Coefficients[i] = &c
@@ -239,8 +246,10 @@ func TestProvenanceSeesEveryFigureFixedBytesReports(t *testing.T) {
 		}
 	}
 	for _, o := range k.Provenance() {
+		// nontorch_in_budget_bytes_<N>rank is the named gap of blis-substrate#299: a (model, part,
+		// tensor-parallel width) with no fit-unit group is charged nothing and says so (#294).
 		if o.Set == KernelAssumptionSet && o.Name != "max_cudagraph_capture_size" &&
-			o.Name != "engine_version" {
+			o.Name != "engine_version" && !strings.HasPrefix(o.Name, "nontorch_in_budget_bytes_") {
 			t.Errorf("a deployment stating every engine setting reported the kernel "+
 				"assumption %s", o.Name)
 		}
