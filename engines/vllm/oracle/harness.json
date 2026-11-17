@@ -1,0 +1,38 @@
+{
+  "commit_field": "blis_vllm_commit",
+  "ci_platform": "linux-x86_64",
+  "golden_dirs": [
+    "core/sched/testdata/golden/",
+    "core/sched/testdata/golden-swa/",
+    "core/engine/testdata/golden/",
+    "core/engine/testdata/golden-dp/",
+    "core/engine/testdata/golden-dp-async/",
+    "core/engine/testdata/golden-dp-nixl/",
+    "core/connector/nixl/testdata/golden/",
+    "core/connector/offloading/testdata/golden/",
+    "core/connector/multi/testdata/golden/",
+    "core/connector/offloading/testdata/golden-fid5/",
+    "core/metrics/testdata/golden/"
+  ],
+  "golden_files": [
+    "core/kv/testdata/block_hashes.json"
+  ],
+  "harness_files": [
+    "run_*.py"
+  ],
+  "decision_prefixes": [
+    "vllm.v1.core.",
+    "vllm.v1.engine.core",
+    "vllm.distributed.kv_transfer.kv_connector.v1.",
+    "vllm.v1.kv_offload."
+  ],
+  "upstream_names": [
+    "schedule",
+    "update_from_output",
+    "run_busy_loop",
+    "step_with_batch_queue",
+    "_has_global_unfinished_reqs",
+    "get_core_engine_for_request",
+    "_should_throttle_prefills"
+  ]
+}

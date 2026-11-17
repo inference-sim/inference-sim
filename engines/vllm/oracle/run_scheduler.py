@@ -112,8 +112,8 @@ def has_mamba(cfg: dict) -> bool:
 
 
 def layer_groups(cfg: dict, vllm_config) -> list:
-    """vLLM's own grouping of the layers (get_kv_cache_groups, vllm/v1/core/kv_cache_utils.py:
-    2159-2253@5df63a72), with the spec registry the engine registers before it groups
+    """vLLM's own grouping of the layers (get_kv_cache_groups, vllm/v1/core/kv_cache_planning.py:
+    1113-1200@4ba787ec), with the spec registry the engine registers before it groups
     (register_all_kvcache_specs, vllm/v1/core/single_type_kv_cache_manager.py:2633). The
     layers are named in run order. vLLM buckets layers by spec in order of first appearance and
     splits each bucket by stride, so only which spec comes first matters: a run order that
@@ -121,7 +121,7 @@ def layer_groups(cfg: dict, vllm_config) -> list:
     model does."""
     import dataclasses  # noqa: E402
 
-    from vllm.v1.core.kv_cache_utils import get_kv_cache_groups  # noqa: E402
+    from vllm.v1.core.kv_cache_planning import get_kv_cache_groups  # noqa: E402
     from vllm.v1.core.single_type_kv_cache_manager import register_all_kvcache_specs  # noqa: E402
     from vllm.v1.kv_cache_interface import SlidingWindowSpec  # noqa: E402
 
@@ -157,27 +157,34 @@ def layer_groups(cfg: dict, vllm_config) -> list:
     groups = get_kv_cache_groups(vllm_config, layers)
     if cfg.get("kv_available_bytes"):
         # The pool vLLM sizes from that much KV memory over these groups: its own
-        # get_kv_cache_config_from_groups (vllm/v1/core/kv_cache_utils.py:1588-1628@5df63a72) on the
-        # groups it just built, as the engine core calls it per worker (get_kv_cache_configs,
-        # :2687-2695). Recorded beside the trace; the scenario's num_blocks still runs the
+        # get_kv_cache_config_from_groups (vllm/v1/core/kv_cache_planning.py:642-741@4ba787ec) on the
+        # groups it just built, as the engine core's default builder calls it per worker
+        # (get_kv_cache_configs, :1574-1577; DefaultKVCacheConfigBuilder, :1698-1719). Recorded beside the trace; the scenario's num_blocks still runs the
         # scheduler, so no decision moves.
-        from vllm.v1.core.kv_cache_utils import get_kv_cache_config_from_groups  # noqa: E402
+        from vllm.v1.core.kv_cache_planning import get_kv_cache_config_from_groups  # noqa: E402
 
         sized = get_kv_cache_config_from_groups(vllm_config, groups, cfg["kv_available_bytes"])
         pool = {"available_bytes": cfg["kv_available_bytes"], "num_blocks": sized.num_blocks,
                 "kv_cache_layout": vllm_config.cache_config.kv_cache_layout}
         if cfg.get("kv_startup_check"):
             # The engine core's start-up check on the same layers and memory: vLLM's own
-            # get_kv_cache_configs (vllm/v1/core/kv_cache_utils.py:2531-2690@5df63a72), whose
-            # _check_enough_kv_cache_memory (:2636-2646) refuses a worker whose KV cache cannot hold
+            # get_kv_cache_configs (vllm/v1/core/kv_cache_planning.py:1461-1604@4ba787ec), whose
+            # _check_enough_kv_cache_memory (:1550-1559) refuses a worker whose KV cache cannot hold
             # one max_model_len request across every group. The verdict, vLLM's message and the
             # max_concurrent_batches its sliding windows' admission caps were counted at
             # (max_in_flight_tokens, vllm/config/vllm.py:577-598) are recorded; the scenario's
-            # num_blocks still runs the scheduler.
-            from vllm.v1.core.kv_cache_utils import get_kv_cache_configs  # noqa: E402
+            # num_blocks still runs the scheduler. The engine core groups every worker's layers
+            # first and passes those global groups in (get_global_kv_cache_groups, :1607-1657;
+            # vllm/v1/engine/core.py:292 and 321-323@4ba787ec).
+            from vllm.v1.core.kv_cache_planning import (  # noqa: E402
+                get_global_kv_cache_groups,
+                get_kv_cache_configs,
+            )
 
             try:
-                get_kv_cache_configs(vllm_config, [layer_specs(cfg)], [cfg["kv_available_bytes"]])
+                specs = [layer_specs(cfg)]
+                get_kv_cache_configs(vllm_config, specs, [cfg["kv_available_bytes"]],
+                                     get_global_kv_cache_groups(vllm_config, specs))
                 pool["startup"] = {"refused": False}
             except ValueError as e:
                 pool["startup"] = {"refused": True, "message": str(e)}
@@ -289,7 +296,11 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     # Request block hashes are computed at the scheduler's hash_block_size, as the engine core
     # builds the hasher (vllm/v1/engine/core.py:233-240@5df63a72): the block size, or for groups
     # of several block sizes the one vLLM resolved for them.
-    hasher = get_request_block_hasher(scheduler.hash_block_size, sha256)
+    # The engine core builds the hasher with vllm_config.num_hash_lookahead_tokens
+    # (vllm/v1/engine/core.py:220-230@4ba787ec), so an EAGLE-family drafter with prefix caching
+    # and no KV connector hashes the tokens past each block; the harness does the same.
+    hasher = get_request_block_hasher(scheduler.hash_block_size, sha256,
+                                      scheduler.vllm_config.num_hash_lookahead_tokens)
     pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
     # LoRA adapter ids, numbered from 1 in name order (vllm/lora/request.py:37-39 refuses 0).
     lora_ids = {n: i + 1 for i, n in enumerate(sorted({r["lora"] for r in sc["requests"] if r.get("lora")}))}
@@ -577,7 +588,7 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
             # (get_kv_cache_groups, kv_cache_utils.py:2173-2174, unify_hybrid_kv_cache_specs,
             # :1799-1822), so all layers form one uniform group (:2185-2189). Both calls are
             # vLLM's own.
-            from vllm.v1.core.kv_cache_utils import (  # noqa: E402
+            from vllm.v1.core.kv_cache_planning import (  # noqa: E402
                 _get_kv_cache_groups_uniform_spec,
                 is_kv_cache_spec_uniform,
                 unify_hybrid_kv_cache_specs,
@@ -587,7 +598,7 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
             assert is_kv_cache_spec_uniform(layers)
             specs = _get_kv_cache_groups_uniform_spec(layers)
         else:
-            from vllm.v1.core.kv_cache_utils import (  # noqa: E402
+            from vllm.v1.core.kv_cache_planning import (  # noqa: E402
                 _get_kv_cache_groups_uniform_spec,
                 is_kv_cache_spec_uniform,
             )

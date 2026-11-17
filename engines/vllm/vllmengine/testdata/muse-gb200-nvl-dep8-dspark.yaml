@@ -1,6 +1,6 @@
 kind: Scenario
 name: muse-gb200-nvl-dep8-dspark
-engine_version: "0.32.0"
+engine_version: "0.33.0"
 model: muse-spark-open-816b-a42b-nvfp4
 acceptance:
   value:

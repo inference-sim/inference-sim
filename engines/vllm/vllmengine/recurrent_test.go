@@ -19,7 +19,7 @@ func TestRecurrentModelsBuildAndRun(t *testing.T) {
 	for _, scenario := range []string{"recurrent-nemotron-3-ultra-h100-tp8.yaml", "recurrent-kimi-k3-h200-dep16.yaml"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
-			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Config: poolEngine(t, scenario),
+			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Config: poolEngine(t, scenario),
 				Roots: roots(t, scenario), Pool: 0}
 			e, err := engine.New(spec)
 			if err != nil {

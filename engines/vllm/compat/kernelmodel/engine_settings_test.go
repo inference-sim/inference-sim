@@ -70,7 +70,7 @@ func TestEngineResolvesUnstatedBatchSettingsAt032(t *testing.T) {
 		{"both unstated", []string{"max_num_seqs: 256", "max_num_batched_tokens: 8192"}, 1024, 8192, false, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			m := openEdited(t, "0.32.0", c.drop...)
+			m := openEdited(t, "0.33.0", c.drop...)
 			e, err := m.Engine()
 			if err != nil {
 				t.Fatal(err)
@@ -111,7 +111,7 @@ func TestEngineResolvesTheTokenBudgetFromEnableChunkedPrefill(t *testing.T) {
 			if c.add != "" {
 				drop = append(drop, c.add)
 			}
-			m := openEdited(t, "0.32.0", drop...)
+			m := openEdited(t, "0.33.0", drop...)
 			e, err := m.Engine()
 			if err != nil {
 				t.Fatal(err)
@@ -129,7 +129,7 @@ func TestEngineResolvesTheTokenBudgetFromEnableChunkedPrefill(t *testing.T) {
 // An unstated block_size at 0.32.0 is still refused, naming the open issue (#68); at 0.31.0 the
 // block is returned as stated, and an unstated batch setting is refused, as before.
 func TestEngineRefusesWhatItDoesNotResolve(t *testing.T) {
-	_, err := openEdited(t, "0.32.0", "block_size: 64").Engine()
+	_, err := openEdited(t, "0.33.0", "block_size: 64").Engine()
 	if err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/68") {
 		t.Errorf("0.32.0 without block_size: %v, want a refusal citing blis-vllm#68", err)
 	}
@@ -306,7 +306,7 @@ func TestEngineResolvesAnUnstatedMemoryUtilization(t *testing.T) {
 // A stated gpu_memory_utilization is kept and reported as stated; a stated value outside (0, 1]
 // is still refused, not replaced by the default.
 func TestEngineKeepsOrRefusesAStatedMemoryUtilization(t *testing.T) {
-	m, err := openWithMemoryUtilization(t, "0.32.0", "0.85")
+	m, err := openWithMemoryUtilization(t, "0.33.0", "0.85")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,13 +315,13 @@ func TestEngineKeepsOrRefusesAStatedMemoryUtilization(t *testing.T) {
 	}
 	// Document validation refuses a stated value outside [0, 1] before a model opens.
 	for _, v := range []string{"1.5", "-0.1"} {
-		if _, err := openWithMemoryUtilization(t, "0.32.0", v); err == nil {
+		if _, err := openWithMemoryUtilization(t, "0.33.0", v); err == nil {
 			t.Errorf("stated %s opened, want it refused", v)
 		}
 	}
 	// And the resolver never replaces such a value with the default, whatever reaches it: only
 	// 0, which the schema reads as unset (rules/engineconfig/validate.go:65), is replaced.
-	in := latencykernel.Inputs{Scenario: &scenario.Scenario{EngineVersion: "0.32.0"},
+	in := latencykernel.Inputs{Scenario: &scenario.Scenario{EngineVersion: "0.33.0"},
 		Deployment: &deployment.Deployment{Pools: []deployment.Pool{{}}}, Chip: &hardware.Chip{MemoryGiB: 141}, Model: &model.Graph{}}
 	for _, c := range []struct {
 		util float64

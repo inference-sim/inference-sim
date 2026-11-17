@@ -36,6 +36,7 @@ that interface. The design is
 | `vllmengine/` | how a simulator gets the v0.32.0 engine: it registers the Factory, prices steps with the latency kernel and sizes the KV cache |
 | `compat/` | the compatibility engine: inference-sim's engine as it ran before the extraction (`compat/engine`, `compat/kv`, `compat/lora`, `compat/kernelmodel`, moved verbatim, each file stating its source commit), which keeps the existing 0.29.0/0.31.0 scenarios byte-identical until they are re-baselined to 0.32.0 (inference-sim#2027), plus the leaf packages it uses and `compat/build`, the engine-side configuration the simulator used to decode itself (the scenario's KV offload block and the `--kv-offload-config` file; inference-sim#2021 E3) |
 | `kerneltests/` | the latency kernel's tests that open a kernel from a vLLM engine block, its commands and docs generator, moved here from blis-latency-kernel (`kerneltests/_inpackage` runs inside blis-substrate's `kernel` package: `kerneltests/scripts/run-inpackage.sh`). The catalog and registry they read are blis-substrate's, at the release `go.mod` pins |
+| `kernels/`, `kernel_impls.json`, `kernelimpls.go` | the kernel-implementation table, its generator and classification, and the lookup the lowering states a build with (below) |
 | `testdata/` | inputs of `compat/kernelmodel`'s tests: inference-sim's scenarios (`testdata/README.md`); the catalog and registry are the pinned blis-substrate's, through its loader |
 | `docs/feature-matrix.md` | every feature our sources use, its v0.32.0 citation, owner, oracle tier and status |
 | `docs/testing.md` | the oracle tiers, the shared GPU mock, provenance, golden-trace policy |
@@ -244,6 +245,67 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   perturbation test over every `modelled` field, VLM-3's other check, is not here yet.
 - `TestTheFieldListLoadsAndNamesThisRelease` loads the file with the substrate's strict loader,
   checks it names this release, is in canonical form, and that every cited trace exists.
+
+## The surface list (surface.json)
+
+`surface.json` lists every feature vLLM v0.32.0 registers, each with one status (design X9, §7.5,
+VLM-4): connectors, offload specs, secondary tiers, cache policies, backpressure classes, offload
+media and backends, KV-event publishers, types and sources, KV-cache spec types with their
+managers, speculative methods, scheduler policies, the places vLLM loads a class from a path a
+setting names, the parts of the shared KV frameworks (§7.6), and metric families. Configuration
+fields and environment variables are the field list's, above.
+
+- **Items** come from vLLM's own registration tables at the pinned commit, read by
+  `tools/surface/gen_surface.py` (its docstring names the table each category is read from). A
+  name whose class is another registered name's is recorded with `alias_of`.
+- **Statuses** are in `tools/surface/status.json`, edited by hand: `modelled`, naming evidence that
+  includes an oracle scenario or a golden trace; `refused`, naming the blis-vllm issue; or
+  `out_of_scope`, for one of §7.5's three reasons, with a citation of the upstream code. A
+  framework part is `modelled` only with recorded and direct traces at its interface (FID-5).
+- **Code BLIS does not have.** An item with `refusal: code_not_visible` (each `path_loader` item) is
+  refused at start-up by the setting that names it, with `vllm.CodeNotVisibleError`, whose `G5Code`
+  is design §11.4's `code_not_visible` (`core/vllm/notvisible.go`). A component name the release does
+  not register is refused the same way: only out-of-tree code could have run it.
+- **Checked in CI** by the `metrics-manifest` job:
+  `python3 -I tools/surface/gen_surface.py vllm-source tools/surface/status.json --check surface.json`
+  fails when the regenerated list differs from the committed one, when an item has no status, when a
+  status names an item vLLM does not register, when a status lacks what X9 asks of it, or when a KV
+  file loads a module by a name no `path_loader` item accounts for.
+- **The release** is the one `provenance.go`'s `Upstream` record names; the generator reads it
+  from there, refuses a vLLM checkout at another commit, and holds no version of its own
+  (`--upstream-tag` and `--upstream-commit` name another release). Moving to a new release
+  changes `provenance.go` and the status file, and the list is regenerated with the same command:
+  `python3 -I tools/surface/gen_surface.py <vllm-source> tools/surface/status.json > surface.json`.
+
+## The kernel-implementation table (kernel_impls.json)
+
+`kernel_impls.json` lists every attention kernel vLLM v0.32.0 can emit on the architectures it
+covers (sm_90a for H100 and H200, sm_100a for B200 and GB200, sm_103a for B300 and GB300), each with
+the code hash the coefficient registry keys its entries by (design §6.2, D5, VAL-8). The type and
+the hash rule are blis-substrate's `contracts/spec/kernelimpls`; the substrate's loader recomputes
+every hash. `Implementation` (`kernelimpls.go`) is how the lowering states the build an operation
+runs, so the cost model's lookup matches a coefficient only for that build.
+
+- **What runs** comes from vLLM's own selection code, not by hand: `kernels/gen_kernel_impls.py`
+  reads every `AttentionBackendEnum` member, the backends `_get_backend_priorities` selects on CUDA,
+  every name each listed backend imports from a kernel library, and the line of each kernel's call
+  and of each architecture gate. `kernels/<tag>/attention.json`, one per vLLM release and edited
+  by people, gives each backend a status and each kernel its library, variant, primitives, architectures and hash inputs; the
+  generator refuses a backend or an import it does not classify, and a classification the source no
+  longer supports.
+- **Versions and hashes** come from the pinned sources: the library versions from
+  `requirements/cuda.txt` and the GIT_TAG of vLLM's build, the toolkit from `docker/Dockerfile`, a
+  source kernel's hash inputs from the git objects of its source at the pin, and a binary kernel's
+  from the SHA-256 its library records for the precompiled package.
+- **One command** regenerates the table: `python3 -I kernels/regen.py [TAG]` fetches vLLM at the tag
+  (default: `Upstream.Tag` in `provenance.go`), and each library at the pin vLLM's build files state,
+  then runs the generator; CI runs it with `--check`. Classifications exist for v0.32.0 and v0.33.0;
+  a new release gets its own, copied from the nearest and completed until the generator, run against
+  the new source, refuses nothing.
+- **What it does not list yet** is named in `gaps`: the MLA, sparse-MLA and model-driven backends, and
+  the remaining CUDA backends, with inference-sim/blis-vllm#151. A lowering that asks for a build of a
+  primitive with gaps, and finds no row, gets the implementation with no code hash, which matches no
+  keyed coefficient.
 
 ## Licence
 

@@ -35,7 +35,7 @@ type preparedKV struct {
 
 func prepareKV(t *testing.T, roots map[string]string, pool int) (preparedKV, kvOffload) {
 	t.Helper()
-	done, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots, Pool: pool}, nil)
+	done, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots, Pool: pool}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,11 +68,11 @@ func TestAMultiConnectorScenarioBuildsBothPoolsAndRunsItsPair(t *testing.T) {
 		if off.CPUBytes != 0 || off.BytesPerBlock == 0 {
 			t.Errorf("pool %d: kv_offload %+v, want only what vLLM derives from the model", i, off)
 		}
-		if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r, Pool: i}); err != nil {
+		if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r, Pool: i}); err != nil {
 			t.Fatalf("pool %d: %v", i, err)
 		}
 	}
-	p, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r, Pool: 0})
+	p, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r, Pool: 0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestAHostStatesTheMultiConnectorOrderInItsEngineBlock(t *testing.T) {
 	given = *given.Content[0]
 	engineBlock := poolEngine(t, multiScenario)
 	given.Content = append(given.Content, engineBlock.Content...)
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, multiScenario), Pool: 1, Config: given}
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, multiScenario), Pool: 1, Config: given}
 	done, err := prepare(spec, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +156,7 @@ func TestAHostStatesTheMultiConnectorOrderInItsEngineBlock(t *testing.T) {
 // drafter: it says so by name, rather than failing on the connector's children.
 func TestTheShippedMultiConnectorScenarioIsRefusedForItsDrafterByName(t *testing.T) {
 	Register()
-	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, shippedScenario), Pool: 0})
+	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, shippedScenario), Pool: 0})
 	if err == nil || !strings.Contains(err.Error(), "drafter") || strings.Contains(err.Error(), "child(ren)") {
 		t.Fatalf("the shipped scenario: %v, want a refusal that names the drafter", err)
 	}

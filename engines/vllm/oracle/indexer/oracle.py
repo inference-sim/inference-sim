@@ -23,7 +23,7 @@ Usage:
     python -I oracle/indexer/oracle.py <vllm source root> print            the table, as JSON
     python -I oracle/indexer/oracle.py <vllm source root> check <file>     fail unless <file> is what print gives
 
-<vllm source root> is a directory holding vllm/ at commit 5df63a7203cdb9328d824a27b682e77c7b9928be. The Python needs
+<vllm source root> is a directory holding vllm/ at commit 4ba787ec9959e566d3b587a796dff07673324da5. The Python needs
 pydantic only (the oracle environment, oracle/requirements.lock, has it).
 """
 import ast
@@ -33,7 +33,7 @@ import sys
 import types
 from typing import Any, Literal
 
-COMMIT = "5df63a7203cdb9328d824a27b682e77c7b9928be"
+COMMIT = "4ba787ec9959e566d3b587a796dff07673324da5"
 # DeepSeek V4's and V4.1's index_head_dim (the catalog graphs state d_h 128 for the indexer).
 HEAD_DIM = 128
 REQUESTED = ["auto", "bf16", "fp8", "mxfp4", "nvfp4", "fp8_e4m3"]

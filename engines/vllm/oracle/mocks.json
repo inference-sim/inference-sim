@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/5+af60be80e293",
+  "version": "gpu-mock/7+f4274aa648c4",
   "description": "Everything the oracle replaces. Only the GPU, the clock, transports and external services may be replaced; check_mocks.py fails if an entry names decision code.",
   "mocks": [
     {
@@ -160,11 +160,12 @@
     {
       "symbol": "DPLBAsyncMPClient construction",
       "kind": "environment",
-      "how": "oracle/run_dp.py only: the client is built with object.__new__ holding exactly the state get_core_engine_for_request and process_engine_outputs read (client_count 1, the in-flight maps, one engine identity per rank, the rotating start, a config naming the V1 runner and allgather_reducescatter), as vLLM's own tests build it (tests/v1/engine/test_engine_core_client.py:208-222@5df63a72); the method runs unmodified. The finished-request bookkeeping is process_engine_outputs' own two lines (core_client.py:1703-1710), applied by the harness when a request finishes",
+      "how": "oracle/run_dp.py only: the client is built with object.__new__ holding exactly the state get_core_engine_for_request and process_engine_outputs read (client_count 1, the in-flight maps, the empty set of open streaming-input sessions (core_client.py:1728-1729@4ba787ec), one engine identity per rank, the rotating start, a config naming the V1 runner and allgather_reducescatter), as vLLM's own tests build it (tests/v1/engine/test_engine_core_client.py:208-222@5df63a72); the method runs unmodified. The finished-request bookkeeping is process_engine_outputs' own two lines (core_client.py:1703-1710), applied by the harness when a request finishes",
       "sites": [
         "run_dp.py:object.__new__(DPLBAsyncMPClient)",
         "run_dp.py:client.client_count",
         "run_dp.py:client.reqs_in_flight",
+        "run_dp.py:client.streaming_reqs",
         "run_dp.py:client.engine_inflight",
         "run_dp.py:client.core_engines",
         "run_dp.py:client.eng_start_index",
@@ -175,10 +176,11 @@
     {
       "symbol": "DPEngineCoreProc construction",
       "kind": "environment",
-      "how": "oracle/run_dp.py only: each rank's DP engine core is built with object.__new__ holding exactly the state _should_throttle_prefills and _has_global_unfinished_reqs read (dp_group, dp_sync_interval, prefill_schedule_interval, step_counter, current_wave, pending_pause, ignore_start_dp_wave, engines_running), as vLLM's own tests build it (tests/v1/engine/test_engine_core.py:641-657@5df63a72); those two methods run unmodified",
+      "how": "oracle/run_dp.py only: each rank's DP engine core is built with object.__new__ holding exactly the state _should_throttle_prefills and _has_global_unfinished_reqs read (dp_group, the rank's own vllm_config, through which v0.33.0 reads the DP state (core.py:2560@4ba787ec), dp_sync_interval, prefill_schedule_interval, step_counter, current_wave, pending_pause, ignore_start_dp_wave, engines_running), as vLLM's own tests build it (tests/v1/engine/test_engine_core.py:641-657@5df63a72); those two methods run unmodified",
       "sites": [
         "run_dp.py:object.__new__(DPEngineCoreProc)",
         "run_dp.py:core.dp_group",
+        "run_dp.py:core.vllm_config",
         "run_dp.py:core.dp_sync_interval",
         "run_dp.py:core.prefill_schedule_interval",
         "run_dp.py:core.pending_pause",

@@ -49,10 +49,15 @@ REST_EXTRA = [
     r"^oracle/(scenarios[^/]*/|mocks\.json$|drafts/)",
     r"^docs/metrics-(manifest|buckets)\.json$",
     r"^fields\.json$",
+    r"^surface\.json$",
+    r"^kernel_impls\.json$",
     r"^vllmengine/testdata/",
     r"^core/(kv|lower)/testdata/",
     r"^oracle/engineargs-cases\.json$",
 ]
+# The files the root package's TestHarnessCopiesAreCurrent compares with blis-substrate's contracts/harness
+# (X7): a change to one alone must run it.
+HARNESS_COPIES = [r"^oracle/check_(mocks|goldens|lock)\.py$", r"^oracle/harness\.json$", r"^\.golangci\.yml$"]
 # The census reads kerneltests/testdata (REST_EXTRA); the race legs of other packages read what REST_EXTRA names.
 RACE_EXTRA = REST_EXTRA
 
@@ -74,12 +79,18 @@ ORACLE_PATHS = [
     r"^core/lower/testdata/",
     r"^rules/engineconfig/testdata/",
     r"^rules/v0_32/testdata/",
+    r"^rules/v0_33/testdata/",
 ]
 METRICS_GO = ["./cmd/metricsmanifest", "./registry"]
-METRICS_PATHS = [r"^fields/", r"^fields\.json$", r"^docs/metrics-manifest\.json$"]
+# The surface list (tools/surface/gen_surface.py) reads its status file, the committed list, and the
+# repository paths a modelled item names as its evidence: the oracle scenarios and the golden traces.
+# The kernel table (kernels/gen_kernel_impls.py) reads kernels/ and the committed kernel_impls.json.
+METRICS_PATHS = [r"^fields/", r"^fields\.json$", r"^docs/metrics-manifest\.json$", r"^tools/surface/",
+                 r"^surface\.json$", r"^oracle/scenarios", r"^core/.*/testdata/golden",
+                 r"^kernels/", r"^kernel_impls\.json$"]
 GOLDEN_PATHS = [r"^oracle/", r"^core/.*/testdata/", r"^tools/migrateengineblock/"]
 BENCH_GO = ["./core/sched", "./core/vllm"]
-PACKS = {"v0_29": "./rules/v0_29", "v0_31": "./rules/v0_31", "v0_32": "./rules/v0_32"}
+PACKS = {"v0_29": "./rules/v0_29", "v0_31": "./rules/v0_31", "v0_32": "./rules/v0_32", "v0_33": "./rules/v0_33"}
 
 
 @functools.lru_cache(maxsize=None)
@@ -241,7 +252,7 @@ def decide(files, everything=False, legs_file=LEGS_FILE):
     out["lint"] = any_match(files, modfiles + [r"^\.golangci\.yml$"]) or any(is_lint_go(f) for f in files)
 
     d, rf = closure(["./..."], exclude=r"/kerneltests(/|$)")
-    out["rest"] = any_match(files, modfiles + [SHARD_TOOL] + REST_EXTRA) or in_closure(files, d, rf)
+    out["rest"] = any_match(files, modfiles + [SHARD_TOOL] + REST_EXTRA + HARNESS_COPIES) or in_closure(files, d, rf)
 
     kd, krf = closure(["./kerneltests/..."])
     out["kerneltests"] = any_match(files, modfiles + [SHARD_TOOL] + KERNELTESTS_PATHS) or in_closure(files, kd, krf)

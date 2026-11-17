@@ -1,31 +1,36 @@
-# Original to blis-vllm.
-"""Fail if a commit changes what a golden trace asserts without naming a reviewer.
+# Generated from blis-substrate contracts/harness/oracle/check_goldens.py by `go run github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles`; do not edit.
+"""Fail if a commit changes what a golden trace asserts without naming a reviewer (FID-3).
 
-A golden trace is vLLM's own output for a scenario, and what it records beside its
-`provenance` block is what blis-vllm is checked against. Every golden directory holds them:
-the scheduler's (core/sched), the EngineCore's and the DP loop's (core/engine), the NIXL
-connector's (core/connector/nixl), the OffloadingConnector's (core/connector/offloading), the MultiConnector's (core/connector/multi) and the metric series' (core/metrics); and core/kv's block
-hashes (GOLDEN_FILES), which are vLLM's own hash_block_tokens output. A commit that changes
-the recorded content of an existing golden, or deletes one, must carry a
-`golden-reviewed:` trailer for each trace it changes, which names the trace (its path or file name)
-and gives the reason (design FID-3, section 7.7): `golden-reviewed: <trace>: <reason>`. A trailer that
-names no changed trace, or gives no reason, does not count; a person's name is neither. Adding a golden for a new scenario (in a
-golden file, appending a case), or refreshing only its `provenance` block, needs none, and this
-check verifies that such a commit changed nothing else. A golden directory this list does not name fails the check, so a new
-tier's goldens cannot go unguarded. A golden whose provenance names a blis-vllm commit outside
-head's history (one nobody can fetch, a "+dirty" tree or "unknown") fails too: its provenance
-must name a commit anyone can check out. The one exception is a golden whose run recorded
-`oracle_inputs` (each file of oracle/ the run executed or read, with its sha256): a rebase or a
-reordering of the stack leaves its commit outside head's history, and the golden still stands
-when every one of those files is byte-identical at head, which is the claim the commit stood for
-(vLLM's output, produced by the same oracle code and scenario that head holds). A golden added in the range base..head must
-also have been produced on the platform CI runs (CI_PLATFORM) and from the oracle environment the
-repository commits (its requirements_lock_sha256 is the hash of oracle/requirements.lock at head),
-so a trace recorded elsewhere cannot enter unnoticed; the goldens already committed before this
-check existed are not held to it.
+A golden trace is the upstream's own output for a scenario, and what it records beside its
+`provenance` block is what the engine port is checked against. The golden directories and the
+golden files outside them are the `golden_dirs` and `golden_files` of oracle/harness.json; a
+golden file holds a `cases` list, each case one golden. A commit that changes the recorded
+content of an existing golden, or deletes one, must carry a `golden-reviewed:` trailer for each
+trace it changes, which names the trace (its path or file name) and gives the reason (design
+FID-3, section 7.7): `golden-reviewed: <trace>: <reason>`. A trailer that names no changed trace,
+or gives no reason, does not count; a person's name is neither. Adding a golden for a new
+scenario (in a golden file, appending a case), or refreshing only its `provenance` block, needs
+none, and this check verifies that such a commit changed nothing else. A golden directory the
+configuration does not name fails the check, so a new tier's goldens cannot go unguarded.
 
-Usage: python3 -I oracle/check_goldens.py <base> <head>
-       python3 -I oracle/check_goldens.py --stack-base <head>
+A golden whose provenance names a repository commit (the `commit_field` of oracle/harness.json)
+outside head's history (one nobody can fetch, a "+dirty" tree or "unknown") fails too: its
+provenance must name a commit anyone can check out. The one exception is a golden whose run
+recorded `oracle_inputs` (each file of oracle/ the run executed or read, with its sha256): a
+rebase or a reordering of the stack leaves its commit outside head's history, and the golden
+still stands when every one of those files is byte-identical at head, which is the claim the
+commit stood for (the upstream's output, produced by the same oracle code and scenario that head
+holds). A golden added in the range base..head must also have been produced on the platform CI
+runs (`ci_platform`) and from the oracle environment the repository commits (its
+requirements_lock_sha256 is the hash of oracle/requirements.lock at head), so a trace recorded
+elsewhere cannot enter unnoticed; the goldens already committed before this check existed are
+not held to it.
+
+oracle/harness.json is read from <head> (git show <head>:oracle/harness.json), the tree the goldens
+are read from, unless --config names a file.
+
+Usage: python3 -I oracle/check_goldens.py [--config <harness.json>] <base> <head>
+       python3 -I oracle/check_goldens.py [--config <harness.json>] --stack-base <head>
 
 A run started by hand (workflow_dispatch) has no pull request and no previous push, so it has no
 base. --stack-base prints the one to use: the nearest remote branch, other than a scratch
@@ -34,28 +39,84 @@ merge-base with origin/main. The range base..head is then what this branch adds 
 """
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
 
-GOLDEN_DIRS = (
-    "core/sched/testdata/golden/",
-    "core/sched/testdata/golden-swa/",
-    "core/engine/testdata/golden/",
-    "core/engine/testdata/golden-dp/",
-    "core/engine/testdata/golden-dp-async/",
-    "core/engine/testdata/golden-dp-nixl/",
-    "core/connector/nixl/testdata/golden/",
-    "core/connector/offloading/testdata/golden/",
-    "core/connector/multi/testdata/golden/",
-    "core/metrics/testdata/golden/",
-)
+# The keys of oracle/harness.json and what each must hold. Every key is required and no other is
+# allowed. A string must not be empty, and a list must hold non-empty strings. golden_files may be
+# an empty list (an engine with no golden file outside its golden directories); every other list
+# must name something, because a check given nothing to compare passes on nothing (X16).
+CONFIG_SCHEMA = {
+    "commit_field": "string",
+    "ci_platform": "string",
+    "golden_dirs": "list",
+    "golden_files": "list, may be empty",
+    "harness_files": "list",
+    "decision_prefixes": "list",
+    "upstream_names": "list",
+}
 
-# Golden files outside a golden directory: vLLM's own output, guarded as the directories are.
-# core/kv's block hashes are vLLM's hash_block_tokens over each case (oracle/gen_block_hashes.py).
-GOLDEN_FILES = (
-    "core/kv/testdata/block_hashes.json",
-)
+
+def config_problems(cfg) -> list[str]:
+    """What is wrong with a parsed oracle/harness.json, each naming its key."""
+    if not isinstance(cfg, dict):
+        return [f"the configuration is a {type(cfg).__name__}, not an object"]
+    bad = [f"{k}: missing" for k in sorted(set(CONFIG_SCHEMA) - set(cfg))]
+    bad += [f"{k}: not a key of the configuration" for k in sorted(set(cfg) - set(CONFIG_SCHEMA))]
+    for key, kind in sorted(CONFIG_SCHEMA.items()):
+        if key not in cfg:
+            continue
+        v = cfg[key]
+        if kind == "string":
+            if not isinstance(v, str) or not v.strip():
+                bad.append(f"{key}: must be a non-empty string, not {v!r}")
+            continue
+        if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v):
+            bad.append(f"{key}: must be a list of non-empty strings, not {v!r}")
+        elif not v and kind == "list":
+            bad.append(f"{key}: is empty; the check it configures would pass on nothing")
+    if isinstance(cfg.get("golden_dirs"), list):
+        slashless = [d for d in cfg["golden_dirs"] if isinstance(d, str) and not d.endswith("/")]
+        if slashless:
+            bad.append(f"golden_dirs: each entry must end with '/': {slashless}")
+    return bad
+
+
+def read_config(path: str) -> dict:
+    """Read oracle/harness.json, or exit naming every key that is wrong."""
+    with open(path) as f:
+        cfg = json.load(f)
+    bad = config_problems(cfg)
+    if bad:
+        raise SystemExit(f"{path}: " + "; ".join(bad))
+    return cfg
+
+
+# Set by main from oracle/harness.json.
+GOLDEN_DIRS: tuple = ()
+GOLDEN_FILES: tuple = ()
+COMMIT_FIELD = ""
+CI_PLATFORM = ""
+
+
+def load_config(path: str = None, head: str = None) -> None:
+    """Read the configuration from path, or, with no path, from oracle/harness.json at head: the
+    same tree the goldens are read from."""
+    global GOLDEN_DIRS, GOLDEN_FILES, COMMIT_FIELD, CI_PLATFORM
+    if path is None:
+        r = subprocess.run(["git", "show", f"{head}:oracle/harness.json"], capture_output=True, text=True)
+        if r.returncode:
+            raise SystemExit(f"{head} has no oracle/harness.json: {r.stderr.strip()}")
+        cfg = json.loads(r.stdout)
+        bad = config_problems(cfg)
+        if bad:
+            raise SystemExit(f"{head}:oracle/harness.json: " + "; ".join(bad))
+    else:
+        cfg = read_config(path)
+    GOLDEN_DIRS, GOLDEN_FILES = tuple(cfg["golden_dirs"]), tuple(cfg["golden_files"])
+    COMMIT_FIELD, CI_PLATFORM = cfg["commit_field"], cfg["ci_platform"]
 
 
 def git(*args: str) -> str:
@@ -109,7 +170,7 @@ def inputs_differ(inputs, rev: str) -> list[str]:
 
 
 def unreachable_commits(head: str) -> list[str]:
-    """Goldens at head whose provenance names a blis_vllm_commit that is not a full commit id,
+    """Goldens at head whose provenance names a commit (COMMIT_FIELD) that is not a full commit id,
     or is not in head's history and whose recorded oracle_inputs do not all hold at head.
 
     A golden that records oracle_inputs is also held to them where it was recorded: when the
@@ -121,8 +182,10 @@ def unreachable_commits(head: str) -> list[str]:
         if not is_golden(path):
             continue
         prov = json.loads(git("show", f"{head}:{path}")).get("provenance", {})
-        commit = prov.get("blis_vllm_commit")
+        commit = prov.get(COMMIT_FIELD)
         if commit is None:
+            out.append(f"{path}: its provenance records no {COMMIT_FIELD} (commit_field), so no one can tell "
+                       "which commit produced it")
             continue
         well_formed = bool(re.fullmatch(r"[0-9a-f]{40}", commit))
         if commit not in reachable:
@@ -141,11 +204,11 @@ def unreachable_commits(head: str) -> list[str]:
             differ = inputs_differ(inputs, head)
             if not differ:
                 continue
-            out.append(f"{path}: records blis_vllm_commit {commit}, which is not a commit in {head}'s history, and "
+            out.append(f"{path}: records {COMMIT_FIELD} {commit}, which is not a commit in {head}'s history, and "
                        f"the oracle files its run used differ at {head}: {', '.join(differ)} "
                        "(record it again with the oracle-traces workflow at a commit with these files)")
             continue
-        out.append(f"{path}: records blis_vllm_commit {commit}, which is not a commit in {head}'s history "
+        out.append(f"{path}: records {COMMIT_FIELD} {commit}, which is not a commit in {head}'s history "
                    "(refresh it from the oracle-traces workflow run on main)")
     return out
 
@@ -168,14 +231,9 @@ def trailer_covers(trailers: list[str], path: str, change: str) -> bool:
     return False
 
 
-# The platform the oracle-traces workflow and the oracle jobs run on (ubuntu-latest, x86_64).
-CI_PLATFORM = "linux-x86_64"
-
-
 def foreign_provenance(base: str, head: str) -> list[str]:
     """Goldens added in base..head whose provenance names a platform other than CI's,
     or a committed-lock hash other than head's oracle/requirements.lock."""
-    import hashlib
     lock = hashlib.sha256(git("show", f"{head}:oracle/requirements.lock").encode()).hexdigest()
     out = []
     for line in git("diff", "--name-status", "--diff-filter=A", f"{base}..{head}").splitlines():
@@ -215,8 +273,13 @@ def stack_base(head: str) -> str:
 def main(base: str, head: str) -> int:
     bad = 0
     for d in unguarded(head):
-        print(f"{d}: a golden directory oracle/check_goldens.py does not guard; add it to GOLDEN_DIRS")
+        print(f"{d}: a golden directory oracle/check_goldens.py does not guard; add it to golden_dirs in oracle/harness.json")
         bad = 1
+    tracked = set(git("ls-tree", "-r", "--name-only", head).splitlines())
+    for f in GOLDEN_FILES:
+        if f not in tracked:
+            print(f"{f}: a golden file oracle/harness.json names (golden_files), which {head} does not hold")
+            bad = 1
     for problem in unreachable_commits(head):
         print(problem)
         bad = 1
@@ -251,8 +314,31 @@ def main(base: str, head: str) -> int:
     return bad
 
 
+def split_config(args: list) -> tuple:
+    """(the --config path or None, the other arguments). --config may stand anywhere; any other
+    option is refused, so a mistyped flag cannot fall through to a default."""
+    config, rest, i = None, [], 0
+    while i < len(args):
+        if args[i] == "--config":
+            if i + 1 >= len(args):
+                sys.exit("--config needs a path")
+            config, i = args[i + 1], i + 2
+            continue
+        if args[i].startswith("--") and args[i] != "--stack-base" and args[i] != "--hashed":
+            sys.exit(f"unknown option {args[i]}")
+        rest.append(args[i])
+        i += 1
+    return config, rest
+
+
 if __name__ == "__main__":
-    if sys.argv[1] == "--stack-base":
-        print(stack_base(sys.argv[2]))
+    config, args = split_config(sys.argv[1:])
+    if len(args) != 2:
+        sys.exit(__doc__.split("Usage:", 1)[1].split("\n\n", 1)[0].strip())
+    load_config(config, args[1])
+    if args[0] == "--stack-base":
+        print(stack_base(args[1]))
         sys.exit(0)
-    sys.exit(main(sys.argv[1], sys.argv[2]))
+    if len(args) != 2:
+        sys.exit(__doc__.split("Usage:", 1)[1].split("\n\n", 1)[0].strip())
+    sys.exit(main(args[0], args[1]))

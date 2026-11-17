@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be):
+// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
 // the start-up memory check of get_kv_cache_configs (:2627-2646), _check_enough_kv_cache_memory
 // (:1003-1040), _max_memory_usage_bytes_from_groups (:2337-2366) and
 // _estimate_max_model_len_from_groups (:2369-2412); with each spec's max_memory_usage_bytes

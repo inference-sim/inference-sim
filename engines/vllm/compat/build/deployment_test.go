@@ -122,9 +122,9 @@ func TestAdopt_RefusesTwoColocatedPools(t *testing.T) {
 }
 
 // A scenario stating a release this build models nowhere is refused, naming the release and the
-// ones it does; the compatibility engine's releases adopt to it, and 0.32.0 adopts to the v0.32.0
+// ones it does; the compatibility engine's releases adopt to it, and 0.33.0 adopts to the v0.33.0
 // engine (core/vllm, through vllmengine) with CoreEngine set. One build models one release
-// (#2021 B6), so a 0.32.0 deployment is never run as a 0.29 or 0.31 one.
+// (#2021 B6), so a 0.33.0 deployment is never run as a 0.29 or 0.31 one.
 func TestAdopt_RefusesAReleaseTheEngineDoesNotModel(t *testing.T) {
 	repos := vendoredRepos(t)
 	raw, err := os.ReadFile(filepath.Join(repos.Scenarios, "glm-5-h200-tp8-mtp3.yaml"))
@@ -134,7 +134,7 @@ func TestAdopt_RefusesAReleaseTheEngineDoesNotModel(t *testing.T) {
 	for _, c := range []struct {
 		version string
 		ok      bool
-	}{{"0.29.0", true}, {"0.31.0", true}, {"0.32.0", true}, {"0.30.0", false}, {"", false}} {
+	}{{"0.29.0", true}, {"0.31.0", true}, {"0.33.0", true}, {"0.32.0", false}, {"0.30.0", false}, {"", false}} {
 		body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "`+c.version+`"`, 1)
 		if !strings.Contains(body, `engine_version: "`+c.version+`"`) {
 			t.Fatalf("fixture has no engine_version to edit")
@@ -147,10 +147,10 @@ func TestAdopt_RefusesAReleaseTheEngineDoesNotModel(t *testing.T) {
 		switch {
 		case c.ok && err != nil:
 			t.Errorf("engine_version %s: %v, want it adopted", c.version, err)
-		case c.ok && a.CoreEngine != (c.version == "0.32.0"):
-			t.Errorf("engine_version %s: CoreEngine %t, want it set exactly for 0.32.0", c.version, a.CoreEngine)
+		case c.ok && a.CoreEngine != (c.version == "0.33.0"):
+			t.Errorf("engine_version %s: CoreEngine %t, want it set exactly for 0.33.0", c.version, a.CoreEngine)
 		case !c.ok && (err == nil || !strings.Contains(err.Error(), statedVersion(c.version)) ||
-			!strings.Contains(err.Error(), "0.29.0, 0.31.0 and 0.32.0")):
+			!strings.Contains(err.Error(), "0.29.0, 0.31.0 and 0.33.0")):
 			t.Errorf("engine_version %q: %v, want a refusal naming it and the modelled releases", c.version, err)
 		}
 	}
@@ -174,12 +174,12 @@ func TestAdopt_ReadsTheScenariosEngineRelease(t *testing.T) {
 		core         bool
 		refusal      string
 	}{
-		{"engine only, 0.32.0", "engine: {kind: vllm, version: \"0.32.0\"}\n", true, ""},
+		{"engine only, 0.33.0", "engine: {kind: vllm, version: \"0.33.0\"}\n", true, ""},
 		{"engine only, 0.31.0", "engine: {kind: vllm, version: \"0.31.0\"}\n", false, ""},
-		{"engine_version only", `engine_version: "0.32.0"` + "\n", true, ""},
-		{"both, equal", "engine: {kind: vllm, version: \"0.32.0\"}\n" + `engine_version: "0.32.0"` + "\n", true, ""},
-		{"both, unequal", "engine: {kind: vllm, version: \"0.32.0\"}\n" + `engine_version: "0.31.0"` + "\n", false,
-			`engine_version is "0.31.0" but engine.version is "0.32.0"`},
+		{"engine_version only", `engine_version: "0.33.0"` + "\n", true, ""},
+		{"both, equal", "engine: {kind: vllm, version: \"0.33.0\"}\n" + `engine_version: "0.33.0"` + "\n", true, ""},
+		{"both, unequal", "engine: {kind: vllm, version: \"0.33.0\"}\n" + `engine_version: "0.31.0"` + "\n", false,
+			`engine_version is "0.31.0" but engine.version is "0.33.0"`},
 		{"another kind", "engine: {kind: sglang, version: \"0.32.0\"}\n", false, `engine.kind is "sglang"`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -203,18 +203,18 @@ func TestAdopt_ReadsTheScenariosEngineRelease(t *testing.T) {
 	}
 }
 
-// A 0.32.0 scenario adopts with the settings blis-schemas added with the v0.32.0 engine: that
+// A 0.33.0 scenario adopts with the settings blis-schemas added with the v0.32.0 engine: that
 // engine reads or refuses each of them itself (core/vllm), so they are not the compatibility
 // engine's refusal to make.
-func TestAdopt_032LeavesItsSettingsToTheV032Engine(t *testing.T) {
+func TestAdopt_033LeavesItsSettingsToTheV033Engine(t *testing.T) {
 	repos := vendoredRepos(t)
 	raw, err := os.ReadFile(filepath.Join(repos.Scenarios, "glm-5-h200-tp8-mtp3.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "0.32.0"`, 1)
+	body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "0.33.0"`, 1)
 	body = strings.Replace(body, "      gpu_memory_utilization: 0.9\n", "      gpu_memory_utilization: 0.9\n      max_num_active_seqs: 64\n", 1)
-	if !strings.Contains(body, "max_num_active_seqs: 64") || !strings.Contains(body, `"0.32.0"`) {
+	if !strings.Contains(body, "max_num_active_seqs: 64") || !strings.Contains(body, `"0.33.0"`) {
 		t.Fatal("fixture edit failed")
 	}
 	dir := t.TempDir()
@@ -223,7 +223,7 @@ func TestAdopt_032LeavesItsSettingsToTheV032Engine(t *testing.T) {
 	}
 	a, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Data: repos.Data})
 	if err != nil || !a.CoreEngine {
-		t.Errorf("a 0.32.0 scenario stating max_num_active_seqs: %v (CoreEngine %t), want it adopted to the v0.32.0 engine", err, a.CoreEngine)
+		t.Errorf("a 0.33.0 scenario stating max_num_active_seqs: %v (CoreEngine %t), want it adopted to the v0.33.0 engine", err, a.CoreEngine)
 	}
 }
 
@@ -323,7 +323,7 @@ func TestCompatVersionsAgreeWithTheFactory(t *testing.T) {
 	}
 }
 
-// A 0.32.0 hybrid model's first pool opens on its KV cache groups, as the v0.32.0 engine checks them:
+// A 0.33.0 hybrid model's first pool opens on its KV cache groups, as the v0.33.0 engine checks them:
 // Muse-Spark-Open-816B-A42B at TP8 x EP8 on GB200 and 262,144 tokens is a hybrid model whose KV is
 // checked over its groups (the figures below are the H200 DP8 arm's, which vLLM does not build with
 // data parallelism on Hopper: vllmengine TestMuseSparkOnHopperWithDataParallelismIsRefused). At 0.31.0 the compatibility engine runs it and its own check stands,
@@ -331,7 +331,7 @@ func TestCompatVersionsAgreeWithTheFactory(t *testing.T) {
 // 2,048-token window (SequenceFixedBytes) rather than as caches that grow to 262,144 tokens
 // (blis-latency-kernel's KV per token is the full-attention layers'), so one request needs
 // about 19.2 GiB there as well.
-func TestAdopt_032HybridKVIsCheckedOverItsGroups(t *testing.T) {
+func TestAdopt_033HybridKVIsCheckedOverItsGroups(t *testing.T) {
 	repos := vendoredRepos(t)
 	src := filepath.Join("..", "..", "vllmengine", "testdata", "muse-gb200-nvl-tep8.yaml")
 	raw, err := os.ReadFile(src)
@@ -341,9 +341,9 @@ func TestAdopt_032HybridKVIsCheckedOverItsGroups(t *testing.T) {
 	for _, c := range []struct {
 		version string
 		ok      bool
-	}{{"0.32.0", true}, {"0.31.0", true}} {
+	}{{"0.33.0", true}, {"0.31.0", true}} {
 		dir := t.TempDir()
-		body := strings.Replace(string(raw), `engine_version: "0.32.0"`, `engine_version: "`+c.version+`"`, 1)
+		body := strings.Replace(string(raw), `engine_version: "0.33.0"`, `engine_version: "`+c.version+`"`, 1)
 		if err := os.WriteFile(filepath.Join(dir, "m.yaml"), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}

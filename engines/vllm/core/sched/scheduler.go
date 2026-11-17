@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/sched/scheduler.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/v1/core/sched/scheduler.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // Also vllm/v1/core/sched/request_queue.py, vllm/v1/core/sched/utils.py (check_stop) and
 // vllm/v1/core/sched/async_scheduler.py (AsyncScheduler). SWA bounded replay: scheduler.py:290-305,
 // 1047-1066, 1103-1124, 1253-1256 and 3103-3121.

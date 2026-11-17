@@ -2,9 +2,20 @@
   "kind": "FieldList",
   "engine": {
     "kind": "vllm",
-    "version": "0.32.0"
+    "version": "0.33.0"
   },
   "fields": [
+    {
+      "name": "ARCH",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
     {
       "name": "AWS_ENDPOINT_URL",
       "source": "env",
@@ -29,6 +40,17 @@
     },
     {
       "name": "CMAKE_BUILD_TYPE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "COMPILE_ONLY",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -540,6 +562,28 @@
       }
     },
     {
+      "name": "MC_FORCE_MNNVL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MC_INTRANODE_NVLINK",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "MC_SLICE_SIZE",
       "source": "env",
       "status": "proven_inert",
@@ -551,6 +595,28 @@
         "covered_classes": [
           0
         ]
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MC_USE_TENT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MC_USE_TEV1",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
       },
       "estimation": {
         "rule": "none"
@@ -794,6 +860,17 @@
       }
     },
     {
+      "name": "NCCL_RAS_ENABLE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "NCCL_SOCKET_NTHREADS",
       "source": "env",
       "status": "not_modelled",
@@ -1003,6 +1080,17 @@
       }
     },
     {
+      "name": "PYTORCH_ROCM_ARCH",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "ProgramFiles",
       "source": "env",
       "status": "not_modelled",
@@ -1015,17 +1103,6 @@
     },
     {
       "name": "RANK",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "RAY_CGRAPH_get_timeout",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -1585,6 +1662,17 @@
       }
     },
     {
+      "name": "VLLM_BEAM_ALWAYS_CONSTRAIN_OUTPUT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER",
       "source": "env",
       "status": "not_modelled",
@@ -1640,7 +1728,29 @@
       }
     },
     {
+      "name": "VLLM_CHAT_TEMPLATE_FUEL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_CHAT_TEMPLATE_RENDER_TIMEOUT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_COHERE2_ATTN_MOE_DUAL_STREAM_TOKEN_THRESHOLD",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -2550,6 +2660,17 @@
       }
     },
     {
+      "name": "VLLM_HTTP_MAX_REQUEST_BODY_SIZE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_HTTP_TIMEOUT_KEEP_ALIVE",
       "source": "env",
       "status": "not_modelled",
@@ -2979,6 +3100,28 @@
       }
     },
     {
+      "name": "VLLM_MAX_MEDIA_REQUEST_DECODE_BYTES",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_MAX_MEDIA_REQUEST_DOWNLOAD_SIZE_MB",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_MAX_NUM_BAD_WORDS",
       "source": "env",
       "status": "not_modelled",
@@ -3101,6 +3244,17 @@
     },
     {
       "name": "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_MINIMAX_M3_MSA_CUTLASS_MIN_BATCH",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -3672,6 +3826,17 @@
       }
     },
     {
+      "name": "VLLM_REQUEST_BODY_LOG_LEVEL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_RINGBUFFER_WARNING_INTERVAL",
       "source": "env",
       "status": "not_modelled",
@@ -3683,29 +3848,7 @@
       }
     },
     {
-      "name": "VLLM_ROCM_AITER_MEGA_MOE_FUSE_SHARED_EXPERTS",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "VLLM_ROCM_AITER_MLA_ASM_PADDING",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "VLLM_ROCM_AITER_MLA_DCP_VERIFY",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -3760,7 +3903,18 @@
       }
     },
     {
-      "name": "VLLM_ROCM_MONO_DECODE",
+      "name": "VLLM_ROCM_MUSE_MOE_ONLINE_QUANT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_ROCM_MUSE_MOE_REDUCE_DTYPE",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -3871,17 +4025,6 @@
     },
     {
       "name": "VLLM_ROCM_USE_AITER_FP4BMM",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "VLLM_ROCM_USE_AITER_FP4_ASM_GEMM",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -4234,6 +4377,17 @@
     },
     {
       "name": "VLLM_SSM_CONV_STATE_LAYOUT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_STEP5_SHARD_SP_SHARED_EXPERT",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -4619,50 +4773,6 @@
     },
     {
       "name": "VLLM_USE_PRECOMPILED_RUST",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "VLLM_USE_RAY_COMPILED_DAG_CHANNEL_TYPE",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "VLLM_USE_RAY_COMPILED_DAG_OVERLAP_COMM",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "VLLM_USE_RAY_V2_EXECUTOR_BACKEND",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "VLLM_USE_RAY_WRAPPED_PP_COMM",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -5392,6 +5502,28 @@
       }
     },
     {
+      "name": "attention_config.indexer_tp_shard_min_rows",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#55"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "attention_config.minimax_m3_indexer_cp",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#55"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "attention_config.minimax_m3_msa_decode_backend",
       "source": "config",
       "status": "inert_unproven",
@@ -5455,6 +5587,17 @@
       },
       "estimation": {
         "rule": "leave_unset"
+      }
+    },
+    {
+      "name": "attention_config.trtllm_ragged_backend",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#55"
+      },
+      "estimation": {
+        "rule": "none"
       }
     },
     {
@@ -5531,6 +5674,14 @@
           },
           {
             "value": 17,
+            "closed": "above"
+          },
+          {
+            "value": 128,
+            "closed": "above"
+          },
+          {
+            "value": 129,
             "closed": "above"
           },
           {
@@ -7974,6 +8125,17 @@
       }
     },
     {
+      "name": "kernel_config.monokernel",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#78"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "kernel_config.sparse_indexer_topk_backend",
       "source": "config",
       "status": "not_modelled",
@@ -8011,6 +8173,9 @@
           "turboquant_4bit_nc",
           "turboquant_k3v4_nc",
           "turboquant_3bit_nc",
+          "octave_k3v4",
+          "octave_k3v3",
+          "octave_k3v3_compact",
           "ultraquant_4bit",
           "int4_per_token_head",
           "int8_per_token_head",
@@ -8831,6 +8996,10 @@
           {
             "value": 129,
             "closed": "above"
+          },
+          {
+            "value": 512,
+            "closed": "above"
           }
         ],
         "covered_classes": [
@@ -9178,6 +9347,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-registry#75"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "monokernel",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#78"
       },
       "estimation": {
         "rule": "none"
@@ -10029,6 +10209,17 @@
       }
     },
     {
+      "name": "reasoning_effort_map",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#54"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "reasoning_parser",
       "source": "config",
       "status": "inert_unproven",
@@ -10284,6 +10475,17 @@
       }
     },
     {
+      "name": "sleep_mode_backend",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#54"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "sleep_mode_offload_cudagraph",
       "source": "config",
       "status": "not_modelled",
@@ -10394,7 +10596,29 @@
       }
     },
     {
+      "name": "speculative_config.disable_lookahead_block_hashes",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#58"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "speculative_config.disable_padded_drafter_batch",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#58"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "speculative_config.draft_lm_head_quantization",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
@@ -10579,6 +10803,39 @@
       }
     },
     {
+      "name": "speculative_config.fly_entropy_threshold",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#29"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "speculative_config.fly_entropy_top_k",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#29"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "speculative_config.fly_window_size",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#29"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "speculative_config.index_share_for_mtp_iteration",
       "source": "config",
       "status": "not_modelled",
@@ -10626,8 +10883,6 @@
         "type": "enumerated",
         "values": [
           "ngram",
-          "medusa",
-          "mlp_speculator",
           "draft_model",
           "suffix",
           "custom_class",
@@ -10656,6 +10911,7 @@
           "kimi_k3_mtp",
           "pangu_ultra_moe_mtp",
           "step3p5_mtp",
+          "step5_mtp",
           "hy_v3_mtp",
           "hy_v4_mtp",
           "gemma4_mtp",
@@ -10807,7 +11063,8 @@
         "values": [
           "standard",
           "synthetic",
-          "block"
+          "block",
+          "fly"
         ],
         "covered": [
           "block",
@@ -10937,6 +11194,17 @@
       },
       "estimation": {
         "rule": "leave_unset"
+      }
+    },
+    {
+      "name": "speculative_config.xpress_topc",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#58"
+      },
+      "estimation": {
+        "rule": "none"
       }
     },
     {
@@ -11388,6 +11656,39 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#57"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "watchdog_config.check_interval",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#55"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "watchdog_config.dump_dir",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#55"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "watchdog_config.timeout",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#55"
       },
       "estimation": {
         "rule": "none"

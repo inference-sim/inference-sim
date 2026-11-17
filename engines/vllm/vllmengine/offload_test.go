@@ -49,7 +49,7 @@ func preparedOffload(t *testing.T, spec engine.Spec) (kvOffload, int64) {
 // Both run through engine.New (runWithReload).
 func TestMuseSparkArmDOffload(t *testing.T) {
 	Register()
-	armD := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h100-roce-armD.yaml")}
+	armD := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, "muse-h100-roce-armD.yaml")}
 	o, _ := preparedOffload(t, armD)
 	if o.Connector != "OffloadingConnector" || o.CPUBytes != 1<<40 || o.Workers != 16 || o.Copies != 16 ||
 		o.EvictionPolicy != "lru" || o.BytesPerBlock != 32768 {
@@ -60,7 +60,7 @@ func TestMuseSparkArmDOffload(t *testing.T) {
 	// offloading/config.py:136-145@5df63a72): vLLM groups Muse's layers so each worker's block is 8
 	// layer pages at PP2 (16 at PP1), each 16 tokens x 2 KV heads a rank at TP8 x 64 x K,V x 1 byte
 	// of fp8 = 4096 bytes.
-	twinO, _ := preparedOffload(t, engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0",
+	twinO, _ := preparedOffload(t, engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0",
 		Roots: roots(t, "muse-h100-roce-armD-pp1-sync.yaml")})
 	if twinO.BytesPerBlock != 65536 || twinO.Workers != 8 || twinO.Copies != 8 {
 		t.Fatalf("the PP1 twin's kv_offload %+v, want 65536 bytes a block over 8 workers and copies", twinO)
@@ -81,7 +81,7 @@ func TestMuseSparkArmDOffload(t *testing.T) {
 	setIfAbsent(&armD.Config, "num_gpu_blocks", "20000")
 	runWithReload(t, armD, 6144, 30_000_000)
 
-	twin := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h100-roce-armD-pp1-sync.yaml")}
+	twin := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, "muse-h100-roce-armD-pp1-sync.yaml")}
 	o, blocks := preparedOffload(t, twin)
 	if o.CPUBytes != 512<<30 || o.Workers != 8 || o.Copies != 8 {
 		t.Fatalf("the twin's kv_offload %+v, want 512 GiB over 8 workers' copies", o)
@@ -193,7 +193,7 @@ func TestOffloadMappingRefusals(t *testing.T) {
 			}
 			r := roots(t, "muse-h100-roce-armD-pp1-sync.yaml")
 			r[RootScenario] = path
-			_, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}, nil)
+			_, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r}, nil)
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("err %v, want a refusal naming %q", err, c.want)
 			}
@@ -216,7 +216,7 @@ func TestOffloadMappingBlocksPerChunk(t *testing.T) {
 	}
 	r := roots(t, "muse-h100-roce-armD-pp1-sync.yaml")
 	r[RootScenario] = path
-	o, _ := preparedOffload(t, engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
+	o, _ := preparedOffload(t, engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r})
 	if o.BlockSize != 64 {
 		t.Fatalf("kv_offload block_size %d, want 4 blocks of 16 tokens", o.BlockSize)
 	}
@@ -227,7 +227,7 @@ func TestOffloadMappingBlocksPerChunk(t *testing.T) {
 // the kernel's cpu_dram TierTime for n x those bytes.
 func TestAnOffloadTransferMovesThePoolsBytes(t *testing.T) {
 	Register()
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h100-roce-armD.yaml")}
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, "muse-h100-roce-armD.yaml")}
 	o, _ := preparedOffload(t, spec)
 	p, err := pricerFor(spec, nil)
 	if err != nil {
@@ -280,7 +280,7 @@ func armDVariant(t *testing.T, parallel string) map[string]string {
 func TestAPipelinedCPUTierIsSizedFromRankZero(t *testing.T) {
 	Register()
 	r := armDVariant(t, "{tp: 2, pp: 8, dp: 1, enable_expert_parallel: true}")
-	p, err := open(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}, nil)
+	p, err := open(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func TestAPipelinedCPUTierIsSizedFromRankZero(t *testing.T) {
 		t.Fatalf("stage bytes a block %v binding %d, want rank 0 at 32768 and the binding last rank at 49152",
 			sp.perBlock, sp.binding)
 	}
-	o, _ := preparedOffload(t, engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
+	o, _ := preparedOffload(t, engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r})
 	if o.BytesPerBlock != 32768 || o.Workers != 16 || o.Copies != 16 {
 		t.Fatalf("kv_offload %+v, want rank 0's 32768 bytes a block over 16 workers and copies", o)
 	}
@@ -312,7 +312,7 @@ func TestAPipelinedCPUTierIsSizedFromRankZero(t *testing.T) {
 // n x (4 x 7 + 8) pages on rank 1, 147456n bytes, not 5n blocks x the pool's 32768.
 func TestAnOffloadJobMovesEachGroupsLayers(t *testing.T) {
 	Register()
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h100-roce-armD.yaml")}
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, "muse-h100-roce-armD.yaml")}
 	p, err := pricerFor(spec, nil)
 	if err != nil {
 		t.Fatal(err)

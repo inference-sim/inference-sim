@@ -16,16 +16,25 @@ The oracle is vLLM itself, at the pinned release, running on CPU with no GPU. Th
 - it calls `schedule()` and `update_from_output()` as `EngineCore` does, one step at a time.
 
 **Patch the environment, never the decisions.** The oracle may replace only the GPU, the clock,
-transports and external services. Every replacement is listed in `oracle/mocks.json` with its
-kind and how it is made, and `oracle/check_mocks.py` (run in CI) checks three things:
-- each entry's kind is `gpu`, `clock`, `transport`, `environment` or `external-service`, and no
-  entry whose symbol is a dotted path under vLLM's decision modules (`vllm.v1.core.`,
-  `vllm.v1.engine.core`, `vllm.distributed.kv_transfer.kv_connector.v1.`,
-  `vllm.v1.kv_offload.`) is anything but a clock;
-- every place an `oracle/run_*.py` writes into an object it did not build (attribute and item
-  stores, `setattr`, `del`, `object.__new__`) is a listed site of some entry, and every listed
-  site is one a runner makes;
-- the mock version names the list's digest.
+transports, the environment, the platform and external services, and copy upstream code only in
+a declared transcription. Every replacement is listed in `oracle/mocks.json` with its
+kind and how it is made, and `oracle/check_mocks.py` (run in CI) checks four things:
+- each entry's kind is `gpu`, `clock`, `transport`, `environment`, `platform`,
+  `external-service` or `transcription`, and no entry whose symbol is a dotted path under vLLM's
+  decision modules (the `decision_prefixes` of `oracle/harness.json`) is anything but a clock or a
+  declared transcription, and a transcription's sites install only its declared copy;
+- every place an `oracle/run_*.py` (the `harness_files` of `oracle/harness.json`) writes into an
+  object it did not build (attribute and item stores, `setattr`, `del`, `object.__new__`) is a
+  listed site of some entry, and every listed site is one a runner makes;
+- the mock version names the list's digest;
+- a runner with a `Derived from` header, or a function named like one of the configuration's
+  `upstream_names`, is declared by a `transcription` entry (FID-8).
+
+`oracle/check_mocks.py`, `oracle/check_goldens.py`, `oracle/check_lock.py` and `.golangci.yml`
+are copies of blis-substrate's `contracts/harness` at the substrate version `go.mod` selects,
+the scripts every engine repository runs; `oracle/harness.json` is blis-vllm's configuration of
+them. `TestHarnessCopiesAreCurrent` fails when a copy differs; regenerate them with
+`go run github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles`.
 
 The check reads symbols and sites; it cannot judge an entry's prose. Entries named in words
 rather than by a dotted symbol are not covered by the first test. These include "EngineCore

@@ -18,6 +18,10 @@ import (
 	_ "embed"
 	"fmt"
 	"runtime/debug"
+
+	"github.com/inference-sim/blis-substrate/contracts/harness"
+
+	"github.com/inference-sim/blis-vllm/internal/upstream"
 )
 
 // Kind is the engine kind this module registers with the contracts' engine factory.
@@ -25,17 +29,14 @@ const Kind = "vllm"
 
 // Upstream identifies the vLLM release this build models.
 var Upstream = UpstreamRelease{
-	Version: "0.32.0",
-	Tag:     "v0.32.0",
-	Commit:  "5df63a7203cdb9328d824a27b682e77c7b9928be",
+	Version: upstream.Version,
+	Tag:     upstream.Tag,
+	Commit:  upstream.Commit,
 }
 
-// UpstreamRelease is one vLLM release.
-type UpstreamRelease struct {
-	Version string
-	Tag     string
-	Commit  string
-}
+// UpstreamRelease is one vLLM release: blis-substrate's harness.Upstream, the record every engine
+// repository uses (design §14.3).
+type UpstreamRelease = harness.Upstream
 
 // Provenance is what a run must record to be reproduced: the engine kind, the upstream
 // release it models and this module's own revision. A simulator writes it into its results
@@ -47,7 +48,7 @@ type Provenance struct {
 	// Module is this module's version as the build recorded it: a release tag, or a
 	// pseudo-version naming the commit; "(devel)" in a build of this repository itself.
 	Module string `json:"module" yaml:"module"`
-	// Behaviour names the behaviour the engine executes: "vllm-0.32.0", or a compatibility
+	// Behaviour names the behaviour the engine executes: "vllm-0.33.0", or a compatibility
 	// behaviour a scenario selected (see Compat).
 	Behaviour string `json:"behaviour" yaml:"behaviour"`
 }

@@ -25,7 +25,7 @@ type recorder interface{ RecordSelected(*load.Data) }
 // fresh host Data puts there.
 func selectedBy(t *testing.T, scenario string, pool int) ([]load.Selected, engine.Engine) {
 	t.Helper()
-	e, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, scenario), Pool: pool}})
+	e, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, scenario), Pool: pool}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func selectedBy(t *testing.T, scenario string, pool int) ([]load.Selected, engin
 func openedWith(t *testing.T, scenario string, pool int) []load.Selected {
 	t.Helper()
 	host := embeddedData(t)
-	_, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, scenario), Pool: pool}, Data: host})
+	_, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, scenario), Pool: pool}, Data: host})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestRecordSelectedRegistersEachPricingKernel(t *testing.T) {
 	// Several instances of one pool, each registered once into one host Data.
 	host := embeddedData(t)
 	for range 3 {
-		e, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "d058-032.yaml")}})
+		e, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, "d058-032.yaml")}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -110,7 +110,7 @@ func narrowOverlay(t *testing.T, scenario string) (string, load.Selected) {
 	Register()
 	pick := func(pool int) []load.Selected {
 		host := embeddedData(t)
-		if _, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, scenario), Pool: pool}, Data: host}); err != nil {
+		if _, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, scenario), Pool: pool}, Data: host}); err != nil {
 			t.Fatal(err)
 		}
 		return host.Report().Selected
@@ -208,7 +208,7 @@ func buildWithOverlay(t *testing.T, overlay, scenario string, pool int) engine.E
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, scenario), Pool: pool}, Data: data})
+	e, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, scenario), Pool: pool}, Data: data})
 	if err != nil {
 		t.Fatal(err)
 	}
