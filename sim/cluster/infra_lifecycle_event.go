@@ -62,9 +62,7 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 		if model == "" {
 			model = cs.config.Model
 		}
-		if !cs.addLiveInstance(p.id, model, p.simCfg, p.nodeID, p.gpuIDs, p.tpDegree, instCost) {
-			continue // GPU release already handled by addLiveInstance
-		}
+		cs.addLiveInstance(p.id, model, p.simCfg, p.nodeID, p.gpuIDs, p.tpDegree, instCost)
 	}
 }
 
