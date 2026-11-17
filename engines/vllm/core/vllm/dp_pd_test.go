@@ -646,3 +646,29 @@ func TestADataParallelPodWithDeepSeekV41LayersPassesTheContract(t *testing.T) {
 		})
 	}
 }
+
+// A MultiConnector producer group (NIXL beside the offloading connector) across nodes states the node that
+// holds each request too: the handoff the NIXL child keeps goes through the same group as a plain NIXL
+// producer's.
+func TestAMultiConnectorProducerGroupAcrossNodesStatesTheNodeThatHoldsEachRequest(t *testing.T) {
+	pe := newHostEngine(t, multiBlock(nixlFirst)+dpPool(2, 1, 2), 0)
+	h := &host{t: t, engs: []*hostEngine{pe}}
+	g := pe.e.(*DPGroup)
+	const n = 6
+	for i := 0; i < n; i++ {
+		r := req(strings.Repeat("m", i+1), 80, 6)
+		r.RemoteDecode, r.MaxOutputTokens = true, 1
+		if err := g.Add(r, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.run(func() bool { return len(pe.handoffs) == n })
+	if len(pe.handoffs) != n {
+		t.Fatalf("%d handoffs, want %d", len(pe.handoffs), n)
+	}
+	for _, ho := range pe.handoffs {
+		if ho.At == nil {
+			t.Fatalf("handoff of %s states no endpoint on a MultiConnector group that spans nodes", ho.ID)
+		}
+	}
+}
