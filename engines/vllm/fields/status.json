@@ -2600,12 +2600,14 @@
   },
   "config:kv_cache_memory_bytes": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#81"
+    "traces": [
+     "vllmengine/kvcachememory_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:kv_cache_metrics": {
    "estimation": {
