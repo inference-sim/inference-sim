@@ -1620,6 +1620,11 @@ def test_expert_shape_matches_config(d: Path):
 # everything would pass every per-model check above.
 EXPECTED_IDENTICAL = {
 
+    frozenset({"deepseek-r1-0528-fp4-v2", "deepseek-r1-0528-nvfp4-v2"}):
+        "one set of files under two repository names. nvidia/DeepSeek-R1-0528-FP4-V2 and "
+        "nvidia/DeepSeek-R1-0528-NVFP4-v2 both resolve to revision 25a138f2, with the same "
+        "config.json and shard headers; InferenceX's recipes serve it by either name",
+
     frozenset({"minimax-m2.5", "minimax-m2.7"}):
         "one architecture across two MiniMax-M2 generations. Every cost-relevant field is "
         "identical: 62 layers, hidden 3072, 256 experts at top-8, intermediate 1536, 48 "
@@ -8965,6 +8970,25 @@ def test_dsr1_fp4_refuses_a_draft_layer_its_one_node_cannot_price(tmp_path):
         h[m + ".weight_scale"] = {"dtype": "F8_E4M3", "shape": [2048, 7168 // 16]}
     with pytest.raises(derive_graph.DeriveError, match="one node cannot price both"):
         _derive_dsr1_fp4(_dsr1_fp4_headers(edit), tmp_path)
+
+
+def test_dsr1_second_repository_name_prices_the_same_weights():
+    """InferenceX's recipes serve DeepSeek-R1-0528 FP4 under two repository names, FP4-V2 and
+    NVFP4-v2, one set of files at one revision. The scorer finds a model by the repository a
+    recipe names and then by its base_model, which for the second name is the FP8 checkpoint, so
+    the second name needs an entry whose graph is the first's: same widths, the same speculator,
+    and the same file pins."""
+    a = DSR1_FP4
+    b = MODELS / "deepseek-r1-0528-nvfp4-v2"
+    ga, gb = graph_of(a), graph_of(b)
+    ga.pop("name"), gb.pop("name")
+    assert ga == gb
+    assert {w for k in gb["layer_kinds"] for n in k["nodes"] if (w := n.get("weight_dtype"))} >= {"nvfp4", "bf16"}
+    ya = yaml.safe_load((a / "model.yaml").read_text())
+    yb = yaml.safe_load((b / "model.yaml").read_text())
+    assert yb["source"]["repo"] == "nvidia/DeepSeek-R1-0528-NVFP4-v2"
+    assert (yb["source"]["revision"], yb["shard_index"], yb["headers"]) == (
+        ya["source"]["revision"], ya["shard_index"], ya["headers"])
 
 
 KIMI_K26_NVFP4 = MODELS / "kimi-k2.6-nvfp4"
