@@ -141,12 +141,24 @@ func (g *DPGroup) SetClientCount(k int) error {
 // front end keeps (engine_inflight, vllm/v1/engine/core_client.py:1569-1570, :1639, :1655-1660 at
 // v0.31.0): raised when it sends a request, lowered when the request finishes. The ranks'
 // published counts are the group's own (Counts), sampled once a stats period as the balancer does.
+// With several API servers (SetClientCount) the group picks the client and uses that client's own counts.
 func (g *DPGroup) PickRank(now engine.Time, inFlight []int) (int, error) {
 	if len(inFlight) != len(g.ranks) {
 		return 0, fmt.Errorf("contract: %d in-flight counts for a group of %d ranks", len(inFlight), len(g.ranks))
 	}
 	if len(g.lbs) > 1 {
-		return 0, fmt.Errorf("contract: api_server_count %d: PickRank takes the group's in-flight counts, and each of %d clients scales only its own", len(g.lbs), len(g.lbs))
+		// Several API servers: the arrival reaches the next client in turn, which balances from its
+		// own in-flight counts (a client scales only its own, core_client.py:1786@4ba787ec). The
+		// group keeps those counts, so the host's single vector is not used; the request's AddToRank
+		// that follows is counted against the same client.
+		c := g.arrivals % len(g.lbs)
+		g.arrivals++
+		view := make([]dplb.Rank, len(g.ranks))
+		for k := range g.ranks {
+			view[k] = frontRank{dpRank: dpRank{g: g, k: k}, inFlight: g.cin[c][k]}
+		}
+		g.via = c
+		return g.lbs[c].Pick(view, now), nil
 	}
 	view := make([]dplb.Rank, len(g.ranks))
 	for k := range g.ranks {
@@ -194,6 +206,7 @@ func (g *DPGroup) AddToRank(k int, r engine.Request, now engine.Time) error {
 	g.inflight[k]++
 	g.clientOf[r.ID] = g.via
 	g.cin[g.via][k]++
+	g.via = 0 // consumed: the next arrival's client is picked by PickRank or Add
 	if e.core.HasWaiting() {
 		g.ask(now)
 	}
