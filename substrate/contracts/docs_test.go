@@ -248,6 +248,7 @@ var documented = map[string]struct {
 	"workload.CorpusSource":       {typ: reflect.TypeOf(workload.CorpusSource{})},
 	"workload.TrajectoryStart":    {typ: reflect.TypeOf(workload.TrajectoryStart{})},
 	"workload.Warmup":             {typ: reflect.TypeOf(workload.Warmup{})},
+	"workload.ConstantLoad":       {typ: reflect.TypeOf(workload.ConstantLoad{})},
 	"trace.Header":                {typ: reflect.TypeOf(trace.Header{})},
 	"trace.KVOffload":             {typ: reflect.TypeOf(trace.KVOffload{})},
 	"trace.KVOffloadTier":         {typ: reflect.TypeOf(trace.KVOffloadTier{})},
