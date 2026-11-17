@@ -50,9 +50,7 @@ jobs:
         uses: ./.github/actions/oracle-fuzz
         with:
           python-version: ${{ steps.python.outputs.python-version }}
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        with:
-          go-version-file: go.mod
+      - uses: inference-sim/blis-substrate/.github/actions/go-toolchain@883a2709c250e4724ce11d1d6ba2cc12662b01e7 # v0.15.0
       - name: mutation sweeps
         run: |
           set -o pipefail

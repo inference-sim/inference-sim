@@ -1,4 +1,69 @@
 {
+ "data_parallel_hybrid_lb": {
+  "stated": [
+   {
+    "trace": "oracle/scenarios-dp-modes/dp4-hybrid-local2.json",
+    "values": [
+     true
+    ],
+    "why": "the scenario states hybrid balancing with 2 ranks per node; oracle/run_dp.py runs one DPLBAsyncMPClient per node over that node's ranks, and vLLM's trace is produced by CI (TestDPModesAgainstVLLM)"
+   },
+   {
+    "trace": "core/engine/testdata/golden-dp/dp4-lb.json",
+    "values": [
+     false
+    ],
+    "why": "the recorded DP routing traces state no balancing flag, so oracle/run_dp.py runs vLLM's default, the internal balancer: hybrid false"
+   }
+  ]
+ },
+ "data_parallel_external_lb": {
+  "stated": [
+   {
+    "trace": "oracle/scenarios-dp-modes/dp4-external-rank-affinity.json",
+    "values": [
+     true
+    ],
+    "why": "the scenario states external balancing; oracle/run_dp.py runs each rank as a one-engine front end (vLLM's DPLBAsyncMPClient over that one rank; its DPAsyncMPClient returns the same engine) and vLLM's trace is produced by CI (TestDPModesAgainstVLLM)"
+   },
+   {
+    "trace": "core/engine/testdata/golden-dp/dp4-lb.json",
+    "values": [
+     false
+    ],
+    "why": "the recorded DP routing traces state no balancing flag, so oracle/run_dp.py runs the internal balancer: external false"
+   }
+  ]
+ },
+ "data_parallel_multi_port_external_lb": {
+  "stated": [
+   {
+    "trace": "oracle/scenarios-dp-modes/dp4-external-multi-port.json",
+    "values": [
+     true
+    ],
+    "why": "the scenario states the multi-port launcher, which runs one external rank server per local rank; oracle/run_dp.py runs it as external balancing and vLLM's trace is produced by CI (TestDPModesAgainstVLLM)"
+   },
+   {
+    "trace": "core/engine/testdata/golden-dp/dp4-lb.json",
+    "values": [
+     false
+    ],
+    "why": "the recorded DP routing traces state no balancing flag: multi-port false"
+   }
+  ]
+ },
+ "data_parallel_size_local": {
+  "stated": [
+   {
+    "trace": "oracle/scenarios-dp-modes/dp4-hybrid-local2.json",
+    "values": [
+     2
+    ],
+    "why": "the scenario states 2 ranks per node under hybrid balancing; vLLM's trace is produced by CI (TestDPModesAgainstVLLM)"
+   }
+  ]
+ },
  "api_server_count": {
   "stated": [
    {
@@ -238,6 +303,15 @@
      "fp8"
     ],
     "why": "the tests set fp8 (the engine block's cache_dtype key, which the field list names kv_cache_dtype until a later rename) for gpt-oss-120b, minimax-m2.5, minimax-m3, kimi-k2.5 and deepseek-v4-pro and compare the pool bytes per block with vLLM's; the DeepSeek-V4 pool is the packed fp8_ds_mla layout of the default FlashMLA backend"
+   }
+  ]
+ },
+ "kv_cache_memory_bytes": {
+  "stated": [
+   {
+    "trace": "vllmengine/kvcachememory_test.go",
+    "values": [21474836480],
+    "why": "the test states 20 GiB on DeepSeek-V4-Pro at tensor parallel 8 on H200, at two gpu_memory_utilization values, and finds the KV pool equal to the stated bytes over the bytes a block costs in both, where without the key the pool follows the utilization; a cache larger than the device with the rank's fixed memory is refused"
    }
   ]
  },

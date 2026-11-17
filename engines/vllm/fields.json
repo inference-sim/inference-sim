@@ -6655,9 +6655,19 @@
     {
       "name": "data_parallel_external_lb",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#86"
+        "traces": [
+          "oracle/scenarios-dp-modes/dp4-external-rank-affinity.json",
+          "core/engine/testdata/golden-dp/dp4-lb.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
         "rule": "leave_unset"
@@ -6666,9 +6676,20 @@
     {
       "name": "data_parallel_hybrid_lb",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#64"
+        "traces": [
+          "oracle/scenarios-dp-modes/dp4-hybrid-local2.json",
+          "oracle/scenarios-dp-modes/dp4-hybrid-local2-lag.json",
+          "core/engine/testdata/golden-dp/dp4-lb.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
         "rule": "leave_unset"
@@ -6677,9 +6698,19 @@
     {
       "name": "data_parallel_multi_port_external_lb",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#86"
+        "traces": [
+          "oracle/scenarios-dp-modes/dp4-external-multi-port.json",
+          "core/engine/testdata/golden-dp/dp4-lb.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -6742,9 +6773,27 @@
     {
       "name": "data_parallel_size_local",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "traces": [
+          "oracle/scenarios-dp-modes/dp4-hybrid-local2.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          2
+        ]
       },
       "estimation": {
         "rule": "leave_unset"
@@ -7647,12 +7696,23 @@
     {
       "name": "enable_scale_out",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#54"
+        "traces": [
+          "core/vllm/testdata/golden-render/stated-false.json",
+          "core/vllm/testdata/golden-render/stated-true.json",
+          "core/vllm/testdata/golden-render/unset.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -8437,12 +8497,20 @@
     {
       "name": "kv_cache_memory_bytes",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#81"
+        "traces": [
+          "vllmengine/kvcachememory_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {

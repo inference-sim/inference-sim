@@ -75,6 +75,7 @@ ORACLE_PATHS = [
     r"^\.github/shards/weights-inertness\.txt$",
     r"^docs/metrics-(manifest|buckets)\.json$",
     r"^core/kv/testdata/",
+    r"^core/vllm/testdata/golden-render/",
     r"^compat/quantization/resolved\.json$",
     r"^core/lower/testdata/",
     r"^rules/engineconfig/testdata/",

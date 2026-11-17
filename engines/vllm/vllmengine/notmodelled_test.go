@@ -58,6 +58,7 @@ var engineKeys = map[string][]string{
 	"disable_cascade_attn":                     {"disable_cascade_attn"},
 	"enable_prefix_caching":                    {"enable_prefix_caching"},
 	"swa_bounded_replay":                       {"swa_bounded_replay"},
+	"enable_scale_out":                         {"enable_scale_out"},
 	"block_size":                               {"block_size"},
 	"max_num_batched_tokens":                   {"max_num_batched_tokens"},
 	"max_num_seqs":                             {"max_num_seqs"},
@@ -114,7 +115,6 @@ var engineKeys = map[string][]string{
 
 // refused sets each refused field in the engine block, as YAML under pools[0].engine.
 var refused = map[string]string{
-	"kv_cache_memory_bytes":                 "kv_cache_memory_bytes: 4294967296\n",
 	"attention_config.use_trtllm_attention": "attention_config: {use_trtllm_attention: true}\n",
 	"attention_config.mla_prefill_backend":  "attention_config: {mla_prefill_backend: FLASHINFER}\n",
 	"kernel_config.linear_backend":          "linear_backend: flashinfer\n",
@@ -158,7 +158,6 @@ var atDefault = map[string]string{
 // noDefaultValue lists the refused keys that vLLM leaves unstated (None), so no stated value is the
 // default and every stated one is a choice. Each cites the line that makes it None.
 var noDefaultValue = map[string]string{
-	"kv_cache_memory_bytes":                 "vllm/config/cache.py:257@5df63a72",
 	"attention_config.use_trtllm_attention": "vllm/config/attention.py:74@5df63a72",
 	"attention_config.mla_prefill_backend":  "vllm/config/attention.py:81@5df63a72",
 	"speculative_config.kv_cache_dtype":     "vllm/config/speculative.py:428@5df63a72",
@@ -406,30 +405,6 @@ func blockOf(t *testing.T, key string) deployment.EngineBlock {
 		t.Fatal(err)
 	}
 	return deployment.NewEngineBlock(n.Content[0])
-}
-
-// A stated kv_cache_memory_bytes replaces gpu_memory_utilization in vLLM
-// (vllm/config/cache.py:257-264@5df63a72). The port sizes the cache from the latter, so a
-// deployment that states the former was sized from 0.92, about 23 times too large for 4 GiB on a
-// 70B model. It is refused, citing blis-vllm#81, and the same deployment with the key removed builds.
-func TestAStatedKVCacheMemoryBytesIsRefusedNotSizedFromTheDefault(t *testing.T) {
-	Register()
-	raw, err := os.ReadFile(filepath.Join("..", "kerneltests", "testdata", "aisimulate", "llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := strings.Replace(string(raw), "      gpu_memory_utilization: 0.92\n", "      kv_cache_memory_bytes: 4294967296\n", 1)
-	if body == string(raw) {
-		t.Fatal("the fixture states no gpu_memory_utilization: 0.92 to replace")
-	}
-	path := filepath.Join(t.TempDir(), "v.yaml")
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_, err = engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: map[string]string{RootScenario: path}})
-	if err == nil || !strings.Contains(err.Error(), "kv_cache_memory_bytes") || !strings.Contains(err.Error(), "blis-vllm/issues/81") {
-		t.Fatalf("err %v, want a refusal naming kv_cache_memory_bytes and citing #81", err)
-	}
 }
 
 // dp_sync_interval is a key of the engine block, so a deployment can state it, and the data-
