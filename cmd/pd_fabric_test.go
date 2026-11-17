@@ -71,6 +71,16 @@ func fabricAssumed(t *testing.T, stdout string) bool {
 	return false
 }
 
+// engineRefuses lists the shipped disaggregated scenarios the pinned engine refuses, each with
+// the reason it states. The fabric set of these is checked in the file; they are not run.
+var engineRefuses = map[string]string{
+	// An offload layout the engine refuses until blis-vllm#146: the KV cache group's block is
+	// smaller than the hash block.
+	"deepseek-v4.1-flash-h100-1p1d-dspark5-cpu1t.yaml": "is not a multiple of the hash block size",
+	// A prefill data-parallel group that spans nodes: the handoff names no endpoint (blis-substrate#48).
+	"minimax-m2.5-gb200-1p1d-dp2.yaml": "spans 2 nodes",
+}
+
 func TestShippedPDScenariosStateTheFabricSet(t *testing.T) {
 	files := pdScenarioFiles(t)
 	if len(files) < 6 {
@@ -85,12 +95,18 @@ func TestShippedPDScenariosStateTheFabricSet(t *testing.T) {
 				"--rate", "5", "--num-requests", "6", "--seed", "3",
 				"--speculative-thinking", "on", "--speculative-category", "coding"}, pdFlags(f)...)
 			stdout, stderr, err := runKernelCLI(t, args...)
-			if err != nil && (strings.Contains(stderr, "not modelled") || strings.Contains(stderr, "blis-substrate#48") ||
-				strings.Contains(stderr, "is not diff-tested")) {
-				// The engine does not build this deployment at this pin: a prefill data-parallel group that spans
-				// nodes, or an offload connector beside a KV cache group that holds a drafter's layers (the DeepSeek
-				// V4.1 + DSpark + CPU tier fixture). The file's set list, checked above, is all there is.
-				t.Skipf("%s is not built by the pinned engine: %s", f, lastLines(stderr, 1))
+			want, listed := engineRefuses[filepath.Base(f)]
+			if listed {
+				// The scenario is expected to be refused: it must be, with the stated reason, so a
+				// scenario that starts to run (or is refused for another reason) fails here and the
+				// entry is removed or corrected.
+				if err == nil {
+					t.Fatalf("%s is listed as refused by the engine but ran: remove it from engineRefuses", f)
+				}
+				if !strings.Contains(stderr, want) {
+					t.Fatalf("%s is refused, but not for %q:\n%s", f, want, lastLines(stderr, 3))
+				}
+				return
 			}
 			if err != nil {
 				t.Fatalf("%v\n%s", err, lastLines(stderr, 5))

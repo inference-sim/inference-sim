@@ -36,8 +36,10 @@ type SimulationTrace struct {
 	Disaggregations []DisaggregationRecord
 	PrefillRoutings []PrefillRoutingRecord
 	DecodeRoutings  []DecodeRoutingRecord
-	EncodeRoutings  []EncodeRoutingRecord // GAP-4 (issue #1264)
+	EncodeRoutings  []EncodeRoutingRecord // E/P/D encode routing
 	KVTransfers     []KVTransferRecord
+	ModelScales     []ModelScaleRecord   // model autoscaler decisions as applied (#743)
+	ClusterScales   []ClusterScaleRecord // cluster autoscaler decisions as applied (#743)
 }
 
 // NewSimulationTrace creates a SimulationTrace ready for recording.
@@ -65,6 +67,16 @@ func (st *SimulationTrace) RecordRouting(record RoutingRecord) {
 }
 
 // RecordDisaggregation appends a disaggregation decision record.
+// RecordModelScale appends a model-autoscaler scale record.
+func (st *SimulationTrace) RecordModelScale(record ModelScaleRecord) {
+	st.ModelScales = append(st.ModelScales, record)
+}
+
+// RecordClusterScale appends a cluster-autoscaler scale record.
+func (st *SimulationTrace) RecordClusterScale(record ClusterScaleRecord) {
+	st.ClusterScales = append(st.ClusterScales, record)
+}
+
 func (st *SimulationTrace) RecordDisaggregation(record DisaggregationRecord) {
 	st.Disaggregations = append(st.Disaggregations, record)
 }
@@ -84,7 +96,7 @@ func (st *SimulationTrace) RecordKVTransfer(record KVTransferRecord) {
 	st.KVTransfers = append(st.KVTransfers, record)
 }
 
-// RecordEncodeRouting appends an encode pool routing decision record (GAP-4, #1264).
+// RecordEncodeRouting appends an encode pool routing decision record.
 func (st *SimulationTrace) RecordEncodeRouting(record EncodeRoutingRecord) {
 	st.EncodeRoutings = append(st.EncodeRoutings, record)
 }

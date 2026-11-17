@@ -1,0 +1,77 @@
+# An InferencePool selecting every simulated model-server pod, and one InferenceObjective
+# per BLIS SLO class, at the priorities of BLIS's engine SLO priority map. A scenario names it
+# in its router block's manifests and selects the pool with --pool-name=blis-pool
+# --pool-namespace=default in epp_flags (examples/llm-d/scenarios/*-inferencepool.yaml).
+# Shapes from llm-d-router deploy/components/inference-gateway/inference-pools.yaml and
+# config/manifests/inferenceobjective.yaml (here as llm-d.ai/v1; llm-d.ai/v1alpha2 is read too).
+apiVersion: inference.networking.k8s.io/v1
+kind: InferencePool
+metadata:
+  name: blis-pool
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      llm-d.ai/inference-serving: "true"
+  endpointPickerRef:
+    name: blis-epp
+    kind: Service
+    port:
+      number: 9002
+  targetPorts:
+  - number: 8000
+---
+apiVersion: llm-d.ai/v1
+kind: InferenceObjective
+metadata:
+  name: critical
+spec:
+  priority: 4
+  poolRefs:
+  - group: inference.networking.k8s.io
+    kind: InferencePool
+    name: blis-pool
+---
+apiVersion: llm-d.ai/v1
+kind: InferenceObjective
+metadata:
+  name: standard
+spec:
+  priority: 3
+  poolRefs:
+  - group: inference.networking.k8s.io
+    kind: InferencePool
+    name: blis-pool
+---
+apiVersion: llm-d.ai/v1
+kind: InferenceObjective
+metadata:
+  name: batch
+spec:
+  priority: -1
+  poolRefs:
+  - group: inference.networking.k8s.io
+    kind: InferencePool
+    name: blis-pool
+---
+apiVersion: llm-d.ai/v1
+kind: InferenceObjective
+metadata:
+  name: sheddable
+spec:
+  priority: -2
+  poolRefs:
+  - group: inference.networking.k8s.io
+    kind: InferencePool
+    name: blis-pool
+---
+apiVersion: llm-d.ai/v1
+kind: InferenceObjective
+metadata:
+  name: background
+spec:
+  priority: -3
+  poolRefs:
+  - group: inference.networking.k8s.io
+    kind: InferencePool
+    name: blis-pool

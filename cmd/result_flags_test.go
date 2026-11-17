@@ -207,15 +207,11 @@ func TestResultFlags_ReportOnlyFlagsAreRecordedAndExemptFlagsChangeNothing(t *te
 		t.Fatalf("baseline: %v\n%s", err, lastLines(stderr, 3))
 	}
 	b := parseResult(t, base)
-	sat := filepath.Join(t.TempDir(), "sat.yaml")
-	if err := os.WriteFile(sat, []byte("composite: {sensitivity: 2}\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	for _, tc := range []struct {
 		flags   []string
 		section string
 	}{
-		{[]string{"--detectors", "composite"}, "saturation"},
+		{[]string{"--detectors", "settle"}, "saturation"},
 		{[]string{"--server-series-interval-s", "1"}, "engine"},
 		{[]string{"--fitness-weights", "throughput:1"}, "router"},
 		{[]string{"--trace-level", "decisions", "--summarize-trace"}, "router"},
@@ -236,20 +232,6 @@ func TestResultFlags_ReportOnlyFlagsAreRecordedAndExemptFlagsChangeNothing(t *te
 				tc.flags, tc.section, r.Overrides, r.Name)
 		}
 	}
-	// --saturation-config is a file flag: it is pinned by its sha256, with --detectors.
-	out, stderr, err := runKernelCLI(t, resultRunArgs("--detectors", "composite", "--saturation-config", sat)...)
-	if err != nil {
-		t.Fatalf("--saturation-config: %v\n%s", err, lastLines(stderr, 3))
-	}
-	found := false
-	for _, o := range parseResult(t, out).Overrides {
-		if o.Setting == "saturation-config" && strings.HasPrefix(o.Run, "sha256:") {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("--saturation-config is not recorded by its sha256: %+v", parseResult(t, out).Overrides)
-	}
 	// Each exempt flag is added to a baseline that already has every flag it needs.
 	decisions, stderr, err := runKernelCLI(t, resultRunArgs("--trace-level", "decisions", "--summarize-trace")...)
 	if err != nil {
@@ -260,7 +242,6 @@ func TestResultFlags_ReportOnlyFlagsAreRecordedAndExemptFlagsChangeNothing(t *te
 		flags []string
 	}{
 		{decisions, []string{"--trace-level", "decisions", "--summarize-trace", "--counterfactual-k", "2"}},
-		{base, []string{"--lazy-generation"}},
 		{base, []string{"--log", "info"}},
 		{base, []string{"--view", "summary"}},
 	} {

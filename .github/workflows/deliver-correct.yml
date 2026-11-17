@@ -684,7 +684,7 @@ jobs:
       # runner receives a shutdown signal no step executes, whatever its `if:` says — even
       # `always()` ones, and even the action's own post-steps. That class is the stall sweep's
       # job (deliver-stall-sweep.yml), not this reporter's.
-      # `author_gate.outputs.blocked != 'true'` excludes the author-gate refusal (#1813), which
+      # `author_gate.outputs.blocked != 'true'` excludes the author-gate refusal, which
       # already posted a specific comment and moved the label — same exclusion shape as `paused`.
       - name: Report a failed correction
         if: always() && !success() && steps.target.outputs.owned == 'true' && steps.paused.outputs.paused != 'true' && steps.author_gate.outputs.blocked != 'true'

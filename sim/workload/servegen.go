@@ -813,7 +813,7 @@ func findNearestDataset(queryTimestamp int, datasetByTimestamp map[int]datasetWi
 // windows without matching dataset entries are skipped.
 //
 // The resulting ClientSpec uses per-window overrides on ActiveWindow, triggering
-// the time-varying generator path in GenerateRequests. Client-level fields
+// the time-varying generator path (generateTimeVaryingWorkloadLazy). Client-level fields
 // provide fallback defaults (used only if a window lacks overrides).
 func loadServeGenChunk(chunkID, tracePath, datasetPath string) (*ClientSpec, error) {
 	// Parse all trace rows.
@@ -1049,8 +1049,8 @@ func fitLognormalFromPDF(pdf map[int]float64) (DistSpec, error) {
 		}
 		logX := math.Log(float64(value))
 		sumProb += prob
-		sumLogX += prob * logX
-		sumLogXSq += prob * logX * logX
+		sumLogX += float64(prob * logX)
+		sumLogXSq += float64(prob * logX * logX)
 	}
 
 	// Normalize if needed (R11: division guard)
@@ -1058,7 +1058,7 @@ func fitLognormalFromPDF(pdf map[int]float64) (DistSpec, error) {
 		return DistSpec{}, fmt.Errorf("sum of probabilities is zero or negative")
 	}
 	mu := sumLogX / sumProb
-	variance := (sumLogXSq / sumProb) - (mu * mu)
+	variance := (sumLogXSq / sumProb) - float64(mu*mu)
 
 	// Variance must be non-negative (guard against numerical errors)
 	if variance < 0 {

@@ -1,0 +1,31 @@
+name: golden-change
+
+# A change that moves a byte-gate golden must say what moved and why in its pull request body, on
+# a "Golden change:" line (scripts/golden-change-check.sh; testdata/bytegate/README.md). Editing
+# the body re-runs the check, so adding the statement clears it.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  statement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: A moved golden is explained
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: printf '%s\n' "${BODY:-}" | bash scripts/golden-change-check.sh "$BASE" "$HEAD"

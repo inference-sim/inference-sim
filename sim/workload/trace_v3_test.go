@@ -9,9 +9,12 @@ import (
 	"testing"
 )
 
-// v3Fixture is testdata/trace-v3: the trace v0.15.0's `blis run --trace-output` wrote for the
-// byte gate's moe-prefix case (trace format version 3), and v4Golden the one this build
-// writes for the same run (testdata/bytegate/trace).
+// v3Fixture is testdata/trace-v3: the byte gate's moe-prefix trace in trace format version 3, the
+// form v0.15.0's `blis run --trace-output` wrote (the version 3 header keys and columns, a
+// send_time_us equal to the arrival on every row, and no server-reported length), and v4Golden the
+// one this build writes for the same run (testdata/bytegate/trace). The fixture moves with the
+// golden: when `go test ./internal/bytegate -update` rewrites the golden, the fixture is rewritten
+// from it in the same change, by the column and header mapping this file's drop test names.
 func v3Fixture(t *testing.T) (header, data string) {
 	t.Helper()
 	root := repoRootFromHere(t)

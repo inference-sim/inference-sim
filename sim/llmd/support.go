@@ -58,6 +58,11 @@ var supported = map[string]bool{
 	// The engines publish vLLM's KV-cache events, ingested synchronously by the hosted producer
 	// (sim/llmd/kvevents.go); checkPrecisePrefix refuses the configurations it cannot host.
 	"precise-prefix-cache-producer": true,
+	// Session affinity: a multi-turn client sends its session id as the plugins read it, and echoes the
+	// token the router writes on its responses (session.go).
+	"session-affinity-scorer": true,
+	"session-affinity-filter": true,
+	"session-id-producer":     true,
 	// admission
 	"probabilistic-admitter": true,
 	// saturation detectors
@@ -95,9 +100,6 @@ var supported = map[string]bool{
 // signalReasons give, for plugin types BLIS's signal policy refuses, why: a signal the simulated
 // engines or workload do not produce. The fork gives the reasons of the types it cannot host.
 var signalReasons = map[string]string{
-	"session-affinity-scorer":                   "the simulated workload sends no session header",
-	"session-affinity-filter":                   "the simulated workload sends no session header",
-	"session-id-producer":                       "the simulated workload sends no session header",
 	"mm-embeddings-cache-producer":              "the simulated workload carries no multimodal inputs",
 	"mm-embeddings-cache-scorer":                "the simulated workload carries no multimodal inputs",
 	"p2p-source-producer":                       "peer KV pulls are not modeled by the simulated engines",

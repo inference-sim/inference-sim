@@ -25,7 +25,7 @@ jq '.metrics.ttft_p99_ms.value' result.json
 
 | Section | What it holds |
 |---|---|
-| `engine` | The engine the scenario names: `kind` (`vllm`) and the upstream `version` it runs (`0.32.0`). |
+| `engine` | The engine the scenario names: `kind` (`vllm`) and the upstream `version` it runs (`0.33.0`). |
 | `data` | The catalog and registry the run read (design §3.3, SIM-6): for each, `source` (`embedded`, the copy compiled into the pinned blis-substrate, or `path` with `--catalog`/`--registry`), its content `hash`, the `overlays` applied with their hashes, and the `combined_hash`; `released_data` (true only for a tagged build reading both embedded copies with no overlay); and `build`, the release tag or `unreleased`. |
 | `selected_entries` | The catalog and registry entries the run read, each by identity and hash, and the `unread_files` the loader opened but no reader used (VAL-6). |
 | `input` | The resolved `scenario` and `deployment`, and a `--policy-config` bundle verbatim under `policy`. |
@@ -36,11 +36,11 @@ jq '.metrics.ttft_p99_ms.value' result.json
 | `requests` | Each generated request's fate (DEV-9): `completed`, `timed_out`, `dropped` (by reason: `admission_rejected`, `routing_rejected`, `gateway_queue_rejected`, `gateway_expired`, `gateway_evicted`, `unservable`, `decode_kv_unavailable`), `in_flight_at_horizon`, `queued_at_horizon`, `not_started`, and `length_capped`. `generated` is the cluster's own count, so the validator's check that the fates sum to it is not a restatement of a sum. |
 | `goodput` | With SLO targets: the targets, and per class `completed` and `met`; `goodput_rps` and `slo_attainment` are in `metrics`. Unlike every other rate, `goodput_rps` is over the whole simulated run (`reports.engine.cluster.simulated_duration_s`), not the measured window, as the results file always computed it. |
 | `breakdowns` | `per_model`, `per_tenant`, `per_adapter` (the run's own metrics over each key's requests), `pd` (the prefill/decode split, in ms), `sessions`. |
-| `reports.engine` | What the engines reported: under `cluster` the per-step and KV figures, preemptions, cache hit rates, in-flight counts, the server series and the acceptance record, plus the whole-run figures under `whole_run`; under each pool role its prefix-cache record; under `instances` each instance's own figures. |
+| `reports.engine` | What the engines reported: under `cluster` the per-step and KV figures, preemptions, cache hit rates, in-flight counts, the server series and the acceptance record, plus the whole-run figures under `whole_run`; under each pool role its prefix-cache record; under `instances` each instance's own whole-run figures and, in `measured_window`, its figures over the Result's measured window (its measured completions, TTFT and E2E mean and percentiles, output tokens per second, and `busy_share`, `prefill_busy_share`, `decode_busy_share` and `mfu`), so the worst instance can be judged on the window and not on the warmup-inflated run. The same figures appear under `cluster` over all the instances. Busy share is the simulated time the engine spent running steps over the window's length (steps clipped to the window, overlapping pipeline stages counted once); each step's time is split between prefill and decode by the tokens it scheduled (metric registry, DEV-8). `mfu` is the estimated model-FLOPs utilization: the steps' model FLOPs (GEMMs, head, attention matmuls, counted from the graph the kernel prices; elementwise work, recurrent mixers and drafter passes are not counted) over the window's length times the instance's GPUs times one GPU's datasheet dense peak; it is absent when the engine states no FLOPs. |
 | `reports.router` | The embedded router's requirements (`embed.Requirements`), sheds by SLO class, and the priority-inversion and head-of-line counters; with `--fitness-weights`, the score under `fitness`; with `--summarize-trace`, the decision-trace summary under `trace_summary`. |
 | `reports.kernel` | The cost model's coefficient provenance per pool role. |
-| `reports.saturation` | The detectors' final labels under `final`, when `--detectors` ran. |
-| `overrides` | Every setting the run simulated differently from its scenario, and what chose it: a `--scheduler` or `--preemption-policy` against the scenario's stated policy, and every other command-line flag that changes what is simulated and was given a value other than its default (`--timeout`, `--num-instances`, `--prefix-tokens`, the token-length flags, the router timing flags, the speculative-decoding flags, ...), as `setting` (the flag), `run` (its value; a file flag by `sha256:<digest>`) and `source`. A workload spec run without `--seed` adds `workload_seed` (the spec's own request seed). Flags that select or tune a reported section without changing what is simulated (`--detectors`, `--saturation-config`, `--saturation-final-window`, `--server-series-interval-s`, `--fitness-weights`, `--trace-level`, `--summarize-trace`) are recorded the same way, because they change bytes of the document (SIM-10, #2062). Flags that change no byte of it (`--output`, `--format`, `--view`, `--log`, output paths, `--counterfactual-k`, `--lazy-generation`) are not recorded; `cmd/result_flags.go` lists each with the reason, and a test fails for a new flag listed in neither place. The run's `name` carries a digest of the overrides, so two runs that differ only in a flag get different names. |
+| `reports.saturation` | The steady-state detector's verdict: its state under `final.settle` and the numbers behind it under `detail`, when `--detectors` ran. |
+| `overrides` | Every setting the run simulated differently from its scenario, and what chose it: every command-line flag that changes what is simulated and was given a value other than its default (`--timeout`, `--num-instances`, `--prefix-tokens`, the token-length flags, the router timing flags, the speculative-decoding flags, ...), as `setting` (the flag), `run` (its value; a file flag by `sha256:<digest>`) and `source`. A workload spec run without `--seed` adds `workload_seed` (the spec's own request seed). Flags that select or tune a reported section without changing what is simulated (`--detectors`, `--saturation-config`, `--saturation-final-window`, `--server-series-interval-s`, `--fitness-weights`, `--trace-level`, `--summarize-trace`) are recorded the same way, because they change bytes of the document (SIM-10, #2062). Flags that change no byte of it (`--output`, `--format`, `--view`, `--log`, output paths, `--counterfactual-k`) are not recorded; `cmd/result_flags.go` lists each with the reason, and a test fails for a new flag listed in neither place. The run's `name` carries a digest of the overrides, so two runs that differ only in a flag get different names. |
 | `artifacts` | Files the run wrote, by sha256 and by path relative to `--output`'s directory (as given, with no `--output`): `trace_header`/`trace_data` (`--trace-output` on run). |
 | `runtime` | Wall-clock seconds, start time and host. The only block that depends on the host or the clock. |
 
@@ -305,28 +305,14 @@ Scheduling delay isolates the WaitQ wait time from compute time. High scheduling
 
 ### Scenario Overrides
 
-A run reproduces its scenario unless a flag or a policy bundle chooses another value for a
-setting the scenario states. Today those are the two settings vLLM's
-`engine.scheduling_policy` decides: the waiting queue's order and the preemption victim
-(vLLM `fcfs` is BLIS `--scheduler fcfs` with `--preemption-policy fcfs`; vLLM `priority` is
-`--scheduler priority-fcfs` with `--preemption-policy priority`). An explicit `--scheduler` or
-`--preemption-policy`, or a `--policy-config` bundle's `scheduler` or `preemption.policy`, that
-differs from the scenario is kept, since exploring a policy against a fixed deployment is the
-point, and the Result says so:
-
-```json
-{
-  "overrides": [
-    {"setting": "scheduler", "input": "priority-fcfs", "run": "sjf", "source": "--scheduler"}
-  ]
-}
-```
-
-In a prefill/decode deployment each pool runs its own engine's policy, so a run-level choice
-is recorded once per pool whose engine stated otherwise, as `"scheduler (prefill pool)"` or
-`"preemption_policy (decode pool)"`.
-
-A warning on stderr says the same.
+A run reproduces its scenario's engine settings. No flag or policy bundle sets one: the waiting
+queue's order and the preemption victim are the pool's `engine.scheduling_policy`, as in vLLM
+(vLLM `fcfs` is BLIS `fcfs` queueing and `fcfs` preemption; vLLM `priority` is BLIS
+`priority-fcfs` queueing and `priority` preemption). In a prefill/decode deployment each pool
+runs its own engine's policy. `--scheduler` and `--preemption-policy` were removed in v0.18.0,
+and a `--policy-config` bundle that states `scheduler` or `preemption` is refused
+([#2037](https://github.com/inference-sim/inference-sim/issues/2037)). The `overrides` list
+records the command-line flags that change what is simulated (see the table above).
 
 ### Closeness Data
 
@@ -354,7 +340,7 @@ The Result carries what a scoring harness needs to grade a point against the run
   passed on everything each entry states and the implementation each coefficient priced; it does not
   say that every pool registered, nor that a condition was decided. A registry coefficient that states
   no `kernel_impls` is `unkeyed`, so the kernel-hash condition cannot be decided for it; at the
-  registry this release pins few coefficients state them (blis-registry#73).
+  registry this release pins few coefficients state them (inference-sim/blis-substrate#149).
 - `resolutions` lists, for each pool and each setting the cost model resolves, the engine's value
   beside the host's, with the reason where they differ. A row names its `pool` by the pool's role
   (`colocated`, `prefill`, `decode`); the engine allows one pool per role. Rows are sorted by
@@ -370,21 +356,23 @@ the path, a fact of the host.
 
 ### Saturation Detection
 
-Post-hoc saturation analysis classifies a completed run as `STABLE`, `BACKLOGGED` or
-`OVERLOADED`. It is distinct from the llm-d router's saturation detector, which gates admission
-and flow control during the run. Select detectors with
-`--detectors <name|comma-list|all>` (`composite`, `threshold`, `backlog-drift`, `peak-rate`),
-tune them with `--saturation-config`, and write the per-event verdict trace with
-`--saturation-report`:
+`--detectors settle` classifies the measured window (the whole run when it has none) as
+`SETTLED`, `OVERLOADED` or `INCOMPLETE`, ending the window at the last arrival (the drain after it is not steady state), by the one steady-state detector of DEV-10. Only a
+settled run gives a steady-state latency figure. It is distinct from the llm-d router's
+saturation detector, which gates admission and flow control during the run. The verdict is in
+`reports.saturation`: `final.settle` is the state and `detail` holds the numbers behind it
+(completions, mean requests in the system, the backlog's growth across the window and its
+one-sided p-value, the latency tail index). `--saturation-report` writes the same verdict to a
+file.
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
   --scenarios testdata/kernel/aisimulate \
-  --rate 10 --num-requests 100 --detectors all --saturation-report sat.json
+  --rate 10 --num-requests 100 --detectors settle --saturation-report sat.json
 ```
 
-Detector mechanics and tuning knobs:
-[Saturation analyzer](../contributing/saturation-analyzer-extension.md).
+The statistic, the constants and the measured false-alarm rate and power are in
+[Saturation detector](../contributing/saturation-analyzer-extension.md).
 
 ### Per-Request Rows
 
@@ -415,7 +403,7 @@ When anomalies are detected, `--view summary` prints `=== Anomaly Counters ===`:
 
 | Counter | What It Means | Action |
 |---------|--------------|--------|
-| **Priority Inversions** | A lower-priority request was scheduled before a higher-priority one | Check scheduler choice — use `priority-fcfs` for SLO workloads |
+| **Priority Inversions** | A lower-priority request was scheduled before a higher-priority one | Check the scheduling policy — use `engine.scheduling_policy: priority` for SLO workloads |
 | **HOL Blocking Events** | A long prefill blocked shorter requests | Enable chunked prefill: state `long_prefill_token_threshold: 256` in the scenario's pool `engine` block |
 | **Rejected Requests (Admission)** | The llm-d router denied admission: an admitter plugin, or the legacy admission controller shedding a sheddable request (priority < 0) from a saturated pool | Check the `InferenceObjective` priorities and the saturation detector's parameters; see [Admission Control](admission.md) |
 | **Shed (tier)** | Per-SLO-class count of requests the router shed (admission denials and flow-control TTL expiries) — printed as indented sub-items beneath Rejected Requests (Admission) | Raise the class's `InferenceObjective` priority, or the detector's thresholds |

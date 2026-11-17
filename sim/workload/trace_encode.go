@@ -41,7 +41,7 @@ type NormalizedRound struct {
 // so a recorded cross-model name would report every request under a model the
 // run never simulated. Empty leaves them out of that block; every request is
 // simulated under the scenario's model either way (#1477). ThinkUs, when a reader sets it (non-nil), is written to
-// the think_time_us column (#1478) and preferred over arrival-gap think at replay;
+// the think_time_us column and preferred over arrival-gap think at replay;
 // the OTel reader leaves it nil (no reliable response-complete time → arrival-gap
 // fallback), Weka sets it — including a recorded &0 for an overlapping turn, which
 // (#1608) is no longer conflated with "not recorded".

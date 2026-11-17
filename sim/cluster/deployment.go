@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"time"
+
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -15,13 +17,24 @@ type DeploymentConfig struct {
 
 	NumInstances int
 
+	// ClusterAutoscaler configures the node-count loop (cluster_autoscaler.go, #740). The zero
+	// value is none: no node is ever provisioned beyond the pools' initial nodes.
+	ClusterAutoscaler ClusterAutoscalerConfig
+
 	// NewEngine builds an instance's engine through blis-schemas' engine.Engine contract, for a
-	// release the compatibility engine does not model (engine_version 0.32.0, GOAL.md); nil
+	// release the compatibility engine does not model (engine_version 0.33.0, GOAL.md); nil
 	// builds the compatibility engine (sim.NewEngine). It receives the instance's index in the
 	// cluster and its configuration, resolved for its pool role as the compatibility engine's is.
 	// The build site (cmd/engine_build.go) supplies it, so this package names no engine
 	// implementation.
 	NewEngine func(index int, cfg sim.InstanceConfig) (*sim.EngineDriver, error) `json:"-" yaml:"-"`
+
+	// WeightLoadTime prices reading an instance's resident weights from a storage tier (#1215):
+	// the time for an instance of tpDegree ranks on chip gpu to load from tier. It is used when
+	// InstanceLifecycle.WeightSource names a tier; the build site supplies it from the kernel of
+	// the instance's chip, so this package prices nothing itself. An error means the tier cannot
+	// be priced for the chip, which the build site refuses before the run starts.
+	WeightLoadTime func(gpu, tier string, tpDegree int) (time.Duration, error) `json:"-" yaml:"-"`
 
 	// DPLockstepRanks is the data-parallel width of an MoE replica (#1909): each run of this
 	// many consecutive instances is one replica whose ranks step in lockstep and share one
@@ -67,7 +80,7 @@ type DeploymentConfig struct {
 	// and the pipeline is unchanged (BC-PD-1).
 	PrefillInstances int // Number of instances dedicated to prefill (0 = disabled)
 	DecodeInstances  int // Number of instances dedicated to decode (0 = disabled)
-	// SharedInstances (issue #1276, GAP-5) — number of instances serving both
+	// SharedInstances — number of instances serving both
 	// prefill and decode (shared-role pods, llm-d "prefill-decode" / legacy "both"
 	// role labels). When > 0, ValidatePoolTopology accepts
 	// prefill+decode+shared <= total, and BuildPoolMembershipFromIndices
@@ -75,7 +88,7 @@ type DeploymentConfig struct {
 	// the prefill-only and decode-only ranges.
 	SharedInstances int
 
-	// E/P/D disaggregation configuration (GAP-4, issue #1264).
+	// E/P/D disaggregation configuration.
 	// When EncodeInstances == 0 (default), the encode stage is disabled and the
 	// pipeline is byte-identical to the pre-PR simulator (BC-EPD-1).
 	EncodeInstances int // Number of instances dedicated to encoding multimodal input (0 = disabled)
@@ -90,6 +103,14 @@ type DeploymentConfig struct {
 	// not the cluster's: the decode engine states the move (engine.Transfer.Move), and the
 	// driver's Environment prices it (design 6.2); the cluster owns when it ends.
 	InstanceEndpoint func(InstanceID) plan.Endpoint `json:"-" yaml:"-"`
+
+	// PeerEndpoint is where an instance's workers sit, in the numbering of the instance's own pool,
+	// for the engines that exchange peer messages and WRITEs (engine.PeerPlaced). Unset, engines are
+	// told nothing and refuse a WRITE to a peer.
+	PeerEndpoint func(InstanceID) plan.Endpoint `json:"-" yaml:"-"`
+	// PeerMessageLatency is how long a peer message takes from sender to receiver, in ticks: the
+	// named substitution peer_message_delivery_latency, until the ZMQ round trip is measured.
+	PeerMessageLatency int64 `json:"-" yaml:"-"`
 
 	// PDTransferContention makes concurrent handoffs share the links they cross (#1922,
 	// INV-P2-2): each handoff's demand, which the Environment states with the links it crosses
@@ -110,7 +131,7 @@ type DeploymentConfig struct {
 	PDPrefillKVHold bool
 	// PDPrefillSamplesFirstToken gives a P/D prefill sub-request the request's first output token
 	// and max_tokens 1, as the P/D proxy sends the prefill leg (vLLM's toy_proxy_server.py:167-169;
-	// llm-d's CapSingleToken), for an engine that samples it (blis-vllm's v0.32.0 engine). The
+	// llm-d's CapSingleToken), for an engine that samples it (blis-vllm's v0.33.0 engine). The
 	// compatibility engines model the leg without output.
 	PDPrefillSamplesFirstToken bool
 	// PDKVLeaseUs is the handoff's kv_lease_duration in microseconds: how long a prefill
@@ -123,6 +144,14 @@ type DeploymentConfig struct {
 
 	// Phase 1C: Model autoscaler pipeline (issue #692).
 	// Zero value is safe: ModelAutoscalerIntervalUs=0 disables the autoscaler entirely (INV-6).
+	// ScaleToZeroIdleUs, above 0, drains all of a model's replicas after that long without a request
+	// and with nothing in flight (#909). 0, the default, never does.
+	ScaleToZeroIdleUs float64 `yaml:"scale_to_zero_idle_us,omitempty"`
+	// ScaleFromZeroHoldUs, above 0, makes a request for a model with no replica start one and wait,
+	// up to that long, for it (#908); ScaleFromZeroPollUs is how often a held request looks again
+	// (0: 100 ms). 0, the default, rejects such a request as before.
+	ScaleFromZeroHoldUs            float64   `yaml:"scale_from_zero_hold_us,omitempty"`
+	ScaleFromZeroPollUs            float64   `yaml:"scale_from_zero_poll_us,omitempty"`
 	ModelAutoscalerIntervalUs      float64   `yaml:"model_autoscaler_interval_us,omitempty"`       // tick interval in μs; 0 = autoscaler disabled
 	HPAScrapeDelay                 DelaySpec `yaml:"hpa_scrape_delay,omitempty"`                   // HPA scrape lag: time from WVA metric emission to HPA acting; zero = same-tick actuation; Mean/Stddev in seconds
 	ScaleUpStabilizationWindowUs   float64   `yaml:"scale_up_stabilization_window_us,omitempty"`   // HPA scale-up stabilization window in μs; 0 = act on first signal (HPA default)
@@ -131,6 +160,13 @@ type DeploymentConfig struct {
 	// Zero values are safe: NewClusterSimulator applies WVA reference defaults
 	// (KvCacheThreshold=0.8, ScaleUpThreshold=0.8, ScaleDownBoundary=0.4, AvgInputTokens=512).
 	AutoscalerAnalyzerConfig V2SaturationAnalyzerConfig `yaml:"autoscaler_analyzer,omitempty"`
+	// AutoscalerAnalyzer selects the analyzer (inference-sim#2063): v2-saturation (the default, whose
+	// thresholds are AutoscalerAnalyzerConfig) or threshold, a target-value rule on one signal.
+	AutoscalerAnalyzer AnalyzerSelection `yaml:"autoscaler_analyzer_selection,omitempty"`
+	// CollectorWindowSize, above 0, makes the autoscaler's collector a WindowedCollector that keeps
+	// that many ticks of readings and fills the latency fields from per-tick deltas (#1141). 0, the
+	// default, uses the plain collector.
+	CollectorWindowSize int `yaml:"collector_window_size,omitempty"`
 }
 
 // resolveConfigForRole returns the configuration an instance in the given pool role is built

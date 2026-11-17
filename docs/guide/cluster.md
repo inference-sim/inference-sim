@@ -36,7 +36,7 @@ Arrival → gateway latency → llm-d router → dispatch → Instance WaitQueue
 | Stage | Controls | Configured by |
 |-------|----------|---------------|
 | **Admission, flow control, routing** | Whether the request is admitted, how long it waits, which instance receives it | The llm-d router's inputs: the scenario's `router:` block and `pools[].labels`; see [the router's inputs](routing.md#the-routers-inputs) |
-| **Scheduling** | What order within the instance | the pool engine block's `scheduling_policy` (`--scheduler`, deprecated in v0.16.0, may override it), the policy bundle's `priority` section |
+| **Scheduling** | What order within the instance | the pool engine block's `scheduling_policy`, the policy bundle's `priority` section |
 | **Batch Formation** | Which requests form the next batch | scenario `max_num_seqs`, `max_num_batched_tokens` |
 
 With no router inputs, the router uses its built-in default configuration over every
@@ -91,8 +91,17 @@ matters when a shared link (e.g. the decode node's NIC in xP1D) runs close to sa
 
 ### Node pools and multi-node placement
 
-When node pools are configured (`--policy-config` with `node_pools`), every pool's `gpu_type` must
-equal the scenario's `cluster.hardware`, and `gpu_type` must be unique across pools.
+When node pools are configured (`--policy-config` with `node_pools`), each pool's chip is
+stated in the scenario, not the bundle: `cluster.pools` lists named pools, each with an optional
+`hardware` (a catalog chip), and `cluster.hardware` is the default for a pool that states none. A
+bundle `node_pools` entry refers to the scenario's pool of the same name, and its `gpu_type` must
+equal that pool's chip. An instance is priced and sized by the chip of the pool it is placed in:
+the run opens one variant of the scenario, one kernel, for each distinct pool chip, and refuses by
+name a chip that has no catalog entry or that the scenario's model cannot run on. A scenario that
+states no `cluster.pools` has one chip, `cluster.hardware`. Pools of different chips serve
+colocated scenarios only. Pools may share a `gpu_type` and differ in `cost_per_hour`: each
+instance is billed at the price of the pool its GPUs sit in, and the autoscaler treats pools of one
+chip as one variant, priced at the mean of its replicas' costs.
 
 An instance whose TP group exceeds a pool's `gpus_per_node` can occupy **whole nodes across the same
 pool**. This happens only as a fallback (BLIS first tries a single node in any matching pool) and

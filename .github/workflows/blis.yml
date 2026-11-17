@@ -6,9 +6,8 @@ name: blis
 # AGENTS.md section and pull-request template, the selected-version lint), and the nightly
 # checks (cited issues stay open, X28).
 #
-# The commit is the head of blis-substrate's layer 1 of M2 (m2/1-process-and-release-checks),
-# where the review questions are guidance for the review agent and the shared check no longer
-# fails on one; it moves to a substrate release tag's commit when that release is cut.
+# The commit is the pinned blis-substrate release's (stack.json states it), which carries the generated invariant
+# sections the check compares (SIM-16, SIM-17, SIM-18).
 
 on:
   pull_request:
@@ -30,22 +29,22 @@ concurrency:
 jobs:
   pr:
     if: github.event_name == 'pull_request'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-pr-checks.yml@f36f6b2e4900f2556c7f64940a657a89e89c756b
+    uses: inference-sim/blis-substrate/.github/workflows/shared-pr-checks.yml@883a2709c250e4724ce11d1d6ba2cc12662b01e7
     permissions:
       contents: read
       pull-requests: write
       checks: write
     with:
       repo: inference-sim
-      substrate-ref: f36f6b2e4900f2556c7f64940a657a89e89c756b
+      substrate-ref: 883a2709c250e4724ce11d1d6ba2cc12662b01e7
 
   nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-nightly.yml@f36f6b2e4900f2556c7f64940a657a89e89c756b
+    uses: inference-sim/blis-substrate/.github/workflows/shared-nightly.yml@883a2709c250e4724ce11d1d6ba2cc12662b01e7
     permissions:
       contents: read
       issues: read
     with:
-      substrate-ref: f36f6b2e4900f2556c7f64940a657a89e89c756b
+      substrate-ref: 883a2709c250e4724ce11d1d6ba2cc12662b01e7
     secrets:
       INTERNAL_NAME_PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}

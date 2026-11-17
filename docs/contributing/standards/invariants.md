@@ -206,7 +206,7 @@ Two things to preserve if you touch it. Both metric-map reads must be two-value:
 
 **The embedded llm-d router.** The router is a deterministic function of its configuration, the seed and the sequence of calls BLIS makes, because every hidden input it has in a process is closed by the fork's hosting seam (`pkg/common/hosting`) and BLIS's discrete-event runtime (`sim/llmd/runtime.go`): its clock is the simulation clock on a fixed epoch; every goroutine it would start runs as a coroutine under one baton (`sim/llmd/coroutine.go`), so exactly one of the simulation and the router runs at any time and blocking waits (`Park`) resume in spawn order; its deadlines are simulation events; its random draws come from per-run streams derived from the seed; map-order tie-breaks become a seeded shuffle of a sorted order; and its logs go to stderr. Verification: `sim/llmd/determinism_test.go` — `TestDeterminism_AcrossProcesses` runs the same simulations in separate processes at `GOMAXPROCS` 1 and 8 (Go randomizes map iteration per process) and `TestDeterminism_SameProcessRepeat` repeats them in one process (shared router state); every `sim/llmd` test asserts no router coroutine survives `Stop`. Upstream release updates are guarded by the fork's `hack/hosting-lint`, which fails CI on any new direct clock, timer, deadline, goroutine or process-wide random draw on a router path.
 
-**Transient sub-invariant — eager ≡ lazy (holds until A8, #1442):** While both the eager generator (`GenerateWorkload`/`GenerateRequests`) and the lazy streaming source (`GenerateWorkloadLazy`, behind `--lazy-generation`, #1441) exist, they MUST produce byte-identical request streams and session blueprints for any seed and any lazy-supported spec — and consequently a byte-identical `Result` outside `runtime`. Both paths draw every value from the same named stream (`sim.NewStream`, DEV-6): a request's draws are named by its client, purpose and position, so the equality does not rest on the two paths consuming draws in one order. Enforced at the generator layer by the property test `sim/workload/parity_property_test.go` (`TestProperty_EagerEqualsLazy_RequestStreams`), which samples ≥100 random `(seed, spec)` draws (env-gated extended mode via `BLIS_PROPERTY_DRAWS`) and asserts stream + blueprint equality; and at the CLI layer by `cmd/parity_run_replay_test.go` (`TestParity_RunStdout_DeterministicAndEagerLazyIdentical` for stdout, `TestParity_RunReplay_TraceByteIdentity_Matrix` for the exported trace). This invariant is transient by design: since v0.16.0 lazy is the default and `--lazy-generation=false` selects the deprecated eager generator (#1449, #1450); the invariant is retired when v0.19.0 removes eager generation (A8, #1451), after which lazy is the sole path.
+**Streaming generation (#1441, #1442, #1451):** `blis run` has one generation path, the streaming source, and v0.18.0 deleted the eager generator and `--lazy-generation` (#1451), which retired the eager ≡ lazy sub-invariant. Every value is drawn from a named stream (`sim.NewStream`, DEV-6): a request's draws are named by its client, purpose and position. Determinism of the streamed workload is enforced at the CLI layer by `cmd/parity_run_replay_test.go`: `TestParity_RunStdout_DeterministicAndEagerLazyIdentical` (same seed, same `Result` outside `runtime`; the name is kept because the invariant registry names it) and `TestParity_RunReplay_TraceByteIdentity_Matrix` (byte-identical exported traces across two runs at the same seed).
 
 ### INV-8: Work-Conserving Property
 
@@ -214,7 +214,7 @@ Two things to preserve if you touch it. Both metric-map reads must be two-value:
 
 **Verification:** `sim/engine_driver_test.go`: `TestEngineDriver_StepsBackToBackAndStopsWhenIdle` and `TestEngineDriver_ArrivalDuringAStepWaitsForIt`; the engine's own liveness (`NextWake` after a schedule that ran nothing) is blis-schemas' `enginetest` conformance law, which blis-vllm's engines pass.
 
-**Evidence:** H-MMK experiment (PR #325) — without the work-conserving fix, W_q error was 151,000% at ρ=0.3. After fix, error dropped to 47% (remaining gap is discrete step processing, not a bug).
+**Evidence:** H-MMK experiment (PR #325) — without the work-conserving fix, W_q error was 151,000% at ρ=0.3. After fix, error dropped to 47% (the remaining error comes from discrete step processing, not a bug).
 
 **Additional evidence (hardening wave):** Issue #349, fix #519 — Go `range` over mutable `RunningBatch.Requests` during `FormBatch` Phase 1 visited evicted requests, triggering 102K+ cascading preemptions with zero completions. The simulator never made forward progress (zero completed requests = INV-8 violation). See R21.
 
@@ -234,7 +234,7 @@ Two things to preserve if you touch it. Both metric-map reads must be two-value:
 
 **Verification:** `cmd/replay_test.go` — `TestINV13_RunReplayParity_PD` verifies that a PD-disaggregated cluster produces matching `RequestTTFTs` and `RequestE2Es` maps when the same requests are run directly vs. through the trace-export-then-replay path. `TestReplayCmd_AutoscalerBundleFatal` and `TestReplayCmd_NodePoolsBundleFatal` verify fatal exit for unsupported features. For a data-parallel MoE deployment, whose engine is the whole data-parallel group behind one endpoint, `cmd/dp_replay_parity_test.go` — `TestINV13_RunReplayParity_MoEDP` asserts that a trace exported by a `dp > 1` run replays with the same flags to an identical `Result` in every simulated section, and `TestReplayCmd_MoEDP_OneGroupPerInstance` asserts one group per instance plus INV-1 conservation on the replay path.
 
-**Under lazy generation (#1441, #1442, #1458, #1459, #1460):** run/replay parity must hold whether the run used the eager generator or the lazy streaming source (`--lazy-generation`). Before lazy mode, parity was structural by construction (both code paths consumed the same eagerly-built request list); with lazy mode in play it is enforced only by tests. The authoritative enforcement point is `cmd/parity_run_replay_test.go`: `TestParity_RunReplay_TraceByteIdentity_Matrix` asserts eager and lazy runs export byte-identical traces across a coverage matrix (single-turn chatbot, multi-turn accumulate cohort, single-session reasoning, multi-session reasoning, concurrency clients, and time-varying / per-window workloads), and `TestParity_RunReplay_INV13_BothModes` asserts an eager-sourced and a lazy-sourced trace replay to identical per-request TTFT/E2E. As of #1460 the lazy source streams every workload class — there is no eager-fallback sentinel remaining.
+**Under streaming generation (#1441, #1442, #1451, #1458, #1459, #1460):** the run streams its requests, so run/replay parity is enforced by tests rather than by both paths consuming one prebuilt request list. The enforcement point is `cmd/parity_run_replay_test.go`: `TestParity_RunReplay_TraceByteIdentity_Matrix` asserts two runs at the same seed export byte-identical traces across a coverage matrix (single-turn chatbot, multi-turn accumulate cohort, single-session reasoning, multi-session reasoning, concurrency clients, and time-varying / per-window workloads), and `TestParity_RunReplay_INV13` asserts an exported trace replays to the run's per-request TTFT/E2E. The streaming source covers every workload class.
 
 **Evidence:** `cmd/replay.go::replayCmd.Run` wires the same `cluster.DeploymentConfig` field set as `runCmd` (`cmd/root.go`). This parity surface spans the PD fields (`PrefillInstances`, `DecodeInstances`, `SharedInstances`, `PrefillOverrides`, `DecodeOverrides`), `EncodeInstances`, `InstanceLifecycle`, and the router inputs (`cmd/router.go`: `resolveRouterInputs` for run, `reconcileReplayRouter` for replay). Both call sites carry an `INV-13 SYNC POINT` comment marking the literal that must stay in sync; treat that comment — not a fixed field count — as the authoritative enumeration, since it grows as features are added. Autoscaler and node-pool checks use `logrus.Fatalf` to prevent silent divergence.
 
@@ -300,7 +300,7 @@ the catalog or the registry. This is design §3.3 at the CLI. Three clauses:
    Deployment file) on both `blis run` and `blis replay`; omitting it is refused. No flag
    restates the model, the hardware or the tensor-parallel width.
 
-**Status at this commit:** clauses 1, 2 and 3 hold, except that the v0.32.0 engine refuses a
+**Status at this commit:** clauses 1, 2 and 3 hold, except that the v0.33.0 engine refuses a
 run with an overlay (`--catalog-overlay` or `--registry-overlay`) until it reads overlays.
 
 **Why this tier:** like INV-9 and INV-A2 this constrains *what the code may do* rather than
@@ -354,7 +354,7 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 
 #### INV-K3: A Sequence's Bounded State Is Held on Demand and Gated at Admission
 
-**Statement:** After every allocation a request holds exactly `SequenceState.Hold(computed, inFlight)` blocks for its bounded per-sequence state -- window rings, compressor and indexer state, bounded recurrent state -- where `computed` is its tokens computed before the step and `inFlight` those scheduled in it: the kernel's `SequenceBoundedBytesAt` in whole pool blocks (#1941, blis-latency-kernel#46/#56). That is vLLM's on-demand hold: `allocate_slots` allocates a window group's blocks for the scheduled tokens after `remove_skipped_blocks` frees those the window has passed (`single_type_kv_cache_manager.py:178-238, 687-725, 1153-1175` at v0.31.0), so the hold grows through a prefill chunk and settles at the steady `SequenceFixedBytes` while decoding; a shrink frees its blocks before any are taken. The admission cap (`SequenceAdmissionBytes`, `max_admission_blocks_per_request`) is only a gate: a request's first allocation is refused unless its whole prompt and its state at `SequenceState.Gate(prompt)` = each window group at `min(cdiv(prompt), cap)` are free (`full_sequence_must_fit`, `kv_cache_manager.py:517-534`, `single_type_kv_cache_manager.py:216-229`). State blocks hold no tokens or hash, are freed with the request, and are counted in INV-4. A model whose kernel reports no bounded per-sequence state has no `SequenceState`, no gate, and byte-identical output.
+**Statement:** After every allocation a request holds exactly `SequenceState.Hold(computed, inFlight)` blocks for its bounded per-sequence state -- window rings, compressor and indexer state, bounded recurrent state -- where `computed` is its tokens computed before the step and `inFlight` those scheduled in it: the kernel's `SequenceBoundedBytesAt` in whole pool blocks (blis-latency-kernel#46/#56). That is vLLM's on-demand hold: `allocate_slots` allocates a window group's blocks for the scheduled tokens after `remove_skipped_blocks` frees those the window has passed (`single_type_kv_cache_manager.py:178-238, 687-725, 1153-1175` at v0.31.0), so the hold grows through a prefill chunk and settles at the steady `SequenceFixedBytes` while decoding; a shrink frees its blocks before any are taken. The admission cap (`SequenceAdmissionBytes`, `max_admission_blocks_per_request`) is only a gate: a request's first allocation is refused unless its whole prompt and its state at `SequenceState.Gate(prompt)` = each window group at `min(cdiv(prompt), cap)` are free (`full_sequence_must_fit`, `kv_cache_manager.py:517-534`, `single_type_kv_cache_manager.py:216-229`). State blocks hold no tokens or hash, are freed with the request, and are counted in INV-4. A model whose kernel reports no bounded per-sequence state has no `SequenceState`, no gate, and byte-identical output.
 
 **Enforced:** blis-vllm `compat/kv` `KVCacheState.AllocateKVBlocks` (`admissionGateRefuses`, `stateDelta`, `resizeState`), `ReleaseKVBlocks`; the offload tiers check `sequenceFits` before reloading and charge through `chargeSequence`. The functions are blis-vllm `compat/kernelmodel` `Settings.SequenceState`.
 
@@ -394,11 +394,11 @@ vLLM v0.31.0 sources:
 
 **Enforced:** blis-vllm `compat/kv` `OffloadCache.beginCPULoad` / `cpuLoadPlan` / `PollDeferred` (`deferLoading`), `KVCacheState.allocateLoad`, `OffloadCache.loadReserve` / `admitLoaded`; blis-vllm `compat/engine` `FormBatch` (`LoadHoldingKVStore`); blis-vllm `compat/build` `priceOffload` (called from `cmd/engine_build.go`) installs `KVOffloadConfig.CPULoadTime`.
 
-**Verification:** `TestCPULoad_AHitWaitsAtLeastItsTransfer` (rapid), `TestCPULoad_HalvingBandwidthDelaysOnlyTheHit` (metamorphic), `TestCPULoad_ClearDeferredReleasesThePins`, `TestLoadStart_TheLoadHoldsItsBlocksFromItsStart` (rapid), `TestLoadStart_ALoadLeavesTheInflightPrefillsRoom` (rapid), `TestLoadStart_AHolderThatLeavesFreesItsBlocks`, `TestLoadStart_ALandedLoadIsScheduledAheadOfTheWaitingQueue` (blis-vllm `compat/kv`). No CLI test remains: the compatibility engine, the only engine whose CPU tier served hits, no longer runs (LIF-6), and the v0.32.0 engine's offload tier is blis-vllm's to verify.
+**Verification:** `TestCPULoad_AHitWaitsAtLeastItsTransfer` (rapid), `TestCPULoad_HalvingBandwidthDelaysOnlyTheHit` (metamorphic), `TestCPULoad_ClearDeferredReleasesThePins`, `TestLoadStart_TheLoadHoldsItsBlocksFromItsStart` (rapid), `TestLoadStart_ALoadLeavesTheInflightPrefillsRoom` (rapid), `TestLoadStart_AHolderThatLeavesFreesItsBlocks`, `TestLoadStart_ALandedLoadIsScheduledAheadOfTheWaitingQueue` (blis-vllm `compat/kv`). No CLI test remains: the compatibility engine, the only engine whose CPU tier served hits, no longer runs (LIF-6), and the v0.33.0 engine's offload tier is blis-vllm's to verify.
 
 #### INV-K8: A Loaded Prefix Is Computed, Not In Flight
 
-**Statement:** A new admission whose prefix an offload tier loads sizes its bounded state (INV-K3) from the end of the loaded prefix, capped below the prompt's last token, not from its GPU-cached prefix: the loaded tokens are computed, and only the tokens scheduled past them are in flight. vLLM v0.31.0 sizes a window group from `total_computed_tokens`, the local and external hits together, and skips the blocks the window has passed (`single_type_kv_cache_manager.py:178-245`). So a queued request whose sequence fits the pool is scheduled within its load and one step once the pool frees, and a CPU tier never leaves unstarted a request that starts without it. Charging the loaded prefix as in flight sized a DSV4 rank's state at the whole prompt, more than a DP rank's pool, and refused the request at every step of the run (#1955).
+**Statement:** A new admission whose prefix an offload tier loads sizes its bounded state (INV-K3) from the end of the loaded prefix, capped below the prompt's last token, not from its GPU-cached prefix: the loaded tokens are computed, and only the tokens scheduled past them are in flight. vLLM v0.31.0 sizes a window group from `total_computed_tokens`, the local and external hits together, and skips the blocks the window has passed (`single_type_kv_cache_manager.py:178-245`). So a queued request whose sequence fits the pool is scheduled within its load and one step once the pool frees, and a CPU tier never leaves unstarted a request that starts without it. Charging the loaded prefix as in flight sized a DSV4 rank's state at the whole prompt, more than a DP rank's pool, and refused the request at every step of the run.
 
 **Enforced:** blis-vllm `compat/kv` `KVCacheState.loadedStateStart`, used by `OffloadCache.AllocateKVBlocks` and `TieredKVCache.AllocateKVBlocks` for the pre-check (`sequenceFits`) and the full-reload charge (`chargeSequence`).
 
@@ -434,17 +434,21 @@ vLLM v0.31.0 sources:
 
 **Statement:** After Phase 1 of `FormBatch` completes, every non-preempted running request in decode phase has `NumNewTokens > 0`, provided the token budget was not exhausted and `MaxModelLen` did not cap the request. No running request is silently skipped due to index drift from non-tail eviction.
 
-**Context:** With `--preemption-policy priority`, the preemption victim may be at any index in the running batch (not just the tail). Removing an element at index `i < reqIndex` shifts subsequent elements left by one. Without the `reqIndex -= adjustment` correction (analog of vLLM `scheduler.py:853` `req_index -= 1`), the Phase 1 loop skips the shifted element.
+**Context:** With priority preemption (the pool's `engine.scheduling_policy: priority`), the preemption victim may be at any index in the running batch (not just the tail). Removing an element at index `i < reqIndex` shifts subsequent elements left by one. Without the `reqIndex -= adjustment` correction (analog of vLLM `scheduler.py:853` `req_index -= 1`), the Phase 1 loop skips the shifted element.
 
 **Verification:** `TestPreemption_Priority_Phase1Completeness`, in the simulator's batch-formation test before the engine moved to blis-vllm (the index correction is now in blis-vllm `compat/engine/batch_formation.go`; the test is not in the pinned blis-vllm): verifies that after non-tail eviction where `victimIdx < reqIndex`, ALL remaining running requests receive decode tokens (NumNewTokens > 0). The index adjustment is tested with [bg, crit, std] batch where bg is evicted at index 0 while processing crit at index 1.
 
-**Trivially satisfied for FCFS:** With `--preemption-policy fcfs` (default), victims are always at the batch tail (`victimIdx == len-1 >= reqIndex`), so `adjustment == 0` and no element skipping is possible.
+**Trivially satisfied for FCFS:** With `engine.scheduling_policy: fcfs` (default), victims are always at the batch tail (`victimIdx == len-1 >= reqIndex`), so `adjustment == 0` and no element skipping is possible.
 
 **Hypothesis family:** Structural model (same as INV-4, INV-7, INV-8, INV-9).
 
 ### Gateway queue
 
-#### INV-16, INV-17: retired
+#### INV-16: Gateway queue counter consistency (retired)
+
+See INV-17 below for the shared reason.
+
+#### INV-17: The shed victim is the flow tail (retired)
 
 BLIS's own gateway queue (the former gateway-queue file of the cluster package) is gone: flow control is the embedded llm-d router's, whose flow registry and processor own their queue accounting and are tested upstream. INV-16 (gateway queue counter consistency) and INV-17 (the shed victim is the flow tail) protected code that no longer exists, and llm-d never sheds a queued request to admit another. The IDs are not reused.
 
@@ -731,7 +735,7 @@ phase starts (the warm-up's last return); profiling requests are sent only in
 
 #### INV-K5: The Recorded Acceptance Is the Simulated One
 
-**Statement:** A speculating run's acceptance is exactly one `acceptance.Resolve` resolution (blis-schemas#65) from the registry profile, the workload, the scenario pin and the CLI, highest layer winning, with AL in `[1, K+1]` for the deployment's K and no silent fallback; the results file's `acceptance.length` and `rate` are the `SpeculativeConfig` the simulator advanced requests by (`length = 1 + rate·K`), and `source_layer`/`entry` name where it came from. A run that does not speculate records none. Run and replay under the same flags resolve the same acceptance (INV-13).
+**Statement:** A speculating run's acceptance is exactly one `acceptance.Resolve` resolution (https://github.com/inference-sim/blis-schemas/issues/65) from the registry profile, the workload, the scenario pin and the CLI, highest layer winning, with AL in `[1, K+1]` for the deployment's K and no silent fallback; the results file's `acceptance.length` and `rate` are the `SpeculativeConfig` the simulator advanced requests by (`length = 1 + rate·K`), and `source_layer`/`entry` name where it came from. A run that does not speculate records none. Run and replay under the same flags resolve the same acceptance (INV-13).
 
 **Enforced:** blis-vllm `compat/build` `ResolveAcceptance` (called by `resolveAcceptance` in `cmd/engine_build.go`), `cmd/speculative_acceptance.go` `acceptanceRecordOf`, `cmd/root.go` `resolveSpeculativeConfig`.
 
@@ -741,7 +745,7 @@ phase starts (the warm-up's last return); profiling requests are sent only in
 
 **Statement:** An engine that states an admission queue in its plan (`plan.HostPlan.Admission`: `Servers` independent queues of `WorkersPerServer` servers; zero workers is no queue) has each request wait in it before the engine sees the request. The cost model gives the request's demand on it (`env.Environment.HostDemand`): `Service`, the time it holds one server, and `Delay`, the time it waits holding none; `Service + Delay` is the kernel's admission overhead. Arrivals join the queues in turn. Within a queue a request starts at `max(arrival, earliest server free)` in arrival order and holds that server for `Service`, so a queue never runs more than `WorkersPerServer` requests at once and a request waits only while all are busy (FIFO M/G/c). The request enters the engine at `end of service + Delay`. Every arrival is admitted exactly once. A stage with a server per request, or no queue, gives `arrival + Service + Delay`; one request alone always waits its whole overhead. The ranks of a replica behind one balancer share one stage (`sim.ShareAdmissionStage`); an external-balancer rank and a P/D pool rank each have their own. A P/D decode sub-request is not admitted again.
 
-The host knows nothing of what the servers are. The engine resolves its own settings into the shape: for vLLM v0.32.0, `renderer_num_workers` threads on each of `api_server_count` servers, on which the tokenizer and the chat template run (the admission-split page of the blis-vllm documentation).
+The host knows nothing of what the servers are. The engine resolves its own settings into the shape: for vLLM v0.33.0, `renderer_num_workers` threads on each of `api_server_count` servers, on which the tokenizer and the chat template run (the admission-split page of the blis-vllm documentation).
 
 **Assumption:** The kernel's per-request term (40 ms, method `assumed`, a latency of unknown origin) is charged as `Delay`, not as `Service`. Charging it as `Service` caps a one-server queue at 1 / 40 ms = 25 requests a second; charging none of it as `Service` leaves the cap at the per-token term's rate. The truth lies between if part of it is work a server does.
 
@@ -762,7 +766,7 @@ BLIS prices every step with `blis-latency-kernel`; the in-repo roofline and trai
 
 ### LoRA control plane
 
-The LoRA control-plane invariants are stated in full in `docs/plans/2026-07-15-lora-control-plane-design.md` §9, which stays **authoritative**. They are listed here as pointer lines so an `INV-L*` citation in code can be resolved (the resolution rule at the top of this document).
+The LoRA control-plane invariants are stated in full in §9 of the LoRA control-plane design, which remains **authoritative**. The design document is no longer tracked; the last commit that holds it is `0045b726`, and `specs/007-lora-control-plane/` keeps the durable record. They are listed here as pointer lines so an `INV-L*` citation in code can be resolved (the resolution rule at the top of this document).
 
 | ID | Statement (abbreviated — the plan is authoritative) | Relationship | Code citations |
 |---|---|---|---|
@@ -772,7 +776,7 @@ The LoRA control-plane invariants are stated in full in `docs/plans/2026-07-15-l
 | **INV-L4** | Memory conservation: per instance, `allocated_blocks + free_blocks + adapter_reserved == total`, with `adapter_reserved` fixed at startup. | extends INV-4 | 11 |
 | **INV-L5** | No eviction of in-use: an adapter is *in use* from the moment a request referencing it enters the running batch until that request completes; an in-use adapter is never evicted, and this persists through preemption (a preempted request has not completed). Also covers the victim reserved at load-start, which is never in use. | — | 7 |
 | **INV-L6** | Oracle boundary: adapter-aware routing/servability reads adapter id, rank and resident sets only — never `Request.OutputTokens`. | specializes INV-9 | 0 |
-| **INV-L7** | *Retired* — see [Retired latency-model invariants](#retired-latency-model-invariants). | — | 0 |
+| INV-L7 (retired) | *Retired* — see [Retired latency-model invariants](#retired-latency-model-invariants). | — | 0 |
 
 Counts are a snapshot over `sim/` and `cmd/` together with blis-vllm `compat/`, where the engine's citations moved (#2021). Re-derive any row with (and the same over `compat/**` in blis-vllm):
 
@@ -914,7 +918,7 @@ The schedule point requires all of the following:
 - the wait queue ahead is empty;
 - fewer than `max_num_seqs` requests run.
 
-Admission follows the decode engine's own order and stops at the first handoff that does not fit. vLLM v0.32.0 orders a priority pool's waiters by priority (`request_queue.py:202-205`), which is https://github.com/inference-sim/blis-vllm/issues/30. It must leave free the reservation of the other admitted handoffs (pulls in flight, and landed ones not yet run) plus its own first-decode-step blocks.
+Admission follows the decode engine's own order and stops at the first handoff that does not fit. vLLM v0.33.0 orders a priority pool's waiters by priority (`request_queue.py:202-205`), which is https://github.com/inference-sim/blis-vllm/issues/30. It must leave free the reservation of the other admitted handoffs (pulls in flight, and landed ones not yet run) plus its own first-decode-step blocks.
 
 Consequences:
 - A handoff holding transferred KV is never preempted and keeps its whole prompt until its pull lands.

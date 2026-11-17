@@ -1,0 +1,31 @@
+# Drain-gated phases: a warm-up, then the measured requests, as a benchmark sends them. The
+# measured phase starts when every warm-up request has its fate, not at a clock time, and the
+# engine, KV cache and prefix cache run on across the phases, so the measured requests hit the
+# 512-token system prompt the warm-up left in cache. Each Result row carries its phase, and the
+# warm-up rows are outside the measured window.
+#
+#   blis run --scenarios examples/capabilities --scenario cpu-tier.yaml --num-instances 1 \
+#     --workload-spec examples/capabilities/phases-workload.yaml
+version: "2"
+seed: 42
+aggregate_rate: 20
+phases:
+  - {name: warmup, num_requests: 12, concurrency: 4}
+  - {name: measured, num_requests: 24, concurrency: 4}   # starts when the warm-up has drained
+clients:
+  - id: w
+    phase: warmup
+    rate_fraction: 1
+    prefix_group: sys
+    prefix_length: 512
+    arrival: {process: poisson}
+    input_distribution: {type: constant, params: {value: 128}}
+    output_distribution: {type: constant, params: {value: 16}}
+  - id: m
+    phase: measured
+    rate_fraction: 1
+    prefix_group: sys
+    prefix_length: 512
+    arrival: {process: poisson}
+    input_distribution: {type: constant, params: {value: 128}}
+    output_distribution: {type: constant, params: {value: 16}}

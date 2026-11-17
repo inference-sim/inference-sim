@@ -11,7 +11,7 @@
 # floor, which would understate the collective by up to 1.9x -- so every test using one
 # fails for a reason that has nothing to do with what it asserts. The two tests that
 # genuinely need a 16-wide group spanning two nodes keep minimax-m25-h200-ep16.yaml and
-# are skipped against inference-sim/blis-registry#27 until the coefficient exists.
+# are skipped against https://github.com/inference-sim/blis-registry/issues/27 until the coefficient exists.
 #
 # tp=8 with dp=1 and expert parallelism enabled is a real deployment shape, not a
 # contrivance to reach a measured width: the InferenceX corpus measures it directly
@@ -35,7 +35,7 @@ kind: Scenario
 name: minimax-m25-h200-ep8
 engine:
   kind: vllm
-  version: "0.32.0"
+  version: "0.33.0"
 
 model: minimax-m2.5
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

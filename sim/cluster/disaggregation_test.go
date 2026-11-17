@@ -2016,8 +2016,8 @@ func TestPDRouting_InjectionTimingPreserved(t *testing.T) {
 }
 
 // TestDisaggregation_FollowUpWaitsForTheReportedCompletion pins that a session's next round
-// is released no earlier than the completion the request reports (arrival + E2E): a client
-// sends its next message after it has the whole response, output-processing time included.
+// is released no earlier than the completion the request's row states (arrival + client E2E): a
+// client sends its next message after it has the whole response, output-processing time included.
 func TestDisaggregation_FollowUpWaitsForTheReportedCompletion(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	if otpt := engineConfigOf(config).LatencyModel.OutputTokenProcessingTime(); otpt <= 0 {
@@ -2042,12 +2042,12 @@ func TestDisaggregation_FollowUpWaitsForTheReportedCompletion(t *testing.T) {
 		t.Fatal("no session round was released")
 	}
 	for id, tick := range releasedAt {
-		done, ok := m.RequestCompletionTimes[id]
+		done, ok := m.ClientCompletionTime(id)
 		if !ok {
 			t.Fatalf("%s: no reported completion", id)
 		}
-		if float64(tick) < done {
-			t.Errorf("%s: next round released at %d, before the reported completion %.0f", id, tick, done)
+		if tick < done {
+			t.Errorf("%s: next round released at %d, before the reported completion %d", id, tick, done)
 		}
 	}
 }

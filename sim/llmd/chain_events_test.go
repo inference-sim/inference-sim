@@ -7,7 +7,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// A vLLM v0.32.0 engine keys its blocks by its own 64-bit hashes, in decimal. chainEvents maps
+// A vLLM v0.33.0 engine keys its blocks by its own 64-bit hashes, in decimal. chainEvents maps
 // each to the prefix chain the canonicalizer keyed the same block of the prompt by, so a block the
 // engine cached from a prompt names the chain the router was shown (canonicalBlock). Removals
 // resolve to the chain of the store they undo, and the mapping goes with the last store.

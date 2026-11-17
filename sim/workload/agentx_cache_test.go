@@ -20,11 +20,11 @@ func TestAgentXCorpusCacheRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	miss, r1, err := LoadAgentXCorpusCached(agxSlicePath, "", 0, true, dir, "build-a")
+	miss, r1, err := LoadAgentXCorpusCached(agxSlicePath, "", 0, true, dir)
 	if err != nil || r1.Hit || r1.Ignored != "" || r1.WriteErr != nil {
 		t.Fatalf("first load: hit=%v ignored=%q write=%v err=%v", r1.Hit, r1.Ignored, r1.WriteErr, err)
 	}
-	hit, r2, err := LoadAgentXCorpusCached(agxSlicePath, "", 0, true, dir, "build-a")
+	hit, r2, err := LoadAgentXCorpusCached(agxSlicePath, "", 0, true, dir)
 	if err != nil || !r2.Hit || r2.Path != r1.Path {
 		t.Fatalf("second load: hit=%v ignored=%q err=%v", r2.Hit, r2.Ignored, err)
 	}
@@ -40,20 +40,19 @@ func TestAgentXCorpusCacheRoundTrip(t *testing.T) {
 }
 
 // TestAgentXCorpusCacheKeyAndDamage: a snapshot written under another filter, split
-// setting or build is not used, and a damaged, truncated or foreign file is ignored with a
+// setting is not used, and a damaged, truncated or foreign file is ignored with a
 // reason, re-parsed, and replaced by a good snapshot.
 func TestAgentXCorpusCacheKeyAndDamage(t *testing.T) {
 	dir := t.TempDir()
-	_, r, err := LoadAgentXCorpusCached(agxSlicePath, "", 0, true, dir, "build-a")
+	_, r, err := LoadAgentXCorpusCached(agxSlicePath, "", 0, true, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, other := range []struct {
 		limit int
 		split bool
-		build string
-	}{{60000, true, "build-a"}, {0, false, "build-a"}, {0, true, "build-b"}} {
-		_, ro, err := LoadAgentXCorpusCached(agxSlicePath, "", other.limit, other.split, dir, other.build)
+	}{{60000, true}, {0, false}} {
+		_, ro, err := LoadAgentXCorpusCached(agxSlicePath, "", other.limit, other.split, dir)
 		if err != nil || ro.Hit || ro.Path == r.Path {
 			t.Errorf("%+v reused the snapshot of another key (hit=%v path=%s)", other, ro.Hit, ro.Path)
 		}
@@ -65,7 +64,7 @@ func TestAgentXCorpusCacheKeyAndDamage(t *testing.T) {
 	fresh, _ := LoadAgentXCorpus(agxSlicePath, "", 0, true)
 	flip := append([]byte(nil), good...)
 	flip[len(flip)/2] ^= 0xff
-	wrongKey := []byte(strings.Replace(string(good), "build=build-a", "build=build-z", 1))
+	wrongKey := []byte(strings.Replace(string(good), "split=true", "split=fals", 1))
 	for name, bad := range map[string][]byte{
 		"flipped byte":  flip,
 		"truncated":     good[:len(good)/3],
@@ -76,7 +75,7 @@ func TestAgentXCorpusCacheKeyAndDamage(t *testing.T) {
 		if err := os.WriteFile(r.Path, bad, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		c, rb, err := LoadAgentXCorpusCached(agxSlicePath, "", 0, true, dir, "build-a")
+		c, rb, err := LoadAgentXCorpusCached(agxSlicePath, "", 0, true, dir)
 		if err != nil || rb.Hit || rb.Ignored == "" {
 			t.Errorf("%s: hit=%v ignored=%q err=%v", name, rb.Hit, rb.Ignored, err)
 		}
@@ -87,7 +86,7 @@ func TestAgentXCorpusCacheKeyAndDamage(t *testing.T) {
 			t.Errorf("%s: the damaged snapshot was not replaced", name)
 		}
 	}
-	if _, _, err := LoadAgentXCorpusCached(agxSlicePath, strings.Repeat("0", 64), 0, true, dir, "build-a"); err == nil {
+	if _, _, err := LoadAgentXCorpusCached(agxSlicePath, strings.Repeat("0", 64), 0, true, dir); err == nil {
 		t.Error("a cached load accepted a wrong corpus digest")
 	}
 }
@@ -103,7 +102,7 @@ func TestAgentXCorpusCacheConcurrentProcesses(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c, r, err := LoadAgentXCorpusCached(agxSlicePath, "", 0, true, dir, "build-a")
+			c, r, err := LoadAgentXCorpusCached(agxSlicePath, "", 0, true, dir)
 			switch {
 			case err != nil:
 				errs <- err.Error()
@@ -123,5 +122,28 @@ func TestAgentXCorpusCacheConcurrentProcesses(t *testing.T) {
 	all, _ := filepath.Glob(filepath.Join(dir, "*"))
 	if len(left) != 0 || len(all) != 1 {
 		t.Errorf("cache dir holds %v", all)
+	}
+}
+
+// A snapshot is reused by every build: the key names the corpus, the settings and the snapshot
+// schema, not the executable that wrote it, so a rebuilt binary, a CI job or a new pod hits the
+// snapshot a sibling wrote and the cache directory holds one snapshot per setting (#2086).
+func TestAgentXCorpusCacheIsSharedAcrossBuilds(t *testing.T) {
+	dir := t.TempDir()
+	_, written, err := LoadAgentXCorpusCached(agxSlicePath, "", 0, true, dir)
+	if err != nil || written.Hit {
+		t.Fatalf("first load: err %v, hit %v", err, written.Hit)
+	}
+	// A different build is the same call from a different process; nothing in the call names it.
+	again, r, err := LoadAgentXCorpusCached(agxSlicePath, "", 0, true, dir)
+	if err != nil || !r.Hit || r.Path != written.Path {
+		t.Fatalf("second load: err %v, hit %v, path %s (written at %s)", err, r.Hit, r.Path, written.Path)
+	}
+	fresh, _ := LoadAgentXCorpus(agxSlicePath, "", 0, true)
+	if again.SHA256 != fresh.SHA256 || len(again.Traces) != len(fresh.Traces) {
+		t.Errorf("a cached corpus differs from a parsed one")
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("%d files in the cache directory, want one snapshot", len(entries))
 	}
 }

@@ -7,7 +7,6 @@ package cluster
 
 import (
 	"bytes"
-	"fmt"
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"sort"
 	"strings"
@@ -115,69 +114,76 @@ func TestInstanceCostPerHour_EmptySetLogsAndReturnsZero(t *testing.T) {
 	}
 }
 
-// TestNewPlacementManager_RejectsDuplicateGPUType (round-5 IMP-2): two pools sharing a
-// gpu_type make cost/capacity resolution ambiguous (cost is looked up by first-match on
-// gpu_type), which the nodes-spanned × cost_per_hour multiplier would then mis-bill.
-// NewPlacementManager must reject the ambiguity at construction.
-func TestNewPlacementManager_RejectsDuplicateGPUType(t *testing.T) {
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("expected panic on two pools sharing a gpu_type, got none")
-		}
-		if !strings.Contains(fmt.Sprint(r), "gpu_type") {
-			t.Errorf("panic message should mention gpu_type, got: %v", r)
-		}
-	}()
-	newTestPM([]NodePoolConfig{
-		{Name: "h100-8g", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 0, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
-		{Name: "h100-4g", GPUType: "H100", GPUsPerNode: 4, InitialNodes: 1, MinNodes: 0, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 5},
+// TestSharedGPUType_EachInstanceBilledAtItsOwnPool (#1549): two pools may share a gpu_type
+// and differ in price (a spot and an on-demand H100 pool). An instance placed in each is
+// billed at its own pool's cost_per_hour, whichever pool it lands in, at startup.
+func TestSharedGPUType_EachInstanceBilledAtItsOwnPool(t *testing.T) {
+	pools := []NodePoolConfig{
+		{Name: "h100-spot", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 3},
+		{Name: "h100-ondemand", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
+	}
+	// TP=8 fills one node per instance: instance_0 takes the first pool, instance_1 the second.
+	cfg := deploymentForPlacement(2, pools, 9999)
+	cfg.TP = 8
+	cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
+	if len(cs.instances) != 2 {
+		t.Fatalf("expected 2 placed instances, got %d", len(cs.instances))
+	}
+	if got := cs.instances[0].CostPerHour; got != 3 {
+		t.Errorf("instance in the spot pool CostPerHour = %v, want 3", got)
+	}
+	if got := cs.instances[1].CostPerHour; got != 10 {
+		t.Errorf("instance in the on-demand pool CostPerHour = %v, want 10", got)
+	}
+}
+
+// TestSharedGPUType_SpanBilledAtOwnPool (#1549): a node-spanning instance in the second of
+// two same-chip pools is billed nodes-spanned x that pool's price.
+func TestSharedGPUType_SpanBilledAtOwnPool(t *testing.T) {
+	pm := newTestPM([]NodePoolConfig{
+		{Name: "h100-spot", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 0, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 3},
+		{Name: "h100-ondemand", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 2, MinNodes: 0, MaxNodes: 2, GPUMemoryGiB: 80, CostPerHour: 10},
 	})
+	// Only the second pool holds two whole free nodes, so TP=16 spans there.
+	_, gpus, _, err := pm.PlaceInstance("inst", "m", "H100", 16)
+	if err != nil {
+		t.Fatalf("PlaceInstance: %v", err)
+	}
+	if got := pm.PlacedInstanceCostPerHour(gpus); got != 20 {
+		t.Errorf("cost = %v, want 20 (2 nodes x the on-demand pool's 10)", got)
+	}
 }
 
-// TestNewClusterSimulator_RejectsPerRoleTPWithNodePools (round-5 IMP-1): a per-role TP
-// override (--prefill-tp/--decode-tp) differing from the global TP would make the
-// simulated TP diverge from the placed/billed TP under node_pools. Reject the combo.
-func TestNewClusterSimulator_RejectsPerRoleTPWithNodePools(t *testing.T) {
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("expected panic on per-role TP override + node_pools, got none")
-		}
-		if !strings.Contains(fmt.Sprint(r), "per-role tensor parallelism") {
-			t.Errorf("panic message should mention per-role tensor parallelism, got: %v", r)
-		}
-	}()
+// TestPerRoleTP_PlacedAndBilledAtOwnDegree (#1543): with node_pools of 8-GPU nodes, a
+// prefill pool at TP=8 and a decode pool at TP=16, the prefill instance takes one node and
+// the decode instance spans two. Each is billed nodes-spanned x cost_per_hour and holds
+// exactly its own TP in GPUs.
+func TestPerRoleTP_PlacedAndBilledAtOwnDegree(t *testing.T) {
 	pools := []NodePoolConfig{
-		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
+		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 3, MinNodes: 3, MaxNodes: 3, GPUMemoryGiB: 80, CostPerHour: 10},
 	}
-	cfg := deploymentForPlacement(1, pools, 9999)
+	cfg := newTestDisaggDeploymentConfig(2, 1, 1)
+	cfg.NodePools = pools
 	cfg.TP = 8
-	prefillTP := 4
-	editPrefill(&cfg, func(c *simConfig) { c.TP = prefillTP }) // diverges from global TP=8
-	_ = newTestCluster(cfg, NewSliceRequestSource(nil), nil)
-}
-
-// TestNewClusterSimulator_RejectsDecodeTPWithNodePools (round-5 IMP-1, decode path):
-// the same guard covers a --decode-tp override diverging from the global TP.
-func TestNewClusterSimulator_RejectsDecodeTPWithNodePools(t *testing.T) {
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("expected panic on per-role (decode) TP override + node_pools, got none")
-		}
-		if !strings.Contains(fmt.Sprint(r), "decode pool TP") {
-			t.Errorf("panic message should name the decode pool, got: %v", r)
-		}
-	}()
-	pools := []NodePoolConfig{
-		{Name: "h100", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
+	editPrefill(&cfg, func(c *simConfig) { c.TP = 8 })
+	editDecode(&cfg, func(c *simConfig) { c.TP = 16 })
+	cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
+	if len(cs.instances) != 2 {
+		t.Fatalf("expected 2 placed instances, got %d", len(cs.instances))
 	}
-	cfg := deploymentForPlacement(1, pools, 9999)
-	cfg.TP = 8
-	decodeTP := 16
-	editDecode(&cfg, func(c *simConfig) { c.TP = decodeTP }) // diverges from global TP=8
-	_ = newTestCluster(cfg, NewSliceRequestSource(nil), nil)
+	want := []struct{ tp, nodes int }{{8, 1}, {16, 2}}
+	for i, w := range want {
+		inst := cs.instances[i]
+		if inst.TPDegree != w.tp {
+			t.Errorf("instance %d TPDegree = %d, want %d", i, inst.TPDegree, w.tp)
+		}
+		if got := len(inst.allocatedGPUIDs); got != w.tp {
+			t.Errorf("instance %d holds %d GPUs, want %d", i, got, w.tp)
+		}
+		if got, wantCost := inst.CostPerHour, float64(10*w.nodes); got != wantCost {
+			t.Errorf("instance %d CostPerHour = %v, want %v (%d node(s) x 10)", i, got, wantCost, w.nodes)
+		}
+	}
 }
 
 // TestNewClusterSimulator_PerRoleTPEqualToGlobalOK (round-8 M-5): the per-role-TP guard
@@ -938,5 +944,33 @@ func TestVerifyConservation_FollowsGPUsAFreedNodeReturns(t *testing.T) {
 	}
 	if err := pm.VerifyConservation(); err != nil {
 		t.Errorf("after the instance's release: %v", err)
+	}
+}
+
+// TestSharedGPUType_AutoscalerPricesVariantAtPoolMean (#1549): two pools sharing a chip
+// make one variant {GPUType, TP}. The autoscaler's view of it is the mean of the prices its
+// replicas were actually placed at, not the price of whichever pool came first.
+func TestSharedGPUType_AutoscalerPricesVariantAtPoolMean(t *testing.T) {
+	pools := []NodePoolConfig{
+		{Name: "h100-spot", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 3},
+		{Name: "h100-ondemand", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
+	}
+	cfg := deploymentForPlacement(2, pools, 9999)
+	cfg.TP = 8
+	cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
+	for _, inst := range cs.instances {
+		inst.Model = "m"
+	}
+	signals := (&DefaultCollector{}).Collect(buildClusterState(cs, nil))
+	if len(signals) != 1 {
+		t.Fatalf("want signals for one model, got %d", len(signals))
+	}
+	res := NewV2SaturationAnalyzer(V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: 0.8,
+		ScaleDownBoundary: 0.4, AvgInputTokens: 512, MinReplicas: 1}).Analyze(signals[0])
+	if len(res.VariantCapacities) != 1 {
+		t.Fatalf("two same-chip pools should be one variant, got %d", len(res.VariantCapacities))
+	}
+	if got := res.VariantCapacities[0].CostPerReplica; got != 6.5 {
+		t.Errorf("CostPerReplica = %v, want 6.5 (mean of the spot 3 and on-demand 10)", got)
 	}
 }

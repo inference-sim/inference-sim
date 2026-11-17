@@ -535,6 +535,11 @@ func TestCatalogPresets_DuplicateSourceIsGone(t *testing.T) {
 			if call, isSel := selectorOf[id]; isSel && call {
 				return true
 			}
+			// workload.Replay.Workload names a catalog replay workload (the replay spec's own field, not
+			// the retired defaults.yaml struct); only the file that resolves it reads it.
+			if file == "replay_agentx.go" && id.Name == "Workload" {
+				return true
+			}
 			if why, banned := bannedIdents[id.Name]; banned {
 				t.Errorf("%s:%d: %s must not appear in cmd/'s production sources — %s",
 					file, fset.Position(id.Pos()).Line, id.Name, why)

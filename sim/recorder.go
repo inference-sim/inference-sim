@@ -42,7 +42,7 @@ func (m *Metrics) RecordKVUsage(used, duration int64, weight bool) {
 		m.PeakKVBlocksUsed = used
 	}
 	if weight {
-		m.KVBlocksUsed += float64(used) * float64(duration)
+		m.KVBlocksUsed += float64(float64(used) * float64(duration))
 	}
 }
 
@@ -53,15 +53,21 @@ func (m *Metrics) RecordCompletion(c Completion) {
 		m.TotalOutputTokens += c.OutputTokens
 	}
 	m.RequestE2Es[req.ID] = float64(c.E2E)
-	m.RequestITLs[req.ID] = c.ITL
+	// A request with fewer than two output tokens had no gap between tokens: it has no ITL, not
+	// a zero one that request-averaged consumers would count as a sample (#1894).
+	if c.OutputTokens >= 2 {
+		m.RequestITLs[req.ID] = c.ITL
+	}
 	m.RequestStepCounters = append(m.RequestStepCounters, c.Steps)
 	m.RequestCompletionTimes[req.ID] = float64(c.E2E + req.ArrivalTime)
 	m.recordCompletionOrder(req.ID, c.Clock, c.OutputTokens, c.Overhead)
 	m.AllITLs = append(m.AllITLs, req.ITL...)
 	gaps := req.ClientTokenGaps()
 	m.ClientGaps = append(m.ClientGaps, gaps...)
+	m.ClientChunkGaps = append(m.ClientChunkGaps, req.ClientITL...)
 	m.StepOwners = append(m.StepOwners,
-		StepOwner{CompletionUs: c.E2E + req.ArrivalTime, Steps: len(req.ITL), ClientGaps: len(gaps), Phase: req.Phase})
+		StepOwner{CompletionUs: c.E2E + req.ArrivalTime, Steps: len(req.ITL), ClientGaps: len(gaps),
+			ClientChunkGaps: len(req.ClientITL), Phase: req.Phase})
 }
 
 func (m *Metrics) RecordLengthCapped(req *Request) {

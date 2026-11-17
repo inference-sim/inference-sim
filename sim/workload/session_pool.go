@@ -150,8 +150,17 @@ func BuildSessionPool(blueprints []SessionBlueprint, r0Requests []*sim.Request, 
 	}
 	// Inject the first concurrent sessions immediately.
 	initial := make([]*sim.Request, 0, concurrent)
+	// The client starts its first sessions together, at the first one's recorded start, in corpus
+	// order (#2130). Keeping each one's recorded start would start them apart, and a refill
+	// would then find fewer sessions in flight than the client holds.
+	start := d.queued[0].ArrivalTime
 	for i := 0; i < concurrent; i++ {
-		initial = append(initial, d.queued[d.nextQueued])
+		first := d.queued[d.nextQueued]
+		if first.Deadline > 0 {
+			first.Deadline += start - first.ArrivalTime
+		}
+		first.ArrivalTime = start
+		initial = append(initial, first)
 		d.nextQueued++
 	}
 	return d, initial, nil

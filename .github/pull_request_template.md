@@ -45,7 +45,7 @@ report and the scoring harness's figures on published units (X13, VAL-6). Otherw
 - [ ] X12: No third-party data committed; each derived value cites its source by URL and commit or hash; no private names.
 - [ ] X13: Each behaviour change has a test that fails without it.
 - [ ] X14: The commit hashes listed in this description are the branch heads.
-- [ ] X20: Each commit written with an agent's help has one Assisted-by line and no Co-authored-by line naming a tool; the person responsible adds the DCO sign-off.
+- [ ] X20: Each commit written with an agent's help has one Assisted-by line and no Co-authored-by line naming a tool; the person responsible adds the DCO sign-off, which no check requires.
 - [ ] X24: Every review finding is fixed, filed as a linked issue, or rejected with a reason.
 - [ ] X26: Every path, symbol, issue and supported-feature statement in changed documentation is generated or checked.
 <!-- END GENERATED: invariants -->

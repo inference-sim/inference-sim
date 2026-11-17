@@ -258,9 +258,10 @@ def page_inferencex_agentic(before: Build, after: Build) -> str:
             for r in hard + soft
         ],
     )
-    # The replay states the per-trace idle-gap cap and per-lane warm-up requests since #1971. A
-    # record from a build before it lists them as mismatches; a record from a build with it does
-    # not, and then the page says nothing about them.
+    # The replay states the per-trace idle-gap cap and per-lane warm-up requests
+    # (`trace_idle_gap_cap_s` and `warmup` in the workload spec). A record from a build before
+    # that lists them as mismatches; a record from a build with it does not, and then the page
+    # says nothing about them.
     idle_gap = any("idle-gap cap" in r["setting"] for r in hard)
     lane_warmup = any("warmup" in r["setting"] for r in hard)
     exact = [
@@ -270,12 +271,12 @@ def page_inferencex_agentic(before: Build, after: Build) -> str:
     ]
     if idle_gap or lane_warmup:
         exact.append("a build whose replay states the per-trace idle-gap cap and per-lane "
-                     "warm-up requests (#1971), or a run without them")
+                     "warm-up requests, or a run without them")
     exact.append("the UNSTATED rows stated by the run")
     if idle_gap or lane_warmup:
         L += [
             f"The idle-gap cap and warm-up rows describe build {after.commit}, whose replay cannot "
-            "state them. The replay states both since #1971 (`trace_idle_gap_cap_s` and "
+            "state them. The current replay states both (`trace_idle_gap_cap_s` and "
             "`warmup` in the workload spec), so a record from a build that has it carries no "
             "such row; the rows above are a record of that build, not of the current one.",
             "",

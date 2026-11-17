@@ -38,16 +38,14 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 	// it, naming the mode, rather than run it as internal.
 	if dataParallelism > 1 && dpLoadBalancing == sim.DPLoadBalancingExternal {
 		logrus.Fatalf("scenario %q: engine %s runs a data-parallel group through the engine contract "+
-			"behind vLLM's internal balancer, which does not drive --dp-load-balancing external yet "+
+			"behind vLLM's internal balancer, which does not drive parallel.data_parallel_load_balancing external yet "+
 			"(one endpoint per rank, the router picking the rank)", kernelScenario, version)
 	}
 	// The host does not carry request priority across the engine contract yet: the driver sends
 	// every engine.Request at priority 0 (sim.EngineDriver, the SLO class only as a tag the engine
 	// does not read), so a priority policy would order by arrival alone and silently run as FCFS.
-	// Refuse the scenario's stated policy (vLLM's priority, BLIS's priority-fcfs: enginePolicyOf),
-	// any SLO priority override, and a priority scheduler or preemption policy the run asks for
-	// (--scheduler, --preemption-policy or a --policy-config bundle, none of which reaches the
-	// engine), naming the setting, rather than run any as FCFS.
+	// Refuse the scenario's stated policy (vLLM's priority, BLIS's priority-fcfs: enginePolicyOf)
+	// and any SLO priority override, naming the setting, rather than run either as FCFS.
 	refusePriority := func(setting string) {
 		logrus.Fatalf("scenario %q: engine %s runs through the engine contract, and the host does not "+
 			"carry request priority across it yet (every request reaches the engine at priority 0), so %s",
@@ -59,15 +57,15 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 	if len(sloPriorityOverrides) > 0 {
 		refusePriority("the --policy-config priority.slo_priorities override would be ignored")
 	}
-	if scheduler == "priority-fcfs" || scheduler == "reverse-priority" || preemptionPolicy == "priority" {
-		refusePriority(fmt.Sprintf("scheduler %s with preemption policy %s would run as FCFS", scheduler, preemptionPolicy))
-	}
 	registerContractEngines()
 	scenarioPath := filepath.Join(kernelScenarioDir, kernelScenario)
 	// The run opens its catalog and registry once (runData) and every engine of the run reads
 	// that Data, so the Result's hashes and its one selected-entry report cover the lookups of
 	// every pool's engine (blis-vllm#90, design §3.3, VAL-6).
 	data := mustRunData()
+	// The run's file systems under the fs tiers' root_dirs, shared by every engine of the model
+	// (#1698): one store for each (model, root_dir).
+	storage := newTierStorage()
 	build := func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
 		m := latency
 		if kernelPDOpened != nil {
@@ -93,6 +91,12 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 		if err := placeInstance(eng, kernelPDOpened, index); err != nil {
 			return nil, fmt.Errorf("scenario %q: instance_%d: %w", kernelScenario, index, err)
 		}
+		if kernelPDOpened == nil {
+			if err := placePeerInstance(eng, kernelOpened, index); err != nil {
+				return nil, fmt.Errorf("scenario %q: %w", kernelScenario, err)
+			}
+		}
+		storage.share(eng, model)
 		// --renderer-num-workers and --api-server-count are vLLM's API-server settings, which
 		// blis-schemas does not carry yet; the engine resolves them into the admission queue its
 		// plan states, and the driver queues requests on that shape.

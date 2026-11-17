@@ -37,7 +37,7 @@ type PassedSettings struct {
 	EnablePrefixCaching  *bool    `json:"enable_prefix_caching"`
 	GPUMemoryUtilization *float64 `json:"gpu_memory_utilization"`
 	EnableExpertParallel *bool    `json:"enable_expert_parallel"`
-	// MaxCUDAGraphCaptureSize is compilation_config.max_cudagraph_capture_size (blis-schemas#72).
+	// MaxCUDAGraphCaptureSize is compilation_config.max_cudagraph_capture_size (https://github.com/inference-sim/blis-schemas/issues/72).
 	MaxCUDAGraphCaptureSize *int `json:"max_cudagraph_capture_size"`
 }
 
@@ -182,7 +182,7 @@ type PointConfig struct {
 	GPUMemoryUtilization  float64
 	EnableExpertParallel  bool
 	// MaxCUDAGraphCaptureSize is the capture ceiling the run passed, or nil to keep the
-	// scenario's (blis-schemas#72).
+	// scenario's (https://github.com/inference-sim/blis-schemas/issues/72).
 	MaxCUDAGraphCaptureSize *int
 
 	SeqsFrom   SettingSource

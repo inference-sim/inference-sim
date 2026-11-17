@@ -98,17 +98,12 @@ func setProvenanceRunVars(catalogDir, defaultsPath string) {
 	seed = provenanceSeed
 	simulationHorizon = provenanceHorizonUs
 	longPrefillTokenThreshold = 0
-	kvCPUBlocks = 0
-	kvOffloadThreshold = 0.9
-	kvTransferBandwidth = 100.0
-	kvTransferBaseLatency = 0
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
 	traceLevel = "none"
 	counterfactualK = 0
 	workloadSpecPath = ""
-	lazyGeneration = false
 	requestTimeoutSecs = 300
 }
 

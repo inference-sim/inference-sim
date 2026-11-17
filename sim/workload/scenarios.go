@@ -1,7 +1,7 @@
 package workload
 
 // Built-in scenario presets for common workload patterns.
-// Each returns a valid WorkloadSpec ready for use with GenerateRequests.
+// Each returns a valid WorkloadSpec ready for use with GenerateWorkloadLazy.
 
 // ScenarioBurstyTraffic creates a spec with Gamma-distributed bursty arrivals.
 func ScenarioBurstyTraffic(seed int64, rate float64) *WorkloadSpec {

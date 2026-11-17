@@ -19,11 +19,12 @@ import (
 // configured by the deployment's router inputs (see sim/llmd).
 type PolicyBundle struct {
 	Priority          PriorityConfig                `yaml:"priority"`
-	Scheduler         string                        `yaml:"scheduler"`
-	Preemption        PreemptionConfig              `yaml:"preemption"`
 	NodePools         []NodePoolBundleConfig        `yaml:"node_pools"`         // nil = no node pools
 	Autoscaler        AutoscalerBundleConfig        `yaml:"autoscaler"`         // IntervalUs=0 = disabled
 	InstanceLifecycle InstanceLifecycleBundleConfig `yaml:"instance_lifecycle"` // zero = instant loading
+	// ClusterAutoscaler decides how many nodes each pool needs (inference-sim#740); absent, no node
+	// is provisioned beyond the pools' initial nodes.
+	ClusterAutoscaler ClusterAutoscalerBundleConfig `yaml:"cluster_autoscaler"`
 }
 
 // PriorityConfig holds priority policy configuration.
@@ -33,11 +34,6 @@ type PriorityConfig struct {
 	// scheduling and preemption. nil = defaults (critical=4, standard=3, batch=-1,
 	// sheddable=-2, background=-3).
 	SLOPriorities map[string]int `yaml:"slo_priorities,omitempty"`
-}
-
-// PreemptionConfig holds preemption policy configuration.
-type PreemptionConfig struct {
-	Policy string `yaml:"policy"`
 }
 
 // NodePoolBundleConfig mirrors cluster.NodePoolConfig for YAML loading in PolicyBundle.
@@ -69,6 +65,12 @@ type AnalyzerBundleConfig struct {
 	AvgInputTokens    float64 `yaml:"avg_input_tokens"`
 	// MinReplicas is the fewest ready replicas scale-down leaves a model; 0 means the default, 1.
 	MinReplicas int `yaml:"min_replicas"`
+	// Kind selects the analyzer: v2-saturation (the default) or threshold (#2063). Signal and Target
+	// belong to threshold: the per-replica signal (in_flight, queue_depth, kv_utilization) and the
+	// value one replica is sized for.
+	Kind   string  `yaml:"kind"`
+	Signal string  `yaml:"signal"`
+	Target float64 `yaml:"target"`
 }
 
 // InstanceLifecycleBundleConfig holds instance lifecycle timing for YAML loading.
@@ -76,6 +78,26 @@ type AnalyzerBundleConfig struct {
 type InstanceLifecycleBundleConfig struct {
 	LoadingDelay              DelayBundleSpec `yaml:"loading_delay"`
 	WarmStartInitialInstances bool            `yaml:"warm_start_initial_instances"`
+	// WeightSource names the catalog storage tier an instance's weights are read from when it
+	// loads (#1215), such as nvme_gen4 or s3. The loading time then has two parts: the time to
+	// read the instance's resident weights from that tier, priced from the registry's
+	// offload_tier_<tier>_* entries for the instance's chip, and loading_delay, which is what
+	// remains (process start, CUDA context, graph capture). Empty keeps loading_delay as the
+	// whole loading time.
+	WeightSource string `yaml:"weight_source"`
+	// DrainPolicy is how a scale-down drains an instance (#910): IMMEDIATE, WAIT or REDIRECT. Empty is WAIT.
+	DrainPolicy string `yaml:"drain_policy"`
+}
+
+// ClusterAutoscalerBundleConfig is the policy bundle's cluster_autoscaler block
+// (cluster.ClusterAutoscalerConfig).
+type ClusterAutoscalerBundleConfig struct {
+	Policy             string  `yaml:"policy"`
+	PendingThresholdUs float64 `yaml:"pending_threshold_us"`
+	MaxNodesPerPool    int     `yaml:"max_nodes_per_pool"`
+	ScaleDown          string  `yaml:"scale_down"`
+	LowWaterMark       float64 `yaml:"low_water_mark"`
+	MinNodesPerPool    int     `yaml:"min_nodes_per_pool"`
 }
 
 // AutoscalerBundleConfig holds autoscaler pipeline configuration.
@@ -89,14 +111,44 @@ type AutoscalerBundleConfig struct {
 	ScaleDownStabilizationWindowUs float64              `yaml:"scale_down_stabilization_window_us"`
 	HPAScrapeDelay                 DelayBundleSpec      `yaml:"hpa_scrape_delay"`
 	Analyzer                       AnalyzerBundleConfig `yaml:"analyzer"`
+	// CollectorWindowSize keeps that many ticks of readings for the analyzer (#1141); 0 = none.
+	CollectorWindowSize int `yaml:"collector_window_size"`
+	// ScaleToZeroIdleUs drains all of a model's replicas after that long without a request (#909); 0 = never.
+	ScaleToZeroIdleUs float64 `yaml:"scale_to_zero_idle_us"`
+	// ScaleFromZeroHoldUs: a request for a model with no replica starts one and waits up to this long (#908); 0 = reject.
+	ScaleFromZeroHoldUs float64 `yaml:"scale_from_zero_hold_us"`
+	ScaleFromZeroPollUs float64 `yaml:"scale_from_zero_poll_us"`
+}
+
+// removedBundleKeys are the top-level keys a bundle no longer takes, each with what states its
+// setting now: the scheduler and preemption policy are the engine's, stated in the scenario
+// (inference-sim #2037, #1602).
+var removedBundleKeys = map[string]string{
+	"scheduler":  "state engine.scheduling_policy (fcfs or priority, vLLM's) in each pool's engine block of the scenario",
+	"preemption": "state engine.scheduling_policy (fcfs or priority, vLLM's) in each pool's engine block of the scenario; it sets the preemption victim too",
 }
 
 // LoadPolicyBundle reads and parses a YAML policy configuration file.
-// Uses strict parsing: unrecognized keys (typos) are rejected.
+// Uses strict parsing: unrecognized keys (typos) are rejected, and a removed key is refused
+// with what replaces it.
 func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading policy config: %w", err)
+	}
+	var top map[string]yaml.Node
+	if err := yaml.Unmarshal(data, &top); err == nil {
+		var removed []string
+		for k := range top {
+			if _, ok := removedBundleKeys[k]; ok {
+				removed = append(removed, k)
+			}
+		}
+		sort.Strings(removed)
+		if len(removed) > 0 {
+			k := removed[0]
+			return nil, fmt.Errorf("parsing policy config: %s was removed from the policy bundle: %s", k, removedBundleKeys[k])
+		}
 	}
 	var bundle PolicyBundle
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
@@ -107,44 +159,8 @@ func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 	return &bundle, nil
 }
 
-// The engine's scheduler and preemption policy names (validSchedulers,
-// validPreemptionPolicies) are declared with the engine (scheduler.go); the bundle validates
-// against them.
-
-// ValidSchedulerNames returns sorted valid scheduler names (excluding empty).
-func ValidSchedulerNames() []string { return validNamesList(SchedulerNameTable()) }
-
-// IsValidPreemptionPolicy returns true if name is a recognized preemption policy.
-func IsValidPreemptionPolicy(name string) bool { return PreemptionPolicyNameTable()[name] }
-
-// ValidPreemptionPolicyNames returns sorted valid preemption policy names (excluding empty).
-func ValidPreemptionPolicyNames() []string { return validNamesList(PreemptionPolicyNameTable()) }
-
-// validNamesList returns sorted non-empty keys from a validity map.
-func validNamesList(m map[string]bool) []string {
-	names := make([]string, 0, len(m))
-	for k := range m {
-		if k != "" {
-			names = append(names, k)
-		}
-	}
-	sort.Strings(names)
-	return names
-}
-
-// validNames returns a sorted comma-separated list of valid names (excluding empty string).
-func validNames(m map[string]bool) string {
-	return strings.Join(validNamesList(m), ", ")
-}
-
-// Validate checks that all policy names and parameter ranges in the bundle are valid.
+// Validate checks that the parameter ranges in the bundle are valid.
 func (b *PolicyBundle) Validate() error {
-	if !IsValidScheduler(b.Scheduler) {
-		return fmt.Errorf("unknown scheduler %q; valid options: %s", b.Scheduler, validNames(SchedulerNameTable()))
-	}
-	if !IsValidPreemptionPolicy(b.Preemption.Policy) {
-		return fmt.Errorf("unknown preemption policy %q; valid options: %s", b.Preemption.Policy, validNames(PreemptionPolicyNameTable()))
-	}
 	// Validate autoscaler config.
 	if math.IsNaN(b.Autoscaler.IntervalUs) || math.IsInf(b.Autoscaler.IntervalUs, 0) {
 		return fmt.Errorf("autoscaler.interval_us must be a finite number")
@@ -181,7 +197,7 @@ func (b *PolicyBundle) Validate() error {
 		return fmt.Errorf("autoscaler.analyzer.avg_input_tokens must be > 0, got %v", a.AvgInputTokens)
 	}
 	if a.MinReplicas < 0 {
-		return fmt.Errorf("autoscaler.analyzer.min_replicas must be >= 1 (0 or absent = 1; scale-to-zero is not modelled, #909), got %d", a.MinReplicas)
+		return fmt.Errorf("autoscaler.analyzer.min_replicas must be >= 1 (0 or absent = 1; a model scales to zero through autoscaler.scale_to_zero_idle_us), got %d", a.MinReplicas)
 	}
 	// Cross-check scale_down_boundary < scale_up_threshold using effective (post-default) values.
 	// A one-sided override (e.g. scale_down_boundary: 0.9, scale_up_threshold unset → default 0.8)
@@ -255,6 +271,9 @@ func (b *PolicyBundle) Validate() error {
 	}
 	if ls < 0 {
 		return fmt.Errorf("instance_lifecycle.loading_delay.stddev must be >= 0, got %v", ls)
+	}
+	if ws := b.InstanceLifecycle.WeightSource; ws != strings.TrimSpace(ws) || strings.ContainsAny(ws, " \t\n") {
+		return fmt.Errorf("instance_lifecycle.weight_source must be a storage tier name such as nvme_gen4, got %q", ws)
 	}
 	return nil
 }

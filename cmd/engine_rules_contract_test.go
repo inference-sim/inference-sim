@@ -20,7 +20,7 @@ import (
 // rules.EngineRules (#2021 B4; PR BC-3). The test type-checks the pinned module's own source --
 // the versions go.mod names, not a copy -- so the claim is checked rather than taken on trust.
 //
-// The concrete pack type (blis-vllm's rules/pack.Pack since blis-schemas#102 2c38342) and
+// The concrete pack type (blis-vllm's rules/pack.Pack since https://github.com/inference-sim/blis-schemas/issues/102 2c38342) and
 // blis-vllm's pack registry may appear in exactly one place: the adaptation that hands
 // blis-vllm/rules' lookup to the kernel's RulesFrom, which turns it into a function returning
 // rules.EngineRules, with the list of releases it answers for (allowedPackUses). Anywhere else,
@@ -426,7 +426,7 @@ func TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite(t *testing.T) {
 	}
 }
 
-// inference-sim reaches blis-vllm's v0.32.0 engine only through blis-schemas' engine.Engine
+// inference-sim reaches blis-vllm's v0.33.0 engine only through blis-schemas' engine.Engine
 // contract (GOAL.md): no inference-sim package imports blis-vllm/core/... directly, the
 // build site's registration package included only through its facade, and the host's driver
 // (sim/engine_driver.go) imports the contract's engine package and no engine implementation.
@@ -444,7 +444,7 @@ func TestTheHostReachesTheV032EngineOnlyThroughTheContract(t *testing.T) {
 		checked++
 		for _, imp := range strings.Split(imports, ",") {
 			if strings.HasPrefix(imp, "github.com/inference-sim/blis-vllm/core") {
-				t.Errorf("%s imports %s; inference-sim reaches the v0.32.0 engine only through engine.Engine", pkg, imp)
+				t.Errorf("%s imports %s; inference-sim reaches the v0.33.0 engine only through engine.Engine", pkg, imp)
 			}
 		}
 	}

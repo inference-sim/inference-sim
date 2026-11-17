@@ -107,6 +107,10 @@ type Gateway struct {
 	// kvHeld counts, per instance, the published holdings (tiers) of each block hash, to release
 	// the canonicalizer's pins when the instance's cache is cleared.
 	kvHeld map[cluster.InstanceID]map[string]int
+	// echoed is, per session, the headers the router wrote on the session's earlier responses that the
+	// session plugins read back (the encoded_endpoint_header token): the client resends them on the
+	// session's next request (sessionHeaders).
+	echoed map[string]map[string]string
 	// kvChains maps, per instance, each block hash its engine publishes in the engine's own form to
 	// the prefix chain BLIS keys the block by (chainEvents).
 	kvChains map[cluster.InstanceID]map[string]*engineChain
@@ -245,6 +249,7 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 	g.canon = newPromptCanon(g.rt.seed, int(host.BlockSizeTokens()), capacity)
 	g.kvHeld = map[cluster.InstanceID]map[string]int{}
 	g.kvChains = map[cluster.InstanceID]map[string]*engineChain{}
+	g.echoed = map[string]map[string]string{}
 	g.kvLastDelivery = map[cluster.InstanceID]int64{}
 	for _, inst := range host.Instances() {
 		if err := g.checkPreciseLoRA(inst); err != nil {
@@ -588,7 +593,7 @@ func (g *Gateway) handleRequest(f *flight) {
 	// the request's context from it, and cancellation propagates synchronously only through stdlib
 	// cancel contexts, so a client deadline reaches the router at its simulated instant (INV-6).
 	f.ctx, f.cancel = context.WithCancel(g.ctx)
-	f.prompt = g.canon.canonical(f.req.InputTokens)
+	f.prompt = g.canon.canonicalUnder(identityRoot(f.req.Adapter, nil), f.req.InputTokens)
 	if g.observe != nil {
 		g.observe("request", f.req.ID)
 	}
@@ -611,6 +616,8 @@ func (g *Gateway) routeRequest(f *flight) embed.Request {
 		Stream:     f.stream,
 		Objective:  f.req.SLOClass,
 		FairnessID: f.req.TenantID,
+		SessionID:  f.req.SessionID,
+		Headers:    g.sessionHeaders(f.req.SessionID),
 	}
 	if f.req.SLOTargetUs > 0 {
 		r.TTFTSLO = time.Duration(f.req.SLOTargetUs) * time.Microsecond
@@ -831,6 +838,7 @@ func (g *Gateway) responseHeaders(f *flight) {
 		ct = "text/event-stream"
 	}
 	headers := f.fl.ResponseHeaders(map[string]string{":status": "200", "content-type": ct})
+	g.keepEchoed(f.req.SessionID, headers)
 	if g.responseHeaderObserved != nil {
 		g.responseHeaderObserved(f.req.ID, headers)
 	}
@@ -1099,10 +1107,11 @@ func (g *Gateway) checkLatePod(inst *cluster.InstanceSimulator) error {
 // checkPreciseLoRA refuses a precise-prefix-cache-producer over an engine serving LoRA adapters, and a
 // router indexing KV events over an engine that says it cannot be indexed (KVEventsRefusal).
 func (g *Gateway) checkPreciseLoRA(inst *cluster.InstanceSimulator) error {
-	if len(g.req.PrefixIndexes) > 0 && inst.AdapterCapacity() > 0 {
+	if len(g.req.PrefixIndexes) > 0 && inst.AdapterCapacity() > 0 && !inst.KVEventsCarryIdentity() {
 		return errors.New("the router configuration cannot be simulated faithfully: precise-prefix-cache-producer " +
 			"keys blocks by LoRA adapter, but the compatibility engine this simulator runs keys its prefix cache " +
-			"without the adapter, so its KV events cannot name the adapter a block belongs to")
+			"without the adapter, so its KV events cannot name the adapter a block belongs to; only an engine " +
+			"that publishes the stored block's identity, as vLLM's does, can be indexed by adapter")
 	}
 	if g.router.WantsKVEvents() {
 		// An engine whose KV events the router cannot key (a full-attention group at another

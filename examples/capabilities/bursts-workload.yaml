@@ -1,0 +1,20 @@
+# Two bursts of requests with a long silence between them: 40 requests/s for 8 s, nothing for 32 s,
+# then 40 requests/s for 6 s. The silence is long enough for the autoscaler to scale the model to
+# zero (autoscale-bundle.yaml), and the second burst finds no replica. Bound the run with --horizon.
+version: "2"
+seed: 42
+aggregate_rate: 40
+num_requests: 100000
+clients:
+  - id: early
+    rate_fraction: 1
+    lifecycle: {windows: [{start_us: 0, end_us: 8000000}]}
+    arrival: {process: poisson}
+    input_distribution: {type: constant, params: {value: 256}}
+    output_distribution: {type: constant, params: {value: 32}}
+  - id: late
+    rate_fraction: 1
+    lifecycle: {windows: [{start_us: 40000000, end_us: 46000000}]}
+    arrival: {process: poisson}
+    input_distribution: {type: constant, params: {value: 256}}
+    output_distribution: {type: constant, params: {value: 32}}
