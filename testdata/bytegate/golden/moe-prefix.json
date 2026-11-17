@@ -882,9 +882,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.2-0.20261117042537-0c8c7259c44b",
+    "substrate": "v0.14.2-0.20261117044346-6eaad394e072",
     "router": "v1.0.0-blis.4",
-    "engine_module": "v0.32.1-0.20261117012328-0e64151389b7"
+    "engine_module": "v0.32.1-0.20261117044643-40622bc81b42"
   },
   "window": {
     "start_us": 49999,
@@ -2338,6 +2338,7 @@
             "e2e_p95_ms": 11906.231299999998,
             "e2e_p99_ms": 12895.740819999994,
             "measured_completed_requests": 80,
+            "mfu": 0.014865237336749977,
             "output_tok_s": 2811.4295983798115,
             "prefill_busy_share": 0.13320065452282548,
             "ttft_mean_ms": 86.87305,

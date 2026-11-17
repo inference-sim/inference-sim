@@ -133,8 +133,12 @@ github.com/inference-sim/blis-substrate v0.14.2-0.20261117042106-8753a021501f h1
 github.com/inference-sim/blis-substrate v0.14.2-0.20261117042106-8753a021501f/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
 github.com/inference-sim/blis-substrate v0.14.2-0.20261117042537-0c8c7259c44b h1:Nps3kFO/iytM6o450Pvr/m2jRHiXlf1wzWTMNJnV+5U=
 github.com/inference-sim/blis-substrate v0.14.2-0.20261117042537-0c8c7259c44b/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
+github.com/inference-sim/blis-substrate v0.14.2-0.20261117044346-6eaad394e072 h1:n4IOssHY7vDqWVyey+ZEG4Wt+FOwFEAKJLHMz4Y0A0A=
+github.com/inference-sim/blis-substrate v0.14.2-0.20261117044346-6eaad394e072/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
 github.com/inference-sim/blis-vllm v0.32.1-0.20261117012328-0e64151389b7 h1:UmrMEMvkcYKT2WT+9bs4ljcZTNa/5LAG08J0/+l7HS4=
 github.com/inference-sim/blis-vllm v0.32.1-0.20261117012328-0e64151389b7/go.mod h1:1VnzunqXYL3pA7WnaGq+cGTRW7hmSctwIZCvlzXRxII=
+github.com/inference-sim/blis-vllm v0.32.1-0.20261117044643-40622bc81b42 h1:nfMYlbIPuOzR8w7JVhyPHPRt9KvFE0h8I77YUzdDHQk=
+github.com/inference-sim/blis-vllm v0.32.1-0.20261117044643-40622bc81b42/go.mod h1:WcnUJYCyVsiHbGRPjv3iWHHT33IH50VR054Fseh/uco=
 github.com/inference-sim/llm-d-router v1.0.0-blis.4 h1:xFhdjLQF/DiZA/9CadTsI09nDc71gIwi/xqDkJ4QS8Y=
 github.com/inference-sim/llm-d-router v1.0.0-blis.4/go.mod h1:Mv78d/5myP9HSQM4oUavuKXKgAhteLfE6yKDvS5PbP8=
 github.com/jellydator/ttlcache/v3 v3.4.1 h1:bOdXmXiycyK6E6Qjyuj5vl+/vU3SCOoDs8a86NbHjAQ=

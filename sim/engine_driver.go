@@ -681,7 +681,7 @@ func (d *EngineDriver) kick(now int64) {
 			break
 		}
 		start, end := d.timeBatch(b, now)
-		d.Metrics.Busy.Record(b, start, end)
+		d.Metrics.Busy.Record(d.eng, b, start, end)
 		// The worker submits a step's offload copies after its forward pass, and each copy's
 		// stream waits on the compute stream (startTierTransfer): they start when the step ends.
 		d.startTransfersAfter(b.TransfersStarted, now, end)
