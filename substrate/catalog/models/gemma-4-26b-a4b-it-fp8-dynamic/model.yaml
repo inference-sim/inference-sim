@@ -1,0 +1,9 @@
+name: gemma-4-26b-a4b-it-fp8-dynamic
+source:
+  provider: huggingface
+  repo: RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic
+  revision: ed35d7abe5d940da41b4ff06eb482feb0be8cb44
+  retrieved: 2026-11-16
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic/raw/ed35d7abe5d940da41b4ff06eb482feb0be8cb44/README.md
