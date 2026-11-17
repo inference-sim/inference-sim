@@ -945,7 +945,7 @@ var runCmd = &cobra.Command{
 			NodePools:                      bundleNodePools,
 			ScenarioEndpointTopology:       cluster.StaticEndpointTopology(scenarioTopology),
 			InstanceLifecycle:              bundleInstanceLifecycle,
-			LoRAPlacement:                  loraPlacementOf(bundle.LoRAPlacement, adapterRegistryOf(loraCfg)),
+			LoRAPlacement:                  loraPlacementOf(bundle, adapterRegistryOf(loraCfg)),
 			NewEngine:                      engineDriverFactory(scenarioEngine, simulationHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
 		}
 		// Session callback installation (Constraint 3 fix):

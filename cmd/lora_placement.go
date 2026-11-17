@@ -11,7 +11,11 @@ import (
 // loraPlacementOf is the policy bundle's lora_placement block as the cluster's config. It refuses,
 // before the run, a block that does not resolve and an assignment that names an adapter the run
 // does not declare; the cluster checks the instances and their capacity when it starts.
-func loraPlacementOf(b sim.LoRAPlacementBundleConfig, registry workload.AdapterRegistry) cluster.LoRAPlacementConfig {
+func loraPlacementOf(bundle *sim.PolicyBundle, registry workload.AdapterRegistry) cluster.LoRAPlacementConfig {
+	if bundle == nil { // no policy bundle: the baseline places nothing
+		return cluster.LoRAPlacementConfig{}
+	}
+	b := bundle.LoRAPlacement
 	cfg := cluster.LoRAPlacementConfig{Bundle: b.Bundle, Creation: b.Creation, Assignment: b.Assignment,
 		PeriodicIntervalUs: b.PeriodicIntervalUs}
 	if _, err := cfg.Resolve(); err != nil {
