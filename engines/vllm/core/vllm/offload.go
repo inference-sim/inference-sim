@@ -148,12 +148,16 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 			"which sizes the CPU tier in chunks (offloading/config.py:136-151@5df63a72); the caller's memory model states it")
 	}
 	if c.Spec == "TieringOffloadingSpec" {
-		// Each secondary tier type vLLM v0.32.0 registers is refused by name; refuseNotVisible has
-		// refused any other. CPUOffloadingSpec reads no secondary_tiers.
+		// Each secondary tier type vLLM v0.33.0 registers is built if modelledTiers holds it and
+		// refused by name otherwise; refuseNotVisible has refused any other. CPUOffloadingSpec reads
+		// no secondary_tiers.
 		for i, t := range c.SecondaryTiers {
 			typ, _ := t["type"].(string)
+			if modelledTiers[typ] {
+				continue
+			}
 			return nil, fmt.Errorf("vllm: kv_offload secondary_tiers[%d] type %q is not modelled: TieringOffloadingSpec runs only "+
-				"its CPU primary tier here (vllm/v1/kv_offload/tiering/factory.py:146-174@5df63a72; %s)", i, typ, issueBase+"63")
+				"its CPU primary tier here (vllm/v1/kv_offload/tiering/factory.py:146-174@4ba787ec; %s)", i, typ, issueBase+"63")
 		}
 	}
 	if err := offloading.Check(offloading.Options{SpecName: c.Spec, EvictionPolicy: c.EvictionPolicy}); err != nil {
