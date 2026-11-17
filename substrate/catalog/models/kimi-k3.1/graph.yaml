@@ -184,6 +184,7 @@ layer_kinds:
     n_q: 32
     n_kv: 1
     d_h: 128
+    tp: replicated
   - op: Attention
     holds_engine_kv: true
     kind: sparse_mla

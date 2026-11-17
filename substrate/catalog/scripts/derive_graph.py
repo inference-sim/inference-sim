@@ -1898,6 +1898,16 @@ def lightning_indexer(cfg: dict[str, Any], model: str, hidden: int,
         # the downstream sparse MLA node carries the top-k.
         scorer["kind"] = "sparse_mla"
         scorer["compress_ratio"] = kpool
+    # The whole indexer runs on every rank: neither implementation splits it across tensor
+    # parallelism. wq_b is a ReplicatedLinear, wk_weights_proj a MergedColumnParallelLinear
+    # with disable_tp=True, and the head gate, the kpool gate and the norms act on those
+    # whole outputs (vllm/models/deepseek_v32/attention.py:66-85, which serves
+    # GlmMoeDsaForCausalLM, and vllm/models/glm5next/common/attention.py:229-245, at v0.33.0
+    # 4ba787ec; n_head = config.index_n_heads, undivided), so the scorer computes all
+    # index_n_heads heads a rank. Left at the default split, a TP8 rank was charged an eighth of its scoring,
+    # the one term in the layer that grows with context.
+    for node in [*projections, scorer]:
+        node["tp"] = "replicated"
     return nodes[:at] + projections + [scorer] + nodes[at:]
 
 
