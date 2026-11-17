@@ -130,6 +130,12 @@ type TransferPrice struct {
 	RunBytes int64
 }
 
+// sglangError is an error whose text is SGLang's own, word for word, so a refusal reads and
+// compares as the ValueError SGLang raises.
+type sglangError string
+
+func (e sglangError) Error() string { return string(e) }
+
 // CheckLayout is the host pool's own refusal of a layout it cannot lay out, raised when HiCache
 // builds it at start-up: init_kv_buffer (mha.py:305-352, 1358-1381; mla.py:307-430;
 // dsa.py:280-320@297e54fd) and PageUnifiedLayout's checks (page_unified.py:63-89).
@@ -142,9 +148,9 @@ func (s HostShape) CheckLayout(layout string) error {
 	}[s.Pool]
 	if !slices.Contains(allowed, layout) {
 		if s.Pool == "AsymmetricMHATokenToKVPoolHost" {
-			return fmt.Errorf("Unsupported layout for models with head_dim != v_head_dim: %s; expected 'page_first' or 'page_first_direct'.", layout)
+			return sglangError("Unsupported layout for models with head_dim != v_head_dim: " + layout + "; expected 'page_first' or 'page_first_direct'.")
 		}
-		return fmt.Errorf("Unsupported layout: %s", layout)
+		return sglangError("Unsupported layout: " + layout)
 	}
 	if layout == "page_unified" {
 		g := max(1, s.HeadGroupNum)

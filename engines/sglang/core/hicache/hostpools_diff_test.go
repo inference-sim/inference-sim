@@ -146,10 +146,10 @@ func TestHostPoolSizingIsSGLangs(t *testing.T) {
 					}
 				}
 			}
-			anchorPage := 0
+			anchorPage, anchorLayout := 0, ""
 			for _, h := range sc.Hosts {
 				if h.As == x.Anchor {
-					anchorPage = h.PageSize
+					anchorPage, anchorLayout = h.PageSize, h.Layout
 				}
 			}
 			s, err := DSAIndexerHost(num(a, "index_head_dim", 0), 128, anchorPage, num(a, "index_kpool", 1), owned)
@@ -158,6 +158,17 @@ func TestHostPoolSizingIsSGLangs(t *testing.T) {
 					t.Errorf("%s/%s: the port refuses (%v), SGLang builds it", name, x.As, err)
 				}
 				refused++
+				continue
+			}
+			if err := s.CheckLayout(anchorLayout); err != nil {
+				if want.Raises == "" || want.Message != err.Error() {
+					t.Errorf("%s/%s: the port refuses %q (%v); SGLang %q %q", name, x.As, anchorLayout, err, want.Raises, want.Message)
+				}
+				refused++
+				continue
+			}
+			if want.Raises != "" {
+				t.Errorf("%s/%s: SGLang refuses %s (%s: %s), the port builds it", name, x.As, anchorLayout, want.Raises, want.Message)
 				continue
 			}
 			if s.SizePerToken() != want.SizePerToken || s.LayerNum != want.LayerNum {

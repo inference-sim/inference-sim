@@ -122,6 +122,21 @@
     "index_kpool": 2,
     "index_buf_size": 300
    }
+  },
+  {
+   "as": "mha_odd",
+   "class": "MHATokenToKVPool",
+   "args": {
+    "size": 96,
+    "page_size": 16,
+    "dtype": {
+     "dtype": "bfloat16"
+    },
+    "head_num": 1,
+    "head_dim": 20,
+    "layer_num": 2,
+    "enable_memory_saver": false
+   }
   }
  ],
  "hosts": [
@@ -259,6 +274,21 @@
    "layout": "page_unified",
    "ratio": 2.0,
    "page_size": 64
+  },
+  {
+   "as": "mha_odd_layer_first",
+   "pool": "mha_odd",
+   "layout": "layer_first",
+   "ratio": 2.0,
+   "page_size": 16
+  },
+  {
+   "as": "mha_odd_page_unified",
+   "pool": "mha_odd",
+   "layout": "page_unified",
+   "ratio": 2.0,
+   "page_size": 16,
+   "raises": "ValueError"
   }
  ],
  "indexers": [
