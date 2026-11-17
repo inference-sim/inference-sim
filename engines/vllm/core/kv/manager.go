@@ -350,6 +350,11 @@ func (m *Manager) GroupBlocks(g int, id string) []*Block { return m.groups[g].re
 // GroupBlockSize is group g's own block size, in tokens.
 func (m *Manager) GroupBlockSize(g int) int { return m.groups[g].blockSize }
 
+// PrefixCacheable is whether group g is prefix-cacheable (KVCacheSpec.prefix_cacheable): a ring and a
+// bounded-replay window are not. A KV connector's hash-addressed stores take only these groups
+// (KVCacheConfig.prefix_cacheable_group_ids, vllm/v1/kv_cache_interface.py:1571-1577@4ba787ec).
+func (m *Manager) PrefixCacheable(g int) bool { return m.groups[g].spec.cacheable() }
+
 // GroupSpec is group g's spec.
 func (m *Manager) GroupSpec(g int) Group { return m.groups[g].spec }
 

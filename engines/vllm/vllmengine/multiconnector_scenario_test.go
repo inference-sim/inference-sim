@@ -1,7 +1,6 @@
 package vllmengine
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
@@ -152,15 +151,54 @@ func TestAHostStatesTheMultiConnectorOrderInItsEngineBlock(t *testing.T) {
 	}
 }
 
-// The shipped scenario drafts with DSpark. At v0.33.0 DSpark no longer drops the trailing
-// prefix-cache block (needs_eagle_block_drop, vllm/config/speculative.py:2122-2129@4ba787ec), so
-// its KV cache group is not a drafter group to the offloading connector and is not refused as
-// one; the scenario is refused for its group's block size against the hash block size, by name,
-// rather than failing on the connector's children.
-func TestTheShippedMultiConnectorScenarioIsRefusedForItsBlockSizesByName(t *testing.T) {
+// The shipped scenario (DeepSeek V4.1 Flash, 1P1D, a MultiConnector over NIXL and a 1 TiB CPU tier)
+// drafts with DSpark and caches in packed groups: eight 32-token window groups, the 64-token
+// compressed cache and an 8-token ring. vLLM offloads the prefix-cacheable group alone
+// (get_offloading_group_ids), so both pools build, and the prefill pool stores a prompt's compressed
+// blocks to the CPU tier while holding the request for the decoder's pull. Before, the engine gave
+// the connector all ten groups and refused them against the 64-token hash block size
+// (blis-vllm#132, #146).
+func TestTheShippedMultiConnectorScenarioBuildsAndOffloadsItsCacheableGroup(t *testing.T) {
 	Register()
-	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, shippedScenario), Pool: 0})
-	if err == nil || !strings.Contains(err.Error(), "hash block size") || strings.Contains(err.Error(), "child(ren)") {
-		t.Fatalf("the shipped scenario: %v, want a refusal that names the hash block size", err)
+	r := roots(t, shippedScenario)
+	for pool := range 2 {
+		if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r, Pool: pool}); err != nil {
+			t.Fatalf("pool %d: %v", pool, err)
+		}
+	}
+	p, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r, Pool: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rq := req("a", 4096, 8)
+	rq.RemoteDecode, rq.MaxOutputTokens = true, 1
+	if err := p.Add(rq, 0); err != nil {
+		t.Fatal(err)
+	}
+	now := engine.Time(0)
+	stored := 0
+	var held []engine.Handoff
+	for step := 0; step < 200 && len(held) == 0; step++ {
+		b, err := p.Schedule(now)
+		if err != nil || b.Empty() {
+			t.Fatalf("prefill schedule: %v, empty %v", err, b.Empty())
+		}
+		for _, tr := range b.TransfersStarted {
+			if tr.Kind == engine.TransferStore && tr.Tier == "cpu" {
+				stored += tr.Tokens
+			}
+		}
+		now += p.StepTime(b)
+		res, err := p.Complete(b.ID, engine.Outcome{}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = res.Handoffs
+	}
+	if len(held) != 1 {
+		t.Fatalf("handoffs %+v, want a's blocks held for the decoder", held)
+	}
+	if stored == 0 || stored%64 != 0 {
+		t.Errorf("the prefill pool stored %d tokens to the CPU tier, want whole 64-token blocks of the cacheable group", stored)
 	}
 }
