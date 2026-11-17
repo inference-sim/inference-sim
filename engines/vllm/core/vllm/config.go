@@ -716,8 +716,6 @@ type unreadSetting struct {
 const issueBase = "https://github.com/inference-sim/blis-vllm/issues/"
 
 var unreadSettings = []unreadSetting{
-	// CacheConfig.kv_cache_memory_bytes: None (vllm/config/cache.py:257@5df63a72).
-	{"kv_cache_memory_bytes", "kv_cache_memory_bytes", issueBase + "81", func(e engineconfig.Engine) bool { return e.KVCacheMemoryBytes != nil }},
 	// AttentionConfig.use_trtllm_attention: None, auto-detect (vllm/config/attention.py:74@5df63a72);
 	// a stated true or false is a choice. Which prefill kernel runs is the engine's to resolve and
 	// to report as the implementation of attention.prefill, which this engine does not do yet; the

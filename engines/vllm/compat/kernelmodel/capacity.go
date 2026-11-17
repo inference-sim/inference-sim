@@ -243,6 +243,24 @@ func (m *Model) kvMemory(reservedBytes int64) (KVMemory, error) {
 			m.id.model, tp, ep, float64(fb.Weights)/float64(gibToBytes))
 	}
 
+	if stated := e.KVCacheMemoryBytes; stated != nil {
+		// A stated kv_cache_memory_bytes is the KV cache's bytes on each GPU, taken whole: the worker
+		// reserves exactly that many and skips memory profiling, so neither gpu_memory_utilization nor the
+		// weights decide it (vllm/v1/worker/gpu_worker.py:656-681@4ba787ec; vllm/config/cache.py:374-382).
+		// The static LoRA adapter reservation is not taken from it: the profiling that nets it out
+		// is skipped (the multimodal IPC reservation, reserve_mm_ipc_gpu_memory, applies to a
+		// multimodal model only). The rank's fixed occupancy and the stated cache must fit the
+		// device, or the allocation fails.
+		if fixed+*stated > deviceBytes {
+			return KVMemory{}, fmt.Errorf(
+				"kernelmodel: kv_cache_memory_bytes %d (%.1f GiB) and the rank's fixed occupancy %.1f GiB exceed "+
+					"the %.1f GiB device, so the engine could not allocate the cache it was told to reserve",
+				*stated, float64(*stated)/float64(gibToBytes), float64(fixed)/float64(gibToBytes),
+				float64(deviceBytes)/float64(gibToBytes))
+		}
+		return KVMemory{DeviceBytes: deviceBytes, BudgetBytes: fixed + *stated, FixedBytes: fixed,
+			AllocatableBytes: *stated}, nil
+	}
 	allocatable := budget - fixed - reservedBytes/int64(m.k.Resolved().TensorParallel())
 	if allocatable <= 0 {
 		// vLLM's start-up refusal when nothing is left for the cache

@@ -8448,12 +8448,20 @@
     {
       "name": "kv_cache_memory_bytes",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#81"
+        "traces": [
+          "vllmengine/kvcachememory_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
