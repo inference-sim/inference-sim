@@ -424,6 +424,8 @@ autoscaler:
     min_replicas: 1
 ```
 
+`collector_window_size` (under `autoscaler`, default 0) keeps that many ticks of each model's replica readings for the analyzer, each stamped with its time and sequence number, and fills the replicas' TTFT, ITL, dispatch rate and token averages from the requests completed since the previous tick (the plain collector leaves them zero). The shipped analyzers ignore the window.
+
 Replicas still loading count as supply when scaling up, so a slow load is not asked for again. This is not the Kubernetes HPA: its tolerance, `behavior` policies and the metrics pipeline's lags (KEDA polling, Prometheus scrape windows, the HPA sync period) are not modelled; only `hpa_scrape_delay` exists.
 
 !!! note "Node pools and instance lifecycle are YAML-only"

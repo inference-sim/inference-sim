@@ -818,6 +818,7 @@ var runCmd = &cobra.Command{
 			bundleHPAScrapeDelayStddev           float64
 			bundleAnalyzerCfg                    cluster.V2SaturationAnalyzerConfig
 			bundleAnalyzerSel                    cluster.AnalyzerSelection
+			bundleCollectorWindow                int
 			bundleNodePools                      []cluster.NodePoolConfig
 			poolChips                            map[string]*poolChip
 			bundleInstanceLifecycle              cluster.InstanceLifecycleConfig
@@ -829,6 +830,7 @@ var runCmd = &cobra.Command{
 				bundleScaleDownStabilizationWindowUs = bundle.Autoscaler.ScaleDownStabilizationWindowUs
 				bundleHPAScrapeDelayMean = bundle.Autoscaler.HPAScrapeDelay.Mean
 				bundleHPAScrapeDelayStddev = bundle.Autoscaler.HPAScrapeDelay.Stddev
+				bundleCollectorWindow = bundle.Autoscaler.CollectorWindowSize
 				bundleAnalyzerSel = cluster.AnalyzerSelection{Kind: bundle.Autoscaler.Analyzer.Kind,
 					Signal: bundle.Autoscaler.Analyzer.Signal, Target: bundle.Autoscaler.Analyzer.Target}
 				if err := bundleAnalyzerSel.Validate(); err != nil {
@@ -971,6 +973,7 @@ var runCmd = &cobra.Command{
 			HPAScrapeDelay:                 cluster.DelaySpec{Mean: bundleHPAScrapeDelayMean, Stddev: bundleHPAScrapeDelayStddev},
 			AutoscalerAnalyzerConfig:       bundleAnalyzerCfg,
 			AutoscalerAnalyzer:             bundleAnalyzerSel,
+			CollectorWindowSize:            bundleCollectorWindow,
 			NodePools:                      bundleNodePools,
 			ScenarioEndpointTopology:       cluster.StaticEndpointTopology(scenarioTopology),
 			InstanceLifecycle:              bundleInstanceLifecycle,

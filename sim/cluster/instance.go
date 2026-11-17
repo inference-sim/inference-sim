@@ -311,6 +311,29 @@ func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
 	}
 }
 
+// LatencyTotals returns the instance's cumulative completed-request totals (the windowed collector
+// differences them between ticks). The per-request samples are summed in sorted order (R2).
+func (i *InstanceSimulator) LatencyTotals() LatencyTotals {
+	if i.drv == nil {
+		return LatencyTotals{}
+	}
+	m := i.Metrics()
+	if m == nil || m.CompletedRequests == 0 {
+		return LatencyTotals{}
+	}
+	ids := make([]string, 0, len(m.RequestITLs))
+	for id := range m.RequestITLs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	t := LatencyTotals{Completed: m.CompletedRequests, InTokens: int64(m.TotalInputTokens), OutTokens: int64(m.TotalOutputTokens)}
+	for _, id := range ids {
+		t.ITLSumUs += m.RequestITLs[id]
+		t.TTFTSumUs += m.RequestTTFTs[id]
+	}
+	return t
+}
+
 // MaxBatchSize returns the simulator's configured maximum number of concurrent requests
 // (BatchConfig.MaxNumSeqs). Returns 0 when the instance has no underlying simulator.
 func (i *InstanceSimulator) MaxBatchSize() int {
