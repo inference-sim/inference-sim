@@ -28,6 +28,10 @@ type MambaSplitConfig struct {
 	LongPrefillTokenThreshold int
 	// EagleBlockDrop is use_eagle_block_drop (:316).
 	EagleBlockDrop bool
+	// HashLookahead is num_hash_lookahead_tokens (scheduler.py:342-345@4ba787ec): the tokens past
+	// each block its hash covers, which the prompt's checkpoint must leave uncomputed
+	// (get_mamba_prefill_checkpoint_position, vllm/v1/kv_cache_interface.py:1169-1186@4ba787ec).
+	HashLookahead int
 	// PartialHashHits is kv_cache_manager.coordinator.enable_partial_hash_hits
 	// (kv_cache_coordinator.py:684-692@5df63a72), which the KV manager decides.
 	PartialHashHits bool
@@ -122,10 +126,10 @@ func (m *MambaSplit) Split(r MambaSplitRequest, numNew, newLocal, external int) 
 	if m.partialCacheHit {
 		ckptBlockSize = m.cfg.HashBlockSize
 	}
-	lastCachePosition := mambaPrefillCheckpointPosition(r.NumTokens, blockSize, m.cfg.EagleBlockDrop)
+	lastCachePosition := mambaPrefillCheckpointPosition(r.NumTokens, blockSize, m.cfg.EagleBlockDrop, m.cfg.HashLookahead)
 
 	end := start + numNew
-	checkpointPosition := mambaPrefillCheckpointPosition(prefillEnd, ckptBlockSize, m.cfg.EagleBlockDrop)
+	checkpointPosition := mambaPrefillCheckpointPosition(prefillEnd, ckptBlockSize, m.cfg.EagleBlockDrop, m.cfg.HashLookahead)
 	useInternalCheckpoint := m.hasCheckpointBlocks && end >= prefillEnd &&
 		mambaPrefillCheckpointValid(start, end, checkpointPosition, m.cfg.HashBlockSize, blockSize, m.alignment)
 	if useInternalCheckpoint {
@@ -147,7 +151,7 @@ func (m *MambaSplit) Split(r MambaSplitRequest, numNew, newLocal, external int) 
 	nextBlockBoundary := (start/blockSize + 1) * blockSize
 	tailBoundary := 0
 	if m.partialCacheHit && !useInternalCheckpoint {
-		tailBoundary = mambaPrefillCheckpointPosition(r.NumPrompt, m.cfg.HashBlockSize, m.cfg.EagleBlockDrop)
+		tailBoundary = mambaPrefillCheckpointPosition(r.NumPrompt, m.cfg.HashBlockSize, m.cfg.EagleBlockDrop, m.cfg.HashLookahead)
 	}
 	junction := r.SharedPrefixBoundary
 	// Block-floored: a sub-block junction's state is not separately cacheable. Python's //
@@ -187,11 +191,13 @@ func floorDiv(a, b int) int {
 }
 
 // mambaPrefillCheckpointPosition is get_mamba_prefill_checkpoint_position
-// (vllm/v1/kv_cache_interface.py:1110-1122@5df63a72). Unexported and local to this file: the
-// KV side may carry the same function; keep one.
-func mambaPrefillCheckpointPosition(numTokens, hashBlockSize int, dropEagleBlock bool) int {
-	// Without EAGLE, leave one token to recompute on resend; EAGLE's block drop already does.
-	proofLimit := numTokens - 1
+// (vllm/v1/kv_cache_interface.py:1169-1186@4ba787ec). Unexported and local to this file: the
+// KV side may carry the same function; keep one. hashLookahead is num_hash_lookahead_tokens.
+func mambaPrefillCheckpointPosition(numTokens, hashBlockSize int, dropEagleBlock bool, hashLookahead int) int {
+	// Leave tokens for logits recomputation and for the checkpoint's hash, which covers the
+	// hashLookahead tokens after it; EAGLE's block drop already leaves tokens to recompute.
+	// v0.32.0 left one token whatever the lookahead (:1110-1121@5df63a72).
+	proofLimit := numTokens - max(1, hashLookahead)
 	if dropEagleBlock {
 		proofLimit = numTokens
 	}

@@ -25,6 +25,11 @@ type Spec struct {
 	// dflash and dspark build that KV from the target's hidden state alone. The scheduler turns
 	// it off when the block hashes cover the lookahead instead (HashLookahead).
 	EagleBlockDrop bool
+	// DraftQueryPass is use_dflash() or use_dspark() (vllm/config/speculative.py@4ba787ec): the
+	// drafter runs a pass of num_lookahead_tokens query rows a request inside
+	// max_num_batched_tokens, which caps max_num_active_seqs (VllmConfig._set_max_num_scheduled_tokens,
+	// vllm/config/vllm.py:2377-2396@4ba787ec).
+	DraftQueryPass bool
 }
 
 // SpecOptions are the speculative-decoding settings a deployment states, and the drafter
@@ -59,7 +64,8 @@ func ResolveSpec(o SpecOptions) Spec {
 	draftModel := o.Method == "draft_model" // uses_draft_model, :1963-1964
 	parallel := o.ParallelDrafting || o.Method == "dflash" || o.Method == "dspark"
 	needsDrop := useEagle && o.Method != "dflash" && o.Method != "dspark" // needs_eagle_block_drop
-	s := Spec{NumTokens: k, EagleBlockDrop: needsDrop && !o.DisableEagleBlockDrop}
+	s := Spec{NumTokens: k, EagleBlockDrop: needsDrop && !o.DisableEagleBlockDrop,
+		DraftQueryPass: o.Method == "dflash" || o.Method == "dspark"}
 
 	// max_num_new_slots_for_drafting (vllm/config/speculative.py:2058-2097@4ba787ec). DFlash and
 	// DSpark draft in a separate query pass and take no slots; v0.32.0 gave them K and K-1.
