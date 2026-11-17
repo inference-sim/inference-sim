@@ -521,6 +521,10 @@ func (e *driverQueuedEvent) run(d *EngineDriver) {
 	d.stepAfterArrivals(e.at)
 }
 
+// KVTransferParamsTag is the engine.Request tag that carries a request's kv_transfer_params
+// (blis-vllm core/vllm TagKVTransferParams).
+const KVTransferParamsTag = "kv_transfer_params"
+
 // engineRequest is req as the engine is told it.
 func (d *EngineDriver) engineRequest(req *Request) engine.Request {
 	er := engine.Request{
@@ -534,6 +538,13 @@ func (d *EngineDriver) engineRequest(req *Request) engine.Request {
 	if req.SLOClass != "" {
 		// The request's SLO class, an opaque fact for an engine whose priority policy reads it.
 		er.Tags = map[string]string{"slo_class": req.SLOClass}
+	}
+	if req.KVTransferParams != "" {
+		// The request's kv_transfer_params, as the P/D gateway sets them for a p2p handoff.
+		if er.Tags == nil {
+			er.Tags = map[string]string{}
+		}
+		er.Tags[KVTransferParamsTag] = req.KVTransferParams
 	}
 	return er
 }

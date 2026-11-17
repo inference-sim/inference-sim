@@ -141,7 +141,7 @@ type addressed struct {
 // Schedule runs the FIFO without the talker's messages: this engine only takes an address.
 func (e *addressed) Schedule(now engine.Time) (engine.Batch, error) {
 	e.scheduled = true
-	return e.talker.FIFO.Schedule(now)
+	return e.FIFO.Schedule(now)
 }
 
 func (e *addressed) SetPeerAddr(a string) error {

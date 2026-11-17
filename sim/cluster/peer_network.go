@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -174,4 +175,54 @@ func (cs *ClusterSimulator) PeerStats() PeerStats {
 		return PeerStats{}
 	}
 	return PeerStats{Sent: cs.peers.sent, Delivered: cs.peers.delivered, Dropped: cs.peers.dropped, LatencyTicks: cs.peers.latency}
+}
+
+// p2pHandoff reports whether parent's P/D handoff goes through vLLM's p2p KV tier: both its prefill
+// and its decode instance are peered (an engine with a p2p tier and an address). Their addresses are
+// returned. A handoff whose instances are not both peered goes through the P/D connector's pull.
+//
+// The gateway keeps its order, prefill first and the decode at the prefill's end, as it does for every
+// connector. vLLM leaves when to send each sub-request to the orchestrator (docs/features/
+// kv_offloading_usage.md, "Orchestration-Layer Protocol", vllm-project/vllm v0.33.0): the prefill
+// side keeps its stored blocks for the decoder's fetch, so the decode may start at its end.
+func (cs *ClusterSimulator) p2pHandoff(parent *ParentRequest) (prefill, decode string, ok bool) {
+	p := cs.instanceByID(parent.PrefillInstanceID)
+	d := cs.instanceByID(parent.DecodeInstanceID)
+	if p == nil || d == nil || p.drv == nil || d.drv == nil {
+		return "", "", false
+	}
+	prefill, decode = p.drv.PeerAddr(), d.drv.PeerAddr()
+	return prefill, decode, prefill != "" && decode != ""
+}
+
+// p2pTransferID is the kv_request_id the orchestrator allocates for parent's handoff: the parent
+// request's id, unique in a run.
+func p2pTransferID(parent *ParentRequest) string { return parent.ID }
+
+// p2pPrefillParams are the prefill sub-request's kv_transfer_params for a p2p handoff: keep the
+// computed KV for the remote decoder (remote_decoder{kv_request_id}).
+func (cs *ClusterSimulator) p2pPrefillParams(parent *ParentRequest) (string, bool) {
+	if _, _, ok := cs.p2pHandoff(parent); !ok {
+		return "", false
+	}
+	b, _ := json.Marshal(map[string]any{"remote_decoder": map[string]any{"kv_request_id": p2pTransferID(parent)}})
+	return string(b), true
+}
+
+// p2pDecodeParams are the decode sub-request's kv_transfer_params for a p2p handoff: pull the KV from
+// the prefill instance at its address (remote_prefiller{kv_request_id, remote_host, remote_port}).
+func (cs *ClusterSimulator) p2pDecodeParams(parent *ParentRequest) (string, bool) {
+	prefill, _, ok := cs.p2pHandoff(parent)
+	if !ok {
+		return "", false
+	}
+	host, portText, found := strings.Cut(prefill, ":")
+	port, err := strconv.Atoi(portText)
+	if !found || err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: prefill instance %s has the peer address %q, which is not host:port",
+			parent.PrefillInstanceID, prefill))
+	}
+	b, _ := json.Marshal(map[string]any{"remote_prefiller": map[string]any{"kv_request_id": p2pTransferID(parent),
+		"remote_host": host, "remote_port": port}})
+	return string(b), true
 }

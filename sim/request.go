@@ -104,19 +104,22 @@ type Request struct {
 	// not recomputed per step.
 
 	// Workload metadata (PR10). All fields are zero-value safe for backward compatibility.
-	TenantID        string  // Client/tenant identifier (empty for legacy workloads)
-	SLOClass        string  // "critical", "standard", "sheddable", "batch", "background" (empty = default)
-	SessionID       string  // Multi-turn session link (empty for single-turn)
-	RoundIndex      int     // Round within session (0-based)
-	TextTokenCount  int     // Text input tokens (multimodal breakdown)
-	ImageTokenCount int     // Image input tokens
-	AudioTokenCount int     // Audio input tokens
-	VideoTokenCount int     // Video input tokens
-	ReasonRatio     float64 // reason_tokens / total_output_tokens (part of OutputTokens, not additional)
-	ClientID        string  // Client identifier from workload spec (empty for legacy/test workloads)
-	PrefixGroup     string  // Shared prefix group name (empty for no prefix)
-	PrefixLength    int     // Shared prefix token count; 0 = no prefix. Set during workload generation.
-	Streaming       bool    // Whether client expects streaming response
+	TenantID string // Client/tenant identifier (empty for legacy workloads)
+	SLOClass string // "critical", "standard", "sheddable", "batch", "background" (empty = default)
+	// KVTransferParams is the request's kv_transfer_params, as JSON, for an engine whose connector reads
+	// them (vLLM's p2p KV tier: remote_decoder, remote_prefiller). Empty for none (blis-vllm#204).
+	KVTransferParams string
+	SessionID        string  // Multi-turn session link (empty for single-turn)
+	RoundIndex       int     // Round within session (0-based)
+	TextTokenCount   int     // Text input tokens (multimodal breakdown)
+	ImageTokenCount  int     // Image input tokens
+	AudioTokenCount  int     // Audio input tokens
+	VideoTokenCount  int     // Video input tokens
+	ReasonRatio      float64 // reason_tokens / total_output_tokens (part of OutputTokens, not additional)
+	ClientID         string  // Client identifier from workload spec (empty for legacy/test workloads)
+	PrefixGroup      string  // Shared prefix group name (empty for no prefix)
+	PrefixLength     int     // Shared prefix token count; 0 = no prefix. Set during workload generation.
+	Streaming        bool    // Whether client expects streaming response
 	// Agentic identifies a request of an agentic session-tree replay (#1937); nil otherwise.
 	Agentic *AgenticTag
 

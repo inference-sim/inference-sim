@@ -47,6 +47,9 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 		panic(fmt.Sprintf("PrefillRoutingEvent: gateway chose unknown prefill instance %q", target))
 	}
 	cs.inFlightRequests[target]++
+	if params, ok := cs.p2pPrefillParams(e.parentReq); ok {
+		e.request.KVTransferParams = params
+	}
 	inst.InjectRequestOnline(e.request, e.time)
 }
 
@@ -127,6 +130,18 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		// The decode engine never received the request (NIXLReleaseOnDrop decides what that
 		// means for the prefill side's held blocks).
 		e.dropAtStart(cs, NIXLDecodeNeverReceived)
+		return
+	}
+	if params, ok := cs.p2pDecodeParams(e.parentReq); ok {
+		// A p2p handoff (blis-vllm#204): the decode engine admits the request by its own scheduler (the
+		// P/D connector's rule below does not apply) and loads the prompt through its own p2p tier,
+		// from the prefill instance's CPU tier, whose stores wait for its fetch; the WRITEs are the
+		// prefill engine's transfers. The cluster's handoff moves nothing and ends at once.
+		decodeSubReq.KVTransferParams = params
+		e.parentReq.DecodeSubReq = decodeSubReq
+		cs.transfersInitiated++
+		e.parentReq.TransferStartTime = e.time
+		cs.schedule(&KVTransferCompletedEvent{time: e.time, parentReq: e.parentReq}, &cs.kvConnectorSender)
 		return
 	}
 	// Whether the decode engine can ever take the prompt is the connector's rule
@@ -450,5 +465,10 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	// ParentRequest.CompletionTime and read DecodeSubReq.State/ProgressIndex
 	// for timeout detection and context accumulation.
 	cs.pendingDecodeCompletions[decodeSubReq.ID] = e.parentReq.ID
+	if decodeSubReq.KVTransferParams != "" {
+		// A p2p handoff's decode is an ordinary request to its engine (p2pDecodeParams).
+		decodeInst.InjectRequestOnline(decodeSubReq, e.time)
+		return
+	}
 	decodeInst.InjectDecodeOnline(decodeSubReq, e.time)
 }
