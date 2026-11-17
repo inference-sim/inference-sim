@@ -8474,3 +8474,75 @@ def test_qwen35_nvfp4_refuses_a_quantized_deltanet_input_projection(tmp_path):
     q["ignore"] = [p for p in q["ignore"] if p != "model.language_model.layers.0.linear_attn*"]
     with pytest.raises(derive_graph.DeriveError, match="in_proj_qkvz"):
         _derive_raw(raw, tmp_path, "qwen-nvfp4-test")
+
+
+LLAMA70B = MODELS / "llama-3.1-70b-instruct"
+
+
+def _llama_headers(width: str, edit=None) -> dict:
+    """Headers in the layout nvidia/Llama-3.3-70B-Instruct-FP8 and -FP4's shards state (read
+    from the pinned headers; not committed): every decoder linear FP8 (F8_E4M3) or NVFP4 (U8
+    with an F8_E4M3 scale per 16 values), the embedding, norms and lm_head BF16."""
+    t = config_of(LLAMA70B)
+    k = t["hidden_size"]
+    h = {"lm_head.weight": {"dtype": "BF16", "shape": [t["vocab_size"], k]},
+         "model.embed_tokens.weight": {"dtype": "BF16", "shape": [t["vocab_size"], k]}}
+
+    def put(m):
+        if width == "fp8":
+            h[m + ".weight"] = {"dtype": "F8_E4M3", "shape": [1024, k]}
+            h[m + ".weight_scale"] = {"dtype": "F32", "shape": []}
+        else:
+            h[m + ".weight"] = {"dtype": "U8", "shape": [1024, k // 2]}
+            h[m + ".weight_scale"] = {"dtype": "F8_E4M3", "shape": [1024, k // 16]}
+
+    for i in range(t["num_hidden_layers"]):
+        p = f"model.layers.{i}."
+        h[p + "input_layernorm.weight"] = {"dtype": "BF16", "shape": [k]}
+        for a in ("q_proj", "k_proj", "v_proj", "o_proj"):
+            put(p + "self_attn." + a)
+        for a in ("gate_proj", "up_proj", "down_proj"):
+            put(p + "mlp." + a)
+    if edit:
+        edit(h)
+    return h
+
+
+def _derive_llama(headers, tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps(config_of(LLAMA70B)))
+    return derive_graph.derive(p, "llama-3.3-70b-instruct-fp8", headers=headers)
+
+
+@pytest.mark.parametrize("width", ["fp8", "nvfp4"])
+def test_llama_modelopt_widths_come_from_its_shard_headers(tmp_path, width):
+    """NVIDIA's Llama-3.3-70B-Instruct FP8 and FP4 state their quantization only in
+    hf_quant_config.json; their headers store every attention and MLP linear quantized and the
+    head BF16. Each of the four GEMMs takes the stored width, the global and head widths stay
+    BF16, and the same config without headers derives BF16 throughout."""
+    g = _derive_llama(_llama_headers("fp8" if width == "fp8" else "nvfp4"), tmp_path)
+    assert g["global"]["weight_dtype"] == "bf16"
+    w = _widths(g, "dense")
+    assert {r: w[r][0] for r in ("qkv_proj", "o_proj", "mlp_gate_up", "mlp_down")} == \
+        dict.fromkeys(("qkv_proj", "o_proj", "mlp_gate_up", "mlp_down"), width)
+    plain = _derive_llama(None, tmp_path)
+    assert {v[0] for v in _widths(plain, "dense").values()} == {"bf16"}
+
+
+@pytest.mark.parametrize("edit,why", [
+    (lambda h: h.__setitem__("lm_head.weight", {"dtype": "F8_E4M3", "shape": [128256, 8192]}),
+     "the head is priced at the base width"),
+    (lambda h: h.__setitem__("model.layers.3.self_attn.k_proj.weight", {"dtype": "BF16", "shape": [1024, 8192]}),
+     "one node cannot price both"),
+    (lambda h: h.__setitem__("model.layers.40.mlp.down_proj.weight", {"dtype": "BF16", "shape": [1024, 8192]}),
+     "quantized on some of its layers and not others"),
+])
+def test_llama_header_widths_refuse_what_one_node_cannot_price(tmp_path, edit, why):
+    """A quantized head, a fused qkv whose parts are stored at two widths, and a projection
+    quantized on some layers only are refused rather than priced at one width."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_llama(_llama_headers("fp8", edit), tmp_path)

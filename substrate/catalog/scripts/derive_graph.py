@@ -481,6 +481,24 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
         "stacked": {".q_proj": ".qkv_proj", ".k_proj": ".qkv_proj",
                     ".v_proj": ".qkv_proj"},
     },
+    # LlamaForCausalLM (vLLM v0.33.0 model_executor/models/llama.py): the decoder layers are
+    # model.layers.{i} (:392, :498), the attention self_attn.qkv_proj and o_proj (:165-183), the
+    # MLP mlp.gate_up_proj and down_proj (:95-110), the head lm_head (:503-507), and the loader
+    # stacks q/k/v into qkv_proj and gate/up into gate_up_proj (packed_modules_mapping, :475-478).
+    "LlamaForCausalLM": {
+        "layer": "model.layers.{i}.",
+        "head": "lm_head",
+        "roles": {
+            "qkv_proj": "self_attn.qkv_proj",
+            "o_proj": "self_attn.o_proj",
+            "mlp_gate_up": "mlp.gate_up_proj",
+            "mlp_down": "mlp.down_proj",
+        },
+        "shared": (),
+        "prefix": {},
+        "stacked": {".q_proj": ".qkv_proj", ".k_proj": ".qkv_proj", ".v_proj": ".qkv_proj",
+                    ".gate_proj": ".gate_up_proj", ".up_proj": ".gate_up_proj"},
+    },
     # Qwen3.5-MoE (vLLM v0.33.0 model_executor/models/qwen3_5.py): the text decoder sits under
     # "language_model" and its layers under "language_model.model.layers" (the
     # Qwen3VLForConditionalGeneration mapper renames "model.language_model." to
@@ -2225,6 +2243,15 @@ def handler_dense(cfg, raw, model):
     kind = {"id": "dense", "nodes": nodes, "edges": chain(nodes)}
     layers = int(require(cfg, "num_layers", model))
     return [kind], {"pattern": ["dense"], "repeat": layers}
+
+
+def handler_dense_placed(cfg, raw, model):
+    """Llama, priced by handler_dense, with a ModelOpt checkpoint's widths placed node by
+    node: NVIDIA's Llama-3.3-70B-Instruct FP8 and FP4 state their quantization only in
+    hf_quant_config.json, which vLLM reads and the deriver does not, so their entries pin the
+    shards' safetensors headers and the widths are read from those (SUB-15). A checkpoint
+    that is not ModelOpt and pins no headers keeps handler_dense's graph."""
+    return modelopt_placed(handler_dense(cfg, raw, model), raw, model)
 
 
 def handler_moe(cfg, raw, model):
@@ -6372,7 +6399,7 @@ def handler_llama_eagle3(cfg, raw, model):
 
 
 HANDLERS = {
-    "LlamaForCausalLM": handler_dense,
+    "LlamaForCausalLM": handler_dense_placed,
     "LlamaForCausalLMEagle3": handler_llama_eagle3,
     "MistralForCausalLM": handler_dense,
     "Qwen2ForCausalLM": handler_dense,
