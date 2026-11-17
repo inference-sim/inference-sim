@@ -1540,6 +1540,11 @@ def test_expert_shape_matches_config(d: Path):
     shared_nodes = [n for k in g["layer_kinds"] for n in k["nodes"]
                     if n.get("role") == "shared_experts"]
     shared = t.get("n_shared_experts") or t.get("num_shared_experts")
+    # A config that states a shared expert's width and no count has one (Qwen3.5, whose
+    # vLLM loader passes n_shared_experts=1, models/qwen3_5.py).
+    if shared is None and (t.get("shared_expert_intermediate_size")
+                           or t.get("moe_shared_expert_intermediate_size")):
+        shared = 1
     for n in shared_nodes:
         assert n["experts"] == shared, (
             f"shared-expert node states {n['experts']}, config says {shared}")
@@ -8324,3 +8329,62 @@ def test_dflash2_drafter_and_its_target_name_each_other():
     assert "muse-spark-open-dflash2" in target["drafters"]
     cfg = text_config(config_of(MUSE_NVFP4))
     assert derive_graph.DFLASH2_TARGET_STATE_BYTES["muse-spark-open-dflash2"][1] == cfg["hidden_size"]
+
+
+# --- ModelOpt NVFP4: routed and shared experts at their own widths -----------------------
+
+QWEN35_NVFP4 = MODELS / "qwen3.5-397b-a17b-nvfp4"
+
+
+def _widths(g: dict, kind: str) -> dict:
+    k = {k["id"]: k for k in g["layer_kinds"]}[kind]
+    return {n["role"]: (n.get("weight_dtype", g["global"]["weight_dtype"]), n.get("experts"))
+            for n in k["nodes"] if n["op"] in ("GEMM", "GroupedGEMM")}
+
+
+def test_qwen35_nvfp4_quantizes_the_routed_experts_and_nothing_else():
+    """nvidia/Qwen3.5-397B-A17B-NVFP4's ModelOpt list excludes every attention and DeltaNet
+    module, every shared expert (`*.mlp.shared_expert.*`), the head and the MTP module
+    (`mtp.layers.0*`): only the 512 routed experts a layer store NVFP4. The shared expert is
+    its own node at bf16, and the draft layer is placed at its own module names, so it is
+    bf16 throughout rather than a mirror of the decoder's NVFP4 experts."""
+    g = graph_of(QWEN35_NVFP4)
+    assert g["global"]["weight_dtype"] == "bf16"
+    assert _widths(g, "attn_moe") == {"qkv_proj": ("bf16", None), "o_proj": ("bf16", None),
+                                      "experts": ("nvfp4", 512), "shared_experts": ("bf16", 1)}
+    assert _widths(g, "gdn_moe") == {"mixer_out": ("bf16", None), "experts": ("nvfp4", 512),
+                                     "shared_experts": ("bf16", 1)}
+    assert g["speculator"]["stack"]["pattern"] == ["mtp_moe"]
+    assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
+
+
+@pytest.mark.parametrize("pattern,why", [
+    # the shared expert left unquantized on one layer only
+    ("model.language_model.layers.3.mlp.shared_expert*", "'shared_experts' quantized on some"),
+    # the routed experts left unquantized on one layer only
+    ("model.language_model.layers.7.mlp.experts*", "'experts' quantized on some"),
+])
+def test_modelopt_placement_refuses_a_role_split_across_one_kinds_layers(tmp_path, pattern, why):
+    """A list that excludes a module on some of a kind's layers and not on others states two
+    widths for one node, which is refused rather than priced at either."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = config_of(QWEN35_NVFP4)
+    q = raw["quantization_config"]
+    q["ignore"] = [p for p in q["ignore"] if "shared_expert" not in p] + [pattern]
+    if "experts*" in pattern:
+        q["ignore"] = [p for p in raw["quantization_config"]["ignore"]] + [pattern]
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw(raw, tmp_path, "qwen-nvfp4-test")
+
+
+def test_qwen35_nvfp4_refuses_a_quantized_deltanet_input_projection(tmp_path):
+    """The DeltaNet input projections are priced inside the recurrent update at the base width;
+    a list that leaves them quantized is refused rather than priced at a width they do not store."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = config_of(QWEN35_NVFP4)
+    q = raw["quantization_config"]
+    q["ignore"] = [p for p in q["ignore"] if p != "model.language_model.layers.0.linear_attn*"]
+    with pytest.raises(derive_graph.DeriveError, match="in_proj_qkvz"):
+        _derive_raw(raw, tmp_path, "qwen-nvfp4-test")
