@@ -89,7 +89,7 @@ layer_kinds:
     role: input_norm
   - op: GEMM
     role: qkv_proj
-    n: 9216
+    n: 17408
     k: 4096
   - op: Attention
     holds_engine_kv: true
@@ -151,7 +151,7 @@ layer_kinds:
     role: input_norm
   - op: GEMM
     role: qkv_proj
-    n: 9216
+    n: 17408
     k: 4096
   - op: Attention
     holds_engine_kv: true

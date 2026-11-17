@@ -2672,7 +2672,7 @@ def test_qwen3_5_gdn_state_size_is_the_key_dim_not_the_value_dim():
         "full_attention_interval": 4,
         "linear_num_key_heads": 16, "linear_num_value_heads": 32,
         "linear_key_head_dim": 64, "linear_value_head_dim": 256,
-        "linear_conv_kernel_dim": 4,
+        "linear_conv_kernel_dim": 4, "attn_output_gate": True,
     }
     kinds, _ = dg.handler_qwen3_5_moe(cfg, cfg, "synthetic")
     n = next(x for k in kinds if k["id"] == "gdn_moe"
@@ -8666,6 +8666,27 @@ def test_qwen35_nvfp4_v2_places_each_module_at_the_width_its_map_states(tmp_path
     assert [n.get("weight_dtype", "bf16") for n in g["head"] if n["op"] == "GEMM"] == ["bf16"]
     assert g["speculator"]["stack"]["pattern"] == ["mtp_moe"]
     assert set(_qwen_role_widths(g, "mtp_moe").values()) == {"bf16"}
+
+
+@pytest.mark.parametrize("name", QWEN_GATED_ATTENTION)
+def test_qwen35_full_attention_qkv_carries_the_output_gate(name):
+    """attn_output_gate doubles the query rows of qkv_proj: vLLM builds it with
+    num_heads * (1 + attn_output_gate) query heads (qwen3_next.py:315-325@v0.33.0), and the V2
+    checkpoint's q_proj is [16384, 4096] for 32 heads of 256. The draft layer is the same."""
+    g = graph_of(MODELS / name)
+    t = text_config(config_of(MODELS / name))
+    want = (2 * t["num_attention_heads"] + 2 * t["num_key_value_heads"]) * t["head_dim"]
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    for kind in ["attn_moe"] + [k for k in g["speculator"]["stack"]["pattern"] if k != "attn_moe"]:
+        qkv = [n for n in kinds[kind]["nodes"] if n.get("role") == "qkv_proj"]
+        assert [(n["n"], n["k"]) for n in qkv] == [(want, t["hidden_size"])]
+
+
+def test_qwen35_without_a_stated_output_gate_is_refused(tmp_path):
+    raw = config_of(QWEN35_NVFP4_V2)
+    del text_config(raw)["attn_output_gate"]
+    with pytest.raises(deriver().DeriveError, match="attn_output_gate is not stated"):
+        _derive_raw(raw, tmp_path, "qwen-v2-test")
 
 
 def _v2_edit(edit) -> dict:
