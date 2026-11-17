@@ -544,6 +544,167 @@ class RefreshProvenance(unittest.TestCase):
                 self.assertEqual(self.golden(g), self.GOLDEN)
 
 
+
+class ValueCoverage(unittest.TestCase):
+    """oracle/value_coverage.py, the value-coverage report (FID-10)."""
+
+    def check(self, root):
+        return run([sys.executable, "-I", os.path.join(HERE, "value_coverage.py"), root], ROOT)
+
+    def test_the_committed_goldens_are_covered_or_held(self):
+        r = self.check(ROOT)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def tree(self, goldens, held=None, maps=("finished",)):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        os.makedirs(os.path.join(root, "oracle", "testdata", "golden"))
+        with open(os.path.join(root, "oracle", "harness.json"), "w") as f:
+            json.dump({"golden_dirs": ["oracle/testdata/golden/"], "golden_files": []}, f)
+        with open(os.path.join(root, "oracle", "value_coverage.json"), "w") as f:
+            json.dump({"description": "x", "maps": list(maps), "held": held or {}}, f)
+        for i, g in enumerate(goldens):
+            with open(os.path.join(root, "oracle", "testdata", "golden", f"g{i}.trace.json"), "w") as f:
+                json.dump({"provenance": {"seed": i}, **g}, f)
+        return root
+
+    def test_a_field_at_one_value_fails_and_two_values_pass(self):
+        held = {"steps": {"kind": "fixed", "reason": "r"}}
+        r = self.check(self.tree([{"steps": [{"batch_size": 2}]}, {"steps": [{"batch_size": 2}]}], held))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("steps[].batch_size: takes only 2", r.stdout)
+        r = self.check(self.tree([{"steps": [{"batch_size": 2}, {"batch_size": 0}]}], held))
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_list_is_covered_only_when_both_empty_and_not(self):
+        r = self.check(self.tree([{"arrivals": ["r0"]}, {"arrivals": ["r1"]}]))
+        self.assertIn("arrivals: takes only [...]", r.stdout)
+        r = self.check(self.tree([{"arrivals": ["r0"]}, {"arrivals": []}], held={"arrivals[]": {"kind": "fixed", "reason": "x"}}))
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_map_keyed_by_request_is_one_field(self):
+        goldens = [{"finished": {"r0": {"step": 2}}}, {"finished": {"r1": {"step": 2}}}]
+        held = {"finished.*.step": {"kind": "gap", "reason": "no scenario moves it (#32)"}}
+        r = self.check(self.tree(goldens, held))
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_the_held_list_stays_true(self):
+        two = [{"x": 1}, {"x": 0}]
+        for name, goldens, held, text in [
+                ("now covered", two, {"x": {"kind": "fixed", "reason": "r"}}, "x: is held as fixed but is now covered"),
+                ("no such field", two, {"y": {"kind": "fixed", "reason": "r"}}, "y: is held, but no golden has it"),
+                ("a gap without its issue", [{"x": 1}], {"x": {"kind": "gap", "reason": "later"}}, "cites the open issue"),
+                ("no reason", [{"x": 1}], {"x": {"kind": "fixed", "reason": ""}}, "x: no reason"),
+                ("no kind", [{"x": 1}], {"x": {"reason": "r"}}, "kind must be one of")]:
+            with self.subTest(name):
+                r = self.check(self.tree(goldens, held))
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn(text, r.stdout)
+
+    def test_no_golden_fails(self):
+        r = self.check(self.tree([]))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("no golden trace", r.stdout)
+
+
+class MutationSweep(unittest.TestCase):
+    """oracle/mutate.py, the mutation sweep (T7), on scratch repositories."""
+
+    LIB = "def positive(x):\n    return x > 0\n\n\ndef untested():\n    return 1\n"
+    TEST = "import lib\nassert lib.positive(1) and not lib.positive(0)\n"
+    GO = ("// SPDX-License-Identifier: Apache-2.0\n// Derived from python/sglang/srt/x.py at SGLang v0.5.23.\n\n"
+          "package core\n\n// Fits says a < b.\nfunc Fits(a, b int) bool {\n\treturn a < b && b != 0 // a > b\n}\n\n"
+          "func Name() string {\n\treturn \"a >= b\"\n}\n")
+
+    def repo(self, mutants, gaps=None, equivalent=None):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        os.makedirs(os.path.join(root, "oracle"))
+        os.makedirs(os.path.join(root, "core"))
+        files = {"lib.py": self.LIB, "check.py": self.TEST, "other.py": "X = 1\n", "core/x.go": self.GO}
+        for rel, text in files.items():
+            with open(os.path.join(root, rel), "w") as f:
+                f.write(text)
+        cfg = {"description": "x", "mutants": mutants, "known_gaps": gaps or {}, "equivalent": equivalent or {},
+               "suites": {"unit": {"command": [sys.executable, "check.py"], "tests": ["check.py"]},
+                          "go": {"command": ["false"], "tests": []}}}
+        with open(os.path.join(root, "oracle", "mutants.json"), "w") as f:
+            json.dump(cfg, f)
+        for cmd in (["init", "-q"], ["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false",
+                                                     "commit", "-q", "-m", "base"]):
+            subprocess.run(["git", "-C", root, *cmd], check=True, capture_output=True)
+        return root
+
+    def sweep(self, root, *extra):
+        scratch = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, scratch, True)
+        return run([sys.executable, "-I", os.path.join(HERE, "mutate.py"), "--root", root, *extra, "nowhere",
+                    os.path.join(scratch, "tree")], root)
+
+    @staticmethod
+    def mutant(i, file="lib.py", old="return x > 0", new="return x >= 0"):
+        return {"id": i, "guards": "g", "file": file, "old": old, "new": new, "suite": "unit"}
+
+    def test_a_caught_mutant_passes(self):
+        r = self.sweep(self.repo([self.mutant("A")]), "--only", "A")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("CAUGHT     A", r.stdout)
+
+    def test_a_survivor_a_stale_gap_and_a_broken_mutant_fail(self):
+        survivor = self.mutant("B", old="return 1", new="return 2")
+        for name, mutants, gaps, text in [
+                ("survivor", [survivor], {}, "SURVIVED   B  guards g"),
+                ("gap now caught", [self.mutant("A")], {"A": "a gap (#32)"}, "NOW CAUGHT A"),
+                ("broken", [self.mutant("C", old="return y")], {}, "BROKEN     C"),
+                ("gap without its issue", [survivor], {"B": "later"}, "cites the open issue"),
+                ("stale gap", [], {"Z": "gone (#32)"}, "STALE      Z")]:
+            with self.subTest(name):
+                r = self.sweep(self.repo(mutants, gaps), "--only", ",".join(m["id"] for m in mutants) or "none") \
+                    if name != "stale gap" else self.sweep(self.repo(mutants, gaps), "--list")
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                self.assertIn(text, r.stdout)
+
+    def test_a_listed_survivor_with_its_issue_passes(self):
+        r = self.sweep(self.repo([self.mutant("B", old="return 1", new="return 2")], {"B": "no test yet (#32)"}), "--only", "B")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_generated_mutants_flip_code_operators_only(self):
+        mu = import_oracle("mutate")
+        got = mu.generated_mutants("core/x.go", self.GO)
+        self.assertEqual(sorted(m["new"].strip() for m in got),
+                         ["return a < b && b == 0 // a > b", "return a < b || b != 0 // a > b",
+                          "return a <= b && b != 0 // a > b"])
+        self.assertEqual({m["function"] for m in got}, {"Fits"})
+        self.assertEqual({m["package"] for m in got}, {"./core"})
+
+    def changed_list(self, edit):
+        root = self.repo([self.mutant("A"), self.mutant("O", file="other.py", old="X = 1", new="X = 2")])
+        edit(root)
+        subprocess.run(["git", "-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false",
+                        "commit", "-qam", "change"], check=True, capture_output=True)
+        r = self.sweep(root, "--changed", "HEAD~1", "--list")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return {line.split()[1].split(":")[0] if line.startswith("generated") else line.split()[1]
+                for line in r.stdout.splitlines() if line.startswith(("listed", "generated"))}, r.stdout
+
+    def test_a_pull_request_sweeps_what_it_changed(self):
+        def edit(path, old, new):
+            def f(root):
+                with open(os.path.join(root, path)) as h:
+                    text = h.read()
+                with open(os.path.join(root, path), "w") as h:
+                    h.write(text.replace(old, new))
+            return f
+        for name, change, want in [
+                ("a changed file", edit("lib.py", "return 1", "return 3"), {"A"}),
+                ("a changed test", edit("check.py", "lib.positive(1)", "lib.positive(2)"), {"A", "O"}),
+                ("a changed ported function", edit("core/x.go", "b != 0 //", "b != 1 //"), {"core/x.go"}),
+                ("an unchanged ported function", edit("core/x.go", "\"a >= b\"", "\"a\""), set())]:
+            with self.subTest(name):
+                got, out = self.changed_list(change)
+                self.assertEqual(got, want, out)
+
+
 class Runner(unittest.TestCase):
     """oracle/run_scheduler.py's own guards."""
 

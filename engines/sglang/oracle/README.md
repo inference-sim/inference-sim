@@ -135,3 +135,37 @@ That copies each fresh trace's provenance into its golden, and only that. It ref
 decisions differ from the fresh trace, or that ran another scenario or seed. Commit the result. A
 change that alters decisions instead re-records the golden with the runner, and the commit carries
 the trailer.
+
+## Value coverage and the mutation sweep
+
+`value_coverage.py`, in `oracle-checks`, is the value-coverage report (FID-10). It reads every
+key of every golden outside its provenance block. A field is named by its path, with `[]` for a list
+element and `*` for a key of a map that `value_coverage.json` lists in `maps`. Each field must take
+two distinct values somewhere in the scenario set, so that a comparison of it can fail. For a list,
+the two values are empty and not empty. A field that takes one value is listed in `held` in
+`value_coverage.json`, with one of three kinds:
+
+- `fixed`: the oracle holds it by construction;
+- `no_neutral`: its neutral value cannot occur;
+- `gap`: no scenario moves it yet. The entry cites the open issue that adds the scenario (X28).
+
+The report fails on a held field that is now covered, and on one that no golden has.
+`--report` prints every field with its values.
+
+`mutate.py` is the mutation sweep (T7), run by `.github/workflows/mutation.yml`. It applies one
+one-line break at a time to a scratch copy of the tree and runs the suite that must catch it. There
+are two kinds of mutant:
+
+- **Listed mutants** are in `mutants.json`. They cover the oracle's own checks (X18). A lane that
+  ports a row adds that row's mutants there.
+- **Generated mutants.** Every Go file ported from SGLang gets its relational, equality and logical
+  operators flipped one at a time. Its package tests must catch each flip.
+
+A survivor fails the sweep, unless `mutants.json` lists it in `known_gaps`, citing the issue, or in
+`equivalent`, saying why. A pull request sweeps what it changed: the listed mutants of each changed
+file and of each changed test file, and the generated mutants of each changed ported function. The
+full sweep runs nightly, on release tags and on demand.
+
+```sh
+python3 -I oracle/mutate.py [--changed <base>] [--list] <sglang checkout> <scratch dir>
+```

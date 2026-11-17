@@ -1,0 +1,277 @@
+{
+  "description": "The mutation sweep's mutants (oracle/mutate.py, T7). Each listed mutant is a one-line break that the named suite must catch; ported Go files get generated mutants too. known_gaps holds survivors with the open issue that closes each gap (X28); equivalent holds generated mutants no test can tell from the original, with why.",
+  "suites": {
+    "oracle-checks": {
+      "command": [
+        "python3",
+        "-I",
+        "oracle/test_checks.py",
+        "{sglang}"
+      ],
+      "tests": [
+        "oracle/test_checks.py"
+      ]
+    },
+    "go": {
+      "command": [
+        "go",
+        "test",
+        "-count=1",
+        "{package}"
+      ],
+      "tests": []
+    }
+  },
+  "mutants": [
+    {
+      "id": "T1",
+      "guards": "FID-2: a seed is an integer, not a boolean",
+      "file": "oracle/traces.py",
+      "old": "return isinstance(v, int) and not isinstance(v, bool) and v >= 0",
+      "new": "return isinstance(v, int) and v >= 0",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "T2",
+      "guards": "FID-2: the SGLang commit is a full commit id",
+      "file": "oracle/traces.py",
+      "old": "HEX40 = re.compile(r\"[0-9a-f]{40}\")",
+      "new": "HEX40 = re.compile(r\"[0-9a-f]{8,40}\")",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "T3",
+      "guards": "FID-2: a provenance key outside the format fails",
+      "file": "oracle/traces.py",
+      "old": "bad += [f\"provenance.{k}: not a key of the trace format\" for k in sorted(set(prov) - set(PROVENANCE))]",
+      "new": "bad += []",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "T4",
+      "guards": "FID-3: a write into a golden directory of harness.json needs the flag",
+      "file": "oracle/traces.py",
+      "old": "if p.startswith(tuple(os.path.realpath(d.rstrip(os.sep)) + os.sep for d in dirs)):",
+      "new": "if False:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "T5",
+      "guards": "FID-3: a write into a golden file of harness.json needs the flag",
+      "file": "oracle/traces.py",
+      "old": "if p in {os.path.realpath(f) for f in files}:",
+      "new": "if False:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "T6",
+      "guards": "FID-3: a write under any testdata/golden* needs the flag",
+      "file": "oracle/traces.py",
+      "old": "a == \"testdata\" and b.startswith(\"golden\")",
+      "new": "a == \"testdata\" and b == \"golden\"",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "T7",
+      "guards": "FID-3: the update flag lets a golden be written",
+      "file": "oracle/traces.py",
+      "old": "return bool(path) and is_golden_path(path, root) and os.environ.get(UPDATE_FLAG) != \"1\"",
+      "new": "return bool(path) and is_golden_path(path, root)",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "T8",
+      "guards": "FID-2: a malformed trace is never written",
+      "file": "oracle/traces.py",
+      "old": "    bad = trace_problems(trace)\n    if bad:\n        raise SystemExit(\"not a trace: \"",
+      "new": "    bad = []\n    if bad:\n        raise SystemExit(\"not a trace: \"",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "T9",
+      "guards": "X16: a trace records something beside its provenance",
+      "file": "oracle/traces.py",
+      "old": "if len(trace) < 2:",
+      "new": "if len(trace) < 1:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "C1",
+      "guards": "FID-2: the pin, the lock hash and the manifest version are held",
+      "file": "oracle/check_provenance.py",
+      "old": "        if prov[key] != value:",
+      "new": "        if False:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "C2",
+      "guards": "FID-2: the scenario is a file of this tree",
+      "file": "oracle/check_provenance.py",
+      "old": "    if len(named) != 1:",
+      "new": "    if len(named) > 1:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "C3",
+      "guards": "FID-2: the scenario is unchanged",
+      "file": "oracle/check_provenance.py",
+      "old": "    if now != prov[\"scenario_sha256\"]:",
+      "new": "    if now is None:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "C4",
+      "guards": "FID-2: the seed is the scenario's",
+      "file": "oracle/check_provenance.py",
+      "old": "    if prov[\"seed\"] != seed:",
+      "new": "    if False:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "C5",
+      "guards": "X16: no golden at all fails",
+      "file": "oracle/check_provenance.py",
+      "old": "    if not found:",
+      "new": "    if False:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "R1",
+      "guards": "FID-3: the refresh needs the update flag",
+      "file": "oracle/refresh_provenance.py",
+      "old": "    if os.environ.get(traces.UPDATE_FLAG) != \"1\":",
+      "new": "    if False:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "R2",
+      "guards": "FID-3: changed decisions are never refreshed",
+      "file": "oracle/refresh_provenance.py",
+      "old": "        if g != n:",
+      "new": "        if False:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "R3",
+      "guards": "FID-2: a fresh trace of another seed is refused",
+      "file": "oracle/refresh_provenance.py",
+      "old": "held = [k for k in (\"scenario_sha256\", \"seed\") if gp[k] != fp[k]]",
+      "new": "held = [k for k in (\"scenario_sha256\",) if gp[k] != fp[k]]",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "R4",
+      "guards": "FID-2: a malformed trace is refused",
+      "file": "oracle/refresh_provenance.py",
+      "old": "        if malformed:\n            print(f\"{name}: \" + \"; \".join(malformed))",
+      "new": "        if False:\n            print(f\"{name}: \" + \"; \".join(malformed))",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "G1",
+      "guards": "FID-2: a golden records the same provenance as the fresh run",
+      "file": "oracle/compare_goldens.py",
+      "old": "            if gp.get(key) != fp.get(key):",
+      "new": "            if False:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "G2",
+      "guards": "FID-10: a provenance key one side lacks fails",
+      "file": "oracle/compare_goldens.py",
+      "old": "malformed += [f\"{name}: this run's trace: {p}\" for p in traces.trace_problems(fresh)]",
+      "new": "malformed += []",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "G3",
+      "guards": "FID-2: the seed is held",
+      "file": "oracle/compare_goldens.py",
+      "old": "\"scenario_sha256\", \"seed\")",
+      "new": "\"scenario_sha256\")",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "G4",
+      "guards": "X16: a golden that differs from SGLang's output fails",
+      "file": "oracle/compare_goldens.py",
+      "old": "        if d:\n            bad.append(f\"{name}: the golden differs",
+      "new": "        if False:\n            bad.append(f\"{name}: the golden differs",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "V1",
+      "guards": "FID-10: a field seen at one value fails",
+      "file": "oracle/value_coverage.py",
+      "old": "    return len(values) >= 2",
+      "new": "    return len(values) >= 1",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "V2",
+      "guards": "FID-10: a held field that is now covered fails",
+      "file": "oracle/value_coverage.py",
+      "old": "        elif ok and path in held:",
+      "new": "        elif False:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "V3",
+      "guards": "FID-10: a held field no golden has fails",
+      "file": "oracle/value_coverage.py",
+      "old": "    for path in sorted(set(held) - set(seen)):",
+      "new": "    for path in []:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "V4",
+      "guards": "X28: a gap cites the open issue that closes it",
+      "file": "oracle/value_coverage.py",
+      "old": "        elif entry[\"kind\"] == \"gap\" and not ISSUE.search(reason):",
+      "new": "        elif False:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "V5",
+      "guards": "FID-10: a map's keys are one field",
+      "file": "oracle/value_coverage.py",
+      "old": "child = f\"{path}.*\" if path in maps else",
+      "new": "child = f\"{path}.*\" if False else",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "S1",
+      "guards": "the scenario finished within max_steps",
+      "file": "oracle/run_scheduler.py",
+      "old": "    if result[\"truncated\"]:",
+      "new": "    if False:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "S2",
+      "guards": "every request of the scenario finished",
+      "file": "oracle/run_scheduler.py",
+      "old": "    if set(result[\"finished\"]) != expected:",
+      "new": "    if False:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "S3",
+      "guards": "SGL-1: the Python tree core",
+      "file": "oracle/run_scheduler.py",
+      "old": "    if result.get(\"classes\", {}).get(\"tree_core\") != \"UnifiedTreeCore\":",
+      "new": "    if False:",
+      "suite": "oracle-checks"
+    },
+    {
+      "id": "S4",
+      "guards": "the loop ended on the harness's ShutdownReq",
+      "file": "oracle/run_scheduler.py",
+      "old": "    if not result[\"shutdown_sent\"]:",
+      "new": "    if False:",
+      "suite": "oracle-checks"
+    }
+  ],
+  "known_gaps": {},
+  "equivalent": {}
+}
