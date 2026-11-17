@@ -27,7 +27,8 @@ func TestADynamoRecipeBuildResolvesThroughTheEmbeddedTable(t *testing.T) {
 		{"1.2.0.dev20260426", routertable.OutcomeMapped},
 		{"1.3.0.dev20260601", routertable.OutcomeMapped},
 		{"1.2.1", routertable.OutcomeMapped},
-		{"1.3.0.dev20260614", routertable.OutcomeRevisionNotCovered},
+		{"1.3.0.dev20260614", routertable.OutcomeMapped},
+		{"1.6.0.dev20261010", routertable.OutcomeRevisionNotCovered},
 		{"", routertable.OutcomeRevisionNotCovered},
 	} {
 		e, got := d.LookupRouterBuild("dynamo", "round-robin", nil, c.build)
