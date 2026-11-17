@@ -53,7 +53,7 @@ func fixtureInputs(t testing.TB, scenario string) Inputs {
 	t.Helper()
 	// The fixture itself is committed beside this test, so it is never merely absent:
 	// a failure to read one is a malformed fixture and always a real failure.
-	sc, dep, err := LoadBundle(filepath.Join("testdata", scenario))
+	sc, dep, err := schemas.LoadBundle(filepath.Join("testdata", scenario))
 	if err != nil {
 		t.Fatalf("committed fixture %s: %v", scenario, err)
 	}

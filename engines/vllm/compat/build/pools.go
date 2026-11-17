@@ -15,6 +15,7 @@ import (
 	"github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/blis-vllm/compat/kvtransfer"
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // Topology is a run's instance counts after DP-as-placement: every instance is numbered
@@ -42,6 +43,9 @@ type Pools struct {
 	Prefill, Decode *kernelmodel.Model
 	// Connector is the scenario's pd_transfer.connector.
 	Connector string
+	// P2P is whether the handoff is vLLM's p2p tier's: pd_transfer OffloadingConnector and a p2p
+	// tier in the offload's connector options (openPools).
+	P2P bool
 }
 
 // EndpointPlacements uses the same role-specific kernel placements that price KV handoffs.
@@ -174,29 +178,18 @@ func openPools(scenario string, repos kernelmodel.Repos, kernelOpen bool, top To
 		return nil, fmt.Errorf("scenario %q: %v", scenario, err)
 	}
 	p.Connector = shape.PDConnector
-	if err := RequireNIXLHandoff(scenario, p.Connector); err != nil {
-		return nil, err
+	// vLLM's p2p tier hands a request off with the OffloadingConnector alone: the decode engine
+	// loads the prompt from the prefill engine's CPU tier through its own p2p tier, which the
+	// v0.33.0 engines run (docs/features/kv_offloading_usage.md "P2P (Including P/D)" at vLLM
+	// v0.33.0; #204). NIXL's rules (the connector, MultiConnector's order, the prefill backoff) are
+	// not that handoff's; the rules every P/D run keeps follow.
+	p.P2P = p.Connector == p2pHandoffConnector && StatesP2PTier(shape.Offload)
+	if !p.P2P {
+		if err := requireNIXLRules(scenario, p, warnings); err != nil {
+			return nil, err
+		}
 	}
-	if p.Connector == "MultiConnector" {
-		// The schema states no MultiConnector children or their order, and the order decides
-		// which connector loads a request's KV: the first, in config order, that reports
-		// tokens (multi_connector.py:134-141, 429-448). BLIS assumes llm-d's composition,
-		// NIXL listed first, which it cannot check.
-		*warnings = append(*warnings, fmt.Sprintf("scenario %q: pd_transfer.connector MultiConnector is simulated as NixlConnector "+
-			"listed before OffloadingConnector (the first connector reporting tokens loads them); "+
-			"blis-schemas does not state the children or their order, so this assumption is not "+
-			"checked -- a deployment listing the OffloadingConnector first would load remotely "+
-			"prefilled prompts from the decode CPU tier", scenario))
-	}
-	// NIXL's prefill backoff (nixl/base_scheduler.py:385-407): the prefill stops short of the
-	// last few prompt tokens and the decode side recomputes them. BLIS moves and decodes the
-	// whole prompt, so a pool that backs off is refused rather than simulated without it.
-	if b := p.Prefill.PrefillBackoffTokens(); b > 0 {
-		return nil, fmt.Errorf("scenario %q: under NIXL this model's decode engine recomputes the last %d prompt "+
-			"token(s) that the prefill engine does not compute (_prefill_backoff: a Mamba-state model, "+
-			"or multi-module MTP drafting K>1); BLIS does not model that recompute", scenario, b)
-	}
-	// For the same reason every instance must belong to a pool: one with no role would run the
+	// Every instance must belong to a pool: one with no role would run the
 	// first pool's engine with the global sizing, an engine the scenario did not describe.
 	if top.Prefill+top.Decode != top.NumInstances {
 		return nil, fmt.Errorf("--num-instances %d, but --prefill-instances %d + --decode-instances %d "+
@@ -254,6 +247,47 @@ func openPools(scenario string, repos kernelmodel.Repos, kernelOpen bool, top To
 // (rules/v0_31 pack.go:964-968), it is taken to carry the NIXL one.
 var nixlConnectors = map[string]bool{
 	"NixlConnector": true, "NixlPullConnector": true, "NixlPushConnector": true, "MultiConnector": true,
+}
+
+// requireNIXLRules refuses a NIXL handoff BLIS does not model and adds MultiConnector's warning.
+func requireNIXLRules(scenario string, p *Pools, warnings *[]string) error {
+	if err := RequireNIXLHandoff(scenario, p.Connector); err != nil {
+		return err
+	}
+	if p.Connector == "MultiConnector" {
+		// The schema states no MultiConnector children or their order, and the order decides
+		// which connector loads a request's KV: the first, in config order, that reports
+		// tokens (multi_connector.py:134-141, 429-448). BLIS assumes llm-d's composition,
+		// NIXL listed first, which it cannot check.
+		*warnings = append(*warnings, fmt.Sprintf("scenario %q: pd_transfer.connector MultiConnector is simulated as NixlConnector "+
+			"listed before OffloadingConnector (the first connector reporting tokens loads them); "+
+			"blis-schemas does not state the children or their order, so this assumption is not "+
+			"checked -- a deployment listing the OffloadingConnector first would load remotely "+
+			"prefilled prompts from the decode CPU tier", scenario))
+	}
+	// NIXL's prefill backoff (nixl/base_scheduler.py:385-407): the prefill stops short of the
+	// last few prompt tokens and the decode side recomputes them. BLIS moves and decodes the
+	// whole prompt, so a pool that backs off is refused rather than simulated without it.
+	if b := p.Prefill.PrefillBackoffTokens(); b > 0 {
+		return fmt.Errorf("scenario %q: under NIXL this model's decode engine recomputes the last %d prompt "+
+			"token(s) that the prefill engine does not compute (_prefill_backoff: a Mamba-state model, "+
+			"or multi-module MTP drafting K>1); BLIS does not model that recompute", scenario, b)
+	}
+	return nil
+}
+
+// p2pHandoffConnector is the pd_transfer connector of a p2p handoff: vLLM's P/D deployment over
+// its p2p tier states the OffloadingConnector as its only KV connector.
+const p2pHandoffConnector = "OffloadingConnector"
+
+// StatesP2PTier reports whether an offload block states vLLM's p2p tier, in its connector options'
+// secondary_tiers (engineconfig.ConnectorOptions, which accepts no other tier type there).
+func StatesP2PTier(o *deployment.Offload) bool {
+	if o == nil {
+		return false
+	}
+	c, err := engineconfig.DecodeConnectorOptions(o.ConnectorOptions)
+	return err == nil && c != nil && len(c.SecondaryTiers) > 0
 }
 
 // RequireNIXLHandoff refuses a P/D scenario whose handoff is not NIXL's. What BLIS simulates
@@ -686,8 +720,9 @@ func (p *Pools) PriceOffload(scenario string, cfg engine.KVOffloadConfig, in Off
 	// A disaggregated engine with an offload tier runs both connectors, which only a
 	// MultiConnector composes: with kv_offloading_size set, vLLM overwrites kv_connector with
 	// the OffloadingConnector and kv_role with kv_both (vllm/config/vllm.py:1124-1158 at
-	// v0.31.0), so a plain NIXL connector and a tier cannot run together.
-	if p.Connector != "MultiConnector" {
+	// v0.31.0), so a plain NIXL connector and a tier cannot run together. A p2p handoff runs the
+	// OffloadingConnector alone, its tiers the handoff's (openPools).
+	if p.Connector != "MultiConnector" && !p.P2P {
 		return PoolOffload{}, PoolOffload{}, false, fmt.Errorf("scenario %q offloads KV under P/D with pd_transfer.connector %q; vLLM runs a NIXL "+
 			"handoff and an offload tier together only through a MultiConnector (stating "+
 			"kv_offloading_size replaces kv_connector with OffloadingConnector, vllm/config/vllm.py:1124-1158), "+

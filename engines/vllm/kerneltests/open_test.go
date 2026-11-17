@@ -3,6 +3,7 @@
 package latencykernel_test
 
 import (
+	schemas "github.com/inference-sim/blis-substrate/contracts"
 	. "github.com/inference-sim/blis-substrate/kernel"
 
 	"os"
@@ -21,7 +22,7 @@ import (
 // versions that do exist, because the next question a reader has is which one to use.
 func TestOpenRefusesAnUnregisteredEngineVersion(t *testing.T) {
 	dir := t.TempDir()
-	sc, dep, err := LoadBundle(filepath.Join("testdata", "minimax-m25-h200-ep8.yaml"))
+	sc, dep, err := schemas.LoadBundle(filepath.Join("testdata", "minimax-m25-h200-ep8.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

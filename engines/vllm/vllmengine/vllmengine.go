@@ -642,7 +642,11 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 		// (vllm/config/vllm.py:644-664@5df63a72), which the catalog's model graph holds.
 		setIfAbsent(&block, "mtp_nextn_predict_layers", fmt.Sprint(n))
 	}
-	if role := kvRoleOf(p.role); role != "" && p.connector != "" {
+	// vLLM's P/D deployment over its p2p tier states the OffloadingConnector as its only KV connector
+	// (docs/features/kv_offloading_usage.md "P2P (Including P/D)" at vLLM v0.33.0): the engine runs it
+	// as kv_offload, whose p2p tier loads the decode's prompt, so the pool states no kv_transfer.
+	p2pHandoff := p.connector == offloadChild && p.offload != nil
+	if role := kvRoleOf(p.role); role != "" && p.connector != "" && !p2pHandoff {
 		// A P/D pool's kv_transfer_config: the deployment's pd_transfer.connector, and the pool's
 		// role as vLLM's kv_role (a prefill pool produces KV, a decode pool consumes it).
 		kt := yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}

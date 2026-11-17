@@ -2,6 +2,7 @@ package vllmengine
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -51,8 +52,11 @@ func TestAP2PTierStatedInTheConnectorOptionsBuildsAPeeredEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, ok := e.(engine.Peered)
-	if !ok || !strings.HasSuffix(p.PeerAddr(), ":5710") {
-		t.Fatalf("the engine is not peered at port 5710 (Peered %v, %q)", ok, p.PeerAddr())
+	if !ok {
+		t.Fatal("the engine is not peered")
+	}
+	if !strings.HasSuffix(p.PeerAddr(), ":5710") {
+		t.Fatalf("the engine is peered at %q, want port 5710", p.PeerAddr())
 	}
 }
 
@@ -71,5 +75,43 @@ func TestAConnectorOptionTierThatIsNotP2PIsRefused(t *testing.T) {
 				t.Fatalf("refusal %v, want one naming %q", err, c.want)
 			}
 		})
+	}
+}
+
+// A P/D deployment over vLLM's p2p tier states the OffloadingConnector as its only KV connector
+// (docs/features/kv_offloading_usage.md "P2P (Including P/D)" at vLLM v0.33.0). Each pool builds a
+// peered engine whose offload is that connector, with the p2p tier, and no kv_transfer. Before, the
+// factory stated the OffloadingConnector as a kv_transfer beside kv_offload, which the engine refuses.
+func TestAP2PHandoffDeploymentBuildsBothPoolsPeered(t *testing.T) {
+	Register()
+	raw, err := os.ReadFile(roots(t, multiScenario)[RootScenario])
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := strings.Replace(string(raw), "pd_transfer:\n  connector: MultiConnector\n", "pd_transfer:\n  connector: OffloadingConnector\n", 1)
+	s = strings.Replace(s, "  eviction_policy: lru\n", "  eviction_policy: lru\n  spec: TieringOffloadingSpec\n"+
+		"  connector_options:\n    secondary_tiers: [{type: p2p, port: 5710}]\n", 1)
+	if !strings.Contains(s, "connector: OffloadingConnector\n\n") || !strings.Contains(s, "type: p2p") {
+		t.Fatal("fixture edit failed")
+	}
+	path := filepath.Join(t.TempDir(), "p2p.yaml")
+	if err := os.WriteFile(path, []byte(s), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := map[string]string{RootScenario: path}
+	for pool := range 2 {
+		kt, off := prepareKV(t, r, pool)
+		if kt.Connector != "" || off.CPUBytes != 512<<30 {
+			t.Errorf("pool %d: kv_transfer %+v, kv_offload CPU bytes %d; want no kv_transfer and the 512 GiB tier", pool, kt, off.CPUBytes)
+		}
+		e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r, Pool: pool})
+		if err != nil {
+			t.Fatalf("pool %d: %v", pool, err)
+		}
+		if p, ok := e.(engine.Peered); !ok {
+			t.Errorf("pool %d: the engine has no p2p tier", pool)
+		} else if p.PeerAddr() == "" {
+			t.Errorf("pool %d: the engine's p2p tier has no address", pool)
+		}
 	}
 }
