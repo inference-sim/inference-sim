@@ -172,4 +172,10 @@ func TestAStatedMoEBackendIsApproximatedWhereTheEnginePricesIt(t *testing.T) {
 			t.Errorf("moe_backend %q is exact, but it has no stand-in", c.value)
 		}
 	}
+	// The SM90 clause is valid for block-FP8 experts only and the clause grammar cannot test the
+	// weight scheme, so the approximation must say so where a reader of a scored point sees it.
+	a, _ := fields.Approximate(e, fields.Facts{Value: "triton", ComputeCapability: "9.0"})
+	if !strings.Contains(a.Differs, "block-FP8 experts only") {
+		t.Errorf("the approximation covering moe_backend on SM90 does not say it is valid for block-FP8 only: %q", a.Differs)
+	}
 }
