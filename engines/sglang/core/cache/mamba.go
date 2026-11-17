@@ -362,7 +362,7 @@ func (p *HybridRequestPool) PingPongMap() [][]int64 {
 
 // ErrMambaExhausted is the assertion HybridReqToTokenPool.alloc raises when the mamba pool has no
 // slot for a request (memory_pool.py:1608-1611).
-var ErrMambaExhausted = fmt.Errorf("Not enough space for mamba cache, try to increase --mamba-full-memory-ratio or --max-mamba-cache-size")
+var ErrMambaExhausted = fmt.Errorf("not enough space for mamba cache, try to increase --mamba-full-memory-ratio or --max-mamba-cache-size")
 
 // Alloc is HybridReqToTokenPool.alloc (memory_pool.py:1572-1633): rows as the request pool gives
 // them, then each request without a mamba slot takes one (and, with the extra buffer and no
@@ -409,7 +409,7 @@ func (p *HybridRequestPool) allocPingPong(m *MambaKV) error {
 	n := p.initialTracking
 	slots, ok := p.Mamba.Alloc(n)
 	if !ok {
-		return fmt.Errorf("Not enough space for mamba ping pong idx, try to increase --mamba-full-memory-ratio")
+		return fmt.Errorf("not enough space for mamba ping pong idx, try to increase --mamba-full-memory-ratio")
 	}
 	buf := make([]int64, p.pingPongSize)
 	for i := range buf {
@@ -471,7 +471,7 @@ func (p *HybridRequestPool) FreeMambaCache(row int, m *MambaKV, keep *int) error
 	if !p.extraBuffer {
 		return nil
 	}
-	if keep != nil && !(*keep == 0 || (*keep == 1 && p.pingPongSize == 2)) {
+	if keep != nil && *keep != 0 && (*keep != 1 || p.pingPongSize != 2) {
 		return fmt.Errorf("cannot keep ping-pong entry %d of %d", *keep, p.pingPongSize)
 	}
 	var positions []int

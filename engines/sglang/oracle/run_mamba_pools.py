@@ -49,6 +49,24 @@ KV_FIELDS = ("req_pool_idx", "kv_allocated_len", "mamba_pool_idx", "mamba_ping_p
              "mamba_cow_src_index")
 
 
+class Req:
+    """A request as the pool code reads one: a row of ReqKvInfo (managers/schedule_batch.py)."""
+
+    def __init__(self, rid, fields):
+        from sglang.srt.managers.schedule_batch import ReqKvInfo
+
+        self.rid = rid
+        self.kv = ReqKvInfo(**fields)
+
+    def update(self, fields):
+        import dataclasses
+
+        import torch
+
+        self.kv = dataclasses.replace(
+            self.kv, **{k: torch.tensor(v, dtype=torch.int64) if isinstance(v, list) else v for k, v in fields.items()})
+
+
 def enc(x):
     import torch
 
@@ -131,13 +149,25 @@ def mamba_budget(entry, cfg, K, scenario_args):
 
     algo = entry.get("spec_algorithm")
     spec = SpeculativeAlgorithm.from_string(algo) if algo else SpeculativeAlgorithm.NONE
-    kvc = types.SimpleNamespace(
-        mambaish_config=cfg, hybrid_gdn_config=cfg, hybrid_kda_config=None, pp_size=1,
-        attn_dp_size=entry.get("attn_dp_size", 1),
-        model_config=types.SimpleNamespace(num_hidden_layers=cfg.num_hidden_layers,
-                                           context_len=entry.get("context_len", 4096)),
-        fused_entry_bytes=lambda name: None, spec_algorithm=spec, extra_mamba_cache_bytes_per_req=0)
-    kvc._calculate_mamba_ratio = lambda: K._calculate_mamba_ratio(kvc)
+    class Configurator:
+        """Holds only this entry's inputs; the configurator's own methods run on it."""
+
+        _calculate_mamba_ratio = K._calculate_mamba_ratio
+
+        def __init__(self):
+            self.mambaish_config = self.hybrid_gdn_config = cfg
+            self.hybrid_kda_config = None
+            self.pp_size = 1
+            self.attn_dp_size = entry.get("attn_dp_size", 1)
+            self.model_config = types.SimpleNamespace(num_hidden_layers=cfg.num_hidden_layers,
+                                                      context_len=entry.get("context_len", 4096))
+            self.spec_algorithm = spec
+            self.extra_mamba_cache_bytes_per_req = 0
+
+        def fused_entry_bytes(self, name):
+            return None
+
+    kvc = Configurator()
     out = {"name": entry["name"]}
     args = {**scenario_args, **entry.get("server_args", {})}
     with get_context().override_server_args(model_path="dummy", **args), ssm_dtype_env(args):
@@ -162,7 +192,6 @@ def drive(sglang_root: str, path: str) -> dict:
         os.environ.pop(name)
     os.environ.update(run_scheduler.KEPT_SGLANG_ENV)
     import torch
-    from sglang.srt.managers.schedule_batch import ReqKvInfo
     from sglang.srt.mem_cache.kv_cache_configurator import KVCacheConfigurator as K
     from sglang.srt.runtime_context import get_context
 
@@ -197,17 +226,14 @@ def drive(sglang_root: str, path: str) -> dict:
             built.append(p)
         for c in sq.get("calls", []):
             if c.get("op") == "req":
-                reqs[c["as"]] = types.SimpleNamespace(rid=c["as"], kv=ReqKvInfo())
-                for k, v in c.get("set", {}).items():
-                    setattr(reqs[c["as"]].kv, k, v)
+                reqs[c["as"]] = Req(c["as"], c.get("set", {}))
                 continue
             if c.get("op") == "set":
-                for k, v in c["set"].items():
-                    setattr(reqs[c["req"]].kv, k, torch.tensor(v, dtype=torch.int64) if isinstance(v, list) else v)
+                reqs[c["req"]].update(c["set"])
                 continue
             target = bound[c["on"]]
             args = {k: decode(v, bound, reqs) for k, v in c.get("args", {}).items()}
-            touched = [n for n in sorted(reqs) if any(isinstance(a, types.SimpleNamespace) and a is reqs[n]
+            touched = [n for n in sorted(reqs) if any(isinstance(a, Req) and a is reqs[n]
                        or isinstance(a, list) and reqs[n] in a for a in args.values())]
             try:
                 out = getattr(target, c["m"])(**args)

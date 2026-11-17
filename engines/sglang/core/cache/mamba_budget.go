@@ -53,7 +53,7 @@ func MambaRatio(disableRadixCache bool, s MambaStrategy, disableOverlap bool) (i
 	if s == MambaExtraBuffer || s == MambaExtraBufferLazy {
 		lazy := s == MambaExtraBufferLazy
 		if disableOverlap && lazy {
-			return 0, fmt.Errorf("Lazy extra buffer requires overlap schedule (--disable-overlap-schedule is incompatible)")
+			return 0, fmt.Errorf("lazy extra buffer requires overlap schedule (--disable-overlap-schedule is incompatible)")
 		}
 		extra = MambaTrackingSlots(true, !disableOverlap, lazy)
 	}
@@ -138,7 +138,7 @@ func MambaCacheSize(b MambaBudget) (size int, restGiB float64, err error) {
 		}
 	}
 	if size <= 0 {
-		return 0, 0, fmt.Errorf("Not enough GPU memory for hybrid (mamba/linear-attention) state cache. "+
+		return 0, 0, fmt.Errorf("not enough GPU memory for hybrid (mamba/linear-attention) state cache. "+
 			"Computed max_mamba_cache_size=%d (total_rest_memory=%.2f GB, mamba_cache_per_req=%.2f MB)",
 			size, rest, float64(perReq)/float64(1<<20))
 	}
@@ -152,7 +152,7 @@ func MaxNumReqsMamba(tokenCapacity, contextLen int, maxRunningRequests *int, att
 	n := MaxNumReqs(tokenCapacity, contextLen, maxRunningRequests, attnDPSize)
 	n = min(n, mambaSize/ratio)
 	if n <= 0 {
-		return 0, fmt.Errorf("Hybrid (mamba/linear-attention) state cache is too small to serve any requests. "+
+		return 0, fmt.Errorf("hybrid (mamba/linear-attention) state cache is too small to serve any requests. "+
 			"max_mamba_cache_size=%d, mamba_ratio=%d, resulting max_num_reqs=%d", mambaSize, ratio, n)
 	}
 	return n, nil
