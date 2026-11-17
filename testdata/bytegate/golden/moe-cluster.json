@@ -877,9 +877,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.2-0.20261117042537-0c8c7259c44b",
+    "substrate": "v0.14.2-0.20261117044346-6eaad394e072",
     "router": "v1.0.0-blis.4",
-    "engine_module": "v0.32.1-0.20261117012328-0e64151389b7"
+    "engine_module": "v0.32.1-0.20261117044643-40622bc81b42"
   },
   "window": {
     "start_us": 33333,
@@ -2669,6 +2669,7 @@
         "measured_cancelled_requests": 0,
         "measured_context_overflow_requests": 0,
         "measured_failed_requests": 0,
+        "mfu": 0.007642269356054967,
         "preemption_rate": 0,
         "preemptions": 0,
         "prefill_busy_share": 0.07542612123315834,
@@ -2728,6 +2729,7 @@
             "e2e_p95_ms": 7260.4944000000005,
             "e2e_p99_ms": 7281.216399999999,
             "measured_completed_requests": 33,
+            "mfu": 0.007576561985910502,
             "output_tok_s": 1607.8545162171429,
             "prefill_busy_share": 0.07370370071897935,
             "ttft_mean_ms": 76.80863636363637,
@@ -2774,6 +2776,7 @@
             "e2e_p95_ms": 7304.533049999999,
             "e2e_p99_ms": 7561.72585,
             "measured_completed_requests": 30,
+            "mfu": 0.007438265878707406,
             "output_tok_s": 1541.5951051518618,
             "prefill_busy_share": 0.07180002477443512,
             "ttft_mean_ms": 76.45660000000001,
@@ -2820,6 +2823,7 @@
             "e2e_p95_ms": 6715.4804,
             "e2e_p99_ms": 7455.203359999999,
             "measured_completed_requests": 29,
+            "mfu": 0.008033238155050961,
             "output_tok_s": 1477.9698602757203,
             "prefill_busy_share": 0.07951409082400994,
             "ttft_mean_ms": 80.88006896551725,
@@ -2866,6 +2870,7 @@
             "e2e_p95_ms": 6686.55175,
             "e2e_p99_ms": 6835.8028,
             "measured_completed_requests": 28,
+            "mfu": 0.007521011404550997,
             "output_tok_s": 1410.190737947474,
             "prefill_busy_share": 0.07668666861520897,
             "ttft_mean_ms": 80.22310714285715,
