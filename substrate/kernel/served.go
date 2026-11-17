@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 )
 
 // checkServedWeights proves that the target graph stores exactly the layout the engine says it
-// serves (enginesettings.ServedWeights), class by class, and refuses a difference. The cost
+// serves (plan.ServedWeights.Layout), class by class, and refuses a difference. The cost
 // model resolves no engine setting: the engine model resolves its quantization setting, refuses
 // what its engine refuses, and states the result; the kernel prices the graph, so it must show
 // the graph is that layout rather than take the statement on trust.
@@ -21,7 +21,7 @@ import (
 // shared experts are linears, the head is the head GEMM of the vocabulary's width, and the
 // embedding is the Gather of that vocabulary, whose stored width is its row bytes over the
 // hidden width.
-func checkServedWeights(g *model.Graph, sw *enginesettings.ServedWeights) error {
+func checkServedWeights(g *model.Graph, sw *plan.WeightLayout) error {
 	if sw == nil {
 		return nil
 	}
@@ -54,7 +54,7 @@ func checkServedWeights(g *model.Graph, sw *enginesettings.ServedWeights) error 
 // storedLayout reads the layout a graph stores, in the words ServedWeights uses. A class stored
 // at more than one dtype reads "mixed", which no engine statement equals; an embedding of a width
 // no dtype has reads "other".
-func storedLayout(g *model.Graph) enginesettings.ServedWeights {
+func storedLayout(g *model.Graph) plan.WeightLayout {
 	var linear, experts, router oneDType
 	for _, lk := range g.LayerKinds {
 		routedRows := 0
@@ -83,7 +83,7 @@ func storedLayout(g *model.Graph) enginesettings.ServedWeights {
 			}
 		}
 	}
-	out := enginesettings.ServedWeights{Linear: linear.get(), RoutedExperts: experts.get(), Router: router.get()}
+	out := plan.WeightLayout{Linear: linear.get(), RoutedExperts: experts.get(), Router: router.get()}
 	if ws := g.Global.WeightScale; ws != nil && out.Linear != "" {
 		out.LinearScaleElements = ws.Elements
 	}

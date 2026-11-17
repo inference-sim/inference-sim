@@ -34,6 +34,7 @@ import argparse
 import fnmatch
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -55,7 +56,8 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "ffn_size": ("intermediate_size", "ffn_hidden_size"),
     "vocab_size": ("vocab_size",),
     "num_experts": ("num_local_experts", "n_routed_experts", "num_experts"),
-    "top_k": ("num_experts_per_tok", "num_experts_per_token", "moe_topk"),
+    # top_k_experts is Gemma 4's spelling (vLLM passes it as top_k, gemma4.py:646-648).
+    "top_k": ("num_experts_per_tok", "num_experts_per_token", "moe_topk", "top_k_experts"),
     "moe_ffn_size": ("moe_intermediate_size", "expert_intermediate_size"),
     "num_shared_experts": ("n_shared_experts", "num_shared_experts"),
     "shared_ffn_size": (
@@ -482,6 +484,24 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
         "stacked": {".q_proj": ".qkv_proj", ".k_proj": ".qkv_proj",
                     ".v_proj": ".qkv_proj"},
     },
+    # LlamaForCausalLM (vLLM v0.33.0 model_executor/models/llama.py): the decoder layers are
+    # model.layers.{i} (:392, :498), the attention self_attn.qkv_proj and o_proj (:165-183), the
+    # MLP mlp.gate_up_proj and down_proj (:95-110), the head lm_head (:503-507), and the loader
+    # stacks q/k/v into qkv_proj and gate/up into gate_up_proj (packed_modules_mapping, :475-478).
+    "LlamaForCausalLM": {
+        "layer": "model.layers.{i}.",
+        "head": "lm_head",
+        "roles": {
+            "qkv_proj": "self_attn.qkv_proj",
+            "o_proj": "self_attn.o_proj",
+            "mlp_gate_up": "mlp.gate_up_proj",
+            "mlp_down": "mlp.down_proj",
+        },
+        "shared": (),
+        "prefix": {},
+        "stacked": {".q_proj": ".qkv_proj", ".k_proj": ".qkv_proj", ".v_proj": ".qkv_proj",
+                    ".gate_proj": ".gate_up_proj", ".up_proj": ".gate_up_proj"},
+    },
     # Qwen3.5-MoE (vLLM v0.33.0 model_executor/models/qwen3_5.py): the text decoder sits under
     # "language_model" and its layers under "language_model.model.layers" (the
     # Qwen3VLForConditionalGeneration mapper renames "model.language_model." to
@@ -499,6 +519,33 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
     # layers/fused_moe/utils.py:55-89), so on NVIDIA parts the two keep their own widths. The MTP
     # module is built under "mtp" (Qwen3_5MTP, qwen3_5_mtp.py:226-234; its layers at
     # mtp.layers.{i}, :122).
+    # DeepSeek-V3 and R1 (DeepseekV3ForCausalLM, vLLM v0.33.0
+    # model_executor/models/deepseek_v2.py): a DeepseekV2DecoderLayer at model.layers.{i} whose
+    # latent attention is self_attn.fused_qkv_a_proj (q_a_proj and kv_a_proj_with_mqa fused when
+    # q_lora_rank is set, :1052-1058, :1905-1912), q_b_proj, kv_b_proj and o_proj (:1083-1112); a
+    # dense layer's MLP is mlp.gate_up_proj and mlp.down_proj (:261-276), a sparse layer's experts
+    # mlp.experts with the shared experts at mlp.shared_experts (:360-380), and the router a
+    # GateLinear (:321), not a node. The MTP layer is built at model.layers.{num_hidden_layers + k}
+    # (deepseek_mtp.py:157-158, 245-246), its decoder block under that same prefix (:104-106) and
+    # its eh_proj an nn.Linear there (:87).
+    "DeepseekV3ForCausalLM": {
+        "layer": "model.layers.{i}.",
+        "draft_layer": "model.layers.{i}.",
+        "draft_roles": {"mtp_eh_proj": "model.layers.{i}.eh_proj"},
+        "head": "lm_head",
+        "roles": {
+            "qkv_a_proj": "self_attn.fused_qkv_a_proj",
+            "q_b_proj": "self_attn.q_b_proj",
+            "kv_b_proj": "self_attn.kv_b_proj",
+            "o_proj": "self_attn.o_proj",
+            "mlp_gate_up": "mlp.gate_up_proj",
+            "mlp_down": "mlp.down_proj",
+            "experts": "mlp.experts",
+        },
+        "shared": ("mlp.shared_experts.gate_up_proj", "mlp.shared_experts.down_proj"),
+        "prefix": {},
+        "stacked": {".gate_proj": ".gate_up_proj", ".up_proj": ".gate_up_proj"},
+    },
     # GLM-5's DSA family (GlmMoeDsaForCausalLM, vLLM v0.33.0 vllm/models/deepseek_v32): a
     # DeepseekV32DecoderLayer at model.layers.{i} (nvidia/model.py:57-120, 224) whose attention
     # is self_attn.fused_qkv_a_proj, q_b_proj, kv_b_proj and o_proj with the indexer's wq_b and
@@ -511,6 +558,7 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
     "GlmMoeDsaForCausalLM": {
         "layer": "model.layers.{i}.",
         "draft_layer": "model.layers.{i}.",
+        "draft_roles": {"mtp_eh_proj": "model.layers.{i}.eh_proj"},
         "head": "lm_head",
         "roles": {
             "qkv_a_proj": "self_attn.fused_qkv_a_proj",
@@ -610,6 +658,9 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
             "recurrent_in_proj_ba": "linear_attn.in_proj_ba",
             "mixer_out": "linear_attn.out_proj",
             "experts": "mlp.experts",
+            # vLLM builds mtp.fc unquantized under ModelOpt FP4 whatever the list says
+            # (qwen3_5_mtp.py:89-97), so no quantization reaches it.
+            "mtp_fc": None,
         },
         "shared": ("mlp.shared_expert.gate_up_proj", "mlp.shared_expert.down_proj"),
         "prefix": {"model.language_model.": "language_model.model.",
@@ -1391,7 +1442,7 @@ def attention(cfg: dict[str, Any], model: str, *, kind: str | None = None,
             node["compress_ratio"] = int(compress_ratio)
         # A window alone bounds a sparse read too: DeepSeek-V4.1's ratio-0 layers run
         # the sparse FlashMLA kernel over their window and nothing else
-        # (deepseek_v41/nvidia/flashmla.py:218-246), which blis-schemas#55 admits.
+        # (deepseek_v41/nvidia/flashmla.py:218-246), which https://github.com/inference-sim/blis-schemas/issues/55 admits.
         if kind == "sparse_mla" and not (index_topk or compress_ratio or window):
             raise DeriveError(
                 f"{model}: a sparse latent read bounded by no top-k selection, "
@@ -1588,7 +1639,7 @@ EMIT_TENSOR_PARALLEL = "tensor_parallel"
 EMIT_EXPERT_PARALLEL = "expert_parallel"
 EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE = "tensor_parallel_unless_sp_moe"
 # Decided by the model's own sequence parallelism, for the architecture
-# global.architecture names (blis-schemas#55); DeepSeek-V4.1 is the family that needs it.
+# global.architecture names (https://github.com/inference-sim/blis-schemas/issues/55); DeepSeek-V4.1 is the family that needs it.
 EMIT_SEQUENCE_PARALLEL = "sequence_parallel"
 EMIT_TENSOR_PARALLEL_UNLESS_SEQUENCE_PARALLEL = "tensor_parallel_unless_sequence_parallel"
 # An MoE that reduces a different tensor in each mode states one collective per mode
@@ -1607,6 +1658,10 @@ def collective(op: str, role: str, emit: str) -> dict[str, Any]:
 # than conventional: derive() prefers it over mirroring a target layer, so a handler that
 # defines it is stating that no target layer has the draft module's structure.
 DRAFT_KIND_ID = "mtp_moe"
+
+# The architectures whose MTP layer is DeepSeekMultiTokenPredictorLayer's, with an enorm, an hnorm
+# and an eh_proj ahead of its decoder block (see handler_moe's declare_draft).
+DEEPSEEK_MTP_ARCHS = frozenset({"DeepseekV3ForCausalLM", "GlmMoeDsaForCausalLM"})
 
 
 # Architectures whose head width this deriver reads from the fp8 exclusion list. Keyed
@@ -2038,10 +2093,21 @@ def attention_block(cfg: dict[str, Any], model: str, hidden: int, *,
         dh = attn["d_h"]
         qkv_out = (nq + 2 * nkv) * dh
         o_in = nq * dh
+    # A config that states attn_output_gate (Qwen3-Next, Qwen3.5 and 3.6 state it true) has
+    # Qwen3NextAttention project a gate beside the query: qkv_proj holds twice the query rows,
+    # the two are split per head, and the attention output is multiplied by sigmoid(gate)
+    # before o_proj (model_executor/models/qwen3_next.py:315-320, 436-467@4ba787ec). The
+    # multiply reads the output and the gate and writes the product.
+    gated = cfg.get("attn_output_gate") is True
+    if gated:
+        qkv_out += nq * dh
+    gate = [dict(norm("attn_output_gate"), bytes_per_token=3 * nq * dh *
+                 DTYPE_WIDTHS[base_dtype(cfg, raw or cfg, model)])] if gated else []
     return [
         norm("input_norm"),
         gemm("qkv_proj", qkv_out, hidden),
         attn,
+        *gate,
         gemm("o_proj", hidden, o_in),
         collective("AllReduce", "attn_out", EMIT_TENSOR_PARALLEL),
     ]
@@ -2275,6 +2341,15 @@ def handler_dense(cfg, raw, model):
     return [kind], {"pattern": ["dense"], "repeat": layers}
 
 
+def handler_dense_placed(cfg, raw, model):
+    """Llama, priced by handler_dense, with a ModelOpt checkpoint's widths placed node by
+    node: NVIDIA's Llama-3.3-70B-Instruct FP8 and FP4 state their quantization only in
+    hf_quant_config.json, which vLLM reads and the deriver does not, so their entries pin the
+    shards' safetensors headers and the widths are read from those (SUB-15). A checkpoint
+    that is not ModelOpt and pins no headers keeps handler_dense's graph."""
+    return modelopt_placed(handler_dense(cfg, raw, model), raw, model)
+
+
 def handler_moe(cfg, raw, model):
     """Mixtral, Qwen3-MoE, Llama-4, Granite-MoE, Inkling, DeepSeek-V2, GLM: attention
     plus a routed expert layer.
@@ -2358,12 +2433,27 @@ def handler_moe(cfg, raw, model):
     # Without a declared draft kind, derive()'s fallback mirrors the last DECLARED kind,
     # which on these configs is the unindexed one -- underpricing the draft indexer on
     # every speculative step.
+    #
+    # The DeepSeek family's MTP layer also runs its own input stage before the decoder block,
+    # once a draft token: enorm over the token embedding, hnorm over the previous hidden state,
+    # and eh_proj, an nn.Linear(2 x hidden -> hidden) over the two concatenated
+    # (DeepSeekMultiTokenPredictorLayer, model_executor/models/deepseek_mtp.py:85-130@4ba787ec;
+    # GLM-5's in vllm/models/deepseek_v32/nvidia/mtp.py:72-75). It is a plain nn.Linear, built
+    # with no quant config and no tensor-parallel split, so it is BF16 on every rank whatever the
+    # checkpoint's quantization. A mirror of a decoder kind has none of it, so these families
+    # always declare their draft kind.
     def declare_draft(kinds: list[dict[str, Any]]) -> None:
-        if not split_index:
-            return
         if not int(pick(cfg, "num_spec_tokens") or 0):
             return
-        nodes = sparse_nodes(window, True)
+        eh = architecture_of(raw, model) in DEEPSEEK_MTP_ARCHS
+        if not split_index and not eh:
+            return
+        nodes = sparse_nodes(window, True if split_index else None)
+        if eh:
+            base = base_dtype(cfg, raw, model)
+            nodes = [norm("mtp_enorm"), norm("mtp_hnorm"),
+                     dict(gemm("mtp_eh_proj", hidden, 2 * hidden), weight_dtype=base, tp="replicated"),
+                     *nodes]
         kinds.append({"id": DRAFT_KIND_ID, "nodes": nodes, "edges": chain(nodes)})
 
 
@@ -2480,11 +2570,13 @@ def handler_moe(cfg, raw, model):
     if first_dense:
         dense = dense_nodes(window)
         kinds.insert(0, {"id": "attn_dense", "nodes": dense, "edges": chain(dense)})
+        declare_draft(kinds)
         return kinds, {
             "prologue": ["attn_dense"] * first_dense,
             "pattern": ["attn_moe"],
             "repeat": layers - first_dense,
         }
+    declare_draft(kinds)
     return kinds, {"pattern": ["attn_moe"], "repeat": layers}
 
 
@@ -2547,7 +2639,9 @@ def handler_glm_moe_dsa(cfg, raw, model):
     """GLM-5's DSA family, priced by handler_moe, with a ModelOpt checkpoint's widths placed
     node by node. Its MTP layer, the draft kind handler_moe declares, is asked at the module
     names vLLM builds it under, model.layers.{num_hidden_layers + k}: GLM-5.2-NVFP4 excludes
-    that layer whole (model.layers.78*), so it is bf16 beside the decoder's NVFP4 experts."""
+    that layer whole (model.layers.78*), so it is bf16 beside the decoder's NVFP4 experts.
+    DeepSeek-V3 and R1 build their MTP layer at the same names, so they are placed the same way:
+    nvidia/DeepSeek-R1-0528-FP4-V2's headers store layer 61 BF16 beside NVFP4 experts."""
     result = handler_moe(cfg, raw, model)
     layers = int(require(cfg, "num_layers", model))
     spec = int(pick(cfg, "num_spec_tokens") or 0)
@@ -2685,7 +2779,7 @@ def handler_deepseek_v4(cfg, raw, model):
     What the graph cannot carry, recorded so a reader does not have to rediscover it:
       * FlashMLA pads each rank's heads to 64, or 128 above 64 (nvidia/flashmla.py:
         77-85): 16 heads per rank at TP 8 run as 64. The main read states no tp and
-        the consumer applies it (inference-sim/blis-latency-kernel#39). The Q RoPE +
+        the consumer applies it (https://github.com/inference-sim/blis-latency-kernel/issues/39). The Q RoPE +
         insert reads each rank's heads and writes the padded set, and every rank reads
         the whole KV row and writes the whole record. It is stated sharded, which is
         exact at TP 1, exact for the Q half at TP 2, and nearer than replicated above;
@@ -2704,9 +2798,9 @@ def handler_deepseek_v4(cfg, raw, model):
         in-flight tokens are 1 + num_spec_tokens a step, twice that under async
         scheduling -- 2 or 4 at MTP's one draft token, which give the same pages for
         these windows. Their pages' 576 B padding, and the larger hold during chunked
-        prefill, are not carried (inference-sim/blis-schemas#59);
+        prefill, are not carried (https://github.com/inference-sim/blis-schemas/issues/59);
       * h_proj runs on all hc_mult streams of the MTP input, hc_mult rows per token
-        (nvidia/mtp.py:185-187); a GEMM node states one (inference-sim/blis-schemas#58);
+        (nvidia/mtp.py:185-187); a GEMM node states one (inference-sim/blis-substrate#157);
       * the shared expert's TP padding: without sequence parallelism its intermediate
         rounds up to whole 128-blocks per rank (nvidia/model.py:150-158), which is no
         padding at TP 8 (24 blocks) but 4,096 for 3,072 at TP 16. It depends on the TP
@@ -2723,13 +2817,13 @@ def handler_deepseek_v4(cfg, raw, model):
       * that the MTP layer's first pass each step runs over every token the target
         scheduled, not one row per request (v1/worker/gpu/spec_decode/autoregressive/
         speculator.py:311-327, 453-493): an autoregressive stack states only that it
-        runs once per drafted token (inference-sim/blis-schemas#60);
+        runs once per drafted token (https://github.com/inference-sim/blis-schemas/issues/60);
       * wo_a's input read: the grouped einsum reads all o_groups x 4,096 FP8 values a
         token (nvidia/ops/o_proj.py:89-95), where one GEMM node of k 4,096 states one
         group's; the FLOPs and weight bytes are exact;
       * work the target runs only with MTP enabled: the copy of the whole hc stream
         into the drafter's buffer (nvidia/model.py:1637-1639)
-        (inference-sim/blis-schemas#51);
+        (https://github.com/inference-sim/blis-schemas/issues/51);
       * prefill's gather of each request's window records into the BF16 workspace,
         about 1.6 KB per prefill token (nvidia/flashmla.py:340-349), and launches
         below any node's resolution: the decode top-k translation, the hash-route
@@ -3435,7 +3529,7 @@ def handler_deepseek_v41(cfg, raw, model):
     a three-layer DSpark draft module.
 
     Priced as vLLM v0.31.0 serves it on SM90 (H200, the part the serving campaign in
-    blis-catalog#29 ran on), with no attention backend forced, as the base of
+    https://github.com/inference-sim/blis-catalog/issues/29 ran on), with no attention backend forced, as the base of
     capability family 9; `arch_overrides` states what family 10 (SM100) changes:
 
       * wo_a is MXFP8 in the checkpoint and BF16 resident on SM90. It is a batched
@@ -3482,7 +3576,7 @@ def handler_deepseek_v41(cfg, raw, model):
     the compressor's FP32 state ring. The main read states compress_ratio to name the
     stream its top-k positions come from, which its kv cache must match; it reads its
     window plus at most index_topk of them whatever the ratio (nvidia/flashmla.py:
-    230-246; inference-sim/blis-latency-kernel#32). The scorer scans ctx / ratio.
+    230-246; https://github.com/inference-sim/blis-latency-kernel/issues/32). The scorer scans ctx / ratio.
 
     The collectives follow V4.1's own sequence parallelism, `_use_sequence_parallel`
     (nvidia/model.py:239-247: PP 1, EP on, TP > 1, and a mega-MoE backend or DP > 1),
@@ -3500,7 +3594,7 @@ def handler_deepseek_v41(cfg, raw, model):
         splits the heads (attention.py:276-284), a rank at TP 8 computes 64 heads where
         n_q / tp gives 8. That depends on the backend and the TP width rather than on
         the model, so the main read states no tp and the consumer applies it
-        (inference-sim/blis-latency-kernel#39);
+        (https://github.com/inference-sim/blis-latency-kernel/issues/39);
       * SM100's fused all-reduce + mHC: at TP 4 without expert parallelism, where
         NVLink multicast is available, wo_b's and the MoE's reductions fold into the
         mHC boundary kernel (nvidia/model.py:318-328, 645-653; nvidia/ops/mhc.py:
@@ -3514,19 +3608,19 @@ def handler_deepseek_v41(cfg, raw, model):
         biases and the engram gate's q and k weights, a few MB;
       * the SM100 page size of the compressed and indexer caches, 128 tokens where
         SM90's is 64: an architecture overlay restates a cache's record and alignment
-        but not its block_size (inference-sim/blis-schemas#62);
+        but not its block_size (inference-sim/blis-substrate#158);
       * the SM100 mega-attention launches (above), and the draft context's window
         insert, which writes a draft layer's cache from another kind and so states the
         SM90 record in its traffic rather than following the overlay;
       * the 68 B MXFP4 indexer record, opt-in through indexer_kv_dtype, which no
-        deployment key carries (inference-sim/blis-schemas#57);
+        deployment key carries (https://github.com/inference-sim/blis-schemas/issues/57);
       * work the target runs only when DSpark is enabled: the copy of the whole hc
         stream into the drafter's hidden buffer (nvidia/model.py:773-784, 975-980),
         the auxiliary writes at the dspark_target_layer_ids, and, under sequence
         parallelism, the head's gather of the whole hc stream and its pre-mix ahead of
         the collapse and norm, in place of the collapsed state after them (:976-990),
         and the all-gathers of the auxiliary states it reads (:944-946, 958-959). No
-        emit condition names speculation (inference-sim/blis-schemas#51);
+        emit condition names speculation (https://github.com/inference-sim/blis-schemas/issues/51);
       * prefill's gather of each layer's own window records into the BF16 workspace,
         query_len + min(prefix, window - 1) entries per request (nvidia/flashmla.py:
         315-325; sparse_swa.py:366-371), about 1.6 KB per prefill token a layer: it
@@ -3535,7 +3629,7 @@ def handler_deepseek_v41(cfg, raw, model):
         `context` read of `swa`, for the window part of the gather, is charged over
         the whole context (computed + scheduled), which on the last 8K chunk of a
         100K-token prompt states 12x the window-bounded gather
-        (inference-sim/blis-catalog#33);
+        (inference-sim/blis-substrate#105);
       * Engram's DP-sharded path: with DP > 1 and /dev/shm too small for the ~189 GiB
         of tables, they shard over TP x DP and the hashes and rows are exchanged over
         the engram DP group (nvidia/engram.py:104-159, 408-424, 490-496;
@@ -3934,7 +4028,7 @@ def handler_deepseek_v41(cfg, raw, model):
             # head_dim and the KV row read at head_dim; the record it writes is the
             # cache's. FlashMLA pads each rank's Q to 64 heads (nvidia/flashmla.py:
             # 66-74), so the Q write does not shrink with TP; replicated is the nearer
-            # layout (inference-sim/blis-latency-kernel#39).
+            # layout (https://github.com/inference-sim/blis-latency-kernel/issues/39).
             store("q_rope_kv_insert", 2 * q_heads * total_dim * act + total_dim * act,
                   "swa"),
         ]
@@ -4064,7 +4158,7 @@ def handler_deepseek_v41(cfg, raw, model):
         # (nvidia/flashmla.py:181-246) and a ratio-0 layer passes no extra cache (:242).
         # compress_ratio states the stream the top-k positions come from, which its kv
         # cache must match; the read itself is window + index_topk positions
-        # (inference-sim/blis-latency-kernel#32).
+        # (https://github.com/inference-sim/blis-latency-kernel/issues/32).
         node = attention(
             cfg, model,
             kind="sparse_mla",
@@ -5132,15 +5226,27 @@ def handler_qwen3_5_moe(cfg, raw, model):
     ]
     sequence = ["attn_moe" if t == "full_attention" else "gdn_moe" for t in types]
     stack = compress(sequence)
-    if method != "modelopt":
-        return kinds, stack
-    # A ModelOpt checkpoint's widths, node by node. Its MTP module is a full-attention MoE
-    # layer like attn_moe, but the list can leave it at another width than the decoder's
-    # (Qwen3.5-NVFP4 excludes mtp.layers.0* whole), so it is declared as the draft kind and
-    # placed at its own module names rather than mirrored from attn_moe.
+    # The MTP module (Qwen3_5MultiTokenPredictor, model_executor/models/qwen3_5_mtp.py:66-160
+    # @4ba787ec) runs, once a draft token, an input stage before its full-attention MoE layer:
+    # pre_fc_norm_embedding over the token embedding, pre_fc_norm_hidden over the previous
+    # hidden state, and fc, a ColumnParallelLinear(2 x hidden -> hidden, gather_output) over the
+    # two concatenated, whose gather is an all-gather of its output. fc is BF16 in every committed
+    # checkpoint: the FP8 one names mtp.fc in modules_to_not_convert, the bf16 ones are
+    # unquantized, and vLLM forces it unquantized under ModelOpt FP4 whatever the list says
+    # (:89-97). So the draft kind is declared, with that stage, rather than mirrored from attn_moe;
+    # under ModelOpt it is also placed at its own module names, since the list can leave it at
+    # another width than the decoder's (Qwen3.5-NVFP4 excludes mtp.layers.0* whole).
     mtp = int(pick(cfg, "num_spec_tokens") or 0)
     if mtp:
-        kinds.append({"id": DRAFT_KIND_ID, "nodes": [dict(n) for n in full], "edges": chain(full)})
+        lead = [norm("mtp_pre_fc_norm_embedding"), norm("mtp_pre_fc_norm_hidden"),
+                dict(gemm("mtp_fc", hidden, 2 * hidden), weight_dtype=base_dtype(cfg, raw, model),
+                     tp="column"),
+                collective("AllGather", "mtp_fc_out", EMIT_TENSOR_PARALLEL)]
+        draft = lead + [dict(n) for n in full]
+        kinds.append({"id": DRAFT_KIND_ID, "nodes": draft, "edges": chain(draft)})
+    quant = raw.get("quantization_config") or {}
+    if str(quant.get("quant_method", "")).lower() != "modelopt":
+        return kinds, stack
     kinds = modelopt_place_widths(kinds, stack, raw, model,
                                   draft=(DRAFT_KIND_ID, list(range(mtp))) if mtp else None)
     return kinds, stack
@@ -6472,6 +6578,219 @@ EAGLE3_TARGETS = {
 }
 
 
+# The dflash_config keys a DFlash2 drafter's configuration may state, each read by the engine's
+# DFlash2 model (vLLM v0.33.0 model_executor/models/qwen3_dflash2.py@4ba787ec and the
+# qwen3_dflash.py it extends) and by this handler, or read by the engine and not changing what is
+# priced (final_logit_softcapping and output_multiplier scale the candidate logits;
+# input_embedding_scale scales the embedding output). attention_mode is the exception: vLLM
+# v0.33.0 does not read it and builds GQA attention whatever it says; the handler reads it only to
+# refuse an MLA drafter, whose weights that GQA attention could not load. Any other key changes the draft: causal,
+# use_swa, swa_window_size, attention_sink_bias and attention_value_scale change the attention
+# (_resolve_layer_attention and DFlashQwen3DecoderLayer, qwen3_dflash.py:96-156, 316-345), and
+# a key the engine does not know may be one a later release reads. Each is refused.
+DFLASH2_KEYS = frozenset({
+    "attention_mode", "block_size", "conv_group_size", "conv_kernel_size",
+    "final_logit_softcapping", "input_embedding_scale", "mask_token_id", "output_multiplier",
+    "selector_rank", "selector_top_k", "target_layer_ids",
+})
+
+# The bytes a token of one captured target state, for a DFlash2 drafter whose target captures
+# more than one hidden-width activation. The drafter's configuration does not name its target,
+# so this is recorded per drafter entry, with the target's code as the source. Muse Spark keeps
+# its residual stream in fp32 (residual_dtype = torch.float32,
+# vllm/models/muse_spark/nvidia/model.py:1531@v0.33.0) and appends that stream at each capture
+# point (:1705-1722), 4 x hidden_size bytes; its DSpark drafter states the same.
+DFLASH2_TARGET_STATE_BYTES = {
+    "muse-spark-open-dflash2": ("fp32", 8192),
+}
+
+
+def handler_dflash2(cfg, raw, model):
+    """A DFlash2 drafter (architecture DFlash2DraftModel, served by DFlash2Qwen3ForCausalLM,
+    vLLM v0.33.0 model_executor/models/qwen3_dflash2.py, registry.py:666), a checkpoint of its
+    own that a deployment names as its speculative draft model with method dflash.
+
+    The graph is the drafter, and states itself as the speculator a kernel prices beside the
+    target. num_hidden_layers DFlash layers (DFlash2Qwen3DecoderLayer, qwen3_dflash2.py:
+    229-287): the input norm; the attention-side grouped convolution's prepare, whose
+    kernel_projection is a replicated linear of 2 x conv_kernel_size x (hidden /
+    conv_group_size) rows (DFlashGroupedConv, :170-227), and the convolution over the block;
+    the Qwen3 attention, a fused QKV projection, per-head Q and K norms and RoPE, the
+    attention and o_proj (DFlashQwen3Attention, qwen3_dflash.py:159-296); the convolution's
+    finish; the post-attention norm and the MLP's convolution prepare; the SwiGLU MLP of
+    intermediate_size (Qwen2MLP); the MLP convolution's finish. The stack runs ONCE a step over
+    the block (parallel drafting, config/speculative.py:1581-1582). Every layer is
+    sliding-window attention over sliding_window tokens; a configuration whose is_causal is
+    false makes it non-causal (_dflash_layer_causal, qwen3_dflash.py:62-73), so each query
+    reads its window plus the whole query block: the bonus token and the deployment's
+    num_speculative_tokens mask tokens (DFlash2's convolution block, qwen3_dflash2.py:250-256).
+    The graph states that span at the checkpoint's dflash_config.block_size, the block it was
+    trained on; a deployment drafting another count reads a span that differs by the difference.
+
+    Before the pass, the context stack runs over the target's scheduled tokens: the fc
+    projection of one captured state per target_layer_ids entry (a replicated linear,
+    _get_dflash_fc_input_size, qwen3_dflash.py:84-95), the hidden norm, ONE projection of every
+    layer's K and V (the layers' K and V rows concatenated after loading, _build_context_kv_buffers,
+    qwen3_dflash.py:505-534, so those rows are resident twice), and each layer's K norm, RoPE and
+    cache insert (precompute_and_store_context_kv, :633-708). After the pass: the final norm and
+    the target's lm_head over the block, then the candidate selector (CandidateSelector,
+    qwen3_dflash2.py:314-358): a replicated projection of the hidden state to selector_rank, and
+    the predecessor and successor codebook rows of the selector_top_k candidates a position.
+
+    NOT PRICED, each small: the token lookup, which reads the target's table (the checkpoint
+    ships no embed_tokens); the convolutions' base kernels and the norms' weight vectors; the
+    edge scores, top_k x top_k x selector_rank multiply-adds a position, and the walk over them.
+    THE HEAD IS THE TARGET'S: the checkpoint ships no lm_head (has_own_lm_head is not set), so the
+    graph states one lm_head, as every graph must, aliased to the target's.
+
+    attention_mode mla (an MLA DFlash2 drafter) is refused: v0.33.0's DFlash attention builds a
+    QKV projection over head_dim and has no latent-attention path, and SGLang v0.5.23's
+    (python/sglang/srt/models/dflash.py DFlashAttention) has none either, so neither pinned
+    engine runs such a checkpoint (inference-sim/blis-sglang#21, inference-sim/blis-substrate#179)."""
+    def whole(v, key):
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise DeriveError(f"{model}: {key} is {v!r}, not a whole number")
+        return v
+
+    def positive(v, key):
+        if whole(v, key) < 1:
+            raise DeriveError(f"{model}: {key} is {v}; this architecture needs at least 1")
+        return v
+
+    draft = cfg.get("dflash_config")
+    if not isinstance(draft, dict):
+        raise DeriveError(f"{model}: no dflash_config; the engine reads the convolution, the "
+                          f"selector and the capture layers from it")
+    mode = draft.get("attention_mode", "gqa")
+    if mode != "gqa":
+        raise DeriveError(f"{model}: dflash_config.attention_mode is {mode!r}, an MLA DFlash "
+                          f"drafter, which neither pinned engine supports: vLLM v0.33.0's DFlash "
+                          f"attention is GQA only (qwen3_dflash.py:159-296@4ba787ec), and SGLang "
+                          f"v0.5.23's is too (srt/models/dflash.py DFlashAttention@297e54fd); SGLang "
+                          f"serves MLA drafts only after that release "
+                          f"(inference-sim/blis-sglang#21, inference-sim/blis-substrate#179)")
+    unread = sorted(set(draft) - DFLASH2_KEYS)
+    if unread:
+        raise DeriveError(f"{model}: dflash_config states {unread}, which this handler does not "
+                          f"read; each changes the draft the engine builds")
+    hidden = whole(require(cfg, "hidden_size", model), "hidden_size")
+    layers = positive(require(cfg, "num_layers", model), "num_hidden_layers")
+    nq = whole(require(cfg, "num_q_heads", model), "num_attention_heads")
+    nkv = whole(require(cfg, "num_kv_heads", model), "num_key_value_heads")
+    dh = head_dim(cfg, model)
+    vocab = whole(require(cfg, "vocab_size", model), "vocab_size")
+    ffn = positive(require(cfg, "ffn_size", model), "intermediate_size")
+    if cfg.get("draft_vocab_size", vocab) != vocab:
+        raise DeriveError(f"{model}: draft_vocab_size differs from vocab_size; the engine then maps "
+                          f"draft ids to target ids, which this handler does not price")
+    if cfg.get("attention_bias"):
+        raise DeriveError(f"{model}: attention_bias is set; this handler prices bias-free projections")
+    taps = positive(draft.get("conv_kernel_size"), "dflash_config.conv_kernel_size")
+    group = positive(draft.get("conv_group_size"), "dflash_config.conv_group_size")
+    if hidden % group:
+        raise DeriveError(f"{model}: conv_group_size {group} does not divide hidden_size {hidden}, "
+                          f"which the engine refuses (qwen3_dflash2.py:182-185)")
+    rank = positive(draft.get("selector_rank"), "dflash_config.selector_rank")
+    top_k = positive(draft.get("selector_top_k"), "dflash_config.selector_top_k")
+    block = positive(draft.get("block_size"), "dflash_config.block_size")
+    if not 0 <= whole(draft.get("mask_token_id"), "dflash_config.mask_token_id") < vocab:
+        raise DeriveError(f"{model}: the mask token is outside the vocabulary")
+    layer_types = cfg.get("layer_types")
+    if layer_types is None or len(layer_types) != layers or set(layer_types) != {"sliding_attention"}:
+        raise DeriveError(f"{model}: layer_types {layer_types!r}; this handler prices a draft whose "
+                          f"every layer is sliding-window attention")
+    window = positive(require(cfg, "sliding_window", model), "sliding_window")
+    if cfg.get("is_causal") is not False:
+        raise DeriveError(f"{model}: is_causal is {cfg.get('is_causal')!r}; this handler prices the "
+                          f"non-causal draft, whose queries read the whole block")
+    target_layers = whole(require_key(cfg, "num_target_layers", model), "num_target_layers")
+    targets = draft.get("target_layer_ids") or ()
+    target_hidden = whole(cfg.get("target_hidden_size") or hidden, "target_hidden_size")
+    aux_layers = draft_aux_hidden_state_layers(cfg, model, target_layers, states=len(targets))
+    base = base_dtype(cfg, raw, model)
+    if raw_quant(cfg, model) or raw_quant(raw, model):
+        raise DeriveError(f"{model}: a quantized DFlash2 checkpoint; this handler prices the "
+                          f"unquantized one")
+    act = DTYPE_WIDTHS[base]
+    groups = hidden // group
+
+    def traffic(role, nbytes, tp=None):
+        node = dict(norm(role), bytes_per_token=int(nbytes))
+        if tp:
+            node["tp"] = tp
+        return node
+
+    def with_tp(node, tp):
+        node["tp"] = tp
+        return node
+
+    def conv(side):
+        # One kernel projection a convolution, then its taps over the block, read and written
+        # at hidden width (_grouped_conv, qwen3_dflash2.py:144-167).
+        return [with_tp(gemm(f"{side}_conv_kernel_projection", 2 * taps * groups, hidden), "replicated"),
+                traffic(f"{side}_conv_prepare", 2 * hidden * act, tp="replicated")]
+
+    attention = {"op": "Attention", "holds_engine_kv": True, "kind": "swa", "n_q": nq,
+                 "n_kv": nkv, "d_h": dh, "window": window + block}
+    layer = [
+        norm("input_norm"),
+        *conv("attention"),
+        gemm("qkv_proj", (nq + 2 * nkv) * dh, hidden),
+        # The per-head Q and K norms and RoPE over q and k.
+        traffic("qk_norm_rope", 2 * (nq + nkv) * dh * act),
+        attention,
+        gemm("o_proj", hidden, nq * dh),
+        collective("AllReduce", "attn_out", EMIT_TENSOR_PARALLEL),
+        traffic("attention_conv_finish", 2 * hidden * act, tp="replicated"),
+        norm("post_attn_norm"),
+        *conv("mlp"),
+        gemm("mlp_gate_up", 2 * ffn, hidden),
+        gemm("mlp_down", hidden, ffn),
+        collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL),
+        traffic("mlp_conv_finish", 2 * hidden * act, tp="replicated"),
+    ]
+    context = [
+        with_tp(gemm("dflash_fc", hidden, target_hidden * len(targets)), "replicated"),
+        traffic("dflash_hidden_norm", 2 * hidden * act, tp="replicated"),
+        gemm("dflash_context_kv", layers * 2 * nkv * dh, hidden),
+    ]
+    for d in range(layers):
+        # The K norm, RoPE and the cache insert over the projected K and V.
+        context.append(traffic(f"dflash_context_kv_insert_{d}", 2 * 2 * nkv * dh * act))
+    kinds = [{"id": "dflash_layer", "nodes": layer, "edges": chain(layer)},
+             {"id": "dflash_context", "nodes": context, "edges": chain(context)}]
+    head = [traffic("final_norm", 2 * hidden * act, tp="replicated"),
+            with_tp(gemm("lm_head", vocab, hidden), "column")]
+    speculator = {
+        # dflash has no default draft length (config/speculative.py:1614-1618 refuses a
+        # deployment that states none), so the graph states 1, the least a deployment can.
+        "method": "dflash",
+        "num_spec_tokens": 1,
+        "drafting": "parallel_block",
+        "shares_target_head": True,
+        "stack": {"pattern": ["dflash_layer"], "repeat": layers},
+        "context_stack": {"pattern": ["dflash_context"], "repeat": 1},
+        "head": [traffic("dflash_final_norm", 2 * hidden * act, tp="replicated"),
+                 {**with_tp(gemm("dflash_lm_head", vocab, hidden), "column"),
+                  "aliases": "head.lm_head"},
+                 with_tp(gemm("selector_hidden_projection", rank, hidden), "replicated"),
+                 {"op": "Gather", "role": "selector_codebooks", "rows": 2 * vocab,
+                  "row_bytes": rank * act, "rows_per_token": 2 * top_k,
+                  "out_bytes_per_token": 2 * top_k * rank * act}],
+        "aux_hidden_state_layers": aux_layers,
+    }
+    wider = DFLASH2_TARGET_STATE_BYTES.get(model)
+    if wider:
+        dtype, width = wider
+        if width != target_hidden:
+            raise DeriveError(f"{model}: the recorded target width {width} is not the fc's "
+                              f"{target_hidden}")
+        speculator["aux_hidden_state_bytes_per_token"] = width * DTYPE_WIDTHS[dtype]
+    extras = {"global": {"architecture": raw["architectures"][0]}, "head": head,
+              "speculator": speculator}
+    return kinds, {"pattern": ["dflash_layer"], "repeat": layers}, extras
+
+
 def eagle3_default_aux_layers(layers: int) -> list[int]:
     """The capture layers vLLM's SupportsEagle3 default gives a target of `layers` layers."""
     return sorted({2, layers // 2, layers - 3})
@@ -6497,7 +6816,7 @@ def handler_llama_eagle3(cfg, raw, model):
     token the target scheduled, or one per request); the schema states that work as the
     context stack only for the fc projection. The engine states the count in the pool's plan
     (plan.DraftPolicy.FirstPassRows and PassRequests) and the kernel refuses a deployment that
-    speculates through this drafter without it (draft_passes_unstated; blis-schemas#60). The
+    speculates through this drafter without it (draft_passes_unstated; https://github.com/inference-sim/blis-schemas/issues/60). The
     vocabulary mapping a drafter with
     draft_vocab_size != vocab_size carries (draft_id_to_target_id) is refused rather than
     priced as free."""
@@ -6608,8 +6927,304 @@ def handler_llama_eagle3(cfg, raw, model):
     return kinds, {"pattern": ["eagle3_layer"], "repeat": layers}, extras
 
 
+# --- Gemma 4 --------------------------------------------------------------------
+# Every citation below is vllm-project/vllm v0.33.0 unless it says otherwise. vLLM builds
+# Gemma4ForConditionalGeneration's text decoder as Gemma4ForCausalLM over text_config
+# (model_executor/models/gemma4_mm.py:1144-1150); the vision and audio towers are not
+# priced, which the graph records as modality text_decoder_of_multimodal.
+GEMMA4_LAYER_TYPES = ("sliding_attention", "full_attention")
+
+# The open issue each refused Gemma 4 feature cites (X28).
+GEMMA4_GAP = "inference-sim/blis-substrate#232"
+
+
+def gemma4_layer_shapes(cfg: dict[str, Any], model: str) -> list[tuple[str, int, int]]:
+    """(layer type, KV heads, head dim) for every decoder layer, as vLLM sizes it.
+
+    vLLM reads each layer's head_dim and num_key_value_heads from per_layer_config
+    (models/gemma4.py:577-580), which transformers fills for the full-attention layers only:
+    head_dim = global_head_dim, and num_key_value_heads = num_global_key_value_heads where
+    attention_k_eq_v is set (configuration_gemma4.py:210-222 in transformers 5.20.2, the
+    version vLLM v0.33.0's requirements admit). A sliding layer keeps the top-level
+    head_dim and num_key_value_heads."""
+    layers = int(require(cfg, "num_layers", model))
+    types = require_key(cfg, "layer_types", model)
+    if len(types) != layers:
+        raise DeriveError(f"{model}: layer_types has {len(types)} entries for {layers} layers")
+    unknown = sorted(set(types) - set(GEMMA4_LAYER_TYPES))
+    if unknown:
+        raise DeriveError(f"{model}: layer_types names {unknown}; a Gemma 4 layer is "
+                          f"sliding_attention or full_attention")
+    sliding_dh = int(require_key(cfg, "head_dim", model))
+    sliding_kv = int(require(cfg, "num_kv_heads", model))
+    full_dh = int(require_key(cfg, "global_head_dim", model))
+    full_kv = sliding_kv
+    if cfg.get("attention_k_eq_v") and cfg.get("num_global_key_value_heads") is not None:
+        full_kv = int(cfg["num_global_key_value_heads"])
+    return [(t, full_kv, full_dh) if t == "full_attention" else (t, sliding_kv, sliding_dh)
+            for t in types]
+
+
+def gemma4_refuse_unpriced(cfg: dict[str, Any], model: str) -> None:
+    """Refuse the Gemma 4 features no node of this handler prices (GEMMA4_GAP)."""
+    if int(cfg.get("hidden_size_per_layer_input") or 0) > 0:
+        # A second vocabulary table, a model-level projection, and a gate, projection and
+        # norm in every layer (gemma4.py:673-706, 1014-1067).
+        raise DeriveError(f"{model}: hidden_size_per_layer_input "
+                          f"{cfg['hidden_size_per_layer_input']} builds per-layer embeddings, "
+                          f"which this handler does not price ({GEMMA4_GAP})")
+    if int(cfg.get("num_kv_shared_layers") or 0) > 0:
+        # The last layers project Q only and read an earlier layer's cache
+        # (gemma4.py:403-418, 471-492); with use_double_wide_mlp their MLP doubles (:595-607).
+        raise DeriveError(f"{model}: num_kv_shared_layers {cfg['num_kv_shared_layers']} "
+                          f"shares KV caches across layers, which this handler does not "
+                          f"price ({GEMMA4_GAP})")
+    if cfg.get("attn_logit_softcapping") is not None:
+        # Passed to the attention kernel (gemma4.py:591); the graph has no field for it.
+        raise DeriveError(f"{model}: attn_logit_softcapping is set, which the attention "
+                          f"node cannot state ({GEMMA4_GAP})")
+    if cfg.get("use_bidirectional_attention") == "all":
+        # transformers halves the sliding window under it (configuration_gemma4.py:185-188).
+        raise DeriveError(f"{model}: use_bidirectional_attention 'all' makes every token "
+                          f"bidirectional and halves the window ({GEMMA4_GAP})")
+
+
+def gemma4_linear_widths(cfg: dict[str, Any], raw: dict[str, Any], model: str):
+    """`quantized(ckpt_module, vllm_module)` -> True where vLLM runs that linear quantized.
+
+    An unquantized checkpoint quantizes nothing. A compressed-tensors checkpoint is read
+    as vLLM reads it: every LinearBase takes the group's scheme unless the ignore list
+    names it (compressed_tensors.py:159-182; should_ignore_layer, utils.py:53-70), and a
+    `Linear` target also covers the routed experts (_add_fused_moe_to_target_scheme_map,
+    compressed_tensors.py:221-232). Only one shape is accepted: one group of 8-bit float
+    weights over `Linear`, per channel or per tensor. Anything else is refused.
+
+    An ignore entry is a module name or a `re:` regex (re.match). vLLM maps exact names to
+    its own module names (apply_vllm_mapper, compressed_tensors.py:129-157) and matches
+    regexes against its names unmapped, so each answer is checked on both names, and a
+    regex that answers differently for the two is refused."""
+    quant = raw_quant(raw, model) or raw_quant(cfg, model)
+    if not quant:
+        return lambda ckpt, vllm: False
+    if str(quant.get("quant_method", "")).lower() != "compressed-tensors":
+        raise DeriveError(f"{model}: quant_method {quant.get('quant_method')!r}; this handler "
+                          f"reads only compressed-tensors")
+    groups = list((quant.get("config_groups") or {}).values())
+    weights = [(g or {}).get("weights") or {} for g in groups]
+    if (len(groups) != 1 or (groups[0] or {}).get("targets") != ["Linear"]
+            or weights[0].get("num_bits") != 8 or weights[0].get("type") != "float"
+            or weights[0].get("strategy") not in ("channel", "tensor")):
+        raise DeriveError(f"{model}: a compressed-tensors layout other than one group of "
+                          f"8-bit float weights over Linear, per channel or tensor")
+    names, regexes = set(), []
+    for entry in quant.get("ignore") or ():
+        text = str(entry)
+        if text.startswith("re:"):
+            regexes.append(re.compile(text[3:]))
+        else:
+            names.add(text)
+
+    def quantized(ckpt: str, vllm: str) -> bool:
+        for r in regexes:
+            if bool(r.match(ckpt)) != bool(r.match(vllm)):
+                raise DeriveError(f"{model}: ignore regex {r.pattern!r} matches {ckpt} and "
+                                  f"{vllm} differently; vLLM reads it against its own names")
+        return not (ckpt in names or any(r.match(ckpt) for r in regexes))
+    return quantized
+
+
+def handler_gemma4(cfg, raw, model):
+    """Gemma 4's text decoder: interleaved sliding-window and full-attention layers, a dense
+    MLP in every layer, and on the MoE checkpoints routed experts beside it.
+
+    Attention (gemma4.py:365-557). One QKVParallelLinear over the layer's own head dim and
+    KV heads (:420-431). On a full-attention layer with attention_k_eq_v the checkpoint ships
+    k_proj only, and vLLM loads it into both the K and the V shard (_gemma4_layer_weights_
+    mapper, :86-127), so the projection it builds, holds and runs is (n_q + 2 n_kv) d_h wide
+    on every layer; the graph prices that. V is then normed without a weight and not rotated
+    while K is (:536-553), so the two cached tensors differ and the cache holds both. Q, K
+    and V are RMS-normed and Q and K rotated, read and written once. A sliding layer is
+    bounded by sliding_window (:449-451, 509).
+
+    Feed-forward (:595-671, 719-776). The dense Gemma4MLP (:256-286) runs on every layer
+    behind pre_feedforward_layernorm. Where num_experts is set -- vLLM keys the MoE block on
+    it, not on enable_moe_block (:630) -- a Gemma4Router (an unweighted norm, two scales and
+    a replicated GateLinear built with no quantization config, :289-362) and
+    FusedMoEFactory(num_experts, top_k_experts, moe_intermediate_size) (:636-656) run on the
+    same residual, each output with its own norm, and the two sums are added. Both reduce
+    their outputs under tensor parallelism (RowParallelLinear; FusedMoEFactory
+    reduce_results=True, fused_moe/layer.py:124).
+
+    The head is tied to the embedding (:1447-1454): lm_head aliases embed_tokens, so the
+    table is held once and read at its own width.
+
+    Not priced: the embedding normalizer multiply (:1089-1098) and the per-layer
+    layer_scalar multiply (:708-709, 774), one hidden-width pass each that the compiled
+    graph fuses into the neighbouring norm; the final logit soft-cap (:1456-1459), which no
+    head node can scope to the sampled rows; RoPE's partial rotary factor on the full
+    layers, which changes no byte count. use_bidirectional_attention 'vision' makes image
+    tokens bidirectional only (gemma4.py:511-517), which a text workload never has.
+    """
+    gemma4_refuse_unpriced(cfg, model)
+    hidden = int(require(cfg, "hidden_size", model))
+    nq = int(require(cfg, "num_q_heads", model))
+    ffn = int(require(cfg, "ffn_size", model))
+    vocab = int(require(cfg, "vocab_size", model))
+    base = base_dtype(cfg, raw, model)
+    act = DTYPE_WIDTHS[base]
+    shapes = gemma4_layer_shapes(cfg, model)
+    window = pick(cfg, "sliding_window")
+    if any(t == "sliding_attention" for t, _, _ in shapes) and not window:
+        raise DeriveError(f"{model}: sliding_attention layers with no sliding_window")
+
+    experts = cfg.get("num_experts")
+    if bool(experts) != bool(cfg.get("enable_moe_block")):
+        raise DeriveError(f"{model}: enable_moe_block {cfg.get('enable_moe_block')!r} with "
+                          f"num_experts {experts!r}; vLLM builds the MoE block on num_experts "
+                          f"alone (gemma4.py:630), and the two disagree")
+    moe = None
+    if experts:
+        top_k = int(require(cfg, "top_k", model))
+        inner = int(require(cfg, "moe_ffn_size", model))
+        if not 0 < top_k <= int(experts):
+            raise DeriveError(f"{model}: top-{top_k} routing over {experts} experts")
+        moe = (int(experts), top_k, inner)
+
+    global_width = weight_dtype(cfg, raw, model)
+    quantized = gemma4_linear_widths(cfg, raw, model)
+
+    def layer_width(i: int, shards: tuple[str, ...], fused: str) -> str:
+        """The width vLLM holds module `fused` of layer i at, from its checkpoint shards."""
+        ckpt = f"model.language_model.layers.{i}."
+        vllm = f"language_model.model.layers.{i}."
+        found = {quantized(ckpt + s, vllm + s) for s in shards}
+        if len(found) != 1:
+            # vLLM refuses a fused linear whose shards differ (utils.py:62-66).
+            raise DeriveError(f"{model}: the ignore list splits layer {i}'s {fused} "
+                              f"{list(shards)}; vLLM requires one scheme for the fused module")
+        return global_width if found.pop() else base
+
+    def width_set(node: dict[str, Any], width: str) -> dict[str, Any]:
+        return dict(node, weight_dtype=width) if width != global_width else node
+
+    roles = {
+        "qkv_proj": lambda i, kv_eq: (("self_attn.q_proj", "self_attn.k_proj")
+                                      if kv_eq else ("self_attn.q_proj", "self_attn.k_proj",
+                                                     "self_attn.v_proj")),
+        "o_proj": lambda i, kv_eq: ("self_attn.o_proj",),
+        "mlp_gate_up": lambda i, kv_eq: ("mlp.gate_proj", "mlp.up_proj"),
+        "mlp_down": lambda i, kv_eq: ("mlp.down_proj",),
+    }
+    if moe:
+        # vLLM asks expert 0's three projections and applies the answer to every expert
+        # (CompressedTensorsMoEMethod.get_moe_method, compressed_tensors_moe.py:36-58).
+        roles["experts"] = lambda i, kv_eq: tuple(f"experts.0.{p}" for p in
+                                                  ("gate_proj", "up_proj", "down_proj"))
+
+    k_eq_v = bool(cfg.get("attention_k_eq_v"))
+    kind_of = {"sliding_attention": "swa", "full_attention": "full"}
+    suffix = "_moe" if moe else "_dense"
+    sequence = [kind_of[t] + suffix for t, _, _ in shapes]
+
+    def widths_for(kid: str, kv_eq: bool) -> dict[str, str]:
+        layers = [i for i, k in enumerate(sequence) if k == kid]
+        out = {}
+        for role, shards_of in roles.items():
+            got = {layer_width(i, shards_of(i, kv_eq), role) for i in layers}
+            if len(got) != 1:
+                raise DeriveError(f"{model}: layer kind {kid!r} holds {role} at "
+                                  f"{sorted(got)} on different layers; one node cannot "
+                                  f"price both")
+            out[role] = got.pop()
+        if moe:
+            for i in layers:
+                ckpt = f"model.language_model.layers.{i}.router.proj"
+                if quantized(ckpt, f"language_model.model.layers.{i}.router.proj"):
+                    raise DeriveError(
+                        f"{model}: the quantization config leaves {ckpt} quantized, and vLLM "
+                        f"builds the router as a GateLinear with no quantization config "
+                        f"(gemma4.py:325-331); the checkpoint would store a width vLLM does "
+                        f"not run")
+                def expert(e: int) -> set[bool]:
+                    return {quantized(f"model.language_model.layers.{i}.experts.{e}.{p}",
+                                      f"language_model.model.layers.{i}.experts.{e}.{p}")
+                            for p in ("gate_proj", "up_proj", "down_proj")}
+                first = expert(0)
+                for e in range(1, moe[0]):
+                    if expert(e) != first:
+                        raise DeriveError(
+                            f"{model}: layer {i} expert {e} is quantized differently from "
+                            f"expert 0, whose scheme vLLM applies to every expert "
+                            f"(compressed_tensors_moe.py:36-58)")
+        return out
+
+    def traffic(role: str, nbytes: int) -> dict[str, Any]:
+        return dict(norm(role), bytes_per_token=int(nbytes))
+
+    def layer(kid: str, kv: int, dh: int, win: int | None, kv_eq: bool) -> dict[str, Any]:
+        w = widths_for(kid, kv_eq)
+        attn: dict[str, Any] = {"op": "Attention", "holds_engine_kv": True,
+                                "kind": "swa" if win else "gqa", "n_q": nq, "n_kv": kv,
+                                "d_h": dh}
+        if win:
+            attn["window"] = int(win)
+        nodes = [
+            norm("input_norm"),
+            width_set(gemm("qkv_proj", (nq + 2 * kv) * dh, hidden), w["qkv_proj"]),
+            # q_norm, k_norm, the weightless v_norm and RoPE: read and write Q, K and V.
+            traffic("qkv_norm_rope", 2 * (nq + 2 * kv) * dh * act),
+            attn,
+            width_set(gemm("o_proj", hidden, nq * dh), w["o_proj"]),
+            collective("AllReduce", "attn_out", EMIT_TENSOR_PARALLEL),
+            norm("post_attn_norm"),
+            norm("pre_ffn_norm"),
+            width_set(gemm("mlp_gate_up", 2 * ffn, hidden), w["mlp_gate_up"]),
+            width_set(gemm("mlp_down", hidden, ffn), w["mlp_down"]),
+            collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL),
+        ]
+        if moe:
+            n_exp, top_k, inner = moe
+            experts_node = {"op": "GroupedGEMM", "shared": False, "role": "experts",
+                            "n": inner, "k": hidden, "experts": n_exp, "top_k": top_k}
+            nodes += [
+                norm("post_mlp_norm"),
+                # RMSNorm with no weight, then the root-size and per-dimension scales.
+                norm("router_norm"),
+                width_set({**gemm("router", n_exp, hidden), "tp": "replicated"}, base),
+                norm("pre_experts_norm"),
+                width_set(experts_node, w["experts"]),
+                collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
+                collective("AllReduce", "moe_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE),
+                norm("post_experts_norm"),
+            ]
+        nodes.append(norm("post_ffn_norm"))
+        return {"id": kid, "nodes": nodes, "edges": chain(nodes)}
+
+    kinds = []
+    for t, kv, dh in shapes:
+        kid = kind_of[t] + suffix
+        if kid in {k["id"] for k in kinds}:
+            continue
+        sliding = t == "sliding_attention"
+        kinds.append(layer(kid, kv, dh, int(window) if sliding else None,
+                           k_eq_v and not sliding))
+
+    row = hidden * act
+    embedding = [
+        {"op": "Gather", "role": "embed_tokens", "rows": vocab, "row_bytes": row,
+         "rows_per_token": 1, "out_bytes_per_token": row, "shard": "rows"},
+        collective("AllReduce", "embed_out", EMIT_TENSOR_PARALLEL),
+    ]
+    if cfg.get("tie_word_embeddings", raw.get("tie_word_embeddings")) is False:
+        raise DeriveError(f"{model}: an untied Gemma 4 head, which no committed checkpoint "
+                          f"states; this handler prices the tied one")
+    head = [norm("final_norm"),
+            {**gemm("lm_head", vocab, hidden), "aliases": "embedding.embed_tokens"}]
+    return kinds, compress(sequence), {"embedding": embedding, "head": head}
+
+
 HANDLERS = {
-    "LlamaForCausalLM": handler_dense,
+    "LlamaForCausalLM": handler_dense_placed,
     "LlamaForCausalLMEagle3": handler_llama_eagle3,
     "MistralForCausalLM": handler_dense,
     "Qwen2ForCausalLM": handler_dense,
@@ -6633,7 +7248,7 @@ HANDLERS = {
     # would derive kind=swa window=128 and misprice every layer. See
     # handler_deepseek_v4, which reads the bound from compress_ratios and index_topk and
     # gives the indexer its own node.
-    "DeepseekV3ForCausalLM": handler_moe,
+    "DeepseekV3ForCausalLM": handler_glm_moe_dsa,
     "DeepseekV4ForCausalLM": handler_deepseek_v4,
     # Its own handler rather than V4's: V4.1 shares the compressed cache and the indexer
     # across layers, pools at ratios 1 and 2 where V4 asserts 4 or 128, and adds engram
@@ -6658,6 +7273,9 @@ HANDLERS = {
     "MuseSparkDSparkModel": handler_muse_spark_dspark,
     "K3DSparkModel": handler_k3_dspark,
     "DSparkMiniMaxDraftModel": handler_minimax_dspark,
+    # A DFlash2 drafter, a Qwen3-style draft head with grouped convolutions and a candidate
+    # selector (vLLM v0.33.0 registry.py:666, model_executor/models/qwen3_dflash2.py).
+    "DFlash2DraftModel": handler_dflash2,
     # Kimi-K2.5 is a vision-language model whose TEXT decoder vLLM instantiates as
     # DeepseekV2ForCausalLM over config.text_config
     # (model_executor/models/kimi_k25.py:371-376, architectures=["DeepseekV2ForCausalLM"]),
@@ -6667,6 +7285,9 @@ HANDLERS = {
     # graph records as modality text_decoder_of_multimodal; the corpus's workloads are all
     # text (1024:1024, 1024:8192, 8192:1024), so the tower never runs in these measurements.
     "KimiK25ForConditionalGeneration": handler_kimi_k25,
+    # Gemma 4's text decoder, which vLLM builds as Gemma4ForCausalLM over text_config
+    # (model_executor/models/gemma4_mm.py:1144-1150 at v0.33.0); see handler_gemma4.
+    "Gemma4ForConditionalGeneration": handler_gemma4,
 }
 
 

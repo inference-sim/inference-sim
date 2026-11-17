@@ -4,17 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 )
-
-// draftModelName is the drafter the deployment names, or "".
-func draftModelName(e enginesettings.Settings) string {
-	if e.Speculative == nil {
-		return ""
-	}
-	return e.Speculative.DraftModel
-}
 
 // A drafter that is a checkpoint of its own -- Muse Spark's DSpark drafter, an EAGLE3 head --
 // is named by the deployment's speculative.draft_model, the engine's speculative_config.model

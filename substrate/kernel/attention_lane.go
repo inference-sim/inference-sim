@@ -131,18 +131,20 @@ func (k *Kernel) applyAttentionLane(c *resolve.Coefficients, used map[model.Atte
 	}
 	for _, dtype := range dtypes {
 		floor, scale := trtllmGenPrefillFloor+dtype, trtllmGenPrefillScale+dtype
+		// The rule the resolver uses to decide which operations read the part-wide pair: the
+		// whole family carried, each member shown valid for the implementation that runs. An
+		// entry of the pair keyed to another build is refused beside one keyed to the build that
+		// runs; the exact one prices, and the refusal of its sibling says nothing against it.
+		isExact := func(n string) bool { r, _ := c.Admitted(n); return r.Match == coefficient.KernelExact }
+		if c.Has(floor) && c.Has(scale) && coefficient.ClassUsable(laneRunningPrimitive, "kv_"+dtype, c.Has, isExact) {
+			exact = append(exact, dtype)
+			continue
+		}
 		if r := laneRefusedByImplementation(c, floor, scale); r != "" {
 			why = append(why, r)
 			continue
 		}
 		if !c.Has(floor) || !c.Has(scale) {
-			continue
-		}
-		// The rule the resolver uses to decide which operations read the part-wide pair: the
-		// whole family carried, each member shown valid for the implementation that runs.
-		isExact := func(n string) bool { r, _ := c.Admitted(n); return r.Match == coefficient.KernelExact }
-		if coefficient.ClassUsable(laneRunningPrimitive, "kv_"+dtype, c.Has, isExact) {
-			exact = append(exact, dtype)
 			continue
 		}
 		for _, name := range []string{floor, scale} {
@@ -171,7 +173,7 @@ func (k *Kernel) applyAttentionLane(c *resolve.Coefficients, used map[model.Atte
 	k.assume("trtllm_gen_prefill_lane", "pooled", "the trtllm-gen prefill pair cannot be shown valid for the prefill "+
 		"implementation reported ("+describeLaneRunning(c)+"): "+strings.Join(why, "; ")+". Needed: the code hash of the "+
 		"trtllm-gen prefill kernel of the engine's FlashInfer pin, which an engine release's kernel_impls.json would "+
-		"publish (inference-sim/blis-registry#73), stated on the entries and reported by the engine as the "+
+		"publish (inference-sim/blis-substrate#149), stated on the entries and reported by the engine as the "+
 		"implementation of attention.prefill. The part's pooled pair prices the prefill.")
 	return nil
 }

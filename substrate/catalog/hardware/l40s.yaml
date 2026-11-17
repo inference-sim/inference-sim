@@ -1,4 +1,4 @@
-_comment: "TFlopsFP8=733 is DENSE FP8, consistent with TFlopsPeak=362.05 being DENSE BF16 (NVIDIA L40S datasheet: FP8 733 dense / 1466 sparse; BF16 362.05 dense / 733 sparse), giving a ~2.0x dense FP8:BF16 ratio (733/362.05=2.02, the datasheet dense pair; H100/H200 are exactly 2.0x). Corrected from the migrated 1466 (the WITH-SPARSITY figure, which mixed sparsity conventions for an architecturally-impossible 4.05x ratio) per blis-catalog#2 / inference-sim#1738."
+_comment: "TFlopsFP8=733 is DENSE FP8, consistent with TFlopsPeak=362.05 being DENSE BF16 (NVIDIA L40S datasheet: FP8 733 dense / 1466 sparse; BF16 362.05 dense / 733 sparse), giving a ~2.0x dense FP8:BF16 ratio (733/362.05=2.02, the datasheet dense pair; H100/H200 are exactly 2.0x). Corrected from the migrated 1466 (the WITH-SPARSITY figure, which mixed sparsity conventions for an architecturally-impossible 4.05x ratio) per https://github.com/inference-sim/blis-catalog/issues/2 / inference-sim#1738."
 Provenance: vendor_spec
 TFlopsPeak: 362.05
 TFlopsFP8: 733.0

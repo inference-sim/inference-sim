@@ -40,7 +40,7 @@ unreachable. That was discovered by grepping the kernel for the key, not the reg
 Check both.
 
 Each unread family is either given a reader or removed, and the decision is recorded
-(inference-sim/blis-registry#36):
+(https://github.com/inference-sim/blis-registry/issues/36):
 
 * **Removed:** `hbm_constant_latency` and `p2p_latency`, the two NVIDIA-simulator constants
   whose fixed cost the kernel's measured attention and collective floors already carry, so
@@ -50,11 +50,11 @@ Each unread family is either given a reader or removed, and the decision is reco
 * **Kept, with a named reader:** the `gemm_*_fp8_block` ramps. They are what vLLM runs for
   a 128×128 block-scaled FP8 checkpoint (DeepGEMM and FlashInfer block-scaled kernels), and
   their fit differs from per-tensor FP8 (h100: 0.749 / 160 against 0.648 / 131). A ramp
-  selected by block scaling, blis-latency-kernel#34, is what would read them; the cost model
+  selected by block scaling, https://github.com/inference-sim/blis-latency-kernel/issues/34, is what would read them; the cost model
   does not select one.
-* **Given readers:** `cost-model-memory` (blis-latency-kernel#22); the weight-only Marlin
+* **Given readers:** `cost-model-memory` (https://github.com/inference-sim/blis-latency-kernel/issues/22); the weight-only Marlin
   ramps on parts with no native four-bit peak, the indexer pair and the host-gather rate
-  (§10.5), through blis-latency-kernel#44, which also added the role-keyed attention lookup.
+  (§10.5), through https://github.com/inference-sim/blis-latency-kernel/issues/44, which also added the role-keyed attention lookup.
   The [reference overview](reference/index.md#which-sets-the-kernel-reads) lists every
   family that has no reader, so "committed" is never read as "live".
 
@@ -671,7 +671,7 @@ GB300 (21), H200 (13), GB200 (4), B300_SXM (4). So:
   one previously recorded here. Four Kimi-K3 artifacts are all vLLM and all on **GB300**,
   two of them on `vllm/0.1.dev19262` — the same collection the kernel fit used, which is
   the cleanest possible pairing. An earlier revision of this section said the catalog had
-  no `gb300` chip; it has carried one since blis-catalog#23, and this registry carries
+  no `gb300` chip; it has carried one since https://github.com/inference-sim/blis-catalog/issues/23, and this registry carries
   102 GB300 coefficients including the KDA pair. The dataset's own
   catalog index lists both artifacts as `aic_fpm_forward_perf` with
   `phases: [decode, prefill]`, 5,266 and 4,874 rows at `tep8`.
@@ -693,11 +693,11 @@ GB300 (21), H200 (13), GB200 (4), B300_SXM (4). So:
   `CutlassExpertsMxfp4` (W4A4) on SM100. So scoring that run needs the kernel to price
   Marlin W4A16 experts at the BF16 rate class, which is what
   `gemm_*_w4a16_mxfp4_grouped` on gb300 measures (§10.5). The cost model selects
-  ramps by weight format and chip (blis-latency-kernel#44), which on gb300 is the FP4 class -- right for stock
+  ramps by weight format and chip (https://github.com/inference-sim/blis-latency-kernel/issues/44), which on gb300 is the FP4 class -- right for stock
   v0.31.0 -- so this entry stays unread until a deployment can state that its MoE backend
   is Marlin. The scoring attempt recorded on
   #25 also over-predicted by ~2x with the FASTER FP4 rate class, and making the KDA read
-  free left that unchanged, so the MoE/GEMM composition is a second blocker. #41 carries
+  free left that unchanged, so the MoE/GEMM composition is a second blocker. inference-sim/blis-substrate#129 carries
   the validation forward.
 
   Note also that FPM carries no per-kernel or per-node column at all — the truth
@@ -967,7 +967,7 @@ and only the end-to-end check could tell that this made it unusable.
 
 ### 10.5 DeepSeek-V4.1-Flash on H200: what vLLM v0.31.0 runs, and what is measured of it
 
-inference-sim/blis-registry#37, #38 and #39 asked for the coefficients the kernels vLLM
+https://github.com/inference-sim/blis-registry/issues/37, https://github.com/inference-sim/blis-registry/issues/38 and https://github.com/inference-sim/blis-registry/issues/39 asked for the coefficients the kernels vLLM
 v0.31.0 runs for DeepSeek-V4.1-Flash on SM90 need. Every kernel identity below is read from
 the v0.31.0 tag (`db9527a4`); every number is written by
 `scripts/fit_deepseek_v41_h200.py` or `scripts/fit_marlin_grouped_ramp.py`, both with
@@ -1064,7 +1064,7 @@ that every compressed layer reads at least two blocks.
 was fitted on Pro's 128-head rows — the `h128` instance, which Pro runs only below TP 2,
 since FlashMLA pads `n_local_heads` — and was to be charged against the kernel's selection
 rule for Pro's csa4 layers: up to 262,912 tokens at a 1 M context, outside every measured
-row on the block axis (vLLM itself reads far less there; blis-latency-kernel#32). Every V4.1
+row on the block axis (vLLM itself reads far less there; https://github.com/inference-sim/blis-latency-kernel/issues/32). Every V4.1
 sparse read is on the `h64` instance at every TP width and inside the block axis. The entry
 is scoped to this model, so no other deployment moves.
 
@@ -1085,7 +1085,7 @@ assuming it if a future sweep's throughput stops exceeding the HBM peak.
 weight-only GEMM is two costs, a BF16 `mma.sync` compute and a narrow weight read. The
 kernel sums them for the routed term, and fitting the ramp as what remains after the
 kernel's own memory half is the only way it composes back to the measurement. That couples
-it to the cost model's routed term as blis-latency-kernel#44 (`483f6aa`) implements it:
+it to the cost model's routed term as https://github.com/inference-sim/blis-latency-kernel/issues/44 (`483f6aa`) implements it:
 
 * compute and memory summed, the ramp evaluated at the step's token count, compute at the
   BF16 peak, memory as `ExpertsTouched` experts' stored bytes at BwPeak × `hbm_derate`,
@@ -1125,8 +1125,8 @@ under **SGLang only** -- another engine, another MoE kernel (`w4a16_mxfp4_hummin
 and another checkpoint revision (`fb2764a5` against the catalog's `52544481`). The only vLLM
 V4.1 leaf is a historical GB200 dev build labelled "comparator". So FPM cannot be the arbiter
 §3 requires for V4.1's vLLM pricing; an earlier version of this section said it could.
-blis-registry#42 stays open with no arbiter until a vLLM V4.1 forward-pass measurement
-exists. Separately, the kernel before blis-latency-kernel#44 could not
+inference-sim/blis-substrate#130 stays open with no arbiter until a vLLM V4.1 forward-pass measurement
+exists. Separately, the kernel before https://github.com/inference-sim/blis-latency-kernel/issues/44 could not
 price the model: it refused the `fp8_ds_mla` cache (#36), charged 20,480 KV bytes per token
 against roughly 1,790 (#30), dropped the 128-token window from the sparse read (#32) and
 did not pad FlashMLA's heads (#39). #44 closes all four. Three
@@ -1140,11 +1140,11 @@ consumer-contract points go with the entries, each stated in them:
 * **Routed FLOPs under pure TP.** This ramp's FLOPs are each rank's own (`inter / tp`). #44
   divides routed FLOPs by tp on the weight-only Marlin ramps, as this fit requires, and keeps
   its documented over-charge on the native ramps, where it cancels a measured error;
-  blis-latency-kernel#47 tracks removing it there. A consumer that charged this ramp the
+  inference-sim/blis-substrate#112 tracks removing it there. A consumer that charged this ramp the
   whole expert would price its compute half tp times too slow.
 * **gb300's Marlin ramp stays unread** while ramps are chosen by format and chip, which on
   gb300 is the FP4 class — right for stock v0.31.0. It is for scoring the Kimi-K3 preview
-  build's FPM run, for blis-registry#41 (the Kimi-K3/GB300 FPM check of the KDA pair).
+  build's FPM run, for inference-sim/blis-substrate#129 (the Kimi-K3/GB300 FPM check of the KDA pair).
 
 Every V4.1 attention read in the catalog's graph (blis-catalog 0.3.0) is `sparse_mla`, the window-only layers (0,
 1, and the DSpark drafts at a 133-token window) included, all inside the block axis above.
@@ -1188,7 +1188,7 @@ error at V4.1's operating point is "about 10-20% fast, from 71 rows", not 1.067x
 explicit exception.** No vLLM forward-pass measurement of V4.1 exists on any part (§10.5:
 FPM's V4.1 rows are SGLang), so the rule cannot be met by waiting for the data on hand; the
 alternative is to keep pricing V4.1 with entries fitted on other kernels, which is the known
-larger error. Each entry therefore says it has no arbiter, and blis-registry#42 stays open
+larger error. Each entry therefore says it has no arbiter, and inference-sim/blis-substrate#130 stays open
 until a vLLM V4.1 forward-pass measurement exists. The SM90 sparse prefill device code is unchanged between
 the FlashMLA pins of vLLM 0.25.0 and 0.31.0 (renames only). V4.1's ratio-1/2 layers gather
 their whole compressed stream before the kernel; the ratio-128 rows hold that gather only at
@@ -1348,7 +1348,7 @@ form; it is recorded as held-out evidence for that term on gb300 and moves no va
 `cost-model-memory.yaml` exists because a consumer was carrying three per-rank memory
 magnitudes as constants in its own source — CUDA-graph capture at 512 MiB, collective
 buffers at 392 MiB, activation scratch at "a few live buffers" (×4) — where no provenance
-readout could see them (inference-sim/blis-registry#33). They set how many sequences
+readout could see them (https://github.com/inference-sim/blis-registry/issues/33). They set how many sequences
 fit, so they are not soft numbers.
 
 ### 11.1 The composition, taken from NVIDIA's capacity path
@@ -1452,13 +1452,13 @@ On `deepseek-v3-h200-fp8-sglang-tp8` (tp 8, `hidden_size` 7168, 8,192 batched to
 | **total** | **1,417,674,752** | **6,202,327,040** |
 
 The cost model reads every term of the set and refuses a scenario that does not list it
-(inference-sim/blis-latency-kernel#22).
+(https://github.com/inference-sim/blis-latency-kernel/issues/22).
 
 ## 12. Speculative acceptance profiles
 
 `acceptance/inferencex-golden-al.yaml` holds the acceptance lengths a simulator advances
-speculating requests by (inference-sim/blis-registry#44), in the contracts' acceptance
-format (blis-schemas#65). It
+speculating requests by (https://github.com/inference-sim/blis-registry/issues/44), in the contracts' acceptance
+format (https://github.com/inference-sim/blis-schemas/issues/65). It
 is not a coefficient set: acceptance does not price a step, it sets how many tokens a step
 yields. The generated tables and the set's caveats are on the
 [acceptance reference page](reference/acceptance.md).
@@ -1466,66 +1466,93 @@ yields. The generated tables and the set's caveats are on the
 ### 12.1 One source, transcribed
 
 Every value comes from SemiAnalysis InferenceX's
-`inferencex-e2e/infx/golden_al_distribution/*.yaml`, vendored under
-`validator/testdata/inferencex/` at the commit `scripts/emit_acceptance_profiles.py` cites.
-The emitter reads each acceptance length, and every provenance field a file's header
-states (the source Actions run, benchmark, category, sampling, image, TP and engine
-settings, including `speculative-config: a=b | c=d` lines), and types none of them. Every
-header is read, carried or not: a piece stating a value, as `key: value` or `key=value`
-with any spelling of key, that the emitter does not know how to transcribe fails the run,
-so a setting cannot be silently dropped. Only named prose lines are exempt. A header that
-states `method:` must state the curve's method; one that does not is checked against its
-"Measured on (..., vLLM <method>)" line. An acceptance length is `measured`; the
-one file InferenceX marks provisional is `transferred`, with `transferred_from` naming the measured
-profile it repeats and `transfer_rule` stating why that carries over, and the emitter checks that the two values agree.
+`inferencex-e2e/infx/golden_al_distribution/`: its curve files and `identities.yaml`, at the commit
+`validator/testdata/inferencex/curves.json` pins, the last that changed a curve. No InferenceX file is
+committed (X12): `curves.json` holds the commit and each file's SHA-256, and
+`scripts/fetch_inferencex_curves.py` fetches the files at the commit, failing on a hash that differs.
+The emitter refuses files that are not exactly the pinned ones. Each profile's provenance cites its curve file at that commit and the file's SHA-256.
+The emitter reads each acceptance length from the curve file, how the curve was collected
+(engine, drafter, draft sampler, verifier, adaptive verification, topology and KV-cache
+dtypes) from `identities.yaml`, and the sampling and chat-template arguments of each thinking
+mode from the file's `collection` block, or from its header where it has none. It types none
+of them. A collection fact or sampling parameter the emitter does not know how to transcribe
+fails the run, so a setting cannot be silently dropped. Every curve was collected with real
+verification, so each value is a natural acceptance length.
 
-### 12.2 Model names: resolved, or refused
+### 12.2 Carried by default: models and drafters resolved, or refused
 
-InferenceX keys a curve by the lower-cased basename of the Hugging Face repository it
-served (`MODEL_KEY` in its SPEED-Bench collectors). The emitter resolves that key to the
-catalog model whose `source.repo` has that basename, against the vendored copy of every
-catalog `model.yaml`. A key that resolves to none is not carried, and the set's caveats
-name it. A quantised checkpoint is a different catalog model, so InferenceX's
-`qwen3.5-397b-a17b-nvfp4` does not become the catalog's bf16 `qwen3.5-397b-a17b`.
+A new curve is carried with no script edit when its model and its drafter resolve in the
+catalog (design §12.2). InferenceX keys a curve by the lower-cased basename of the Hugging
+Face repository it served; the emitter resolves that key to the catalog model whose
+`source.repo` has that basename. A quantised checkpoint is a different catalog model, so
+InferenceX's `qwen3.5-397b-a17b-nvfp4` does not become the catalog's bf16
+`qwen3.5-397b-a17b`.
 
-One alias is allowed, with its evidence in the emitter: `glm-5.3-fp8`, the provisional
-curve's key, is InferenceX's name for `zai-org/GLM-5.3`, the catalog's `glm-5.3`. The
-emitter fails if the catalog stops recording that repository for it.
+A curve's drafter is `native` or a Hugging Face repository. A repository resolves to the
+catalog drafter entry with that `source.repo` that the model lists and that names the model
+as its target, and the profile records it as `drafter` (design D8). `native` is the model's
+in-graph speculator when its entry lists `speculator`, and otherwise the one drafter entry it
+lists that ships in its own repository (MiniMax-M3.1-Flash's DSpark drafter). A curve whose
+header names the drafter's revision is refused when the catalog's entry is another revision.
+A curve that does not resolve is not carried, and the set's caveats name it with the reason;
+the drafters InferenceX measures and the catalog lacks are listed there.
+
+The emitter's `SKIP` table may leave out a resolving curve, each with a stated reason; it is
+empty. Its `TRANSFERS` table moves a curve to a catalog model it was not measured on, as
+method `transferred`, with the rule and its evidence. It holds one: GLM-5.3's curve, which
+InferenceX measures only on the NVFP4 quantization of `zai-org/GLM-5.3`.
 
 ### 12.3 Curves a key cannot tell apart
 
-A profile is keyed by model, method, K, thinking mode and category; it cannot state the
-drafter or the draft sampler. Where InferenceX publishes two curves that differ only in
-those, at most one can be carried. The emitter follows InferenceX's own resolver
-(`curves.py`, `curve_name`): MiniMax-M3's base EAGLE3 curve is carried and the GQA-drafter
-variant is not, and neither Kimi-K3 DSpark curve is carried, because the resolver itself
-refuses to choose between greedy and probabilistic draft sampling. Every file is
-classified in the emitter's `CURVES` table, and an unclassified file fails the run.
+A profile is keyed by model, drafter, method, K, thinking mode, category, and the collection
+settings: engine, draft sampler and verifier (design D8). Every profile states the settings as its
+source states them, from `identities.yaml`: an explicit or documented value as stated, and a value
+left at the engine's default as the marker `default`. No engine default is written here: at lookup
+the engine states its resolved values and its own defaults, and the lookup compares a `default`
+marker with the requesting engine's stated default. So the three Kimi-K3 DSpark curves and the
+two MiniMax-M3 GQA-drafter curves are carried apart, and a run identical to a curve's
+collection matches it exactly. Two curves that agree on every key field are both refused, and a
+verifier outside the key's vocabulary (vLLM v0.33.0's standard, block and fly) refuses its curve;
+both cite inference-sim/blis-substrate#207.
 
 ### 12.4 Hardware: stated, or read from the run
 
-A measured profile must name the part it was measured on. Most headers state it ("B300,
-vLLM MTP"). The DeepSeek-V4.1-Flash file states none, and its collecting job ran on
+A measured profile must name the part it was measured on. Most files state it in their
+"Measured on" line. The DeepSeek-V4.1-Flash file states none, and its collecting job ran on
 InferenceX's `b200-nscale` cluster, launched through the B200 benchmark base, so its
-profiles say `b200`. blis-registry#44 describes the curve as measured on B300; the run
-contradicts that, and the run is what is recorded. The emitter's `RUN_HARDWARE` table
-holds each run's runner, read through the GitHub API, and is checked against every header
-that also states a part. Files that name no engine image say so in `engine_image`: their
-runs' logs have expired, so the image cannot be recovered.
+profiles say `b200`. The emitter's `RUN_HARDWARE` table holds each run's runner, read through
+the GitHub API, and is checked against every file that also states a part. Files that name
+no engine image say so in `engine_image`.
 
-The collectors are named `<prefix>_fp4_b300_vllm.sh` because `speedbench-al.yml` requires
-that name and labels every collection `PRECISION: fp4`; the fp4 is not what they serve.
-Each serves its checkpoint's own weights, and the DeepSeek-V4-Pro and GLM-5.2 collectors
-set `--kv-cache-dtype fp8`, which their profiles record as `kv_cache_dtype`. The
-emitter's `COLLECTORS` table holds what each collector serves, and a curve whose
-collector it has not read fails the run.
+### 12.5 Shapes: how natural acceptance decays
 
-### 12.5 Gates
+A value measured from natural acceptance usually states only its rate or length. The
+engine's minimum-variance schedule would spread it as a step ([1, 1, 0.1, 0, ...] for 30% at
+K 7), which no measured curve resembles. The set's `shapes` say how it decays instead:
+p_i = q^(i^b), with q solved so the rates sum to AL − 1 (`acceptance.NaturalRates`), and one
+exponent b per speculative method plus one for every method. The emitter fits each b to every
+vendored curve of the method measured at each K from 1 to its largest, carried as a profile
+or not, so the Muse-Spark-Open DFlash2 curve informs the `dflash` shape although its drafter
+is not in the catalog. The rule is in each shape's `rule`.
+
+`validator/test_acceptance_profiles.py` checks the fit out of sample: with each source file left
+out of its method's fit, the decay predicts that curve's smaller-K lengths better than the
+step on every curve. For Muse-Spark-Open with DFlash2 at K 7, held out of the `dflash` fit, the
+rates its length alone derives are within 0.05 of the per-position rates its curve measures at
+every position. A shape is an estimate, so it states `method: calibrated`, and a run that uses
+one records it as such. The shapes are not yet judged against held-out end-to-end runs: that
+waits for the landing gate (VAL-6). Requests advance by the mean acceptance length until per-step
+draws land (inference-sim/blis-vllm#147), so a shape changes only adaptive-verification pricing.
+
+### 12.6 Gates
 
 `emit_acceptance_profiles.py --check` runs in every CI job
-(`validator/test_acceptance_profiles.py`), because its inputs are vendored. The `rederive`
-job also checks the vendored curves against InferenceX at its pinned commit
+(`validator/test_acceptance_profiles.py`), after the job fetches the pinned curves. The scheduled
+`acceptance-refresh` workflow moves the pin to the last InferenceX commit that changed a curve
+(`scripts/refresh_inferencex_curves.py`), regenerates the set and opens a pull request when
+it changes. The `rederive`
+job also checks the pinned hashes against an InferenceX checkout at its pinned commit
 (`INFERENCEX_SHA` in `.github/workflows/rederive.yml`), checks the catalog models against
 the repository's `catalog/`, and re-runs the emitter against the upstream checkout. Schema
 validation is `validate-registry` (`validate/cmd/validate-registry`), which reads
-`acceptance/` (blis-schemas#74), in CI's `registry` job.
+`acceptance/` (https://github.com/inference-sim/blis-schemas/issues/74), in CI's `registry` job.

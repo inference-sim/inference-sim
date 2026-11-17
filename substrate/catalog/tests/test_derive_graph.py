@@ -237,7 +237,7 @@ def test_a_hand_edit_of_a_header_pinned_entry_is_detected_once_fetched(tree_copy
 
 
 def test_a_failure_names_its_model_once(tmp_path):
-    """Each failure line names the model exactly once (blis-catalog#28).
+    """Each failure line names the model exactly once (https://github.com/inference-sim/blis-catalog/issues/28).
 
     A DeriveError carries the model name itself, because derive() is called directly
     and its message has to stand alone there; main() prefixed it again, printing
@@ -323,6 +323,11 @@ def test_attention_shape_matches_config(d: Path):
             # A latent cache holds one vector per token whatever the config's KV head
             # count says, so the engine pins it to one.
             assert n["n_kv"] == 1
+        elif (n["kind"] == "gqa" and t.get("attention_k_eq_v")
+              and t.get("num_global_key_value_heads") is not None):
+            # Gemma 4's full-attention layers take num_global_key_value_heads where
+            # attention_k_eq_v is set (transformers' per_layer_config, which vLLM reads).
+            assert n["n_kv"] == t["num_global_key_value_heads"]
         else:
             assert n["n_kv"] == t["num_key_value_heads"]
 
@@ -1579,7 +1584,8 @@ def test_expert_shape_matches_config(d: Path):
     if not nodes:
         assert not experts, "the config declares experts but the graph has no expert layer"
         return
-    top_k = t.get("num_experts_per_tok") or t.get("num_experts_per_token")
+    top_k = (t.get("num_experts_per_tok") or t.get("num_experts_per_token")
+             or t.get("top_k_experts"))
     for n in nodes:
         assert n["experts"] == experts
         assert n["top_k"] == top_k
@@ -1631,6 +1637,9 @@ EXPECTED_IDENTICAL = {
         "scorers and their projections per forward pass — so grouping it here would "
         "assert away the very distinction the indexer-frequency derivation exists to "
         "capture",
+    frozenset({"glm-5", "glm-5.1-fp8"}):
+        "one checkpoint geometry: GLM-5.1-FP8 is a post-trained GLM-5-FP8 whose config.json "
+        "differs from GLM-5-FP8's only in transformers_version",
     frozenset({"deepseek-v3", "deepseek-r1-0528"}):
         "one checkpoint geometry: DeepSeek-R1-0528 is a post-trained DeepSeek-V3 whose "
         "config.json differs from V3's only in transformers_version",
@@ -1715,7 +1724,7 @@ def node_cost(n: dict) -> tuple:
         # Omitted here, the signature read GLM-5.3-Flash's mHC mixing as two plain
         # norms.
         n.get("bytes_per_token"),
-        # What blis-schemas#55 prices beyond the shape: how a node splits over tensor
+        # What https://github.com/inference-sim/blis-schemas/issues/55 prices beyond the shape: how a node splits over tensor
         # parallelism, the caches a read holds and their records, a launch that writes a
         # cache record only every per_tokens tokens, work proportional to the context, a
         # gather's table and where it lives, and a node that reuses another's weights.
@@ -2762,7 +2771,7 @@ def test_collectives_land_where_the_parallelism_needs_them():
         g = graph_of(d)
         # A family that decides sequence parallelism itself names its architecture, and
         # its MoE reduction stands down under that rule rather than the engine-wide one
-        # (DeepSeek-V4.1: nvidia/model.py:239-247, 324-327; blis-schemas#55).
+        # (DeepSeek-V4.1: nvidia/model.py:239-247, 324-327; https://github.com/inference-sim/blis-schemas/issues/55).
         own_sp = g["global"].get("architecture") in OWN_SEQUENCE_PARALLELISM
         mlp_reduction = ("tensor_parallel_unless_sequence_parallel" if own_sp
                          else "tensor_parallel_unless_sp_moe")
@@ -2828,7 +2837,7 @@ def test_every_emit_condition_is_one_a_resolver_knows():
     The deriver's EMIT_ constants are the whole vocabulary, so a committed graph naming
     anything else would reach a resolver with no branch for it. The two conditions the
     model's own sequence parallelism decides need the graph to name its architecture,
-    since that is what a rules pack decides them by (blis-schemas#55)."""
+    since that is what a rules pack decides them by (https://github.com/inference-sim/blis-schemas/issues/55)."""
     dg = _dg()
     known = {dg.EMIT_TENSOR_PARALLEL, dg.EMIT_EXPERT_PARALLEL,
              dg.EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE,
@@ -4775,7 +4784,7 @@ def test_deepseek_v41_splits_across_tensor_parallel_ranks_where_vllm_does():
         elif n["op"] == "Attention" and not role:
             # The main read's per-rank heads are FlashMLA's padding to 64, a property of
             # the backend and the TP width, so its layout is left to the consumer
-            # (inference-sim/blis-latency-kernel#39).
+            # (https://github.com/inference-sim/blis-latency-kernel/issues/39).
             assert "tp" not in n
         else:
             assert n["tp"] == split.get(role, "replicated"), (role, n["tp"])
@@ -8274,6 +8283,114 @@ def test_minimax_m31_flash_states_the_same_embedding(tmp_path):
     assert graph_of(MODELS / "minimax-m3.1-flash")["embedding"] == g["embedding"]
 
 
+# --- DFlash2 drafter (RadixArk/Muse-Spark-Open-DFlash2) ---------------------------------
+
+# A DFlash2 configuration rebuilt from what the committed muse-spark-open-dflash2 graph states,
+# not copied from the checkpoint's config.json, whose repository states no licence (X12). Every
+# shape below is a value the derived graph carries: its global hidden and vocabulary sizes, the
+# attention node's heads, head width and window, the MLP and selector widths, and the capture
+# layers (the graph's aux_hidden_state_layers, less one, as the configuration states them). Three
+# splits the graph states only as a product are the test's own choice of factors: the attention
+# window as sliding window plus block (2048 + 8), the convolution projection as
+# 2 x taps x hidden / group (2 x 2 x 8192 / 16), and the mask token, any id in the vocabulary.
+def _dflash2_cfg() -> dict:
+    g = graph_of(MODELS / "muse-spark-open-dflash2")
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    layer = kinds["dflash_layer"]["nodes"]
+    attn = [n for n in layer if n["op"] == "Attention"][0]
+    roles = {n.get("role"): n for n in layer}
+    head = {n.get("role"): n for n in g["speculator"]["head"]}
+    hidden, vocab, layers = g["global"]["hidden_size"], g["global"]["vocab_size"], g["speculator"]["stack"]["repeat"]
+    block, taps = 8, 2
+    group = 2 * taps * hidden // roles["attention_conv_kernel_projection"]["n"]
+    return {
+        "architectures": ["DFlash2DraftModel"], "model_type": "qwen3", "dtype": "bfloat16",
+        "hidden_size": hidden, "intermediate_size": roles["mlp_down"]["k"], "num_hidden_layers": layers,
+        "num_attention_heads": attn["n_q"], "num_key_value_heads": attn["n_kv"], "head_dim": attn["d_h"],
+        "vocab_size": vocab, "attention_bias": False, "is_causal": False,
+        "sliding_window": attn["window"] - block,
+        "num_target_layers": len(layer_sequence(graph_of(MUSE_NVFP4)["stack"])),
+        "layer_types": ["sliding_attention"] * layers,
+        "dflash_config": {"attention_mode": "gqa", "block_size": block, "conv_group_size": group,
+                          "conv_kernel_size": taps, "mask_token_id": 0,
+                          "selector_rank": head["selector_codebooks"]["row_bytes"] // 2,
+                          "selector_top_k": head["selector_codebooks"]["rows_per_token"] // 2,
+                          "target_layer_ids": [i - 1 for i in g["speculator"]["aux_hidden_state_layers"]]},
+    }
+
+
+DFLASH2_CFG = _dflash2_cfg()
+
+
+def _dflash2_nodes(g: dict) -> list[dict]:
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    return kinds["dflash_layer"]["nodes"] * g["speculator"]["stack"]["repeat"] + \
+        kinds["dflash_context"]["nodes"] + g["speculator"]["head"]
+
+
+def test_dflash2_drafter_weights_equal_the_checkpoints_tensor_total(tmp_path):
+    """Every matrix of the checkpoint is a node, counted once: the safetensors header's
+    tensors other than its norm and convolution-kernel vectors hold 4,887,052,288 parameters.
+    The context K/V projection reads the layers' own K and V rows, a copy the engine makes,
+    and the lm_head is the target's, so neither is a checkpoint tensor."""
+    g = _derive_raw(DFLASH2_CFG, tmp_path, "muse-spark-open-dflash2")
+    params = 0
+    for n in _dflash2_nodes(g):
+        if n["op"] == "GEMM" and n["role"] not in ("dflash_context_kv", "dflash_lm_head"):
+            params += n["n"] * n["k"]
+        elif n["op"] == "Gather":
+            params += n["rows"] * n["row_bytes"] // 2
+    assert params == 4_887_052_288
+
+
+def test_dflash2_drafts_a_block_from_the_targets_captured_states(tmp_path):
+    g = _derive_raw(DFLASH2_CFG, tmp_path, "muse-spark-open-dflash2")
+    sp = g["speculator"]
+    assert (sp["method"], sp["drafting"], sp["shares_target_head"]) == ("dflash", "parallel_block", True)
+    # The engine captures each target_layer_ids entry plus one, and fc reads one state each.
+    assert sp["aux_hidden_state_layers"] == [2, 17, 31, 45, 60]
+    ctx = {k["id"]: k for k in g["layer_kinds"]}["dflash_context"]
+    fc = _node(ctx, "dflash_fc")
+    assert (fc["n"], fc["k"], fc["tp"]) == (8192, 5 * 8192, "replicated")
+    # Muse Spark captures its fp32 residual stream; another target's drafter states none.
+    assert sp["aux_hidden_state_bytes_per_token"] == 4 * 8192
+    other = _derive_raw(DFLASH2_CFG, tmp_path, "some-other-dflash2")
+    assert "aux_hidden_state_bytes_per_token" not in other["speculator"]
+    layer = {k["id"]: k for k in g["layer_kinds"]}["dflash_layer"]
+    attn = [n for n in layer["nodes"] if n["op"] == "Attention"][0]
+    # Non-causal: a query reads its window and the whole block.
+    assert (attn["kind"], attn["window"]) == ("swa", 2048 + 8)
+    conv = _node(layer, "attention_conv_kernel_projection")
+    assert (conv["n"], conv["k"]) == (2 * 2 * 8192 // 16, 8192)
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"dflash_config": {**DFLASH2_CFG["dflash_config"], "attention_mode": "mla"}}, "neither pinned engine supports.*blis-sglang#21"),
+    ({"dflash_config": {**DFLASH2_CFG["dflash_config"], "causal": True}}, "does not read"),
+    ({"is_causal": True}, "non-causal"),
+    ({"draft_vocab_size": 32000}, "draft_vocab_size differs"),
+    ({"layer_types": ["full_attention"] * 5}, "sliding-window"),
+    ({"dflash_config": {**DFLASH2_CFG["dflash_config"], "conv_group_size": 24}}, "does not divide"),
+])
+def test_dflash2_refuses_what_it_does_not_price(tmp_path, edit, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw({**DFLASH2_CFG, **edit}, tmp_path, "muse-spark-open-dflash2")
+
+
+def test_dflash2_drafter_and_its_target_name_each_other():
+    """The drafter's recorded target width is its target's hidden size, and the target lists it."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    drafter = yaml.safe_load((MODELS / "muse-spark-open-dflash2" / "model.yaml").read_text())
+    assert drafter["targets"] == ["muse-spark-open-816b-a42b-nvfp4"]
+    target = yaml.safe_load((MUSE_NVFP4 / "model.yaml").read_text())
+    assert "muse-spark-open-dflash2" in target["drafters"]
+    cfg = text_config(config_of(MUSE_NVFP4))
+    assert derive_graph.DFLASH2_TARGET_STATE_BYTES["muse-spark-open-dflash2"][1] == cfg["hidden_size"]
+
+
 # --- ModelOpt NVFP4: routed and shared experts at their own widths -----------------------
 
 QWEN35_NVFP4 = MODELS / "qwen3.5-397b-a17b-nvfp4"
@@ -8407,6 +8524,8 @@ def _glm5_headers(edit=None) -> dict:
                   "indexer.wq_b", "indexer.wk", "indexer.weights_proj"):
             bf16(p + "self_attn." + a)
         quant = bf16 if i == n else nvfp4
+        if i == n:
+            bf16(p + "eh_proj")
         if i < dense:
             for a in ("gate_proj", "up_proj", "down_proj"):
                 quant(p + "mlp." + a)
@@ -8573,6 +8692,411 @@ def test_qwen35_nvfp4_places_a_quantized_deltanet_input_projection(tmp_path):
     q["ignore"] = [p for p in q["ignore"] if p != "model.language_model.layers.0.linear_attn*"]
     with pytest.raises(derive_graph.DeriveError, match="'recurrent_in_proj_qkvz' quantized on some"):
         _derive_raw(raw, tmp_path, "qwen-nvfp4-test")
+
+
+# --- Qwen3.5's attention output gate (blis-substrate#199) -------------------------------
+
+def test_qwen35_full_attention_projects_its_output_gate(tmp_path):
+    """attn_output_gate true doubles the query rows of qkv_proj, as the checkpoint stores them
+    (q_proj 16384 x 4096 in Qwen3.5-397B's header: 32 heads x 256 x 2), and adds the sigmoid
+    gating multiply; the same config with the gate off derives the ungated projection."""
+    raw = config_of(MODELS / "qwen3.5-397b-a17b")
+    t = raw["text_config"]
+    nq, nkv, dh = t["num_attention_heads"], t["num_key_value_heads"], t["head_dim"]
+    def attn(g):
+        return {n.get("role"): n for n in {k["id"]: k for k in g["layer_kinds"]}["attn_moe"]["nodes"]}
+    gated = attn(_derive_raw(raw, tmp_path, "qwen-gate-test"))
+    assert gated["qkv_proj"]["n"] == (2 * nq + 2 * nkv) * dh == 16384 + 1024
+    assert gated["attn_output_gate"]["bytes_per_token"] == 3 * nq * dh * 2
+    t["attn_output_gate"] = False
+    plain = attn(_derive_raw(raw, tmp_path, "qwen-gate-test"))
+    assert plain["qkv_proj"]["n"] == (nq + 2 * nkv) * dh and "attn_output_gate" not in plain
+
+
+# --- The DeepSeek-family MTP input stage (blis-substrate#200) ----------------------------
+
+@pytest.mark.parametrize("name", ["glm-5", "glm-5.2", "deepseek-v3"])
+def test_deepseek_family_mtp_layer_runs_its_eh_proj(name):
+    """The MTP layer normalises the embedding and the previous hidden state and projects the two
+    through eh_proj, a BF16 nn.Linear(2 x hidden -> hidden) on every rank, before its decoder
+    block, so the draft kind leads with enorm, hnorm and that GEMM whatever the checkpoint's
+    width."""
+    g = graph_of(MODELS / name)
+    hidden = g["global"]["hidden_size"]
+    assert g["speculator"]["stack"]["pattern"] == ["mtp_moe"]
+    draft = {k["id"]: k for k in g["layer_kinds"]}["mtp_moe"]["nodes"]
+    assert [n.get("role") for n in draft[:3]] == ["mtp_enorm", "mtp_hnorm", "mtp_eh_proj"]
+    eh = draft[2]
+    assert (eh["n"], eh["k"], eh["weight_dtype"], eh["tp"]) == (hidden, 2 * hidden, "bf16", "replicated")
+
+
+# --- The Qwen3.5 MTP input stage (blis-substrate#201) ------------------------------------
+
+@pytest.mark.parametrize("name", ["qwen3.5-397b-a17b", "qwen3.5-397b-a17b-fp8",
+                                  "qwen3.5-397b-a17b-nvfp4", "qwen3.6-35b-a3b"])
+def test_qwen35_mtp_layer_runs_its_fc(name):
+    """The MTP predictor normalises the embedding and the previous hidden state and projects the
+    two through fc, a column-parallel BF16 linear of 2 x hidden -> hidden whose output is
+    gathered, before its decoder layer; FP8 and NVFP4 checkpoints keep it BF16 too."""
+    g = graph_of(MODELS / name)
+    hidden = g["global"]["hidden_size"]
+    assert g["speculator"]["stack"]["pattern"] == ["mtp_moe"]
+    draft = {k["id"]: k for k in g["layer_kinds"]}["mtp_moe"]["nodes"]
+    assert [n.get("role") for n in draft[:4]] == ["mtp_pre_fc_norm_embedding", "mtp_pre_fc_norm_hidden",
+                                                  "mtp_fc", "mtp_fc_out"]
+    fc = draft[2]
+    assert (fc["n"], fc["k"], fc["weight_dtype"], fc["tp"]) == (hidden, 2 * hidden, "bf16", "column")
+    assert (draft[3]["op"], draft[3]["emit"]) == ("AllGather", "tensor_parallel")
+
+
+LLAMA70B = MODELS / "llama-3.1-70b-instruct"
+
+
+def _llama_headers(width: str, edit=None) -> dict:
+    """Headers in the layout nvidia/Llama-3.3-70B-Instruct-FP8 and -FP4's shards state (read
+    from the pinned headers; not committed): every decoder linear FP8 (F8_E4M3) or NVFP4 (U8
+    with an F8_E4M3 scale per 16 values), the embedding, norms and lm_head BF16."""
+    t = config_of(LLAMA70B)
+    k = t["hidden_size"]
+    h = {"lm_head.weight": {"dtype": "BF16", "shape": [t["vocab_size"], k]},
+         "model.embed_tokens.weight": {"dtype": "BF16", "shape": [t["vocab_size"], k]}}
+
+    def put(m):
+        if width == "fp8":
+            h[m + ".weight"] = {"dtype": "F8_E4M3", "shape": [1024, k]}
+            h[m + ".weight_scale"] = {"dtype": "F32", "shape": []}
+        else:
+            h[m + ".weight"] = {"dtype": "U8", "shape": [1024, k // 2]}
+            h[m + ".weight_scale"] = {"dtype": "F8_E4M3", "shape": [1024, k // 16]}
+
+    for i in range(t["num_hidden_layers"]):
+        p = f"model.layers.{i}."
+        h[p + "input_layernorm.weight"] = {"dtype": "BF16", "shape": [k]}
+        for a in ("q_proj", "k_proj", "v_proj", "o_proj"):
+            put(p + "self_attn." + a)
+        for a in ("gate_proj", "up_proj", "down_proj"):
+            put(p + "mlp." + a)
+    if edit:
+        edit(h)
+    return h
+
+
+def _derive_llama(headers, tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps(config_of(LLAMA70B)))
+    return derive_graph.derive(p, "llama-3.3-70b-instruct-fp8", headers=headers)
+
+
+@pytest.mark.parametrize("width", ["fp8", "nvfp4"])
+def test_llama_modelopt_widths_come_from_its_shard_headers(tmp_path, width):
+    """NVIDIA's Llama-3.3-70B-Instruct FP8 and FP4 state their quantization only in
+    hf_quant_config.json; their headers store every attention and MLP linear quantized and the
+    head BF16. Each of the four GEMMs takes the stored width, the global and head widths stay
+    BF16, and the same config without headers derives BF16 throughout."""
+    g = _derive_llama(_llama_headers("fp8" if width == "fp8" else "nvfp4"), tmp_path)
+    assert g["global"]["weight_dtype"] == "bf16"
+    w = _widths(g, "dense")
+    assert {r: w[r][0] for r in ("qkv_proj", "o_proj", "mlp_gate_up", "mlp_down")} == \
+        dict.fromkeys(("qkv_proj", "o_proj", "mlp_gate_up", "mlp_down"), width)
+    plain = _derive_llama(None, tmp_path)
+    assert {v[0] for v in _widths(plain, "dense").values()} == {"bf16"}
+
+
+@pytest.mark.parametrize("edit,why", [
+    (lambda h: h.__setitem__("lm_head.weight", {"dtype": "F8_E4M3", "shape": [128256, 8192]}),
+     "the head is priced at the base width"),
+    (lambda h: h.__setitem__("model.layers.3.self_attn.k_proj.weight", {"dtype": "BF16", "shape": [1024, 8192]}),
+     "one node cannot price both"),
+    (lambda h: h.__setitem__("model.layers.40.mlp.down_proj.weight", {"dtype": "BF16", "shape": [1024, 8192]}),
+     "quantized on some of its layers and not others"),
+])
+def test_llama_header_widths_refuse_what_one_node_cannot_price(tmp_path, edit, why):
+    """A quantized head, a fused qkv whose parts are stored at two widths, and a projection
+    quantized on some layers only are refused rather than priced at one width."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_llama(_llama_headers("fp8", edit), tmp_path)
+
+
+DSR1_FP4 = MODELS / "deepseek-r1-0528-fp4-v2"
+
+
+def _dsr1_fp4_headers(edit=None) -> dict:
+    """Headers in the layout nvidia/DeepSeek-R1-0528-FP4-V2's shards state (read from the pinned
+    headers; not committed): NVFP4 o_proj, dense MLPs, routed and shared experts; BF16 latent
+    projections, router and head; the MTP layer 61 BF16 throughout. Two experts a layer are
+    enough: a layer's experts share one width."""
+    t = config_of(DSR1_FP4)
+    n, dense, k = t["num_hidden_layers"], t["first_k_dense_replace"], t["hidden_size"]
+    h = {"lm_head.weight": {"dtype": "BF16", "shape": [t["vocab_size"], k]}}
+
+    def nvfp4(m):
+        h[m + ".weight"] = {"dtype": "U8", "shape": [2048, k // 2]}
+        h[m + ".weight_scale"] = {"dtype": "F8_E4M3", "shape": [2048, k // 16]}
+
+    def bf16(m):
+        h[m + ".weight"] = {"dtype": "BF16", "shape": [2048, k]}
+
+    for i in range(n + 1):
+        p = f"model.layers.{i}."
+        mtp = i == n
+        for a in ("q_a_proj", "kv_a_proj_with_mqa", "q_b_proj", "kv_b_proj"):
+            bf16(p + "self_attn." + a)
+        quant = bf16 if mtp else nvfp4
+        quant(p + "self_attn.o_proj")
+        if mtp:
+            bf16(p + "eh_proj")
+        if i < dense:
+            for a in ("gate_proj", "up_proj", "down_proj"):
+                quant(p + "mlp." + a)
+        else:
+            bf16(p + "mlp.gate")
+            for e in range(2):
+                for a in ("gate_proj", "up_proj", "down_proj"):
+                    quant(p + f"mlp.experts.{e}." + a)
+            for a in ("gate_proj", "up_proj", "down_proj"):
+                quant(p + "mlp.shared_experts." + a)
+    if edit:
+        edit(h)
+    return h
+
+
+def _derive_dsr1_fp4(headers, tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps(config_of(DSR1_FP4)))
+    return derive_graph.derive(p, "deepseek-r1-0528-fp4-v2", headers=headers)
+
+
+def test_dsr1_fp4_widths_come_from_its_shard_headers(tmp_path):
+    """DeepSeek-R1-0528-FP4-V2's config.json states no quantization; its headers store o_proj,
+    the dense MLPs and every expert NVFP4, the latent projections BF16, and the MTP layer BF16.
+    The draft layer is placed at its own names, so it does not mirror the decoder's NVFP4
+    experts, and the same config without headers derives no NVFP4 node at all."""
+    g = _derive_dsr1_fp4(_dsr1_fp4_headers(), tmp_path)
+    assert g["global"]["weight_dtype"] == "bf16"
+    dense = _widths(g, "attn_dense")
+    assert (dense["o_proj"][0], dense["mlp_gate_up"][0], dense["mlp_down"][0]) == ("nvfp4",) * 3
+    assert {dense[r][0] for r in ("qkv_a_proj", "q_b_proj", "kv_b_proj")} == {"bf16"}
+    moe = _widths(g, "attn_moe")
+    assert moe["experts"][0] == "nvfp4" and "shared_experts" not in moe   # shared at the same width
+    assert g["speculator"]["method"] == "deepseek_mtp"
+    assert g["speculator"]["stack"]["pattern"] == ["mtp_moe"]
+    assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
+    plain = _derive_dsr1_fp4(None, tmp_path)
+    assert "nvfp4" not in {w for k in plain["layer_kinds"] for n in k["nodes"]
+                           if (w := n.get("weight_dtype"))}
+
+
+def test_dsr1_fp4_refuses_a_draft_layer_its_one_node_cannot_price(tmp_path):
+    """An MTP layer whose experts are stored at two widths is refused, not priced at either."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    n = config_of(DSR1_FP4)["num_hidden_layers"]
+
+    def edit(h):
+        m = f"model.layers.{n}.mlp.experts.1.gate_proj"
+        h[m + ".weight"] = {"dtype": "U8", "shape": [2048, 7168 // 2]}
+        h[m + ".weight_scale"] = {"dtype": "F8_E4M3", "shape": [2048, 7168 // 16]}
+    with pytest.raises(derive_graph.DeriveError, match="one node cannot price both"):
+        _derive_dsr1_fp4(_dsr1_fp4_headers(edit), tmp_path)
+
+
+KIMI_K26_NVFP4 = MODELS / "kimi-k2.6-nvfp4"
+
+
+def test_kimi_k26_nvfp4_quantizes_the_routed_experts_and_nothing_else():
+    """nvidia/Kimi-K2.6-NVFP4's ModelOpt list excludes every attention module
+    (`*.self_attn*`), every shared expert, the dense layer 0 whole and the head, so only the
+    routed experts store NVFP4: the shared experts are a node of their own at bf16, and the
+    dense layer and every attention projection are bf16."""
+    g = graph_of(KIMI_K26_NVFP4)
+    assert g["global"]["weight_dtype"] == "bf16"
+    moe = _widths(g, "attn_moe")
+    assert moe["experts"][0] == "nvfp4" and moe["shared_experts"][0] == "bf16"
+    assert {w for r, (w, _) in moe.items() if r not in ("experts", "shared_experts")} == {"bf16"}
+    assert {w for w, _ in _widths(g, "attn_dense").values()} == {"bf16"}
+
+
+GLM51_NVFP4 = MODELS / "glm-5.1-nvfp4"
+
+
+def test_glm51_nvfp4_quantizes_the_routed_experts_and_nothing_else():
+    """nvidia/GLM-5.1-NVFP4's ModelOpt list excludes the three dense layers and the MTP layer 78
+    whole, every attention module and shared expert, and the head: only the routed experts store
+    NVFP4. The shared experts are a node of their own at bf16, the dense layers and the attention
+    projections are bf16, and the draft layer is bf16 throughout rather than a mirror of the
+    decoder's NVFP4 experts."""
+    g = graph_of(GLM51_NVFP4)
+    assert g["global"]["weight_dtype"] == "bf16"
+    moe = _widths(g, "attn_moe")
+    assert moe["experts"][0] == "nvfp4" and moe["shared_experts"][0] == "bf16"
+    assert {w for r, (w, _) in moe.items() if r not in ("experts", "shared_experts")} == {"bf16"}
+    assert {w for w, _ in _widths(g, "attn_dense").values()} == {"bf16"}
+    assert g["speculator"]["method"] == "deepseek_mtp"
+    assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
+
+
+# --- Gemma 4 ----------------------------------------------------------------------------
+# The three committed Gemma 4 configs, derived as vLLM v0.33.0 builds them (handler_gemma4).
+GEMMA4_DENSE = MODELS / "gemma-4-31b-it"
+GEMMA4_MOE = MODELS / "gemma-4-26b-a4b-it"
+GEMMA4_FP8 = MODELS / "gemma-4-26b-a4b-it-fp8-dynamic"
+
+
+def _gemma4(d: Path, tmp_path: Path, edit=None) -> dict:
+    """Derive a Gemma 4 entry's committed config, after `edit(raw, text_config)` if given."""
+    raw = config_of(d)
+    if edit:
+        edit(raw, raw["text_config"])
+    return _derive_raw(raw, tmp_path, d.name)
+
+
+def _gemma4_role(kind: dict, role: str) -> dict:
+    found = [n for n in kind["nodes"] if n.get("role") == role]
+    assert len(found) == 1, f"{kind['id']} has {len(found)} {role} nodes"
+    return found[0]
+
+
+@pytest.mark.parametrize("d", [GEMMA4_DENSE, GEMMA4_MOE, GEMMA4_FP8], ids=lambda d: d.name)
+def test_gemma4_layers_follow_the_layer_types(d, tmp_path):
+    """Each layer is the kind its layer_types entry names: a sliding layer reads the window
+    at head_dim and num_key_value_heads, a full layer reads the whole context at
+    global_head_dim and num_global_key_value_heads, and both project Q, K and V (vLLM loads
+    the full layer's K into the V shard as well)."""
+    g = _gemma4(d, tmp_path)
+    t = config_of(d)["text_config"]
+    seq = layer_sequence(g["stack"])
+    assert len(seq) == t["num_hidden_layers"]
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    for i, layer_type in enumerate(t["layer_types"]):
+        kind = kinds[seq[i]]
+        attn = [n for n in kind["nodes"] if n["op"] == "Attention"]
+        assert len(attn) == 1
+        a = attn[0]
+        if layer_type == "sliding_attention":
+            assert (a["kind"], a.get("window")) == ("swa", t["sliding_window"])
+            assert (a["n_kv"], a["d_h"]) == (t["num_key_value_heads"], t["head_dim"])
+        else:
+            assert a["kind"] == "gqa" and "window" not in a
+            assert (a["n_kv"], a["d_h"]) == (t["num_global_key_value_heads"],
+                                             t["global_head_dim"])
+        assert a["n_q"] == t["num_attention_heads"]
+        assert _gemma4_role(kind, "qkv_proj")["n"] == (a["n_q"] + 2 * a["n_kv"]) * a["d_h"]
+        assert _gemma4_role(kind, "o_proj")["k"] == a["n_q"] * a["d_h"]
+
+
+@pytest.mark.parametrize("d", [GEMMA4_MOE, GEMMA4_FP8], ids=lambda d: d.name)
+def test_gemma4_moe_layers_run_the_dense_mlp_beside_the_experts(d, tmp_path):
+    """Every MoE layer runs the dense MLP and the routed experts, top-k of num_experts at
+    moe_intermediate_size, behind a replicated router."""
+    g = _gemma4(d, tmp_path)
+    t = config_of(d)["text_config"]
+    for kind in g["layer_kinds"]:
+        assert _gemma4_role(kind, "mlp_gate_up")["n"] == 2 * t["intermediate_size"]
+        assert _gemma4_role(kind, "mlp_down")["k"] == t["intermediate_size"]
+        experts = _gemma4_role(kind, "experts")
+        assert (experts["experts"], experts["top_k"], experts["n"], experts["k"]) == (
+            t["num_experts"], t["top_k_experts"], t["moe_intermediate_size"], t["hidden_size"])
+        assert experts["shared"] is False
+        router = _gemma4_role(kind, "router")
+        assert (router["n"], router["k"], router["tp"]) == (t["num_experts"],
+                                                            t["hidden_size"], "replicated")
+
+
+def test_gemma4_dense_model_has_no_experts(tmp_path):
+    g = _gemma4(GEMMA4_DENSE, tmp_path)
+    assert not [n for k in g["layer_kinds"] for n in k["nodes"]
+                if n["op"] == "GroupedGEMM" or n.get("role") == "router"]
+
+
+def _gemma4_widths(g: dict) -> dict[str, set[str]]:
+    """The width each weight role is held at, over every layer kind."""
+    out: dict[str, set[str]] = collections.defaultdict(set)
+    for k in g["layer_kinds"]:
+        for n in k["nodes"]:
+            if n["op"] in ("GEMM", "GroupedGEMM"):
+                out[n["role"]].add(n.get("weight_dtype", g["global"]["weight_dtype"]))
+    return out
+
+
+def test_gemma4_fp8_dynamic_holds_its_linears_at_fp8_and_the_rest_at_bf16(tmp_path):
+    """The compressed-tensors FP8 checkpoint quantizes every Linear its ignore list does not
+    name: attention, the dense MLP and the experts are FP8; the router (a GateLinear vLLM
+    builds unquantized) is BF16; the head reads the BF16 embedding it is tied to. The BF16
+    checkpoint of the same model holds everything at BF16."""
+    g = _gemma4(GEMMA4_FP8, tmp_path)
+    w = _gemma4_widths(g)
+    for role in ("qkv_proj", "o_proj", "mlp_gate_up", "mlp_down", "experts"):
+        assert w[role] == {"fp8"}, role
+    assert w["router"] == {"bf16"}
+    head = _gemma4_role({"id": "head", "nodes": g["head"]}, "lm_head")
+    assert head["aliases"] == "embedding.embed_tokens"
+    table = _gemma4_role({"id": "embedding", "nodes": g["embedding"]}, "embed_tokens")
+    assert table["row_bytes"] == 2 * g["global"]["hidden_size"]
+    bf16 = _gemma4_widths(_gemma4(GEMMA4_MOE, tmp_path))
+    assert set().union(*bf16.values()) == {"bf16"}
+
+
+def test_gemma4_fp8_ignore_list_keeps_a_named_module_at_bf16(tmp_path):
+    """A module the ignore list names on every layer of a kind is held at BF16."""
+    def edit(raw, t):
+        raw["quantization_config"]["ignore"].append("re:.*self_attn\\.o_proj$")
+    w = _gemma4_widths(_gemma4(GEMMA4_FP8, tmp_path, edit))
+    assert w["o_proj"] == {"bf16"}
+    assert w["qkv_proj"] == {"fp8"}
+
+
+def _gemma4_layer_ignored(name):
+    def edit(raw, t):
+        raw["quantization_config"]["ignore"].append(f"model.language_model.layers.0.{name}")
+    return edit
+
+
+def _gemma4_quant_router(raw, t):
+    q = raw["quantization_config"]
+    q["ignore"] = [p for p in q["ignore"] if not p.endswith(".router.proj")]
+
+
+def _gemma4_set(**kv):
+    def edit(raw, t):
+        t.update(kv)
+    return edit
+
+
+def _gemma4_four_bit(raw, t):
+    w = raw["quantization_config"]["config_groups"]["group_0"]["weights"]
+    w.update(num_bits=4, group_size=16, strategy="tensor_group")
+
+
+@pytest.mark.parametrize("d,edit,why", [
+    (GEMMA4_DENSE, _gemma4_set(hidden_size_per_layer_input=256), "per-layer embeddings"),
+    (GEMMA4_DENSE, _gemma4_set(num_kv_shared_layers=20), "shares KV caches"),
+    (GEMMA4_DENSE, _gemma4_set(attn_logit_softcapping=50.0), "attn_logit_softcapping"),
+    (GEMMA4_DENSE, _gemma4_set(use_bidirectional_attention="all"), "bidirectional"),
+    (GEMMA4_DENSE, _gemma4_set(layer_types=["sliding_attention"] * 59), "59 entries for 60 layers"),
+    (GEMMA4_DENSE, _gemma4_set(layer_types=["chunked_attention"] * 60), "chunked_attention"),
+    (GEMMA4_DENSE, _gemma4_set(tie_word_embeddings=False), "untied"),
+    (GEMMA4_MOE, _gemma4_set(enable_moe_block=False), "enable_moe_block"),
+    (GEMMA4_FP8, _gemma4_quant_router, "router.proj"),
+    (GEMMA4_FP8, _gemma4_layer_ignored("self_attn.q_proj"), "splits layer 0's qkv_proj"),
+    (GEMMA4_FP8, _gemma4_layer_ignored("mlp.down_proj"), "mlp_down at"),
+    (GEMMA4_FP8, _gemma4_layer_ignored("experts.3.up_proj"), "expert 3"),
+    (GEMMA4_FP8, _gemma4_four_bit, "8-bit float"),
+], ids=["ple", "kv-shared", "attn-softcap", "bidirectional-all", "layer-types-length",
+        "layer-type-unknown", "untied-head", "moe-flag-disagrees", "router-quantized",
+        "qkv-shards-split", "down-proj-one-layer", "one-expert", "four-bit-group"])
+def test_gemma4_refuses_what_it_cannot_price(d, edit, why, tmp_path):
+    """A Gemma 4 config with a feature no node prices, or a quantization layout one node
+    cannot hold, is refused with its reason rather than priced as something else."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=re.escape(why)):
+        _gemma4(d, tmp_path, edit)
 
 
 def test_header_widths_read_qwen35_deltanet_shards():

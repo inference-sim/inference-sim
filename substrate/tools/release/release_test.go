@@ -285,17 +285,24 @@ func TestRefusals(t *testing.T) {
 			}
 		}
 	})
-	t.Run("a relaxed deprecated feature stays until M4 (plan §3.3)", func(t *testing.T) {
-		sim := newRepo(t, simMod)
-		sim.git("tag", "v0.16.0")
-		h := sim.branch("b", "cmd/root.go", "package cmd\n\n// Deprecated: --scheduler is stated in the engine block (#2037).\nvar scheduler string\n", "Deprecate --scheduler")
-		st := planOne(t, env(t, nil), "inference-sim", sim.dir, h, "bump: minor", 2)
+	t.Run("a relaxed deprecated feature stays until M3 (plan §3.3)", func(t *testing.T) {
+		sub := newRepo(t, subMod)
+		sub.git("tag", "v0.14.0")
+		h := sub.branch("b", "contracts/rules/rules.go", "package rules\n\n// Deprecated: the rules interface leaves with compat/ (plan §3.3).\ntype EngineRules interface{}\n", "Deprecate the rules interface")
+		st := planOne(t, env(t, nil), "blis-substrate", sub.dir, h, "bump: minor", 2)
 		for _, r := range st.Refusals {
 			if strings.Contains(r, "a deprecated feature remains") {
-				t.Errorf("a relaxed feature is refused before M4: %s", r)
+				t.Errorf("a relaxed feature is refused before M3: %s", r)
 			}
 		}
-		st = planOne(t, env(t, nil), "inference-sim", sim.dir, h, "bump: minor", 4)
+		st = planOne(t, env(t, nil), "blis-substrate", sub.dir, h, "bump: minor", 3)
+		has(t, st.Refusals, "contracts/rules/rules.go:3: a deprecated feature remains")
+	})
+	t.Run("inference-sim's relaxation ended at v0.18.0: a deprecated flag is refused", func(t *testing.T) {
+		sim := newRepo(t, simMod)
+		sim.git("tag", "v0.17.0")
+		h := sim.branch("b", "cmd/root.go", "package cmd\n\n// Deprecated: --scheduler is stated in the engine block (#2037).\nvar scheduler string\n", "Deprecate --scheduler")
+		st := planOne(t, env(t, nil), "inference-sim", sim.dir, h, "bump: minor", 3)
 		has(t, st.Refusals, "cmd/root.go:3: a deprecated feature remains")
 	})
 	t.Run("an open invariant bug (X27)", func(t *testing.T) {
@@ -372,15 +379,13 @@ func TestStackLockIsStrict(t *testing.T) {
 	}
 }
 
-// The relaxation list is plan §3.3's: it ends at M4 and names exactly these features.
+// The relaxation list is plan §3.3's: it ends at M3 (v0.18.0) and names exactly these features.
 func TestRelaxationsMatchThePlan(t *testing.T) {
-	want := []string{"engine_version", "compat/", "rules/v0_29/", "rules/v0_31/", "contracts/rules/",
-		"contracts/kernel/enginesettings/", "scheduler", "preemption-policy", "dp-load-balancing",
-		"swa-bounded-replay", "kv-offload-config", "lazy-generation", "eager"}
+	want := []string{"compat/", "rules/v0_29/", "rules/v0_31/", "contracts/rules/"}
 	var got []string
 	for _, r := range relaxations {
-		if r.Milestone != 4 {
-			t.Errorf("%s ends at M%d; plan §3.3 relaxes until M4", r.Reason, r.Milestone)
+		if r.Milestone != 3 {
+			t.Errorf("%s ends at M%d; plan §3.3 relaxes until M3 (v0.18.0)", r.Reason, r.Milestone)
 		}
 		k := r.Match
 		if k == "" {

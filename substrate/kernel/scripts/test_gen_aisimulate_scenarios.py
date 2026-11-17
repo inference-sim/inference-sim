@@ -9,6 +9,7 @@ Run: python3 scripts/test_gen_aisimulate_scenarios.py
 
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from gen_aisimulate_scenarios import emit  # noqa: E402
+from gen_aisimulate_scenarios import DEFAULT_CATALOG, emit  # noqa: E402
 
 FAILURES = []
 
@@ -111,6 +112,69 @@ def main() -> int:
                                               "num_speculative_tokens": 3})
     ck("an unpriced speculator (minimax-m3 eagle3) emits no scenario",
        emit(eagle, {"1024:1024"}, {"1k1k"}) is None)
+    # inference-sim/blis-substrate#124: a run that names its EAGLE3 checkpoint drafts with the
+    # catalog's drafter entry for it, which the kernel prices; one the catalog lacks is skipped.
+    for repo, entry in (("Inferact/MiniMax-M3-EAGLE3", "minimax-m3-eagle3"),
+                        ("Inferact/MiniMax-M3-EAGLE3-GQA", "minimax-m3-eagle3-gqa")):
+        named = sweep(model="minimax-m3", stated={"speculative_method": "eagle3",
+                                                  "num_speculative_tokens": 3, "draft_model": repo})
+        ck(f"an EAGLE3 run that names {repo} drafts with {entry}",
+           (engine(named, "method"), engine(named, "draft_model")) == ("eagle3", entry))
+    for draft in ("/data/models/MiniMax-M3-EAGLE3", "Org/Not-A-Drafter"):
+        unknown = sweep(model="minimax-m3", stated={"speculative_method": "eagle3",
+                                                    "num_speculative_tokens": 3, "draft_model": draft})
+        ck(f"an EAGLE3 run whose draft {draft} is no catalog drafter emits no scenario",
+           emit(unknown, {"1024:1024"}, {"1k1k"}) is None)
+    own = sweep(model="deepseek-v4-pro", stated={"speculative_method": "mtp", "num_speculative_tokens": 2,
+                                                 "draft_model": "deepseek-ai/DeepSeek-V4-Pro"})
+    ck("an MTP run that names the served model as its draft drafts with its own speculator",
+       engine(own, "method") == "mtp" and engine(own, "draft_model") is None)
+    lower = emit(sweep(model="deepseek-v4-pro", stated={
+        "speculative_method": "mtp", "num_speculative_tokens": 2,
+        "draft_model": "deepseek-ai/deepseek-v4-pro"}), {"1024:1024"}, {"1k1k"}) or ""
+    ck("an MTP run that names its own repository in another case drafts with its own speculator",
+       "method: mtp" in lower and "draft_model:" not in lower)
+    named = emit(sweep(model="minimax-m3", stated={
+        "speculative_method": "eagle3", "num_speculative_tokens": 3,
+        "draft_model": "Inferact/MiniMax-M3-EAGLE3"}), {"1024:1024"}, {"1k1k"}) or ""
+    ck("a drafting scenario's header says the run records no draft revision",
+       "# speculative: stated by the run, drafting with the catalog's minimax-m3-eagle3; "
+       "the run records no draft revision." in named.splitlines())
+
+    # The catalog is read as text: a repo or method key outside the block that owns it is a decoy.
+    with tempfile.TemporaryDirectory() as d:
+        cat = Path(d)
+        shutil.copytree(DEFAULT_CATALOG / "hardware", cat / "hardware")
+        m = cat / "models" / "decoy"
+        m.mkdir(parents=True)
+        (m / "model.yaml").write_text(
+            "name: decoy\nbase_model:\n  repo: Other/Base\n"
+            "source:\n  provider: huggingface\n  repo: Org/Decoy\n  revision: abc\n"
+            "drafters: [speculator]\n")
+        (m / "graph.yaml").write_text(
+            "kind: ModelGraph\nname: decoy\nspeculator:\n  stack:\n    method: eagle3\n"
+            "  method: decoy_mtp\n  num_spec_tokens: 1\n")
+        run = sweep(model="decoy", stated={"speculative_method": "mtp", "num_speculative_tokens": 1,
+                                           "draft_model": "Org/Decoy"})
+        text = emit(run, {"1024:1024"}, {"1k1k"}, cat) or ""
+        ck("a run naming its source repo drafts with its own speculator despite a base_model repo",
+           "method: mtp" in text and "draft_model:" not in text)
+        bare = sweep(model="decoy", stated={"speculative_method": "mtp", "num_speculative_tokens": 1})
+        ck("the speculator's own method is read, not one nested under another of its keys",
+           "method: mtp" in (emit(bare, {"1024:1024"}, {"1k1k"}, cat) or ""))
+        nested = sweep(model="decoy", stated={"speculative_method": "eagle3", "num_speculative_tokens": 1})
+        ck("a method only nested inside the speculator block does not make the run priced",
+           emit(nested, {"1024:1024"}, {"1k1k"}, cat) is None)
+
+    # A DSpark head shipped in the target's own repository resolves to its catalog entry, whether
+    # the run names the target's repository or nothing (vLLM loads it from there).
+    for draft in ("MiniMaxAI/MiniMax-M3.1-Flash", None):
+        stated = {"speculative_method": "dspark", "num_speculative_tokens": 3}
+        if draft:
+            stated["draft_model"] = draft
+        shipped = sweep(model="minimax-m3.1-flash", stated=stated)
+        ck(f"a DSpark head in the target's repository resolves (draft {draft})",
+           engine(shipped, "draft_model") == "minimax-m3.1-flash-dspark")
     priced = sweep(model="minimax-m3", stated={"speculative_method": "mtp",
                                                "num_speculative_tokens": 3})
     ck("a speculator the graph describes still emits, with its block",

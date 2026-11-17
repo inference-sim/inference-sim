@@ -9,8 +9,8 @@ import (
 
 // The three decode-context-parallel engine knobs blis-schemas v0.2.2 made expressible --
 // dcp_comm_backend, dcp_q_replicate, cp_kv_cache_interleave_size -- priced the way vLLM
-// v0.31.0 runs them. resolve.ResolveDecodeContext and dcpDecodeCollectives carry the
-// citations; these pin the behaviour.
+// v0.31.0 runs them. blis-vllm's lowering resolves them into the plan, and
+// dcpDecodeCollectives prices what the plan states; these pin the behaviour.
 
 // The fabric pcpInputs adds must be loadable from the same catalog the fixtures read; this
 // keeps dcpVariant's multi-node layouts honest if the catalog moves.

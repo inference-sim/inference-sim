@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The Marlin NVFP4 W4A16 grouped ramp on Hopper, and whether the byte convention matters
-(inference-sim/blis-registry#51 part 3).
+(https://github.com/inference-sim/blis-registry/issues/51 part 3).
 
     python scripts/fit_marlin_nvfp4_grouped_ramp.py --data <dir> [--check]
     (or set OPERATORX_DATA; <dir> holds moe_MiniMax-M3.json)

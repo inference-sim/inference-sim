@@ -1,0 +1,15 @@
+name: muse-spark-open-dflash2
+source:
+  provider: huggingface
+  repo: RadixArk/Muse-Spark-Open-DFlash2
+  revision: 46c90f412549c472941a68382d91a99e5e6372a0
+  retrieved: 2026-11-16
+# The card's front matter names no licence and the repository holds no licence file; the API
+# record of the revision shows both (its cardData has no license, its files no LICENSE). NONE is
+# not on the allow-list, so only the config's hash is committed (X12).
+licence:
+  id: NONE
+  evidence: https://huggingface.co/api/models/RadixArk/Muse-Spark-Open-DFlash2/revision/46c90f412549c472941a68382d91a99e5e6372a0
+config:
+  sha256: 2f88d111418b4018678b8a80ed0bdf83c14b0e395cd6cc163153bce4dd8ba0ae
+targets: [muse-spark-open-816b-a42b-nvfp4]

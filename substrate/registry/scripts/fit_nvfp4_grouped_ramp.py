@@ -4,7 +4,7 @@
     python scripts/fit_nvfp4_grouped_ramp.py            # print the fits, rewrite the file
     python scripts/fit_nvfp4_grouped_ramp.py --check    # exit 1 if the file would change
 
-WHY THIS FAMILY EXISTS (inference-sim/blis-registry#51, #60 gap 1). On a part with a native
+WHY THIS FAMILY EXISTS (inference-sim/blis-registry#51, blis-registry#60 gap 1). On a part with a native
 FP4 peak, blis-latency-kernel priced an NVFP4 MoE's routed experts with the DENSE NVFP4 ramp
 (`gemm_*_nvfp4`), which is fitted on vLLM's dense linear kernel
 (FlashInferCuteDslNvFp4LinearKernel), not on the fused-MoE kernel the experts run. The

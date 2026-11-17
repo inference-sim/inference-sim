@@ -1,17 +1,19 @@
 package result
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -595,5 +597,100 @@ func TestAcceptancePropertyRecordsEveryResolution(t *testing.T) {
 		if pr := r.Validate(); !pr.OK() {
 			t.Errorf("%s builds a property the schema refuses:\n%s", c.name, pr.Error())
 		}
+	}
+}
+
+// A run whose rates were derived records the schedule it assumed, and for a natural decay the
+// fitted shape it took, with the shape's method, so the point can name an estimate
+// (inference-sim/blis-substrate#103); stated rates record none.
+func TestAcceptancePropertyRecordsADerivedSchedule(t *testing.T) {
+	rate := 0.3
+	shaped := &acceptance.ProfileSet{Kind: acceptance.Kind, Name: "s", Shapes: []acceptance.Shape{
+		{SpeculativeMethod: "dspark", DecayExponent: 1.17, FittedFrom: []string{"a.yaml"}, Rule: "fit",
+			Method: vocab.MethodCalibrated}}}
+	req := func(v *acceptance.Value) acceptance.Request {
+		return acceptance.Request{Model: "m", SpeculativeMethod: "dspark", NumSpecTokens: v.NumSpecTokens,
+			Registry: []*acceptance.ProfileSet{shaped}, CLI: v}
+	}
+	fitted := &RatesShape{Set: "s", SpeculativeMethod: "dspark", DecayExponent: 1.17, Method: vocab.MethodCalibrated}
+	for _, c := range []struct {
+		name, schedule string
+		shape          *RatesShape
+		v              *acceptance.Value
+	}{
+		{"natural", "natural_decay", fitted,
+			&acceptance.Value{NumSpecTokens: 7, AcceptanceRate: &rate, Realisation: acceptance.RealisationNatural}},
+		{"synthetic", "minimum_variance", nil,
+			&acceptance.Value{NumSpecTokens: 7, AcceptanceRate: &rate, Realisation: acceptance.RealisationSynthetic}},
+		{"stated rates", "", nil,
+			&acceptance.Value{NumSpecTokens: 2, PerPositionRates: []float64{0.5, 0.2}}},
+	} {
+		res, err := acceptance.Resolve(req(c.v))
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		w := AcceptanceProperty(res)
+		if w.RatesSchedule != c.schedule || !reflect.DeepEqual(w.RatesShape, c.shape) {
+			t.Errorf("%s: rates_schedule %q, rates_shape %+v", c.name, w.RatesSchedule, w.RatesShape)
+		}
+		out := valid()
+		out.Input.WorkloadProperties = []WorkloadProperty{w}
+		if p := out.Validate(); !p.OK() {
+			t.Errorf("%s builds a property the schema refuses:\n%s", c.name, p.Error())
+		}
+	}
+	measured := *fitted
+	measured.Method = vocab.MethodMeasured
+	steep := *fitted
+	steep.DecayExponent = 3
+	noSet := *fitted
+	noSet.Set = ""
+	for _, c := range []struct {
+		name, schedule string
+		shape          *RatesShape
+		field          string
+	}{
+		{"an unknown schedule", "step", nil, "rates_schedule"},
+		{"a decay with no shape", "natural_decay", nil, "rates_shape"},
+		{"a shape with no decay", "minimum_variance", fitted, "rates_shape"},
+		{"a shape called measured", "natural_decay", &measured, "rates_shape.method"},
+		{"an exponent out of range", "natural_decay", &steep, "rates_shape.decay_exponent"},
+		{"a shape with no set", "natural_decay", &noSet, "rates_shape.set"},
+	} {
+		out := valid()
+		out.Input.WorkloadProperties = []WorkloadProperty{{Name: SpeculativeAcceptance, Source: PropertyCommandLine,
+			Values: map[string]float64{"acceptance_length": 2}, RatesSchedule: c.schedule, RatesShape: c.shape}}
+		if p := out.Validate(); p.OK() || !strings.Contains(p.Error(), c.field) {
+			t.Errorf("%s: want a problem at %s, got %v", c.name, c.field, p.Error())
+		}
+	}
+}
+
+// A resolution that derived its rates without naming a schedule is a programming error: it is
+// never recorded as either schedule.
+func TestAPropertyOfARatesDerivedResolutionWithNoScheduleIsRefused(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("a derived resolution with no schedule was recorded")
+		}
+	}()
+	AcceptanceProperty(acceptance.Resolution{AcceptanceLength: 2, PerPositionRates: []float64{1, 0}, RatesDerived: true,
+		Layer: acceptance.LayerCLI})
+}
+
+// A value borrowed across a draft sampler or verifier records the step and names the field that
+// differed (inference-sim/blis-substrate#174).
+func TestAPropertyBorrowedAcrossSettingsValidates(t *testing.T) {
+	for _, differed := range [][]string{{"verifier"}, {"draft_sampler"}, {"draft_sampler", "verifier"}} {
+		r := valid()
+		r.Input.WorkloadProperties = []WorkloadProperty{borrowed("same_drafter_other_settings", differed, "", "s a")}
+		if p := r.Validate(); !p.OK() {
+			t.Errorf("differed %v was refused:\n%s", differed, p.Error())
+		}
+	}
+	r := valid()
+	r.Input.WorkloadProperties = []WorkloadProperty{borrowed("same_drafter_other_settings", []string{"rejection"}, "", "s a")}
+	if p := r.Validate(); p.OK() || !strings.Contains(p.Error(), "differed[0]") {
+		t.Errorf("an unknown differed field was accepted: %v", p.Error())
 	}
 }

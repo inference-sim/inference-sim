@@ -1,7 +1,7 @@
 // Package acceptance describes how far speculative decoding advances a request per
 // verification step: a profile set of measured acceptance lengths hosted in blis-registry,
 // the inline values a workload, a scenario or a command line may state instead, and the
-// resolution that picks one of them for a run (blis-schemas#65).
+// resolution that picks one of them for a run (https://github.com/inference-sim/blis-schemas/issues/65).
 //
 // The canonical quantity is the mean acceptance length AL: the tokens a request gains per
 // verification step, counting the target's bonus token, so AL lies in [1, K+1] for K
@@ -76,7 +76,11 @@ type ProfileSet struct {
 	// Caveats state what the set does not cover and how far its values travel: which
 	// categories have no curve, which hardware they were measured on, which K the image
 	// refused.
-	Caveats  []string  `yaml:"caveats,omitempty"`
+	Caveats []string `yaml:"caveats,omitempty"`
+	// Shapes state how natural acceptance spreads over the draft positions, fitted to the
+	// set's measured curves: a natural value that states no rates takes its rates from the
+	// shape for its method (NaturalRates).
+	Shapes   []Shape   `yaml:"shapes,omitempty"`
 	Profiles []Profile `yaml:"profiles"`
 }
 
@@ -98,6 +102,16 @@ type Profile struct {
 	// drafter checkpoint. It is part of what the value is a measurement of, so a profile that
 	// states none is a measurement with the model's own speculator.
 	Drafter string `yaml:"drafter,omitempty"`
+	// DraftSampler and Verifier name how the drafter sampled its drafts and how the target
+	// verified them, as the source records them (inference-sim/blis-substrate#174). Empty is
+	// unstated, never a default: a lookup matches it only against an unstated request field,
+	// and borrows across any other difference, naming the field (design D8).
+	DraftSampler DraftSampler `yaml:"draft_sampler,omitempty"`
+	Verifier     Verifier     `yaml:"verifier,omitempty"`
+	// Engine is the serving engine that measured the value, a lower-case name such as the
+	// one a deployment's engine block states; empty is unstated. It is a collection setting
+	// like the sampler and verifier (design D8).
+	Engine string `yaml:"engine,omitempty"`
 	// Architecture is the architecture of the target model, as its graph records it
 	// (global.architecture, the configuration's architectures[0]). A lookup that borrows
 	// across targets reads it to find another target of the same architecture; a profile that
@@ -130,13 +144,18 @@ type Key struct {
 	NumSpecTokens     int
 	Thinking          Thinking
 	Category          string
+	DraftSampler      DraftSampler
+	Verifier          Verifier
+	Engine            string
 }
 
 // KeyFields are the fields of a Key, as a point record's profile substitution names a field in
 // which a profile differs from the run's (design D8, §11.3): model, drafter, speculative_method,
-// num_spec_tokens, thinking and category. A test holds the list equal to the struct.
+// num_spec_tokens, thinking, category, draft_sampler, verifier and engine. A test holds the list equal to
+// the struct.
 func KeyFields() []string {
-	return []string{"model", "drafter", "speculative_method", "num_spec_tokens", "thinking", "category"}
+	return []string{"model", "drafter", "speculative_method", "num_spec_tokens", "thinking", "category",
+		"draft_sampler", "verifier", "engine"}
 }
 
 // String renders a key as model/method/k<K>/thinking-<mode>/category, the form
@@ -150,14 +169,27 @@ func (k Key) String() string {
 	if k.Drafter != "" {
 		model += "+" + k.Drafter
 	}
-	return fmt.Sprintf("%s/%s/k%d/thinking-%s/%s",
+	s := fmt.Sprintf("%s/%s/k%d/thinking-%s/%s",
 		model, k.SpeculativeMethod, k.NumSpecTokens, k.Thinking, k.Category)
+	// A sampler or verifier, when stated, follows the category, so a key without them renders
+	// as it always has.
+	if k.DraftSampler != "" {
+		s += "/draft-" + string(k.DraftSampler)
+	}
+	if k.Verifier != "" {
+		s += "/verify-" + string(k.Verifier)
+	}
+	if k.Engine != "" {
+		s += "/engine-" + k.Engine
+	}
+	return s
 }
 
 // Key returns the profile's identity.
 func (p Profile) Key() Key {
 	return Key{Model: p.Model, Drafter: p.Drafter, SpeculativeMethod: p.SpeculativeMethod,
-		NumSpecTokens: p.NumSpecTokens, Thinking: p.Thinking, Category: p.Category}
+		NumSpecTokens: p.NumSpecTokens, Thinking: p.Thinking, Category: p.Category,
+		DraftSampler: p.DraftSampler, Verifier: p.Verifier, Engine: p.Engine}
 }
 
 // Rates returns the stated per-position rates, or the minimum-variance schedule for the
@@ -175,6 +207,9 @@ func (p Profile) Rates() ([]float64, bool, error) {
 type Provenance struct {
 	// Source is the document the value was read from, such as the golden-curve file's URL.
 	Source string `yaml:"source"`
+	// SHA256 is the hex SHA-256 of the source file's bytes, so a reader can check that the
+	// file Source names is the one the value was read from. Empty means unrecorded.
+	SHA256 string `yaml:"sha256,omitempty"`
 	// Run is the job that measured it, such as a GitHub Actions run URL.
 	Run string `yaml:"run,omitempty"`
 	// Benchmark names the prompt set, such as "SPEED-Bench Qualitative".
@@ -224,6 +259,11 @@ type Value struct {
 	// Source cites where the value came from, such as the server log of the run it
 	// reproduces. It is recorded with the resolution.
 	Source string `yaml:"source,omitempty"`
+	// Realisation is how the run the value describes realised its acceptance: natural (real
+	// verification) or synthetic (the engine's forced acceptance). It decides how a value
+	// that states no per-position rates is spread: a natural one with its method's measured
+	// decay, a synthetic or unstated one with the engine's minimum-variance schedule.
+	Realisation Realisation `yaml:"realisation,omitempty"`
 }
 
 // UnmarshalYAML restores strict unknown-key checking, which a Value nested under a type

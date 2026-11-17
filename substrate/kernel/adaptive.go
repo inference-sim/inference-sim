@@ -45,9 +45,8 @@ const maxChunkBytes = 1 << 30
 // leaves k.adaptive nil, and nothing else in the kernel reads the acceptance. It runs after
 // every pricing term is settled, since the tables are this kernel's own step prices.
 func (k *Kernel) resolveAdaptive(acc *acceptance.Resolution) error {
-	s := k.engine.Speculative
 	n := k.numSpecTokens()
-	if s == nil || !s.EnableAdaptiveVerification || n == 0 {
+	if !k.low.Drafts.Adaptive || n == 0 {
 		return nil
 	}
 	if acc == nil {

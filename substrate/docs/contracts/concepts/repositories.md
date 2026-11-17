@@ -59,7 +59,12 @@ A field-layer error stops construction; rule-layer problems do not.
 here, so a simulator steps it without knowing which engine it is, and checks itself with
 `conformance/enginetest`, the suite every engine runs. It also owns the vLLM rules packs,
 which a caller such as the cost model reads through `rules.EngineRules`, and the connector
-registry, whose shape is `spec/connector`. blis-sglang does the same for SGLang.
+registry, whose shape is `spec/connector`. blis-sglang does the same for SGLang. Both take
+their shared machinery from `contracts/harness`: the `Upstream` record, the provenance and
+no-clock checks, the golangci-lint settings, and the oracle's lock, manifest and golden-trace
+checks, which each keeps as generated copies (`go run
+github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles`). Neither imports
+the other.
 
 **inference-sim** takes its step times from the cost model through `kernel.Kernel`, and its
 documents through these loaders. It computes no cost of its own.

@@ -3,6 +3,7 @@ package acceptance
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ func (s *ProfileSet) Validate() *validate.Problems {
 	if len(s.Profiles) == 0 {
 		p.Field("profiles", "a set with no profiles carries nothing")
 	}
+	validateShapes(p, s.Shapes)
 	// Two profiles with one key would leave a resolver to pick whichever came last.
 	seen := map[Key]int{}
 	for i, pr := range s.Profiles {
@@ -64,6 +66,15 @@ func (pr Profile) validate(p *validate.Problems, at string) {
 	// a drafter cannot contain '+', which Key.String uses to join it to the model.
 	if pr.Drafter != "" && (strings.ContainsAny(pr.Drafter, "+ /\t") || pr.Drafter == pr.Model) {
 		p.Field(at+".drafter", "%q must be a catalog model name other than the target's, with no '+', '/' or space; leave it out for the model's own speculator", pr.Drafter)
+	}
+	if !pr.DraftSampler.Valid() {
+		p.Field(at+".draft_sampler", "%q is not one of %v; leave it out for the engine's default", pr.DraftSampler, AllDraftSamplers())
+	}
+	if !ValidEngine(pr.Engine) {
+		p.Field(at+".engine", "%q is not an engine name: lower-case letters, digits, '_' and '-'", pr.Engine)
+	}
+	if !pr.Verifier.Valid() {
+		p.Field(at+".verifier", "%q is not one of %v; leave it out for the engine's default", pr.Verifier, AllVerifiers())
 	}
 	if pr.Provenance != nil && pr.Provenance.Date != "" {
 		if _, err := time.Parse("2006-01-02", pr.Provenance.Date); err != nil {
@@ -143,9 +154,15 @@ func (pr Profile) validateEvidence(p *validate.Problems, at string) {
 	pr.Provenance.validate(p, at+".provenance", pr.Method == vocab.MethodMeasured)
 }
 
+// sha256Pattern is a SHA-256 digest as hex.
+var sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
 func (v Provenance) validate(p *validate.Problems, at string, measured bool) {
 	if v.Source == "" {
 		p.Field(at+".source", "required: the document the value was read from")
+	}
+	if v.SHA256 != "" && !sha256Pattern.MatchString(v.SHA256) {
+		p.Field(at+".sha256", "%q is not a SHA-256: 64 lower-case hex digits", v.SHA256)
 	}
 	if v.Prompts < 0 {
 		p.Field(at+".prompts", "must not be negative")
@@ -202,6 +219,9 @@ func (v *Value) Validate() *validate.Problems {
 		return p
 	}
 	k := v.NumSpecTokens
+	if v.Realisation != "" && !v.Realisation.Valid() {
+		p.Field("realisation", "%q is not one of %v", v.Realisation, AllRealisations())
+	}
 	switch {
 	case v.AcceptanceLength != nil && v.AcceptanceRate != nil:
 		p.Errorf("acceptance_length and acceptance_rate are two spellings of one number; state one")

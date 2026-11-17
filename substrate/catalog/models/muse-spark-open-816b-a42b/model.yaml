@@ -1,9 +1,14 @@
 name: muse-spark-open-816b-a42b
+# The base checkpoint of the one InferenceX serves. Its config.json at this revision is
+# byte-identical to the unsloth/Muse-Spark-Open-816B-A42B mirror's at
+# 49cade7b0c6ed297f0434229ac67eea5f9ae1220, from which it was first committed: both trees list it
+# as git blob e6df3a846ebfcb0d55c350c1e79e7886c65b7399. The repository is gated, so the licence is
+# read from the provider's API record of the revision.
 source:
   provider: huggingface
-  repo: unsloth/Muse-Spark-Open-816B-A42B
-  revision: 49cade7b0c6ed297f0434229ac67eea5f9ae1220
-  retrieved: 2026-10-29
+  repo: meta-models/Muse-Spark-Open-816B-A42B
+  revision: 4c0e167c8b7a18e1dd5ca76763ecb5d53c6a9601
+  retrieved: 2026-11-16
 licence:
   id: LicenseRef-muse-model-license
-  evidence: https://huggingface.co/unsloth/Muse-Spark-Open-816B-A42B/raw/49cade7b0c6ed297f0434229ac67eea5f9ae1220/README.md
+  evidence: https://huggingface.co/api/models/meta-models/Muse-Spark-Open-816B-A42B/revision/4c0e167c8b7a18e1dd5ca76763ecb5d53c6a9601
