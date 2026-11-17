@@ -20,7 +20,7 @@ import (
 // Left out on both sides, each named: the MoE router (a node of its own with #228, removed from
 // the graph here so the comparison does not depend on that change); the multimodal tower, which
 // these graphs do not hold (#107 item 2); the expert biases gpt-oss stores, which the schema has
-// no field for (0.074 GiB); block-FP8 scale tensors (#122). The part is a B200, on which the
+// no field for (0.074 GiB). The part is a B200, on which the
 // kernel adds no expert padding (vLLM's MXFP4 round-up to 256 hidden and 128 intermediate,
 // fused_moe/oracle/mxfp4.py:837-879, is engine lowering and is not counted here either).
 
@@ -46,10 +46,13 @@ func perRank(mods []ckptModule, tp int) float64 {
 }
 
 const (
-	bf16  = 2.0
-	fp8   = 1.0
-	nvfp4 = 0.5 + 1.0/16 // U8 pairs and an F8_E4M3 scale per 16
-	mxfp4 = 0.5 + 1.0/32 // U8 pairs and a U8 (E8M0) scale per 32
+	bf16 = 2.0
+	fp8  = 1.0
+	// fp8block is block-quantized FP8 with its float32 scale per 128 x 128 block (weight_scale_inv
+	// F32, quantization_config.weight_block_size [128, 128]); the graph states the scale since #239.
+	fp8block = fp8 + 4.0/(128*128)
+	nvfp4    = 0.5 + 1.0/16 // U8 pairs and an F8_E4M3 scale per 16
+	mxfp4    = 0.5 + 1.0/32 // U8 pairs and a U8 (E8M0) scale per 32
 )
 
 // gptOSS120B: openai/gpt-oss-120b@b5c939de. quant_method mxfp4 reaches the routed experts only
@@ -94,15 +97,16 @@ func miniMaxM25NVFP4() []ckptModule {
 	}
 }
 
-// miniMaxM25: MiniMaxAI/MiniMax-M2.5@f710177d. FP8 block-quantized attention and experts;
+// miniMaxM25: MiniMaxAI/MiniMax-M2.5@f710177d. FP8 block-quantized attention and experts, each
+// with its float32 block scale;
 // the head is BF16 in the header ([200064, 3072]), and Fp8Config builds ParallelLMHead
 // unquantized (quantization/fp8.py:177-209@4ba787ec).
 func miniMaxM25() []ckptModule {
 	const L, H, E, I, V = 62, 3072, 256, 1536, 200064
 	q, kv := 48*128, 8*128
 	return []ckptModule{
-		{L * float64(H*(q+2*kv)+q*H), fp8, false},
-		{L * E * 3 * float64(I) * H, fp8, false},
+		{L * float64(H*(q+2*kv)+q*H), fp8block, false},
+		{L * E * 3 * float64(I) * H, fp8block, false},
 		{V * H, bf16, false}, {V * H, bf16, false},
 	}
 }
