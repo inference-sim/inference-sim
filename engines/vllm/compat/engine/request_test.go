@@ -23,7 +23,7 @@ func TestRequest_String_IncludesState(t *testing.T) {
 	assert.Contains(t, s, "queued")
 }
 
-// TestRequestIsMultimodal verifies the IsMultimodal derivation (GAP-4, #1264):
+// TestRequestIsMultimodal verifies the IsMultimodal derivation (GAP-4, the multimodal encode pool):
 // the method returns true iff any per-modality token count is > 0.
 func TestRequestIsMultimodal(t *testing.T) {
 	cases := []struct {

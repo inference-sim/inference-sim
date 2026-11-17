@@ -13,7 +13,7 @@ import (
 // override the run's (cluster.PoolOverrides), each read from the pool's own kernel and its
 // scenario pool. vLLM sets these per engine, so prefill and decode pools may differ. The host
 // copies them into its per-pool overrides; the values and the rules that choose them are the
-// engine's (#2021 B2, verification pass 3, gap 2).
+// engine's (inference-sim issue 2021 B2, verification pass 3, gap 2).
 type PoolSettings struct {
 	TP                    int
 	GPU                   string

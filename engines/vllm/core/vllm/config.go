@@ -867,7 +867,7 @@ func fullCUDAGraphs(mode string) bool {
 }
 
 // checkRules runs the v0.33.0 rules pack (rules/v0_33) over the engine block, the startup check
-// #2021 B11 step 2 gives the engine: the values the release accepts and the refusals it makes.
+// inference-sim issue 2021 B11 step 2 gives the engine: the values the release accepts and the refusals it makes.
 // The block is one pool's engine, and it is all the engine is given: the model graph, the cluster
 // and the pool's parallel widths other than pipeline_parallel_size are not in it. So a refusal
 // stands only where the block decides it whatever those widths are: the pack runs once for each

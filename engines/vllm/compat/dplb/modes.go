@@ -5,7 +5,7 @@ package dplb
 // How a data-parallel replica's requests reach its ranks, as vLLM's serve flags choose
 // (vllm/engine/arg_utils.py:536-538, :1225-1242; EngineCoreClient.make_async_mp_client,
 // vllm/v1/engine/core_client.py:155-166 at v0.31.0). The cluster asks these rules and keeps the
-// endpoints, the replica grouping and the routing (#2021 B2, verification pass 4, gap 3).
+// endpoints, the replica grouping and the routing (inference-sim issue 2021 B2, verification pass 4, gap 3).
 //   - Internal ("" or "internal", vLLM's default) and Hybrid (--data-parallel-hybrid-lb): one
 //     endpoint per replica, whose front-end balances requests over its ranks (DPLBAsyncMPClient).
 //     Hybrid balances over one node's ranks, which is the whole replica when it fits a node.

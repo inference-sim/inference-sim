@@ -1,7 +1,7 @@
 // Moved from inference-sim/sim/dp_lockstep.go at 63b211633e587a48a650922a2a2c2c2927199533.
 
 // A data-parallel wave's continuation rule: whether a lockstep group runs another step. It
-// moved here from inference-sim's host (LockstepGroup.step, #2021 B2 verification gap 6),
+// moved here from inference-sim's host (LockstepGroup.step, inference-sim issue 2021 B2 verification gap 6),
 // which keeps the clocks, the arming of the step event and the event order, and asks this
 // type whether the wave goes on.
 package engine
