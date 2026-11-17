@@ -1036,6 +1036,11 @@ func (e *Engine) Snapshot() engine.State {
 // prefix-cache changes in Result.KVEvents.
 func (e *Engine) EnableKVEvents() { e.s.EnableKVEvents() }
 
+// KVEventsCarryIdentity reports that the engine's stored blocks name the adapter and the extra
+// keys that keyed their hashes (engine.KVEvent LoRAName, LoRAID and ExtraKeys), so a router
+// indexing them can keep an adapter's blocks apart from the base model's.
+func (e *Engine) KVEventsCarryIdentity() bool { return true }
+
 // KVEventsRefusal reports why a router cannot index this engine's KV events, nil when it can. The
 // router keys every pod's blocks at the engine's block size (llm-d's indexer takes one block size;
 // the simulator's gateway is told the scenario's block_size). A full-attention group at another
