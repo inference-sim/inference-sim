@@ -119,7 +119,7 @@ func TestCommitsStrictReadsSignaturesFromGit(t *testing.T) {
 		t.Setenv("GIT_CONFIG_KEY_1", "gpg.ssh.allowedSignersFile")
 		t.Setenv("GIT_CONFIG_VALUE_1", signers)
 		var w bytes.Buffer
-		err := run([]string{"commits", "-strict", "-maintainer", maintainer, "-base", base, "-head", "HEAD"}, &w)
+		err = run([]string{"commits", "-strict", "-maintainer", maintainer, "-base", base, "-head", "HEAD"}, &w)
 		return w.String(), err
 	}
 	if out, err := run1("HEAD~1"); err != nil {
