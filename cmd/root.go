@@ -933,7 +933,7 @@ var runCmd = &cobra.Command{
 			SharedInstances:                prefillDecodeInstances,
 			EncodeInstances:                encodeInstances,
 			InstanceEndpoint:               kernelPD.instanceEndpoint(),
-			PeerEndpoint:                   kernelPD.instanceEndpoint(),
+			PeerEndpoint:                   peerEndpoint(kernelPD, kernelOpened),
 			PeerMessageLatency:             peerMessageLatencyUs,
 			PDTransferContention:           pdTransferContention,
 			PDPrefillKVHold:                kernelPD.holdsPrefillKV(),
