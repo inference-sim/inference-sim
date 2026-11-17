@@ -82,6 +82,12 @@ The nightly of `1.3.0.dev20260614` is not covered: its window holds a commit
 decide the mode, so what is shown at the window's other commits is not shown for the build. A run
 on any other Dynamo build stays `router_unsupported` until an entry cites it.
 
+The `vllm-router-consistent_hash` entry covers vLLM Router `0.1.14`, a release (the commit of the
+project's tag `v0.1.14`), the build InferenceX installs for its AgentX runs. It maps to `none`, so
+a run behind it resolves to `no_policy`: the table knows the router and says why no policy of
+llm-d's router is close enough. A run on another build of vLLM Router, such as a dated nightly,
+is `revision_not_covered`.
+
 Policies:
 
 --8<-- "docs/contracts/generated/enum/routertable.Policy.md"
