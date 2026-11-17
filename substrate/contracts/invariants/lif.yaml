@@ -291,14 +291,14 @@
   - repo: blis-substrate
     check: The release bot, which writes the notes from the release's changes
     runs: release
-    status: new
+    status: ci
     test: 'tools/release: Notes'
     known_bad: 'tools/release: TestReviewSetIsPlannedBottomUp'
   review: null
-  status: new
+  status: ci
   target:
     status: ci
-    milestone: 1
+    milestone: null
 - id: LIF-5
   section: §14.2
   statement: >-

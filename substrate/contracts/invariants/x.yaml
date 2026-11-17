@@ -875,14 +875,14 @@
   - repo: blis-substrate
     check: Release bot (§13.6)
     runs: release
-    status: new
+    status: ci
     test: tools/release
     known_bad: 'tools/release: TestReviewSetIsPlannedBottomUp'
   review: null
-  status: new
+  status: ci
   target:
     status: ci
-    milestone: 1
+    milestone: null
 - id: X11
   section: §4.1
   statement: >-
@@ -2215,14 +2215,14 @@
   - repo: blis-substrate
     check: The release bot
     runs: release
-    status: new
+    status: ci
     test: 'tools/release: CheckBugs'
     known_bad: 'tools/release: TestRefusals'
   review: null
-  status: new
+  status: ci
   target:
     status: ci
-    milestone: 1
+    milestone: null
 - id: X28
   section: §4.1
   statement: >-
