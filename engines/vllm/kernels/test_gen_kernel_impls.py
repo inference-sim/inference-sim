@@ -481,5 +481,130 @@ class GenKernelImplsTest(unittest.TestCase):
             self.assertEqual(gen.main(args + ["--check", out]), 1)
 
 
+
+MOE_VLLM = {
+    "vllm/moe/oracle.py": """
+        class MoeBackend(Enum):
+            TRI = "TRI"
+            FAST = "FAST"
+            ROCM = "ROCM"
+            LATER = "LATER"
+
+        def _get_priority_backends():
+            return [MoeBackend.FAST, MoeBackend.TRI, MoeBackend.LATER]
+    """,
+    "vllm/moe/tri_experts.py": """
+        from vllm.moe.kern import invoke_tri, pick_config
+
+        def run(x):
+            return invoke_tri(x, pick_config(x))
+    """,
+    "vllm/moe/kern.py": "def invoke_tri(x, c):\n    return x\n\n\ndef pick_config(x):\n    return 1\n",
+    "vllm/moe/configs/a.json": "{}\n",
+    "vllm/moe/fast_experts.py": """
+        from fastlib import fused_moe
+
+        def run(x):
+            return fused_moe(x)
+    """,
+}
+
+
+def moe_classification(commit, seen=None):
+    return {
+        "upstream": {"tag": "v9.9.9", "commit": commit},
+        "engine_modules": ["vllm.moe.kern"],
+        "seen": seen or {},
+        "formats": [{
+            "selector": {"file": "vllm/moe/oracle.py", "enum": "MoeBackend", "priorities": "_get_priority_backends",
+                         "selection": "moe backend {backend}"},
+            "backends": {
+                "TRI": {"status": "listed", "experts": "vllm/moe/tri_experts.py",
+                        "not_kernels": {"pick_config": "picks a tile configuration"}},
+                "FAST": {"status": "listed", "experts": "vllm/moe/fast_experts.py"},
+                "ROCM": {"status": "not_cuda", "reason": "ROCm"},
+                "LATER": {"status": "gap", "issue": "org/repo#9"},
+            },
+            "kernels": [
+                {"backend": "TRI", "library": "vllm-csrc", "variant": "tri_moe", "call": "invoke_tri",
+                 "archs": ["sm_90a"], "compiler": "triton",
+                 "hash": {"source": ["vllm/moe/kern.py", "vllm/moe/configs/"], "engine_source": ["vllm/moe/tri_experts.py"]}},
+                {"backend": "FAST", "library": "fastlib", "variant": "fused_moe", "call": "fused_moe",
+                 "archs": ["sm_90a"], "compiler": "nvcc", "hash": {"source": ["csrc/decode.cu"]}},
+            ],
+        }],
+    }
+
+
+class GenMoEKernelImplsTest(unittest.TestCase):
+    """The moe.grouped_gemm rows, from kernels/<tag>/moe.json and vLLM's MoE oracle, over the attention
+    fixture's trees (its helpers, not its tests)."""
+
+    tearDown, generate, refused, git, row = (GenKernelImplsTest.tearDown, GenKernelImplsTest.generate,
+                                            GenKernelImplsTest.refused, GenKernelImplsTest.git, GenKernelImplsTest.row)
+
+    def setUp(self):
+        GenKernelImplsTest.setUp(self)
+        for rel, body in MOE_VLLM.items():
+            p = os.path.join(self.vllm, rel)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w") as f:
+                f.write(textwrap.dedent(body).lstrip("\n"))
+        commit_all(self.vllm)
+        self.commit = self.git(self.vllm, "rev-parse", "HEAD")
+        self.cls = classification(self.commit)
+        self.cls["moe"] = moe_classification(self.commit)
+
+    def moe_rows(self, t):
+        return sorted((r["selection"], r["library"], r["library_version"], r["variant"], r["target_arch"])
+                      for r in t["implementations"] if r["primitive"] == "moe.grouped_gemm")
+
+    def test_each_listed_moe_backend_is_a_row_and_a_gap_is_listed(self):
+        t = self.generate()
+        self.assertIn("moe.grouped_gemm", t["primitives"])
+        self.assertEqual(self.moe_rows(t), [
+            ("moe backend FAST", "fastlib", "1.2.3", "fused_moe", "sm_90a"),
+            ("moe backend TRI", "vllm-csrc", self.commit, "tri_moe", "sm_90a"),
+        ])
+        self.assertIn({"primitive": "moe.grouped_gemm", "selection": "moe backend LATER", "issue": "org/repo#9"}, t["gaps"])
+        tri = self.row(t, "moe.grouped_gemm", "tri_moe", "sm_90a")
+        configs = self.git(self.vllm, "rev-parse", "HEAD:vllm/moe/configs")
+        self.assertIn(f"vllm/moe/configs tree {configs}", tri["hash_inputs"],
+                      "the tile configurations the kernel reads are part of its build")
+
+    def test_an_unclassified_moe_backend_or_import_is_refused(self):
+        cls = copy.deepcopy(self.cls)
+        del cls["moe"]["formats"][0]["backends"]["LATER"]
+        self.assertIn("MoeBackend.LATER has no status", self.refused(cls))
+        cls = copy.deepcopy(self.cls)
+        del cls["moe"]["formats"][0]["backends"]["TRI"]["not_kernels"]["pick_config"]
+        self.assertIn("imports pick_config", self.refused(cls))
+
+    def test_a_ranked_moe_backend_is_not_marked_off_cuda_without_its_gate(self):
+        cls = copy.deepcopy(self.cls)
+        cls["moe"]["formats"][0]["backends"]["LATER"] = {"status": "not_cuda", "reason": "x"}
+        self.assertIn("ranks it", self.refused(cls))
+
+    def test_a_seen_engine_build_is_hashed_from_its_own_tree(self):
+        old = os.path.join(self.tmp.name, "vllm-old")
+        os.makedirs(old)
+        files = {**VLLM, **MOE_VLLM}
+        files["cmake/external_projects/other.cmake"] = files["cmake/external_projects/other.cmake"].format(
+            other_commit=self.other_commit)
+        files["vllm/moe/kern.py"] = "def invoke_tri(x, c):\n    return x + 0\n\n\ndef pick_config(x):\n    return 1\n"
+        old_commit = git_tree(old, files, tag="v9.0.0")
+        cls = copy.deepcopy(self.cls)
+        cls["moe"]["seen"] = {"vllm-csrc": [{"version": old_commit, "tag": "v9.0.0", "seen_in": "a run record"}]}
+        self.sources[f"vllm-csrc@{old_commit}"] = old
+        t = self.generate(cls)
+        rows = [r for r in t["implementations"] if r["variant"] == "tri_moe"]
+        self.assertEqual(sorted(r["library_version"] for r in rows), sorted([self.commit, old_commit]))
+        self.assertNotEqual(rows[0]["code_hash"], rows[1]["code_hash"], "two builds of different source share a hash")
+        self.assertIn({"name": "vllm-csrc", "version": old_commit, "pinned": False, "pin": "a run record",
+                       "origin": f"https://example.org/vllm {old_commit}"}, t["libraries"])
+        cls["moe"]["seen"]["vllm-csrc"][0]["version"] = self.commit
+        self.sources[f"vllm-csrc@{self.commit}"] = old
+        self.assertIn("names vLLM v9.0.0 as", self.refused(cls))
+
 if __name__ == "__main__":
     unittest.main()
