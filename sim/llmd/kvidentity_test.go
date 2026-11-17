@@ -97,6 +97,32 @@ func TestKVEventBatch_CarriesTheStoredBlocksIdentity(t *testing.T) {
 	}
 }
 
+// TestKVEventBatch_RemovalNamesTheGroupOfTheStore: the router counts a grouped store apart from an
+// ungrouped one, so a removal that names no group leaves the block indexed after the engine has
+// evicted it (the precise-prefix router then routes to caches that no longer hold the prefix: the
+// Muse-Spark routing test measured it worse than load-only routing). Removals of different groups
+// are separate runs.
+func TestKVEventBatch_RemovalNamesTheGroupOfTheStore(t *testing.T) {
+	g := &Gateway{canon: newPromptCanon(1, 4, 100)}
+	h := func(c byte) string { return hashBlock(string(c), []sim.TokenID{1, 2, 3, 4}) }
+	batch := g.kvEventBatch(5, []sim.KVEvent{
+		{Removed: true, Hash: h('a'), GroupIdx: intp(0)},
+		{Removed: true, Hash: h('b'), GroupIdx: intp(0)},
+		{Removed: true, Hash: h('c'), GroupIdx: intp(1)},
+		{Removed: true, Hash: h('d')},
+	})
+	if len(batch.Events) != 3 {
+		t.Fatalf("got %d events, want one removal run per group (0, 1, none)", len(batch.Events))
+	}
+	want := []*int{intp(0), intp(1), nil}
+	for i, w := range want {
+		r, ok := batch.Events[i].(embed.BlockRemoved)
+		if !ok || !intPtrEq(r.GroupIdx, w) {
+			t.Errorf("event %d = %+v, want a removal of group %v", i, batch.Events[i], w)
+		}
+	}
+}
+
 // identityEngine is an engine whose stored blocks carry the adapter of the request that stored
 // them, as blis-vllm's v0.33.0 engine publishes (requests run one at a time in the test, so the
 // request a step serves is the last one added).

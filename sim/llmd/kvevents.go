@@ -220,11 +220,13 @@ func (g *Gateway) kvEventBatch(at int64, events []sim.KVEvent) embed.KVBatch {
 			continue
 		}
 		if e.Removed {
-			if stored != nil || (removed != nil && runTier != e.Tier) {
+			if stored != nil || (removed != nil && (runTier != e.Tier || !intPtrEq(removed.GroupIdx, e.GroupIdx))) {
 				flush()
 			}
 			if removed == nil {
-				removed = &embed.BlockRemoved{Tier: e.Tier}
+				// The router counts a grouped store apart from an ungrouped one, so a removal must name the
+				// group the store did, or the block stays indexed after the engine has evicted it.
+				removed = &embed.BlockRemoved{Tier: e.Tier, GroupIdx: e.GroupIdx}
 				runTier = e.Tier
 			}
 			removed.Hashes = append(removed.Hashes, engineKey(e.Hash))
