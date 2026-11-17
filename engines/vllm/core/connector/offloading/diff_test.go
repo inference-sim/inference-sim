@@ -189,7 +189,7 @@ func configure(t *testing.T, sc scenario) setup {
 	if c.AsyncScheduling || pp > 1 {
 		queue = engine.MaxConcurrentBatches(pp, c.AsyncScheduling, v2)
 	}
-	s, err := sched.New(sched.Config{
+	s, err := sched.New(sched.Config{KVTransfer: true, // the connector this test installs (kv_transfer_config)
 		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: c.MaxModelLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 		EnableChunkedPrefill: chunked, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: caching,
@@ -912,5 +912,24 @@ func TestCapabilitiesAndTheDrafterGroupRefusal(t *testing.T) {
 	if _, err := New(Config{Groups: []Group{{BlockSize: 4}, {BlockSize: 8}}, TokensPerHash: 4, NumChunks: 4}); err == nil ||
 		!strings.Contains(err.Error(), GroupIssue) {
 		t.Errorf("groups of several block sizes: %v, want refused with %s", err, GroupIssue)
+	}
+}
+
+// A drafter whose method drops its last block (EAGLE-3) on a scheduler with prefix caching is
+// built with lookahead block hashes unless the engine states a kv_transfer_config
+// (vllm/config/vllm.py:678-692@4ba787ec); the offloading connector is one, so the scenario
+// must run. The seeded fuzz corpus draws EAGLE-3 scenarios from oracle/gen_offloading_fuzz.py.
+func TestAnEagle3ScenarioWithPrefixCachingRunsBesideTheConnector(t *testing.T) {
+	var sc scenario
+	readJSON(t, "../../../oracle/scenarios/offloading/offloading-async.json", &sc)
+	caching := true
+	sc.Config.EnablePrefixCaching = &caching
+	sc.Config.Speculative = &struct {
+		Method    string `json:"method"`
+		NumTokens int    `json:"num_speculative_tokens"`
+		Draft     string `json:"draft"`
+	}{Method: "eagle3", NumTokens: 2, Draft: "llama-eagle"}
+	if tr := run(t, sc); len(tr.Steps) == 0 {
+		t.Fatal("the scenario ran no step")
 	}
 }
