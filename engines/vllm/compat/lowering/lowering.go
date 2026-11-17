@@ -27,6 +27,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/contracts/units"
 
+	blisvllm "github.com/inference-sim/blis-vllm"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 )
 
@@ -543,7 +544,9 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 		p.MoE.RedundantExperts = e.NumRedundantExperts
 	}
 	p.MoE.Dispatch = dispatchKernel(backend)
-	p.MoE.Experts = expertsKernel(g, &c, eng.MoEBackend)
+	if p.MoE.Experts, err = expertsKernel(g, &c, eng.MoEBackend); err != nil {
+		return nil, err
+	}
 	p.MoE.Fused = in.Rules.MegaMoEBackend(eng.MoEBackend)
 
 	// The packed latent cell: the stated layout, or on a DSA model the one its backend
@@ -716,9 +719,9 @@ func lowerEngram(in Input, pool deployment.Pool, eng vllmsettings.Settings, lay 
 // taken as stated (:274-282). A stated backend outside those two is named by its own word, and
 // the cost model prices it by weight format and records that. Any other format or part states
 // none.
-func expertsKernel(g *model.Graph, c *lowerContext, stated string) plan.KernelImpl {
+func expertsKernel(g *model.Graph, c *lowerContext, stated string) (plan.KernelImpl, error) {
 	if !c.hopper() || stackRoutedExperts(g) == 0 || !blockFP8Experts(g) {
-		return plan.KernelImpl{}
+		return plan.KernelImpl{}, nil
 	}
 	// The engine normalises the name before it validates it (vllm/config/kernel.py
 	// _normalize_moe_backend): lower case, dashes as underscores.
@@ -729,13 +732,31 @@ func expertsKernel(g *model.Graph, c *lowerContext, stated string) plan.KernelIm
 			backend = "flashinfer_cutlass"
 		}
 	}
+	// The build the release runs, from its kernel table (kernel_impls.json): the coefficient
+	// lookup binds the routed term's ramp to it (VAL-8). A part the table does not cover states
+	// the kernel unidentified, and the cost model reads no keyed entry for it.
+	var member, library, variant string
 	switch backend {
 	case "triton":
-		return plan.ExpertsTriton
+		member, library, variant = "TRITON", "vllm-csrc", plan.ExpertsTriton.Variant
 	case "flashinfer_cutlass":
-		return plan.ExpertsFlashInferCutlass
+		member, library, variant = "FLASHINFER_CUTLASS", plan.ExpertsFlashInferCutlass.Library, plan.ExpertsFlashInferCutlass.Variant
+	default:
+		return plan.KernelImpl{Library: backend}, nil
 	}
-	return plan.KernelImpl{Library: backend}
+	major, minor := capability(c.chip)
+	return blisvllm.Implementation(plan.PrimMoEGroupedGEMM, blisvllm.MoESelection("fp8", member), library, variant, major, minor)
+}
+
+// capability is the chip's compute capability, major and minor; 0, 0 when it states none.
+func capability(chip hardware.Chip) (int, int) {
+	major, ok := chip.CapabilityMajor()
+	if !ok {
+		return 0, 0
+	}
+	_, m, _ := strings.Cut(chip.ComputeCapability, ".")
+	minor, _ := strconv.Atoi(m)
+	return major, minor
 }
 
 // blockFP8Experts reports whether every routed expert of the stack stores block-scaled FP8 weights:
