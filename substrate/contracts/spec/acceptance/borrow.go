@@ -347,7 +347,7 @@ func build(step Step, key Key, g *group, v value, req Request) Resolution {
 	}
 	p := v.primary.p
 	r := Resolution{AcceptanceLength: v.al, PerPositionRates: rates, RatesDerived: derived,
-		Set: v.primary.set, Profile: p, Step: step, Differed: differed, KRule: v.rule}
+		Schedule: scheduleOf(derived), Set: v.primary.set, Profile: p, Step: step, Differed: differed, KRule: v.rule}
 	for _, h := range v.used {
 		r.Used = append(r.Used, Used{Set: h.set, Profile: h.p})
 	}

@@ -36,6 +36,18 @@ func AcceptanceProperty(r acceptance.Resolution) WorkloadProperty {
 	default:
 		w.Source = PropertyProfile
 	}
+	if r.RatesDerived {
+		if r.Schedule == "" {
+			// Every resolution that derives rates names its schedule (acceptance.Resolve); one
+			// that does not is a programming error, never recorded as either schedule.
+			panic("result.AcceptanceProperty: a resolution derived its rates and names no schedule")
+		}
+		w.RatesSchedule = string(r.Schedule)
+		if r.Shape != nil {
+			w.RatesShape = &RatesShape{Set: r.ShapeSet, SpeculativeMethod: r.Shape.SpeculativeMethod,
+				DecayExponent: r.Shape.DecayExponent, Method: r.Shape.Method}
+		}
+	}
 	if r.Profile == nil {
 		return w // a stated value: it came from no profile
 	}
