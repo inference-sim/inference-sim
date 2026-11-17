@@ -66,6 +66,9 @@ def main() -> None:
     if vllm_root not in sys.path:
         sys.path.append(vllm_root)
     os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
+    # The runner is vLLM's own default, as a real CUDA run gets it: unstated VLLM_USE_V2_MODEL_RUNNER
+    # is V2 wherever Triton is installed (vllm/config/vllm.py:731-767@4ba787ec), as the oracle's
+    # triton-cpu is, and core/vllm TestEngineArgsAgainstVLLM's engine block states V2 to match.
     here = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, here)
     from vllm.engine.arg_utils import EngineArgs  # noqa: E402

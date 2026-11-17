@@ -84,9 +84,11 @@ type childConfig struct {
 // childExtra holds the OffloadingConnector's kv_connector_extra_config keys the engine models, under
 // vLLM's names (offloading/config.py:98-134, cpu/spec.py:96-139, kv_offload/base.py:617-623@5df63a72).
 type childExtra struct {
-	SpecName          string `yaml:"spec_name,omitempty"`
-	CPUBytesToUse     int64  `yaml:"cpu_bytes_to_use,omitempty"`
-	BlockSize         int    `yaml:"block_size,omitempty"`
+	SpecName      string `yaml:"spec_name,omitempty"`
+	CPUBytesToUse int64  `yaml:"cpu_bytes_to_use,omitempty"`
+	BlockSize     int    `yaml:"block_size,omitempty"`
+	// BlocksPerChunk is blocks_per_chunk (offloading/config.py:121-135@4ba787ec), as offloadConfig's.
+	BlocksPerChunk    *int   `yaml:"blocks_per_chunk,omitempty"`
 	EvictionPolicy    string `yaml:"eviction_policy,omitempty"`
 	OffloadPromptOnly *bool  `yaml:"offload_prompt_only,omitempty"`
 	// The keys that choose the code the offloading connector runs, read so that what vLLM would load
@@ -205,7 +207,7 @@ func checkConnectorPair(c *connectorConfig, off *offloadConfig) (*offloadConfig,
 	for _, d := range []struct {
 		key    string
 		stated bool
-	}{{"cpu_bytes", off.CPUBytes != 0}, {"block_size", off.BlockSize != 0}, {"eviction_policy", off.EvictionPolicy != ""},
+	}{{"cpu_bytes", off.CPUBytes != 0}, {"block_size", off.BlockSize != 0}, {"blocks_per_chunk", off.BlocksPerChunk != nil}, {"eviction_policy", off.EvictionPolicy != ""},
 		{"offload_prompt_only", off.OffloadPromptOnly != nil}, {"spec", off.Spec != ""},
 		{"spec_module_path", off.SpecModulePath != ""}, {"cache_policy_module_path", off.CachePolicyModulePath != ""},
 		{"secondary_tiers", off.SecondaryTiers != nil}, {"backpressure", off.Backpressure != nil}} {
@@ -219,6 +221,7 @@ func checkConnectorPair(c *connectorConfig, off *offloadConfig) (*offloadConfig,
 			"(vllm/v1/kv_offload/cpu/spec.py:97-101@5df63a72)", offloadChild)
 	}
 	merged.Spec, merged.CPUBytes, merged.BlockSize = x.SpecName, x.CPUBytesToUse, x.BlockSize
+	merged.BlocksPerChunk = x.BlocksPerChunk
 	merged.EvictionPolicy, merged.OffloadPromptOnly = x.EvictionPolicy, x.OffloadPromptOnly
 	merged.SpecModulePath, merged.CachePolicyModulePath = x.SpecModulePath, x.CachePolicyModulePath
 	merged.SecondaryTiers, merged.Backpressure = x.SecondaryTiers, x.Backpressure

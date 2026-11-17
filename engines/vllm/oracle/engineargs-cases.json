@@ -369,7 +369,7 @@
    "expect": "watermark -0.1 is outside [0, 1)"
   },
   {
-   "name": "refused-async-with-ngram-stated",
+   "name": "not-modelled-async-with-ngram-stated",
    "args": {
     "max_model_len": 512,
     "block_size": 16,
@@ -380,8 +380,7 @@
      "method": "ngram",
      "num_speculative_tokens": 3
     }
-   },
-   "expect": "async_scheduling is only supported with EAGLE"
+   }
   },
   {
    "name": "refused-negative-max-loras",
