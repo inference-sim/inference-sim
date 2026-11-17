@@ -529,8 +529,14 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 		} else if config.AutoscalerAnalyzer.Kind == AnalyzerKindThreshold {
 			analyzer = NewThresholdAnalyzer(config.AutoscalerAnalyzer, analyzerCfg.MinReplicas)
 		}
+		var collector Collector = &DefaultCollector{}
+		if config.CollectorWindowSize < 0 {
+			cs.startupErr = fmt.Errorf("autoscaler collector_window_size must be >= 0, got %d", config.CollectorWindowSize)
+		} else if config.CollectorWindowSize > 0 {
+			collector = NewWindowedCollector(collector, config.CollectorWindowSize, cs.instanceTotals)
+		}
 		cs.autoscaler = newAutoscalerPipeline(
-			&DefaultCollector{},
+			collector,
 			analyzer,
 			&UnlimitedEngine{},
 			NewDirectActuator(cs),

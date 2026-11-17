@@ -134,6 +134,10 @@ type DeploymentConfig struct {
 	// AutoscalerAnalyzer selects the analyzer (inference-sim#2063): v2-saturation (the default, whose
 	// thresholds are AutoscalerAnalyzerConfig) or threshold, a target-value rule on one signal.
 	AutoscalerAnalyzer AnalyzerSelection `yaml:"autoscaler_analyzer_selection,omitempty"`
+	// CollectorWindowSize, above 0, makes the autoscaler's collector a WindowedCollector that keeps
+	// that many ticks of readings and fills the latency fields from per-tick deltas (#1141). 0, the
+	// default, uses the plain collector.
+	CollectorWindowSize int `yaml:"collector_window_size,omitempty"`
 }
 
 // resolveConfigForRole returns the configuration an instance in the given pool role is built

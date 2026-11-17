@@ -87,6 +87,8 @@ type AutoscalerBundleConfig struct {
 	ScaleDownStabilizationWindowUs float64              `yaml:"scale_down_stabilization_window_us"`
 	HPAScrapeDelay                 DelayBundleSpec      `yaml:"hpa_scrape_delay"`
 	Analyzer                       AnalyzerBundleConfig `yaml:"analyzer"`
+	// CollectorWindowSize keeps that many ticks of readings for the analyzer (#1141); 0 = none.
+	CollectorWindowSize int `yaml:"collector_window_size"`
 }
 
 // removedBundleKeys are the top-level keys a bundle no longer takes, each with what states its
