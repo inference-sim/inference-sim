@@ -4,8 +4,8 @@ go 1.27.2
 
 require (
 	github.com/go-logr/logr v1.4.4
-	github.com/inference-sim/blis-substrate v0.14.2-0.20261117011026-7794a6c6277b // TEMPORARY: inference-sim/blis-substrate branch m3/integration, until it is released
-	github.com/inference-sim/blis-vllm v0.32.1-0.20261117021439-0f211731f4fe // TEMPORARY: inference-sim/blis-vllm branch m3/integration (vLLM v0.33.0), until v0.33.0-blis.1 is tagged (item pin: m3/pd-unequal-dp, blis-vllm#206)
+	github.com/inference-sim/blis-substrate v0.14.2-0.20261117064636-bfa2cb3b20b0 // TEMPORARY: inference-sim/blis-substrate branch m3/integration, until it is released
+	github.com/inference-sim/blis-vllm v0.32.1-0.20261117073624-bc5a9a97ee7b // TEMPORARY: inference-sim/blis-vllm branch m3/integration (vLLM v0.33.0), until v0.33.0-blis.1 is tagged
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
@@ -16,6 +16,7 @@ require (
 	k8s.io/api v0.37.1
 	k8s.io/apimachinery v0.37.1
 	pgregory.net/rapid v1.2.0
+	sigs.k8s.io/controller-runtime v0.25.2
 	sigs.k8s.io/yaml v1.6.0
 )
 
@@ -119,7 +120,6 @@ require (
 	k8s.io/streaming v0.37.1 // indirect
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.36.0 // indirect
-	sigs.k8s.io/controller-runtime v0.25.2 // indirect
 	sigs.k8s.io/gateway-api-inference-extension v1.6.2 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
@@ -129,7 +129,7 @@ require (
 // The one permitted replace (design X11): the llm-d router fork keeps upstream's module path, so
 // a replace is the only way to substitute it (docs/contributing/llm-d-router-fork.md). A release
 // names a -blis.N tag, and this one names v1.0.0-blis.4.
-replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.4
+replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.4.0.20261117140125-6acd0a87e875
 
 // blis-vllm's plain tag v0.32.0 predates the -blis.N rule (design §14.1) and would outrank every
 // -blis.N tag in version selection; the main module's exclude keeps any requirement from
