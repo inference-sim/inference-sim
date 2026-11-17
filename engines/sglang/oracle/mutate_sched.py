@@ -1,8 +1,9 @@
 # Original to blis-sglang.
 """Mutation check of core/sched (S13): each mutant changes one decision of the port; the replay of
 SGLang's traces (TestStepsEqualSGLangs) must fail on every one. Usage: python3 -I oracle/mutate_sched.py [index...]"""
-import subprocess, shutil, sys, os
+import subprocess, shutil, sys, os, re
 ROOT=os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","core","sched")
+GOVER="go"+re.search(r"^go (\S+)",open(os.path.join(ROOT,"..","..","go.mod")).read(),re.M).group(1)  # the toolchain go.mod names
 M=[
 ("budget.go","float64(totalTokens) < b.remainingTotal()","float64(totalTokens) <= b.remainingTotal()","admission boundary"),
 ("budget.go","return b.remainingTotal() > 0 && b.remainingCurrent() > 0","return b.remainingTotal() > 0","capacity ignores current"),
@@ -64,7 +65,7 @@ for i,(f,a,b,name) in enumerate(M):
     if a not in src: res.append((i,name,"NOT APPLIED")); continue
     open(p,"w").write(src.replace(a,b,1))
     try:
-        r=subprocess.run(["go","test","./core/sched/","-run","TestStepsEqual"],cwd=ROOT,env={**os.environ,"GOTOOLCHAIN":"go1.27.2"},capture_output=True,text=True,timeout=300)
+        r=subprocess.run(["go","test","./core/sched/","-run","TestStepsEqual"],cwd=ROOT,env={**os.environ,"GOTOOLCHAIN":GOVER},capture_output=True,text=True,timeout=300)
         out="caught" if r.returncode!=0 else "SURVIVED"
         if "build failed" in r.stdout: out="BUILD FAILED"
     finally:
