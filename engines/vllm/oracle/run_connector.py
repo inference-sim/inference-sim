@@ -233,14 +233,19 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     init_none_hash(sha256)
     if batch_queue_size > 1:
         return run_queued(scheduler, vllm_config, batch_queue_size, sc, scenario_path, vllm_root,
-                          hasher_for=lambda: get_request_block_hasher(scheduler.hash_block_size, sha256),
+                          hasher_for=lambda: get_request_block_hasher(
+                              scheduler.hash_block_size, sha256, vllm_config.num_hash_lookahead_tokens),
                           helpers=helpers, add_kv_params=add_kv_params, connector_state_of=connector_state_of)
     assert scheduler.max_model_len == cfg["max_model_len"], "the Scheduler does not read the scenario's max_model_len"
     num_spec = scheduler.num_spec_tokens
     accepted_plan = {r["id"]: list(r.get("accepted", [])) for r in sc["requests"]}
     verify_steps = {r["id"]: 0 for r in sc["requests"]}
 
-    hasher = get_request_block_hasher(scheduler.hash_block_size, sha256)
+    # The engine core builds the hasher with vllm_config.num_hash_lookahead_tokens
+    # (vllm/v1/engine/core.py:220-230@4ba787ec), so an EAGLE-family drafter with prefix caching
+    # and no KV connector hashes the tokens past each block; the harness does the same.
+    hasher = get_request_block_hasher(scheduler.hash_block_size, sha256,
+                                      scheduler.vllm_config.num_hash_lookahead_tokens)
     pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
     by_id = {r["id"]: r for r in sc["requests"]}
     sampled_so_far = {r["id"]: 0 for r in sc["requests"]}
@@ -691,7 +696,7 @@ def kv_cache_config(cfg: dict, vllm_config):
         # (get_kv_cache_groups, kv_cache_utils.py:2173-2174, unify_hybrid_kv_cache_specs,
         # :1799-1822@5df63a72), so the layers form one uniform group (:2185-2189); both calls are
         # vLLM's own, as run_scheduler.py build_scheduler makes them.
-        from vllm.v1.core.kv_cache_utils import (  # noqa: E402
+        from vllm.v1.core.kv_cache_planning import (  # noqa: E402
             _get_kv_cache_groups_uniform_spec,
             is_kv_cache_spec_uniform,
             unify_hybrid_kv_cache_specs,

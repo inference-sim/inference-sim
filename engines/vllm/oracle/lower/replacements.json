@@ -7,9 +7,9 @@
       "how": "VllmConfig, SchedulerConfig, CompilationConfig, SpeculativeConfig and the model config are small namespaces holding only the fields the extracted functions read, built from each case. current_platform answers is_device_capability_family(100) from the case. The functions' torch and CUDA imports are not executed: they are taken out of their modules by ast, as written."
     },
     {
-      "symbol": "vllm.v1.worker.gpu.dp_utils.dist.all_reduce",
+      "symbol": "vllm.v1.worker.gpu.dp_utils.get_dp_group().cpu_all_reduce_",
       "kind": "transport",
-      "how": "the data-parallel group's CPU all-reduce inside sync_cudagraph_and_dp_padding returns the tensor every rank would hold, built from each case's per-rank votes with the function's own six assignments. Everything the function decides after the collective runs unmodified, and each rank's vote is made by vLLM's own CudaGraphManager.dispatch."
+      "how": "the data-parallel group's CPU all-reduce inside sync_cudagraph_and_dp_padding returns the tensor every rank would hold, built from each case's per-rank votes with the function's own seven assignments (no rank allows skipping the drafts). Everything the function decides after the collective runs unmodified, and each rank's vote is made by vLLM's own CudaGraphManager.dispatch."
     },
     {
       "symbol": "get_num_ubatches, check_ubatch_thresholds, build_dynamic_sd_schedule_lookup",
@@ -19,7 +19,7 @@
     {
       "symbol": "get_dp_group, should_skip_dp_coordination",
       "kind": "environment",
-      "how": "get_dp_group returns an object holding the CPU group handle the all-reduce is given, which the replaced all-reduce ignores; should_skip_dp_coordination is False, as it is for a real multi-rank pool, so the function takes the all-reduce path."
+      "how": "get_dp_group returns an object whose only member is the replaced all-reduce above; should_skip_dp_coordination is False, as it is for a real multi-rank pool, so the function takes the all-reduce path."
     },
     {
       "symbol": "get_tensor_model_parallel_rank, get_engram_dp_group, _cur",

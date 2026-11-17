@@ -317,7 +317,11 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             for i in range(len(names))))
 
     init_none_hash(sha256)
-    hasher = get_request_block_hasher(scheduler.hash_block_size, sha256)
+    # The engine core builds the hasher with vllm_config.num_hash_lookahead_tokens
+    # (vllm/v1/engine/core.py:220-230@4ba787ec), so an EAGLE-family drafter with prefix caching
+    # and no KV connector hashes the tokens past each block; the harness does the same.
+    hasher = get_request_block_hasher(scheduler.hash_block_size, sha256,
+                                      scheduler.vllm_config.num_hash_lookahead_tokens)
     workers = scheduler.connector._connectors[off_idx].connector_scheduler.config.num_workers
     worker = off.Worker({r["id"]: r for r in sc["requests"]}, cfg.get("transfer") or {}, workers,
                         KVConnectorOutput, worker_meta)

@@ -17,7 +17,8 @@ Usage:
 
 Name spaces. A configuration field is named as `vllm serve` accepts it, in snake case:
   - every field of EngineArgs and AsyncEngineArgs (vllm/engine/arg_utils.py) that has a flag;
-  - every field of FrontendArgs and BaseFrontendArgs (vllm/entrypoints/launchers/cli_args.py),
+  - every field of FrontendArgs and BaseFrontendArgs (cli_args.py: vllm/entrypoints/common/ at
+    v0.33.0, vllm/entrypoints/launchers/ at v0.32.0; CLI_ARGS below),
     and the flags make_arg_parser adds there itself (model_tag, headless, api_server_count, ...);
   - for an EngineArgs field whose value is a vLLM config object (its annotation names a class
     decorated with @config under vllm/config/, or one of the four dict-typed fields that
@@ -168,10 +169,26 @@ def flags_in(tree):
     return out
 
 
+# Where FrontendArgs and make_arg_parser live, by release: vllm/entrypoints/launchers/cli_args.py
+# at v0.32.0, vllm/entrypoints/common/cli_args.py at v0.33.0. Exactly one must exist.
+CLI_ARGS = (
+    "vllm/entrypoints/common/cli_args.py",
+    "vllm/entrypoints/launchers/cli_args.py",
+)
+
+
+def cli_args_path(src):
+    """The one cli_args.py the checkout has (CLI_ARGS); none, or both, stops the generator."""
+    found = [rel for rel in CLI_ARGS if os.path.isfile(os.path.join(src, rel))]
+    if len(found) != 1:
+        raise SystemExit("gen_fields: want exactly one of %s in %s, found %s" % (", ".join(CLI_ARGS), src, found or "none"))
+    return os.path.join(src, found[0])
+
+
 def config_names(src):
     classes = config_classes(src)
     au = parse(os.path.join(src, "vllm", "engine", "arg_utils.py"))
-    cli = parse(os.path.join(src, "vllm", "entrypoints", "launchers", "cli_args.py"))
+    cli = parse(cli_args_path(src))
     flags = flags_in(au)
     names = []
     for tree, wanted in ((au, ("EngineArgs", "AsyncEngineArgs")), (cli, ("BaseFrontendArgs", "FrontendArgs"))):
@@ -487,19 +504,130 @@ def python_env_reads(path, rel, keys):
     return reads, writes, dynamic
 
 
-def regex_env_reads(path, rel, const_re, read_re, cut_at=None):
+def regex_env_reads(path, rel, const_re, read_re, cut_at=None, forwarded=None):
     with open(path, encoding="utf-8", errors="replace") as f:
         text = f.read()
     if cut_at is not None and cut_at in text:
         text = text[:text.index(cut_at)]
     consts = dict(const_re.findall(text))
     reads = {}
+    fwd = forwarded(text, rel) if forwarded is not None else {"reads": {}, "spans": []}
+    for name, sites in fwd["reads"].items():
+        reads.setdefault(name, []).extend(sites)
     for m in read_re.finditer(text):
+        if any(lo <= m.start() < hi for lo, hi in fwd["spans"]):
+            continue
         name = m.group(1) or consts.get(m.group(2))
+        if name is None and forwarded is not None:
+            via = rs_parameter_reads(text, rel, consts, m)
+            if via is not None:
+                for n, sites in via.items():
+                    reads.setdefault(n, []).extend(sites)
+                continue
         if name is None:
             raise SystemExit("gen_fields: %s:%d reads the environment through %s, which is not a string constant"
                              % (rel, text.count("\n", 0, m.start()) + 1, m.group(2)))
         reads.setdefault(name, []).append("%s:%d" % (rel, text.count("\n", 0, m.start()) + 1))
+    return reads
+
+
+# A Rust closure that forwards its argument to the environment, passed to a method:
+# args.apply_env_fallbacks(|name| std::env::var(name).ok()) (rust/src/cmd/src/cli.rs:951@4ba787ec).
+RS_FORWARD = re.compile(r'\.(\w+)\s*\(\s*\|\s*(\w+)\s*\|\s*(?:std::)?env::var(?:_os)?\s*\(\s*(\2)\s*\)')
+
+
+def rs_forwarded_reads(text, rel):
+    """The variables read through a forwarding closure (RS_FORWARD). The method it is passed to
+    must be defined in the same file, with one parameter typed impl Fn(&str) -> ...; each call of
+    that parameter with a string literal in the method's body is a read, sited at that call
+    (cli.rs:636-661@4ba787ec). A method the file does not define, or a call of the parameter with
+    anything but a literal, stops the generator. Returns the reads, and the spans of the closures
+    whose env::var call they account for."""
+    out = {"reads": {}, "spans": []}
+    for m in RS_FORWARD.finditer(text):
+        method = m.group(1)
+        out["spans"].append((m.start(), m.end()))
+        d = re.search(r'\bfn\s+' + method + r'\b[^{;]*\{', text)
+        if d is None:
+            raise SystemExit("gen_fields: %s:%d passes an environment lookup to %s, which the file does not define"
+                             % (rel, text.count("\n", 0, m.start()) + 1, method))
+        params = re.findall(r'(\w+)\s*:\s*impl\s+Fn\s*\(\s*&\s*str\s*\)', d.group(0))
+        if len(params) != 1:
+            raise SystemExit("gen_fields: %s: fn %s has %d impl Fn(&str) parameters, not one" % (rel, method, len(params)))
+        depth, end = 1, d.end()
+        while depth and end < len(text):
+            depth += {"{": 1, "}": -1}.get(text[end], 0)
+            end += 1
+        body = RS_COMMENT.sub(lambda c: re.sub(r"[^\n]", " ", c.group(0)), text[d.end():end])
+        for c in re.finditer(r'\b' + params[0] + r'\s*\(\s*([^)]*?)\s*\)', body):
+            lit = re.fullmatch(r'"([^"]+)"', c.group(1))
+            line = text.count("\n", 0, d.end() + c.start()) + 1
+            if lit is None:
+                raise SystemExit("gen_fields: %s:%d calls the environment lookup %s with %s, which is not a string literal"
+                                 % (rel, line, params[0], c.group(1)))
+            out["reads"].setdefault(lit.group(1), []).append("%s:%d" % (rel, line))
+    return out
+
+
+def rs_split_args(text):
+    """Split a Rust argument or parameter list at its top-level commas."""
+    parts, depth, cur = [], 0, ""
+    for ch in text:
+        if ch in "([{<":
+            depth += 1
+        elif ch in ")]}>":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+    if cur.strip():
+        parts.append(cur.strip())
+    return parts
+
+
+def rs_call_args(text, open_paren):
+    """The argument text of the call whose "(" is at open_paren, and the offset after its ")"."""
+    depth, i = 0, open_paren
+    while i < len(text):
+        depth += {"(": 1, ")": -1}.get(text[i], 0)
+        i += 1
+        if depth == 0:
+            return text[open_paren + 1:i - 1], i
+    raise SystemExit("gen_fields: unbalanced parentheses")
+
+
+def rs_parameter_reads(text, rel, consts, m):
+    """A read through a &str parameter of the enclosing function, fn env_limit(name: &str, ...) {
+    std::env::var(name) } (rust/src/text/src/lower/token_ids.rs:63-65@4ba787ec): each call of the
+    function in the same file passes the name, a literal or a const &str, and is a read sited at
+    that call. None when the identifier is not such a parameter; a call passing anything else, or
+    a function no call in the file reaches, stops the generator."""
+    fns = list(re.finditer(r'\bfn\s+(\w+)\s*(?:<[^>]*>)?\s*\(', text[:m.start()]))
+    if not fns:
+        return None
+    f = fns[-1]
+    params, _ = rs_call_args(text, f.end() - 1)
+    names = [re.match(r'(?:mut\s+)?(\w+)\s*:\s*(.*)', q, re.S) for q in rs_split_args(params)]
+    idx = [k for k, q in enumerate(names) if q and q.group(1) == m.group(2) and re.fullmatch(r"&\s*(?:'static\s+)?str", q.group(2).strip())]
+    if len(idx) != 1:
+        return None
+    reads = {}
+    calls = [c for c in re.finditer(r'(?<![\w.:])' + f.group(1) + r'\s*\(', text) if c.start() != f.start() + text[f.start():].index(f.group(1))]
+    if not calls:
+        raise SystemExit("gen_fields: %s: fn %s reads the environment through its parameter %s and nothing in the file calls it"
+                         % (rel, f.group(1), m.group(2)))
+    for c in calls:
+        args, _ = rs_call_args(text, c.end() - 1)
+        arg = rs_split_args(args)[idx[0]]
+        lit = re.fullmatch(r'"([^"]+)"', arg)
+        name = lit.group(1) if lit else consts.get(arg)
+        line = text.count("\n", 0, c.start()) + 1
+        if name is None:
+            raise SystemExit("gen_fields: %s:%d passes %s to %s, which reads it from the environment, and it is not a string constant"
+                             % (rel, line, arg, f.group(1)))
+        reads.setdefault(name, []).append("%s:%d" % (rel, line))
     return reads
 
 
@@ -536,7 +664,7 @@ def literal_env_reads(src):
     for p, rel in walk(src, "csrc", CPP_EXT):
         add(reads, regex_env_reads(p, rel, CPP_CONST, CPP_READ))
     for p, rel in walk(src, "rust", (".rs",)):
-        add(reads, regex_env_reads(p, rel, RS_CONST, RS_READ, cut_at="#[cfg(test)]"))
+        add(reads, regex_env_reads(p, rel, RS_CONST, RS_READ, cut_at="#[cfg(test)]", forwarded=rs_forwarded_reads))
         add(reads, clap_env_reads(p, rel))
     for name, where in writes.items():
         if COMM_ENV.match(name):
