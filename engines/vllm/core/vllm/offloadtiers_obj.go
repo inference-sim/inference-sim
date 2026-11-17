@@ -31,9 +31,20 @@ var objKeys = map[string]bool{"type": true, "store_config": true, "prefix": true
 var objStoreKeys = map[string]bool{"bucket": true, "endpoint_override": true, "access_key": true,
 	"secret_key": true, "session_token": true, "region": true, "scheme": true, "ca_bundle": true}
 
+// TierBucket is one bucket, as an obj tier sees it: whether an object exists, and a WRITE or READ
+// transfer of objects (false is one that ended in error). Like TierFiles it is written as the
+// interface literal (an alias, not a named type), and TierBuckets as an alias of a plain func type,
+// so that a host reaches Engine.ShareTierBuckets with types of its own and no import of this
+// package's tiers.
+type TierBucket = interface {
+	Exists(key string) bool
+	Write(keys []string) bool
+	Read(keys []string) bool
+}
+
 // TierBuckets gives each obj tier the bucket its store_config names. Engines given one TierBuckets
 // share each bucket's objects, as vLLM instances do through one object store.
-type TierBuckets func(bucket string) kvtier.Bucket
+type TierBuckets = func(bucket string) TierBucket
 
 // tierBucket is the bucket an obj tier's objects are in: its own until the engine is given a
 // TierBuckets.
