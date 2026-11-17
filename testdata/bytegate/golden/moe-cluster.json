@@ -883,8 +883,8 @@
   },
   "window": {
     "start_us": 33333,
-    "end_us": 9903629,
-    "duration_s": 9.870296,
+    "end_us": 9902852,
+    "duration_s": 9.869519,
     "requests": 120
   },
   "metrics": {
@@ -984,12 +984,12 @@
       "scope": "cluster"
     },
     "output_tok_s": {
-      "value": 6037.6102195921985,
+      "value": 6038.08554398649,
       "samples": 120,
       "scope": "cluster"
     },
     "output_tok_s_per_gpu": {
-      "value": 754.7012774490248,
+      "value": 754.7606929983112,
       "samples": 120,
       "scope": "cluster"
     },
@@ -999,7 +999,7 @@
       "scope": "cluster"
     },
     "request_throughput": {
-      "value": 12.157690103721308,
+      "value": 12.158647245119036,
       "samples": 120,
       "scope": "cluster"
     },
@@ -1029,7 +1029,7 @@
       "scope": "cluster"
     },
     "total_tokens_per_second_per_gpu": {
-      "value": 1537.4285634392322,
+      "value": 1537.5496009481312,
       "samples": 120,
       "scope": "cluster"
     },
@@ -2780,7 +2780,7 @@
         "gateway_queue_delay_mean_ms": 0,
         "gateway_queue_delay_p90_ms": 0,
         "in_flight_requests_max": 101,
-        "in_flight_requests_mean": 53.185125349837534,
+        "in_flight_requests_mean": 53.189312468013895,
         "kv_allocation_failures": 0,
         "kv_capacity_tokens_per_replica": 4665488,
         "kv_thrashing_rate": 0,
