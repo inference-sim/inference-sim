@@ -1353,7 +1353,13 @@ func (e *transferEnvironment) tierDemand(t plan.Transfer) (kernel.TransferDemand
 	key := tierKey{t.Tier, dir}
 	rate, ok := e.rates[key]
 	if !ok {
-		rate = tierRate(k, t.Tier, dir)
+		// One rate for the link, which every copy over it states (the link arbiter refuses a link
+		// stated at two). The recovered rate is a float that rounds once more than the kernel's
+		// (tierRate's probe is 2^50 bytes priced in whole nanoseconds, so it is off by under one
+		// part in 10^14), so it is raised by one part in 10^12: a copy alone then never drains later
+		// than the kernel's price, and sooner by a nanosecond per 1000 s of copy at most, which
+		// the copy's floor takes up below.
+		rate = tierRate(k, t.Tier, dir) * (1 + 1e-12)
 		e.rates[key] = rate
 	}
 	d := kernel.TransferDemand{
@@ -1364,16 +1370,14 @@ func (e *transferEnvironment) tierDemand(t plan.Transfer) (kernel.TransferDemand
 			BytesPerSecond: rate,
 		}},
 	}
+	if d.AloneTime() < price {
+		// The copy drains a little before the kernel's price: its floor is the price, so alone it
+		// costs exactly that, and a copy that shares the link still drains at the link's one rate.
+		d.Floor = price
+	}
 	if d.AloneTime() != price {
-		// The recovered rate is a float that rounds once more than the kernel's, so a copy that
-		// lands on the edge of a nanosecond can differ by one. State the rate this copy was
-		// priced at instead: the bytes over the price, widened by half a nanosecond so the
-		// truncation lands on the price itself.
-		d.Links[0].BytesPerSecond = float64(bytes) / ((float64(price) + 0.5) / float64(time.Second))
-		if d.AloneTime() != price {
-			return kernel.TransferDemand{}, fmt.Errorf("the demand of a copy of %d bytes %s tier %q costs %v alone but "+
-				"the kernel prices it at %v", bytes, dirName(dir), t.Tier, d.AloneTime(), price)
-		}
+		return kernel.TransferDemand{}, fmt.Errorf("the demand of a copy of %d bytes %s tier %q costs %v alone but "+
+			"the kernel prices it at %v", bytes, dirName(dir), t.Tier, d.AloneTime(), price)
 	}
 	if err := d.Check(); err != nil {
 		return kernel.TransferDemand{}, err
