@@ -279,22 +279,32 @@ func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
 	// Compute ITL from RequestITLs (per-request average ITL in µs).
 	// Sort keys before accumulating to satisfy INV-6 determinism (R2).
 	// ITLSum is never populated by the simulator; RequestITLs is the authoritative source.
-	reqIDs := make([]string, 0, len(m.RequestITLs))
-	for id := range m.RequestITLs {
+	reqIDs := make([]string, 0, len(m.RequestE2Es))
+	for id := range m.RequestE2Es {
 		reqIDs = append(reqIDs, id)
 	}
 	sort.Strings(reqIDs)
 	// TTFT is derived from the same per-request samples (DEV-9): each completed request's
 	// entry in RequestTTFTs, which has no separate accumulator to drift from it (#2093 states P/D preemption as a machine state).
 	var itlSum, ttftSum float64
+	itlCount := 0
 	for _, id := range reqIDs {
-		itlSum += m.RequestITLs[id]
+		if itl, ok := m.RequestITLs[id]; ok {
+			itlSum += itl
+			itlCount++
+		}
 		ttftSum += m.RequestTTFTs[id]
+	}
+	// A request with fewer than two output tokens has no ITL (#1894): the mean is over those
+	// that do.
+	itlMean := 0.0
+	if itlCount > 0 {
+		itlMean = itlSum / float64(itlCount)
 	}
 
 	return InstanceLatencyStats{
 		TTFT:         ttftSum / n,
-		ITL:          itlSum / n,
+		ITL:          itlMean,
 		DispatchRate: dispatchRate,
 		AvgInTokens:  float64(m.TotalInputTokens) / n,
 		AvgOutTokens: float64(m.TotalOutputTokens) / n,

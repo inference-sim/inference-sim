@@ -53,7 +53,11 @@ func (m *Metrics) RecordCompletion(c Completion) {
 		m.TotalOutputTokens += c.OutputTokens
 	}
 	m.RequestE2Es[req.ID] = float64(c.E2E)
-	m.RequestITLs[req.ID] = c.ITL
+	// A request with fewer than two output tokens had no gap between tokens: it has no ITL, not
+	// a zero one that request-averaged consumers would count as a sample (#1894).
+	if c.OutputTokens >= 2 {
+		m.RequestITLs[req.ID] = c.ITL
+	}
 	m.RequestStepCounters = append(m.RequestStepCounters, c.Steps)
 	m.RequestCompletionTimes[req.ID] = float64(c.E2E + req.ArrivalTime)
 	m.recordCompletionOrder(req.ID, c.Clock, c.OutputTokens, c.Overhead)
