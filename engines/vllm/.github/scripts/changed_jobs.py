@@ -78,6 +78,7 @@ ORACLE_PATHS = [
     r"^core/lower/testdata/",
     r"^rules/engineconfig/testdata/",
     r"^rules/v0_32/testdata/",
+    r"^rules/v0_33/testdata/",
 ]
 METRICS_GO = ["./cmd/metricsmanifest", "./registry"]
 # The surface list (tools/surface/gen_surface.py) reads its status file, the committed list, and the
@@ -86,7 +87,7 @@ METRICS_PATHS = [r"^fields/", r"^fields\.json$", r"^docs/metrics-manifest\.json$
                  r"^surface\.json$", r"^oracle/scenarios", r"^core/.*/testdata/golden"]
 GOLDEN_PATHS = [r"^oracle/", r"^core/.*/testdata/", r"^tools/migrateengineblock/"]
 BENCH_GO = ["./core/sched", "./core/vllm"]
-PACKS = {"v0_29": "./rules/v0_29", "v0_31": "./rules/v0_31", "v0_32": "./rules/v0_32"}
+PACKS = {"v0_29": "./rules/v0_29", "v0_31": "./rules/v0_31", "v0_32": "./rules/v0_32", "v0_33": "./rules/v0_33"}
 
 
 @functools.lru_cache(maxsize=None)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/config/vllm.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/config/vllm.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // Also vllm/config/scheduler.py, vllm/config/cache.py and vllm/config/lora.py (the defaults a
 // launch inherits).
 
@@ -22,7 +22,7 @@ import (
 	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
-	"github.com/inference-sim/blis-vllm/rules/v0_32"
+	"github.com/inference-sim/blis-vllm/rules/v0_33"
 )
 
 // Config is the engine block of one pool, as the simulator hands it over in engine.Spec.Config.
@@ -833,7 +833,7 @@ func fullCUDAGraphs(mode string) bool {
 	return false
 }
 
-// checkRules runs the v0.32.0 rules pack (rules/v0_32) over the engine block, the startup check
+// checkRules runs the v0.33.0 rules pack (rules/v0_33) over the engine block, the startup check
 // #2021 B11 step 2 gives the engine: the values the release accepts and the refusals it makes.
 // The block is one pool's engine, and it is all the engine is given: the model graph, the cluster
 // and the pool's parallel widths other than pipeline_parallel_size are not in it. So a refusal
@@ -844,7 +844,7 @@ func fullCUDAGraphs(mode string) bool {
 // requires dp above 1" (vllm/config/engram.py@5df63a72), is left to the caller that validates
 // the whole document set, as is every rule that needs the model graph, which checks nothing
 // without one. Warnings are not refusals. pp is the pool's pipeline_parallel_size.
-func checkRules(e engineconfig.Engine, pp int) error { return checkRulesWith(v0_32.Pack(), e, pp) }
+func checkRules(e engineconfig.Engine, pp int) error { return checkRulesWith(v0_33.Pack(), e, pp) }
 
 // blockShapes are the parallel shapes checkRules runs the pack under: the tensor and data widths
 // each at 1 and at 2, so that a clause turning on either width, whichever way, is silent in one of

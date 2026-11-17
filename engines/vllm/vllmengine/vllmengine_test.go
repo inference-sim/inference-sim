@@ -93,7 +93,7 @@ func TestDashboardDeploymentsBuildAndRun(t *testing.T) {
 	} {
 		t.Run(c.v032, func(t *testing.T) {
 			t.Parallel()
-			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Config: poolEngine(t, c.v032),
+			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Config: poolEngine(t, c.v032),
 				Roots: roots(t, c.v032), Pool: 0}
 			e, err := engine.New(spec)
 			if err != nil {
@@ -151,7 +151,7 @@ func TestDashboardDataParallelDeploymentsAreNotRefused(t *testing.T) {
 	Register()
 	for _, scenario := range []string{"d116-032.yaml", "d079-032.yaml", "d088-032.yaml", "d103-032.yaml"} {
 		abs, _ := filepath.Abs(filepath.Join("testdata", scenario))
-		eng, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0",
+		eng, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0",
 			Roots: map[string]string{RootScenario: abs}})
 		if err != nil {
 			if strings.Contains(err.Error(), "data parallelism") {
@@ -233,7 +233,7 @@ func TestDashboardDrafterBlocksBuild(t *testing.T) {
 			p := openPool(t, c.scenario)
 			block := p.complete(yaml.Node{})
 			f := vllm.Factory{Pricer: func(engine.Spec) (vllm.Pricer, error) { return kernelPricer{m: p.model}, nil }}
-			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Config: block}
+			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Config: block}
 			e, err := f.New(spec)
 			if err != nil {
 				t.Fatalf("%s's engine block with its %s drafter: refused: %v", c.scenario, c.method, err)
@@ -278,7 +278,7 @@ func TestDashboardDataParallelDeploymentsRun(t *testing.T) {
 			if par.DP != 2 {
 				t.Fatalf("%s states dp %d, want 2", name, par.DP)
 			}
-			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}
+			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r}
 			eng, err := engine.New(spec)
 			if err != nil {
 				t.Fatal(err)
@@ -335,7 +335,7 @@ func TestDashboardHybridKVDeploymentsBuildAndRun(t *testing.T) {
 	} {
 		t.Run(c.scenario, func(t *testing.T) {
 			t.Parallel()
-			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, c.scenario)}
+			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, c.scenario)}
 			done, err := prepare(spec, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -399,7 +399,7 @@ func TestKVPoolBlocksAreVLLMsOverTheKVCacheGroups(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, c.scenario)})
+			e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, c.scenario)})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -423,7 +423,7 @@ func TestKVPoolBlocksAreVLLMsOverTheKVCacheGroups(t *testing.T) {
 // deployment at max_model_len 4096 fits and builds.
 func TestADeploymentVLLMRefusesAtStartupIsRefusedWithVLLMsMessage(t *testing.T) {
 	Register()
-	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "d025-032.yaml")})
+	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, "d025-032.yaml")})
 	want := "To serve at least one request with the model's max seq len (9472), (5.2 GiB KV cache is needed, " +
 		"which is larger than the available KV cache memory (3.01 GiB). Based on the available memory, the " +
 		"estimated maximum model length is 5468."
@@ -442,7 +442,7 @@ func TestADeploymentVLLMRefusesAtStartupIsRefusedWithVLLMsMessage(t *testing.T) 
 	r := roots(t, "d025-032.yaml")
 	r[RootScenario] = filepath.Join(dir, "d025-4096.yaml")
 	tr, err := enginetest.Drive(func() (engine.Engine, error) {
-		return engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
+		return engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r})
 	}, []enginetest.Arrival{{At: 0, Req: req("a", 2048, 16)}}, enginetest.Options{})
 	if err != nil {
 		t.Fatalf("d025 at max_model_len 4096: %v", err)
@@ -465,7 +465,7 @@ func TestMuseSparkDeploymentsBuildAndRun(t *testing.T) {
 		"muse-gb200-nvl-tep8.yaml", "muse-gb200-nvl-dep8-dspark.yaml"} {
 		t.Run(s, func(t *testing.T) {
 			t.Parallel()
-			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s)}
+			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, s)}
 			done, err := prepare(spec, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -503,7 +503,7 @@ func TestMuseSparkOnHopperWithDataParallelismIsRefused(t *testing.T) {
 	for _, s := range []string{"muse-h200-ib-dep8.yaml", "muse-h200-ib-dep8-dspark.yaml",
 		"muse-h200-ib-dep8-dspark-128k.yaml"} {
 		t.Run(s, func(t *testing.T) {
-			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s)}
+			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, s)}
 			_, err := engine.New(spec)
 			if err == nil || !strings.Contains(err.Error(), "requires data parallelism 1") ||
 				!strings.Contains(err.Error(), "MuseSpark1x Triton/Marlin currently requires DP1 and PCP1") {
@@ -523,7 +523,7 @@ func TestMuseSparkPDPoolsRunThroughTheEngine(t *testing.T) {
 	const s = "muse-h100-roce-1p1d.yaml"
 	var engines [2]engine.Engine
 	for i, want := range []string{"kv_producer", "kv_consumer"} {
-		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s), Pool: i}
+		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, s), Pool: i}
 		done, err := prepare(spec, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -641,7 +641,7 @@ func TestAPDPoolRunsTheDeploymentsConnector(t *testing.T) {
 	}
 	r := roots(t, "muse-h100-roce-1p1d.yaml")
 	r[RootScenario] = filepath.Join(dir, "pull.yaml")
-	done, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r, Pool: 1}, nil)
+	done, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r, Pool: 1}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -666,7 +666,7 @@ func TestARootDirectoryReplacesTheEmbeddedData(t *testing.T) {
 	r := roots(t, "d058-032.yaml")
 	empty := t.TempDir()
 	r[RootRegistry] = empty
-	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
+	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r})
 	if err == nil || !strings.Contains(err.Error(), empty) {
 		t.Errorf("an empty registry directory: %v, want a refusal naming %s", err, empty)
 	}
@@ -681,7 +681,7 @@ func TestEnginesGivenOneDataShareItsReport(t *testing.T) {
 	if shared == other {
 		t.Fatal("two opens returned one Data: a report would outlive its run")
 	}
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "d058-032.yaml")}
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, "d058-032.yaml")}
 	if _, err := New(Input{Spec: spec, Data: shared}); err != nil {
 		t.Fatal(err)
 	}
@@ -714,7 +714,7 @@ func TestOverlayRootsAreRefusedWithoutTheHostsData(t *testing.T) {
 	for _, key := range []string{RootCatalogOverlays, RootRegistryOverlays} {
 		r := roots(t, "d058-032.yaml")
 		r[key] = t.TempDir()
-		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}
+		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r}
 		_, err := engine.New(spec)
 		if err == nil || !strings.Contains(err.Error(), "Input.Data") || !strings.Contains(err.Error(), key) {
 			t.Errorf("Roots[%s] set, no Data: %v, want a refusal telling the host to pass its Data", key, err)
@@ -734,7 +734,7 @@ func TestOneBuildOpensItsDataOnce(t *testing.T) {
 	was := openData
 	openData = func(o load.Options) (*load.Data, error) { opens++; return was(o) }
 	defer func() { openData = was }()
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "d058-032.yaml")}
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, "d058-032.yaml")}
 	if _, err := engine.New(spec); err != nil {
 		t.Fatal(err)
 	}
@@ -760,12 +760,12 @@ func TestRootsAreRefusedBesideTheHostsData(t *testing.T) {
 		r := roots(t, "d058-032.yaml")
 		dir := t.TempDir()
 		r[key] = dir
-		_, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}, Data: embeddedData(t)})
+		_, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r}, Data: embeddedData(t)})
 		if err == nil || !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), dir) || !strings.Contains(err.Error(), "load.Options") {
 			t.Errorf("Roots[%s] beside the host's Data: %v, want a refusal naming the root and telling the host to open its Data with it", key, err)
 		}
 	}
-	if _, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "d058-032.yaml")}, Data: embeddedData(t)}); err != nil {
+	if _, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, "d058-032.yaml")}, Data: embeddedData(t)}); err != nil {
 		t.Errorf("no root beside the host's Data: %v", err)
 	}
 }
@@ -775,7 +775,7 @@ func TestRootsAreRefusedBesideTheHostsData(t *testing.T) {
 func TestOneBuildWritesOneReport(t *testing.T) {
 	Register()
 	shared := embeddedData(t)
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "d058-032.yaml")}
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, "d058-032.yaml")}
 	if _, err := New(Input{Spec: spec, Data: shared}); err != nil {
 		t.Fatal(err)
 	}
@@ -802,7 +802,7 @@ func TestEngineDisclosesWhatLanguageModelOnlyLeavesUnpriced(t *testing.T) {
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: map[string]string{RootScenario: path}})
+		e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: map[string]string{RootScenario: path}})
 		if err != nil {
 			t.Fatalf("%q: %v", c.stated, err)
 		}

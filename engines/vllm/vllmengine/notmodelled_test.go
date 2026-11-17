@@ -258,7 +258,7 @@ func indent(s, pad string) string {
 func TestEveryNotModelledFieldIsRefusedOrExplained(t *testing.T) {
 	Register()
 	// The base fixture builds, so a refusal below is the stated field's.
-	if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, "")}); err != nil {
+	if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: withEngine(t, "")}); err != nil {
 		t.Fatalf("the base scenario does not build: %v", err)
 	}
 	keyOf := map[string]string{}
@@ -280,14 +280,14 @@ func TestEveryNotModelledFieldIsRefusedOrExplained(t *testing.T) {
 			// Each build opens its own Data and a scenario of its own, so the refusals run in parallel.
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()
-				_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, snippet)})
+				_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: withEngine(t, snippet)})
 				if err == nil {
 					t.Errorf("%s: stated as %q, away from vLLM's default, and not refused", name, strings.TrimSpace(snippet))
 					return
 				}
 				// The pair: the same key at vLLM's default builds.
 				if def, ok := atDefault[name]; ok {
-					if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, def)}); err != nil {
+					if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: withEngine(t, def)}); err != nil {
 						t.Errorf("%s: stated at vLLM's default as %q, and refused: %v", name, strings.TrimSpace(def), err)
 					}
 				} else if _, ok := noDefaultValue[name]; !ok {
@@ -303,7 +303,7 @@ func TestEveryNotModelledFieldIsRefusedOrExplained(t *testing.T) {
 				}
 			})
 		case readByTheEngine[name].snippet != "":
-			if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, readByTheEngine[name].snippet)}); err != nil {
+			if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: withEngine(t, readByTheEngine[name].snippet)}); err != nil {
 				t.Errorf("%s: %s, which %s covers, is refused: %v", name, readByTheEngine[name].snippet, readByTheEngine[name].test, err)
 			}
 		case pricedByTheKernel[name] != "":
@@ -424,7 +424,7 @@ func TestAStatedKVCacheMemoryBytesIsRefusedNotSizedFromTheDefault(t *testing.T) 
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err = engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: map[string]string{RootScenario: path}})
+	_, err = engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: map[string]string{RootScenario: path}})
 	if err == nil || !strings.Contains(err.Error(), "kv_cache_memory_bytes") || !strings.Contains(err.Error(), "blis-vllm/issues/81") {
 		t.Fatalf("err %v, want a refusal naming kv_cache_memory_bytes and citing #81", err)
 	}
@@ -439,7 +439,7 @@ func TestADeploymentStatesDPSyncInterval(t *testing.T) {
 	// the group stays busy past the request's last token follows the stated interval.
 	end := func(extra string) (engine.Time, int) {
 		tr, err := enginetest.Drive(func() (engine.Engine, error) {
-			return engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, extra)})
+			return engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: withEngine(t, extra)})
 		}, []enginetest.Arrival{{At: 0, Req: engine.Request{ID: "a", Prompt: make([]int32, 64), Output: make([]int32, 4)}}}, enginetest.Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -480,7 +480,7 @@ func TestOnlySyntheticRejectionSamplingIsRefused(t *testing.T) {
 			extra += ", rejection_sample_method: " + c.method
 		}
 		extra += c.length + "}\n"
-		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, extra)})
+		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: withEngine(t, extra)})
 		if c.refused != (err != nil) {
 			t.Errorf("rejection_sample_method %q%s: err %v, want refused %t", c.method, c.length, err, c.refused)
 		}
@@ -500,7 +500,7 @@ func TestKVEventsPublisherDefaultFollowsEnableKVCacheEvents(t *testing.T) {
 		{true, "zmq", false}, {true, "null", true}, {false, "null", false}, {false, "zmq", true},
 	} {
 		extra := fmt.Sprintf("kv_events_config: {enable_kv_cache_events: %t, publisher: %q}\n", c.enabled, c.publisher)
-		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, extra)})
+		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: withEngine(t, extra)})
 		if c.refused != (err != nil) {
 			t.Errorf("events %t, publisher %s: err %v, want refused %t", c.enabled, c.publisher, err, c.refused)
 		}
@@ -549,7 +549,7 @@ func TestTheEngineRefusesUseTRTLLMAttentionWhateverItsValue(t *testing.T) {
 		if err := os.WriteFile(roots[RootScenario], []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		_, err = engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots})
+		_, err = engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots})
 		return err
 	}
 	for _, c := range []struct{ chip, line string }{
