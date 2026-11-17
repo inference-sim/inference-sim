@@ -17,6 +17,8 @@ import latencykernel "github.com/inference-sim/blis-substrate/kernel"
 | `Open(scenario, repos)` | Loads a scenario file and everything it names, and builds a kernel for its first pool. |
 | `OpenPool(scenario, repos, i)` | The same for pool `i` of a disaggregated deployment. |
 | `OpenInputs(scenario, repos, i)` | Loads the documents without building a kernel, for a caller that needs them too. |
+| `OpenPoolIn(scenario, repos, i, nodePool)` | `OpenPool` for an instance placed in the cluster's node pool `nodePool` (`cluster.pools`): priced and sized by that pool's chip (SIM-17). An empty name is the cluster's chip; an unlisted name is refused. |
+| `OpenInputsIn(scenario, repos, i, nodePool)` | `OpenInputs` for a node pool; `Inputs.Scenario` is a copy whose `cluster.hardware` is the pool's chip. |
 | `New(inputs)` | Builds a kernel from documents already in memory. `Open` and `OpenPool` end here. |
 | `(*Kernel).RecordSelected(data)` | Records the coefficients the kernel's lookups returned in the data's selected-entry report. `OpenPool` calls it. |
 | `Inputs` | The documents a kernel is built from: scenario, deployment, pool index, model graph, chip, fabric, storage devices, coefficient sets, engine rules, `Lowered`, the pool's plan with every engine setting the engine's lowering resolved (`plan.Lowered`), which the kernel prices and applies no default to, `Operations`, the pool's lowered operations with the kernel that executes each (`plan.PoolPlan.Operations()`), which a coefficient that lists implementations is matched against, for the operations that read it, and `Implementations`, the same by lowered primitive when a caller cannot say which operation runs which ([VAL-8](provenance.md#kernel-implementations)). |
