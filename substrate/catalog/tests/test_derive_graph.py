@@ -8991,6 +8991,49 @@ def test_dsr1_second_repository_name_prices_the_same_weights():
         ya["source"]["revision"], ya["shard_index"], ya["headers"])
 
 
+def test_dense_qwen35_prices_a_dense_mlp_on_gdn_and_full_attention_layers(tmp_path):
+    """Qwen3.8-27B is the dense Qwen3_5ForConditionalGeneration: three Gated DeltaNet layers to one
+    full-attention layer, each followed by a dense gate/up/down MLP of the stated intermediate size,
+    no router or experts, and an MTP draft layer. The MoE class of the same family is refused."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    g = graph_of(MODELS / "qwen3.8-27b")
+    assert g["global"]["architecture"] == "Qwen3_5ForConditionalGeneration"
+    inter = config_of(MODELS / "qwen3.8-27b")["text_config"]["intermediate_size"]
+    for kid in ("gdn_dense", "attn_dense"):
+        w = _widths(g, kid)
+        assert "router" not in w and "experts" not in w
+    nodes = {n["role"]: n for k in g["layer_kinds"] if k["id"] == "attn_dense" for n in k["nodes"] if n.get("role")}
+    assert (nodes["mlp_gate_up"]["n"], nodes["mlp_down"]["k"]) == (2 * inter, inter)
+    assert layer_sequence(g["stack"]).count("attn_dense") == 16
+    assert g["speculator"]["method"] == "qwen3_5_mtp"
+    # The draft layer's MLP is dense, so it is not the MoE draft layer "mtp_moe" that other
+    # families' graphs carry: it has its own id, and the speculator's stack names it.
+    assert g["speculator"]["stack"]["pattern"] == ["mtp_dense"]
+    assert "mtp_moe" not in {k["id"] for k in g["layer_kinds"]}
+    cfg = config_of(MODELS / "qwen3.8-27b")
+    cfg["text_config"]["num_experts"] = 8
+    f = tmp_path / "config.json"
+    f.write_text(json.dumps(cfg))
+    with pytest.raises(derive_graph.DeriveError, match="dense Qwen3.5 declares no experts"):
+        derive_graph.derive(f, "qwen3.8-27b")
+
+
+def test_qwen38_27b_text_decoder_bytes_equal_the_header_total():
+    """The graph's text-decoder weights (the stack, the head and the inferred embedding table, all
+    bf16) are 53.79 GB, the sum of the checkpoint's safetensors tensors outside the vision tower and
+    the MTP layer at Qwen/Qwen3.8-27B's pinned revision (read from the shard headers by range request;
+    the headers are not committed). The graph's parameters are derived from the config, so the two
+    agree only if the handler places every projection."""
+    g = graph_of(MODELS / "qwen3.8-27b")
+    wide = BYTES_PER_PARAM[g["global"]["weight_dtype"]]
+    head = sum(n["n"] * n["k"] * BYTES_PER_PARAM[n.get("weight_dtype") or g["global"]["weight_dtype"]]
+               for n in g["head"] if n["op"] == "GEMM")
+    emb = g["global"]["vocab_size"] * g["global"]["hidden_size"] * wide
+    total = (weight_bytes(g) + head + emb) / 1e9
+    assert abs(total - 53.79) < 0.01, total
+
+
 KIMI_K26_NVFP4 = MODELS / "kimi-k2.6-nvfp4"
 
 
