@@ -23,7 +23,9 @@ top-k of 2048, a BF16 KV cache, CUDA-graph replay over a real KV cache.
 
 NET OF THE REST OF THE MODULE. The form prices one kernel, and the table times the module, so
 the fit is of the measured module against (what BLIS charges for everything in the module except
-the sparse-MLA prefill attention) + the form. That first part is the generated file
+the sparse-MLA prefill attention) + the form. The table is GPU kernel time only, with the output
+all-reduce excluded (its collection_meta.yaml), so the rest is the device share (SM + HBM) of
+BLIS's price of the module cut before that all-reduce. That first part is the generated file
 registry/docs/glm53-attention-rest-h200-tp8.csv, written by
 kernel/glm53_attention_rest_test.go (BLIS_WRITE_GLM53_REST=1), which also fails, in the rederive
 job, when the kernel's price of the rest moves without the file being regenerated. About a
@@ -224,6 +226,11 @@ def run(data: Path) -> dict:
         holds[name] = (int(te.sum()), *geo(pred(sub(r, te), th), r["y"][te]))
     out["holds"] = holds
     out["share"] = float(np.median((r["y"] - r["rest"]) / r["y"]))
+    one = (allr["b"] == 1) & (allr["p"] == 0)
+    small = one & (allr["x"] == allr["x"][one].min())
+    if small.sum() != 1:
+        raise SystemExit("no single smallest prefill row (batch 1, no prefix)")
+    out["small"] = (int(allr["x"][small][0]), float(allr["y"][small][0]), float(allr["rest"][small][0]))
     out["by_batch"] = {int(b): geo(pred(sub(r, r["b"] == b), thr), r["y"][r["b"] == b])[1]
                        for b in sorted(set(r["b"]))}
     # 95% interval: 200 bootstrap refits over rows, fixed seed.
@@ -271,7 +278,12 @@ def entries(f: dict) -> list[list[str]]:
         f"{h['new tokens'][1]:.3f}x (signed {h['new tokens'][2]:.3f}, n={h['new tokens'][0]}). AT OR "
         f"BELOW THE TOP-K ({f['below'][0]} rows, not fitted) the form gives {f['below'][1]:.3f}x, "
         f"signed {f['below'][2]:.3f}. The sparse attention is a median {f['share']:.0%} of the "
-        f"measured module; the rest is BLIS's own price, so this fit inherits its error.")
+        f"measured module; the rest is BLIS's own price, so this fit inherits its error. THE FLOOR "
+        f"IS NOT THE ATTENTION KERNEL'S ALONE: at the table's smallest prefill ({f['small'][0]} tokens, "
+        f"one request, no prefix) the module measures {f['small'][1]:.1f} us of GPU time and BLIS's "
+        f"device price of the rest of it is {f['small'][2]:.1f} us, so the floor also carries the "
+        f"module's fixed device cost that the rest's forms leave out (the indexer's and scorer's small "
+        f"kernels among them).")
     subst = (
         "Named substitutions: GLM-5.3-Flash's geometry for GLM-5.3 (8 heads a rank at TP8, a "
         "512-wide latent, top-k 2048; GLM-5.3's record is 1152 B against Flash's 1024 B, and the "

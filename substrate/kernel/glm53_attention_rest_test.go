@@ -34,11 +34,11 @@ const glm53RestFile = "../registry/docs/glm53-attention-rest-h200-tp8.csv"
 
 const glm53RestHeader = "batch,new_tokens,prefix,rest_us"
 
-// glm53ModuleProbe is glm-5.3-flash's sparse-MLA layer cut after its attention-output
+// glm53ModuleProbe is glm-5.3-flash's sparse-MLA layer cut before its attention-output
 // all-reduce (the module AISimulate times: projections, the indexer and its scorer, the
-// sparse attention, o_proj and the all-reduce), stacked n deep, with no speculator. Two
-// depths are priced and differenced so the per-step costs that do not scale with layers
-// (host, head, embedding) cancel.
+// sparse attention and o_proj; the table's collection_meta.yaml records the output
+// all-reduce as excluded), stacked n deep, with no speculator. Two depths are priced and
+// differenced so the per-step costs that do not scale with layers (head, embedding) cancel.
 func glm53ModuleProbe(t *testing.T, g *model.Graph, n int) *model.Graph {
 	t.Helper()
 	var kind *model.LayerKind
@@ -54,9 +54,9 @@ func glm53ModuleProbe(t *testing.T, g *model.Graph, n int) *model.Graph {
 	if cut < 0 {
 		t.Fatal("glm-5.3-flash's mla_moe layer has no attn_out node")
 	}
-	k := model.LayerKind{ID: "mla_attn", Nodes: slices.Clone(kind.Nodes[:cut+1])}
+	k := model.LayerKind{ID: "mla_attn", Nodes: slices.Clone(kind.Nodes[:cut])}
 	for _, e := range kind.Edges {
-		if e[0] <= cut && e[1] <= cut {
+		if e[0] < cut && e[1] < cut {
 			k.Edges = append(k.Edges, e)
 		}
 	}
@@ -181,7 +181,11 @@ func TestGLM53AttentionRestIsCurrent(t *testing.T) {
 				reqs[i] = kernel.ReqShape{Scheduled: r.newTokens, Computed: r.prefix,
 					PromptLen: r.prefix + r.newTokens}
 			}
-			return k.StepTime(kernel.Batch{Reqs: reqs, DecodeThreshold: 1}).NoOverlap.Seconds() * 1e6
+			// The table is GPU kernel time only (CUPTI busy time over graph replay), so the
+			// rest is the device's share of the price: the SM and HBM resources, not the
+			// host's issue time.
+			e := k.StepTime(kernel.Batch{Reqs: reqs, DecodeThreshold: 1})
+			return (e.PerResource[kernel.ResourceSM] + e.PerResource[kernel.ResourceHBM]).Seconds() * 1e6
 		}
 	}
 	p10, p20 := price(10), price(20)
