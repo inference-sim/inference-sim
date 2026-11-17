@@ -414,26 +414,69 @@ func TestADecodeRankWaitingForItsPullDoesNotStopTheOtherRank(t *testing.T) {
 	}
 }
 
-// A prefill group whose ranks span nodes is refused: a handoff names no endpoint, so every pull would be priced from
-// the group's first node. A group on one node builds, and so does a decode group across nodes, whose ranks each state
-// their own node as the end of their pulls.
-func TestAPrefillGroupAcrossNodesIsRefusedAndADecodeGroupIsNot(t *testing.T) {
-	for _, c := range []struct {
-		name, extra string
-		refused     bool
-	}{
-		{"kv_producer across nodes", producer + dpPool(2, 1, 2), true},
-		{"kv_both across nodes", "kv_transfer: {connector: NixlConnector, kv_role: kv_both}\n" + dpPool(2, 1, 2), true},
-		{"kv_producer on one node", producer + dpPool(8, 8, 2), false},
-		{"kv_consumer across nodes", consumer + dpPool(2, 1, 2), false},
+// A prefill group whose ranks span nodes builds, and states for each handoff the node of the rank that holds the
+// KV (engine.Handoff.At), so the decode side's pull reads from the right node. Before the field the group was
+// refused: a handoff named no endpoint, so every pull would have been priced from the group's first node. A group
+// on one node states nothing, and the host reads its first node as before.
+func TestAPrefillGroupAcrossNodesStatesTheNodeThatHoldsEachRequest(t *testing.T) {
+	pe := newHostEngine(t, producer+dpPool(2, 1, 2), 0)
+	h := &host{t: t, engs: []*hostEngine{pe}}
+	g := pe.e.(*DPGroup)
+	const n = 6
+	for i := 0; i < n; i++ {
+		r := req(strings.Repeat("p", i+1), 80, 6)
+		r.RemoteDecode, r.MaxOutputTokens = true, 1
+		if err := g.Add(r, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.run(func() bool { return len(pe.handoffs) == n })
+	if len(pe.handoffs) != n {
+		t.Fatalf("%d handoffs, want %d", len(pe.handoffs), n)
+	}
+	nodes := map[int]bool{}
+	for _, ho := range pe.handoffs {
+		if ho.At == nil {
+			t.Fatalf("handoff of %s states no endpoint on a group that spans nodes", ho.ID)
+		}
+		// The group gives each rank's block IDs a range of its own, so the first block says the rank.
+		per := int64(g.ranks[0].e.s.KV.Pool.NumBlocks())
+		if want := int(ho.Blocks[0] / per); ho.At.Node != want {
+			t.Errorf("handoff of %s is held at node %d, but rank %d computed it (one rank to a node)", ho.ID, ho.At.Node, want)
+		}
+		if err := ho.Validate(); err != nil {
+			t.Error(err)
+		}
+		nodes[ho.At.Node] = true
+	}
+	if len(nodes) != 2 {
+		t.Errorf("the handoffs name nodes %v; the balancer put requests on both ranks, so both nodes hold some", nodes)
+	}
+}
+
+// Which groups build: a producer or kv_both group across nodes now builds; so do a group on one node, which
+// states no endpoint, and a decode group across nodes, whose ranks each state their own node as the end of their pulls.
+func TestAProducerGroupOnOneNodeStatesNoEndpoint(t *testing.T) {
+	for _, extra := range []string{
+		producer + dpPool(2, 1, 2),
+		"kv_transfer: {connector: NixlConnector, kv_role: kv_both}\n" + dpPool(2, 1, 2),
+		producer + dpPool(8, 8, 2),
+		consumer + dpPool(2, 1, 2),
 	} {
-		_, err := build(t, c.extra)()
-		if c.refused != (err != nil) {
-			t.Errorf("%s: err = %v, want refused %t", c.name, err, c.refused)
+		if _, err := build(t, extra)(); err != nil {
+			t.Errorf("%q: %v", extra, err)
 		}
-		if c.refused && err != nil && !strings.Contains(err.Error(), "substrate#48") {
-			t.Errorf("%s: %q does not name the contract limit", c.name, err)
-		}
+	}
+	pe := newHostEngine(t, producer+dpPool(2, 8, 1), 0)
+	h := &host{t: t, engs: []*hostEngine{pe}}
+	r := req("one", 80, 6)
+	r.RemoteDecode, r.MaxOutputTokens = true, 1
+	if err := pe.e.(*DPGroup).Add(r, 0); err != nil {
+		t.Fatal(err)
+	}
+	h.run(func() bool { return len(pe.handoffs) == 1 })
+	if len(pe.handoffs) != 1 || pe.handoffs[0].At != nil {
+		t.Errorf("a group on one node stated %+v, want a handoff with no endpoint", pe.handoffs)
 	}
 }
 
