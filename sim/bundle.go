@@ -113,6 +113,8 @@ type AutoscalerBundleConfig struct {
 	Analyzer                       AnalyzerBundleConfig `yaml:"analyzer"`
 	// CollectorWindowSize keeps that many ticks of readings for the analyzer (#1141); 0 = none.
 	CollectorWindowSize int `yaml:"collector_window_size"`
+	// ScaleToZeroIdleUs drains all of a model's replicas after that long without a request (#909); 0 = never.
+	ScaleToZeroIdleUs float64 `yaml:"scale_to_zero_idle_us"`
 }
 
 // removedBundleKeys are the top-level keys a bundle no longer takes, each with what states its

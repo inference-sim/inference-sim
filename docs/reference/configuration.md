@@ -427,6 +427,9 @@ autoscaler:
 `collector_window_size` (under `autoscaler`, default 0) keeps that many ticks of each model's replica readings for the analyzer, each stamped with its time and sequence number, and fills the replicas' TTFT, ITL, dispatch rate and token averages from the requests completed since the previous tick (the plain collector leaves them zero). The shipped analyzers ignore the window.
 
 Replicas still loading count as supply when scaling up, so a slow load is not asked for again. This is not the Kubernetes HPA: its tolerance, `behavior` policies and the metrics pipeline's lags (KEDA polling, Prometheus scrape windows, the HPA sync period) are not modelled; only `hpa_scrape_delay` exists.
+### Scale to zero
+
+`autoscaler.scale_to_zero_idle_us` (default 0 = never) drains all of a model's replicas once the model has had no request for that long and nothing is in flight, using the configured `drain_policy`. The node a model leaves empty is flagged as idle (`ClusterSimulator.IdleNodes`) and the cluster autoscaler's `bin-pack` scale-down may remove it. The scaling tick keeps running past the end of the workload until the idle models are drained. A request for a model with no replica is not served: bringing a model back from zero is scale-from-zero (#908).
 
 !!! note "Node pools and instance lifecycle are YAML-only"
     `node_pools` and `instance_lifecycle` have no corresponding CLI flags. They must be set via `--policy-config`. Omitting them is safe — the simulator falls back to single-pool, no-lifecycle mode for full backward compatibility.

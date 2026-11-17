@@ -368,6 +368,8 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 	// The cluster autoscaler looks at the pools on every scaling tick (it also runs when a
 	// placement is queued): its scale-down policy needs a look when nothing is pending.
 	cs.runClusterAutoscaler()
+	// A model idle for the scale-to-zero period is drained (#909).
+	cs.checkScaleToZero()
 
 	// Stage 6: Schedule next ScalingTickEvent.
 	p.scheduleNextTick(cs, nowUs)
@@ -386,7 +388,7 @@ func (p *autoscalerPipeline) scheduleNextTick(cs *ClusterSimulator, nowUs int64)
 		for _, v := range cs.inFlightRequests {
 			inFlight += v
 		}
-		if inFlight == 0 {
+		if inFlight == 0 && !cs.scaleToZeroPending() {
 			return // no more work; don't self-schedule
 		}
 	}

@@ -49,7 +49,9 @@ type ClusterSimulator struct {
 	// clusterAutoscaler decides node counts from the pending-placement queue (cluster_autoscaler.go);
 	// nil for none.
 	clusterAutoscaler ClusterAutoscaler
-	instanceSenders   map[InstanceID]*eventSender
+	// lastDemandAt is when each model last had a request arrive (scale to zero, #909).
+	lastDemandAt    map[string]int64
+	instanceSenders map[InstanceID]*eventSender
 	// testSender is the sender of events tests schedule by hand (senderTest).
 	testSender *eventSender
 	// permuteSchedule, set only by the permutation test, gives every queued event a random

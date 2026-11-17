@@ -66,6 +66,7 @@ func (c *ClusterSimulator) arriveRequest(req *sim.Request) {
 	}
 	c.noteFateErr(c.fates.Arrive(req.ID))
 	c.liveRequests[req.ID] = req
+	c.noteDemand(req)
 }
 
 // SetPlannedRounds installs the source of the rounds sessions planned and never issued. At the
