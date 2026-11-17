@@ -287,15 +287,15 @@
     "ctx": "c1",
     "keys": [
      "2da54de42305db3e7a3e6bfd25a2c34abbc31cb82dc88b82242ccd69a3e8915d00000000",
-     "95786191e66499342168cb8a8581a254aa5682fa63b0e8d73bfd3436f0d6d5f200000000",
-     "401e963d696909b2f00a1ca30c7459772988cb5628279e5af02b85827b5a255a00000000",
-     "85baa94fd7b4bfe2911460f6e04f519f9790f5e30d6bf309ad393199a227cc9200000000",
-     "9522d13306a3c73af78382fc6a6807845f555c69f2af9fed07a4afb63bb2d67100000000",
      "e5b2e082fe3c88b316d138fb53785bae4dd826a45abaca9f1ee907ae1fd02d9400000000",
+     "401e963d696909b2f00a1ca30c7459772988cb5628279e5af02b85827b5a255a00000000",
+     "9522d13306a3c73af78382fc6a6807845f555c69f2af9fed07a4afb63bb2d67100000000",
+     "a65103f6b75fa7f5654aa3272e58cb19f89937ab559defc8d3290e634fae302a00000000",
      "95cf53e18afc0970ac9a223ae911532dd5f6f3b78768abd52324cce75f9cc19700000000",
+     "85baa94fd7b4bfe2911460f6e04f519f9790f5e30d6bf309ad393199a227cc9200000000",
      "348b7770d84a7c218602ca73e4184d4acf38ca739f20c2c43b8fc055f1da623400000000",
      "cf6d0ddc22681e794fa176b5b658b420b04e1f30adef6fc1276a4e83b265b94a00000000",
-     "a65103f6b75fa7f5654aa3272e58cb19f89937ab559defc8d3290e634fae302a00000000"
+     "95786191e66499342168cb8a8581a254aa5682fa63b0e8d73bfd3436f0d6d5f200000000"
     ],
     "req": "a",
     "success": true
@@ -376,15 +376,15 @@
     "ctx": "c2",
     "keys": [
      "3892739409f75d7ad05101e686a17e8fa0d6b1a2da4b1ac4fd8e71ad9fabf77000000000",
-     "8d59ba7734bd74f9940a25c88647007756e52e54f698bcca22fb0b11619d5ef800000000",
      "3b5bdb713a96940d0c946c936702ed3e0d93f858d56934b5ae974d193e5d4b9700000000",
-     "35d9cca39110db41bbe1d85ddf892d1c6630a3f56e3771859f37229874c2120900000000",
      "ef7bc5a0d395392ee4af22d663ee7b9c0e56cf95c4dcb0bdeeb61fa9ae4961ac00000000",
+     "35d9cca39110db41bbe1d85ddf892d1c6630a3f56e3771859f37229874c2120900000000",
      "9979bbded357500b501be47c229b4f9d91e5683eace465010242f59fc2c65ffd00000000",
-     "078df02ee36be653aabeb6cfd0ab47d80081bbfb84b20fc7a440be89713bb5bf00000000",
-     "1fa604e31c988e79632383df8808bc3a63669a97d4fc8e3d833b22df79b5575600000000",
+     "6fd88e5b0e2b342bb34427929d9dfba0afaa96728347833dc6706e53dd811c5600000000",
      "711238d3cdd6647a3910fc89dad82d36d5add96026cd7a5dba3009bf8bd40ec400000000",
-     "6fd88e5b0e2b342bb34427929d9dfba0afaa96728347833dc6706e53dd811c5600000000"
+     "078df02ee36be653aabeb6cfd0ab47d80081bbfb84b20fc7a440be89713bb5bf00000000",
+     "8d59ba7734bd74f9940a25c88647007756e52e54f698bcca22fb0b11619d5ef800000000",
+     "1fa604e31c988e79632383df8808bc3a63669a97d4fc8e3d833b22df79b5575600000000"
     ],
     "req": "b",
     "success": true
@@ -1305,17 +1305,17 @@
    "args": {
     "ctx": "c3",
     "keys": [
-     "3bc1159a0e57d78b54392f6c81987d9d56722e51ac7ce6e0b6af184d0962e84a00000000",
-     "02a971c267ebd9957af3dd40fdbf640253e549d9eef5b1719ff4a60a961da54700000000",
+     "5662f384a29506b70c8b8854b06fdf98564cad58d2bb4dcddddb96ede60b3aad00000000",
      "0867460858d2f79d560bf1f6e5d8bf14d1049d88eca957db487e2d95406f11ef00000000",
-     "cb193fae6818e34297a55310f27a9a429b852b8d35b273972fd8badfe853351500000000",
      "8acb6781f731ca307c99526a7b23f3ab896fb3adb7f4cd896a6566c34c7c822700000000",
      "a21b71d7a96ac31cab8d2bff8359f6cd087c2f621e7717d611e9189082a67f0b00000000",
-     "5662f384a29506b70c8b8854b06fdf98564cad58d2bb4dcddddb96ede60b3aad00000000",
-     "874310941ea7696718e422bfc7be4215bfe1804cd5841039679d158a3ba5b3ac00000000",
-     "8c7edd4bd576377ff22b9cddbda5a91b29f6d6784a700248807348686d37054700000000",
+     "3bc1159a0e57d78b54392f6c81987d9d56722e51ac7ce6e0b6af184d0962e84a00000000",
      "302064e4dc2c4860b64313a3dc9d08f61bddec1ab0d63f3e1317d1efcb47f60d00000000",
-     "76ec17c198f8db66ede429e04dfd918d7de13225cb342572773c5502baf5a27400000000"
+     "8c7edd4bd576377ff22b9cddbda5a91b29f6d6784a700248807348686d37054700000000",
+     "cb193fae6818e34297a55310f27a9a429b852b8d35b273972fd8badfe853351500000000",
+     "76ec17c198f8db66ede429e04dfd918d7de13225cb342572773c5502baf5a27400000000",
+     "874310941ea7696718e422bfc7be4215bfe1804cd5841039679d158a3ba5b3ac00000000",
+     "02a971c267ebd9957af3dd40fdbf640253e549d9eef5b1719ff4a60a961da54700000000"
     ],
     "req": "x",
     "success": true
@@ -1785,15 +1785,15 @@
    "args": {
     "ctx": "c5",
     "keys": [
-     "8d59ba7734bd74f9940a25c88647007756e52e54f698bcca22fb0b11619d5ef800000000",
      "3b5bdb713a96940d0c946c936702ed3e0d93f858d56934b5ae974d193e5d4b9700000000",
-     "35d9cca39110db41bbe1d85ddf892d1c6630a3f56e3771859f37229874c2120900000000",
      "ef7bc5a0d395392ee4af22d663ee7b9c0e56cf95c4dcb0bdeeb61fa9ae4961ac00000000",
+     "35d9cca39110db41bbe1d85ddf892d1c6630a3f56e3771859f37229874c2120900000000",
      "9979bbded357500b501be47c229b4f9d91e5683eace465010242f59fc2c65ffd00000000",
-     "078df02ee36be653aabeb6cfd0ab47d80081bbfb84b20fc7a440be89713bb5bf00000000",
-     "1fa604e31c988e79632383df8808bc3a63669a97d4fc8e3d833b22df79b5575600000000",
+     "6fd88e5b0e2b342bb34427929d9dfba0afaa96728347833dc6706e53dd811c5600000000",
      "711238d3cdd6647a3910fc89dad82d36d5add96026cd7a5dba3009bf8bd40ec400000000",
-     "6fd88e5b0e2b342bb34427929d9dfba0afaa96728347833dc6706e53dd811c5600000000"
+     "078df02ee36be653aabeb6cfd0ab47d80081bbfb84b20fc7a440be89713bb5bf00000000",
+     "8d59ba7734bd74f9940a25c88647007756e52e54f698bcca22fb0b11619d5ef800000000",
+     "1fa604e31c988e79632383df8808bc3a63669a97d4fc8e3d833b22df79b5575600000000"
     ],
     "req": "d"
    },
@@ -1960,12 +1960,12 @@
     "ctx": "c4",
     "keys": [
      "348b7770d84a7c218602ca73e4184d4acf38ca739f20c2c43b8fc055f1da623400000000",
+     "e5b2e082fe3c88b316d138fb53785bae4dd826a45abaca9f1ee907ae1fd02d9400000000",
      "401e963d696909b2f00a1ca30c7459772988cb5628279e5af02b85827b5a255a00000000",
-     "95786191e66499342168cb8a8581a254aa5682fa63b0e8d73bfd3436f0d6d5f200000000",
-     "85baa94fd7b4bfe2911460f6e04f519f9790f5e30d6bf309ad393199a227cc9200000000",
-     "95cf53e18afc0970ac9a223ae911532dd5f6f3b78768abd52324cce75f9cc19700000000",
      "9522d13306a3c73af78382fc6a6807845f555c69f2af9fed07a4afb63bb2d67100000000",
-     "e5b2e082fe3c88b316d138fb53785bae4dd826a45abaca9f1ee907ae1fd02d9400000000"
+     "95cf53e18afc0970ac9a223ae911532dd5f6f3b78768abd52324cce75f9cc19700000000",
+     "85baa94fd7b4bfe2911460f6e04f519f9790f5e30d6bf309ad393199a227cc9200000000",
+     "95786191e66499342168cb8a8581a254aa5682fa63b0e8d73bfd3436f0d6d5f200000000"
     ],
     "req": "c",
     "success": true
@@ -2471,11 +2471,11 @@
    "args": {
     "ctx": "c6",
     "keys": [
-     "c0e3f9825dd03a8124555f39fea07568531bb4f1bc2ef7a3a95f1e80c8ff385d00000000",
-     "ff8ca58355efaf250d1db2a33e1b2b125aa607ef665e1912a2b751241da859f100000000",
+     "bbe046f52f0992a7fcf779ff324db4d69055e701b03cd66b7c214d7139e49dfd00000000",
      "82e7d1ec4953a4c844147b0a65777cbb5c2f17a39b329fa55791186cc57cafa300000000",
+     "ff8ca58355efaf250d1db2a33e1b2b125aa607ef665e1912a2b751241da859f100000000",
      "6ffd01ae6ec0b7e638ef12418f6e18827d07f706d60b7a534fd5d77429cfe7f900000000",
-     "bbe046f52f0992a7fcf779ff324db4d69055e701b03cd66b7c214d7139e49dfd00000000"
+     "c0e3f9825dd03a8124555f39fea07568531bb4f1bc2ef7a3a95f1e80c8ff385d00000000"
     ],
     "req": "e",
     "success": true
@@ -3157,17 +3157,17 @@
   },
   {
    "args": {
-    "key": "95786191e66499342168cb8a8581a254aa5682fa63b0e8d73bfd3436f0d6d5f200000000"
+    "key": "e5b2e082fe3c88b316d138fb53785bae4dd826a45abaca9f1ee907ae1fd02d9400000000"
    },
    "m": "get",
    "ret": {
-    "id": 6,
+    "id": 3,
     "ref": -1
    }
   },
   {
    "args": {
-    "key": "95786191e66499342168cb8a8581a254aa5682fa63b0e8d73bfd3436f0d6d5f200000000"
+    "key": "e5b2e082fe3c88b316d138fb53785bae4dd826a45abaca9f1ee907ae1fd02d9400000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -3191,23 +3191,6 @@
   },
   {
    "args": {
-    "key": "85baa94fd7b4bfe2911460f6e04f519f9790f5e30d6bf309ad393199a227cc9200000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 4,
-    "ref": -1
-   }
-  },
-  {
-   "args": {
-    "key": "85baa94fd7b4bfe2911460f6e04f519f9790f5e30d6bf309ad393199a227cc9200000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
     "key": "9522d13306a3c73af78382fc6a6807845f555c69f2af9fed07a4afb63bb2d67100000000"
    },
    "m": "get",
@@ -3225,17 +3208,17 @@
   },
   {
    "args": {
-    "key": "e5b2e082fe3c88b316d138fb53785bae4dd826a45abaca9f1ee907ae1fd02d9400000000"
+    "key": "a65103f6b75fa7f5654aa3272e58cb19f89937ab559defc8d3290e634fae302a00000000"
    },
    "m": "get",
    "ret": {
-    "id": 3,
+    "id": 2,
     "ref": -1
    }
   },
   {
    "args": {
-    "key": "e5b2e082fe3c88b316d138fb53785bae4dd826a45abaca9f1ee907ae1fd02d9400000000"
+    "key": "a65103f6b75fa7f5654aa3272e58cb19f89937ab559defc8d3290e634fae302a00000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -3253,6 +3236,23 @@
   {
    "args": {
     "key": "95cf53e18afc0970ac9a223ae911532dd5f6f3b78768abd52324cce75f9cc19700000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "85baa94fd7b4bfe2911460f6e04f519f9790f5e30d6bf309ad393199a227cc9200000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 4,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "85baa94fd7b4bfe2911460f6e04f519f9790f5e30d6bf309ad393199a227cc9200000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -3293,17 +3293,17 @@
   },
   {
    "args": {
-    "key": "a65103f6b75fa7f5654aa3272e58cb19f89937ab559defc8d3290e634fae302a00000000"
+    "key": "95786191e66499342168cb8a8581a254aa5682fa63b0e8d73bfd3436f0d6d5f200000000"
    },
    "m": "get",
    "ret": {
-    "id": 2,
+    "id": 6,
     "ref": -1
    }
   },
   {
    "args": {
-    "key": "a65103f6b75fa7f5654aa3272e58cb19f89937ab559defc8d3290e634fae302a00000000"
+    "key": "95786191e66499342168cb8a8581a254aa5682fa63b0e8d73bfd3436f0d6d5f200000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -3368,23 +3368,6 @@
   },
   {
    "args": {
-    "key": "8d59ba7734bd74f9940a25c88647007756e52e54f698bcca22fb0b11619d5ef800000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 13,
-    "ref": -1
-   }
-  },
-  {
-   "args": {
-    "key": "8d59ba7734bd74f9940a25c88647007756e52e54f698bcca22fb0b11619d5ef800000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
     "key": "3b5bdb713a96940d0c946c936702ed3e0d93f858d56934b5ae974d193e5d4b9700000000"
    },
    "m": "get",
@@ -3396,23 +3379,6 @@
   {
    "args": {
     "key": "3b5bdb713a96940d0c946c936702ed3e0d93f858d56934b5ae974d193e5d4b9700000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
-    "key": "35d9cca39110db41bbe1d85ddf892d1c6630a3f56e3771859f37229874c2120900000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 17,
-    "ref": -1
-   }
-  },
-  {
-   "args": {
-    "key": "35d9cca39110db41bbe1d85ddf892d1c6630a3f56e3771859f37229874c2120900000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -3436,6 +3402,23 @@
   },
   {
    "args": {
+    "key": "35d9cca39110db41bbe1d85ddf892d1c6630a3f56e3771859f37229874c2120900000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 17,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "35d9cca39110db41bbe1d85ddf892d1c6630a3f56e3771859f37229874c2120900000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
     "key": "9979bbded357500b501be47c229b4f9d91e5683eace465010242f59fc2c65ffd00000000"
    },
    "m": "get",
@@ -3453,34 +3436,17 @@
   },
   {
    "args": {
-    "key": "078df02ee36be653aabeb6cfd0ab47d80081bbfb84b20fc7a440be89713bb5bf00000000"
+    "key": "6fd88e5b0e2b342bb34427929d9dfba0afaa96728347833dc6706e53dd811c5600000000"
    },
    "m": "get",
    "ret": {
-    "id": 15,
+    "id": 14,
     "ref": -1
    }
   },
   {
    "args": {
-    "key": "078df02ee36be653aabeb6cfd0ab47d80081bbfb84b20fc7a440be89713bb5bf00000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
-    "key": "1fa604e31c988e79632383df8808bc3a63669a97d4fc8e3d833b22df79b5575600000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 10,
-    "ref": -1
-   }
-  },
-  {
-   "args": {
-    "key": "1fa604e31c988e79632383df8808bc3a63669a97d4fc8e3d833b22df79b5575600000000"
+    "key": "6fd88e5b0e2b342bb34427929d9dfba0afaa96728347833dc6706e53dd811c5600000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -3504,17 +3470,51 @@
   },
   {
    "args": {
-    "key": "6fd88e5b0e2b342bb34427929d9dfba0afaa96728347833dc6706e53dd811c5600000000"
+    "key": "078df02ee36be653aabeb6cfd0ab47d80081bbfb84b20fc7a440be89713bb5bf00000000"
    },
    "m": "get",
    "ret": {
-    "id": 14,
+    "id": 15,
     "ref": -1
    }
   },
   {
    "args": {
-    "key": "6fd88e5b0e2b342bb34427929d9dfba0afaa96728347833dc6706e53dd811c5600000000"
+    "key": "078df02ee36be653aabeb6cfd0ab47d80081bbfb84b20fc7a440be89713bb5bf00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "8d59ba7734bd74f9940a25c88647007756e52e54f698bcca22fb0b11619d5ef800000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 13,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "8d59ba7734bd74f9940a25c88647007756e52e54f698bcca22fb0b11619d5ef800000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "1fa604e31c988e79632383df8808bc3a63669a97d4fc8e3d833b22df79b5575600000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 10,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "1fa604e31c988e79632383df8808bc3a63669a97d4fc8e3d833b22df79b5575600000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -4352,34 +4352,17 @@
   },
   {
    "args": {
-    "key": "3bc1159a0e57d78b54392f6c81987d9d56722e51ac7ce6e0b6af184d0962e84a00000000"
+    "key": "5662f384a29506b70c8b8854b06fdf98564cad58d2bb4dcddddb96ede60b3aad00000000"
    },
    "m": "get",
    "ret": {
-    "id": 5,
+    "id": 20,
     "ref": -1
    }
   },
   {
    "args": {
-    "key": "3bc1159a0e57d78b54392f6c81987d9d56722e51ac7ce6e0b6af184d0962e84a00000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
-    "key": "02a971c267ebd9957af3dd40fdbf640253e549d9eef5b1719ff4a60a961da54700000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 7,
-    "ref": -1
-   }
-  },
-  {
-   "args": {
-    "key": "02a971c267ebd9957af3dd40fdbf640253e549d9eef5b1719ff4a60a961da54700000000"
+    "key": "5662f384a29506b70c8b8854b06fdf98564cad58d2bb4dcddddb96ede60b3aad00000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -4397,23 +4380,6 @@
   {
    "args": {
     "key": "0867460858d2f79d560bf1f6e5d8bf14d1049d88eca957db487e2d95406f11ef00000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
-    "key": "cb193fae6818e34297a55310f27a9a429b852b8d35b273972fd8badfe853351500000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 3,
-    "ref": -1
-   }
-  },
-  {
-   "args": {
-    "key": "cb193fae6818e34297a55310f27a9a429b852b8d35b273972fd8badfe853351500000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -4454,51 +4420,17 @@
   },
   {
    "args": {
-    "key": "5662f384a29506b70c8b8854b06fdf98564cad58d2bb4dcddddb96ede60b3aad00000000"
+    "key": "3bc1159a0e57d78b54392f6c81987d9d56722e51ac7ce6e0b6af184d0962e84a00000000"
    },
    "m": "get",
    "ret": {
-    "id": 20,
+    "id": 5,
     "ref": -1
    }
   },
   {
    "args": {
-    "key": "5662f384a29506b70c8b8854b06fdf98564cad58d2bb4dcddddb96ede60b3aad00000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
-    "key": "874310941ea7696718e422bfc7be4215bfe1804cd5841039679d158a3ba5b3ac00000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 23,
-    "ref": -1
-   }
-  },
-  {
-   "args": {
-    "key": "874310941ea7696718e422bfc7be4215bfe1804cd5841039679d158a3ba5b3ac00000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
-    "key": "8c7edd4bd576377ff22b9cddbda5a91b29f6d6784a700248807348686d37054700000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 8,
-    "ref": -1
-   }
-  },
-  {
-   "args": {
-    "key": "8c7edd4bd576377ff22b9cddbda5a91b29f6d6784a700248807348686d37054700000000"
+    "key": "3bc1159a0e57d78b54392f6c81987d9d56722e51ac7ce6e0b6af184d0962e84a00000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -4522,6 +4454,40 @@
   },
   {
    "args": {
+    "key": "8c7edd4bd576377ff22b9cddbda5a91b29f6d6784a700248807348686d37054700000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 8,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "8c7edd4bd576377ff22b9cddbda5a91b29f6d6784a700248807348686d37054700000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "cb193fae6818e34297a55310f27a9a429b852b8d35b273972fd8badfe853351500000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "cb193fae6818e34297a55310f27a9a429b852b8d35b273972fd8badfe853351500000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
     "key": "76ec17c198f8db66ede429e04dfd918d7de13225cb342572773c5502baf5a27400000000"
    },
    "m": "get",
@@ -4533,6 +4499,40 @@
   {
    "args": {
     "key": "76ec17c198f8db66ede429e04dfd918d7de13225cb342572773c5502baf5a27400000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "874310941ea7696718e422bfc7be4215bfe1804cd5841039679d158a3ba5b3ac00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 23,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "874310941ea7696718e422bfc7be4215bfe1804cd5841039679d158a3ba5b3ac00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "02a971c267ebd9957af3dd40fdbf640253e549d9eef5b1719ff4a60a961da54700000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 7,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "02a971c267ebd9957af3dd40fdbf640253e549d9eef5b1719ff4a60a961da54700000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -5165,23 +5165,6 @@
   },
   {
    "args": {
-    "key": "8d59ba7734bd74f9940a25c88647007756e52e54f698bcca22fb0b11619d5ef800000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 13,
-    "ref": 1
-   }
-  },
-  {
-   "args": {
-    "key": "8d59ba7734bd74f9940a25c88647007756e52e54f698bcca22fb0b11619d5ef800000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
     "key": "3b5bdb713a96940d0c946c936702ed3e0d93f858d56934b5ae974d193e5d4b9700000000"
    },
    "m": "get",
@@ -5193,23 +5176,6 @@
   {
    "args": {
     "key": "3b5bdb713a96940d0c946c936702ed3e0d93f858d56934b5ae974d193e5d4b9700000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
-    "key": "35d9cca39110db41bbe1d85ddf892d1c6630a3f56e3771859f37229874c2120900000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 17,
-    "ref": 1
-   }
-  },
-  {
-   "args": {
-    "key": "35d9cca39110db41bbe1d85ddf892d1c6630a3f56e3771859f37229874c2120900000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -5233,6 +5199,23 @@
   },
   {
    "args": {
+    "key": "35d9cca39110db41bbe1d85ddf892d1c6630a3f56e3771859f37229874c2120900000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 17,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "35d9cca39110db41bbe1d85ddf892d1c6630a3f56e3771859f37229874c2120900000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
     "key": "9979bbded357500b501be47c229b4f9d91e5683eace465010242f59fc2c65ffd00000000"
    },
    "m": "get",
@@ -5250,34 +5233,17 @@
   },
   {
    "args": {
-    "key": "078df02ee36be653aabeb6cfd0ab47d80081bbfb84b20fc7a440be89713bb5bf00000000"
+    "key": "6fd88e5b0e2b342bb34427929d9dfba0afaa96728347833dc6706e53dd811c5600000000"
    },
    "m": "get",
    "ret": {
-    "id": 15,
+    "id": 14,
     "ref": 1
    }
   },
   {
    "args": {
-    "key": "078df02ee36be653aabeb6cfd0ab47d80081bbfb84b20fc7a440be89713bb5bf00000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
-    "key": "1fa604e31c988e79632383df8808bc3a63669a97d4fc8e3d833b22df79b5575600000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 10,
-    "ref": 1
-   }
-  },
-  {
-   "args": {
-    "key": "1fa604e31c988e79632383df8808bc3a63669a97d4fc8e3d833b22df79b5575600000000"
+    "key": "6fd88e5b0e2b342bb34427929d9dfba0afaa96728347833dc6706e53dd811c5600000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -5301,17 +5267,51 @@
   },
   {
    "args": {
-    "key": "6fd88e5b0e2b342bb34427929d9dfba0afaa96728347833dc6706e53dd811c5600000000"
+    "key": "078df02ee36be653aabeb6cfd0ab47d80081bbfb84b20fc7a440be89713bb5bf00000000"
    },
    "m": "get",
    "ret": {
-    "id": 14,
+    "id": 15,
     "ref": 1
    }
   },
   {
    "args": {
-    "key": "6fd88e5b0e2b342bb34427929d9dfba0afaa96728347833dc6706e53dd811c5600000000"
+    "key": "078df02ee36be653aabeb6cfd0ab47d80081bbfb84b20fc7a440be89713bb5bf00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "8d59ba7734bd74f9940a25c88647007756e52e54f698bcca22fb0b11619d5ef800000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 13,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "8d59ba7734bd74f9940a25c88647007756e52e54f698bcca22fb0b11619d5ef800000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "1fa604e31c988e79632383df8808bc3a63669a97d4fc8e3d833b22df79b5575600000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 10,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "1fa604e31c988e79632383df8808bc3a63669a97d4fc8e3d833b22df79b5575600000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -5363,6 +5363,23 @@
   },
   {
    "args": {
+    "key": "e5b2e082fe3c88b316d138fb53785bae4dd826a45abaca9f1ee907ae1fd02d9400000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 4,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "e5b2e082fe3c88b316d138fb53785bae4dd826a45abaca9f1ee907ae1fd02d9400000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
     "key": "401e963d696909b2f00a1ca30c7459772988cb5628279e5af02b85827b5a255a00000000"
    },
    "m": "get",
@@ -5374,57 +5391,6 @@
   {
    "args": {
     "key": "401e963d696909b2f00a1ca30c7459772988cb5628279e5af02b85827b5a255a00000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
-    "key": "95786191e66499342168cb8a8581a254aa5682fa63b0e8d73bfd3436f0d6d5f200000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 7,
-    "ref": -1
-   }
-  },
-  {
-   "args": {
-    "key": "95786191e66499342168cb8a8581a254aa5682fa63b0e8d73bfd3436f0d6d5f200000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
-    "key": "85baa94fd7b4bfe2911460f6e04f519f9790f5e30d6bf309ad393199a227cc9200000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 5,
-    "ref": -1
-   }
-  },
-  {
-   "args": {
-    "key": "85baa94fd7b4bfe2911460f6e04f519f9790f5e30d6bf309ad393199a227cc9200000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
-    "key": "95cf53e18afc0970ac9a223ae911532dd5f6f3b78768abd52324cce75f9cc19700000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 19,
-    "ref": -1
-   }
-  },
-  {
-   "args": {
-    "key": "95cf53e18afc0970ac9a223ae911532dd5f6f3b78768abd52324cce75f9cc19700000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -5448,17 +5414,51 @@
   },
   {
    "args": {
-    "key": "e5b2e082fe3c88b316d138fb53785bae4dd826a45abaca9f1ee907ae1fd02d9400000000"
+    "key": "95cf53e18afc0970ac9a223ae911532dd5f6f3b78768abd52324cce75f9cc19700000000"
    },
    "m": "get",
    "ret": {
-    "id": 4,
+    "id": 19,
     "ref": -1
    }
   },
   {
    "args": {
-    "key": "e5b2e082fe3c88b316d138fb53785bae4dd826a45abaca9f1ee907ae1fd02d9400000000"
+    "key": "95cf53e18afc0970ac9a223ae911532dd5f6f3b78768abd52324cce75f9cc19700000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "85baa94fd7b4bfe2911460f6e04f519f9790f5e30d6bf309ad393199a227cc9200000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 5,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "85baa94fd7b4bfe2911460f6e04f519f9790f5e30d6bf309ad393199a227cc9200000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "95786191e66499342168cb8a8581a254aa5682fa63b0e8d73bfd3436f0d6d5f200000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 7,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "95786191e66499342168cb8a8581a254aa5682fa63b0e8d73bfd3436f0d6d5f200000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -5839,34 +5839,17 @@
   },
   {
    "args": {
-    "key": "c0e3f9825dd03a8124555f39fea07568531bb4f1bc2ef7a3a95f1e80c8ff385d00000000"
+    "key": "bbe046f52f0992a7fcf779ff324db4d69055e701b03cd66b7c214d7139e49dfd00000000"
    },
    "m": "get",
    "ret": {
-    "id": 3,
+    "id": 20,
     "ref": -1
    }
   },
   {
    "args": {
-    "key": "c0e3f9825dd03a8124555f39fea07568531bb4f1bc2ef7a3a95f1e80c8ff385d00000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
-    "key": "ff8ca58355efaf250d1db2a33e1b2b125aa607ef665e1912a2b751241da859f100000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 22,
-    "ref": -1
-   }
-  },
-  {
-   "args": {
-    "key": "ff8ca58355efaf250d1db2a33e1b2b125aa607ef665e1912a2b751241da859f100000000"
+    "key": "bbe046f52f0992a7fcf779ff324db4d69055e701b03cd66b7c214d7139e49dfd00000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -5890,6 +5873,23 @@
   },
   {
    "args": {
+    "key": "ff8ca58355efaf250d1db2a33e1b2b125aa607ef665e1912a2b751241da859f100000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 22,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "ff8ca58355efaf250d1db2a33e1b2b125aa607ef665e1912a2b751241da859f100000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
     "key": "6ffd01ae6ec0b7e638ef12418f6e18827d07f706d60b7a534fd5d77429cfe7f900000000"
    },
    "m": "get",
@@ -5907,24 +5907,24 @@
   },
   {
    "args": {
-    "key": "bbe046f52f0992a7fcf779ff324db4d69055e701b03cd66b7c214d7139e49dfd00000000"
+    "key": "c0e3f9825dd03a8124555f39fea07568531bb4f1bc2ef7a3a95f1e80c8ff385d00000000"
    },
    "m": "get",
    "ret": {
-    "id": 20,
+    "id": 3,
     "ref": -1
    }
   },
   {
    "args": {
-    "key": "bbe046f52f0992a7fcf779ff324db4d69055e701b03cd66b7c214d7139e49dfd00000000"
+    "key": "c0e3f9825dd03a8124555f39fea07568531bb4f1bc2ef7a3a95f1e80c8ff385d00000000"
    },
    "m": "mark_evictable",
    "ret": null
   }
  ],
  "provenance": {
-  "blis_vllm_commit": "bfc8f6e1689177abdf325473717253b3d9204700",
+  "blis_vllm_commit": "e299646714d8134a0eea8409fa6ebeafd9e1af37",
   "kind": "recorded",
   "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
   "mock_version": "gpu-mock/9+2ee0b3b47a9c",
@@ -5965,12 +5965,13 @@
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
   "oracle_inputs": {
+   "oracle/fixed_hash_seed.py": "902b38c45ec4a0e53392ffa05196aaade6ed35d46db902c45f4e092a1030968c",
    "oracle/kv_interfaces.py": "4bcde8955836b6ef732f8c901fa94c89a5b7592dcf1db8f6322e3be451c81c10",
    "oracle/mocks.json": "9521f9f69e212f249e79b33614003c43dea5642e45499afa48b893737fc49f9b",
    "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
    "oracle/run_connector.py": "48217f5b3012d7d0c2888b85d67f92f9568f3b0667acd369a997ef043b308af7",
    "oracle/run_enginecore.py": "35315709f7f99ceaa0dc0d01ec57997b92524b1825cb990ed27ba8417500461c",
-   "oracle/run_kv_interfaces.py": "1fa4a221afbc499c6250ebea84b0cc9dc041161d13b262b515e79a3c9c46ea41",
+   "oracle/run_kv_interfaces.py": "aa603da115b13b5a2ec6d78c4072589179a570ce878e803c07b65ad49a6161d7",
    "oracle/run_multiconnector.py": "62eb25ec9ab35893791f4b62f1b32cf9aef06acaa6db5765f8f4684b6154cfb2",
    "oracle/run_offloading.py": "b5cc5476778c43785049ded33a01789ac273c7a111c7365cafec3ec3a32d4cdc",
    "oracle/run_scheduler.py": "8aeea68a1dce3a32b9b8458ce710812c7851769e67bc3cc28414750054916b3a",
