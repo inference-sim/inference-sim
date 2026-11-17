@@ -28,7 +28,7 @@
   "value": "auto",
   "tp_group_nodes": 1,
   "compute_capability": "10.0",
-  "owner": "_resolve_fi_ar_backend",
+  "owner": "_resolve_fi_ar_backend+multicast",
   "exact": true
  },
  {
@@ -36,7 +36,7 @@
   "value": "auto",
   "tp_group_nodes": 1,
   "compute_capability": "10.3",
-  "owner": "_resolve_fi_ar_backend",
+  "owner": "_resolve_fi_ar_backend+multicast",
   "exact": true
  },
  {
@@ -148,16 +148,16 @@
   "value": "mnnvl",
   "tp_group_nodes": 1,
   "compute_capability": "10.0",
-  "owner": "_resolve_fi_ar_backend",
-  "exact": false
+  "owner": "_resolve_fi_ar_backend+multicast",
+  "exact": true
  },
  {
   "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
   "value": "mnnvl",
   "tp_group_nodes": 1,
   "compute_capability": "10.3",
-  "owner": "_resolve_fi_ar_backend",
-  "exact": false
+  "owner": "_resolve_fi_ar_backend+multicast",
+  "exact": true
  },
  {
   "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
@@ -268,7 +268,7 @@
   "value": "trtllm",
   "tp_group_nodes": 1,
   "compute_capability": "10.0",
-  "owner": "_resolve_fi_ar_backend",
+  "owner": "_resolve_fi_ar_backend+multicast",
   "exact": false
  },
  {
@@ -276,7 +276,7 @@
   "value": "trtllm",
   "tp_group_nodes": 1,
   "compute_capability": "10.3",
-  "owner": "_resolve_fi_ar_backend",
+  "owner": "_resolve_fi_ar_backend+multicast",
   "exact": false
  },
  {
@@ -388,7 +388,7 @@
   "value": "nccl",
   "tp_group_nodes": 1,
   "compute_capability": "10.0",
-  "owner": "_resolve_fi_ar_backend",
+  "owner": "_resolve_fi_ar_backend+multicast",
   "exact": false
  },
  {
@@ -396,7 +396,7 @@
   "value": "nccl",
   "tp_group_nodes": 1,
   "compute_capability": "10.3",
-  "owner": "_resolve_fi_ar_backend",
+  "owner": "_resolve_fi_ar_backend+multicast",
   "exact": false
  },
  {
@@ -543,6 +543,78 @@
   "field": "UCX_TLS",
   "value": "sm,self",
   "owner": "ucx-faq",
+  "exact": false
+ },
+ {
+  "field": "NCCL_CUMEM_ENABLE",
+  "value": "1",
+  "owner": "nccl-user-guide",
+  "exact": true
+ },
+ {
+  "field": "NCCL_CUMEM_ENABLE",
+  "value": "0",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_CUMEM_ENABLE",
+  "value": "",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_CUMEM_ENABLE",
+  "value": "2",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_NVLS_ENABLE",
+  "value": "1",
+  "owner": "nccl-user-guide",
+  "exact": true
+ },
+ {
+  "field": "NCCL_NVLS_ENABLE",
+  "value": "2",
+  "owner": "nccl-user-guide",
+  "exact": true
+ },
+ {
+  "field": "NCCL_NVLS_ENABLE",
+  "value": "0",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_NVLS_ENABLE",
+  "value": "",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "1",
+  "owner": "nccl-user-guide",
+  "exact": true
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "2",
+  "owner": "nccl-user-guide",
+  "exact": true
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "0",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "",
+  "owner": "nccl-user-guide",
   "exact": false
  }
 ]

@@ -735,7 +735,15 @@
         "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "NCCL's own choice: since NCCL 2.19 it allocates with the CUDA cuMem functions whenever the system supports them (NCCL user guide, NCCL_CUMEM_ENABLE), and a stated 1 only overrides the autodetection with the same choice. The latency kernel prices every collective from the NCCL sweep at NCCL's defaults",
+        "valid_when": [
+          {
+            "value_in": [
+              "1"
+            ]
+          }
+        ]
       }
     },
     {
@@ -805,6 +813,26 @@
       }
     },
     {
+      "name": "NCCL_MNNVL_ENABLE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "NCCL's own choice: the default is 2, use multi-node NVLink where the system supports it and fall back to the network where it does not, and 1 differs only in failing communicator initialization when MNNVL is unsupported or cannot be enabled (NCCL user guide, NCCL_MNNVL_ENABLE), which a run that completed did not do. The latency kernel prices every collective from the NCCL sweep at NCCL's defaults, and a stated cluster's NVLink domain is a catalog fact, not a setting",
+        "valid_when": [
+          {
+            "value_in": [
+              "1",
+              "2"
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "NCCL_NO_CACHE",
       "source": "env",
       "status": "not_modelled",
@@ -834,7 +862,16 @@
         "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "NCCL's own choice: the default is 2, use NVLink SHARP where the system supports it, and 1 differs only in failing communicator initialization when the NVLS resources cannot be allocated (NCCL user guide, NCCL_NVLS_ENABLE), which a run that completed did not do. The latency kernel prices every collective from the NCCL sweep at NCCL's defaults",
+        "valid_when": [
+          {
+            "value_in": [
+              "1",
+              "2"
+            ]
+          }
+        ]
       }
     },
     {
@@ -1404,6 +1441,26 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "UCX_CUDA_IPC_ENABLE_MNNVL",
+      "source": "env",
+      "status": "modelled",
+      "evidence": {
+        "traces": [
+          "compat/kernelmodel/packaging_test.go",
+          "compat/kernelmodel/group_placement_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "covered": [
+          "y"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -2484,7 +2541,7 @@
       },
       "estimation": {
         "rule": "leave_unset",
-        "preserves": "the backend vLLM's _resolve_fi_ar_backend picks for the tensor-parallel group (flashinfer_all_reduce.py:143-178@5df63a72). One node: auto picks mnnvl with a trtllm fallback when the multicast workspace cannot be created, and a stated mnnvl picks mnnvl with no fallback, so the two differ on a node without NVSwitch multicast, which the stand-in cannot be told: a stated mnnvl on one node is not exact. Several nodes: auto picks mnnvl without fallback on compute capability 10.0 and up, and turns FlashInfer all-reduce off below it.",
+        "preserves": "the backend vLLM's _resolve_fi_ar_backend picks for the tensor-parallel group (flashinfer_all_reduce.py:143-178@5df63a72). One node: auto picks mnnvl with a trtllm fallback when the multicast workspace cannot be created, and a stated mnnvl picks mnnvl with no fallback, so the two differ on a node without NVSwitch multicast, which the stand-in cannot be told. On compute capability 10.0 and up every node the recorded runs used has NVSwitch multicast (HGX B200 and B300, the GB200 and GB300 NVL72 trays), the fallback is never taken, and a stated mnnvl on one node is exact under that assumption, which the point's estimation text states; on a lower capability it is not exact. Several nodes: auto picks mnnvl without fallback on compute capability 10.0 and up, and turns FlashInfer all-reduce off below it.",
         "valid_when": [
           {
             "value_in": [
@@ -2497,6 +2554,17 @@
             ],
             "tp_group_nodes": {
               "gt": 1
+            },
+            "compute_capability": {
+              "gte": "10.0"
+            }
+          },
+          {
+            "value_in": [
+              "mnnvl"
+            ],
+            "tp_group_nodes": {
+              "eq": 1
             },
             "compute_capability": {
               "gte": "10.0"
