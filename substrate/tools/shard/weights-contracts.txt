@@ -1,0 +1,12 @@
+# Seconds a package of the "contracts and validators tests" matrix takes with the race detector
+# on a hosted 4-core runner (ci.yml run 43345112088). They only balance the legs of the matrix: a
+# package not listed weighs 1, and a stale figure makes a leg slower, never makes a package run
+# twice or not at all (see shard.go).
+github.com/inference-sim/blis-substrate/load 138
+github.com/inference-sim/blis-substrate/contracts 111
+github.com/inference-sim/blis-substrate/tools/prcheck 85
+github.com/inference-sim/blis-substrate/contracts/spec/deployment 48
+github.com/inference-sim/blis-substrate/contracts/spec/measurement 16
+github.com/inference-sim/blis-substrate/tools/release 13
+github.com/inference-sim/blis-substrate/tools/invariants 8
+github.com/inference-sim/blis-substrate/tools/pyrules 5
