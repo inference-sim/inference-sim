@@ -1,9 +1,9 @@
 package main
 
 // relaxations is release plan §3.3, "Relaxing the deprecation rule": the features LIF-7 lets stay
-// past a compatibility-breaking release until v0.19.0, the M4 milestone release (plan v81: the
-// M3.0 release, v0.18.0, removes engine_version, the flags that restate scenario fields, eager
-// workload generation and contracts/kernel/enginesettings; these four go with M4). Each row's
+// past a compatibility-breaking release until v0.19.0, the M4 milestone release (plan v81:
+// inference-sim's M3.0 release, v0.18.0, removes engine_version, the flags that restate scenario
+// fields, eager workload generation and contracts/kernel/enginesettings; these four go with M4). Each row's
 // removal is an M4 item: blis-vllm's compat/ and rules (inference-sim #2027),
 // contracts/rules (blis-substrate #165) and contracts/kernel/enginesettings (#58). The release
 // bot's deprecation check skips exactly these. Every other deprecated feature, including

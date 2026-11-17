@@ -273,8 +273,9 @@ def test_layer_count_matches_config(d: Path):
     stated = t.get("num_hidden_layers")
     vector = t.get("layers_block_type")
     expected = stated if stated is not None else (len(vector) if vector else None)
-    if expected is None:
-        pytest.skip("the config states neither a layer count nor a layer vector")
+    # A config that states neither fails: a skip would let a model go unchecked in every CI job
+    # (X16).
+    assert expected is not None, "the config states neither a layer count nor a layer vector"
     assert derived == expected
 
 
@@ -296,8 +297,9 @@ def test_attention_shape_matches_config(d: Path):
     check and fail here."""
     g, t = graph_of(d), text_config(config_of(d))
     nodes = [n for k in g["layer_kinds"] for n in k["nodes"] if n["op"] == "Attention"]
-    if not nodes:
-        pytest.skip("no attention layer")
+    # Every catalogued model has an attention layer today. A model with none (a pure state-space
+    # model) needs its own check here rather than a skip that passes unseen (X16).
+    assert nodes, "the graph has no attention layer"
     for n in nodes:
         if n.get("role") == "block_index_scores":
             # A block-sparse layer runs a second, much narrower attention to score which

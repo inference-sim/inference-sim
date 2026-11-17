@@ -963,14 +963,15 @@ def test_the_h100_host_link_is_the_cpu_tier_fit_not_a_second_number():
 # VAL-7: single-model coefficients only go down
 # --------------------------------------------------------------------------------------
 
-# A coefficient scoped to one model marks a cost the cost model's general forms do not yet
-# explain. All 46 committed ones are for deepseek-v4.1-flash. Lower this number when a
-# general form absorbs some of them; never raise it to admit a new one -- add the missing
-# general form instead (design VAL-7).
-# 46 -> 73 (2026-11-17, a coordinator decision recorded for the maintainer): the 27 per-model non-KV
-# memory entries scripts/fit_memory_startup.py writes, each checked out of sample on its model's anchor
-# units, are a recorded exception until the general form of inference-sim/blis-substrate#294 replaces
-# them; that issue lowers this back.
+# Invariant VAL-7 (contracts/invariants/val.yaml): a coefficient scoped to one model marks a cost the
+# cost model's general forms do not yet explain. This number is the ratchet, the largest count the
+# registry may hold. It only goes down, except as a recorded exception: the raising pull request names
+# the general form each added entry stands in for, records the raise with the issue that lowers it,
+# and a maintainer approves it there.
+# Recorded exceptions now in force: 46 -> 73 (2026-11-17), the 27 per-model non-KV memory entries
+# scripts/fit_memory_startup.py writes, each checked out of sample on its model's anchor units. They
+# stand in for the general non-KV memory form of inference-sim/blis-substrate#294, which lowers this
+# back; the approval is recorded on inference-sim/blis-substrate#329.
 MAX_SINGLE_MODEL_ENTRIES = 73
 
 

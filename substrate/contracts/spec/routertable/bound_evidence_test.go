@@ -543,7 +543,7 @@ func TestTheLayoutBoundsNameALayoutTheSweepRan(t *testing.T) {
 		}
 	}
 	if checked == 0 {
-		t.Skip("no committed ratio comes from a layout sweep yet")
+		t.Fatal("no committed ratio comes from a layout sweep: this check would pass unseen (X16)")
 	}
 }
 

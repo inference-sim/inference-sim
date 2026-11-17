@@ -193,7 +193,13 @@
   section: §9.4
   statement: >-
     A coefficient scoped to a single model marks a cost that the cost model's general forms do not
-    yet explain. It names the missing form. The number of such coefficients only goes down.
+    yet explain. It names the missing form. The registry's ratchet is the largest number of such
+    coefficients it may hold, and a test fails when the count is above it. The ratchet only goes
+    down, with one exception. A pull request may raise it, as a recorded exception, when three things
+    hold. First, each coefficient the raise adds names the general form it stands in for. Second, the
+    pull request records the raise and names the issue that will lower the ratchet again. Third, a
+    maintainer approves the raise in that pull request. This invariant states no number: the
+    registry's ratchet holds the current one.
   scope:
   - blis-substrate
   checks:
@@ -206,7 +212,6 @@
   target:
     status: ci
     milestone: 2
-  note: 46 such coefficients, all for one model
 - id: VAL-8
   section: §9.4
   statement: >-
