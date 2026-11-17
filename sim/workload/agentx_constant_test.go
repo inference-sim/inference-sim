@@ -267,3 +267,31 @@ func TestConstantLoadRecyclingRules(t *testing.T) {
 		t.Error("an unknown recycling rule was accepted")
 	}
 }
+
+// A child the warmup's root spawned with a long recorded start offset is asleep when the warmup
+// window closes. It must neither hold the measured phase back until it wakes nor send into the
+// measured phase: the measured phase starts when the warmup's requests have returned, and no
+// request of a warmup session appears in it.
+func TestConstantLoadWarmupDropsSleepingChildren(t *testing.T) {
+	late := wekaLine(t, "L",
+		wreq(0, 1, 128, 5, 1, 2),
+		wsub(1, "a1", 5000, wreq(500, 2, 128, 5, 50, 51)),
+		wreq(10, 1, 192, 5, 1, 2, 3))
+	c := agxCorpus(t, late, chainTrace(t, "B", 2))
+	h := runAgentX(t, c, constantCfg(2, 20, AgentXConstantLoad{WarmupUs: 3 * sec}), fixedService(sec))
+	start, _ := h.x.Window()
+	if start <= 0 || start > 60*sec {
+		t.Fatalf("the measured phase started at %d µs: the sleeping child held it back", start)
+	}
+	warm := map[int]bool{}
+	for _, i := range h.issued {
+		if i.phase == sim.PhaseWarmup {
+			warm[i.tag.Tree] = true
+		}
+	}
+	for _, i := range h.issued {
+		if i.phase == sim.PhaseProfile && warm[i.tag.Tree] {
+			t.Errorf("a warmup session's request %+v was sent in the measured phase", i.tag)
+		}
+	}
+}
