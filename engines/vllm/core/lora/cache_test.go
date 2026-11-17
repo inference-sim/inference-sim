@@ -125,7 +125,8 @@ func TestCacheReplaysVLLMsAdapterLRU(t *testing.T) {
 }
 
 // TestCacheAgainstFuzzCorpus replays a corpus of random scenarios run through vLLM
-// (oracle/gen_fuzz_lora.py), when BLIS_VLLM_LORA_FUZZ_DIR names one.
+// (oracle/gen_fuzz_lora.py), when BLIS_VLLM_LORA_FUZZ_DIR names one. No CI job sets it: this is a local
+// check, and no table or description counts its seeds as evidence.
 func TestCacheAgainstFuzzCorpus(t *testing.T) {
 	dir := os.Getenv("BLIS_VLLM_LORA_FUZZ_DIR")
 	if dir == "" {
