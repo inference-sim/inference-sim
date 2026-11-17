@@ -318,7 +318,7 @@ func TestFactoryRefuses(t *testing.T) {
 		{"adaptive verification without full CUDA graphs", Version, "use_v2_model_runner: true\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\ncompilation_config: {cudagraph_mode: PIECEWISE}\n", "requires full CUDA graphs"},
 		{"adaptive verification with a lowercase piecewise mode", Version, "use_v2_model_runner: true\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\ncompilation_config: {cudagraph_mode: piecewise}\n", "requires full CUDA graphs"},
 		{"adaptive verification with PP", Version, "use_v2_model_runner: true\npipeline_parallel_size: 2\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\n", "pipeline parallelism"},
-		// What rules/v0_32 refuses in an engine block (#2021 B11 step 2).
+		// What rules/v0_32 refuses in an engine block (inference-sim issue 2021 B11 step 2).
 		{"a cache dtype v0.32.0 does not accept", Version, "kv_cache_dtype: fp9\n", "enum-values-known"},
 		{"an all2all backend v0.32.0 does not accept", Version, "all2all_backend: carrier_pigeon\n", "all2all-backend-known"},
 		{"a moe backend v0.32.0 does not accept", Version, "moe_backend: flashinfer_moe_ep_mega_cutedsl\n", "moe_backend"},

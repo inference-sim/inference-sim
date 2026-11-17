@@ -379,7 +379,7 @@ func TestMetricsAgainstVLLM(t *testing.T) {
 				t.Fatalf("the golden has %d per-step records for %d steps", len(want.PerStep), want.Steps)
 			}
 			// Step by step: every gauge and counter sample of an exact family, after each step,
-			// with the earliest divergence reported (#2021 B8).
+			// with the earliest divergence reported (inference-sim issue 2021 B8).
 			steps := 0
 			first := ""
 			got := drive(t, sc, func(i int, m *Model) {

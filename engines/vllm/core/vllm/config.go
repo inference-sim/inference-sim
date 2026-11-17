@@ -59,6 +59,14 @@ type Config struct {
 	// the factory builds a data-parallel group of that many ranks behind one endpoint (DPGroup).
 	// Unstated or 1 is one engine.
 	DataParallelSize int `yaml:"data_parallel_size,omitempty"`
+	// APIServerCount is vLLM's api_server_count: the API-server processes in front of a
+	// data-parallel group, each a DPLBAsyncMPClient that balances the ranks with its own in-flight
+	// counts scaled by this count, from its own scan start (vllm/v1/engine/core_client.py:1747-1750,
+	// 1786, 1800@4ba787ec). Requests reach the clients in turn. Unstated or 1 is one client, which
+	// sees every request; vLLM's own default for an internal balancer is the group's size
+	// (vllm/entrypoints/cli/serve.py:123-126@4ba787ec), which a caller states. A single engine has
+	// no balancer, so the count does not change it.
+	APIServerCount int `yaml:"api_server_count,omitempty"`
 	// MambaModel is whether the model runs vLLM's MambaModelConfig hook: a Mamba or hybrid
 	// attention/Mamba model (ModelConfig.is_hybrid, vllm/config/model.py:2023-2032@5df63a72, or a
 	// Mamba architecture, vllm/model_executor/models/config.py:1073-1095@5df63a72). It is the model's,
@@ -187,6 +195,8 @@ type settings struct {
 type dpSettings struct {
 	ranks, syncInterval, prefillInterval int
 	statsIntervalUs                      int64
+	// clients is the number of load-balancing clients (api_server_count), at least 1.
+	clients int
 }
 
 // maxModelLenIssue is the open issue an unstated max_model_len cites (design X28).
@@ -477,8 +487,12 @@ func resolve(c Config) (settings, error) {
 				"or wait for a handoff that carries its rank's endpoint", c.KVTransfer.Role, c.DataParallelSize, n)
 		}
 	}
+	if c.APIServerCount < 0 {
+		return settings{}, fmt.Errorf("vllm: api_server_count %d: it counts API-server processes and is not negative", c.APIServerCount)
+	}
 	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: e.DPSyncInterval,
-		prefillInterval: max(e.PrefillScheduleInterval, 1), statsIntervalUs: c.DPStatsIntervalUs}
+		prefillInterval: max(e.PrefillScheduleInterval, 1), statsIntervalUs: c.DPStatsIntervalUs,
+		clients: max(c.APIServerCount, 1)}
 	if s.dp.syncInterval == 0 {
 		s.dp.syncInterval = 16
 	}
@@ -860,7 +874,7 @@ func fullCUDAGraphs(mode string) bool {
 }
 
 // checkRules runs the v0.33.0 rules pack (rules/v0_33) over the engine block, the startup check
-// #2021 B11 step 2 gives the engine: the values the release accepts and the refusals it makes.
+// inference-sim issue 2021 B11 step 2 gives the engine: the values the release accepts and the refusals it makes.
 // The block is one pool's engine, and it is all the engine is given: the model graph, the cluster
 // and the pool's parallel widths other than pipeline_parallel_size are not in it. So a refusal
 // stands only where the block decides it whatever those widths are: the pack runs once for each

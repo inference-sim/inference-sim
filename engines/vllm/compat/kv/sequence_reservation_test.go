@@ -341,7 +341,7 @@ func cpuResidentPrompt(t *testing.T, tiered *TieredKVCache, gpu *KVCacheState) [
 	return prompt
 }
 
-// Review I1: an admission refused for want of its fixed blocks (#1941) is refused before the
+// Review I1: an admission refused for want of its fixed blocks is refused before the
 // CPU tier is consulted, as vLLM's allocate_slots refuses before it touches a block: no
 // reload, no transfer latency, no cache hit, the free list as it was.
 func TestARefusedReloadAdmissionHasNoSideEffects(t *testing.T) {

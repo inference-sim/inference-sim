@@ -6,7 +6,10 @@
 
 package engine
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
 
 // Wave is one DP rank's wave state in DPEngineCoreProc (core.py:2298-2314): the step counter
 // the sync cadence and the prefill throttle read, the wave number, and whether the rank's
@@ -70,6 +73,14 @@ type RankStep struct {
 // core.py:2281-2298).
 func (d *DP) Add(id string) int {
 	rank := d.LB.Choose(id)
+	d.startWave(rank)
+	return rank
+}
+
+// AddVia routes a request through the given load-balancing client, as Add does through the next
+// client in turn.
+func (d *DP) AddVia(client int, id string) int {
+	rank := d.LB.ChooseVia(client, id)
 	d.startWave(rank)
 	return rank
 }
@@ -161,42 +172,102 @@ func (d *DP) EndStep(out []RankStep) {
 	}
 }
 
-// LoadBalancer is DPLBAsyncMPClient's routing state for one client (core_client.py:1607-1640):
-// the coordinator's latest [waiting, running, kv_cache_usage] per engine, the client's exact
-// in-flight count per engine, and the rotating scan start.
+// LoadBalancer is the routing state of a data-parallel group's load-balancing clients: one
+// DPLBAsyncMPClient per API-server process, api_server_count of them (vllm/entrypoints/cli/serve.py:
+// 107-137), each with its own copy of the coordinator's latest [waiting, running, kv_cache_usage]
+// per engine, its own exact in-flight count per engine (only the requests it routed) and its own
+// rotating scan start (core_client.py:1607-1640). The score scales a client's in-flight count by
+// the client count and the optimistic increment is the client count, because each client sees only
+// its share of the traffic (:1786, :1800@4ba787ec).
 type LoadBalancer struct {
-	Counts     [][3]float64
+	clients []*lbClient
+	// reqs is the client and engine each unfinished request was routed to.
+	reqs map[string]lbRoute
+	// arrivals counts the requests spread so far, which picks the next client (see Choose).
+	arrivals int
+	// Counts is the latest published snapshot, kept for the group to read.
+	Counts [][3]float64
+}
+
+type lbClient struct {
+	counts     [][3]float64
 	inflight   []int
-	reqs       map[string]int
 	startIndex int
 }
 
-// NewLoadBalancer is a client for n engines (client_count 1, client_index 0).
-func NewLoadBalancer(n int) *LoadBalancer {
-	return &LoadBalancer{Counts: make([][3]float64, n), inflight: make([]int, n), reqs: map[string]int{}}
+type lbRoute struct{ client, engine int }
+
+// NewLoadBalancer is one client for n engines (client_count 1, client_index 0).
+func NewLoadBalancer(n int) *LoadBalancer { return NewLoadBalancers(n, 1) }
+
+// NewLoadBalancers is clientCount clients for n engines. Client i starts its scan at
+// n*i/clientCount (eng_start_index, core_client.py:1623-1625); a count below 1 is 1.
+func NewLoadBalancers(n, clientCount int) *LoadBalancer {
+	clientCount = max(clientCount, 1)
+	lb := &LoadBalancer{reqs: map[string]lbRoute{}, Counts: make([][3]float64, n)}
+	for i := 0; i < clientCount; i++ {
+		lb.clients = append(lb.clients, &lbClient{counts: make([][3]float64, n), inflight: make([]int, n), startIndex: n * i / clientCount})
+	}
+	return lb
 }
 
-// Publish is the coordinator's stats update, which rebinds the counts (core_client.py:1562-1575).
+// SetClientCount replaces the clients with k of them, before any request is routed.
+func (lb *LoadBalancer) SetClientCount(k int) error {
+	if k == len(lb.clients) {
+		return nil
+	}
+	if lb.arrivals > 0 || len(lb.reqs) > 0 {
+		return fmt.Errorf("engine: the client count is set before the first request, %d routed", lb.arrivals)
+	}
+	*lb = *NewLoadBalancers(len(lb.Counts), k)
+	return nil
+}
+
+// ClientCount is the number of clients.
+func (lb *LoadBalancer) ClientCount() int { return len(lb.clients) }
+
+// Publish is the coordinator's stats update, which rebinds every client's counts
+// (core_client.py:1562-1575).
 func (lb *LoadBalancer) Publish(counts [][3]float64) {
 	lb.Counts = append([][3]float64(nil), counts...)
+	for _, c := range lb.clients {
+		c.counts = append([][3]float64(nil), counts...)
+	}
 }
 
-// Choose is get_core_engine_for_request (core_client.py:1642-1697) for a request with no
-// explicit data_parallel_rank: the engine whose load score is lowest, scanning from the
-// rotating start; the score is the greater of its waiting + running snapshot and this
-// client's in-flight count, plus a penalty for waiting requests on a KV-bound engine.
+// Choose routes a request with no explicit data_parallel_rank through the next client in turn.
+// vLLM's API-server processes share one listening socket (SO_REUSEPORT, serve.py:298), and the
+// kernel picks the process for each connection by a hash of the connection's addresses, which
+// spreads connections evenly in expectation and in no fixed order. BLIS stands the even spread in
+// for that hash: request k goes to client k mod client_count (a named substitution). ChooseVia
+// routes through a named client.
 func (lb *LoadBalancer) Choose(id string) int {
-	if e, ok := lb.reqs[id]; ok {
-		// Streaming-input session affinity.
-		return e
+	if r, ok := lb.reqs[id]; ok {
+		return r.engine
 	}
-	n := len(lb.Counts)
+	client := lb.arrivals % len(lb.clients)
+	lb.arrivals++
+	return lb.ChooseVia(client, id)
+}
+
+// ChooseVia is get_core_engine_for_request (core_client.py:1642-1697) on the given client, for a
+// request with no explicit data_parallel_rank: the engine whose load score is lowest, scanning
+// from the client's rotating start; the score is the greater of its waiting + running snapshot and
+// client_count times this client's in-flight count, plus a penalty for waiting requests on a
+// KV-bound engine.
+func (lb *LoadBalancer) ChooseVia(client int, id string) int {
+	if r, ok := lb.reqs[id]; ok {
+		// Streaming-input session affinity.
+		return r.engine
+	}
+	c, count := lb.clients[client], len(lb.clients)
+	n := len(c.counts)
 	minScore := math.MaxFloat64
 	choice := 0
 	for i := 0; i < n; i++ {
-		idx := (lb.startIndex + i) % n
-		waiting, running, kv := lb.Counts[idx][0], lb.Counts[idx][1], lb.Counts[idx][2]
-		score := max(float64(lb.inflight[idx]), waiting+running)
+		idx := (c.startIndex + i) % n
+		waiting, running, kv := c.counts[idx][0], c.counts[idx][1], c.counts[idx][2]
+		score := max(float64(count*c.inflight[idx]), waiting+running)
 		if waiting != 0 {
 			score += waiting * 6.0 * max(0.0, kv-0.5)
 		}
@@ -205,30 +276,33 @@ func (lb *LoadBalancer) Choose(id string) int {
 			choice = idx
 		}
 	}
-	lb.Counts[choice][0]++
-	lb.startIndex = (lb.startIndex + 1) % n
-	lb.reqs[id] = choice
-	lb.inflight[choice]++
+	c.counts[choice][0] += float64(count)
+	c.startIndex = (c.startIndex + 1) % n
+	lb.reqs[id] = lbRoute{client, choice}
+	c.inflight[choice]++
 	return choice
 }
 
 // Pin is get_core_engine_for_request for a request that names its rank (core_client.py:1647-1650,
-// 1692-1696): the rank is the request's, and only the in-flight count and the request's
-// route change. A request already routed keeps its engine (session affinity, :1643-1645).
+// 1692-1696): the rank is the request's, and only the in-flight count and the request's route
+// change. A request already routed keeps its engine (session affinity, :1643-1645). The request
+// reaches the next client in turn, as Choose spreads.
 func (lb *LoadBalancer) Pin(id string, rank int) int {
-	if e, ok := lb.reqs[id]; ok {
-		return e
+	if r, ok := lb.reqs[id]; ok {
+		return r.engine
 	}
-	lb.reqs[id] = rank
-	lb.inflight[rank]++
+	client := lb.arrivals % len(lb.clients)
+	lb.arrivals++
+	lb.reqs[id] = lbRoute{client, rank}
+	lb.clients[client].inflight[rank]++
 	return rank
 }
 
-// Finished is process_engine_outputs (core_client.py:1703-1710): a finished request leaves
-// its engine's in-flight count.
+// Finished is process_engine_outputs (core_client.py:1703-1710): a finished request leaves its
+// engine's in-flight count on the client that routed it.
 func (lb *LoadBalancer) Finished(id string) {
-	if e, ok := lb.reqs[id]; ok {
+	if r, ok := lb.reqs[id]; ok {
 		delete(lb.reqs, id)
-		lb.inflight[e]--
+		lb.clients[r.client].inflight[r.engine]--
 	}
 }

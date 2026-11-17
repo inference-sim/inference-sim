@@ -192,7 +192,7 @@ func TestResolveKVOffload_Rejects(t *testing.T) {
 		{"tier missing type", func(b *KVOffloadBlock) { b.SecondaryTiers[0].Type = nil }, "type is required"},
 		{"tier missing root_dir", func(b *KVOffloadBlock) { b.SecondaryTiers[0].RootDir = nil }, "root_dir is required"},
 		{"tier missing direct_io", func(b *KVOffloadBlock) { b.SecondaryTiers[0].DirectIO = nil }, "direct_io must be set"},
-		// #1770: the device table moved from defaults.yaml to the catalog, so the refusal
+		// the device table moved from defaults.yaml to the catalog, so the refusal
 		// now names the catalog file. TestResolveKVOffload_UnknownDeviceClassNamesCatalogTable
 		// covers the full message (known classes, sorted, and no stale defaults.yaml mention).
 		{"unknown device_class", func(b *KVOffloadBlock) { b.SecondaryTiers[0].DeviceClass = strp("floppy") }, "not defined in the catalog storage-device table"},

@@ -66,3 +66,44 @@ func TestPickSamplesAtANewPeriod(t *testing.T) {
 		t.Errorf("after a publish showing rank 1 loaded: got %d, want rank 0", got)
 	}
 }
+
+// Front-end clientIndex of clientCount starts its scan at n*clientIndex/clientCount, so on idle
+// ranks two clients of a four-rank replica take ranks 0 and 2 first (eng_start_index,
+// core_client.py:1747-1750@4ba787ec).
+func TestClientsStartTheirScansApart(t *testing.T) {
+	ranks := []Rank{&rank{}, &rank{}, &rank{}, &rank{}}
+	for i, want := range []int{0, 2} {
+		if got := NewClient(4, 2, i).Pick(ranks, 0); got != want {
+			t.Errorf("client %d of 2 first picked rank %d, want %d", i, got, want)
+		}
+	}
+}
+
+// A client scales its in-flight count by the client count: holding one request on rank 0, with
+// rank 1 published running one, two clients score rank 0 at 2 and pick rank 1; one client ties at
+// 1 and keeps the scan's first, rank 0.
+func TestAClientScalesItsInFlightByTheClientCount(t *testing.T) {
+	for _, c := range []struct{ clients, want int }{{2, 1}, {1, 0}} {
+		r0, r1 := &rank{inflight: 1}, &rank{c: Counts{Running: 1}}
+		b := NewClient(2, c.clients, 0)
+		b.SetPublished(0, 0, []Counts{{}, {Running: 1}})
+		if got := b.Pick([]Rank{r0, r1}, 10); got != c.want {
+			t.Errorf("%d clients picked rank %d, want %d", c.clients, got, c.want)
+		}
+	}
+}
+
+// The optimistic bump is the client count: after one pick the chosen rank looks as loaded as the
+// whole group's share of that request, so a second pick by the same client moves on.
+func TestTheBumpIsTheClientCount(t *testing.T) {
+	r0, r1 := &rank{}, &rank{c: Counts{Running: 1}}
+	b := NewClient(2, 2, 0)
+	b.SetPublished(0, 0, []Counts{{}, {Running: 1}})
+	if got := b.Pick([]Rank{r0, r1}, 1); got != 0 {
+		t.Fatalf("first pick rank %d, want 0", got)
+	}
+	// Rank 0 now looks like waiting 2 (the bump), rank 1 like running 1: rank 1 wins from start 1.
+	if got := b.Pick([]Rank{r0, r1}, 2); got != 1 {
+		t.Errorf("second pick rank %d, want 1 once the bump is the client count (2 against 1)", got)
+	}
+}
