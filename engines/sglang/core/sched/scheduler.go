@@ -144,9 +144,13 @@ type Scheduler struct {
 
 	// reports are the Reports made this step; numRetracted and forwardCtDecode are the
 	// reporter's counters (metrics_reporter.py: num_retracted_reqs, forward_ct_decode).
-	reports         []Report
-	numRetracted    int
-	forwardCtDecode int
+	reports []Report
+	// abortedSinceTake are requests finished at ingest, for TakeAborted.
+	abortedSinceTake []string
+	// preemptedSinceTake are the requests retracted or preempted since the last TakeReports.
+	preemptedSinceTake []string
+	numRetracted       int
+	forwardCtDecode    int
 
 	processedTokens  int
 	forwardCt        int
@@ -232,12 +236,16 @@ func (s *Scheduler) handleGenerateRequest(a Arrival) {
 			panic(refused("a prompt token outside the vocabulary"))
 		}
 	}
-	r := &Req{MaxNewTokens: a.MaxNewTokens, IgnoreEOS: a.IgnoreEOS, RoutingKey: a.RoutingKey}
+	r := &Req{MaxNewTokens: a.MaxNewTokens, IgnoreEOS: a.IgnoreEOS, RoutingKey: a.RoutingKey, Script: a.Script}
 	if a.Priority != nil {
 		r.Priority = *a.Priority
 		r.HasPriority = true
 	}
 	r.C = cache.Req{ID: a.RID, OriginInputIDs: slices.Clone(a.Prompt)}
+	if a.CacheSalt != "" {
+		salt := a.CacheSalt
+		r.C.CacheSalt = &salt
+	}
 	s.initReqMaxNewTokens(r)
 	// validate_input_length (utils.py:259-289) without --allow-auto-truncate.
 	if len(r.C.OriginInputIDs) >= s.cfg.MaxReqInputLen {
@@ -467,6 +475,7 @@ func (s *Scheduler) getNewBatchPrefill(running *Batch) (*Batch, *Batch) {
 	// Update waiting queue.
 	if len(a.canRunList) == 0 {
 		for _, r := range a.preemptList {
+			s.preemptedSinceTake = append(s.preemptedSinceTake, r.RID())
 			s.addRequestToQueue(r)
 		}
 		return nil, running
@@ -483,6 +492,7 @@ func (s *Scheduler) getNewBatchPrefill(running *Batch) (*Batch, *Batch) {
 	}
 	s.waiting = rest
 	for _, r := range a.preemptList {
+		s.preemptedSinceTake = append(s.preemptedSinceTake, r.RID())
 		s.addRequestToQueue(r)
 	}
 	if a.newChunkedReq != nil {
@@ -538,6 +548,9 @@ func (s *Scheduler) updateRunningBatch(b *Batch) *Batch {
 	if retract {
 		retracted, ratio := b.RetractDecode(s)
 		s.numRetracted = len(retracted)
+		for _, r := range retracted {
+			s.preemptedSinceTake = append(s.preemptedSinceTake, r.RID())
+		}
 		s.newTokenRatio.current = ratio
 		for _, r := range retracted {
 			s.addRequestToQueue(r)
@@ -655,7 +668,7 @@ func (s *Scheduler) processPrefill(b *Batch) {
 			continue
 		}
 		if r.InflightMiddleChunks <= 0 {
-			r.C.OutputIDs = append(r.C.OutputIDs, s.sampledToken)
+			r.C.OutputIDs = append(r.C.OutputIDs, s.tokenFor(r))
 			r.UpdateFinishState(s.cfg.EOSTokenIDs)
 			if r.Finished() {
 				s.noteFinished(r)
@@ -682,7 +695,7 @@ func (s *Scheduler) processDecode(b *Batch) {
 			// release_kv_cache already freed its over-allocated tokens (:1022-1027).
 			continue
 		}
-		r.C.OutputIDs = append(r.C.OutputIDs, s.sampledToken)
+		r.C.OutputIDs = append(r.C.OutputIDs, s.tokenFor(r))
 		r.UpdateFinishState(s.cfg.EOSTokenIDs)
 		if r.Finished() {
 			s.noteFinished(r)
