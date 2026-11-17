@@ -279,7 +279,7 @@ func identityOf(in latencykernel.Inputs, engine engineconfig.Engine, pk scenario
 		tpRanks:         max(1, pl.TP),
 		latentKV:        allLatent(in.Model),
 		prefillBackoff:  prefillBackoffOf(in.Model, engine.Speculative),
-		prefix:          prefixLayoutOf(in.Model, pool, engine),
+		prefix:          prefixLayoutOf(in.Model, in.Deployment, pool, engine),
 		capabilityMajor: func() int { f, _ := in.Chip.CapabilityMajor(); return f }(),
 	}
 }
