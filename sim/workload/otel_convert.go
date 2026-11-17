@@ -20,11 +20,12 @@ type OTelConvertOptions struct {
 	MaxThinkTimeUs int64 // cap on per-round arrival gap; 0 = no cap
 	IncludeErrors  bool  // keep spans with status.code == 2
 	MinRounds      int   // skip sessions with fewer usable calls (default 1)
-	// ThinkFromSpanEnds records each follow-up round's think time as the gap between the
-	// previous span's end and this span's start (#2130). Use it when the spans carry real end
-	// times; a placeholder end_time would state a think time that is nearly the whole gap.
-	// A round whose previous span has no usable end states none, and a replay derives it.
-	ThinkFromSpanEnds bool
+	// ThinkFromArrivalGaps states no think time, so a replay derives it from the arrival gaps,
+	// which bundle the service time into the think time. It exists only to reproduce the output
+	// of versions before #2130. By default each follow-up round's think time is the gap between
+	// the previous span's end and this span's start, as the trace records it; a round whose
+	// previous span has no usable end states none.
+	ThinkFromArrivalGaps bool
 }
 
 // OTelSession is one converted session with what the converter learned about it beyond its
@@ -276,7 +277,7 @@ func ConvertOTelSession(raw []byte, opts OTelConvertOptions) (*OTelSession, erro
 		}
 		// The client thinks from the response it received to the next call it sends: the
 		// previous span's end to this span's start (#2130).
-		if i > 0 && opts.ThinkFromSpanEnds && spans[i-1].endUs > 0 && spans[i-1].endUs <= sp.startUs {
+		if i > 0 && !opts.ThinkFromArrivalGaps && spans[i-1].endUs > 0 && spans[i-1].endUs <= sp.startUs {
 			think := sp.startUs - spans[i-1].endUs
 			if opts.MaxThinkTimeUs > 0 && think > opts.MaxThinkTimeUs {
 				think = opts.MaxThinkTimeUs
