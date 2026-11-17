@@ -126,6 +126,8 @@ type Engine struct {
 	async bool
 	// pp is pipeline_parallel_size: how many stages a batch runs through (StageTimes).
 	pp int
+	// kvCapacity is the KV cache size the engine core logs at start-up (KVCacheCapacity).
+	kvCapacity kv.Capacity
 	// idleWake is when the engine next polls after an empty schedule that left requests, 0
 	// when none is due.
 	idleWake engine.Time
@@ -209,7 +211,7 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 		s: s, pricer: pricer, reqs: map[string]*reqState{}, aborted: map[string]bool{},
 		metrics:  metrics.New(histogramBounds(st.sched.MaxModelLen)),
 		maxLoRAs: st.sched.MaxLoRAs, specTokens: st.sched.Spec.NumTokens, async: st.sched.Async,
-		pp: max(st.sched.DecodeStagger, 1), hashSeed: st.hashSeed, servesRender: st.servesRender,
+		pp: max(st.sched.DecodeStagger, 1), hashSeed: st.hashSeed, servesRender: st.servesRender, kvCapacity: st.kvCapacity,
 	}
 	if st.maxCPULoRAs > 0 {
 		if e.adapterCache, err = lora.New(st.sched.MaxLoRAs, st.maxCPULoRAs); err != nil {
@@ -1135,6 +1137,16 @@ func (e *Engine) Snapshot() engine.State {
 		KVBlocksTotal: int64(pool.NumBlocks() - 1), KVBlocksUsed: int64(pool.NumBlocks() - 1 - pool.NumFree()),
 		KVBlockSize: e.s.BlockSize()}
 }
+
+// KVCacheCapacity is the KV cache size this engine core logs at start-up, "GPU KV cache size: N
+// tokens, Maximum concurrency for M tokens per request: Cx" (update_kv_cache_capacity,
+// vllm/v1/core/kv_cache_utils.py:1136-1154@4ba787ec). It is not the pool's blocks times the block
+// size (Snapshot): a request holds blocks in every KV cache group of a hybrid model, so the pool
+// holds that many requests' worth of max_model_len tokens, which the log prints. It is the zero
+// Capacity when the pool's size is not stated. It is not part of the engine contract: a simulator
+// reporting the pool's size as the engine does looks for it by type assertion on
+// interface{ KVCacheCapacity() kv.Capacity }.
+func (e *Engine) KVCacheCapacity() kv.Capacity { return e.kvCapacity }
 
 // EnableKVEvents turns on the engine's KV cache events (kv_events_config.enable_kv_cache_events),
 // which a simulator calls when a router indexes them: each completed batch then reports its

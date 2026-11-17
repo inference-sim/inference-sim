@@ -1,0 +1,245 @@
+{
+ "name": "dp4-external-multi-port",
+ "description": "DP 4 started by the multi-port launcher (data_parallel_multi_port_external_lb), which runs one external rank server per local rank: the routing is the external balancer's, a DPAsyncMPClient per rank. Requests are spread over the ranks with no shared prefix, and one rank takes a burst.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 30,
+  "max_model_len": 128,
+  "enable_prefix_caching": false,
+  "scheduling_policy": "fcfs",
+  "data_parallel_size": 4,
+  "prefill_schedule_interval": 1,
+  "dp_sync_interval": 16,
+  "stats_interval": 3,
+  "data_parallel_multi_port_external_lb": true
+ },
+ "requests": [
+  {
+   "id": "m0",
+   "arrival_step": 0,
+   "prompt": [
+    45695,
+    40829,
+    7003,
+    41489,
+    44609,
+    49942,
+    42577,
+    34752,
+    3322,
+    42355,
+    25197,
+    29687
+   ],
+   "output": [
+    35604,
+    8068,
+    45757
+   ],
+   "priority": 0,
+   "endpoint": 1
+  },
+  {
+   "id": "m1",
+   "arrival_step": 0,
+   "prompt": [
+    45695,
+    40829,
+    7003,
+    41489,
+    44609,
+    49942,
+    42577,
+    34752,
+    3322,
+    42355,
+    25197,
+    29687
+   ],
+   "output": [
+    30940,
+    40365
+   ],
+   "priority": 0,
+   "endpoint": 1
+  },
+  {
+   "id": "m2",
+   "arrival_step": 0,
+   "prompt": [
+    19476,
+    25810,
+    49243,
+    28736,
+    30089,
+    10463,
+    4244
+   ],
+   "output": [
+    6965,
+    28073,
+    5925,
+    36629
+   ],
+   "priority": 0,
+   "endpoint": 3
+  },
+  {
+   "id": "m3",
+   "arrival_step": 1,
+   "prompt": [
+    45695,
+    40829,
+    7003,
+    41489,
+    44609,
+    49942,
+    42577,
+    34752,
+    3322,
+    42355,
+    25197,
+    29687
+   ],
+   "output": [
+    19912,
+    24665,
+    43482,
+    47199
+   ],
+   "priority": 0,
+   "endpoint": 1
+  },
+  {
+   "id": "m4",
+   "arrival_step": 1,
+   "prompt": [
+    29334,
+    39521,
+    37872,
+    24996,
+    42890,
+    47214,
+    38557,
+    3231,
+    35515
+   ],
+   "output": [
+    41592,
+    14975,
+    34108
+   ],
+   "priority": 0,
+   "endpoint": 0
+  },
+  {
+   "id": "m5",
+   "arrival_step": 2,
+   "prompt": [
+    28326,
+    5130,
+    1575,
+    1496,
+    43977,
+    34431
+   ],
+   "output": [
+    24651,
+    5496
+   ],
+   "priority": 0,
+   "endpoint": 2
+  },
+  {
+   "id": "m6",
+   "arrival_step": 2,
+   "prompt": [
+    45695,
+    40829,
+    7003,
+    41489,
+    44609,
+    49942,
+    42577,
+    34752,
+    3322,
+    42355,
+    25197,
+    29687
+   ],
+   "output": [
+    47344,
+    39015,
+    15736
+   ],
+   "priority": 0,
+   "endpoint": 1
+  },
+  {
+   "id": "m7",
+   "arrival_step": 4,
+   "prompt": [
+    2538,
+    22227,
+    24060,
+    35570,
+    11438,
+    2422,
+    48711,
+    1885
+   ],
+   "output": [
+    15284,
+    49224,
+    48113
+   ],
+   "priority": 0,
+   "endpoint": 3
+  },
+  {
+   "id": "m8",
+   "arrival_step": 5,
+   "prompt": [
+    45695,
+    40829,
+    7003,
+    41489,
+    44609,
+    49942,
+    42577,
+    34752,
+    3322,
+    42355,
+    25197,
+    29687
+   ],
+   "output": [
+    21418,
+    46842
+   ],
+   "priority": 0,
+   "endpoint": 1
+  },
+  {
+   "id": "m9",
+   "arrival_step": 6,
+   "prompt": [
+    15892,
+    34468,
+    43560,
+    20773,
+    41955
+   ],
+   "output": [
+    3757,
+    19534,
+    18865,
+    47995
+   ],
+   "priority": 0,
+   "endpoint": 0
+  }
+ ]
+}

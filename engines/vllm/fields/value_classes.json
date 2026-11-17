@@ -2822,6 +2822,586 @@
     "name": "cudagraph_capture_sizes"
    }
   },
+  "data_parallel_external_lb": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "kind": "boolean",
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "vllm/config/parallel.py:551",
+       "vllm/config/parallel.py:657",
+       "vllm/config/parallel.py:825",
+       "vllm/config/vllm.py:891",
+       "vllm/distributed/elastic_ep/elastic_state.py:263",
+       "vllm/distributed/elastic_ep/elastic_state.py:276",
+       "vllm/distributed/elastic_ep/elastic_state.py:405",
+       "vllm/distributed/elastic_ep/external_elastic_ep.py:865",
+       "vllm/engine/arg_utils.py:2383",
+       "vllm/engine/arg_utils.py:2425",
+       "vllm/engine/arg_utils.py:2448",
+       "vllm/entrypoints/cli/serve.py:84",
+       "vllm/entrypoints/launchers/dp_supervisor.py:75",
+       "vllm/multimodal/cache/factories.py:39",
+       "vllm/v1/engine/async_llm.py:1285",
+       "vllm/v1/engine/async_llm.py:1336",
+       "vllm/v1/engine/core.py:1221",
+       "vllm/v1/engine/core.py:1431",
+       "vllm/v1/engine/core.py:2484",
+       "vllm/v1/engine/core_client.py:1487",
+       "vllm/v1/engine/core_client.py:1562",
+       "vllm/v1/engine/core_client.py:159",
+       "vllm/v1/engine/core_client.py:1673",
+       "vllm/v1/engine/utils.py:1421",
+       "vllm/v1/worker/xpu_worker.py:52",
+       "vllm/v1/worker/xpu_worker.py:62"
+      ],
+      "covered_by": [
+       "core/engine/testdata/golden-dp/dp4-lb.json"
+      ]
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "vllm/config/parallel.py:551",
+       "vllm/config/parallel.py:657",
+       "vllm/config/parallel.py:825",
+       "vllm/config/vllm.py:891",
+       "vllm/distributed/elastic_ep/elastic_state.py:263",
+       "vllm/distributed/elastic_ep/elastic_state.py:276",
+       "vllm/distributed/elastic_ep/elastic_state.py:405",
+       "vllm/distributed/elastic_ep/external_elastic_ep.py:865",
+       "vllm/engine/arg_utils.py:2383",
+       "vllm/engine/arg_utils.py:2425",
+       "vllm/engine/arg_utils.py:2448",
+       "vllm/entrypoints/cli/serve.py:84",
+       "vllm/entrypoints/launchers/dp_supervisor.py:75",
+       "vllm/multimodal/cache/factories.py:39",
+       "vllm/v1/engine/async_llm.py:1285",
+       "vllm/v1/engine/async_llm.py:1336",
+       "vllm/v1/engine/core.py:1221",
+       "vllm/v1/engine/core.py:1431",
+       "vllm/v1/engine/core.py:2484",
+       "vllm/v1/engine/core_client.py:1487",
+       "vllm/v1/engine/core_client.py:1562",
+       "vllm/v1/engine/core_client.py:159",
+       "vllm/v1/engine/core_client.py:1673",
+       "vllm/v1/engine/utils.py:1421",
+       "vllm/v1/worker/xpu_worker.py:52",
+       "vllm/v1/worker/xpu_worker.py:62"
+      ],
+      "covered_by": [
+       "oracle/scenarios-dp-modes/dp4-external-rank-affinity.json"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/config/parallel.py:551",
+      "expr": "self.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/config/parallel.py:657",
+      "expr": "self.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/config/parallel.py:825",
+      "expr": "self.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:891",
+      "expr": "not self.parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/distributed/elastic_ep/elastic_state.py:263",
+      "expr": "external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/distributed/elastic_ep/elastic_state.py:276",
+      "expr": "external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/distributed/elastic_ep/elastic_state.py:405",
+      "expr": "self.vllm_config.parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/distributed/elastic_ep/external_elastic_ep.py:865",
+      "expr": "parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2383",
+      "expr": "self.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2425",
+      "expr": "self.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2448",
+      "expr": "self.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:84",
+      "expr": "args.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/launchers/dp_supervisor.py:75",
+      "expr": "args.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/multimodal/cache/factories.py:39",
+      "expr": "parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/engine/async_llm.py:1285",
+      "expr": "self.vllm_config.parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/engine/async_llm.py:1336",
+      "expr": "parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/engine/core.py:1221",
+      "expr": "not vllm_config.parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/v1/engine/core.py:1431",
+      "expr": "parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/engine/core.py:2484",
+      "expr": "self.vllm_config.parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/engine/core_client.py:159",
+      "expr": "parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/engine/core_client.py:1487",
+      "expr": "parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/engine/core_client.py:1562",
+      "expr": "not parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/v1/engine/core_client.py:1673",
+      "expr": "not parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/v1/engine/utils.py:1421",
+      "expr": "not parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/xpu_worker.py:52",
+      "expr": "parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/xpu_worker.py:62",
+      "expr": "parallel_config.data_parallel_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": true,
+      "trace": "oracle/scenarios-dp-modes/dp4-external-rank-affinity.json",
+      "reviewed": true
+     },
+     {
+      "value": false,
+      "trace": "core/engine/testdata/golden-dp/dp4-lb.json",
+      "reviewed": true
+     }
+    ],
+    "name": "data_parallel_external_lb"
+   }
+  },
+  "data_parallel_hybrid_lb": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "kind": "boolean",
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "vllm/config/parallel.py:657",
+       "vllm/config/parallel.py:982",
+       "vllm/engine/arg_utils.py:2380",
+       "vllm/engine/arg_utils.py:2383",
+       "vllm/engine/arg_utils.py:2493",
+       "vllm/engine/arg_utils.py:2519",
+       "vllm/entrypoints/cli/serve.py:116",
+       "vllm/entrypoints/cli/serve.py:196",
+       "vllm/entrypoints/cli/serve.py:91",
+       "vllm/entrypoints/launchers/dp_supervisor.py:75",
+       "vllm/v1/engine/core_client.py:1560",
+       "vllm/v1/engine/utils.py:1420"
+      ],
+      "covered_by": [
+       "core/engine/testdata/golden-dp/dp4-lb.json"
+      ]
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "vllm/config/parallel.py:657",
+       "vllm/config/parallel.py:982",
+       "vllm/engine/arg_utils.py:2380",
+       "vllm/engine/arg_utils.py:2383",
+       "vllm/engine/arg_utils.py:2493",
+       "vllm/engine/arg_utils.py:2519",
+       "vllm/entrypoints/cli/serve.py:116",
+       "vllm/entrypoints/cli/serve.py:196",
+       "vllm/entrypoints/cli/serve.py:91",
+       "vllm/entrypoints/launchers/dp_supervisor.py:75",
+       "vllm/v1/engine/core_client.py:1560",
+       "vllm/v1/engine/utils.py:1420"
+      ],
+      "covered_by": [
+       "oracle/scenarios-dp-modes/dp4-hybrid-local2.json"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/config/parallel.py:657",
+      "expr": "self.data_parallel_hybrid_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/config/parallel.py:982",
+      "expr": "self.data_parallel_hybrid_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2380",
+      "expr": "not self.data_parallel_hybrid_lb",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2383",
+      "expr": "self.data_parallel_hybrid_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2493",
+      "expr": "self.data_parallel_hybrid_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2519",
+      "expr": "self.data_parallel_hybrid_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:91",
+      "expr": "not args.data_parallel_hybrid_lb",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:116",
+      "expr": "is_hybrid_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:196",
+      "expr": "engine_args.data_parallel_hybrid_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/launchers/dp_supervisor.py:75",
+      "expr": "args.data_parallel_hybrid_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/engine/core_client.py:1560",
+      "expr": "not parallel_config.data_parallel_hybrid_lb",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/v1/engine/utils.py:1420",
+      "expr": "not parallel_config.data_parallel_hybrid_lb",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": true,
+      "trace": "oracle/scenarios-dp-modes/dp4-hybrid-local2.json",
+      "reviewed": true
+     },
+     {
+      "value": false,
+      "trace": "core/engine/testdata/golden-dp/dp4-lb.json",
+      "reviewed": true
+     }
+    ],
+    "name": "data_parallel_hybrid_lb"
+   }
+  },
+  "data_parallel_multi_port_external_lb": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "kind": "boolean",
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "vllm/entrypoints/cli/serve.py:114",
+       "vllm/entrypoints/cli/serve.py:147",
+       "vllm/entrypoints/cli/serve.py:92",
+       "vllm/entrypoints/common/cli_args.py:500",
+       "vllm/entrypoints/common/cli_args.py:573"
+      ],
+      "covered_by": [
+       "core/engine/testdata/golden-dp/dp4-lb.json"
+      ]
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "vllm/entrypoints/cli/serve.py:114",
+       "vllm/entrypoints/cli/serve.py:147",
+       "vllm/entrypoints/cli/serve.py:92",
+       "vllm/entrypoints/common/cli_args.py:500",
+       "vllm/entrypoints/common/cli_args.py:573"
+      ],
+      "covered_by": [
+       "oracle/scenarios-dp-modes/dp4-external-multi-port.json"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/entrypoints/cli/serve.py:92",
+      "expr": "not args.data_parallel_multi_port_external_lb",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:114",
+      "expr": "is_multi_port",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:147",
+      "expr": "is_multi_port",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/common/cli_args.py:500",
+      "expr": "args.data_parallel_multi_port_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/common/cli_args.py:573",
+      "expr": "args.data_parallel_multi_port_external_lb",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": true,
+      "trace": "oracle/scenarios-dp-modes/dp4-external-multi-port.json",
+      "reviewed": true
+     },
+     {
+      "value": false,
+      "trace": "core/engine/testdata/golden-dp/dp4-lb.json",
+      "reviewed": true
+     }
+    ],
+    "name": "data_parallel_multi_port_external_lb"
+   }
+  },
   "data_parallel_rpc_port": {
    "value_classes": {
     "type": "numeric",
@@ -3755,6 +4335,163 @@
      }
     ],
     "name": "data_parallel_size"
+   }
+  },
+  "data_parallel_size_local": {
+   "value_classes": {
+    "type": "numeric",
+    "thresholds": [
+     {
+      "value": 1,
+      "closed": "above"
+     },
+     {
+      "value": 2,
+      "closed": "above"
+     }
+    ],
+    "covered_classes": [
+     2
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": 1,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/engine/arg_utils.py:2476",
+       "vllm/engine/arg_utils.py:2493"
+      ],
+      "covered_by": []
+     },
+     {
+      "lo": 1,
+      "hi": 2,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/engine/arg_utils.py:2476",
+       "vllm/engine/arg_utils.py:2493",
+       "vllm/entrypoints/launchers/dp_supervisor.py:87"
+      ],
+      "covered_by": []
+     },
+     {
+      "lo": 2,
+      "hi": null,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/engine/arg_utils.py:2476",
+       "vllm/engine/arg_utils.py:2493",
+       "vllm/entrypoints/launchers/dp_supervisor.py:87"
+      ],
+      "covered_by": [
+       "oracle/scenarios-dp-modes/dp4-hybrid-local2.json"
+      ]
+     },
+     {
+      "unset": true,
+      "compared_at": [
+       "vllm/engine/arg_utils.py:2442",
+       "vllm/engine/arg_utils.py:2486",
+       "vllm/entrypoints/launchers/dp_supervisor.py:87"
+      ],
+      "covered_by": []
+     }
+    ],
+    "relations": [
+     {
+      "at": "vllm/engine/arg_utils.py:2503",
+      "expr": "data_parallel_size_local == self.data_parallel_size",
+      "with": "self.data_parallel_size"
+     },
+     {
+      "at": "vllm/entrypoints/launchers/dp_supervisor.py:92",
+      "expr": "local_size > args.data_parallel_size",
+      "with": "args.data_parallel_size"
+     }
+    ],
+    "sites": [
+     {
+      "at": "vllm/engine/arg_utils.py:2442",
+      "expr": "self.data_parallel_size_local is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2476",
+      "expr": "self.data_parallel_size_local not in (1, None)",
+      "op": "NotIn",
+      "values": [
+       1,
+       null
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2486",
+      "expr": "self.data_parallel_size_local is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2493",
+      "expr": "data_parallel_size_local == 1",
+      "op": "Eq",
+      "values": [
+       1
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:117",
+      "expr": "args.data_parallel_size_local",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/launchers/dp_supervisor.py:48",
+      "expr": "getattr(args, \"data_parallel_size_local\", 0)",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/launchers/dp_supervisor.py:87",
+      "expr": "local_size < 2",
+      "op": "Lt",
+      "values": [
+       2
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/launchers/dp_supervisor.py:87",
+      "expr": "local_size is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": 2,
+      "trace": "oracle/scenarios-dp-modes/dp4-hybrid-local2.json",
+      "reviewed": true
+     }
+    ],
+    "name": "data_parallel_size_local"
    }
   },
   "disable_hybrid_kv_cache_manager": {
