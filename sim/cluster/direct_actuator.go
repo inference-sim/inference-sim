@@ -109,12 +109,11 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 			if errors.Is(err, ErrNoCapacity) {
 				// No Ready node has room: the replica waits in the pending queue for a node (#741),
 				// and is placed, in arrival order, when one becomes Ready. It is not dropped.
+				// The queued replica keeps this number for when it is placed; a repeat of a decision
+				// the model already has enough placements waiting for queues nothing and uses none.
 				if a.queuePending(id, d, err) {
-					continue
+					a.nextInstSeq++
 				}
-				// The model already has as many placements waiting as this decision asks for, so a
-				// repeat of the same decision does not queue the same replica again.
-				a.nextInstSeq--
 				continue
 			}
 			logrus.Errorf("[actuator] scale-up for model %q variant %v: PlaceInstance failed: %v (INV-A2)", d.ModelID, d.Variant, err)

@@ -135,8 +135,9 @@ func TestDirectActuatorApply(t *testing.T) {
 	})
 
 	t.Run("a_refused_placement_does_not_consume_an_instance_number", func(t *testing.T) {
-		// GIVEN: a pool of A100-80 GPUs. The first decision asks for a GPU type the cluster
-		// does not have, so its placement is refused; the second asks for the pool's type.
+		// GIVEN: a pool of A100-80 GPUs. The first decision asks for a tensor-parallel degree
+		// below 1, which no placement can satisfy, so it is refused (a placement that merely finds
+		// no room waits in the pending queue instead); the second asks for a valid placement.
 		base := newTestDeploymentConfig(1)
 		base.Model = "test-model"
 		base.NodePools = []NodePoolConfig{
@@ -147,7 +148,7 @@ func TestDirectActuatorApply(t *testing.T) {
 
 		// WHEN: both decisions are applied.
 		err := NewDirectActuator(cs).Apply([]ScaleDecision{
-			{ModelID: "test-model", Variant: NewVariantSpec("no-such-gpu", 1), Delta: 1},
+			{ModelID: "test-model", Variant: VariantSpec{GPUType: "A100-80", TPDegree: 0}, Delta: 1},
 			{ModelID: "test-model", Variant: NewVariantSpec("A100-80", 1), Delta: 1},
 		})
 
@@ -161,6 +162,37 @@ func TestDirectActuatorApply(t *testing.T) {
 		}
 		if got, want := string(cs.instances[0].ID()), "autoscale-test-model-000001"; got != want {
 			t.Errorf("instance ID = %q, want %q (a refused placement must not use up a number)", got, want)
+		}
+	})
+
+	t.Run("queued_placements_take_consecutive_numbers_after_the_placed_one", func(t *testing.T) {
+		// GIVEN: one node of 3 GPUs and a decision for three TP2 replicas: one fits, the other two
+		// find no room and wait in the pending queue.
+		base := newTestDeploymentConfig(1)
+		base.Model = "test-model"
+		base.NodePools = []NodePoolConfig{
+			{Name: "a100-pool", GPUType: "A100-80", GPUsPerNode: 3, InitialNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80},
+		}
+		cs := newTestCluster(base, NewSliceRequestSource(nil), nil)
+		cs.instances = []*InstanceSimulator{}
+
+		// WHEN: the decision is applied.
+		if err := NewDirectActuator(cs).Apply([]ScaleDecision{{ModelID: "test-model", Variant: NewVariantSpec("A100-80", 2), Delta: 3}}); err != nil {
+			t.Fatal(err)
+		}
+
+		// THEN: the placed replica is number 1 and the two waiting ones are numbers 2 and 3, each
+		// its own, so the instances they become never share an ID.
+		if len(cs.instances) != 1 || string(cs.instances[0].ID()) != "autoscale-test-model-000001" {
+			t.Fatalf("placed instances = %v, want exactly autoscale-test-model-000001", cs.instances)
+		}
+		var got []string
+		for _, p := range cs.placement.pendingInsts {
+			got = append(got, string(p.id))
+		}
+		want := []string{"autoscale-test-model-000002", "autoscale-test-model-000003"}
+		if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+			t.Errorf("pending placement IDs = %v, want %v", got, want)
 		}
 	})
 
