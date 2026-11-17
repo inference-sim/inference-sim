@@ -107,9 +107,8 @@ sources:
       No unit list yet. The sweeps are reachable from CI (registry's rederive.yml checks them out
       at this commit, 2,353 files under python/aisim/src/aisim_core/systems/data/, the path since
       the rename from ai-dynamo/aisimulate), but the ingest tool for AISimulate is not written; the
-      registry's fitting scripts read the sweeps directly until it is. Two families read another
-      commit: the h100/h200 vLLM 0.31.0 all-reduce at 7980e9500c00d9f85d7f296451d12768a743c70e, and
-      the DeepSeek-V4.1 FlashMLA sparse decode kernel table dsv4_hca_attn_module_perf at
+      registry's fitting scripts read the sweeps directly until it is. One table is read at another
+      commit: the DeepSeek-V4.1 FlashMLA sparse decode kernel table dsv4_hca_attn_module_perf at
       2f0f4cd8606d580567b253d02f3d699fe36db865, the last commit that has it (retired at e8cbe2dc;
       its successor times the whole attention module).
     # The end-to-end accuracy artifact kernel/scripts/extract_aisimulate_e2e.py reads, pinned to
