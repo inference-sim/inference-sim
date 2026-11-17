@@ -1369,3 +1369,110 @@ func TestResult_RunOfAPhasedWorkloadDrainsGatesAndReplaysToTheSameRows(t *testin
 		}
 	}
 }
+
+// #1914 (INV-13): accumulate sessions replay to the run's own Result, row by row, for every
+// session mode that reads their trace: closed-loop sessions replayed closed-loop, and open-loop
+// sessions (every round pre-generated) replayed as fixed-accumulate. The default mode refuses the
+// trace at startup, naming the modes that read it (TestReplay_AccumulateTraceRefusesFixedMode).
+func TestResult_AccumulateSessionsReplayRowForRowInEverySessionMode(t *testing.T) {
+	cases := []struct {
+		name, closedLoop, mode string
+	}{
+		{"closed-loop sessions, closed-loop replay", "true", "closed-loop"},
+		{"open-loop sessions, fixed-accumulate replay", "false", "fixed-accumulate"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			spec := filepath.Join(dir, "ss.yaml")
+			body := `version: "2"
+seed: 7
+category: reasoning
+aggregate_rate: 5.0
+num_requests: 60
+cohorts:
+  - id: agents
+    population: 10
+    rate_fraction: 1.0
+    arrival: {process: poisson}
+    input_distribution: {type: gaussian, params: {mean: 256, std_dev: 64, min: 64, max: 1024}}
+    output_distribution: {type: exponential, params: {mean: 64}}
+    reasoning:
+      reason_ratio_distribution: {type: constant, params: {value: 0}}
+      multi_turn: {max_rounds: 4, think_time_us: 500000, context_growth: accumulate, single_session: true}
+    closed_loop: ` + c.closedLoop + "\n"
+			if err := os.WriteFile(spec, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			prefix := filepath.Join(dir, "tr")
+			runOut, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "7",
+				"--workload-spec", spec, "--trace-output", prefix)
+			if err != nil {
+				t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+			}
+			args := []string{"replay", "--scenario", kernelTestScenario, "--seed", "7",
+				"--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv"}
+			if c.mode != "" {
+				args = append(args, "--session-mode", c.mode)
+			}
+			repOut, stderr, err := runKernelCLI(t, args...)
+			if err != nil {
+				t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
+			}
+			run, rep := parseResult(t, runOut), parseResult(t, repOut)
+			if run.Requests.Completed < 40 {
+				t.Fatalf("non-vacuity: the run completed %d requests", run.Requests.Completed)
+			}
+			if !jsonEqual(t, run.Requests, rep.Requests) || !jsonEqual(t, run.Metrics, rep.Metrics) {
+				t.Errorf("INV-13: replay differs from run\nrequests %+v\n         %+v\nmetrics %v\n        %v", run.Requests, rep.Requests, run.Metrics, rep.Metrics)
+			}
+			if len(run.RequestRows) != len(rep.RequestRows) {
+				t.Fatalf("INV-13: %d rows in the run, %d in the replay", len(run.RequestRows), len(rep.RequestRows))
+			}
+			for i, a := range run.RequestRows {
+				b := rep.RequestRows[i]
+				if a.ArrivalUs != b.ArrivalUs || a.PromptTokens != b.PromptTokens || a.Fate != b.Fate ||
+					a.CachedLocalTokens != b.CachedLocalTokens || !jsonEqual(t, a.TTFTUs, b.TTFTUs) || !jsonEqual(t, a.E2EUs, b.E2EUs) {
+					t.Errorf("INV-13: row %d differs: run %+v, replay %+v", i, a, b)
+					break
+				}
+			}
+		})
+	}
+}
+
+// #1914: a replay that cannot reproduce an accumulate trace refuses it at startup and names the
+// session modes that can, rather than replaying it without the cross-round prefix reuse.
+func TestReplay_AccumulateTraceRefusesFixedMode(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "ss.yaml")
+	if err := os.WriteFile(spec, []byte(`version: "2"
+seed: 7
+category: reasoning
+aggregate_rate: 5.0
+num_requests: 20
+cohorts:
+  - id: agents
+    population: 4
+    rate_fraction: 1.0
+    arrival: {process: poisson}
+    input_distribution: {type: constant, params: {value: 200}}
+    output_distribution: {type: constant, params: {value: 30}}
+    reasoning:
+      reason_ratio_distribution: {type: constant, params: {value: 0}}
+      multi_turn: {max_rounds: 3, think_time_us: 500000, context_growth: accumulate, single_session: true}
+    closed_loop: false
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prefix := filepath.Join(dir, "tr")
+	if _, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "7", "--workload-spec", spec, "--trace-output", prefix); err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	_, stderr, err := runKernelCLI(t, "replay", "--scenario", kernelTestScenario, "--seed", "7",
+		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv")
+	if err == nil || !strings.Contains(stderr, "fixed-accumulate") {
+		t.Fatalf("replay in the default mode: err %v, stderr %q; want a refusal naming fixed-accumulate", err, lastLines(stderr, 3))
+	}
+}

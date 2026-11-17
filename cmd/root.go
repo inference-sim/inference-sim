@@ -1138,6 +1138,16 @@ var runCmd = &cobra.Command{
 				}
 				growth = tracespec.ContextGrowth("accumulate")
 			}
+			if growth == "" && workload.OpenLoopAccumulate(spec) {
+				// Open-loop accumulate sessions export as deltas too: absolute rounds would
+				// replay without the previous round's context (#1914).
+				var rErr error
+				records, rErr = workload.ReExportOpenLoopAccumulateRecords(traceArrivals)
+				if rErr != nil {
+					logrus.Fatalf("Trace export of open-loop accumulate sessions: %v", rErr)
+				}
+				growth = tracespec.ContextGrowth("accumulate")
+			}
 			header := &workload.TraceHeader{
 				SessionContextGrowth: growth,
 				Version:              workload.TraceVersion,

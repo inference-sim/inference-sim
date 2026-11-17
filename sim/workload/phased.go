@@ -167,3 +167,24 @@ func GeneratePhased(spec *WorkloadSpec) ([]*sim.Request, error) {
 	}
 	return out, nil
 }
+
+// OpenLoopAccumulate reports whether the workload's session clients all grow their context by
+// accumulation with every round pre-generated (closed_loop false), the case whose trace export
+// must carry deltas (#1914). A workload with a closed-loop or independent-round session client,
+// or none, is not.
+func OpenLoopAccumulate(spec *WorkloadSpec) bool {
+	clients := append([]ClientSpec{}, spec.Clients...)
+	clients = append(clients, ExpandCohorts(spec.Cohorts)...)
+	sessions := 0
+	for i := range clients {
+		c := &clients[i]
+		if c.Reasoning == nil || c.Reasoning.MultiTurn == nil {
+			continue
+		}
+		if isClosedLoop(c) || c.Reasoning.MultiTurn.ContextGrowth != "accumulate" {
+			return false
+		}
+		sessions++
+	}
+	return sessions > 0
+}
