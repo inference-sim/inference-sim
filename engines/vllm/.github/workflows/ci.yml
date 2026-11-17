@@ -881,6 +881,28 @@ jobs:
           python -I oracle/run_multiconnector.py vllm-source oracle/scenarios/multiconnector oracle/out/scenarios-multi
       - name: every multi-connector golden trace is vLLM's own output
         run: python3 -I oracle/compare_goldens.py core/connector/multi/testdata/golden oracle/out/scenarios-multi
+      # FID-5 (design §7.6): the offload framework's interfaces, traced at the interface. Recorded: every
+      # call the OffloadingConnector's scheduler side makes at OffloadingManager, the manager at its
+      # CachePolicy and each spec's get_manager, observed (sys.monitoring, nothing replaced) while the
+      # offloading and multi-connector scenarios run. Direct: this repository's driver makes calls no
+      # feature makes (oracle/scenarios-fid5), on vLLM's CPUOffloadingSpec, TieringOffloadingSpec with no
+      # secondary tiers, and LRUCachePolicy alone. Each must equal its committed trace, which
+      # core/connector/offloading's fid5_test.go replays against the port.
+      - name: the offload interface traces are vLLM's own calls and answers
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out/fid5
+          status=0
+          python -I oracle/run_kv_interfaces.py vllm-source oracle/out/fid5 oracle/scenarios/offloading oracle/scenarios/multiconnector \
+            --check core/connector/offloading/testdata/golden-fid5 || status=1
+          python -I oracle/drive_kv_interfaces.py vllm-source oracle/scenarios-fid5 oracle/out/fid5 \
+            --check core/connector/offloading/testdata/golden-fid5 || status=1
+          exit $status
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

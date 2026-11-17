@@ -1,0 +1,76 @@
+{
+ "description": "TieringOffloadingSpec with no secondary tiers, whose manager forwards to its CPU primary tier: reset_cache while a store is in flight, then the request registered again, as the tiering manager requires (it drops every request's state on reset, vllm/v1/kv_offload/tiering/manager.py:935-980@5df63a72): the cache starts empty at slot 0. The scheduler never completes a pre-reset job (reset_cache's own comment), so this sequence does not either.",
+ "spec": {
+  "name": "TieringOffloadingSpec",
+  "cpu_bytes_to_use": 32768,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "r1",
+    "r2"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "r1"
+   ],
+   "success": true
+  },
+  {
+   "m": "reset_cache"
+  },
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "r1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "r2"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "r3"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "r3"
+   ],
+   "success": true
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "r3"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  },
+  {
+   "m": "get_stats"
+  }
+ ]
+}
