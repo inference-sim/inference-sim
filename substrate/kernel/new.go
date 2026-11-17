@@ -1654,6 +1654,9 @@ func dtypeFitSuffix(d model.DType, chip hardware.Chip) fitSpec {
 	return fitSpec{suffix: suffix, peak: peak}
 }
 
+// fp8BlockScaleElements is the elements one scale covers in a 128x128 block-scaled FP8 weight.
+const fp8BlockScaleElements = 128 * 128
+
 // formatFit chooses the kernel a GEMM of this format runs on this chip, which is what its
 // rate is.
 //
@@ -1692,6 +1695,12 @@ func formatFit(f price.Format, grouped bool, chip hardware.Chip, hopper bool) fi
 			return fitSpec{suffix: "w4a16_mxfp4_grouped", fallback: "bf16", peak: bf16}
 		}
 		return fitSpec{suffix: "bf16", peak: bf16}
+	case f.DType == model.DTypeFP8 && f.ScaleElements == fp8BlockScaleElements && !grouped:
+		// Weight scales one per 128x128 block (MiniMax-M2.5, GLM) run vLLM's block-scaled FP8
+		// linear kernels, which the registry measures as the fp8_block ramp (AISimulate gemm
+		// fp8_block, v0.30.0/0.31.0), at the FP8 peak. The ramp is the dense GEMM's; routed
+		// experts keep their own (expertsFit, or fp8 where none is measured).
+		return fitSpec{suffix: "fp8_block", fallback: "fp8", peak: chip.FP8Peak * 1e12}
 	case f.DType == model.DTypeNVFP4 && grouped:
 		// A native-FP4 part's NVFP4 fused MoE (FlashInfer TRT-LLM, CUTLASS NvFp4) runs its
 		// own grouped kernels, whose efficiency is not the dense FlashInfer CuTe-DSL linear's
