@@ -11,7 +11,7 @@ import (
 // (blockSizes.Assumptions), and that size is the one the resolver returns. A resolved combination
 // carries the assumed facts exactly when its size is not the same under all 16 settings.
 func TestBlockSizeTableIsInternallyConsistent(t *testing.T) {
-	if blockSizes.VLLM != "5df63a7203cdb9328d824a27b682e77c7b9928be" {
+	if blockSizes.VLLM != "4ba787ec9959e566d3b587a796dff07673324da5" {
 		t.Errorf("the table is for vLLM %s, not the pinned commit", blockSizes.VLLM)
 	}
 	if len(blockSizes.Facts) < 3 {

@@ -53,7 +53,7 @@ func loadCaptureOracle(t *testing.T) []captureOracleCase {
 	if err := json.Unmarshal(raw, &f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Commit != "5df63a7203cdb9328d824a27b682e77c7b9928be" {
+	if f.Commit != "4ba787ec9959e566d3b587a796dff07673324da5" {
 		t.Fatalf("the oracle file is for commit %s, not the pinned release", f.Commit)
 	}
 	return f.Capture
