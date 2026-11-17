@@ -237,6 +237,8 @@ runs:
         CORPORA: ${{ inputs.corpora }}
         T2_KEY: ${{ steps.keys.outputs.t2 }}
         T2_HIT: ${{ steps.t2.outputs.cache-hit }}
+        MAMBA_KEY: ${{ steps.keys.outputs.mamba }}
+        MAMBA_HIT: ${{ steps.mamba.outputs.cache-hit }}
         T3_KEY: ${{ steps.keys.outputs.t3 }}
         T3_HIT: ${{ steps.t3.outputs.cache-hit }}
         CONNECTOR_KEY: ${{ steps.keys.outputs.connector }}
@@ -261,6 +263,8 @@ runs:
         out = {"run_blis_vllm_commit": os.environ["GITHUB_SHA"]}
         if "t2" in want:
             out["tier2"] = corpus("T2_KEY", "T2_HIT", "fuzz")
+        if "mamba" in want:
+            out["mamba"] = corpus("MAMBA_KEY", "MAMBA_HIT", "fuzz-mamba")
         if "t3" in want:
             out["tier3_and_dp"] = corpus("T3_KEY", "T3_HIT", "fuzz-t3", "fuzz-t3-dp")
         if "connector" in want:

@@ -119,5 +119,7 @@ pr_event
 
 python3 -I "$here/audit_triggers.py" || fail=1
 python3 -I "$here/test_shard.py" || fail=1
+python3 -I "$here/test_fuzz_provenance.py" || fail=1
+python3 -I "$here/test_fetch_check.py" || fail=1
 python3 -I "$here/check_race_legs.py" || fail=1
 exit "$fail"

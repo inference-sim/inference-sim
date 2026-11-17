@@ -1,0 +1,27 @@
+name: recorded-logs
+
+# The recorded block sizes (compat/kernelmodel/testdata/recorded_block_sizes) are read from
+# InferenceX server logs that a public API serves and that can change or disappear. Every night
+# this fetches the log of each recorded row again and fails, naming the row, when its sha256
+# differs from the recorded one or the log is gone, so a changed or withdrawn log is seen before
+# the comparison it supports (TestResolutionAgainstTheRecordedRuns) is trusted. It never rewrites
+# the file: a person re-runs `fetch.py --from-rows` and reviews the difference.
+on:
+  schedule:
+    - cron: "41 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recorded-logs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: re-fetch every recorded log and compare its hash
+        run: python3 -I compat/kernelmodel/testdata/recorded_block_sizes/fetch.py --check compat/kernelmodel/testdata/recorded_block_sizes/recorded_block_sizes.json
