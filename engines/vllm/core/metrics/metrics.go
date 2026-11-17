@@ -21,7 +21,8 @@ import (
 )
 
 // Admission is one request the scheduler admitted from the waiting queue in a step, after a
-// prefix-cache lookup (a request resuming with computed tokens takes none).
+// prefix-cache lookup (a request resuming with computed tokens takes none). A request whose KV
+// connector load runs asynchronously is admitted at the step that starts the load, and runs later.
 type Admission struct {
 	ID string
 	// PromptTokens is the request's num_tokens at admission: its prompt plus, for a request
@@ -36,6 +37,15 @@ type Admission struct {
 	// ran is counted (record_prefix_cache_stats, :255-264), though the prompt is counted
 	// either way.
 	CacheLookup bool
+	// External is num_external_computed_tokens: the tokens a KV connector supplied beyond the
+	// local hit, by a load that has finished or is still running (scheduler.py:1251-1257@4ba787ec).
+	External int
+	// Connector is whether a KV connector is configured, so the admission also counts as a
+	// connector prefix-cache query (connector_prefix_cache_stats, scheduler.py:1476-1495).
+	Connector bool
+	// ExternalBySource splits External by the CacheHitSource of the tier that supplied it
+	// (get_external_cache_hit_sources, scheduler.py:1494-1503@4ba787ec), by the label's value.
+	ExternalBySource map[string]int
 }
 
 // Finish is one request a step finished.
@@ -122,7 +132,7 @@ type Model struct {
 	cached map[string]int
 }
 
-type prefill struct{ prompt, localHit int }
+type prefill struct{ prompt, localHit, external int }
 
 type histogram struct {
 	bounds []float64
@@ -209,9 +219,18 @@ func (m *Model) Step(s Step) {
 			m.counters["vllm:prefix_cache_hits_total"] += float64(a.LocalHit)
 			m.counters["vllm:prompt_tokens_cached_by_source_total{source=device}"] += float64(a.LocalHit)
 		}
+		// The connector's prefix-cache query at admission: the tokens the local hit left, of which
+		// the connector supplied External (scheduler.py:1476-1495@4ba787ec).
+		if a.Connector && a.PromptTokens-a.LocalHit != 0 {
+			m.counters["vllm:external_prefix_cache_queries_total"] += float64(a.PromptTokens - a.LocalHit)
+			m.counters["vllm:external_prefix_cache_hits_total"] += float64(a.External)
+			for _, src := range sortedIntKeys(a.ExternalBySource) {
+				m.counters["vllm:prompt_tokens_cached_by_source_total{source="+src+"}"] += float64(a.ExternalBySource[src])
+			}
+		}
 		// PrefillStats.set at the first admission (scheduler.py:1251-1257@4ba787ec): a request
 		// not preempted before is being admitted for the first time.
-		m.pending[a.ID] = prefill{prompt: a.PromptTokens, localHit: a.LocalHit}
+		m.pending[a.ID] = prefill{prompt: a.PromptTokens, localHit: a.LocalHit, external: a.External}
 	}
 	// IterationStats (loggers.py:1259-1330@4ba787ec), built from the step's outputs. A
 	// preemption is an event on the request, which the request's next emitted output carries
@@ -240,12 +259,16 @@ func (m *Model) Step(s Step) {
 			continue
 		}
 		delete(m.pending, id)
-		m.cached[id] = p.localHit
+		// PromptTokenStats.update_from_output: the tokens skipped are the local hit and the
+		// external ones (stats.py:426-460@4ba787ec).
+		cached := p.localHit + p.external
+		m.cached[id] = cached
 		m.counters["vllm:prompt_tokens_total"] += float64(p.prompt)
-		m.counters["vllm:prompt_tokens_cached_total"] += float64(p.localHit)
-		m.counters["vllm:prompt_tokens_by_source_total{source=local_compute}"] += float64(p.prompt - p.localHit)
+		m.counters["vllm:prompt_tokens_cached_total"] += float64(cached)
+		m.counters["vllm:prompt_tokens_by_source_total{source=local_compute}"] += float64(p.prompt - cached)
 		m.counters["vllm:prompt_tokens_by_source_total{source=local_cache_hit}"] += float64(p.localHit)
-		computed += p.prompt - p.localHit
+		m.counters["vllm:prompt_tokens_by_source_total{source=external_kv_transfer}"] += float64(p.external)
+		computed += p.prompt - cached
 	}
 	generated := 0
 	for _, id := range sortedKeys(s.Emitted) {
@@ -364,6 +387,15 @@ func sortedBoolKeys(m map[string]bool) []string {
 }
 
 func sortedKeys(m map[string]int) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sortedIntKeys(m map[string]int) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)

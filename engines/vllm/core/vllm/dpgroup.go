@@ -625,6 +625,17 @@ func (g *DPGroup) EnableKVEvents() {
 // KVEventsRefusal is the ranks' (Engine.KVEventsRefusal): every rank runs one configuration.
 func (g *DPGroup) KVEventsRefusal() error { return g.ranks[0].e.KVEventsRefusal() }
 
+// OffloadCachedTokens is how much of id's Scheduled.CachedTokens the KV offload tier supplied, as
+// its rank's engine says.
+func (g *DPGroup) OffloadCachedTokens(id string) int {
+	for _, r := range g.ranks {
+		if n := r.e.OffloadCachedTokens(id); n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
 // Ranks is the group's data-parallel width.
 func (g *DPGroup) Ranks() int { return len(g.ranks) }
 
