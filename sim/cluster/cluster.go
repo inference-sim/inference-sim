@@ -53,9 +53,13 @@ type ClusterSimulator struct {
 	lastDemandAt map[string]int64
 	// heldSince is when each request held for a cold start was first held, and coldStarted the
 	// models a request has started a replica for and that have none serving yet (scale from zero, #908).
-	heldSince       map[string]int64
-	coldStarted     map[string]bool
-	instanceSenders map[InstanceID]*eventSender
+	heldSince   map[string]int64
+	coldStarted map[string]bool
+	// loraPlacement is the LoRA placement loop (lora_placement.go), nil when it places nothing;
+	// loraPlacementSender is its outbox.
+	loraPlacement       *loraPlacement
+	loraPlacementSender eventSender
+	instanceSenders     map[InstanceID]*eventSender
 	// testSender is the sender of events tests schedule by hand (senderTest).
 	testSender *eventSender
 	// permuteSchedule, set only by the permutation test, gives every queued event a random
@@ -319,22 +323,23 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 	}
 
 	cs := &ClusterSimulator{
-		config:            config,
-		instances:         make([]*InstanceSimulator, 0, config.NumInstances),
-		requestSource:     requestSource,
-		clusterEvents:     make(ClusterEventQueue, 0),
-		lifecycleSender:   eventSender{id: senderLifecycle},
-		workloadSender:    eventSender{id: senderWorkload},
-		routerSender:      eventSender{id: senderRouter},
-		kvConnectorSender: eventSender{id: senderKVConnector},
-		autoscalerSender:  eventSender{id: senderAutoscaler},
-		trace:             simTrace,
-		inFlightRequests:  make(map[string]int, config.NumInstances),
-		shedByTier:        make(map[string]int),
-		injectedByClass:   make(map[string]int64),
-		fates:             sim.NewFateLedger(),
-		requestFacts:      make(map[string]RequestFact),
-		liveRequests:      make(map[string]*sim.Request),
+		config:              config,
+		instances:           make([]*InstanceSimulator, 0, config.NumInstances),
+		requestSource:       requestSource,
+		clusterEvents:       make(ClusterEventQueue, 0),
+		lifecycleSender:     eventSender{id: senderLifecycle},
+		workloadSender:      eventSender{id: senderWorkload},
+		routerSender:        eventSender{id: senderRouter},
+		kvConnectorSender:   eventSender{id: senderKVConnector},
+		autoscalerSender:    eventSender{id: senderAutoscaler},
+		loraPlacementSender: eventSender{id: senderLoRAPlacement},
+		trace:               simTrace,
+		inFlightRequests:    make(map[string]int, config.NumInstances),
+		shedByTier:          make(map[string]int),
+		injectedByClass:     make(map[string]int64),
+		fates:               sim.NewFateLedger(),
+		requestFacts:        make(map[string]RequestFact),
+		liveRequests:        make(map[string]*sim.Request),
 	}
 
 	// PD disaggregation: set pool membership (topology already validated above). The gateway
@@ -541,6 +546,10 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 
 	for _, inst := range cs.instances {
 		cs.wireInstance(inst)
+	}
+	// The LoRA placement loop loads its assignment at time zero, before any request.
+	if cs.startupErr == nil {
+		cs.startupErr = cs.startLoRAPlacement()
 	}
 	return cs, nil
 }
@@ -769,6 +778,8 @@ func (c *ClusterSimulator) Run() error {
 	if c.autoscaler != nil && c.config.ModelAutoscalerIntervalUs > 0 {
 		c.schedule(&ScalingTickEvent{At: c.clock}, &c.autoscalerSender)
 	}
+	// The LoRA placement loop's periodic trigger, when it is on (inert otherwise: no event).
+	c.scheduleFirstLoRAPlacementTick()
 
 	// 2. Drain the request source to schedule arrival events. The source is
 	// required to yield in non-decreasing ArrivalTime order (RequestSource

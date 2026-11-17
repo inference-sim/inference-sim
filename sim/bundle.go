@@ -25,6 +25,9 @@ type PolicyBundle struct {
 	// ClusterAutoscaler decides how many nodes each pool needs (inference-sim#740); absent, no node
 	// is provisioned beyond the pools' initial nodes.
 	ClusterAutoscaler ClusterAutoscalerBundleConfig `yaml:"cluster_autoscaler"`
+	// LoRAPlacement places LoRA adapters on instances through the engine's dynamic adapter load
+	// (inference-sim#1493, #1495); absent, no adapter is placed.
+	LoRAPlacement LoRAPlacementBundleConfig `yaml:"lora_placement"`
 }
 
 // PriorityConfig holds priority policy configuration.
@@ -98,6 +101,14 @@ type ClusterAutoscalerBundleConfig struct {
 	ScaleDown          string  `yaml:"scale_down"`
 	LowWaterMark       float64 `yaml:"low_water_mark"`
 	MinNodesPerPool    int     `yaml:"min_nodes_per_pool"`
+}
+
+// LoRAPlacementBundleConfig is the policy bundle's lora_placement block (cluster.LoRAPlacementConfig).
+type LoRAPlacementBundleConfig struct {
+	Bundle             string           `yaml:"bundle"`
+	Creation           string           `yaml:"creation"`
+	Assignment         map[int][]string `yaml:"assignment"`
+	PeriodicIntervalUs float64          `yaml:"periodic_interval_us"`
 }
 
 // AutoscalerBundleConfig holds autoscaler pipeline configuration.

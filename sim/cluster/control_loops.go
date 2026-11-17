@@ -50,6 +50,14 @@ func ControlLoops() []ControlLoop {
 		Status:      ValidationVerified,
 		Evidence:    "the policy and the loop are tested against their written contracts (cluster_autoscaler_test.go); no measured node-scaling run has been compared with it",
 	}, {
+		Name:        "lora-placement",
+		PolicyField: "LoRAPlacement",
+		Component:   "LoRAPlacementConfig, the placement at start (startLoRAPlacement) and the periodic LoRAPlacementTickEvent (lora_placement.go)",
+		Published:   "each instance's resident adapters and the capacity of its adapter cache, as its engine reports them; it acts through the engine's dynamic adapter load (vLLM's /v1/load_lora_adapter)",
+		Upstream:    "vLLM's serving API for loading and unloading adapters at run time; it models no placement controller (placement policy is the operator's)",
+		Status:      ValidationVerified,
+		Evidence:    "the engine's adapter cache and its load and unload are replayed against vLLM's own LRUCacheWorkerLoRAManager (blis-vllm core/lora); the loop is tested against its written contracts (lora_placement_test.go); no measured placement run has been compared with it",
+	}, {
 		Name:        "model-autoscaler",
 		PolicyField: "Autoscaler",
 		Component:   "Collector, Analyzer, Engine and Actuator, run by the scaling tick (autoscaler.go)",

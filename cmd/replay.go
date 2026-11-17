@@ -506,6 +506,7 @@ Example:
 			PDPrefillSamplesFirstToken: true,
 			Roles:                      rolesOf(runEngine, prefillOverrides, decodeOverrides),
 			InstanceLifecycle:          bundleInstanceLifecycle,
+			LoRAPlacement:              loraPlacementOf(bundle, adapterRegistryOf(loraCfg)),
 			ScenarioEndpointTopology:   cluster.StaticEndpointTopology(scenarioTopology),
 			// A contract-built release replays on the engine it ran on, built the same way as in
 			// run (INV-13); a compatibility release keeps the compatibility engine.
