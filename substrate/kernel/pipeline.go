@@ -475,7 +475,7 @@ func (k *Kernel) stageHost(b kernel.Batch, st *pipelineStage, draftKernels int) 
 	if k.decodeGraphed(b) {
 		mode = k.graphDecode
 	}
-	kernels := st.kernels
+	kernels := st.kernels + k.fusedLaunches(b)*st.totalLayers
 	if !stepPrefills(b) {
 		kernels -= st.prefillOnlyKernels
 	}

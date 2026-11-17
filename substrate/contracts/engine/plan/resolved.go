@@ -180,6 +180,23 @@ func (p PoolPlan) ValidateResolved() error {
 	negative("Graphs.Ceiling", int64(p.Graphs.Ceiling))
 	negative("Drafts.RetainedTokens", int64(p.Drafts.RetainedTokens))
 	negative("InFlight", int64(p.InFlight))
+	for i, c := range p.Launches {
+		switch {
+		case c.FromTokens < 1 || c.ToTokens < c.FromTokens:
+			bad = append(bad, fmt.Sprintf("Launches[%d] covers %d to %d tokens; a range starts at 1 "+
+				"token or more and ends at or after its start", i, c.FromTokens, c.ToTokens))
+		case c.PerLayer == 0:
+			bad = append(bad, fmt.Sprintf("Launches[%d] changes no launch; a range the engine "+
+				"fuses nothing in is left out", i))
+		}
+		for j := range i {
+			if o := p.Launches[j]; c.FromTokens <= o.ToTokens && o.FromTokens <= c.ToTokens {
+				bad = append(bad, fmt.Sprintf("Launches[%d] (%d to %d tokens) overlaps Launches[%d] "+
+					"(%d to %d); a step's launches change one way", i, c.FromTokens, c.ToTokens, j,
+					o.FromTokens, o.ToTokens))
+			}
+		}
+	}
 	if len(bad) > 0 {
 		return fmt.Errorf("the plan's resolved settings: %s", strings.Join(bad, "; "))
 	}
