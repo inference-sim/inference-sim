@@ -57,15 +57,32 @@ func TestEagerLaunchesCostAtLeastAReplay(t *testing.T) {
 
 // A top-k layer's prefill query attends its selection, not its whole prefix: what a chunk's
 // cost gains from a longer prefix is a small part of what the same chunk gains when each query
-// reads every key. The comparison is of the prefix-driven increment, so the layer's other work
-// (its experts, its projections), which the prefix does not touch, does not enter it.
+// reads every key. The comparison is of the prefix-driven increment of the attention, so both
+// graphs drop the indexer's scoring scan: it reads every prefix key by design (the next test
+// prices it), and the substrate prices it at the indexer's own cost, which grows with the prefix
+// and would otherwise hide the bound on the attention.
 func TestSparsePrefillIsBoundedByItsSelection(t *testing.T) {
-	sparse := fixture(t, "glm5-h200-tp8.yaml") // DSA, index_topk 2048
-	in := fixtureInputs(t, "glm5-h200-tp8.yaml")
+	withoutIndexer := func(in *Inputs) {
+		for i := range in.Model.LayerKinds {
+			var kept []model.Node
+			for _, n := range in.Model.LayerKinds[i].Nodes {
+				if n.Role != "block_index_scores" {
+					kept = append(kept, n)
+				}
+			}
+			in.Model.LayerKinds[i].Nodes = kept
+			in.Model.LayerKinds[i].Edges = chain(len(kept))
+		}
+	}
+	in := fixtureInputs(t, "glm5-h200-tp8.yaml") // DSA, index_topk 2048
+	withoutIndexer(&in)
+	sparse := build(t, in)
+	in = fixtureInputs(t, "glm5-h200-tp8.yaml")
 	if editNodes(in.Model, func(n model.Node) bool { return n.IndexTopK > 0 },
 		func(n *model.Node) { n.IndexTopK = 1 << 20 }) == 0 {
 		t.Fatal("the graph states no top-k selection")
 	}
+	withoutIndexer(&in)
 	dense := build(t, in) // a selection wider than any prefix: every query reads every key
 	grows := func(k interface {
 		StepTime(kernel.Batch) kernel.StepEstimate
@@ -75,7 +92,7 @@ func TestSparsePrefillIsBoundedByItsSelection(t *testing.T) {
 		}
 		return sm(131072) - sm(8192)
 	}
-	if s, d := grows(sparse), grows(dense); s > d/10 {
+	if s, d := grows(sparse), grows(dense); d <= 0 || s > d/10 {
 		t.Errorf("a 1,024-token chunk gains %.1f ms of SM from a 128K prefix over an 8K one, and %.1f ms "+
 			"when every query reads every key; each query reads at most its top-k", s*1e3, d*1e3)
 	}
