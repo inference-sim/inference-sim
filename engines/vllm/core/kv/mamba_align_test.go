@@ -415,7 +415,7 @@ func TestMambaPrefillCheckpointHelpers(t *testing.T) {
 		{4, 4, true, 0}, // 4 - 4
 		{2, 4, true, 0}, // negative clamps to 0
 	} {
-		if got := mambaPrefillCheckpointPosition(c.n, c.hbs, c.eagle); got != c.want {
+		if got := mambaPrefillCheckpointPosition(c.n, c.hbs, c.eagle, 0); got != c.want {
 			t.Errorf("position(%d, %d, eagle=%v) = %d, want %d", c.n, c.hbs, c.eagle, got, c.want)
 		}
 	}
