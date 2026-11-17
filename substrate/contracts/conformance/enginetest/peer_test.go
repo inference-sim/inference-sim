@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 )
 
 // echo is a FIFO engine that answers each peer message with one message back to its sender.
@@ -20,6 +21,20 @@ type echo struct {
 }
 
 func (e *echo) PeerAddr() string { return e.addr }
+
+// placed is an echo engine that takes peer placements; its fault, if set, breaks the law.
+type placed struct {
+	*echo
+	peers map[string]plan.Endpoint
+}
+
+func (p *placed) PlacePeer(addr string, at plan.Endpoint) error {
+	if (at.Node < 0 || at.Rack < 0) && p.fault != "places-negative" {
+		return errors.New("placed: negative endpoint")
+	}
+	p.peers[addr] = at
+	return nil
+}
 
 func (e *echo) Outbox() []engine.PeerMessage {
 	out := e.out
@@ -95,5 +110,29 @@ func TestAnEngineThatIsNotPeeredIsCaught(t *testing.T) {
 	err := CheckPeered(newFIFO(fifoCfg()), peerScript)
 	if err == nil || !strings.Contains(err.Error(), "not an engine.Peered") {
 		t.Fatalf("CheckPeered on a FIFO = %v, want it refused as not Peered", err)
+	}
+}
+
+func newPlaced(fault string) func() (engine.Engine, error) {
+	inner := newEcho(fault)
+	return func() (engine.Engine, error) {
+		e, err := inner()
+		if err != nil {
+			return nil, err
+		}
+		return &placed{echo: e.(*echo), peers: map[string]plan.Endpoint{}}, nil
+	}
+}
+
+func TestAPlacedPeerEngineThatKeepsTheLawsPasses(t *testing.T) {
+	if err := CheckPeered(newPlaced(""), peerScript); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAPlacedPeerEngineThatAcceptsANegativeEndpointIsCaught(t *testing.T) {
+	err := CheckPeered(newPlaced("places-negative"), peerScript)
+	if err == nil || !strings.Contains(err.Error(), "negative node") {
+		t.Fatalf("CheckPeered = %v, want an error naming the negative node", err)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"reflect"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 )
 
 // PeerStep is one input of a CheckPeered script: a message delivered to the engine at At. The
@@ -22,7 +23,9 @@ type PeerStep struct {
 //   - its Seq numbers run 1, 2, 3, ... across drains, in send order;
 //   - an Outbox drained again at once is empty;
 //   - a message whose To is not its PeerAddr is refused with an error;
-//   - the two engines send the same messages, in the same order, for the same script.
+//   - the two engines send the same messages, in the same order, for the same script;
+//   - an engine that is a PeerPlaced refuses an endpoint with a negative coordinate and accepts
+//     a valid one.
 //
 // It returns the first law broken, nil when none is.
 func CheckPeered(newEngine func() (engine.Engine, error), script []PeerStep) error {
@@ -39,6 +42,14 @@ func CheckPeered(newEngine func() (engine.Engine, error), script []PeerStep) err
 		addr := p.PeerAddr()
 		if addr == "" {
 			return fmt.Errorf("enginetest: %T has no PeerAddr, so it takes no peer messages", e)
+		}
+		if pp, ok := e.(engine.PeerPlaced); ok {
+			if err := pp.PlacePeer("peer:9", plan.Endpoint{Node: -1}); err == nil {
+				return fmt.Errorf("enginetest: PlacePeer accepted an endpoint with a negative node")
+			}
+			if err := pp.PlacePeer("peer:9", plan.Endpoint{Node: 1, Rack: 0}); err != nil {
+				return fmt.Errorf("enginetest: PlacePeer refused a valid endpoint: %w", err)
+			}
 		}
 		var next uint64 = 1
 		drain := func(after string) error {
