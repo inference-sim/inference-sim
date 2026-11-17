@@ -975,7 +975,7 @@ coefficients:
       rationale: >
         1.27 TB/s, 0.380 of this part's 3.35 TB/s datasheet bandwidth, over every query row's blocks of 37,376 B on the throughput branch, i.e. once the call fills the part. Above the committed single rate (1.11 TB/s) because the per-row cost now carries what that rate had to absorb. Identified by the batch >= 256 rows at 1-3 blocks only; charged at 10 blocks it is extrapolated on the block axis. See attention_decode_launch_floor_sparse_mla for the form and the errors. NO END-TO-END CHECK ON THIS PART: no forward-pass dataset carries DeepSeek-V4.1-Flash on h100 under any engine, and FPM's h200 V4.1 rows are SGLang (revision 03e006de), so nothing arbitrates this entry (methodology section 10.5). Reproduce with scripts/fit_deepseek_v41_decode.py.
   - attention_prefill_floor_sparse_mla:
-      value: 83.15
+      value: 83.28
       units: us_per_transfer
       method: transferred
       fitted: false
@@ -984,7 +984,7 @@ coefficients:
       measured_on: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 840aef008c31014671ebe5e9ead68ea293387e50ff46bc2f7177764bbda95e28}]
       transferred_from: "hardware=h200"
       transfer_rule: "measured on FlashInfer 0.7.0.post1's BatchMLAPagedAttentionWrapper[fa3] build (840aef008c31), which the run's image ran, and used for the pinned FlashInfer 0.7.2.post1's build (41b979880fad) on the same chip; the two builds' hashes differ, so the value is moved, not shown, and nothing is moved between chips"
-      ci95: [81.01, 86.32]
+      ci95: [81.15, 86.48]
       fit_range:
         - {dim: tokens, low: 16.0, high: 8192.0}
         - {dim: requests, low: 1.0, high: 32.0}
@@ -995,9 +995,9 @@ coefficients:
         - {kind: model, cite: "vLLM v0.31.0 v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py FlashInferMLASparseSM90Impl", role: supporting}
         - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the BatchMLAPagedAttentionWrapper[fa3] builds of FlashInfer 0.7.0.post1 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The per-call floor of the GLM-5.3 family's sparse-MLA PREFILL on H200, 83.15 us a layer a rank in a step with prefill. THE FORM: t = attention_prefill_floor_sparse_mla + attention_prefill_per_request_sparse_mla x prefill requests + attention_prefill_per_token_sparse_mla x prefill query tokens + W / attention_prefill_rate_sparse_mla, W = sum over prefill query positions p of 64 x ceil(min(p, 2048) / 64) x record x 8 heads / 64, the record 1152 B for glm-5.3 and 1024 B for glm-5.3-flash at a BF16 cache. Before it, this layer's prefill was priced on the part-wide prefill pair over its FLOPs. Fitted on the 272 TP8 rows whose prefix + new tokens exceed the top-k (2048), batch 1-32, prefix 0-1032192: the module is predicted at 1.048x, signed 0.996. Signed by batch: 1: 1.01, 2: 0.99, 4: 1.00, 8: 1.01, 16: 0.99, 32: 0.97. HELD OUT: trained on prefix <= 16,384 and predicting >= 32,768, 1.081x (signed 0.991, n=111); the prefix slope is the indexer's scorer, in the rest of the module, priced on the part-wide prefill pair over all of its heads on every rank, as vLLM runs it; trained on new tokens <= 2,048 and predicting >= 4,096, 1.033x (signed 1.006, n=33). AT OR BELOW THE TOP-K (84 rows, not fitted) the form gives 1.301x, signed 1.169. The sparse attention is a median 75% of the measured module; the rest is BLIS's own price, so this fit inherits its error. THE FLOOR IS NOT THE ATTENTION KERNEL'S ALONE: at the table's smallest prefill (16 tokens, one request, no prefix) the module measures 107.1 us of GPU time and BLIS's device price of the rest of it is 41.8 us, so the floor also carries the module's fixed device cost that the rest's forms leave out (the indexer's and scorer's small kernels among them). Named substitutions: GLM-5.3-Flash's geometry for GLM-5.3 (8 heads a rank at TP8, a 512-wide latent, top-k 2048; GLM-5.3's record is 1152 B against Flash's 1024 B, and the rate over W is taken as the same, so GLM-5.3 pays 1152/1024 of Flash's time a key slot); a BF16 cache, so an fp8 cache, whose record the kernel's W scales with, is charged its record's share of the BF16 cost, an assumption. Each fitted value has a measured entry keyed to the build the run's image ran and a transferred one keyed to the engine pin's build (kernel_impls.json), or, where the table names no build for the run, one unkeyed transferred entry. The 95% interval is from 200 bootstrap refits over rows; rows of one shape family are not independent, so it is narrower than the data justify.
+        The per-call floor of the GLM-5.3 family's sparse-MLA PREFILL on H200, 83.28 us a layer a rank in a step with prefill. THE FORM: t = attention_prefill_floor_sparse_mla + attention_prefill_per_request_sparse_mla x prefill requests + attention_prefill_per_token_sparse_mla x prefill query tokens + W / attention_prefill_rate_sparse_mla, W = sum over prefill query positions p of 64 x ceil(min(p, 2048) / 64) x record x 8 heads / 64, the record 1152 B for glm-5.3 and 1024 B for glm-5.3-flash at a BF16 cache. Before it, this layer's prefill was priced on the part-wide prefill pair over its FLOPs. Fitted on the 272 TP8 rows whose prefix + new tokens exceed the top-k (2048), batch 1-32, prefix 0-1032192: the module is predicted at 1.048x, signed 0.995. Signed by batch: 1: 1.01, 2: 0.99, 4: 1.00, 8: 1.01, 16: 0.99, 32: 0.97. HELD OUT: trained on prefix <= 16,384 and predicting >= 32,768, 1.081x (signed 0.990, n=111); the prefix slope is the indexer's scorer, in the rest of the module, priced on the part-wide prefill pair over all of its heads on every rank, as vLLM runs it; trained on new tokens <= 2,048 and predicting >= 4,096, 1.033x (signed 1.006, n=33). AT OR BELOW THE TOP-K (84 rows, not fitted) the form gives 1.301x, signed 1.171. The sparse attention is a median 75% of the measured module; the rest is BLIS's own price, so this fit inherits its error. THE FLOOR IS NOT THE ATTENTION KERNEL'S ALONE: at the table's smallest prefill (16 tokens, one request, no prefix) the module measures 107.1 us of GPU time and BLIS's device price of the rest of it is 41.7 us, so the floor also carries the module's fixed device cost that the rest's forms leave out (the indexer's and scorer's small kernels among them). Named substitutions: GLM-5.3-Flash's geometry for GLM-5.3 (8 heads a rank at TP8, a 512-wide latent, top-k 2048; GLM-5.3's record is 1152 B against Flash's 1024 B, and the rate over W is taken as the same, so GLM-5.3 pays 1152/1024 of Flash's time a key slot); a BF16 cache, so an fp8 cache, whose record the kernel's W scales with, is charged its record's share of the BF16 cost, an assumption. Each fitted value has a measured entry keyed to the build the run's image ran and a transferred one keyed to the engine pin's build (kernel_impls.json), or, where the table names no build for the run, one unkeyed transferred entry. The 95% interval is from 200 bootstrap refits over rows; rows of one shape family are not independent, so it is narrower than the data justify.
   - attention_prefill_rate_sparse_mla:
-      value: 487386.0
+      value: 487851.0
       units: bytes_per_us
       method: transferred
       fitted: false
@@ -1007,7 +1007,7 @@ coefficients:
       measured_on: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 840aef008c31014671ebe5e9ead68ea293387e50ff46bc2f7177764bbda95e28}]
       transferred_from: "hardware=h200"
       transfer_rule: "measured on FlashInfer 0.7.0.post1's BatchMLAPagedAttentionWrapper[fa3] build (840aef008c31), which the run's image ran, and used for the pinned FlashInfer 0.7.2.post1's build (41b979880fad) on the same chip; the two builds' hashes differ, so the value is moved, not shown, and nothing is moved between chips"
-      ci95: [484692.0, 492176.0]
+      ci95: [485125.0, 492608.0]
       fit_range:
         - {dim: tokens, low: 16.0, high: 8192.0}
         - {dim: requests, low: 1.0, high: 32.0}
@@ -1018,7 +1018,7 @@ coefficients:
         - {kind: model, cite: "vLLM v0.31.0 v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py FlashInferMLASparseSM90Impl", role: supporting}
         - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the BatchMLAPagedAttentionWrapper[fa3] builds of FlashInfer 0.7.0.post1 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        487,386 B/us over W, a WORK rate: W counts each query's read of its top-k records separately, and the queries of one prefill read overlapping keys, which the kernel serves from shared memory and L2 rather than HBM, so W is not HBM traffic and must not be rescaled by the part's bandwidth. 262.6 ps per (query, 64-token key slot) at glm-5.3-flash's 1024 B record x 8 heads / 64, where it was fitted; glm-5.3's 1152 B record pays 1.125x that. Every query past the top-k reads 2048 keys, so a 2048-key read costs 0.538 us a query. See attention_prefill_floor_sparse_mla (this scope) for the form, the errors and the substitutions.
+        487,851 B/us over W, a WORK rate: W counts each query's read of its top-k records separately, and the queries of one prefill read overlapping keys, which the kernel serves from shared memory and L2 rather than HBM, so W is not HBM traffic and must not be rescaled by the part's bandwidth. 262.4 ps per (query, 64-token key slot) at glm-5.3-flash's 1024 B record x 8 heads / 64, where it was fitted; glm-5.3's 1152 B record pays 1.125x that. Every query past the top-k reads 2048 keys, so a 2048-key read costs 0.537 us a query. See attention_prefill_floor_sparse_mla (this scope) for the form, the errors and the substitutions.
   - attention_prefill_per_request_sparse_mla:
       value: 0
       units: us_per_request
@@ -1026,7 +1026,7 @@ coefficients:
       fitted: false
       scope: {hardware: [h200], model: [glm-5.3, glm-5.3-flash]}
       rationale: >
-        Not charged. Fitted free beside the floor and rate on the same 272 rows, it lowers the mean absolute log error by 0.0000, under the 0.005 a term must earn (scripts/fit_glm53_attention.py), so the form keeps two terms; this entry completes the four-member family the kernel reads.
+        Not charged. Fitted free beside the floor and rate on the same 272 rows, it lowers the mean absolute log error by -0.0000, under the 0.005 a term must earn (scripts/fit_glm53_attention.py), so the form keeps two terms; this entry completes the four-member family the kernel reads.
   - attention_prefill_per_token_sparse_mla:
       value: 0
       units: us_per_token
@@ -1034,9 +1034,9 @@ coefficients:
       fitted: false
       scope: {hardware: [h200], model: [glm-5.3, glm-5.3-flash]}
       rationale: >
-        Not charged. Fitted free beside the floor and rate on the same 272 rows, it lowers the mean absolute log error by 0.0043, under the 0.005 a term must earn (scripts/fit_glm53_attention.py), so the form keeps two terms; this entry completes the four-member family the kernel reads.
+        Not charged. Fitted free beside the floor and rate on the same 272 rows, it lowers the mean absolute log error by 0.0042, under the 0.005 a term must earn (scripts/fit_glm53_attention.py), so the form keeps two terms; this entry completes the four-member family the kernel reads.
   - attention_prefill_floor_sparse_mla:
-      value: 83.15
+      value: 83.28
       units: us_per_transfer
       method: measured
       fitted: true
@@ -1046,7 +1046,7 @@ coefficients:
         time: device
         execution: captured
         harness: "AISimulate collector.vllm.glm53flash_attention_runner at ai-dynamo/aisim 6fdf6fb6b2e1: one real sparse-MLA layer's GPU kernel time (CUPTI busy time) over module graph replay, the output all-reduce excluded"
-      ci95: [81.01, 86.32]
+      ci95: [81.15, 86.48]
       fit_range:
         - {dim: tokens, low: 16.0, high: 8192.0}
         - {dim: requests, low: 1.0, high: 32.0}
@@ -1057,9 +1057,9 @@ coefficients:
         - {kind: model, cite: "vLLM v0.31.0 v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py FlashInferMLASparseSM90Impl", role: supporting}
         - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the BatchMLAPagedAttentionWrapper[fa3] builds of FlashInfer 0.7.0.post1 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The per-call floor of the GLM-5.3 family's sparse-MLA PREFILL on H200, 83.15 us a layer a rank in a step with prefill. THE FORM: t = attention_prefill_floor_sparse_mla + attention_prefill_per_request_sparse_mla x prefill requests + attention_prefill_per_token_sparse_mla x prefill query tokens + W / attention_prefill_rate_sparse_mla, W = sum over prefill query positions p of 64 x ceil(min(p, 2048) / 64) x record x 8 heads / 64, the record 1152 B for glm-5.3 and 1024 B for glm-5.3-flash at a BF16 cache. Before it, this layer's prefill was priced on the part-wide prefill pair over its FLOPs. Fitted on the 272 TP8 rows whose prefix + new tokens exceed the top-k (2048), batch 1-32, prefix 0-1032192: the module is predicted at 1.048x, signed 0.996. Signed by batch: 1: 1.01, 2: 0.99, 4: 1.00, 8: 1.01, 16: 0.99, 32: 0.97. HELD OUT: trained on prefix <= 16,384 and predicting >= 32,768, 1.081x (signed 0.991, n=111); the prefix slope is the indexer's scorer, in the rest of the module, priced on the part-wide prefill pair over all of its heads on every rank, as vLLM runs it; trained on new tokens <= 2,048 and predicting >= 4,096, 1.033x (signed 1.006, n=33). AT OR BELOW THE TOP-K (84 rows, not fitted) the form gives 1.301x, signed 1.169. The sparse attention is a median 75% of the measured module; the rest is BLIS's own price, so this fit inherits its error. THE FLOOR IS NOT THE ATTENTION KERNEL'S ALONE: at the table's smallest prefill (16 tokens, one request, no prefix) the module measures 107.1 us of GPU time and BLIS's device price of the rest of it is 41.8 us, so the floor also carries the module's fixed device cost that the rest's forms leave out (the indexer's and scorer's small kernels among them). Named substitutions: GLM-5.3-Flash's geometry for GLM-5.3 (8 heads a rank at TP8, a 512-wide latent, top-k 2048; GLM-5.3's record is 1152 B against Flash's 1024 B, and the rate over W is taken as the same, so GLM-5.3 pays 1152/1024 of Flash's time a key slot); a BF16 cache, so an fp8 cache, whose record the kernel's W scales with, is charged its record's share of the BF16 cost, an assumption. Each fitted value has a measured entry keyed to the build the run's image ran and a transferred one keyed to the engine pin's build (kernel_impls.json), or, where the table names no build for the run, one unkeyed transferred entry. The 95% interval is from 200 bootstrap refits over rows; rows of one shape family are not independent, so it is narrower than the data justify.
+        The per-call floor of the GLM-5.3 family's sparse-MLA PREFILL on H200, 83.28 us a layer a rank in a step with prefill. THE FORM: t = attention_prefill_floor_sparse_mla + attention_prefill_per_request_sparse_mla x prefill requests + attention_prefill_per_token_sparse_mla x prefill query tokens + W / attention_prefill_rate_sparse_mla, W = sum over prefill query positions p of 64 x ceil(min(p, 2048) / 64) x record x 8 heads / 64, the record 1152 B for glm-5.3 and 1024 B for glm-5.3-flash at a BF16 cache. Before it, this layer's prefill was priced on the part-wide prefill pair over its FLOPs. Fitted on the 272 TP8 rows whose prefix + new tokens exceed the top-k (2048), batch 1-32, prefix 0-1032192: the module is predicted at 1.048x, signed 0.995. Signed by batch: 1: 1.01, 2: 0.99, 4: 1.00, 8: 1.01, 16: 0.99, 32: 0.97. HELD OUT: trained on prefix <= 16,384 and predicting >= 32,768, 1.081x (signed 0.990, n=111); the prefix slope is the indexer's scorer, in the rest of the module, priced on the part-wide prefill pair over all of its heads on every rank, as vLLM runs it; trained on new tokens <= 2,048 and predicting >= 4,096, 1.033x (signed 1.006, n=33). AT OR BELOW THE TOP-K (84 rows, not fitted) the form gives 1.301x, signed 1.171. The sparse attention is a median 75% of the measured module; the rest is BLIS's own price, so this fit inherits its error. THE FLOOR IS NOT THE ATTENTION KERNEL'S ALONE: at the table's smallest prefill (16 tokens, one request, no prefix) the module measures 107.1 us of GPU time and BLIS's device price of the rest of it is 41.7 us, so the floor also carries the module's fixed device cost that the rest's forms leave out (the indexer's and scorer's small kernels among them). Named substitutions: GLM-5.3-Flash's geometry for GLM-5.3 (8 heads a rank at TP8, a 512-wide latent, top-k 2048; GLM-5.3's record is 1152 B against Flash's 1024 B, and the rate over W is taken as the same, so GLM-5.3 pays 1152/1024 of Flash's time a key slot); a BF16 cache, so an fp8 cache, whose record the kernel's W scales with, is charged its record's share of the BF16 cost, an assumption. Each fitted value has a measured entry keyed to the build the run's image ran and a transferred one keyed to the engine pin's build (kernel_impls.json), or, where the table names no build for the run, one unkeyed transferred entry. The 95% interval is from 200 bootstrap refits over rows; rows of one shape family are not independent, so it is narrower than the data justify.
   - attention_prefill_rate_sparse_mla:
-      value: 487386.0
+      value: 487851.0
       units: bytes_per_us
       method: measured
       fitted: true
@@ -1070,7 +1070,7 @@ coefficients:
         time: device
         execution: captured
         harness: "AISimulate collector.vllm.glm53flash_attention_runner at ai-dynamo/aisim 6fdf6fb6b2e1: one real sparse-MLA layer's GPU kernel time (CUPTI busy time) over module graph replay, the output all-reduce excluded"
-      ci95: [484692.0, 492176.0]
+      ci95: [485125.0, 492608.0]
       fit_range:
         - {dim: tokens, low: 16.0, high: 8192.0}
         - {dim: requests, low: 1.0, high: 32.0}
@@ -1081,9 +1081,9 @@ coefficients:
         - {kind: model, cite: "vLLM v0.31.0 v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py FlashInferMLASparseSM90Impl", role: supporting}
         - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the BatchMLAPagedAttentionWrapper[fa3] builds of FlashInfer 0.7.0.post1 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        487,386 B/us over W, a WORK rate: W counts each query's read of its top-k records separately, and the queries of one prefill read overlapping keys, which the kernel serves from shared memory and L2 rather than HBM, so W is not HBM traffic and must not be rescaled by the part's bandwidth. 262.6 ps per (query, 64-token key slot) at glm-5.3-flash's 1024 B record x 8 heads / 64, where it was fitted; glm-5.3's 1152 B record pays 1.125x that. Every query past the top-k reads 2048 keys, so a 2048-key read costs 0.538 us a query. See attention_prefill_floor_sparse_mla (this scope) for the form, the errors and the substitutions.
+        487,851 B/us over W, a WORK rate: W counts each query's read of its top-k records separately, and the queries of one prefill read overlapping keys, which the kernel serves from shared memory and L2 rather than HBM, so W is not HBM traffic and must not be rescaled by the part's bandwidth. 262.4 ps per (query, 64-token key slot) at glm-5.3-flash's 1024 B record x 8 heads / 64, where it was fitted; glm-5.3's 1152 B record pays 1.125x that. Every query past the top-k reads 2048 keys, so a 2048-key read costs 0.537 us a query. See attention_prefill_floor_sparse_mla (this scope) for the form, the errors and the substitutions.
   - attention_decode_floor_sparse_mla:
-      value: 27.79
+      value: 27.93
       units: us_per_transfer
       method: measured
       fitted: true
@@ -1093,7 +1093,7 @@ coefficients:
         time: device
         execution: captured
         harness: "AISimulate collector.vllm.glm53flash_attention_runner at ai-dynamo/aisim 6fdf6fb6b2e1: one real sparse-MLA layer's GPU kernel time (CUPTI busy time) over module graph replay, the output all-reduce excluded"
-      ci95: [25.62, 29.9]
+      ci95: [25.74, 30.01]
       fit_range:
         - {dim: tokens, low: 1.0, high: 32.0}
         - {dim: requests, low: 1.0, high: 32.0}
@@ -1104,9 +1104,9 @@ coefficients:
         - {kind: model, cite: "vLLM v0.31.0 v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py FlashInferMLASparseSM90Impl, decode", role: supporting}
         - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the BatchMLAPagedAttentionWrapper[fa3] decode builds of FlashInfer 0.7.0.post1 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The per-call floor of the GLM-5.3 family's sparse-MLA DECODE on H200, 27.79 us a layer a rank in a step with decode. THE FORM: t = attention_decode_floor_sparse_mla + read / attention_decode_rate_sparse_mla, per layer per rank per step with decode, read as the kernel counts it (decodeReadBytes: FlashMLA's 64-token blocks of the stated caches over the top-k, one read per query token, so a verify step's 1 + num_spec_tokens queries a request read it that many times). Before it, GLM's sparse decode was priced on the part-wide attention pair, which prices the module at about half what the table measures. NET OF THE REST INCLUDING ITS LAUNCHES: the table is GPU busy time and this kernel charges host_launch_per_kernel (3.2 us, its committed value; refit if it changes) on every launch, so the rest subtracted is the module's whole price but this form, launches included (median 77.0 us of a measured 110.6 us). Fitted on all 107 TP8 decode rows, batch 1-32, context 64-1048575: 1.027x, signed 1.009. Signed by batch: 1: 1.02, 2: 1.00, 3: 1.01, 4: 1.00, 6: 1.00, 8: 1.01, 12: 1.00, 16: 1.02, 24: 1.01, 32: 1.03. HELD OUT: trained on context <= 16,384, predicting >= 32,768, 1.056x (signed 1.007, n=27); trained on batch <= 4, predicting >= 8, 1.104x (signed 1.104, n=52). THE TABLE TIMES AN INDEXED LAYER: GLM-5.3's layers that reuse the indexer's top-k drop the scorer node, whose price is in the rest, so they are right only as far as BLIS's scorer price is. Named substitutions: GLM-5.3-Flash's geometry for GLM-5.3 (the same 8 heads a rank at TP8 and top-k 2048; the kernel reads each model's own record); a BF16 cache (the kernel's read scales with the record, so an fp8 cache is charged its record's share, an assumption); one query token a request (a verify step's 4 is read 4 times, as vLLM gathers them). The 95% interval is from 200 bootstrap refits over rows, narrower than the data justify.
+        The per-call floor of the GLM-5.3 family's sparse-MLA DECODE on H200, 27.93 us a layer a rank in a step with decode. THE FORM: t = attention_decode_floor_sparse_mla + read / attention_decode_rate_sparse_mla, per layer per rank per step with decode, read as the kernel counts it (decodeReadBytes: FlashMLA's 64-token blocks of the stated caches over the top-k, one read per query token, so a verify step's 1 + num_spec_tokens queries a request read it that many times). Before it, GLM's sparse decode was priced on the part-wide attention pair, which prices the module at about half what the table measures. NET OF THE REST INCLUDING ITS LAUNCHES: the table is GPU busy time and this kernel charges host_launch_per_kernel (3.2 us, its committed value; refit if it changes) on every launch, so the rest subtracted is the module's whole price but this form, launches included (median 76.9 us of a measured 110.6 us). Fitted on all 107 TP8 decode rows, batch 1-32, context 64-1048575: 1.027x, signed 1.009. Signed by batch: 1: 1.02, 2: 1.00, 3: 1.01, 4: 1.00, 6: 1.00, 8: 1.01, 12: 1.00, 16: 1.02, 24: 1.01, 32: 1.03. HELD OUT: trained on context <= 16,384, predicting >= 32,768, 1.056x (signed 1.007, n=27); trained on batch <= 4, predicting >= 8, 1.104x (signed 1.104, n=52). THE TABLE TIMES AN INDEXED LAYER: GLM-5.3's layers that reuse the indexer's top-k drop the scorer node, whose price is in the rest, so they are right only as far as BLIS's scorer price is. Named substitutions: GLM-5.3-Flash's geometry for GLM-5.3 (the same 8 heads a rank at TP8 and top-k 2048; the kernel reads each model's own record); a BF16 cache (the kernel's read scales with the record, so an fp8 cache is charged its record's share, an assumption); one query token a request (a verify step's 4 is read 4 times, as vLLM gathers them). The 95% interval is from 200 bootstrap refits over rows, narrower than the data justify.
   - attention_decode_floor_sparse_mla:
-      value: 27.79
+      value: 27.93
       units: us_per_transfer
       method: transferred
       fitted: false
@@ -1115,7 +1115,7 @@ coefficients:
       measured_on: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 840aef008c31014671ebe5e9ead68ea293387e50ff46bc2f7177764bbda95e28}]
       transferred_from: "hardware=h200"
       transfer_rule: "measured on FlashInfer 0.7.0.post1's BatchMLAPagedAttentionWrapper[fa3] decode build (840aef008c31), which the run's image ran, and used for the pinned FlashInfer 0.7.2.post1's build (41b979880fad) on the same chip; the two builds' hashes differ, so the value is moved, not shown, and nothing is moved between chips"
-      ci95: [25.62, 29.9]
+      ci95: [25.74, 30.01]
       fit_range:
         - {dim: tokens, low: 1.0, high: 32.0}
         - {dim: requests, low: 1.0, high: 32.0}
@@ -1126,9 +1126,9 @@ coefficients:
         - {kind: model, cite: "vLLM v0.31.0 v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py FlashInferMLASparseSM90Impl, decode", role: supporting}
         - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the BatchMLAPagedAttentionWrapper[fa3] decode builds of FlashInfer 0.7.0.post1 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The per-call floor of the GLM-5.3 family's sparse-MLA DECODE on H200, 27.79 us a layer a rank in a step with decode. THE FORM: t = attention_decode_floor_sparse_mla + read / attention_decode_rate_sparse_mla, per layer per rank per step with decode, read as the kernel counts it (decodeReadBytes: FlashMLA's 64-token blocks of the stated caches over the top-k, one read per query token, so a verify step's 1 + num_spec_tokens queries a request read it that many times). Before it, GLM's sparse decode was priced on the part-wide attention pair, which prices the module at about half what the table measures. NET OF THE REST INCLUDING ITS LAUNCHES: the table is GPU busy time and this kernel charges host_launch_per_kernel (3.2 us, its committed value; refit if it changes) on every launch, so the rest subtracted is the module's whole price but this form, launches included (median 77.0 us of a measured 110.6 us). Fitted on all 107 TP8 decode rows, batch 1-32, context 64-1048575: 1.027x, signed 1.009. Signed by batch: 1: 1.02, 2: 1.00, 3: 1.01, 4: 1.00, 6: 1.00, 8: 1.01, 12: 1.00, 16: 1.02, 24: 1.01, 32: 1.03. HELD OUT: trained on context <= 16,384, predicting >= 32,768, 1.056x (signed 1.007, n=27); trained on batch <= 4, predicting >= 8, 1.104x (signed 1.104, n=52). THE TABLE TIMES AN INDEXED LAYER: GLM-5.3's layers that reuse the indexer's top-k drop the scorer node, whose price is in the rest, so they are right only as far as BLIS's scorer price is. Named substitutions: GLM-5.3-Flash's geometry for GLM-5.3 (the same 8 heads a rank at TP8 and top-k 2048; the kernel reads each model's own record); a BF16 cache (the kernel's read scales with the record, so an fp8 cache is charged its record's share, an assumption); one query token a request (a verify step's 4 is read 4 times, as vLLM gathers them). The 95% interval is from 200 bootstrap refits over rows, narrower than the data justify.
+        The per-call floor of the GLM-5.3 family's sparse-MLA DECODE on H200, 27.93 us a layer a rank in a step with decode. THE FORM: t = attention_decode_floor_sparse_mla + read / attention_decode_rate_sparse_mla, per layer per rank per step with decode, read as the kernel counts it (decodeReadBytes: FlashMLA's 64-token blocks of the stated caches over the top-k, one read per query token, so a verify step's 1 + num_spec_tokens queries a request read it that many times). Before it, GLM's sparse decode was priced on the part-wide attention pair, which prices the module at about half what the table measures. NET OF THE REST INCLUDING ITS LAUNCHES: the table is GPU busy time and this kernel charges host_launch_per_kernel (3.2 us, its committed value; refit if it changes) on every launch, so the rest subtracted is the module's whole price but this form, launches included (median 76.9 us of a measured 110.6 us). Fitted on all 107 TP8 decode rows, batch 1-32, context 64-1048575: 1.027x, signed 1.009. Signed by batch: 1: 1.02, 2: 1.00, 3: 1.01, 4: 1.00, 6: 1.00, 8: 1.01, 12: 1.00, 16: 1.02, 24: 1.01, 32: 1.03. HELD OUT: trained on context <= 16,384, predicting >= 32,768, 1.056x (signed 1.007, n=27); trained on batch <= 4, predicting >= 8, 1.104x (signed 1.104, n=52). THE TABLE TIMES AN INDEXED LAYER: GLM-5.3's layers that reuse the indexer's top-k drop the scorer node, whose price is in the rest, so they are right only as far as BLIS's scorer price is. Named substitutions: GLM-5.3-Flash's geometry for GLM-5.3 (the same 8 heads a rank at TP8 and top-k 2048; the kernel reads each model's own record); a BF16 cache (the kernel's read scales with the record, so an fp8 cache is charged its record's share, an assumption); one query token a request (a verify step's 4 is read 4 times, as vLLM gathers them). The 95% interval is from 200 bootstrap refits over rows, narrower than the data justify.
   - attention_decode_rate_sparse_mla:
-      value: 3459542.0
+      value: 3461812.0
       units: bytes_per_us
       method: measured
       fitted: true
@@ -1138,7 +1138,7 @@ coefficients:
         time: device
         execution: captured
         harness: "AISimulate collector.vllm.glm53flash_attention_runner at ai-dynamo/aisim 6fdf6fb6b2e1: one real sparse-MLA layer's GPU kernel time (CUPTI busy time) over module graph replay, the output all-reduce excluded"
-      ci95: [2974828.0, 4402769.0]
+      ci95: [2982954.0, 4403963.0]
       fit_range:
         - {dim: tokens, low: 1.0, high: 32.0}
         - {dim: requests, low: 1.0, high: 32.0}
@@ -1149,9 +1149,9 @@ coefficients:
         - {kind: model, cite: "vLLM v0.31.0 v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py FlashInferMLASparseSM90Impl, decode", role: supporting}
         - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the BatchMLAPagedAttentionWrapper[fa3] decode builds of FlashInfer 0.7.0.post1 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        3,459,542 B/us over the bytes the kernel's decode form counts. See attention_decode_floor_sparse_mla (this scope) for the form, the errors and the substitutions.
+        3,461,812 B/us over the bytes the kernel's decode form counts. See attention_decode_floor_sparse_mla (this scope) for the form, the errors and the substitutions.
   - attention_decode_rate_sparse_mla:
-      value: 3459542.0
+      value: 3461812.0
       units: bytes_per_us
       method: transferred
       fitted: false
@@ -1160,7 +1160,7 @@ coefficients:
       measured_on: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 840aef008c31014671ebe5e9ead68ea293387e50ff46bc2f7177764bbda95e28}]
       transferred_from: "hardware=h200"
       transfer_rule: "measured on FlashInfer 0.7.0.post1's BatchMLAPagedAttentionWrapper[fa3] decode build (840aef008c31), which the run's image ran, and used for the pinned FlashInfer 0.7.2.post1's build (41b979880fad) on the same chip; the two builds' hashes differ, so the value is moved, not shown, and nothing is moved between chips"
-      ci95: [2974828.0, 4402769.0]
+      ci95: [2982954.0, 4403963.0]
       fit_range:
         - {dim: tokens, low: 1.0, high: 32.0}
         - {dim: requests, low: 1.0, high: 32.0}
@@ -1171,7 +1171,7 @@ coefficients:
         - {kind: model, cite: "vLLM v0.31.0 v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py FlashInferMLASparseSM90Impl, decode", role: supporting}
         - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the BatchMLAPagedAttentionWrapper[fa3] decode builds of FlashInfer 0.7.0.post1 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        3,459,542 B/us over the bytes the kernel's decode form counts. See attention_decode_floor_sparse_mla (this scope) for the form, the errors and the substitutions.
+        3,461,812 B/us over the bytes the kernel's decode form counts. See attention_decode_floor_sparse_mla (this scope) for the form, the errors and the substitutions.
   - attention_prefill_work_scale_sparse_mla_kv_fp8:
       value: 1.848
       units: dimensionless

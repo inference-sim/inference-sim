@@ -52,9 +52,16 @@ layer_kinds:
   - op: Elementwise
     role: input_norm
   - op: GEMM
+    role: router
+    n: 512
+    k: 4096
+    tp: replicated
+    weight_dtype: bf16
+  - op: GEMM
     role: routed_expert_down_proj
     n: 1024
     k: 4096
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -62,14 +69,29 @@ layer_kinds:
     k: 4096
     experts: 512
     top_k: 22
-    shared_experts: 1
-    shared_intermediate_size: 5376
     latent_size: 1024
     weight_dtype: fp8
   - op: GEMM
     role: routed_expert_up_proj
     n: 4096
     k: 1024
+    weight_dtype: bf16
+  - op: GEMM
+    role: shared_up
+    n: 5376
+    k: 4096
+    tp: column
+    weight_dtype: fp8
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 21504
+  - op: GEMM
+    role: shared_down
+    n: 4096
+    k: 5376
+    tp: row
+    weight_dtype: fp8
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -87,6 +109,14 @@ layer_kinds:
     - 4
   - - 4
     - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
 - id: attention
   nodes:
   - op: Elementwise
@@ -95,6 +125,7 @@ layer_kinds:
     role: qkv_proj
     n: 4608
     k: 4096
+    weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
     kind: gqa
@@ -105,6 +136,7 @@ layer_kinds:
     role: o_proj
     n: 4096
     k: 4096
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -122,9 +154,16 @@ layer_kinds:
   - op: Elementwise
     role: input_norm
   - op: GEMM
+    role: router
+    n: 512
+    k: 4096
+    tp: replicated
+    weight_dtype: bf16
+  - op: GEMM
     role: routed_expert_down_proj
     n: 1024
     k: 4096
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -132,13 +171,29 @@ layer_kinds:
     k: 4096
     experts: 512
     top_k: 22
-    shared_experts: 1
-    shared_intermediate_size: 5376
     latent_size: 1024
+    weight_dtype: bf16
   - op: GEMM
     role: routed_expert_up_proj
     n: 4096
     k: 1024
+    weight_dtype: bf16
+  - op: GEMM
+    role: shared_up
+    n: 5376
+    k: 4096
+    tp: column
+    weight_dtype: bf16
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 21504
+  - op: GEMM
+    role: shared_down
+    n: 4096
+    k: 5376
+    tp: row
+    weight_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -156,6 +211,14 @@ layer_kinds:
     - 4
   - - 4
     - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
 stack:
   prologue:
   - mamba
@@ -212,6 +275,7 @@ head:
   role: lm_head
   n: 131072
   k: 4096
+  weight_dtype: bf16
 speculator:
   method: nemotron_h_mtp
   num_spec_tokens: 1
