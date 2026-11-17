@@ -1,0 +1,2636 @@
+{
+ "finished": {
+  "a": {
+   "output_tokens": 1,
+   "reason": "stop",
+   "step": 1
+  },
+  "b": {
+   "output_tokens": 1,
+   "reason": "stop",
+   "step": 8
+  },
+  "c": {
+   "output_tokens": 1,
+   "reason": "stop",
+   "step": 15
+  },
+  "d": {
+   "output_tokens": 1,
+   "reason": "stop",
+   "step": 34
+  },
+  "e": {
+   "output_tokens": 1,
+   "reason": "stop",
+   "step": 22
+  },
+  "f": {
+   "output_tokens": 1,
+   "reason": "stop",
+   "step": 34
+  }
+ },
+ "provenance": {
+  "blis_vllm_commit": "985fe7890173c1e3faa30b1abbc3d8fd21d97730",
+  "cpu_chunks": 6,
+  "kind": "tiered",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/7+f4274aa648c4",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "tests.v1.core.utils.CacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "oracle_inputs": {
+   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_offloading.py": "5d9ce700b38d454a921f0ef248678157a2f8d2e80a5d7645d50c3fb04e74dcf4",
+   "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
+   "oracle/scenarios/offloading-tiering/tiering-fs-two-readers.json": "9b2bac548e45d9ee9644da593d8e11434ed81d079e4862e21b991861d424a519"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+  "scenario_sha256": "9b2bac548e45d9ee9644da593d8e11434ed81d079e4862e21b991861d424a519",
+  "secondary_tiers": [
+   "fs"
+  ],
+  "seed": null,
+  "tier": 4,
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
+ },
+ "steps": [
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 1,
+   "num_running": 0,
+   "num_waiting": 1,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [],
+     "evictable": 0,
+     "free": 6
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": [],
+    "tier_files": [
+     []
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 0,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [
+    "a"
+   ],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "8ed2d019f01a8a49/0",
+       3,
+       -1
+      ],
+      [
+       "62799b74fdb9a9d0/0",
+       2,
+       -1
+      ],
+      [
+       "65991f5110ffe148/0",
+       1,
+       -1
+      ],
+      [
+       "9d8f7fe55f6e7665/0",
+       0,
+       -1
+      ]
+     ],
+     "evictable": 0,
+     "free": 2
+    },
+    "flush": [],
+    "jobs": [
+     0
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": [
+     [
+      0,
+      "a",
+      [
+       0,
+       1,
+       2,
+       3
+      ],
+      [
+       [
+        1,
+        2,
+        3,
+        4
+       ],
+       [
+        4
+       ],
+       [
+        0
+       ]
+      ]
+     ]
+    ],
+    "tier_files": [
+     []
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {
+    "a": 16
+   },
+   "step": 1,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "8ed2d019f01a8a49/0",
+       3,
+       -1
+      ],
+      [
+       "62799b74fdb9a9d0/0",
+       2,
+       -1
+      ],
+      [
+       "65991f5110ffe148/0",
+       1,
+       -1
+      ],
+      [
+       "9d8f7fe55f6e7665/0",
+       0,
+       -1
+      ]
+     ],
+     "evictable": 0,
+     "free": 2
+    },
+    "flush": [],
+    "jobs": [
+     0
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": [],
+    "tier_files": [
+     []
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 2,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [
+     0
+    ],
+    "cpu": {
+     "chunks": [
+      [
+       "8ed2d019f01a8a49/0",
+       3,
+       1
+      ],
+      [
+       "62799b74fdb9a9d0/0",
+       2,
+       1
+      ],
+      [
+       "65991f5110ffe148/0",
+       1,
+       1
+      ],
+      [
+       "9d8f7fe55f6e7665/0",
+       0,
+       1
+      ]
+     ],
+     "evictable": 0,
+     "free": 2
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": true,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin"
+     ]
+    ],
+    "tier_jobs": [
+     [
+      0,
+      0,
+      "cascade",
+      4,
+      "a"
+     ]
+    ]
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 3,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "8ed2d019f01a8a49/0",
+       3,
+       0
+      ],
+      [
+       "62799b74fdb9a9d0/0",
+       2,
+       0
+      ],
+      [
+       "65991f5110ffe148/0",
+       1,
+       0
+      ],
+      [
+       "9d8f7fe55f6e7665/0",
+       0,
+       0
+      ]
+     ],
+     "evictable": 4,
+     "free": 2
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 4,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "idle": true,
+   "step": 5
+  },
+  {
+   "idle": true,
+   "step": 6
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 1,
+   "num_running": 0,
+   "num_waiting": 1,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "8ed2d019f01a8a49/0",
+       3,
+       0
+      ],
+      [
+       "62799b74fdb9a9d0/0",
+       2,
+       0
+      ],
+      [
+       "65991f5110ffe148/0",
+       1,
+       0
+      ],
+      [
+       "9d8f7fe55f6e7665/0",
+       0,
+       0
+      ]
+     ],
+     "evictable": 4,
+     "free": 2
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 7,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [
+    "b"
+   ],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "65991f5110ffe148/0",
+       1,
+       0
+      ],
+      [
+       "9d8f7fe55f6e7665/0",
+       0,
+       0
+      ],
+      [
+       "d8c65bc2086fea55/0",
+       3,
+       -1
+      ],
+      [
+       "1d0e3a4df7118510/0",
+       2,
+       -1
+      ],
+      [
+       "39d5f945e36ebfdd/0",
+       5,
+       -1
+      ],
+      [
+       "8fa23bdca21d80f7/0",
+       4,
+       -1
+      ]
+     ],
+     "evictable": 2,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [
+     1
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": [
+     [
+      1,
+      "b",
+      [
+       4,
+       5,
+       2,
+       3
+      ],
+      [
+       [
+        5,
+        6,
+        7,
+        8
+       ],
+       [
+        4
+       ],
+       [
+        0
+       ]
+      ]
+     ]
+    ],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {
+    "b": 16
+   },
+   "step": 8,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "65991f5110ffe148/0",
+       1,
+       0
+      ],
+      [
+       "9d8f7fe55f6e7665/0",
+       0,
+       0
+      ],
+      [
+       "d8c65bc2086fea55/0",
+       3,
+       -1
+      ],
+      [
+       "1d0e3a4df7118510/0",
+       2,
+       -1
+      ],
+      [
+       "39d5f945e36ebfdd/0",
+       5,
+       -1
+      ],
+      [
+       "8fa23bdca21d80f7/0",
+       4,
+       -1
+      ]
+     ],
+     "evictable": 2,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [
+     1
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 9,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [
+     1
+    ],
+    "cpu": {
+     "chunks": [
+      [
+       "65991f5110ffe148/0",
+       1,
+       0
+      ],
+      [
+       "9d8f7fe55f6e7665/0",
+       0,
+       0
+      ],
+      [
+       "d8c65bc2086fea55/0",
+       3,
+       1
+      ],
+      [
+       "1d0e3a4df7118510/0",
+       2,
+       1
+      ],
+      [
+       "39d5f945e36ebfdd/0",
+       5,
+       1
+      ],
+      [
+       "8fa23bdca21d80f7/0",
+       4,
+       1
+      ]
+     ],
+     "evictable": 2,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": true,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin"
+     ]
+    ],
+    "tier_jobs": [
+     [
+      1,
+      0,
+      "cascade",
+      4,
+      "b"
+     ]
+    ]
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 10,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "65991f5110ffe148/0",
+       1,
+       0
+      ],
+      [
+       "9d8f7fe55f6e7665/0",
+       0,
+       0
+      ],
+      [
+       "d8c65bc2086fea55/0",
+       3,
+       0
+      ],
+      [
+       "1d0e3a4df7118510/0",
+       2,
+       0
+      ],
+      [
+       "39d5f945e36ebfdd/0",
+       5,
+       0
+      ],
+      [
+       "8fa23bdca21d80f7/0",
+       4,
+       0
+      ]
+     ],
+     "evictable": 6,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 11,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "idle": true,
+   "step": 12
+  },
+  {
+   "idle": true,
+   "step": 13
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 1,
+   "num_running": 0,
+   "num_waiting": 1,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "65991f5110ffe148/0",
+       1,
+       0
+      ],
+      [
+       "9d8f7fe55f6e7665/0",
+       0,
+       0
+      ],
+      [
+       "d8c65bc2086fea55/0",
+       3,
+       0
+      ],
+      [
+       "1d0e3a4df7118510/0",
+       2,
+       0
+      ],
+      [
+       "39d5f945e36ebfdd/0",
+       5,
+       0
+      ],
+      [
+       "8fa23bdca21d80f7/0",
+       4,
+       0
+      ]
+     ],
+     "evictable": 6,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 14,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [
+    "c"
+   ],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "39d5f945e36ebfdd/0",
+       5,
+       0
+      ],
+      [
+       "8fa23bdca21d80f7/0",
+       4,
+       0
+      ],
+      [
+       "eddb8fb3e8f2d6d6/0",
+       1,
+       -1
+      ],
+      [
+       "1436a0efbccd068c/0",
+       0,
+       -1
+      ],
+      [
+       "57b1e557f1813e02/0",
+       3,
+       -1
+      ],
+      [
+       "30601ef6cc490836/0",
+       2,
+       -1
+      ]
+     ],
+     "evictable": 2,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [
+     2
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": [
+     [
+      2,
+      "c",
+      [
+       2,
+       3,
+       0,
+       1
+      ],
+      [
+       [
+        9,
+        10,
+        11,
+        12
+       ],
+       [
+        4
+       ],
+       [
+        0
+       ]
+      ]
+     ]
+    ],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {
+    "c": 16
+   },
+   "step": 15,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "39d5f945e36ebfdd/0",
+       5,
+       0
+      ],
+      [
+       "8fa23bdca21d80f7/0",
+       4,
+       0
+      ],
+      [
+       "eddb8fb3e8f2d6d6/0",
+       1,
+       -1
+      ],
+      [
+       "1436a0efbccd068c/0",
+       0,
+       -1
+      ],
+      [
+       "57b1e557f1813e02/0",
+       3,
+       -1
+      ],
+      [
+       "30601ef6cc490836/0",
+       2,
+       -1
+      ]
+     ],
+     "evictable": 2,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [
+     2
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 16,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [
+     2
+    ],
+    "cpu": {
+     "chunks": [
+      [
+       "39d5f945e36ebfdd/0",
+       5,
+       0
+      ],
+      [
+       "8fa23bdca21d80f7/0",
+       4,
+       0
+      ],
+      [
+       "eddb8fb3e8f2d6d6/0",
+       1,
+       1
+      ],
+      [
+       "1436a0efbccd068c/0",
+       0,
+       1
+      ],
+      [
+       "57b1e557f1813e02/0",
+       3,
+       1
+      ],
+      [
+       "30601ef6cc490836/0",
+       2,
+       1
+      ]
+     ],
+     "evictable": 2,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": true,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/143/6a_g0/1436a0efbccd068c7fca2dc84e827510c68233a7572466d463059d6dba06e114.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/306/01_g0/30601ef6cc49083644ebb5b2ff63b4248b9e38c7644f6b5a7ec7d3a830be8c19.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/57b/1e_g0/57b1e557f1813e02721e3b138259852ce761419ef6a962958a050d09edba0839.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/edd/b8_g0/eddb8fb3e8f2d6d6783de404760991f8c009122820e456af8fb2f32ffcff929b.bin"
+     ]
+    ],
+    "tier_jobs": [
+     [
+      2,
+      0,
+      "cascade",
+      4,
+      "c"
+     ]
+    ]
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 17,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "39d5f945e36ebfdd/0",
+       5,
+       0
+      ],
+      [
+       "8fa23bdca21d80f7/0",
+       4,
+       0
+      ],
+      [
+       "eddb8fb3e8f2d6d6/0",
+       1,
+       0
+      ],
+      [
+       "1436a0efbccd068c/0",
+       0,
+       0
+      ],
+      [
+       "57b1e557f1813e02/0",
+       3,
+       0
+      ],
+      [
+       "30601ef6cc490836/0",
+       2,
+       0
+      ]
+     ],
+     "evictable": 6,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/143/6a_g0/1436a0efbccd068c7fca2dc84e827510c68233a7572466d463059d6dba06e114.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/306/01_g0/30601ef6cc49083644ebb5b2ff63b4248b9e38c7644f6b5a7ec7d3a830be8c19.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/57b/1e_g0/57b1e557f1813e02721e3b138259852ce761419ef6a962958a050d09edba0839.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/edd/b8_g0/eddb8fb3e8f2d6d6783de404760991f8c009122820e456af8fb2f32ffcff929b.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 18,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "idle": true,
+   "step": 19
+  },
+  {
+   "idle": true,
+   "step": 20
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 1,
+   "num_running": 0,
+   "num_waiting": 1,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "39d5f945e36ebfdd/0",
+       5,
+       0
+      ],
+      [
+       "8fa23bdca21d80f7/0",
+       4,
+       0
+      ],
+      [
+       "eddb8fb3e8f2d6d6/0",
+       1,
+       0
+      ],
+      [
+       "1436a0efbccd068c/0",
+       0,
+       0
+      ],
+      [
+       "57b1e557f1813e02/0",
+       3,
+       0
+      ],
+      [
+       "30601ef6cc490836/0",
+       2,
+       0
+      ]
+     ],
+     "evictable": 6,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/143/6a_g0/1436a0efbccd068c7fca2dc84e827510c68233a7572466d463059d6dba06e114.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/306/01_g0/30601ef6cc49083644ebb5b2ff63b4248b9e38c7644f6b5a7ec7d3a830be8c19.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/57b/1e_g0/57b1e557f1813e02721e3b138259852ce761419ef6a962958a050d09edba0839.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/edd/b8_g0/eddb8fb3e8f2d6d6783de404760991f8c009122820e456af8fb2f32ffcff929b.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 21,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [
+    "e"
+   ],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "57b1e557f1813e02/0",
+       3,
+       0
+      ],
+      [
+       "30601ef6cc490836/0",
+       2,
+       0
+      ],
+      [
+       "df997d82d8bbe0b3/0",
+       5,
+       -1
+      ],
+      [
+       "77d806e1533bdbee/0",
+       4,
+       -1
+      ],
+      [
+       "062f61db4a03f5f1/0",
+       1,
+       -1
+      ],
+      [
+       "1968af87b186291a/0",
+       0,
+       -1
+      ]
+     ],
+     "evictable": 2,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [
+     3
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": [
+     [
+      3,
+      "e",
+      [
+       0,
+       1,
+       4,
+       5
+      ],
+      [
+       [
+        13,
+        4,
+        3,
+        2
+       ],
+       [
+        4
+       ],
+       [
+        0
+       ]
+      ]
+     ]
+    ],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/143/6a_g0/1436a0efbccd068c7fca2dc84e827510c68233a7572466d463059d6dba06e114.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/306/01_g0/30601ef6cc49083644ebb5b2ff63b4248b9e38c7644f6b5a7ec7d3a830be8c19.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/57b/1e_g0/57b1e557f1813e02721e3b138259852ce761419ef6a962958a050d09edba0839.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/edd/b8_g0/eddb8fb3e8f2d6d6783de404760991f8c009122820e456af8fb2f32ffcff929b.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {
+    "e": 16
+   },
+   "step": 22,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "57b1e557f1813e02/0",
+       3,
+       0
+      ],
+      [
+       "30601ef6cc490836/0",
+       2,
+       0
+      ],
+      [
+       "df997d82d8bbe0b3/0",
+       5,
+       -1
+      ],
+      [
+       "77d806e1533bdbee/0",
+       4,
+       -1
+      ],
+      [
+       "062f61db4a03f5f1/0",
+       1,
+       -1
+      ],
+      [
+       "1968af87b186291a/0",
+       0,
+       -1
+      ]
+     ],
+     "evictable": 2,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [
+     3
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/143/6a_g0/1436a0efbccd068c7fca2dc84e827510c68233a7572466d463059d6dba06e114.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/306/01_g0/30601ef6cc49083644ebb5b2ff63b4248b9e38c7644f6b5a7ec7d3a830be8c19.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/57b/1e_g0/57b1e557f1813e02721e3b138259852ce761419ef6a962958a050d09edba0839.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/edd/b8_g0/eddb8fb3e8f2d6d6783de404760991f8c009122820e456af8fb2f32ffcff929b.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 23,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [
+     3
+    ],
+    "cpu": {
+     "chunks": [
+      [
+       "57b1e557f1813e02/0",
+       3,
+       0
+      ],
+      [
+       "30601ef6cc490836/0",
+       2,
+       0
+      ],
+      [
+       "df997d82d8bbe0b3/0",
+       5,
+       1
+      ],
+      [
+       "77d806e1533bdbee/0",
+       4,
+       1
+      ],
+      [
+       "062f61db4a03f5f1/0",
+       1,
+       1
+      ],
+      [
+       "1968af87b186291a/0",
+       0,
+       1
+      ]
+     ],
+     "evictable": 2,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": true,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/062/f6_g0/062f61db4a03f5f1c4ba2ecc57e59000e296adfb53c7af7d041eb594e69caaab.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/143/6a_g0/1436a0efbccd068c7fca2dc84e827510c68233a7572466d463059d6dba06e114.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/196/8a_g0/1968af87b186291a83b6d42ea4ed5f0dec71514655ef0791b7489f18b054bb78.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/306/01_g0/30601ef6cc49083644ebb5b2ff63b4248b9e38c7644f6b5a7ec7d3a830be8c19.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/57b/1e_g0/57b1e557f1813e02721e3b138259852ce761419ef6a962958a050d09edba0839.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/77d/80_g0/77d806e1533bdbee3747db7a352a9f8bdedb624013867cf7ebe4792b17add863.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/df9/97_g0/df997d82d8bbe0b3138996d480794fe97d12940da2ae57b2513fe7be874a4a74.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/edd/b8_g0/eddb8fb3e8f2d6d6783de404760991f8c009122820e456af8fb2f32ffcff929b.bin"
+     ]
+    ],
+    "tier_jobs": [
+     [
+      3,
+      0,
+      "cascade",
+      4,
+      "e"
+     ]
+    ]
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 24,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "57b1e557f1813e02/0",
+       3,
+       0
+      ],
+      [
+       "30601ef6cc490836/0",
+       2,
+       0
+      ],
+      [
+       "df997d82d8bbe0b3/0",
+       5,
+       0
+      ],
+      [
+       "77d806e1533bdbee/0",
+       4,
+       0
+      ],
+      [
+       "062f61db4a03f5f1/0",
+       1,
+       0
+      ],
+      [
+       "1968af87b186291a/0",
+       0,
+       0
+      ]
+     ],
+     "evictable": 6,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/062/f6_g0/062f61db4a03f5f1c4ba2ecc57e59000e296adfb53c7af7d041eb594e69caaab.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/143/6a_g0/1436a0efbccd068c7fca2dc84e827510c68233a7572466d463059d6dba06e114.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/196/8a_g0/1968af87b186291a83b6d42ea4ed5f0dec71514655ef0791b7489f18b054bb78.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/306/01_g0/30601ef6cc49083644ebb5b2ff63b4248b9e38c7644f6b5a7ec7d3a830be8c19.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/57b/1e_g0/57b1e557f1813e02721e3b138259852ce761419ef6a962958a050d09edba0839.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/77d/80_g0/77d806e1533bdbee3747db7a352a9f8bdedb624013867cf7ebe4792b17add863.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/df9/97_g0/df997d82d8bbe0b3138996d480794fe97d12940da2ae57b2513fe7be874a4a74.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/edd/b8_g0/eddb8fb3e8f2d6d6783de404760991f8c009122820e456af8fb2f32ffcff929b.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 25,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "idle": true,
+   "step": 26
+  },
+  {
+   "idle": true,
+   "step": 27
+  },
+  {
+   "idle": true,
+   "step": 28
+  },
+  {
+   "idle": true,
+   "step": 29
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 2,
+   "num_running": 0,
+   "num_waiting": 2,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "57b1e557f1813e02/0",
+       3,
+       0
+      ],
+      [
+       "30601ef6cc490836/0",
+       2,
+       0
+      ],
+      [
+       "df997d82d8bbe0b3/0",
+       5,
+       0
+      ],
+      [
+       "77d806e1533bdbee/0",
+       4,
+       0
+      ],
+      [
+       "062f61db4a03f5f1/0",
+       1,
+       0
+      ],
+      [
+       "1968af87b186291a/0",
+       0,
+       0
+      ]
+     ],
+     "evictable": 6,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/062/f6_g0/062f61db4a03f5f1c4ba2ecc57e59000e296adfb53c7af7d041eb594e69caaab.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/143/6a_g0/1436a0efbccd068c7fca2dc84e827510c68233a7572466d463059d6dba06e114.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/196/8a_g0/1968af87b186291a83b6d42ea4ed5f0dec71514655ef0791b7489f18b054bb78.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/306/01_g0/30601ef6cc49083644ebb5b2ff63b4248b9e38c7644f6b5a7ec7d3a830be8c19.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/57b/1e_g0/57b1e557f1813e02721e3b138259852ce761419ef6a962958a050d09edba0839.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/77d/80_g0/77d806e1533bdbee3747db7a352a9f8bdedb624013867cf7ebe4792b17add863.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/df9/97_g0/df997d82d8bbe0b3138996d480794fe97d12940da2ae57b2513fe7be874a4a74.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/edd/b8_g0/eddb8fb3e8f2d6d6783de404760991f8c009122820e456af8fb2f32ffcff929b.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 30,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 2,
+   "num_running": 0,
+   "num_waiting": 2,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "77d806e1533bdbee/0",
+       4,
+       0
+      ],
+      [
+       "062f61db4a03f5f1/0",
+       1,
+       0
+      ],
+      [
+       "1968af87b186291a/0",
+       0,
+       0
+      ],
+      [
+       "8ed2d019f01a8a49/0",
+       5,
+       -1
+      ],
+      [
+       "62799b74fdb9a9d0/0",
+       2,
+       -1
+      ],
+      [
+       "65991f5110ffe148/0",
+       3,
+       -1
+      ]
+     ],
+     "evictable": 3,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": true,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/062/f6_g0/062f61db4a03f5f1c4ba2ecc57e59000e296adfb53c7af7d041eb594e69caaab.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/143/6a_g0/1436a0efbccd068c7fca2dc84e827510c68233a7572466d463059d6dba06e114.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/196/8a_g0/1968af87b186291a83b6d42ea4ed5f0dec71514655ef0791b7489f18b054bb78.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/306/01_g0/30601ef6cc49083644ebb5b2ff63b4248b9e38c7644f6b5a7ec7d3a830be8c19.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/57b/1e_g0/57b1e557f1813e02721e3b138259852ce761419ef6a962958a050d09edba0839.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/77d/80_g0/77d806e1533bdbee3747db7a352a9f8bdedb624013867cf7ebe4792b17add863.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/df9/97_g0/df997d82d8bbe0b3138996d480794fe97d12940da2ae57b2513fe7be874a4a74.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/edd/b8_g0/eddb8fb3e8f2d6d6783de404760991f8c009122820e456af8fb2f32ffcff929b.bin"
+     ]
+    ],
+    "tier_jobs": [
+     [
+      4,
+      0,
+      "promotion",
+      3,
+      "d"
+     ]
+    ]
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 31,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 9,
+   "kv_fetch_stages": [
+    0,
+    1,
+    0
+   ],
+   "kv_holding_waiting": [
+    "d"
+   ],
+   "kv_usage": 0.3076923076923077,
+   "num_requests": 2,
+   "num_running": 0,
+   "num_waiting": 2,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "77d806e1533bdbee/0",
+       4,
+       0
+      ],
+      [
+       "062f61db4a03f5f1/0",
+       1,
+       0
+      ],
+      [
+       "1968af87b186291a/0",
+       0,
+       0
+      ],
+      [
+       "8ed2d019f01a8a49/0",
+       5,
+       1
+      ],
+      [
+       "62799b74fdb9a9d0/0",
+       2,
+       1
+      ],
+      [
+       "65991f5110ffe148/0",
+       3,
+       1
+      ]
+     ],
+     "evictable": 3,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [
+     4
+    ],
+    "loads": [
+     [
+      4,
+      "d",
+      [
+       3,
+       2,
+       5
+      ],
+      [
+       [
+        8,
+        7,
+        6
+       ],
+       [
+        3
+       ],
+       [
+        1
+       ]
+      ]
+     ]
+    ],
+    "pending_push": true,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/062/f6_g0/062f61db4a03f5f1c4ba2ecc57e59000e296adfb53c7af7d041eb594e69caaab.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/143/6a_g0/1436a0efbccd068c7fca2dc84e827510c68233a7572466d463059d6dba06e114.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/196/8a_g0/1968af87b186291a83b6d42ea4ed5f0dec71514655ef0791b7489f18b054bb78.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/306/01_g0/30601ef6cc49083644ebb5b2ff63b4248b9e38c7644f6b5a7ec7d3a830be8c19.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/57b/1e_g0/57b1e557f1813e02721e3b138259852ce761419ef6a962958a050d09edba0839.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/77d/80_g0/77d806e1533bdbee3747db7a352a9f8bdedb624013867cf7ebe4792b17add863.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/df9/97_g0/df997d82d8bbe0b3138996d480794fe97d12940da2ae57b2513fe7be874a4a74.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/edd/b8_g0/eddb8fb3e8f2d6d6783de404760991f8c009122820e456af8fb2f32ffcff929b.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 32,
+   "waiting_for_remote_kv": [
+    "d"
+   ]
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 9,
+   "kv_fetch_stages": [
+    0,
+    0,
+    1
+   ],
+   "kv_holding_waiting": [
+    "d"
+   ],
+   "kv_usage": 0.3076923076923077,
+   "num_requests": 2,
+   "num_running": 0,
+   "num_waiting": 2,
+   "offload": {
+    "completed": [
+     4
+    ],
+    "cpu": {
+     "chunks": [
+      [
+       "77d806e1533bdbee/0",
+       4,
+       0
+      ],
+      [
+       "062f61db4a03f5f1/0",
+       1,
+       0
+      ],
+      [
+       "1968af87b186291a/0",
+       0,
+       0
+      ],
+      [
+       "8ed2d019f01a8a49/0",
+       5,
+       0
+      ],
+      [
+       "62799b74fdb9a9d0/0",
+       2,
+       0
+      ],
+      [
+       "65991f5110ffe148/0",
+       3,
+       0
+      ]
+     ],
+     "evictable": 6,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/062/f6_g0/062f61db4a03f5f1c4ba2ecc57e59000e296adfb53c7af7d041eb594e69caaab.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/143/6a_g0/1436a0efbccd068c7fca2dc84e827510c68233a7572466d463059d6dba06e114.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/196/8a_g0/1968af87b186291a83b6d42ea4ed5f0dec71514655ef0791b7489f18b054bb78.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/306/01_g0/30601ef6cc49083644ebb5b2ff63b4248b9e38c7644f6b5a7ec7d3a830be8c19.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/57b/1e_g0/57b1e557f1813e02721e3b138259852ce761419ef6a962958a050d09edba0839.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/77d/80_g0/77d806e1533bdbee3747db7a352a9f8bdedb624013867cf7ebe4792b17add863.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/df9/97_g0/df997d82d8bbe0b3138996d480794fe97d12940da2ae57b2513fe7be874a4a74.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/edd/b8_g0/eddb8fb3e8f2d6d6783de404760991f8c009122820e456af8fb2f32ffcff929b.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [
+    "d"
+   ],
+   "running": [],
+   "scheduled": {},
+   "step": 33,
+   "waiting_for_remote_kv": [
+    "d"
+   ]
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [
+    "d",
+    "f"
+   ],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "b4a66600bcff611e/0",
+       4,
+       -1
+      ],
+      [
+       "6e96a5cadd1502e0/0",
+       1,
+       -1
+      ],
+      [
+       "8ed2d019f01a8a49/0",
+       5,
+       0
+      ],
+      [
+       "62799b74fdb9a9d0/0",
+       2,
+       0
+      ],
+      [
+       "65991f5110ffe148/0",
+       3,
+       0
+      ],
+      [
+       "9d8f7fe55f6e7665/0",
+       0,
+       -1
+      ]
+     ],
+     "evictable": 3,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [
+     5,
+     6
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": [
+     [
+      5,
+      "d",
+      [
+       4
+      ],
+      [
+       [
+        5
+       ],
+       [
+        1
+       ],
+       [
+        4
+       ]
+      ]
+     ],
+     [
+      6,
+      "f",
+      [
+       0,
+       1
+      ],
+      [
+       [
+        1,
+        12
+       ],
+       [
+        2
+       ],
+       [
+        0
+       ]
+      ]
+     ]
+    ],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/062/f6_g0/062f61db4a03f5f1c4ba2ecc57e59000e296adfb53c7af7d041eb594e69caaab.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/143/6a_g0/1436a0efbccd068c7fca2dc84e827510c68233a7572466d463059d6dba06e114.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/196/8a_g0/1968af87b186291a83b6d42ea4ed5f0dec71514655ef0791b7489f18b054bb78.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/306/01_g0/30601ef6cc49083644ebb5b2ff63b4248b9e38c7644f6b5a7ec7d3a830be8c19.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/57b/1e_g0/57b1e557f1813e02721e3b138259852ce761419ef6a962958a050d09edba0839.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/77d/80_g0/77d806e1533bdbee3747db7a352a9f8bdedb624013867cf7ebe4792b17add863.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/df9/97_g0/df997d82d8bbe0b3138996d480794fe97d12940da2ae57b2513fe7be874a4a74.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/edd/b8_g0/eddb8fb3e8f2d6d6783de404760991f8c009122820e456af8fb2f32ffcff929b.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {
+    "d": 4,
+    "f": 4
+   },
+   "step": 34,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "b4a66600bcff611e/0",
+       4,
+       -1
+      ],
+      [
+       "6e96a5cadd1502e0/0",
+       1,
+       -1
+      ],
+      [
+       "8ed2d019f01a8a49/0",
+       5,
+       0
+      ],
+      [
+       "62799b74fdb9a9d0/0",
+       2,
+       0
+      ],
+      [
+       "65991f5110ffe148/0",
+       3,
+       0
+      ],
+      [
+       "9d8f7fe55f6e7665/0",
+       0,
+       -1
+      ]
+     ],
+     "evictable": 3,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [
+     5,
+     6
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/062/f6_g0/062f61db4a03f5f1c4ba2ecc57e59000e296adfb53c7af7d041eb594e69caaab.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/143/6a_g0/1436a0efbccd068c7fca2dc84e827510c68233a7572466d463059d6dba06e114.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/196/8a_g0/1968af87b186291a83b6d42ea4ed5f0dec71514655ef0791b7489f18b054bb78.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/306/01_g0/30601ef6cc49083644ebb5b2ff63b4248b9e38c7644f6b5a7ec7d3a830be8c19.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/57b/1e_g0/57b1e557f1813e02721e3b138259852ce761419ef6a962958a050d09edba0839.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/77d/80_g0/77d806e1533bdbee3747db7a352a9f8bdedb624013867cf7ebe4792b17add863.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/df9/97_g0/df997d82d8bbe0b3138996d480794fe97d12940da2ae57b2513fe7be874a4a74.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/edd/b8_g0/eddb8fb3e8f2d6d6783de404760991f8c009122820e456af8fb2f32ffcff929b.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 35,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [
+     5,
+     6
+    ],
+    "cpu": {
+     "chunks": [
+      [
+       "b4a66600bcff611e/0",
+       4,
+       1
+      ],
+      [
+       "6e96a5cadd1502e0/0",
+       1,
+       1
+      ],
+      [
+       "8ed2d019f01a8a49/0",
+       5,
+       0
+      ],
+      [
+       "62799b74fdb9a9d0/0",
+       2,
+       0
+      ],
+      [
+       "65991f5110ffe148/0",
+       3,
+       0
+      ],
+      [
+       "9d8f7fe55f6e7665/0",
+       0,
+       1
+      ]
+     ],
+     "evictable": 3,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": true,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/062/f6_g0/062f61db4a03f5f1c4ba2ecc57e59000e296adfb53c7af7d041eb594e69caaab.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/143/6a_g0/1436a0efbccd068c7fca2dc84e827510c68233a7572466d463059d6dba06e114.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/196/8a_g0/1968af87b186291a83b6d42ea4ed5f0dec71514655ef0791b7489f18b054bb78.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/306/01_g0/30601ef6cc49083644ebb5b2ff63b4248b9e38c7644f6b5a7ec7d3a830be8c19.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/57b/1e_g0/57b1e557f1813e02721e3b138259852ce761419ef6a962958a050d09edba0839.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/6e9/6a_g0/6e96a5cadd1502e0e181b040c85530b1556580403c2efb8a073aea12fb6ebf68.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/77d/80_g0/77d806e1533bdbee3747db7a352a9f8bdedb624013867cf7ebe4792b17add863.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/b4a/66_g0/b4a66600bcff611eb471f30f955284259945f449fa0ffb1e0bc8de9abd496683.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/df9/97_g0/df997d82d8bbe0b3138996d480794fe97d12940da2ae57b2513fe7be874a4a74.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/edd/b8_g0/eddb8fb3e8f2d6d6783de404760991f8c009122820e456af8fb2f32ffcff929b.bin"
+     ]
+    ],
+    "tier_jobs": [
+     [
+      5,
+      0,
+      "cascade",
+      1,
+      "d"
+     ],
+     [
+      6,
+      0,
+      "cascade",
+      2,
+      "f"
+     ]
+    ]
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 36,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "b4a66600bcff611e/0",
+       4,
+       0
+      ],
+      [
+       "6e96a5cadd1502e0/0",
+       1,
+       0
+      ],
+      [
+       "8ed2d019f01a8a49/0",
+       5,
+       0
+      ],
+      [
+       "62799b74fdb9a9d0/0",
+       2,
+       0
+      ],
+      [
+       "65991f5110ffe148/0",
+       3,
+       0
+      ],
+      [
+       "9d8f7fe55f6e7665/0",
+       0,
+       0
+      ]
+     ],
+     "evictable": 6,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": [],
+    "tier_files": [
+     [
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/062/f6_g0/062f61db4a03f5f1c4ba2ecc57e59000e296adfb53c7af7d041eb594e69caaab.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/143/6a_g0/1436a0efbccd068c7fca2dc84e827510c68233a7572466d463059d6dba06e114.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/196/8a_g0/1968af87b186291a83b6d42ea4ed5f0dec71514655ef0791b7489f18b054bb78.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/1d0/e3_g0/1d0e3a4df711851080113295892db0401809b5f55f8257909392775f1723b8da.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/306/01_g0/30601ef6cc49083644ebb5b2ff63b4248b9e38c7644f6b5a7ec7d3a830be8c19.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/39d/5f_g0/39d5f945e36ebfddf37a3512e1bc2129476e5b081ccebde10eff233e14eaf20d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/57b/1e_g0/57b1e557f1813e02721e3b138259852ce761419ef6a962958a050d09edba0839.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/627/99_g0/62799b74fdb9a9d06409482d69914e1a1121ffd77846f9447489855367ee7b0d.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/659/91_g0/65991f5110ffe148cd531b9e7e08026272e55c037168a128974bbf5f85abd686.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/6e9/6a_g0/6e96a5cadd1502e0e181b040c85530b1556580403c2efb8a073aea12fb6ebf68.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/77d/80_g0/77d806e1533bdbee3747db7a352a9f8bdedb624013867cf7ebe4792b17add863.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8ed/2d_g0/8ed2d019f01a8a498505c007c517a8b1307b427fb8380c562d25b86dc2335404.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/8fa/23_g0/8fa23bdca21d80f7e9348ac64644c135a934c3b163ab4bd4f531a3cf219c6706.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/9d8/f7_g0/9d8f7fe55f6e7665c4fa98779fafb219d2da464ecf8e0d457e44ef9c3f615726.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/b4a/66_g0/b4a66600bcff611eb471f30f955284259945f449fa0ffb1e0bc8de9abd496683.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/d8c/65_g0/d8c65bc2086fea5532e140984f12fb57e8c3bee3cf6946c9039e65dacd02a97b.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/df9/97_g0/df997d82d8bbe0b3138996d480794fe97d12940da2ae57b2513fe7be874a4a74.bin",
+      "_home_runner_work_blis-vllm_blis-vllm_oracle-model_514ae2100c07_r0/edd/b8_g0/eddb8fb3e8f2d6d6783de404760991f8c009122820e456af8fb2f32ffcff929b.bin"
+     ]
+    ],
+    "tier_jobs": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 37,
+   "waiting_for_remote_kv": []
+  }
+ ]
+}
