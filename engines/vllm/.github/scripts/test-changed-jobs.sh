@@ -31,6 +31,8 @@ case_ "another workflow (blis, mutation)"       "-" "-" -- .github/workflows/bli
 case_ "a Python file of the oracle"             "goldens oracle" "-" -- oracle/gen_fuzz.py
 case_ "the oracle's fuzz cache action"          "oracle" "-" -- .github/actions/oracle-fuzz/action.yml
 case_ "fields.json only"                        "bench go inpackage kerneltests metrics oracle race rest" "$EVERY_LEG" -- fields.json
+case_ "a harness copy (check_mocks.py)"          "goldens oracle rest" "-" -- oracle/check_mocks.py
+case_ "the harness configuration"               "goldens oracle rest" "-" -- oracle/harness.json
 case_ "a fields generator"                      "metrics" "-" -- fields/gen_fields.py
 case_ "an oracle golden only"                   "bench goldens oracle race rest" "core" -- core/sched/testdata/golden/dashboard-deepseek-v4-pro-layers.json
 case_ "an oracle scenario"                      "goldens oracle race rest" "$EVERY_LEG" -- oracle/scenarios/connector/nixl-d-abort-waiting.json
@@ -43,7 +45,7 @@ case_ "a kernel test in the kernel package"     "go inpackage" "-" -- kerneltest
 case_ "the kernel tests' documents"             "kerneltests" "-" -- kerneltests/docs/index.md
 case_ "a vllmengine Go file"                    "go lint race race_guard rest" "$ENGINE" -- vllmengine/engine.go
 case_ "go.mod"                                  "bench go inpackage kerneltests lint metrics oracle packs_v0_29 packs_v0_31 packs_v0_32 race rest" "$EVERY_LEG" -- go.mod
-case_ "the lint configuration"                  "lint" "-" -- .golangci.yml
+case_ "the lint configuration (a harness copy)"  "lint rest" "-" -- .golangci.yml
 case_ "the CI workflow"                         "$ALL" "$EVERY_LEG" -- .github/workflows/ci.yml
 case_ "the shard tool"                          "inpackage kerneltests oracle race rest" "$EVERY_LEG" -- .github/scripts/shard.py
 case_ "the inertness shard weights"             "oracle" "-" -- .github/shards/weights-inertness.txt
