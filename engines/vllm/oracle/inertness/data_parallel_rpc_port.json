@@ -223,9 +223,9 @@
    },
    "launch": {
     "decisions": {
-     "default (29550)": "af457725eb2220dd68a54c142c2136b58e54e8469991b22d100b86a80339c832",
-     "13345 (InferenceX P/D recipes)": "af457725eb2220dd68a54c142c2136b58e54e8469991b22d100b86a80339c832",
-     "62100 (vLLM's Rust front end examples)": "af457725eb2220dd68a54c142c2136b58e54e8469991b22d100b86a80339c832"
+     "default (29550)": "8b318139e81c49458ad831f26fa5ea9875ef9633953decae5cf317daa1cedecc",
+     "13345 (InferenceX P/D recipes)": "8b318139e81c49458ad831f26fa5ea9875ef9633953decae5cf317daa1cedecc",
+     "62100 (vLLM's Rust front end examples)": "8b318139e81c49458ad831f26fa5ea9875ef9633953decae5cf317daa1cedecc"
     },
     "identical": true,
     "endpoint": {
@@ -245,9 +245,9 @@
    },
    "headless": {
     "decisions": {
-     "default (29550)": "d724ae310259fee5f2ad58e384c911430f5c097c6d6d79c826c324b3ce6d5338",
-     "13345 (InferenceX P/D recipes)": "d724ae310259fee5f2ad58e384c911430f5c097c6d6d79c826c324b3ce6d5338",
-     "62100 (vLLM's Rust front end examples)": "d724ae310259fee5f2ad58e384c911430f5c097c6d6d79c826c324b3ce6d5338"
+     "default (29550)": "f4c1b618ee507bee882ba15aff69822097ea7581ca0f829726673d8e9cbf78c4",
+     "13345 (InferenceX P/D recipes)": "f4c1b618ee507bee882ba15aff69822097ea7581ca0f829726673d8e9cbf78c4",
+     "62100 (vLLM's Rust front end examples)": "f4c1b618ee507bee882ba15aff69822097ea7581ca0f829726673d8e9cbf78c4"
     },
     "identical": true,
     "endpoint": {
@@ -264,9 +264,9 @@
    },
    "elastic": {
     "decisions": {
-     "default (29550)": "088ce3327544840d619fcf8afd872e13dd042eb17c9f84cb9239f7c188b72653",
-     "13345 (InferenceX P/D recipes)": "088ce3327544840d619fcf8afd872e13dd042eb17c9f84cb9239f7c188b72653",
-     "62100 (vLLM's Rust front end examples)": "088ce3327544840d619fcf8afd872e13dd042eb17c9f84cb9239f7c188b72653"
+     "default (29550)": "c18aecbc91444182fee49ebd77f6b2199813beedeea07a4a35b85966ea68423a",
+     "13345 (InferenceX P/D recipes)": "c18aecbc91444182fee49ebd77f6b2199813beedeea07a4a35b85966ea68423a",
+     "62100 (vLLM's Rust front end examples)": "c18aecbc91444182fee49ebd77f6b2199813beedeea07a4a35b85966ea68423a"
     },
     "identical": true,
     "endpoint": {
