@@ -2149,6 +2149,9 @@ type gemmFit struct {
 	// weightOnly is a weight-only kernel's own measured ramp (Marlin W8A16 or W4A16), which
 	// the registry validated with experts divided by their tensor-parallel slice.
 	weightOnly bool
+	// smallRows and smallPeak: at most smallRows rows, a GEMM runs on a kernel with its own compute
+	// ceiling (an fp32 router gate's specialised kernel, up to 32 tokens). Zero means none.
+	smallRows, smallPeak float64
 }
 
 // fitKey is a format and whether it is a grouped (MoE) GEMM, which can select a ramp of
@@ -2166,6 +2169,8 @@ type fitSpec struct {
 	suffix, fallback string
 	peak             float64
 	why              string
+	// smallRows and smallPeak: see gemmFit.
+	smallRows, smallPeak float64
 }
 
 // dtypeFitSuffix is the served dtype's fit, as dtypeFit has always chosen it.
@@ -2263,6 +2268,7 @@ func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped, router
 	}
 	fit.weightOnly = strings.HasPrefix(spec.suffix, "w8a16_") ||
 		strings.HasPrefix(spec.suffix, "w4a16_")
+	fit.smallRows, fit.smallPeak = spec.smallRows, spec.smallPeak
 	k.fits[key] = fit
 	return nil
 }
@@ -3225,7 +3231,6 @@ func (k *Kernel) checkCollectivesStayInAGroup(firstNode int) error {
 	return nil
 }
 
-
 // fp32CUDACoreTFlops is the datasheet FP32 (non-tensor) rate of the parts whose FP32 GEMM runs on
 // CUDA cores: NVIDIA's H100 SXM and H200 SXM datasheets state 67 TFLOP/s, the A100 19.5.
 var fp32CUDACoreTFlops = map[string]float64{"h100": 67, "h200": 67, "a100-sxm": 19.5, "a100-80": 19.5}
@@ -3240,6 +3245,16 @@ var fp32CUDACoreTFlops = map[string]float64{"h100": 67, "h200": 67, "a100-sxm": 
 // v1/worker/gpu_worker.py:219-220). A part with no stated CUDA-core rate keeps the TF32 reading
 // (half the BF16 peak) and the assumption is recorded.
 func fp32RouterFit(chip hardware.Chip, bf16 float64) fitSpec {
+	spec := fp32RouterLargeM(chip, bf16)
+	if chip.NVFP4Peak > 0 || fp32CUDACoreTFlops[chip.Name] > 0 {
+		// Up to 32 tokens the specialised kernel runs (Hopper and Blackwell alike); the gate is bound by
+		// its weight read there, so it keeps the BF16-rate reading the ramp has always priced it at.
+		spec.smallRows, spec.smallPeak = 32, bf16/2
+	}
+	return spec
+}
+
+func fp32RouterLargeM(chip hardware.Chip, bf16 float64) fitSpec {
 	if chip.NVFP4Peak > 0 {
 		return fitSpec{suffix: "bf16", peak: bf16 / 3,
 			why: "an fp32 router gate above 32 tokens runs bf16x3 on a Blackwell part (gate_linear.py:116-136): " +
