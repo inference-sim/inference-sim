@@ -6,6 +6,8 @@ import (
 	"sort"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
 // The cluster autoscaler (design SIM-14, inference-sim#740): a control loop beside the router that
@@ -145,6 +147,24 @@ func (pm *PlacementManager) poolStates() []NodePoolState {
 	return out
 }
 
+// poolSnapshot is the named pool's state now.
+func (cs *ClusterSimulator) poolSnapshot(name string) NodePoolState {
+	for _, p := range cs.placement.poolStates() {
+		if p.PoolName == name {
+			return p
+		}
+	}
+	return NodePoolState{PoolName: name}
+}
+
+// gpuUtilization is a pool's allocated GPUs over its GPUs, 0 for a pool with none.
+func gpuUtilization(p NodePoolState) float64 {
+	if p.GPUCapacity == 0 {
+		return 0
+	}
+	return float64(p.GPUAllocated) / float64(p.GPUCapacity)
+}
+
 // ClusterAutoscalerCheckEvent re-runs the cluster autoscaler when a queued placement reaches the
 // threshold: a placement that was under the threshold when it was queued is acted on once it has
 // waited long enough, without waiting for another placement to be queued.
@@ -174,7 +194,13 @@ func (cs *ClusterSimulator) runClusterAutoscaler() {
 			continue
 		}
 		for i := 0; i < d.Delta; i++ {
+			before := cs.poolSnapshot(d.PoolName)
 			node, readyAt := cs.placement.ProvisionNode(d.PoolName, cs.clock)
+			if cs.trace != nil {
+				cs.trace.RecordClusterScale(trace.ClusterScaleRecord{Clock: cs.clock, PoolName: d.PoolName,
+					OldNodeCount: before.TotalNodes, NewNodeCount: before.TotalNodes + 1, TriggerReason: "pending_threshold",
+					PendingCount: len(pending), GPUUtilization: gpuUtilization(before)})
+			}
 			cs.schedule(&NodeReadyEvent{timestamp: readyAt, nodeID: node.ID}, &cs.lifecycleSender)
 			logrus.Infof("[cluster-autoscaler] provisioning node %s in pool %q for %d pending placement(s); ready at %d",
 				node.ID, d.PoolName, len(pending), readyAt)

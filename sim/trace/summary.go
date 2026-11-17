@@ -15,6 +15,10 @@ type TraceSummary struct {
 	DisaggregatedCount   int     // number of requests for which disaggregation was decided (Disaggregate=true); prefill routing happens in a subsequent event
 	KVTransferCount      int     // number of KV transfers that completed with successful decode KV allocation
 	MeanTransferDuration float64 // mean KV transfer duration in microseconds; zero when KVTransferCount == 0
+
+	// Autoscaler decisions as applied, in order (#743); empty without an autoscaler.
+	ModelScales   []ModelScaleRecord   `json:",omitempty"`
+	ClusterScales []ClusterScaleRecord `json:",omitempty"`
 }
 
 // Summarize computes aggregate statistics from a SimulationTrace.
@@ -27,6 +31,8 @@ func Summarize(st *SimulationTrace) *TraceSummary {
 		return summary
 	}
 
+	summary.ModelScales = st.ModelScales
+	summary.ClusterScales = st.ClusterScales
 	summary.TotalDecisions = len(st.Admissions)
 	for _, a := range st.Admissions {
 		if a.Admitted {
