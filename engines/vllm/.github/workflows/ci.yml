@@ -532,15 +532,16 @@ jobs:
 
   # Tier 5: every vllm:* family vLLM v0.32.0 defines, read from its source and classified
   # exact / derived / unavailable (docs/metrics-manifest.json). A family the release adds or
-  # drops, or a manifest that is not current, fails here. Runs when fields/, fields.json, the manifest, its
-  # generator or the connector registry changed; always reports.
+  # drops, or a manifest that is not current, fails here; so does a surface.json (X9) that is not current. Runs
+  # when fields/, fields.json, the manifest, its generator, the connector registry, the surface list, its
+  # generator or the evidence it names changed; always reports.
   metrics-manifest:
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - if: needs.changes.outputs.metrics != 'true'
-        run: echo "not selected - none of fields/, fields.json, the manifest, its generator or the registry changed"
+        run: echo "not selected - none of fields/, fields.json, the manifest, its generator, the registry or the surface list changed"
       - if: needs.changes.outputs.metrics == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: go
@@ -586,6 +587,16 @@ jobs:
           set -o pipefail
           mkdir -p manifest-out
           go run ./cmd/metricsmanifest -vllm vllm-source -check 2>&1 | tee manifest-out/manifest-check.txt
+      # X9: surface.json lists every connector, tier, spec, policy, KV-cache spec type, speculative
+      # method, scheduler policy, event type, path-loaded component, framework part and metric family
+      # vLLM v0.32.0 registers, each with a status; it is regenerated from the pinned source here and
+      # must equal the committed list. It reads the manifest checked just above.
+      - name: surface.json is current for the pinned release, and every item has a status
+        if: needs.changes.outputs.metrics == 'true'
+        run: python3 -I tools/surface/gen_surface.py vllm-source tools/surface/status.json --check surface.json
+      - name: the surface generator's tests
+        if: needs.changes.outputs.metrics == 'true'
+        run: python3 -I tools/surface/test_gen_surface.py
       # The connector registry's entries are connectors the release registers.
       - name: every registry entry is a connector vLLM v0.32.0 registers
         if: needs.changes.outputs.metrics == 'true'

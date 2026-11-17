@@ -1,0 +1,2498 @@
+{
+ "generator": "tools/surface/gen_surface.py",
+ "upstream": {
+  "name": "vllm",
+  "tag": "v0.32.0",
+  "commit": "5df63a7203cdb9328d824a27b682e77c7b9928be"
+ },
+ "counts": {
+  "modelled": 63,
+  "out_of_scope": 39,
+  "refused": 147
+ },
+ "items": [
+  {
+   "id": "connector:ExampleConnector",
+   "category": "connector",
+   "name": "ExampleConnector",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:153",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.example_connector.ExampleConnector",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+  },
+  {
+   "id": "connector:ExampleHiddenStatesConnector",
+   "category": "connector",
+   "name": "ExampleHiddenStatesConnector",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:159",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.example_hidden_states_connector.ExampleHiddenStatesConnector",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+  },
+  {
+   "id": "connector:LMCacheConnectorV1",
+   "category": "connector",
+   "name": "LMCacheConnectorV1",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:165",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.lmcache_connector.LMCacheConnectorV1",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/11"
+  },
+  {
+   "id": "connector:LMCacheMPConnector",
+   "category": "connector",
+   "name": "LMCacheMPConnector",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:171",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.lmcache_mp_connector.LMCacheMPConnector",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/11"
+  },
+  {
+   "id": "connector:NixlConnector",
+   "category": "connector",
+   "name": "NixlConnector",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:177",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.nixl.NixlConnector",
+   "alias_of": "NixlPullConnector",
+   "status": "modelled",
+   "evidence": [
+    "registry/connectors.yaml",
+    "oracle/scenarios/connector",
+    "core/connector/nixl/testdata/golden"
+   ],
+   "why": "vLLM binds the name to NixlPullConnector's class (vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py:414@5df63a72)"
+  },
+  {
+   "id": "connector:NixlPullConnector",
+   "category": "connector",
+   "name": "NixlPullConnector",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:183",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.nixl.NixlPullConnector",
+   "status": "modelled",
+   "evidence": [
+    "registry/connectors.yaml",
+    "oracle/scenarios/connector",
+    "core/connector/nixl/testdata/golden"
+   ]
+  },
+  {
+   "id": "connector:NixlPushConnector",
+   "category": "connector",
+   "name": "NixlPushConnector",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:189",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.nixl.NixlPushConnector",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/9"
+  },
+  {
+   "id": "connector:MultiConnector",
+   "category": "connector",
+   "name": "MultiConnector",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:195",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.multi_connector.MultiConnector",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/multiconnector",
+    "core/connector/multi/testdata/golden"
+   ],
+   "why": "over one NIXL child and the OffloadingConnector; any other child is refused"
+  },
+  {
+   "id": "connector:HiSparseConnector",
+   "category": "connector",
+   "name": "HiSparseConnector",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:201",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.hisparse.connector.HiSparseConnector",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+  },
+  {
+   "id": "connector:MoRIIOConnector",
+   "category": "connector",
+   "name": "MoRIIOConnector",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:207",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.moriio.moriio_connector.MoRIIOConnector",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/10"
+  },
+  {
+   "id": "connector:OffloadingConnector",
+   "category": "connector",
+   "name": "OffloadingConnector",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:213",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.offloading_connector.OffloadingConnector",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/offloading",
+    "core/connector/offloading/testdata/golden"
+   ]
+  },
+  {
+   "id": "connector:DecodeBenchConnector",
+   "category": "connector",
+   "name": "DecodeBenchConnector",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:219",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.decode_bench_connector.DecodeBenchConnector",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+  },
+  {
+   "id": "connector:MooncakeConnector",
+   "category": "connector",
+   "name": "MooncakeConnector",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:225",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.mooncake.mooncake_connector.MooncakeConnector",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+  },
+  {
+   "id": "connector:MooncakeStoreConnector",
+   "category": "connector",
+   "name": "MooncakeStoreConnector",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:230",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.mooncake.store.connector.MooncakeStoreConnector",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+  },
+  {
+   "id": "connector:FlexKVConnectorV1",
+   "category": "connector",
+   "name": "FlexKVConnectorV1",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:235",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.flexkv_connector.FlexKVConnectorV1",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+  },
+  {
+   "id": "connector:SimpleCPUOffloadConnector",
+   "category": "connector",
+   "name": "SimpleCPUOffloadConnector",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:240",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.simple_cpu_offload_connector.SimpleCPUOffloadConnector",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+  },
+  {
+   "id": "connector:HF3FSKVConnector",
+   "category": "connector",
+   "name": "HF3FSKVConnector",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:245",
+   "class": "vllm.distributed.kv_transfer.kv_connector.v1.hf3fs.hf3fs_connector.HF3FSKVConnector",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+  },
+  {
+   "id": "offload_spec:CPUOffloadingSpec",
+   "category": "offload_spec",
+   "name": "CPUOffloadingSpec",
+   "site": "vllm/v1/kv_offload/factory.py:62",
+   "class": "vllm.v1.kv_offload.cpu.spec.CPUOffloadingSpec",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/offloading",
+    "core/connector/offloading/testdata/golden"
+   ]
+  },
+  {
+   "id": "offload_spec:TieringOffloadingSpec",
+   "category": "offload_spec",
+   "name": "TieringOffloadingSpec",
+   "site": "vllm/v1/kv_offload/factory.py:65",
+   "class": "vllm.v1.kv_offload.tiering.spec.TieringOffloadingSpec",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
+   "why": "the engine runs it with no secondary tiers as its CPU primary tier, an argument from vLLM's forwarding code with no trace of TieringOffloadingManager"
+  },
+  {
+   "id": "secondary_tier:example",
+   "category": "secondary_tier",
+   "name": "example",
+   "site": "vllm/v1/kv_offload/tiering/factory.py:146",
+   "class": "vllm.v1.kv_offload.tiering.example.manager.ExampleSecondaryTierManager",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+  },
+  {
+   "id": "secondary_tier:fs",
+   "category": "secondary_tier",
+   "name": "fs",
+   "site": "vllm/v1/kv_offload/tiering/factory.py:152",
+   "class": "vllm.v1.kv_offload.tiering.fs.manager.FileSystemTierManager",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "secondary_tier:p2p",
+   "category": "secondary_tier",
+   "name": "p2p",
+   "site": "vllm/v1/kv_offload/tiering/factory.py:158",
+   "class": "vllm.v1.kv_offload.tiering.p2p.manager.P2PSecondaryTierManager",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/13"
+  },
+  {
+   "id": "secondary_tier:obj",
+   "category": "secondary_tier",
+   "name": "obj",
+   "site": "vllm/v1/kv_offload/tiering/factory.py:164",
+   "class": "vllm.v1.kv_offload.tiering.obj.manager.ObjectStoreSecondaryTierManager",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "secondary_tier:kvcr",
+   "category": "secondary_tier",
+   "name": "kvcr",
+   "site": "vllm/v1/kv_offload/tiering/factory.py:170",
+   "class": "vllm.v1.kv_offload.tiering.kvcr.manager.KVCRSecondaryTierManager",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+  },
+  {
+   "id": "cache_policy:lru",
+   "category": "cache_policy",
+   "name": "lru",
+   "site": "vllm/v1/kv_offload/cpu/policies/factory.py:86",
+   "class": "vllm.v1.kv_offload.cpu.policies.lru.LRUCachePolicy",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/offloading/offloading-lru-evict.json",
+    "core/connector/offloading/testdata/golden"
+   ]
+  },
+  {
+   "id": "cache_policy:arc",
+   "category": "cache_policy",
+   "name": "arc",
+   "site": "vllm/v1/kv_offload/cpu/policies/factory.py:89",
+   "class": "vllm.v1.kv_offload.cpu.policies.arc.ARCCachePolicy",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/1"
+  },
+  {
+   "id": "backpressure_class:DropAccountingPolicy",
+   "category": "backpressure_class",
+   "name": "DropAccountingPolicy",
+   "site": "vllm/v1/kv_offload/tiering/backpressure.py:27",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/13"
+  },
+  {
+   "id": "backpressure_class:DropStorePolicy",
+   "category": "backpressure_class",
+   "name": "DropStorePolicy",
+   "site": "vllm/v1/kv_offload/tiering/backpressure.py:55",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/13"
+  },
+  {
+   "id": "backpressure_class:ThrottledDropPolicy",
+   "category": "backpressure_class",
+   "name": "ThrottledDropPolicy",
+   "site": "vllm/v1/kv_offload/tiering/backpressure.py:62",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/13"
+  },
+  {
+   "id": "backpressure_class:EMABackpressureDetector",
+   "category": "backpressure_class",
+   "name": "EMABackpressureDetector",
+   "site": "vllm/v1/kv_offload/tiering/backpressure.py:173",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/13"
+  },
+  {
+   "id": "offload_medium:CPU",
+   "category": "offload_medium",
+   "name": "CPU",
+   "site": "vllm/v1/kv_offload/base.py:50",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/offloading",
+    "core/connector/offloading/testdata/golden"
+   ],
+   "why": "the CPU tier"
+  },
+  {
+   "id": "offload_medium:STORAGE",
+   "category": "offload_medium",
+   "name": "STORAGE",
+   "site": "vllm/v1/kv_offload/base.py:51",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63",
+   "why": "the fs and obj secondary tiers"
+  },
+  {
+   "id": "offload_backend:kv_offloading_backend=native",
+   "category": "offload_backend",
+   "name": "kv_offloading_backend=native",
+   "site": "vllm/config/cache.py:65",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/87"
+  },
+  {
+   "id": "offload_backend:kv_offloading_backend=lmcache",
+   "category": "offload_backend",
+   "name": "kv_offloading_backend=lmcache",
+   "site": "vllm/config/cache.py:65",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/87"
+  },
+  {
+   "id": "offload_backend:SimpleCPUOffloadConnector kv_offload_backend=cpu",
+   "category": "offload_backend",
+   "name": "SimpleCPUOffloadConnector kv_offload_backend=cpu",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/simple_cpu_offload_connector.py:56",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+  },
+  {
+   "id": "offload_backend:SimpleCPUOffloadConnector kv_offload_backend=disk",
+   "category": "offload_backend",
+   "name": "SimpleCPUOffloadConnector kv_offload_backend=disk",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/simple_cpu_offload_connector.py:56",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+  },
+  {
+   "id": "kv_event_publisher:null",
+   "category": "kv_event_publisher",
+   "name": "null",
+   "site": "vllm/distributed/kv_events.py:568",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/kv-events.json",
+    "core/sched/testdata/golden/kv-events.json"
+   ],
+   "why": "accepted where it is vLLM's default; a stated non-default publisher is refused (#60)"
+  },
+  {
+   "id": "kv_event_publisher:zmq",
+   "category": "kv_event_publisher",
+   "name": "zmq",
+   "site": "vllm/distributed/kv_events.py:569",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/kv-events.json",
+    "core/sched/testdata/golden/kv-events.json"
+   ],
+   "why": "the events it publishes; the ZMQ transport carries them and prices nothing"
+  },
+  {
+   "id": "kv_event_type:BlockStored",
+   "category": "kv_event_type",
+   "name": "BlockStored",
+   "site": "vllm/distributed/kv_events.py:56",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/kv-events.json",
+    "core/sched/testdata/golden/kv-events.json"
+   ]
+  },
+  {
+   "id": "kv_event_type:BlockRemoved",
+   "category": "kv_event_type",
+   "name": "BlockRemoved",
+   "site": "vllm/distributed/kv_events.py:116",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/kv-events.json",
+    "core/sched/testdata/golden/kv-events.json"
+   ]
+  },
+  {
+   "id": "kv_event_type:AllBlocksCleared",
+   "category": "kv_event_type",
+   "name": "AllBlocksCleared",
+   "site": "vllm/distributed/kv_events.py:137",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "why": "emitted by reset_prefix_cache, which no simulated run calls"
+  },
+  {
+   "id": "kv_event_source:LMCacheKVEvents",
+   "category": "kv_event_source",
+   "name": "LMCacheKVEvents",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/lmcache_connector.py:34",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/11"
+  },
+  {
+   "id": "kv_event_source:MooncakeStoreKVEvents",
+   "category": "kv_event_source",
+   "name": "MooncakeStoreKVEvents",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/connector.py:59",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+  },
+  {
+   "id": "kv_cache_spec:role HISPARSE_SOURCE",
+   "category": "kv_cache_spec",
+   "name": "role HISPARSE_SOURCE",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2635",
+   "manager": "HiSparseSourceManager",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+  },
+  {
+   "id": "kv_cache_spec:FullAttentionSpec",
+   "category": "kv_cache_spec",
+   "name": "FullAttentionSpec",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2638",
+   "manager": "FullAttentionManager",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/hybrid-swa.json",
+    "core/sched/testdata/golden/hybrid-swa.json"
+   ]
+  },
+  {
+   "id": "kv_cache_spec:HiSparseHotSpec",
+   "category": "kv_cache_spec",
+   "name": "HiSparseHotSpec",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2643",
+   "manager": "HiSparseHotManager",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+  },
+  {
+   "id": "kv_cache_spec:HiSparseResidentSpec",
+   "category": "kv_cache_spec",
+   "name": "HiSparseResidentSpec",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2648",
+   "manager": "HiSparseResidentManager",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+  },
+  {
+   "id": "kv_cache_spec:SlidingWindowSpec",
+   "category": "kv_cache_spec",
+   "name": "SlidingWindowSpec",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2654",
+   "manager": "SlidingWindowManager",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/hybrid-swa.json",
+    "core/sched/testdata/golden/hybrid-swa.json"
+   ]
+  },
+  {
+   "id": "kv_cache_spec:CircularBufferSpec",
+   "category": "kv_cache_spec",
+   "name": "CircularBufferSpec",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2659",
+   "manager": "CircularBufferManager",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/dashboard-deepseek-v4.1-flash-layers.json",
+    "core/sched/testdata/golden/dashboard-deepseek-v4.1-flash-layers.json"
+   ]
+  },
+  {
+   "id": "kv_cache_spec:SlidingWindowMLASpec",
+   "category": "kv_cache_spec",
+   "name": "SlidingWindowMLASpec",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2664",
+   "manager": "SlidingWindowManager",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/dashboard-deepseek-v4-pro-layers.json",
+    "core/sched/testdata/golden/dashboard-deepseek-v4-pro-layers.json"
+   ]
+  },
+  {
+   "id": "kv_cache_spec:MambaSpec",
+   "category": "kv_cache_spec",
+   "name": "MambaSpec",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2670",
+   "manager": "MambaManager",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/mamba-align-prefix-hit.json",
+    "core/sched/testdata/golden/mamba-align-prefix-hit.json",
+    "oracle/scenarios/mamba-none-preempt.json"
+   ]
+  },
+  {
+   "id": "kv_cache_spec:ChunkedLocalAttentionSpec",
+   "category": "kv_cache_spec",
+   "name": "ChunkedLocalAttentionSpec",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2673",
+   "manager": "ChunkedLocalAttentionManager",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/149"
+  },
+  {
+   "id": "kv_cache_spec:CrossAttentionSpec",
+   "category": "kv_cache_spec",
+   "name": "CrossAttentionSpec",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2678",
+   "manager": "CrossAttentionManager",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/149"
+  },
+  {
+   "id": "kv_cache_spec:MLAAttentionSpec",
+   "category": "kv_cache_spec",
+   "name": "MLAAttentionSpec",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2685",
+   "manager": "FullAttentionManager",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/dashboard-deepseek-v4-pro-layers.json",
+    "core/sched/testdata/golden/dashboard-deepseek-v4-pro-layers.json"
+   ]
+  },
+  {
+   "id": "kv_cache_spec:RSWASpec",
+   "category": "kv_cache_spec",
+   "name": "RSWASpec",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2688",
+   "manager": "RSWAManager",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/149"
+  },
+  {
+   "id": "kv_cache_spec:HiddenStateCacheSpec",
+   "category": "kv_cache_spec",
+   "name": "HiddenStateCacheSpec",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2694",
+   "manager": "FullAttentionManager",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/150",
+   "why": "the hidden-state cache of extract_hidden_states"
+  },
+  {
+   "id": "kv_cache_spec:SinkFullAttentionSpec",
+   "category": "kv_cache_spec",
+   "name": "SinkFullAttentionSpec",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2699",
+   "manager": "SinkFullAttentionManager",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/149"
+  },
+  {
+   "id": "speculative_method:ngram",
+   "category": "speculative_method",
+   "name": "ngram",
+   "site": "vllm/config/speculative.py:73",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/spec-ngram.json",
+    "core/sched/testdata/golden/spec-ngram.json"
+   ]
+  },
+  {
+   "id": "speculative_method:medusa",
+   "category": "speculative_method",
+   "name": "medusa",
+   "site": "vllm/config/speculative.py:73",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
+  },
+  {
+   "id": "speculative_method:mlp_speculator",
+   "category": "speculative_method",
+   "name": "mlp_speculator",
+   "site": "vllm/config/speculative.py:73",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
+  },
+  {
+   "id": "speculative_method:draft_model",
+   "category": "speculative_method",
+   "name": "draft_model",
+   "site": "vllm/config/speculative.py:73",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/17"
+  },
+  {
+   "id": "speculative_method:suffix",
+   "category": "speculative_method",
+   "name": "suffix",
+   "site": "vllm/config/speculative.py:73",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
+  },
+  {
+   "id": "speculative_method:custom_class",
+   "category": "speculative_method",
+   "name": "custom_class",
+   "site": "vllm/config/speculative.py:73",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140",
+   "why": "loads the proposer from the module path speculative_config.model names"
+  },
+  {
+   "id": "speculative_method:eagle",
+   "category": "speculative_method",
+   "name": "eagle",
+   "site": "vllm/config/speculative.py:70",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/hybrid-swa-eagle.json",
+    "core/sched/testdata/golden/hybrid-swa-eagle.json"
+   ]
+  },
+  {
+   "id": "speculative_method:eagle3",
+   "category": "speculative_method",
+   "name": "eagle3",
+   "site": "vllm/config/speculative.py:70",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/spec-eagle3.json",
+    "core/sched/testdata/golden/spec-eagle3.json"
+   ]
+  },
+  {
+   "id": "speculative_method:extract_hidden_states",
+   "category": "speculative_method",
+   "name": "extract_hidden_states",
+   "site": "vllm/config/speculative.py:70",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
+  },
+  {
+   "id": "speculative_method:deepseek_mtp",
+   "category": "speculative_method",
+   "name": "deepseek_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:dots3_note_mtp",
+   "category": "speculative_method",
+   "name": "dots3_note_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:mimo_mtp",
+   "category": "speculative_method",
+   "name": "mimo_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:mimo_v2_mtp",
+   "category": "speculative_method",
+   "name": "mimo_v2_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:glm4_moe_mtp",
+   "category": "speculative_method",
+   "name": "glm4_moe_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:glm4_moe_lite_mtp",
+   "category": "speculative_method",
+   "name": "glm4_moe_lite_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:glm_ocr_mtp",
+   "category": "speculative_method",
+   "name": "glm_ocr_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:ernie_mtp",
+   "category": "speculative_method",
+   "name": "ernie_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:nemotron_h_mtp",
+   "category": "speculative_method",
+   "name": "nemotron_h_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:exaone_moe_mtp",
+   "category": "speculative_method",
+   "name": "exaone_moe_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:exaone4_5_mtp",
+   "category": "speculative_method",
+   "name": "exaone4_5_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:qwen3_next_mtp",
+   "category": "speculative_method",
+   "name": "qwen3_next_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:qwen4_exp_mtp",
+   "category": "speculative_method",
+   "name": "qwen4_exp_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:qwen3_5_mtp",
+   "category": "speculative_method",
+   "name": "qwen3_5_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:longcat_flash_mtp",
+   "category": "speculative_method",
+   "name": "longcat_flash_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:bailing_hybrid_v3_mtp",
+   "category": "speculative_method",
+   "name": "bailing_hybrid_v3_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:minimax_m3_mtp",
+   "category": "speculative_method",
+   "name": "minimax_m3_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:bailing_hybrid_mtp",
+   "category": "speculative_method",
+   "name": "bailing_hybrid_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:mtp",
+   "category": "speculative_method",
+   "name": "mtp",
+   "site": "vllm/config/speculative.py:38",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/spec-mtp1.json",
+    "core/sched/testdata/golden/spec-mtp1.json",
+    "oracle/scenarios/spec-mtp-multi.json"
+   ]
+  },
+  {
+   "id": "speculative_method:kimi_k3_mtp",
+   "category": "speculative_method",
+   "name": "kimi_k3_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:pangu_ultra_moe_mtp",
+   "category": "speculative_method",
+   "name": "pangu_ultra_moe_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:step3p5_mtp",
+   "category": "speculative_method",
+   "name": "step3p5_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:hy_v3_mtp",
+   "category": "speculative_method",
+   "name": "hy_v3_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:hy_v4_mtp",
+   "category": "speculative_method",
+   "name": "hy_v4_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:gemma4_mtp",
+   "category": "speculative_method",
+   "name": "gemma4_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:inkling_mtp",
+   "category": "speculative_method",
+   "name": "inkling_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:glm5_next_mtp",
+   "category": "speculative_method",
+   "name": "glm5_next_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:dflash",
+   "category": "speculative_method",
+   "name": "dflash",
+   "site": "vllm/config/speculative.py:68",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
+  },
+  {
+   "id": "speculative_method:ngram_gpu",
+   "category": "speculative_method",
+   "name": "ngram_gpu",
+   "site": "vllm/config/speculative.py:67",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
+  },
+  {
+   "id": "speculative_method:dspark",
+   "category": "speculative_method",
+   "name": "dspark",
+   "site": "vllm/config/speculative.py:69",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/spec-dspark.json",
+    "core/sched/testdata/golden/spec-dspark.json"
+   ]
+  },
+  {
+   "id": "scheduler_policy:fcfs",
+   "category": "scheduler_policy",
+   "name": "fcfs",
+   "site": "vllm/config/scheduler.py:21",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/hybrid-swa.json",
+    "core/sched/testdata/golden/hybrid-swa.json"
+   ]
+  },
+  {
+   "id": "scheduler_policy:priority",
+   "category": "scheduler_policy",
+   "name": "priority",
+   "site": "vllm/config/scheduler.py:21",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/priority-tie.json",
+    "core/sched/testdata/golden/priority-tie.json",
+    "oracle/scenarios/preempt-priority.json"
+   ]
+  },
+  {
+   "id": "path_loader:kv_transfer_config.kv_connector_module_path",
+   "category": "path_loader",
+   "name": "kv_transfer_config.kv_connector_module_path",
+   "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:108",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+  },
+  {
+   "id": "path_loader:kv_connector_extra_config.spec_module_path",
+   "category": "path_loader",
+   "name": "kv_connector_extra_config.spec_module_path",
+   "site": "vllm/v1/kv_offload/factory.py:48",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+  },
+  {
+   "id": "path_loader:kv_connector_extra_config.secondary_tiers[].module_path",
+   "category": "path_loader",
+   "name": "kv_connector_extra_config.secondary_tiers[].module_path",
+   "site": "vllm/v1/kv_offload/tiering/factory.py:140",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+  },
+  {
+   "id": "path_loader:kv_connector_extra_config.cache_policy_module_path",
+   "category": "path_loader",
+   "name": "kv_connector_extra_config.cache_policy_module_path",
+   "site": "vllm/v1/kv_offload/cpu/policies/factory.py:79",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+  },
+  {
+   "id": "path_loader:kv_connector_extra_config.secondary_tiers[].backpressure (dotted backpressure_cls or policy_cls)",
+   "category": "path_loader",
+   "name": "kv_connector_extra_config.secondary_tiers[].backpressure (dotted backpressure_cls or policy_cls)",
+   "site": "vllm/v1/kv_offload/tiering/factory.py:34",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+  },
+  {
+   "id": "path_loader:kv_events_config.publisher (EventPublisherFactory.register_publisher)",
+   "category": "path_loader",
+   "name": "kv_events_config.publisher (EventPublisherFactory.register_publisher)",
+   "site": "vllm/distributed/kv_events.py:576",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+  },
+  {
+   "id": "path_loader:kv_connector_extra_config.secondary_tiers[] kvcr policy (dotted name)",
+   "category": "path_loader",
+   "name": "kv_connector_extra_config.secondary_tiers[] kvcr policy (dotted name)",
+   "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:111",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+  },
+  {
+   "id": "path_loader:scheduler_config.scheduler_cls",
+   "category": "path_loader",
+   "name": "scheduler_config.scheduler_cls",
+   "site": "vllm/config/scheduler.py:253",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+  },
+  {
+   "id": "path_loader:speculative_config.method custom_class (speculative_config.model as a module path)",
+   "category": "path_loader",
+   "name": "speculative_config.method custom_class (speculative_config.model as a module path)",
+   "site": "vllm/v1/spec_decode/custom_class_proposer.py:36",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+  },
+  {
+   "id": "framework:SupportsHMA",
+   "category": "framework",
+   "name": "SupportsHMA",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/base.py:100",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
+   "why": "no recorded or direct trace at its interface (FID-5)"
+  },
+  {
+   "id": "framework:KVConnectorWorkerMetadata",
+   "category": "framework",
+   "name": "KVConnectorWorkerMetadata",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/base.py:162",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
+   "why": "no recorded or direct trace at its interface (FID-5)"
+  },
+  {
+   "id": "framework:KVConnectorBase_V1 worker side",
+   "category": "framework",
+   "name": "KVConnectorBase_V1 worker side",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/base.py:233",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
+   "why": "no recorded or direct trace at its interface (FID-5)"
+  },
+  {
+   "id": "framework:KVConnectorBase_V1 scheduler side",
+   "category": "framework",
+   "name": "KVConnectorBase_V1 scheduler side",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/base.py:472",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
+   "why": "no recorded or direct trace at its interface (FID-5)"
+  },
+  {
+   "id": "framework:OffloadingManager",
+   "category": "framework",
+   "name": "OffloadingManager",
+   "site": "vllm/v1/kv_offload/base.py:235",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
+   "why": "no recorded or direct trace at its interface (FID-5)"
+  },
+  {
+   "id": "framework:OffloadingWorker",
+   "category": "framework",
+   "name": "OffloadingWorker",
+   "site": "vllm/v1/kv_offload/base.py:568",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
+   "why": "no recorded or direct trace at its interface (FID-5)"
+  },
+  {
+   "id": "framework:OffloadingSpec",
+   "category": "framework",
+   "name": "OffloadingSpec",
+   "site": "vllm/v1/kv_offload/base.py:595",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
+   "why": "no recorded or direct trace at its interface (FID-5)"
+  },
+  {
+   "id": "framework:CachePolicy",
+   "category": "framework",
+   "name": "CachePolicy",
+   "site": "vllm/v1/kv_offload/cpu/policies/base.py:48",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
+   "why": "no recorded or direct trace at its interface (FID-5)"
+  },
+  {
+   "id": "framework:ParentManager",
+   "category": "framework",
+   "name": "ParentManager",
+   "site": "vllm/v1/kv_offload/tiering/base.py:94",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63",
+   "why": "no recorded or direct trace at its interface (FID-5)"
+  },
+  {
+   "id": "framework:SecondaryTierManager",
+   "category": "framework",
+   "name": "SecondaryTierManager",
+   "site": "vllm/v1/kv_offload/tiering/base.py:131",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63",
+   "why": "no recorded or direct trace at its interface (FID-5)"
+  },
+  {
+   "id": "framework:BackpressurePolicy",
+   "category": "framework",
+   "name": "BackpressurePolicy",
+   "site": "vllm/v1/kv_offload/tiering/backpressure.py:9",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/13",
+   "why": "no recorded or direct trace at its interface (FID-5)"
+  },
+  {
+   "id": "framework:BackpressureDetector",
+   "category": "framework",
+   "name": "BackpressureDetector",
+   "site": "vllm/v1/kv_offload/tiering/backpressure.py:110",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/13",
+   "why": "no recorded or direct trace at its interface (FID-5)"
+  },
+  {
+   "id": "metric_family:vllm:<kvcr DURATION_METRIC>",
+   "category": "metric_family",
+   "name": "vllm:<kvcr DURATION_METRIC>",
+   "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:125",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+  },
+  {
+   "id": "metric_family:vllm:<kvcr STATE_METRIC>",
+   "category": "metric_family",
+   "name": "vllm:<kvcr STATE_METRIC>",
+   "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:137",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+  },
+  {
+   "id": "metric_family:vllm:<kvcr TRANSFER_BLOCKS_METRIC>",
+   "category": "metric_family",
+   "name": "vllm:<kvcr TRANSFER_BLOCKS_METRIC>",
+   "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:133",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+  },
+  {
+   "id": "metric_family:vllm:<kvcr TRANSFER_BYTES_METRIC>",
+   "category": "metric_family",
+   "name": "vllm:<kvcr TRANSFER_BYTES_METRIC>",
+   "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:129",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+  },
+  {
+   "id": "metric_family:vllm:admission_rejections",
+   "category": "metric_family",
+   "name": "vllm:admission_rejections",
+   "site": "vllm/v1/metrics/loggers.py:848",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/54"
+  },
+  {
+   "id": "metric_family:vllm:cache_config_info",
+   "category": "metric_family",
+   "name": "vllm:cache_config_info",
+   "site": "vllm/v1/metrics/loggers.py:1120",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/25"
+  },
+  {
+   "id": "metric_family:vllm:corrupted_requests",
+   "category": "metric_family",
+   "name": "vllm:corrupted_requests",
+   "site": "vllm/v1/metrics/loggers.py:631",
+   "manifest_class": "unavailable",
+   "status": "out_of_scope",
+   "reason": "no_priced_work",
+   "citation": "vllm/v1/metrics/loggers.py:630-640@5df63a72",
+   "why": "a count of NaN logits, a property of the numerics, not of the work"
+  },
+  {
+   "id": "metric_family:vllm:diffusion_num_canvas_positions",
+   "category": "metric_family",
+   "name": "vllm:diffusion_num_canvas_positions",
+   "site": "vllm/v1/spec_decode/metrics.py:219",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/152"
+  },
+  {
+   "id": "metric_family:vllm:diffusion_num_committed_tokens",
+   "category": "metric_family",
+   "name": "vllm:diffusion_num_committed_tokens",
+   "site": "vllm/v1/spec_decode/metrics.py:223",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/152"
+  },
+  {
+   "id": "metric_family:vllm:diffusion_num_denoising_steps",
+   "category": "metric_family",
+   "name": "vllm:diffusion_num_denoising_steps",
+   "site": "vllm/v1/spec_decode/metrics.py:217",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/152"
+  },
+  {
+   "id": "metric_family:vllm:e2e_request_latency_seconds",
+   "category": "metric_family",
+   "name": "vllm:e2e_request_latency_seconds",
+   "site": "vllm/v1/metrics/loggers.py:961",
+   "manifest_class": "derived",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:engine_sleep_state",
+   "category": "metric_family",
+   "name": "vllm:engine_sleep_state",
+   "site": "vllm/v1/metrics/loggers.py:594",
+   "manifest_class": "unavailable",
+   "status": "out_of_scope",
+   "reason": "no_priced_work",
+   "citation": "vllm/v1/metrics/loggers.py:594-600@5df63a72",
+   "why": "an operator's sleep-mode RPC, which no served request makes"
+  },
+  {
+   "id": "metric_family:vllm:estimated_flops_per_gpu_total",
+   "category": "metric_family",
+   "name": "vllm:estimated_flops_per_gpu_total",
+   "site": "vllm/v1/metrics/perf.py:1764",
+   "manifest_class": "derived",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:estimated_read_bytes_per_gpu_total",
+   "category": "metric_family",
+   "name": "vllm:estimated_read_bytes_per_gpu_total",
+   "site": "vllm/v1/metrics/perf.py:1776",
+   "manifest_class": "derived",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:estimated_write_bytes_per_gpu_total",
+   "category": "metric_family",
+   "name": "vllm:estimated_write_bytes_per_gpu_total",
+   "site": "vllm/v1/metrics/perf.py:1788",
+   "manifest_class": "derived",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:external_prefix_cache_hits",
+   "category": "metric_family",
+   "name": "vllm:external_prefix_cache_hits",
+   "site": "vllm/v1/metrics/loggers.py:698",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:external_prefix_cache_queries",
+   "category": "metric_family",
+   "name": "vllm:external_prefix_cache_queries",
+   "site": "vllm/v1/metrics/loggers.py:686",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:generation_tokens",
+   "category": "metric_family",
+   "name": "vllm:generation_tokens",
+   "site": "vllm/v1/metrics/loggers.py:799",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:hf3fs_load_duration_seconds",
+   "category": "metric_family",
+   "name": "vllm:hf3fs_load_duration_seconds",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/hf3fs/hf3fs_connector.py:1146",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+  },
+  {
+   "id": "metric_family:vllm:hf3fs_num_failed_load",
+   "category": "metric_family",
+   "name": "vllm:hf3fs_num_failed_load",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/hf3fs/hf3fs_connector.py:1165",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+  },
+  {
+   "id": "metric_family:vllm:hf3fs_num_failed_save",
+   "category": "metric_family",
+   "name": "vllm:hf3fs_num_failed_save",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/hf3fs/hf3fs_connector.py:1156",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+  },
+  {
+   "id": "metric_family:vllm:hf3fs_save_duration_seconds",
+   "category": "metric_family",
+   "name": "vllm:hf3fs_save_duration_seconds",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/hf3fs/hf3fs_connector.py:1136",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+  },
+  {
+   "id": "metric_family:vllm:hisparse_cache_hits",
+   "category": "metric_family",
+   "name": "vllm:hisparse_cache_hits",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/hisparse/stats.py:103",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+  },
+  {
+   "id": "metric_family:vllm:hisparse_cache_misses",
+   "category": "metric_family",
+   "name": "vllm:hisparse_cache_misses",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/hisparse/stats.py:108",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+  },
+  {
+   "id": "metric_family:vllm:hisparse_host_block_idle_before_evict_seconds",
+   "category": "metric_family",
+   "name": "vllm:hisparse_host_block_idle_before_evict_seconds",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/hisparse/stats.py:174",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+  },
+  {
+   "id": "metric_family:vllm:hisparse_host_block_lifetime_seconds",
+   "category": "metric_family",
+   "name": "vllm:hisparse_host_block_lifetime_seconds",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/hisparse/stats.py:164",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+  },
+  {
+   "id": "metric_family:vllm:hisparse_host_block_reuse_gap_seconds",
+   "category": "metric_family",
+   "name": "vllm:hisparse_host_block_reuse_gap_seconds",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/hisparse/stats.py:183",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+  },
+  {
+   "id": "metric_family:vllm:hisparse_host_cache_usage_perc",
+   "category": "metric_family",
+   "name": "vllm:hisparse_host_cache_usage_perc",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/hisparse/stats.py:132",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+  },
+  {
+   "id": "metric_family:vllm:hisparse_host_to_device_bytes",
+   "category": "metric_family",
+   "name": "vllm:hisparse_host_to_device_bytes",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/hisparse/stats.py:113",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+  },
+  {
+   "id": "metric_family:vllm:hisparse_pending_page_transfers",
+   "category": "metric_family",
+   "name": "vllm:hisparse_pending_page_transfers",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/hisparse/stats.py:141",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+  },
+  {
+   "id": "metric_family:vllm:inter_token_latency_seconds",
+   "category": "metric_family",
+   "name": "vllm:inter_token_latency_seconds",
+   "site": "vllm/v1/metrics/loggers.py:941",
+   "manifest_class": "derived",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:iteration_tokens_total",
+   "category": "metric_family",
+   "name": "vllm:iteration_tokens_total",
+   "site": "vllm/v1/metrics/loggers.py:888",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:kv_block_idle_before_evict_seconds",
+   "category": "metric_family",
+   "name": "vllm:kv_block_idle_before_evict_seconds",
+   "site": "vllm/v1/metrics/loggers.py:1055",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/25"
+  },
+  {
+   "id": "metric_family:vllm:kv_block_lifetime_seconds",
+   "category": "metric_family",
+   "name": "vllm:kv_block_lifetime_seconds",
+   "site": "vllm/v1/metrics/loggers.py:1042",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/25"
+  },
+  {
+   "id": "metric_family:vllm:kv_block_reuse_gap_seconds",
+   "category": "metric_family",
+   "name": "vllm:kv_block_reuse_gap_seconds",
+   "site": "vllm/v1/metrics/loggers.py:1068",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/25"
+  },
+  {
+   "id": "metric_family:vllm:kv_cache_usage_perc",
+   "category": "metric_family",
+   "name": "vllm:kv_cache_usage_perc",
+   "site": "vllm/v1/metrics/loggers.py:620",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_allocation_failure",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_allocation_failure",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:124",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_cpu_allocation_size",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_cpu_allocation_size",
+   "site": "vllm/v1/kv_offload/cpu/spec.py:73",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_cpu_cache_read_usage_perc",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_cpu_cache_read_usage_perc",
+   "site": "vllm/v1/kv_offload/cpu/spec.py:66",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_cpu_cache_usage_perc",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_cpu_cache_usage_perc",
+   "site": "vllm/v1/kv_offload/cpu/spec.py:51",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_cpu_cache_write_usage_perc",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_cpu_cache_write_usage_perc",
+   "site": "vllm/v1/kv_offload/cpu/spec.py:59",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_load_bytes",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_load_bytes",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:65",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_load_size",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_load_size",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:71",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_load_time",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_load_time",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:68",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_lookup_async_delay_seconds",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_lookup_async_delay_seconds",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:104",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_lookup_sync_delay_seconds",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_lookup_sync_delay_seconds",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:85",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_size",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_size",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:147",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_store_bytes",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_store_bytes",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:75",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_store_size",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_store_size",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:81",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_store_time",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_store_time",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:78",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_stores_skipped",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_stores_skipped",
+   "site": "vllm/v1/kv_offload/cpu/spec.py:84",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_active_cascade_jobs",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_active_cascade_jobs",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:235",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_active_promotion_jobs",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_active_promotion_jobs",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:228",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_backpressure_blocks_dropped",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_backpressure_blocks_dropped",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:269",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_backpressure_store_latency_ema",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_backpressure_store_latency_ema",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:251",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_backpressure_stores_dropped",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_backpressure_stores_dropped",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:260",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_cascade_job_failures",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_cascade_job_failures",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:184",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_chunk_hits",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_chunk_hits",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:197",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_chunk_queries",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_chunk_queries",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:191",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_lookup_async_delay_seconds",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_lookup_async_delay_seconds",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:125",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_lookup_sync_delay_seconds",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_lookup_sync_delay_seconds",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:103",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_primary_read_usage_perc",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_primary_read_usage_perc",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:219",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_primary_write_usage_perc",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_primary_write_usage_perc",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:210",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_promotion_allocation_failures",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_promotion_allocation_failures",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:202",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_promotion_job_failures",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_promotion_job_failures",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:176",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_read_bytes",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_read_bytes",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:147",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_read_time",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_read_time",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:154",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_write_bytes",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_write_bytes",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:161",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_write_time",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_write_time",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:168",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_total_bytes",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_total_bytes",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:141",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_total_time",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_total_time",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:144",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:lora_requests_info",
+   "category": "metric_family",
+   "name": "vllm:lora_requests_info",
+   "site": "vllm/v1/metrics/loggers.py:1104",
+   "manifest_class": "derived",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/lora-max-loras-skip.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:mm_cache_hits",
+   "category": "metric_family",
+   "name": "vllm:mm_cache_hits",
+   "site": "vllm/v1/metrics/loggers.py:725",
+   "manifest_class": "unavailable",
+   "status": "out_of_scope",
+   "reason": "no_priced_work",
+   "citation": "vllm/v1/metrics/loggers.py:713-735@5df63a72",
+   "why": "the multimodal processor cache; BLIS simulates text serving"
+  },
+  {
+   "id": "metric_family:vllm:mm_cache_queries",
+   "category": "metric_family",
+   "name": "vllm:mm_cache_queries",
+   "site": "vllm/v1/metrics/loggers.py:714",
+   "manifest_class": "unavailable",
+   "status": "out_of_scope",
+   "reason": "no_priced_work",
+   "citation": "vllm/v1/metrics/loggers.py:713-735@5df63a72",
+   "why": "the multimodal processor cache; BLIS simulates text serving"
+  },
+  {
+   "id": "metric_family:vllm:mooncake_store_operation_bytes_total",
+   "category": "metric_family",
+   "name": "vllm:mooncake_store_operation_bytes_total",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/metrics.py:148",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+  },
+  {
+   "id": "metric_family:vllm:mooncake_store_operation_failed_keys_total",
+   "category": "metric_family",
+   "name": "vllm:mooncake_store_operation_failed_keys_total",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/metrics.py:153",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+  },
+  {
+   "id": "metric_family:vllm:mooncake_store_operation_keys_total",
+   "category": "metric_family",
+   "name": "vllm:mooncake_store_operation_keys_total",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/metrics.py:143",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+  },
+  {
+   "id": "metric_family:vllm:mooncake_store_operation_time_seconds",
+   "category": "metric_family",
+   "name": "vllm:mooncake_store_operation_time_seconds",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/metrics.py:116",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+  },
+  {
+   "id": "metric_family:vllm:mooncake_store_operation_total",
+   "category": "metric_family",
+   "name": "vllm:mooncake_store_operation_total",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/metrics.py:138",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+  },
+  {
+   "id": "metric_family:vllm:nixl_bytes_transferred",
+   "category": "metric_family",
+   "name": "vllm:nixl_bytes_transferred",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:209",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:nixl_num_descriptors",
+   "category": "metric_family",
+   "name": "vllm:nixl_num_descriptors",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:234",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:nixl_num_failed_notifications",
+   "category": "metric_family",
+   "name": "vllm:nixl_num_failed_notifications",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:255",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:nixl_num_failed_transfers",
+   "category": "metric_family",
+   "name": "vllm:nixl_num_failed_transfers",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:244",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:nixl_num_kv_expired_reqs",
+   "category": "metric_family",
+   "name": "vllm:nixl_num_kv_expired_reqs",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:266",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:nixl_num_notifications_after_expiry",
+   "category": "metric_family",
+   "name": "vllm:nixl_num_notifications_after_expiry",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:276",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:nixl_post_time_seconds",
+   "category": "metric_family",
+   "name": "vllm:nixl_post_time_seconds",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:197",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:nixl_xfer_time_seconds",
+   "category": "metric_family",
+   "name": "vllm:nixl_xfer_time_seconds",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:188",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:num_preemptions",
+   "category": "metric_family",
+   "name": "vllm:num_preemptions",
+   "site": "vllm/v1/metrics/loggers.py:739",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:num_requests_kv_fetch_by_stage",
+   "category": "metric_family",
+   "name": "vllm:num_requests_kv_fetch_by_stage",
+   "site": "vllm/v1/metrics/loggers.py:573",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/25"
+  },
+  {
+   "id": "metric_family:vllm:num_requests_running",
+   "category": "metric_family",
+   "name": "vllm:num_requests_running",
+   "site": "vllm/v1/metrics/loggers.py:528",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:num_requests_waiting",
+   "category": "metric_family",
+   "name": "vllm:num_requests_waiting",
+   "site": "vllm/v1/metrics/loggers.py:538",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:num_requests_waiting_by_reason",
+   "category": "metric_family",
+   "name": "vllm:num_requests_waiting_by_reason",
+   "site": "vllm/v1/metrics/loggers.py:548",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:prefix_cache_hits",
+   "category": "metric_family",
+   "name": "vllm:prefix_cache_hits",
+   "site": "vllm/v1/metrics/loggers.py:673",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:prefix_cache_queries",
+   "category": "metric_family",
+   "name": "vllm:prefix_cache_queries",
+   "site": "vllm/v1/metrics/loggers.py:662",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:prompt_tokens",
+   "category": "metric_family",
+   "name": "vllm:prompt_tokens",
+   "site": "vllm/v1/metrics/loggers.py:748",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:prompt_tokens_by_source",
+   "category": "metric_family",
+   "name": "vllm:prompt_tokens_by_source",
+   "site": "vllm/v1/metrics/loggers.py:758",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:prompt_tokens_cached",
+   "category": "metric_family",
+   "name": "vllm:prompt_tokens_cached",
+   "site": "vllm/v1/metrics/loggers.py:773",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:prompt_tokens_cached_by_source",
+   "category": "metric_family",
+   "name": "vllm:prompt_tokens_cached_by_source",
+   "site": "vllm/v1/metrics/loggers.py:782",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:request_decode_time_seconds",
+   "category": "metric_family",
+   "name": "vllm:request_decode_time_seconds",
+   "site": "vllm/v1/metrics/loggers.py:1001",
+   "manifest_class": "derived",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:request_generation_tokens",
+   "category": "metric_family",
+   "name": "vllm:request_generation_tokens",
+   "site": "vllm/v1/metrics/loggers.py:875",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:request_inference_time_seconds",
+   "category": "metric_family",
+   "name": "vllm:request_inference_time_seconds",
+   "site": "vllm/v1/metrics/loggers.py:981",
+   "manifest_class": "derived",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:request_max_num_generation_tokens",
+   "category": "metric_family",
+   "name": "vllm:request_max_num_generation_tokens",
+   "site": "vllm/v1/metrics/loggers.py:898",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:request_num_preemptions",
+   "category": "metric_family",
+   "name": "vllm:request_num_preemptions",
+   "site": "vllm/v1/metrics/loggers.py:1011",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:request_params_max_tokens",
+   "category": "metric_family",
+   "name": "vllm:request_params_max_tokens",
+   "site": "vllm/v1/metrics/loggers.py:918",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:request_params_n",
+   "category": "metric_family",
+   "name": "vllm:request_params_n",
+   "site": "vllm/v1/metrics/loggers.py:908",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:request_prefill_kv_computed_tokens",
+   "category": "metric_family",
+   "name": "vllm:request_prefill_kv_computed_tokens",
+   "site": "vllm/v1/metrics/loggers.py:1021",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:request_prefill_time_seconds",
+   "category": "metric_family",
+   "name": "vllm:request_prefill_time_seconds",
+   "site": "vllm/v1/metrics/loggers.py:991",
+   "manifest_class": "derived",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:request_prompt_tokens",
+   "category": "metric_family",
+   "name": "vllm:request_prompt_tokens",
+   "site": "vllm/v1/metrics/loggers.py:865",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:request_queue_time_seconds",
+   "category": "metric_family",
+   "name": "vllm:request_queue_time_seconds",
+   "site": "vllm/v1/metrics/loggers.py:971",
+   "manifest_class": "derived",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:request_success",
+   "category": "metric_family",
+   "name": "vllm:request_success",
+   "site": "vllm/v1/metrics/loggers.py:809",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:request_time_per_output_token_seconds",
+   "category": "metric_family",
+   "name": "vllm:request_time_per_output_token_seconds",
+   "site": "vllm/v1/metrics/loggers.py:951",
+   "manifest_class": "derived",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:rl_weight_update_operation_duration_seconds",
+   "category": "metric_family",
+   "name": "vllm:rl_weight_update_operation_duration_seconds",
+   "site": "vllm/entrypoints/rl/online/metrics.py:19",
+   "manifest_class": "unavailable",
+   "status": "out_of_scope",
+   "reason": "no_priced_work",
+   "citation": "vllm/entrypoints/rl/online/metrics.py:19-31@5df63a72",
+   "why": "an RL trainer's weight-update endpoint, which no served request calls"
+  },
+  {
+   "id": "metric_family:vllm:rl_weight_update_operations_in_flight",
+   "category": "metric_family",
+   "name": "vllm:rl_weight_update_operations_in_flight",
+   "site": "vllm/entrypoints/rl/online/metrics.py:26",
+   "manifest_class": "unavailable",
+   "status": "out_of_scope",
+   "reason": "no_priced_work",
+   "citation": "vllm/entrypoints/rl/online/metrics.py:19-31@5df63a72",
+   "why": "an RL trainer's weight-update endpoint, which no served request calls"
+  },
+  {
+   "id": "metric_family:vllm:simple_kv_offload_info",
+   "category": "metric_family",
+   "name": "vllm:simple_kv_offload_info",
+   "site": "vllm/v1/simple_kv_offload/metrics.py:226",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+  },
+  {
+   "id": "metric_family:vllm:simple_kv_offload_load_blocks_total",
+   "category": "metric_family",
+   "name": "vllm:simple_kv_offload_load_blocks_total",
+   "site": "vllm/v1/simple_kv_offload/metrics.py:195",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+  },
+  {
+   "id": "metric_family:vllm:simple_kv_offload_pending_store_blocks",
+   "category": "metric_family",
+   "name": "vllm:simple_kv_offload_pending_store_blocks",
+   "site": "vllm/v1/simple_kv_offload/metrics.py:215",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+  },
+  {
+   "id": "metric_family:vllm:simple_kv_offload_save_outcomes_total",
+   "category": "metric_family",
+   "name": "vllm:simple_kv_offload_save_outcomes_total",
+   "site": "vllm/v1/simple_kv_offload/metrics.py:186",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+  },
+  {
+   "id": "metric_family:vllm:simple_kv_offload_used_blocks",
+   "category": "metric_family",
+   "name": "vllm:simple_kv_offload_used_blocks",
+   "site": "vllm/v1/simple_kv_offload/metrics.py:204",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+  },
+  {
+   "id": "metric_family:vllm:sleep_mode_operation_duration_seconds",
+   "category": "metric_family",
+   "name": "vllm:sleep_mode_operation_duration_seconds",
+   "site": "vllm/entrypoints/serve/dev/sleep/metrics.py:21",
+   "manifest_class": "unavailable",
+   "status": "out_of_scope",
+   "reason": "no_priced_work",
+   "citation": "vllm/entrypoints/serve/dev/sleep/metrics.py:21-33@5df63a72",
+   "why": "an operator's sleep-mode endpoint, which no served request calls"
+  },
+  {
+   "id": "metric_family:vllm:sleep_mode_operations_in_flight",
+   "category": "metric_family",
+   "name": "vllm:sleep_mode_operations_in_flight",
+   "site": "vllm/entrypoints/serve/dev/sleep/metrics.py:28",
+   "manifest_class": "unavailable",
+   "status": "out_of_scope",
+   "reason": "no_priced_work",
+   "citation": "vllm/entrypoints/serve/dev/sleep/metrics.py:21-33@5df63a72",
+   "why": "an operator's sleep-mode endpoint, which no served request calls"
+  },
+  {
+   "id": "metric_family:vllm:spec_decode_num_accepted_tokens",
+   "category": "metric_family",
+   "name": "vllm:spec_decode_num_accepted_tokens",
+   "site": "vllm/v1/spec_decode/metrics.py:231",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/spec-draft-model.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:spec_decode_num_accepted_tokens_per_pos",
+   "category": "metric_family",
+   "name": "vllm:spec_decode_num_accepted_tokens_per_pos",
+   "site": "vllm/v1/spec_decode/metrics.py:255",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/spec-draft-model.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:spec_decode_num_draft_tokens",
+   "category": "metric_family",
+   "name": "vllm:spec_decode_num_draft_tokens",
+   "site": "vllm/v1/spec_decode/metrics.py:230",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/spec-draft-model.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:spec_decode_num_drafts",
+   "category": "metric_family",
+   "name": "vllm:spec_decode_num_drafts",
+   "site": "vllm/v1/spec_decode/metrics.py:229",
+   "manifest_class": "exact",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/spec-draft-model.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:time_to_first_token_seconds",
+   "category": "metric_family",
+   "name": "vllm:time_to_first_token_seconds",
+   "site": "vllm/v1/metrics/loggers.py:931",
+   "manifest_class": "derived",
+   "status": "modelled",
+   "evidence": [
+    "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
+    "docs/metrics-manifest.json"
+   ]
+  },
+  {
+   "id": "metric_family:vllm:tool_call_parser_invocations_total",
+   "category": "metric_family",
+   "name": "vllm:tool_call_parser_invocations_total",
+   "site": "vllm/parser/metrics.py:38",
+   "manifest_class": "unavailable",
+   "status": "out_of_scope",
+   "reason": "no_priced_work",
+   "citation": "vllm/parser/metrics.py:38@5df63a72",
+   "why": "response parsing in the API server, after the engine"
+  },
+  {
+   "id": "metric_family:vllm:watermark_requests",
+   "category": "metric_family",
+   "name": "vllm:watermark_requests",
+   "site": "vllm/v1/metrics/loggers.py:644",
+   "manifest_class": "unavailable",
+   "status": "out_of_scope",
+   "reason": "no_priced_work",
+   "citation": "vllm/v1/metrics/loggers.py:643-650@5df63a72",
+   "why": "the watermark status of finished outputs, a property of the sampled text"
+  },
+  {
+   "id": "metric_family:vllm:websocket_connection_duration_seconds",
+   "category": "metric_family",
+   "name": "vllm:websocket_connection_duration_seconds",
+   "site": "vllm/entrypoints/speech_to_text/realtime/metrics.py:34",
+   "manifest_class": "unavailable",
+   "status": "out_of_scope",
+   "reason": "no_priced_work",
+   "citation": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23-39@5df63a72",
+   "why": "the realtime speech-to-text endpoint; BLIS simulates text serving"
+  },
+  {
+   "id": "metric_family:vllm:websocket_connections_active",
+   "category": "metric_family",
+   "name": "vllm:websocket_connections_active",
+   "site": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23",
+   "manifest_class": "unavailable",
+   "status": "out_of_scope",
+   "reason": "no_priced_work",
+   "citation": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23-39@5df63a72",
+   "why": "the realtime speech-to-text endpoint; BLIS simulates text serving"
+  },
+  {
+   "id": "metric_family:vllm:websocket_connections_total",
+   "category": "metric_family",
+   "name": "vllm:websocket_connections_total",
+   "site": "vllm/entrypoints/speech_to_text/realtime/metrics.py:29",
+   "manifest_class": "unavailable",
+   "status": "out_of_scope",
+   "reason": "no_priced_work",
+   "citation": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23-39@5df63a72",
+   "why": "the realtime speech-to-text endpoint; BLIS simulates text serving"
+  }
+ ]
+}

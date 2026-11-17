@@ -34,8 +34,9 @@ case_ "fields.json only"                        "bench go inpackage kerneltests 
 case_ "a harness copy (check_mocks.py)"          "goldens oracle rest" "-" -- oracle/check_mocks.py
 case_ "the harness configuration"               "goldens oracle rest" "-" -- oracle/harness.json
 case_ "a fields generator"                      "metrics" "-" -- fields/gen_fields.py
-case_ "an oracle golden only"                   "bench goldens oracle race rest" "core" -- core/sched/testdata/golden/dashboard-deepseek-v4-pro-layers.json
-case_ "an oracle scenario"                      "goldens oracle race rest" "$EVERY_LEG" -- oracle/scenarios/connector/nixl-d-abort-waiting.json
+case_ "the surface list's status file"           "metrics" "-" -- tools/surface/status.json
+case_ "an oracle golden only"                   "bench goldens metrics oracle race rest" "core" -- core/sched/testdata/golden/dashboard-deepseek-v4-pro-layers.json
+case_ "an oracle scenario"                      "goldens metrics oracle race rest" "$EVERY_LEG" -- oracle/scenarios/connector/nixl-d-abort-waiting.json
 case_ "a rules pack's source"                   "bench go inpackage kerneltests lint oracle packs_v0_32 race race_guard rest" "core $ENGINE $CENSUS" -- rules/v0_32/pack.go
 case_ "a rules pack's test"                     "go lint packs_v0_32 rest" "-" -- rules/v0_32/source_test.go
 case_ "a kernelmodel Go file"                   "go kerneltests lint race race_guard rest" "$ENGINE $CENSUS" -- compat/kernelmodel/acceptance.go
@@ -100,7 +101,7 @@ PY
 		cp -R "$here/../scripts/." .github/scripts/ && cp -R "$here/../shards/." .github/shards/ && cp "$here/../workflows/ci.yml" .github/workflows/ci.yml
 		git add -A; git commit -q --allow-empty -m "base"
 		base="$(git rev-parse HEAD)"
-		for case in "docs/testing.md:-" "core/sched/testdata/golden/dashboard-deepseek-v4-pro-layers.json:goldens oracle race rest"; do
+		for case in "docs/testing.md:-" "core/sched/testdata/golden/dashboard-deepseek-v4-pro-layers.json:goldens metrics oracle race rest"; do
 			f="${case%%:*}"; want="${case#*:}"
 			git checkout -q -B "pr" "$base"; echo "edit" >> "$f"; git add -A; git commit -q -m "pr"
 			git checkout -q -B "merge" "$base"; git merge --no-ff -q pr -m "merge"
