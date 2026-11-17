@@ -1,0 +1,1719 @@
+{
+ "upstream": "SGLang v0.5.23 297e54fd105e974cdf401e5b4d20253a22c16f90",
+ "families": [
+  {
+   "name": "sglang:backup_bandwidth",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2334",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:backup_pgs",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2318",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:backuped_tokens_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2219",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:cache_hit_rate",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:388",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:cached_tokens_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"cache_source\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1934",
+   "class": "later",
+   "why": "TokenizerManager-side request counters: the engine front end, S16"
+  },
+  {
+   "name": "sglang:context_len",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1337",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:cuda_graph_passes_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"mode\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:737",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:decode_deferred_kv_release_seconds",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:626",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:decode_deferred_kv_release_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"outcome\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:632",
+   "class": "later",
+   "why": "TokenizerManager-side request counters: the engine front end, S16"
+  },
+  {
+   "name": "sglang:decode_sum_seq_lens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:394",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:dp_attention_pairs_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"kind\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1152",
+   "class": "later",
+   "why": "attention data parallelism, S35"
+  },
+  {
+   "name": "sglang:dp_attention_steps_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"rank_state\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1144",
+   "class": "later",
+   "why": "attention data parallelism, S35"
+  },
+  {
+   "name": "sglang:dp_attention_sync_wait_seconds",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1194",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:dp_attention_token_imbalance_ratio",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1167",
+   "class": "later",
+   "why": "attention data parallelism, S35"
+  },
+  {
+   "name": "sglang:dp_attention_tokens_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"kind\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1134",
+   "class": "later",
+   "why": "attention data parallelism, S35"
+  },
+  {
+   "name": "sglang:dp_cooperation_forward_execution_seconds_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"category\", \"num_prefill_ranks\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1125",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:dp_cooperation_realtime_tokens_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"mode\", \"num_prefill_ranks\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1117",
+   "class": "later",
+   "why": "attention data parallelism, S35"
+  },
+  {
+   "name": "sglang:e2e_request_latency_seconds",
+   "type": "histogram",
+   "labels": [
+    "list(labels.keys()) + [\"is_streaming\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2067",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:encoder_cache_entries",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2672",
+   "class": "unavailable",
+   "why": "multimodal encoder disaggregation: no target scenario states it"
+  },
+  {
+   "name": "sglang:encoder_cache_evictions_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"modality\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2661",
+   "class": "unavailable",
+   "why": "multimodal encoder disaggregation: no target scenario states it"
+  },
+  {
+   "name": "sglang:encoder_cache_hit_files_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"modality\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2688",
+   "class": "unavailable",
+   "why": "multimodal encoder disaggregation: no target scenario states it"
+  },
+  {
+   "name": "sglang:encoder_cache_hit_tokens_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"modality\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2678",
+   "class": "unavailable",
+   "why": "multimodal encoder disaggregation: no target scenario states it"
+  },
+  {
+   "name": "sglang:encoder_cache_size_mb",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2666",
+   "class": "unavailable",
+   "why": "multimodal encoder disaggregation: no target scenario states it"
+  },
+  {
+   "name": "sglang:encoder_cache_total_files_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"modality\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2693",
+   "class": "unavailable",
+   "why": "multimodal encoder disaggregation: no target scenario states it"
+  },
+  {
+   "name": "sglang:encoder_cache_total_tokens_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"modality\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2683",
+   "class": "unavailable",
+   "why": "multimodal encoder disaggregation: no target scenario states it"
+  },
+  {
+   "name": "sglang:encoder_dp_pending_requests",
+   "type": "gauge",
+   "labels": [
+    "list(self.labels.keys()) + [\"dp_rank\"]"
+   ],
+   "site": "srt/disaggregation/encoder/runtime.py:466",
+   "class": "unavailable",
+   "why": "multimodal encoder disaggregation: no target scenario states it"
+  },
+  {
+   "name": "sglang:encoder_mm_items_per_batch",
+   "type": "histogram",
+   "labels": [
+    "list(labels.keys()) + [\"modality\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2715",
+   "class": "unavailable",
+   "why": "multimodal encoder disaggregation: no target scenario states it"
+  },
+  {
+   "name": "sglang:encoder_mm_items_per_request",
+   "type": "histogram",
+   "labels": [
+    "list(labels.keys()) + [\"modality\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2743",
+   "class": "unavailable",
+   "why": "multimodal encoder disaggregation: no target scenario states it"
+  },
+  {
+   "name": "sglang:encoder_model_forward_seconds",
+   "type": "histogram",
+   "labels": [
+    "list(labels.keys()) + [\"modality\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2777",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:encoder_preprocess_seconds",
+   "type": "histogram",
+   "labels": [
+    "list(labels.keys()) + [\"modality\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2769",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:encoder_queue_wait_seconds",
+   "type": "histogram",
+   "labels": [
+    "list(labels.keys()) + [\"modality\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2761",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:encoder_request_e2e_latency_seconds",
+   "type": "histogram",
+   "labels": [
+    "list(labels.keys()) + [\"modality\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2751",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:encoder_requests_received_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"modality\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2708",
+   "class": "unavailable",
+   "why": "multimodal encoder disaggregation: no target scenario states it"
+  },
+  {
+   "name": "sglang:encoder_requests_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"modality\", \"status\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2700",
+   "class": "unavailable",
+   "why": "multimodal encoder disaggregation: no target scenario states it"
+  },
+  {
+   "name": "sglang:encoder_transfer_seconds",
+   "type": "histogram",
+   "labels": [
+    "list(labels.keys()) + [\"backend\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2785",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:eplb_balancedness",
+   "type": "summary",
+   "labels": [
+    "list(labels.keys()) + [\"forward_mode\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1026",
+   "class": "later",
+   "why": "expert-parallel load balancing, S36"
+  },
+  {
+   "name": "sglang:eplb_gpu_physical_count",
+   "type": "histogram",
+   "labels": [
+    "{\"layer\"}"
+   ],
+   "site": "srt/observability/metrics_collector.py:2408",
+   "class": "later",
+   "why": "expert-parallel load balancing, S36"
+  },
+  {
+   "name": "sglang:estimated_flops_per_gpu_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1092",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:estimated_read_bytes_per_gpu_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1100",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:estimated_write_bytes_per_gpu_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1108",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:evicted_tokens_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2534",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:eviction_duration_seconds",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2524",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:failed_session_recoveries_total",
+   "type": "counter",
+   "site": "srt/disaggregation/mooncake/conn.py:87",
+   "class": "later",
+   "why": "prefill/decode disaggregation transfers, stages S25-S27"
+  },
+  {
+   "name": "sglang:forward_execution_seconds_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"category\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1054",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:full_token_usage",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:410",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:func_latency_seconds",
+   "type": "histogram",
+   "labels": [
+    "[\"name\"]"
+   ],
+   "site": "srt/observability/func_timer.py:35",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:fwd_occupancy",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:710",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:gen_throughput",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:382",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:generation_tokens_histogram",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1924",
+   "class": "later",
+   "why": "TokenizerManager-side request counters: the engine front end, S16"
+  },
+  {
+   "name": "sglang:generation_tokens_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"is_streaming\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1860",
+   "class": "later",
+   "why": "TokenizerManager-side request counters: the engine front end, S16"
+  },
+  {
+   "name": "sglang:get_loads_duration_seconds",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1946",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:grammar_compilation_time_seconds",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:895",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:grammar_ebnf_size",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:967",
+   "class": "later",
+   "why": "grammar-constrained decoding, blis-sglang#81"
+  },
+  {
+   "name": "sglang:grammar_schema_count",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:939",
+   "class": "later",
+   "why": "grammar-constrained decoding, blis-sglang#81"
+  },
+  {
+   "name": "sglang:grammar_tree_traversal_time_avg",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1009",
+   "class": "later",
+   "why": "grammar-constrained decoding, blis-sglang#81"
+  },
+  {
+   "name": "sglang:grammar_tree_traversal_time_max",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1015",
+   "class": "later",
+   "why": "grammar-constrained decoding, blis-sglang#81"
+  },
+  {
+   "name": "sglang:graph_memory_usage_gb",
+   "type": "gauge",
+   "labels": [
+    "list(labels.keys()) + [\"phase\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1313",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:hicache_backup_bytes_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2571",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:hicache_backup_dropped_tokens_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2275",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:hicache_backup_duration_seconds",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2561",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:hicache_backup_tokens_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"pool\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2595",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:hicache_dropped_tokens_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"reason\", \"pool\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2606",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:hicache_host_mamba_total_states",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:788",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:hicache_host_mamba_used_states",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:782",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:hicache_host_total_tokens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:776",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:hicache_host_used_tokens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:770",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:hicache_prefetch_aux_alloc_failed_tokens_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2285",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:http_requests_active",
+   "type": "gauge",
+   "labels": [
+    "[\"endpoint\", \"method\"]"
+   ],
+   "site": "srt/observability/http_request_metrics.py:40",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:http_requests_total",
+   "type": "counter",
+   "labels": [
+    "[\"endpoint\", \"method\"]"
+   ],
+   "site": "srt/observability/http_request_metrics.py:28",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:http_responses_total",
+   "type": "counter",
+   "labels": [
+    "[\"endpoint\", \"status_code\", \"method\"]"
+   ],
+   "site": "srt/observability/http_request_metrics.py:34",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:inter_token_latency_seconds",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2050",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:is_cuda_graph",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:731",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:kv_available_tokens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:438",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:kv_cache_memory_usage_gb",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1307",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:kv_evictable_tokens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:444",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:kv_transfer_alloc_ms",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:688",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:kv_transfer_bootstrap_ms",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:682",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:kv_transfer_latency_ms",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:643",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:kv_transfer_speed_gb_s",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:637",
+   "class": "later",
+   "why": "prefill/decode disaggregation transfers, stages S25-S27"
+  },
+  {
+   "name": "sglang:kv_transfer_total_mb",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:694",
+   "class": "later",
+   "why": "prefill/decode disaggregation transfers, stages S25-S27"
+  },
+  {
+   "name": "sglang:kv_used_tokens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:450",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:load_back_bytes_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2583",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:load_back_duration_seconds",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2543",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:load_back_tokens_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"pool\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2552",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:lora_pool_slots_total",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:753",
+   "class": "later",
+   "why": "LoRA, blis-sglang#80"
+  },
+  {
+   "name": "sglang:lora_pool_slots_used",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:747",
+   "class": "later",
+   "why": "LoRA, blis-sglang#80"
+  },
+  {
+   "name": "sglang:lora_pool_utilization",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:759",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:mamba_available_tokens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:474",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:mamba_evictable_tokens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:480",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:mamba_usage",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:422",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:mamba_used_tokens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:486",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:max_running_requests_under_SLO",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1319",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:max_total_num_tokens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1289",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:max_total_num_tokens_swa",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1295",
+   "class": "later",
+   "why": "hybrid sliding-window pools, S40"
+  },
+  {
+   "name": "sglang:new_token_ratio",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:720",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:num_aborted_requests_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1959",
+   "class": "later",
+   "why": "TokenizerManager-side request counters: the engine front end, S16"
+  },
+  {
+   "name": "sglang:num_bootstrap_failed_reqs_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:667",
+   "class": "later",
+   "why": "prefill/decode disaggregation transfers, stages S25-S27"
+  },
+  {
+   "name": "sglang:num_decode_deferred_kv_release_reqs",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:617",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:num_decode_host_receive_queue_reqs",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:606",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:num_decode_host_receive_reqs_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:612",
+   "class": "later",
+   "why": "prefill/decode disaggregation transfers, stages S25-S27"
+  },
+  {
+   "name": "sglang:num_decode_prealloc_queue_reqs",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:594",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:num_decode_transfer_queue_reqs",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:600",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:num_grammar_aborted_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:924",
+   "class": "later",
+   "why": "grammar-constrained decoding, blis-sglang#81"
+  },
+  {
+   "name": "sglang:num_grammar_cache_hit_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:919",
+   "class": "later",
+   "why": "grammar-constrained decoding, blis-sglang#81"
+  },
+  {
+   "name": "sglang:num_grammar_queue_reqs",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:376",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:num_grammar_timeout_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:929",
+   "class": "later",
+   "why": "grammar-constrained decoding, blis-sglang#81"
+  },
+  {
+   "name": "sglang:num_grammar_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:934",
+   "class": "later",
+   "why": "grammar-constrained decoding, blis-sglang#81"
+  },
+  {
+   "name": "sglang:num_pages",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1331",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:num_paused_reqs",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:573",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:num_prefill_bootstrap_queue_reqs",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:582",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:num_prefill_inflight_queue_reqs",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:588",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:num_prefill_retries_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:677",
+   "class": "later",
+   "why": "prefill/decode disaggregation transfers, stages S25-S27"
+  },
+  {
+   "name": "sglang:num_queue_reqs",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:370",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:num_requests_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"is_streaming\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1940",
+   "class": "later",
+   "why": "TokenizerManager-side request counters: the engine front end, S16"
+  },
+  {
+   "name": "sglang:num_retracted_input_tokens_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:563",
+   "class": "later",
+   "why": "scheduler counters and distributions not yet ported (listed gap)"
+  },
+  {
+   "name": "sglang:num_retracted_output_tokens_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:568",
+   "class": "later",
+   "why": "scheduler counters and distributions not yet ported (listed gap)"
+  },
+  {
+   "name": "sglang:num_retracted_reqs",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:552",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:num_running_reqs",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:364",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:num_so_requests_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1953",
+   "class": "later",
+   "why": "grammar-constrained decoding, blis-sglang#81"
+  },
+  {
+   "name": "sglang:num_streaming_sessions",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:799",
+   "class": "later",
+   "why": "streaming sessions, blis-sglang#45"
+  },
+  {
+   "name": "sglang:num_transfer_failed_reqs_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:672",
+   "class": "later",
+   "why": "prefill/decode disaggregation transfers, stages S25-S27"
+  },
+  {
+   "name": "sglang:num_unique_running_routing_keys",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:815",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:num_used_tokens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:432",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:page_size",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1325",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:pending_prealloc_token_usage",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:649",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:per_stage_req_latency_seconds",
+   "type": "histogram",
+   "labels": [
+    "list(labels.keys()) + [\"stage\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:884",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:prealloc_full_token_usage",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:655",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:prealloc_swa_token_usage",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:661",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:prefetch_bandwidth",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2325",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:prefetch_pgs",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2311",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:prefetched_tokens_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2212",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:prefill_delayer_outcomes_total",
+   "type": "counter",
+   "labels": [
+    "["
+   ],
+   "site": "srt/observability/metrics_collector.py:1274",
+   "class": "later",
+   "why": "scheduler counters and distributions not yet ported (listed gap)"
+  },
+  {
+   "name": "sglang:prefill_delayer_wait_forward_passes",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1244",
+   "class": "later",
+   "why": "scheduler counters and distributions not yet ported (listed gap)"
+  },
+  {
+   "name": "sglang:prefill_delayer_wait_seconds",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1261",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:prefill_effective_tokens_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"mode\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1040",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:process_cpu_seconds_total",
+   "type": "counter",
+   "labels": [
+    "[\"component\"]"
+   ],
+   "site": "srt/observability/cpu_monitor.py:10",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:prompt_tokens_histogram",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1908",
+   "class": "later",
+   "why": "TokenizerManager-side request counters: the engine front end, S16"
+  },
+  {
+   "name": "sglang:prompt_tokens_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"is_streaming\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1855",
+   "class": "later",
+   "why": "TokenizerManager-side request counters: the engine front end, S16"
+  },
+  {
+   "name": "sglang:queue_time_seconds",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:837",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:realtime_tokens_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"mode\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1032",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:request_time_per_output_token_seconds",
+   "type": "histogram",
+   "labels": [
+    "[*labels.keys(), \"is_streaming\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2057",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:routing_key_all_req_count",
+   "type": "histogram",
+   "labels": [
+    "list(labels.keys())"
+   ],
+   "site": "srt/observability/metrics_collector.py:827",
+   "class": "later",
+   "why": "scheduler counters and distributions not yet ported (listed gap)"
+  },
+  {
+   "name": "sglang:routing_key_running_req_count",
+   "type": "histogram",
+   "labels": [
+    "list(labels.keys())"
+   ],
+   "site": "srt/observability/metrics_collector.py:821",
+   "class": "later",
+   "why": "scheduler counters and distributions not yet ported (listed gap)"
+  },
+  {
+   "name": "sglang:routing_keys_active",
+   "type": "gauge",
+   "site": "srt/observability/http_request_metrics.py:48",
+   "class": "later",
+   "why": "scheduler counters and distributions not yet ported (listed gap)"
+  },
+  {
+   "name": "sglang:scheduler_idle_seconds_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1062",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:scheduler_process_cpu_seconds_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1069",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:scheduler_stage_seconds_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"category\", \"forward_overlap\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1076",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:spec_accept_length",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:511",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:spec_accept_rate",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:517",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:spec_block_accept_length",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:529",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:spec_cap_length",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:523",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:spec_num_draft_tokens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:541",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:spec_num_steps",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:535",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:spec_verify_calls_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1865",
+   "class": "later",
+   "why": "speculative decoding, S30"
+  },
+  {
+   "name": "sglang:startup_available_gpu_memory_gb",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1343",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:startup_cuda_graph_time_seconds",
+   "type": "gauge",
+   "labels": [
+    "[*labels.keys(), \"phase\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1848",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:startup_latency_breakdown_seconds_max",
+   "type": "gauge",
+   "labels": [
+    "[\"context\"]"
+   ],
+   "site": "srt/observability/startup_func_log_and_timer.py:27",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:startup_time_seconds",
+   "type": "gauge",
+   "labels": [
+    "[*labels.keys(), \"phase\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:1842",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:storage_prefetch_deferred_tokens_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"reason\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2264",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:storage_prefetch_hit_tokens_total",
+   "type": "counter",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:2225",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:storage_prefetch_unfulfilled_tokens_total",
+   "type": "counter",
+   "labels": [
+    "list(labels.keys()) + [\"reason\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2232",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "name": "sglang:streaming_session_held_tokens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:805",
+   "class": "later",
+   "why": "streaming sessions, blis-sglang#45"
+  },
+  {
+   "name": "sglang:swa_available_tokens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:456",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:swa_evictable_tokens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:462",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:swa_token_usage",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:416",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:swa_used_tokens",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:468",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:time_to_first_token_seconds",
+   "type": "histogram",
+   "labels": [
+    "[*labels.keys(), \"is_streaming\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:2040",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:token_usage",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:404",
+   "class": "exact",
+   "why": "the scheduler decides it; core/metrics reproduces it"
+  },
+  {
+   "name": "sglang:uncached_prompt_tokens_histogram",
+   "type": "histogram",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1916",
+   "class": "later",
+   "why": "TokenizerManager-side request counters: the engine front end, S16"
+  },
+  {
+   "name": "sglang:utilization",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:704",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "name": "sglang:weight_load_duration_seconds",
+   "type": "gauge",
+   "labels": [
+    "[*labels.keys(), \"source\"]"
+   ],
+   "site": "srt/observability/metrics_collector.py:496",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "name": "sglang:weight_memory_usage_gb",
+   "type": "gauge",
+   "labels": [
+    "labels.keys()"
+   ],
+   "site": "srt/observability/metrics_collector.py:1301",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  }
+ ]
+}
