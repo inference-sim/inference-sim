@@ -19,7 +19,7 @@ func withScheduler(t *testing.T, async *bool, spec *engineconfig.Speculative,
 	e := mustDecode(t, in.Deployment.Pools[0])
 	e.AsyncScheduling, e.Speculative = async, spec
 	setEngine(t, &in.Deployment.Pools[0], e)
-	k := build(t, in)
+	k := vllmBuild(t, in)
 	k.schedPerRequest = perReq
 	return k
 }

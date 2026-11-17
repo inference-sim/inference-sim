@@ -108,7 +108,7 @@ func withEntries(t *testing.T, entries []coefficient.Entry, drop ...string) *Ker
 		in.Coefficients = append(append([]*coefficient.Set{}, in.Coefficients...),
 			&coefficient.Set{Kind: "CoefficientSet", Name: "test-v41", Coefficients: kept})
 	}
-	return build(t, in)
+	return vllmBuild(t, in)
 }
 
 // priceOne prices one of k's target layer kinds, once, over b, returning its per-resource

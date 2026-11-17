@@ -185,7 +185,7 @@ func newKernel(in Inputs) (*Kernel, error) {
 }
 
 // build is New on inputs a test has edited, failing the test on a refusal.
-func build(t testing.TB, in Inputs) *Kernel {
+func vllmBuild(t testing.TB, in Inputs) *Kernel {
 	t.Helper()
 	k, err := newKernel(in)
 	if err != nil {

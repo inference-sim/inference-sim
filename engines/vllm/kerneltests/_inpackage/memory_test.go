@@ -404,7 +404,7 @@ func TestAMixedStepIsOneAttentionLaunchOnFlashAttention(t *testing.T) {
 //     window x 64 FP32 values, whatever the context bound.
 func TestV41EngineBuffersAreChargedAtTheEnginesFigures(t *testing.T) {
 	in := fixtureInputs(t, v41)
-	k := build(t, in)
+	k := vllmBuild(t, in)
 	generic := math.Max(
 		registryValue(t, in, k, "activation_buffer_count_moe_8rank")*8192*5120*2,
 		registryValue(t, in, k, "activation_scratch_floor_bytes"))
@@ -427,7 +427,7 @@ func TestAStatedCaptureSizeIsTheCeiling(t *testing.T) {
 	with := func(edit func(*engineconfig.Engine)) *Kernel {
 		in := fixtureInputs(t, v41)
 		editEngine(t, &in, edit)
-		return build(t, in)
+		return vllmBuild(t, in)
 	}
 	size := 64
 	stated := with(func(e *engineconfig.Engine) { e.MaxCUDAGraphCaptureSize = &size })
@@ -511,7 +511,7 @@ func v41Engine(t *testing.T, entries []coefficient.Entry, seqs, mnbt, capture in
 			&coefficient.Set{Kind: "CoefficientSet", Name: "test-capture", Coefficients: entries})
 	}
 	setEngine(t, &in.Deployment.Pools[0], e)
-	return build(t, in)
+	return vllmBuild(t, in)
 }
 
 // THE UNIFORM-DECODE CEILING IS vLLM's. Each capture size is rounded up to a multiple of
@@ -546,7 +546,7 @@ func TestTPScalesOnlyTheShardedWeightsAndTheActivationKey(t *testing.T) {
 		in.Coefficients = append(append([]*coefficient.Set{}, in.Coefficients...),
 			&coefficient.Set{Kind: "CoefficientSet", Name: "test-capture",
 				Coefficients: captureContract()})
-		k := build(t, in)
+		k := vllmBuild(t, in)
 		return k.FixedBytes(), k, in.Model
 	}
 	f4, k4, g := at(4)
@@ -586,7 +586,7 @@ func TestTheDrafterCeilingIsTheLargestRoundedSize(t *testing.T) {
 				e.CUDAGraphMode = mode
 			}
 			setEngine(t, &in.Deployment.Pools[0], e)
-			return build(t, in)
+			return vllmBuild(t, in)
 		}
 		stated, none := at(""), at("NONE")
 		host := func(k *Kernel, n int) time.Duration {
