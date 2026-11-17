@@ -228,13 +228,10 @@ func openPools(scenario string, repos kernelmodel.Repos, kernelOpen bool, top To
 	if err := requireSameKVCacheFormat(scenario, p.Prefill, p.Decode); err != nil {
 		return nil, err
 	}
-	// DP-as-placement expands every pool by one replica factor (the scenario's dp), so
-	// per-pool widths that differ cannot be expressed as a placement.
-	if ps.DataParallel != ds.DataParallel {
-		return nil, fmt.Errorf("scenario %q runs the prefill pool at dp %d and the decode "+
-			"pool at dp %d; one replica factor applies to both pools, so their dp must match",
-			scenario, ps.DataParallel, ds.DataParallel)
-	}
+	// The pools' data-parallel widths may differ: the host counts and places instances by data-parallel group, and
+	// each pool is sized by its own group (Model.GroupCapacity), priced by its own kernel. Nothing in vLLM ties the
+	// prefill engine's --data-parallel-size to the decode engine's; the handoff is per request, from the prefill
+	// instance that computed it to the decode instance the balancer chose (inference-sim/inference-sim#1952).
 	// The simulator's speculative config (draft length, acceptance) is one per run, while each
 	// pool's kernel prices its own draft width. Pools that disagree would advance requests by
 	// one draft length and charge for another.
