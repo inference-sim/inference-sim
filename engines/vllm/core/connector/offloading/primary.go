@@ -19,7 +19,11 @@ func NewCPUPrimary(numChunks int) *CPUPrimary { return &CPUPrimary{m: newCPUMana
 
 // Access is one request's access state in the CPU tier (_RequestCacheAccess and the ReqContext's
 // key positions); the caller keeps one per request.
-type Access struct{ a *reqAccess }
+type Access struct {
+	a     *reqAccess
+	id    string
+	state any
+}
 
 // NewAccess is a request's access state.
 func NewAccess() *Access { return &Access{a: newReqAccess()} }
@@ -90,3 +94,16 @@ func (p *CPUPrimary) OnRequestFinished(a *Access) { p.m.requestFinished(a.a) }
 
 // ResetCache is reset_cache.
 func (p *CPUPrimary) ResetCache() { p.m.resetCache() }
+
+// ReqID is the request's id (ReqContext.req_id).
+func (a *Access) ReqID() string { return a.id }
+
+// State is the per-request value a composing manager keeps with the request (ReqContext's
+// set_state/get_state scratch space, vllm/v1/kv_offload/base.py:98-112@4ba787ec), nil until set.
+func (a *Access) State() any { return a.state }
+
+// SetState sets State.
+func (a *Access) SetState(v any) { a.state = v }
+
+// newAccess is a request's access state, for the request id.
+func newAccess(id string) *Access { return &Access{a: newReqAccess(), id: id} }
