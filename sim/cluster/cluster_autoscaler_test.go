@@ -75,7 +75,7 @@ func autoscalerRun(t *testing.T, ca ClusterAutoscalerConfig) *ClusterSimulator {
 	d.Model = "test-model"
 	d.ModelAutoscalerIntervalUs = 1_000_000
 	d.NodePools = []NodePoolConfig{{Name: "p", GPUType: "A100", GPUsPerNode: 2, InitialNodes: 1, MaxNodes: 2,
-		GPUMemoryGiB: 80, ProvisioningDelay: DelaySpec{Mean: 1_000_000}}}
+		GPUMemoryGiB: 80, ProvisioningDelay: DelaySpec{Mean: 1}}}
 	d.ClusterAutoscaler = ca
 	cs := newTestCluster(d, NewSliceRequestSource(newTestRequests(4)), nil)
 	cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, &scaleUpOnce{}, NewDirectActuator(cs))
