@@ -247,7 +247,7 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 		out.ServedLayout = &plan.WeightLayout{Linear: sw.Linear, LinearScaleElements: sw.LinearScaleElements,
 			RoutedExperts: sw.RoutedExperts, Router: sw.Router, Head: sw.Head, Embedding: sw.Embedding}
 	}
-	served, err := servedDType(g.Global.WeightDType, quantization)
+	served, err := servedDType(g, quantization)
 	if err != nil {
 		return nil, err
 	}
