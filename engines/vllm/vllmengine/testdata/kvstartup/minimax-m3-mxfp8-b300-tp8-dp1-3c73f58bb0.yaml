@@ -1,0 +1,32 @@
+# A scenario of the dashboard's scenario writer for one fit unit's recorded run (counts only are kept of the units).
+kind: Scenario
+name: minimax-m3-mxfp8-b300-tp8-dp1-3c73f58bb0
+engine: {kind: vllm, version: 0.33.0}
+model: minimax-m3-mxfp8
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+cluster: {hardware: b300, gpus_per_node: 8, nodes: 1}
+acceptance:
+  value: {num_spec_tokens: 3, acceptance_length: 2.769}
+---
+kind: Deployment
+name: minimax-m3-mxfp8-b300-tp8-dp1-3c73f58bb0
+pools:
+- role: colocated
+  nodes: 1
+  parallel: {dp: 1, pp: 1, tp: 8}
+  engine:
+    block_size: 128
+    cudagraph_capture_sizes: [1, 2, 4, 8]
+    enable_chunked_prefill: true
+    enable_prefix_caching: false
+    gpu_memory_utilization: 0.9
+    language_model_only: true
+    max_cudagraph_capture_size: 8
+    max_model_len: 9472
+    max_num_batched_tokens: 16384
+    quantization: mxfp8
+    stream_interval: 20
+    compilation_config: {cudagraph_mode: FULL_AND_PIECEWISE}
+    kv_cache_dtype: auto
+    speculative_config: {method: eagle3, num_speculative_tokens: 3, model: minimax-m3-eagle3}
+router: {endpoint_picker_config: vllm-dp-lb.epp.yaml}

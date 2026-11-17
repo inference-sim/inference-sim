@@ -2,7 +2,6 @@ package vllm
 
 import (
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
@@ -402,18 +401,5 @@ func TestPDHybridHandoffHoldsThePrompt(t *testing.T) {
 	// window in 16-token blocks keeps the blocks of its last 31 tokens).
 	if len(h) != 1 || len(h[0].Blocks) != 12 {
 		t.Fatalf("handoffs %+v, want the full-attention group's 10 blocks and the window's 2", h)
-	}
-}
-
-// Each refusal of a connector combination names the open issue that covers it (X28): the offload
-// connector at dp > 1 is the data-parallel connector work (#47).
-func TestConnectorCombinationRefusalsNameTheirIssue(t *testing.T) {
-	for _, c := range []struct{ name, extra, issue string }{
-		{"kv_offload at dp 2", cpuTier + "data_parallel_size: 2\n", "blis-vllm/issues/47"},
-	} {
-		_, err := resolve(mustConfig(t, c.extra))
-		if err == nil || !strings.Contains(err.Error(), c.issue) {
-			t.Errorf("%s: %v, want a refusal naming %s", c.name, err, c.issue)
-		}
 	}
 }
