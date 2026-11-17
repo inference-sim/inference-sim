@@ -594,7 +594,7 @@ func (d *EngineDriver) outcome(b engine.Batch) engine.Outcome {
 		if r == nil || s.Drafts <= 0 {
 			continue
 		}
-		r.acceptCarry += d.cfg.Acceptance * float64(s.Drafts)
+		r.acceptCarry += float64(d.cfg.Acceptance * float64(s.Drafts))
 		n := min(int(r.acceptCarry), s.Drafts)
 		r.acceptCarry -= float64(n)
 		if n > 0 {

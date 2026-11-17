@@ -308,7 +308,7 @@ func maxMinRates(flows []*flowState, caps map[string]float64) []float64 {
 			frozen[i], rates[i] = true, best
 			remaining--
 			for j, l := range f.links {
-				left[l] = max(0, left[l]-best*f.streams[j])
+				left[l] = max(0, left[l]-float64(best*f.streams[j]))
 				count[l] -= f.streams[j]
 			}
 		}

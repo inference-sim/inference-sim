@@ -55,7 +55,7 @@ func requestRows(cs *cluster.ClusterSimulator, m *sim.Metrics) []result.RequestR
 				row.ComputedTokens = max(f.PromptTokens-rm.CachedLocalTokens-rm.CachedExternalTokens, 0)
 			}
 			if rm.GatewayQueueDelay > 0 {
-				us := int64(rm.GatewayQueueDelay*1e3 + 0.5)
+				us := int64(float64(rm.GatewayQueueDelay*1e3) + 0.5)
 				row.GatewayQueueDelayUs = &us
 			}
 			if rec.Fate == sim.FateCompleted {
