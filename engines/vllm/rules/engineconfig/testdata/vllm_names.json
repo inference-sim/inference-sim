@@ -57,6 +57,7 @@
   "enable_dbo": true,
   "enable_eplb": true,
   "enable_prefix_caching": true,
+  "enforce_eager": true,
   "engram_config": true,
   "env": false,
   "eplb_config": true,

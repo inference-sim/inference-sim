@@ -7,6 +7,7 @@ compilation_config:
         - 4
     custom_ops:
         - +rms_norm
+enforce_eager: true
 max_cudagraph_capture_size: 512
 cudagraph_capture_sizes:
     - 1

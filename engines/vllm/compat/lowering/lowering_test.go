@@ -188,6 +188,22 @@ func TestTheLoweringResolvesEverySettingTheKernelPrices(t *testing.T) {
 					t.Errorf("Graphs %q/%q, want graph/eager", l.Plan.Graphs.Decode, l.Plan.Graphs.Other)
 				}
 			}},
+		{"enforce_eager runs no graph, whatever graph mode is stated", dense,
+			vllmsettings.Settings{EnforceEager: true, CUDAGraphMode: "full"},
+			func(t *testing.T, l *plan.Lowered) {
+				if l.Plan.Graphs.Decode != plan.LaunchEager || l.Plan.Graphs.Other != plan.LaunchEager || l.Plan.Graphs.Ceiling != 0 {
+					t.Errorf("Graphs %+v, want no graph", l.Plan.Graphs)
+				}
+				if o, ok := overridden(l, "cudagraph_mode"); !ok || o.Resolved != "NONE" {
+					t.Errorf("cudagraph_mode override %+v (%t), want NONE", o, ok)
+				}
+			}},
+		{"enforce_eager with no graph mode stated runs no graph", dense, vllmsettings.Settings{EnforceEager: true},
+			func(t *testing.T, l *plan.Lowered) {
+				if l.Plan.Graphs.Decode != plan.LaunchEager || l.Plan.Graphs.Other != plan.LaunchEager {
+					t.Errorf("Graphs %+v, want no graph", l.Plan.Graphs)
+				}
+			}},
 		{"DeepEP high-throughput over data parallelism runs no graph", moe,
 			vllmsettings.Settings{All2AllBackend: "deepep_high_throughput"},
 			func(t *testing.T, l *plan.Lowered) {

@@ -49,7 +49,9 @@ type Settings struct {
 	AllReduceBackend       string
 	DisableCustomAllReduce *bool
 
-	CUDAGraphMode           string
+	CUDAGraphMode string
+	// EnforceEager is model_config.enforce_eager: no CUDA graph, whatever CUDAGraphMode states.
+	EnforceEager            bool
 	MaxCUDAGraphCaptureSize *int
 	CUDAGraphCaptureSizes   []int
 
@@ -190,6 +192,7 @@ func Of(e engineconfig.Engine) Settings {
 		AllReduceBackend:        e.AllReduceBackend,
 		DisableCustomAllReduce:  e.DisableCustomAllReduce,
 		CUDAGraphMode:           e.CUDAGraphMode,
+		EnforceEager:            e.EnforceEager,
 		MaxCUDAGraphCaptureSize: e.MaxCUDAGraphCaptureSize,
 		CUDAGraphCaptureSizes:   e.CUDAGraphCaptureSizes,
 		DCPCommBackend:          e.DCPCommBackend,
