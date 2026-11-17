@@ -2501,7 +2501,7 @@
       },
       "estimation": {
         "rule": "leave_unset",
-        "preserves": "the backend vLLM's _resolve_fi_ar_backend picks for the tensor-parallel group (flashinfer_all_reduce.py:143-178@5df63a72). One node: auto picks mnnvl with a trtllm fallback when the multicast workspace cannot be created, and a stated mnnvl picks mnnvl with no fallback, so the two differ on a node without NVSwitch multicast, which the stand-in cannot be told: a stated mnnvl on one node is not exact. Several nodes: auto picks mnnvl without fallback on compute capability 10.0 and up, and turns FlashInfer all-reduce off below it.",
+        "preserves": "the backend vLLM's _resolve_fi_ar_backend picks for the tensor-parallel group (flashinfer_all_reduce.py:143-178@5df63a72). One node: auto picks mnnvl with a trtllm fallback when the multicast workspace cannot be created, and a stated mnnvl picks mnnvl with no fallback, so the two differ on a node without NVSwitch multicast, which the stand-in cannot be told. On compute capability 10.0 and up every node the recorded runs used has NVSwitch multicast (HGX B200 and B300, the GB200 and GB300 NVL72 trays), the fallback is never taken, and a stated mnnvl on one node is exact under that assumption, which the point's estimation text states; on a lower capability it is not exact. Several nodes: auto picks mnnvl without fallback on compute capability 10.0 and up, and turns FlashInfer all-reduce off below it.",
         "valid_when": [
           {
             "value_in": [
@@ -2514,6 +2514,17 @@
             ],
             "tp_group_nodes": {
               "gt": 1
+            },
+            "compute_capability": {
+              "gte": "10.0"
+            }
+          },
+          {
+            "value_in": [
+              "mnnvl"
+            ],
+            "tp_group_nodes": {
+              "eq": 1
             },
             "compute_capability": {
               "gte": "10.0"

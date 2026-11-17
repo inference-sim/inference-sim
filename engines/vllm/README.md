@@ -146,7 +146,7 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
     variable gives the same engine path for the values recorded runs state (the harness that writes the
     stand-in checks that, and names the field and the recorded value on the point): `VLLM_FLASHINFER_ALLREDUCE_BACKEND`
     (#80; `mnnvl` stated across nodes on compute capability 10.0 and up is what vLLM resolves `auto` to; stated on one node it
-    is not, because `auto` there allows a trtllm fallback and a stated `mnnvl` does not,
+    is not, because `auto` there allows a trtllm fallback and a stated `mnnvl` does not, except on compute capability 10.0 and up, where every node has NVSwitch multicast, the fallback is never taken and the stand-in is exact under that assumption,
     `flashinfer_all_reduce.py:143-178@5df63a72`, and every tensor-parallel all-reduce is priced from the NCCL sweep),
     `NCCL_CUMEM_ENABLE` (#62; stated `1` is NCCL's own autodetected choice since 2.19) and `NCCL_NVLS_ENABLE` (#62; stated `1` or `2` is NCCL's default, `1` only making a failed NVLS allocation fatal; `0` is refused as a stand-in), neither read by vLLM's serving process, `UCX_RCACHE_MAX_UNRELEASED` (#62; vLLM sets 1024 itself, `nixl_utils.py:20-36@5df63a72`) and `UCX_TLS` (#62; the engine
     prices a handoff between nodes over the NIC unless `UCX_CUDA_IPC_ENABLE_MNNVL=y` is stated, which is the path a list of
