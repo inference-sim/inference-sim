@@ -55,6 +55,13 @@ type Pack struct {
 	// releases, vllm/config/parallel.py).
 	DefaultAll2AllBackend string
 	All2AllBackendRenames map[string]string
+	// SelfCommunicatingMoEBackends are the MoE backends that dispatch and combine tokens inside
+	// their own kernels (the FlashInfer MoE-EP megakernels), which the engine binds to
+	// all2all_backend passthrough when the backend is left at its default
+	// (bind_passthrough_all2all_backend, vllm/config/kernel.py:194-227@4ba787ec). Empty for a
+	// release without the binding: M3 models v0.33.0 only, and v0.31.0 and v0.32.0 name the FlashInfer
+	// MoE-EP backends differently.
+	SelfCommunicatingMoEBackends map[string]bool
 
 	// CacheDTypeResolutions say, per architecture, which cache dtype runs when the
 	// deployment requests one the attention backend resolves for itself, by compute
@@ -180,6 +187,24 @@ func (p *Pack) EffectiveAll2AllBackend(backend string) string {
 		return to
 	}
 	return backend
+}
+
+// ResolvedAll2AllBackend is the all-to-all backend the engine runs for a stated backend beside a
+// stated MoE backend: EffectiveAll2AllBackend, except that a default backend beside a
+// self-communicating MoE backend is bound to passthrough, which runs no framework all-to-all.
+func (p *Pack) ResolvedAll2AllBackend(backend, moeBackend string) string {
+	eff := p.EffectiveAll2AllBackend(backend)
+	if eff == p.DefaultAll2AllBackend && p.SelfCommunicatingMoEBackends[NormalizeMoEBackend(moeBackend)] {
+		return "passthrough"
+	}
+	return eff
+}
+
+// SelfCommunicatingMoEBackend reports whether an MoE backend dispatches and combines tokens inside
+// its own kernels (the binding to passthrough), and whether this release has the binding at all. A
+// release modelled by v0.33.0 alone has it; v0.31.0 and v0.32.0 do not model it.
+func (p *Pack) SelfCommunicatingMoEBackend(moeBackend string) (self, known bool) {
+	return p.SelfCommunicatingMoEBackends[NormalizeMoEBackend(moeBackend)], len(p.SelfCommunicatingMoEBackends) > 0
 }
 
 // NormalizeMoEBackend spells a --moe-backend value as the engine does before validating

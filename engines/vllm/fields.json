@@ -956,7 +956,7 @@
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#75"
+        "issue": "inference-sim/blis-vllm#264"
       },
       "estimation": {
         "rule": "none"
@@ -5277,7 +5277,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#75"
+        "issue": "inference-sim/blis-vllm#264"
       },
       "estimation": {
         "rule": "none",

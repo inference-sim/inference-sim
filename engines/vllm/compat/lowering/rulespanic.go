@@ -142,3 +142,22 @@ func (r panicTagged) ResolveDPLoadBalancing(pl deployment.Parallelism) deploymen
 	defer tag()
 	return r.EngineRules.ResolveDPLoadBalancing(pl)
 }
+
+// ResolvedAll2AllBackend is not part of subrules.EngineRules: a pack that binds a default
+// all2all_backend to passthrough beside a self-communicating MoE backend offers it, and the
+// wrapper passes it on (resolvedAll2AllBackend falls back to EffectiveAll2AllBackend otherwise).
+func (r panicTagged) ResolvedAll2AllBackend(backend, moeBackend string) string {
+	defer tag()
+	return resolvedAll2AllBackend(r.EngineRules, backend, moeBackend)
+}
+
+// SelfCommunicatingMoEBackend is likewise offered by a pack that knows the binding.
+func (r panicTagged) SelfCommunicatingMoEBackend(moeBackend string) (self, known bool) {
+	defer tag()
+	if b, ok := r.EngineRules.(interface {
+		SelfCommunicatingMoEBackend(string) (bool, bool)
+	}); ok {
+		return b.SelfCommunicatingMoEBackend(moeBackend)
+	}
+	return false, false
+}
