@@ -325,6 +325,12 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		{"more length-capped than completed", func(r *Result) { r.Requests.LengthCapped = 3; r.RequestRows = nil }, "requests.length_capped", "completed"},
 
 		// request rows
+		{"negative planned count", func(r *Result) { r.Requests.PlannedNotIssued = -1 }, "requests.planned_not_issued", "negative"},
+		{"planned rounds without rows", func(r *Result) { r.Requests.PlannedNotIssued = 2 }, "request_rows", "one per planned round never issued"},
+		{"planned count disagrees with the not_started rows", func(r *Result) {
+			r.Requests.PlannedNotIssued = 1
+			r.RequestRows = append(r.RequestRows, RequestRow{ID: "session_s_round_1_unissued", Fate: FateInFlightAtHorizon, PromptTokens: 4})
+		}, "request_rows", "fate not_started"},
 		{"rows short of generated", func(r *Result) {
 			r.RequestRows = r.RequestRows[:3]
 		}, "request_rows", "one row per generated request"},
@@ -699,5 +705,15 @@ func TestAPropertyBorrowedAcrossSettingsValidates(t *testing.T) {
 	r.Input.WorkloadProperties = []WorkloadProperty{borrowed("same_drafter_other_settings", []string{"rejection"}, "", "s a")}
 	if p := r.Validate(); p.OK() || !strings.Contains(p.Error(), "differed[0]") {
 		t.Errorf("an unknown differed field was accepted: %v", p.Error())
+	}
+}
+
+// A round planned and never issued is outside generated and the fates, and has a not_started row.
+func TestPlannedNotIssuedRoundsHaveRowsOutsideGenerated(t *testing.T) {
+	r := valid()
+	r.Requests.PlannedNotIssued = 1
+	r.RequestRows = append(r.RequestRows, RequestRow{ID: "session_s_round_1_unissued", Fate: FateNotStarted, PromptTokens: 4})
+	if p := r.Validate(); !p.OK() {
+		t.Fatalf("a planned round with its row is refused:\n%s", p.Error())
 	}
 }

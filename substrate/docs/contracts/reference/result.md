@@ -370,13 +370,14 @@ is the generator's own count, and equals the sum of the fates.
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
-| `generated` | integer | yes | Requests the workload created, every planned session round included. |
+| `generated` | integer | yes | Requests the workload issued; the cap on a run counts these. |
+| `planned_not_issued` | integer | no | Session rounds planned and never issued. Not generated and not a fate; each has a request row with fate `not_started`. |
 | `completed` | integer | yes | Finished. |
 | `dropped` | mapping | no | Dropped, by reason: `admission_rejected`, `routing_rejected`, `encode_routing_rejected`, `gateway_queue_rejected`, `gateway_evicted`, `gateway_expired`, `unservable`, `context_overflow`, `decode_kv_unavailable`. Each count positive. |
 | `timed_out` | integer | yes | Cancelled by the client's timeout. |
 | `in_flight_at_horizon` | integer | yes | Running when the run stopped. |
 | `queued_at_horizon` | integer | yes | Waiting when the run stopped. |
-| `not_started` | integer | yes | Planned, such as a later session round, but never issued. |
+| `not_started` | integer | yes | Generated, but its arrival had not happened when the run ended. |
 | `length_capped` | integer | yes | Completed requests that stopped at a length limit. Not a fate. |
 
 ## `request_rows`

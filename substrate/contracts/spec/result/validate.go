@@ -657,7 +657,7 @@ func (q Requests) validate(p *validate.Problems) {
 	for name, v := range map[string]int{
 		"generated": q.Generated, "completed": q.Completed, "timed_out": q.TimedOut,
 		"in_flight_at_horizon": q.InFlightAtHorizon, "queued_at_horizon": q.QueuedAtHorizon,
-		"not_started": q.NotStarted, "length_capped": q.LengthCapped,
+		"not_started": q.NotStarted, "length_capped": q.LengthCapped, "planned_not_issued": q.PlannedNotIssued,
 	} {
 		if v < 0 {
 			p.Field("requests."+name, "must not be negative")
@@ -688,8 +688,9 @@ func (r *Result) validateRows(p *validate.Problems) {
 	if len(rows) == 0 {
 		return
 	}
-	if len(rows) != r.Requests.Generated {
-		p.Field("request_rows", "has %d rows but requests.generated is %d: one row per generated request", len(rows), r.Requests.Generated)
+	if len(rows) != r.Requests.Generated+r.Requests.PlannedNotIssued {
+		p.Field("request_rows", "has %d rows but requests.generated is %d and requests.planned_not_issued %d: one row per generated request, and one per planned round never issued",
+			len(rows), r.Requests.Generated, r.Requests.PlannedNotIssued)
 	}
 	counts := map[Fate]int{}
 	dropped := map[DropReason]int{}
@@ -804,7 +805,7 @@ func (r *Result) validateRows(p *validate.Problems) {
 	}
 	q := r.Requests
 	for f, want := range map[Fate]int{FateCompleted: q.Completed, FateTimedOut: q.TimedOut,
-		FateInFlightAtHorizon: q.InFlightAtHorizon, FateQueuedAtHorizon: q.QueuedAtHorizon, FateNotStarted: q.NotStarted} {
+		FateInFlightAtHorizon: q.InFlightAtHorizon, FateQueuedAtHorizon: q.QueuedAtHorizon, FateNotStarted: q.NotStarted + q.PlannedNotIssued} {
 		if counts[f] != want {
 			p.Field("request_rows", "%d rows have fate %s but requests counts %d", counts[f], f, want)
 		}

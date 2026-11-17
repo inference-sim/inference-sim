@@ -603,10 +603,15 @@ type Figure struct {
 }
 
 // Requests counts each request's fate (DEV-9). Generated is the generator's own count of
-// the requests it created, every round a session planned included; it equals the sum of
-// the fates.
+// the requests it issued; it equals the sum of the fates. A round a session planned and never
+// issued is not a generated request: PlannedNotIssued counts it apart, and it has a request row
+// with the fate not_started.
 type Requests struct {
 	Generated int `yaml:"generated"`
+	// PlannedNotIssued counts the rounds sessions planned and never issued, because the session
+	// ended first by a timeout, a drop, the horizon or a budget. It is not part of Generated or
+	// of the fates; each has a row (inference-sim#2093).
+	PlannedNotIssued int `yaml:"planned_not_issued,omitempty"`
 
 	Completed int `yaml:"completed"`
 	// Dropped counts dropped requests by reason.

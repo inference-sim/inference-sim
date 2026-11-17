@@ -1344,6 +1344,9 @@
         "not_started": {
           "type": "integer"
         },
+        "planned_not_issued": {
+          "type": "integer"
+        },
         "queued_at_horizon": {
           "type": "integer"
         },
