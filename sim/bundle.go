@@ -83,6 +83,8 @@ type AutoscalerBundleConfig struct {
 	ScaleDownStabilizationWindowUs float64              `yaml:"scale_down_stabilization_window_us"`
 	HPAScrapeDelay                 DelayBundleSpec      `yaml:"hpa_scrape_delay"`
 	Analyzer                       AnalyzerBundleConfig `yaml:"analyzer"`
+	// ScaleToZeroIdleUs drains all of a model's replicas after that long without a request (#909); 0 = never.
+	ScaleToZeroIdleUs float64 `yaml:"scale_to_zero_idle_us"`
 }
 
 // removedBundleKeys are the top-level keys a bundle no longer takes, each with what states its

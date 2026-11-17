@@ -46,7 +46,9 @@ type ClusterSimulator struct {
 	routerSender      eventSender
 	kvConnectorSender eventSender
 	autoscalerSender  eventSender
-	instanceSenders   map[InstanceID]*eventSender
+	// lastDemandAt is when each model last had a request arrive (scale to zero, #909).
+	lastDemandAt    map[string]int64
+	instanceSenders map[InstanceID]*eventSender
 	// testSender is the sender of events tests schedule by hand (senderTest).
 	testSender *eventSender
 	// permuteSchedule, set only by the permutation test, gives every queued event a random
