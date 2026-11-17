@@ -544,12 +544,6 @@ func resolve(c Config) (settings, error) {
 	if s.offload, err = checkConnectorPair(s.connector, s.offload); err != nil {
 		return settings{}, err
 	}
-	if s.offload != nil && c.DataParallelSize > 1 {
-		// Each rank would run its own offload connector and CPU tier; the group aggregates a P/D
-		// connector's transfers (DPGroup) but not the offload's jobs, which it routes by request.
-		return settings{}, fmt.Errorf("vllm: kv_offload with data parallelism (dp %d) is not built yet: the "+
-			"data-parallel group does not carry an offload connector's jobs (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/47")
-	}
 	if s.connector != nil && s.connector.Role.producer() && c.DataParallelSize > 1 && c.Placement != nil {
 		// A handoff names no endpoint (engine.Handoff), so the decode side is told only the prefill
 		// instance's first node (engine.Request.Peer). A prefill group whose ranks sit on several nodes
