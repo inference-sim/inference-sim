@@ -107,6 +107,10 @@ type Gateway struct {
 	// kvHeld counts, per instance, the published holdings (tiers) of each block hash, to release
 	// the canonicalizer's pins when the instance's cache is cleared.
 	kvHeld map[cluster.InstanceID]map[string]int
+	// echoed is, per session, the headers the router wrote on the session's earlier responses that the
+	// session plugins read back (the encoded_endpoint_header token): the client resends them on the
+	// session's next request (sessionHeaders).
+	echoed map[string]map[string]string
 	// kvChains maps, per instance, each block hash its engine publishes in the engine's own form to
 	// the prefix chain BLIS keys the block by (chainEvents).
 	kvChains map[cluster.InstanceID]map[string]*engineChain
@@ -245,6 +249,7 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 	g.canon = newPromptCanon(g.rt.seed, int(host.BlockSizeTokens()), capacity)
 	g.kvHeld = map[cluster.InstanceID]map[string]int{}
 	g.kvChains = map[cluster.InstanceID]map[string]*engineChain{}
+	g.echoed = map[string]map[string]string{}
 	g.kvLastDelivery = map[cluster.InstanceID]int64{}
 	for _, inst := range host.Instances() {
 		if err := g.checkPreciseLoRA(inst); err != nil {
@@ -611,6 +616,8 @@ func (g *Gateway) routeRequest(f *flight) embed.Request {
 		Stream:     f.stream,
 		Objective:  f.req.SLOClass,
 		FairnessID: f.req.TenantID,
+		SessionID:  f.req.SessionID,
+		Headers:    g.sessionHeaders(f.req.SessionID),
 	}
 	if f.req.SLOTargetUs > 0 {
 		r.TTFTSLO = time.Duration(f.req.SLOTargetUs) * time.Microsecond
@@ -831,6 +838,7 @@ func (g *Gateway) responseHeaders(f *flight) {
 		ct = "text/event-stream"
 	}
 	headers := f.fl.ResponseHeaders(map[string]string{":status": "200", "content-type": ct})
+	g.keepEchoed(f.req.SessionID, headers)
 	if g.responseHeaderObserved != nil {
 		g.responseHeaderObserved(f.req.ID, headers)
 	}
