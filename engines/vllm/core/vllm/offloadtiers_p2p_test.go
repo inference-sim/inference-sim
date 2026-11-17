@@ -649,3 +649,54 @@ func TestTheSideChannelAddressIsTheEnvironmentsOrTheTiers(t *testing.T) {
 		t.Errorf("a non-numeric VLLM_P2P_MAX_PEERS: %v, want a refusal naming it", err)
 	}
 }
+
+// The tier-poll thread starts each round one tier_poll_interval_s after the last: its loop ends a
+// round with `self._tier_poll_stop.wait(self._tier_poll_interval_s)` (vllm/v1/kv_offload/tiering/
+// manager.py:395@4ba787ec), and Event.wait returns once the timeout has elapsed, so with a round that
+// takes no virtual time the next one is due at exactly last + interval (default 1 ms, manager.py:70).
+// The engine runs a round at the first schedule at or after that instant, and asks to be woken at it.
+//
+// The gate shows only in that wake. A p2p tier is also polled on every step (get_finished_jobs does one
+// _poll_once per step, p2p/manager.py:636-645), and a Schedule makes that sweep whether or not a thread
+// round is due, so the messages and results a call produces are the same either way. What the round
+// decides is when the next one is due: one interval after this one, or, if it was skipped, at the next
+// instant the engine is asked. The oracle drives rounds explicitly (tier_poll_interval_s 0) and the
+// thread's wait has wall-clock jitter, so neither pins the gate; the model takes the earliest instant
+// the wait permits, and this test holds it there to the microsecond from below: a round one microsecond
+// early, or an interval one microsecond long, fails it.
+//
+// One mutant of the gate cannot be caught: a round skipped at its due instant (clock <= nextPoll) is
+// re-armed one interval later by arm(), and the same schedule's step sweep does the round's work, so no
+// message, result or wake differs. That equivalence is the reason the gate needs no further test.
+func TestTheTierPollRoundIsDueExactlyOneIntervalAfterTheLast(t *testing.T) {
+	e := p2pEngine(t, 5711, decoderAt) // the poll interval is vLLM's default, 1 ms
+	if err := e.Add(kvParams(req("d1", 100, 2), fromPrefiller("kv1")), 0); err != nil {
+		t.Fatal(err)
+	}
+	wake := func(now engine.Time) engine.Time {
+		t.Helper()
+		at, ok := e.NextWake(now)
+		if !ok {
+			t.Fatalf("a request waiting on a peer asks for no wake at %d", now)
+		}
+		return at
+	}
+	step := func(at engine.Time) {
+		t.Helper()
+		if _, err := e.Schedule(at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	step(0) // the first round is due at once
+	if got := wake(0); got != 1000 {
+		t.Fatalf("after a round at 0 the next is due at %d, want 1000 (one interval later)", got)
+	}
+	step(999) // 1 us early: no round, so the next stays due at 1000
+	if got := wake(999); got != 1000 {
+		t.Fatalf("a schedule at 999 ran a round that was due at 1000; the next is now due at %d", got)
+	}
+	step(1000) // due: a round runs, and the next is one interval later
+	if got := wake(1000); got != 2000 {
+		t.Fatalf("a schedule at 1000 skipped the round due then; the next wake is %d, want 2000", got)
+	}
+}
