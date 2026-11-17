@@ -76,9 +76,10 @@ func NewPlacementManager(pools []NodePoolConfig, provisionRng, loadingRng *rand.
 		loadingRng:   loadingRng,
 	}
 
-	// Validate and store pools; check for duplicate names and duplicate GPU types.
+	// Validate and store pools; check for duplicate names. Two pools may share a gpu_type:
+	// an instance's cost is resolved from the pool its GPUs sit in (PlacedInstanceCostPerHour,
+	// #1549), never from a lookup by gpu_type.
 	seen := make(map[string]struct{})
-	seenGPUType := make(map[string]string) // gpu_type → first pool name that used it
 	for i := range pools {
 		if err := pools[i].IsValid(); err != nil {
 			panic(fmt.Sprintf("NewPlacementManager: pool[%d]: %v", i, err))
@@ -86,20 +87,7 @@ func NewPlacementManager(pools []NodePoolConfig, provisionRng, loadingRng *rand.
 		if _, dup := seen[pools[i].Name]; dup {
 			panic(fmt.Sprintf("NewPlacementManager: duplicate pool name %q", pools[i].Name))
 		}
-		// #1529: instances are matched to pools by gpu_type (PlaceInstance returns the
-		// matched gpu_type, and the three placement sites resolve cost_per_hour /
-		// gpu_memory_gib by first-match on that type). Two pools sharing a gpu_type but
-		// differing in cost or memory would make that lookup ambiguous — and the new
-		// nodes-spanned × cost_per_hour multiplier would then bill the wrong rate. Reject
-		// the ambiguity up front rather than silently pick the first pool. Making
-		// duplicate gpu_type legal (via pool-identity lookup) is tracked by #1543.
-		if first, dup := seenGPUType[pools[i].GPUType]; dup {
-			panic(fmt.Sprintf("NewPlacementManager: pools %q and %q share gpu_type %q — "+
-				"gpu_type must be unique across pools so cost/capacity resolve unambiguously (#1529)",
-				first, pools[i].Name, pools[i].GPUType))
-		}
 		seen[pools[i].Name] = struct{}{}
-		seenGPUType[pools[i].GPUType] = pools[i].Name
 		pm.pools = append(pm.pools, &nodePoolState{config: pools[i]})
 		pm.nodesByPool[pools[i].Name] = nil
 		pm.nextNodeIdx[pools[i].Name] = 0
@@ -475,6 +463,29 @@ func (pm *PlacementManager) InstanceCostPerHour(gpuIDs []string, poolCostPerHour
 		return 0
 	}
 	return poolCostPerHour * float64(span)
+}
+
+// PlacedInstanceCostPerHour is the hourly cost of an instance holding gpuIDs: distinct nodes
+// spanned × the cost_per_hour of the pool those GPUs belong to (#1549). The pool is read from
+// the GPUs themselves, so two pools that share a gpu_type but differ in price bill each of
+// their instances at their own price. An instance never spans pools (PlaceInstance), so the
+// first GPU names the pool; an unresolvable GPU set returns 0, as InstanceCostPerHour does.
+func (pm *PlacementManager) PlacedInstanceCostPerHour(gpuIDs []string) float64 {
+	if len(gpuIDs) == 0 {
+		return pm.InstanceCostPerHour(gpuIDs, 0)
+	}
+	gpu, ok := pm.gpusByID[gpuIDs[0]]
+	if !ok {
+		return pm.InstanceCostPerHour(gpuIDs, 0)
+	}
+	for _, p := range pm.pools {
+		if p.config.Name == gpu.PoolName {
+			return pm.InstanceCostPerHour(gpuIDs, p.config.CostPerHour)
+		}
+	}
+	logrus.Errorf("[cluster] PlacedInstanceCostPerHour: GPU %q names unknown pool %q — returning 0; "+
+		"this is a placement-path bug", gpu.ID, gpu.PoolName)
+	return 0
 }
 
 // ReleaseInstance returns GPUs allocated to id back to the free pool.

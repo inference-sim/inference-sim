@@ -49,19 +49,11 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 		// Deferred construction: set pool's GPU type (authoritative per SC-003).
 		p.simCfg.GPU = p.gpuType
 
-		// Phase 1C: look up CostPerHour for this GPU type (mirrors cluster.go startup path).
-		var poolCostPerHour float64
-		for i := range cs.config.NodePools {
-			if cs.config.NodePools[i].GPUType == p.gpuType {
-				poolCostPerHour = cs.config.NodePools[i].CostPerHour
-				break
-			}
-		}
 		// Record the instance's node span (mirrors the startup path).
 		cs.recordNodeSpan(p.gpuIDs)
 
-		// #1529: cost = distinct-nodes-spanned × pool cost_per_hour (mirrors startup path).
-		instCost := cs.placement.InstanceCostPerHour(p.gpuIDs, poolCostPerHour)
+		// #1529: cost = distinct-nodes-spanned × the cost_per_hour of the pool the GPUs sit in (mirrors startup path).
+		instCost := cs.placement.PlacedInstanceCostPerHour(p.gpuIDs)
 		if !cs.addLiveInstance(p.id, cs.config.Model, p.simCfg, p.nodeID, p.gpuIDs, p.tpDegree, instCost) {
 			continue // GPU release already handled by addLiveInstance
 		}

@@ -365,8 +365,8 @@ priority:
 # scheduler or preemption is refused.
 
 # Node pool infrastructure (optional; omit for single-pool mode)
-# Every pool's gpu_type must equal the scenario's cluster.hardware, and gpu_type must be
-# unique across pools (#1537). See docs/guide/cluster.md.
+# Every pool's gpu_type must equal the scenario's cluster.hardware. Pools may share a
+# gpu_type (#1549). See docs/guide/cluster.md.
 node_pools:
   - name: "gpu-pool-1"
     gpu_type: "h200"      # must equal the scenario's cluster.hardware
@@ -427,7 +427,7 @@ lora:
 ```
 
 !!! note "Node pools and the scenario's hardware"
-    When `node_pools` are configured (via `--policy-config`), every pool's `gpu_type` must equal the scenario's `cluster.hardware`. KV capacity and step time for every placed instance come from the kernel for the scenario's hardware. `gpu_type` must also be unique across pools (#1537).
+    When `node_pools` are configured (via `--policy-config`), every pool's `gpu_type` must equal the scenario's `cluster.hardware`. KV capacity and step time for every placed instance come from the kernel for the scenario's hardware. Pools may share a `gpu_type`; each instance is billed at the `cost_per_hour` of its own pool (#1549).
 
 ---
 
