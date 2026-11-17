@@ -942,6 +942,13 @@ stack:
   - gdn_moe
   - attn_moe
 modality: text_decoder_of_multimodal
+encoder:
+  towers: []
+  omitted:
+  - modality: image
+    reason: the architecture is absent from vLLM v0.33.0, the release the catalog models, so its tower
+      is not verified against the pinned code
+    issue: inference-sim/blis-substrate#304
 head:
 - op: Elementwise
   role: final_hc_norm_mix

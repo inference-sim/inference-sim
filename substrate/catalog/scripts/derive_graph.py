@@ -8163,6 +8163,9 @@ TOWER_BUILDERS = {
 }
 # Towers the kernels cannot express or the deriver cannot yet state, by architecture.
 UNPRICED_IMAGE_TOWERS = {
+    "Qwen4ExpForConditionalGeneration": ("the architecture is absent from vLLM v0.33.0, the release the catalog "
+                                         "models, so its tower is not verified against the pinned code",
+                                         "inference-sim/blis-substrate#304"),
     "InklingForConditionalGeneration": ("the hmlp tower's layer widths come from a planner that has been read, "
                                         "not run", ENCODER_ISSUES["inkling"]),
 }

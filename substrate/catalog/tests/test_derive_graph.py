@@ -9987,3 +9987,18 @@ def test_a_served_format_does_not_reprice_what_a_partial_checkpoint_left_unquant
     plain = _derived_edited(tmp_path, "qwen3-14b")
     head = next(n for n in plain["head"] if n.get("role") == "lm_head")
     assert _resident_bytes(plain, head, served="fp8") == head["n"] * head["k"]
+
+
+def test_qwen38_tower_is_omitted_by_name_because_the_pinned_release_lacks_its_class():
+    """Qwen3.8's architecture is absent from vLLM v0.33.0, so its tower (which resembles
+    Qwen3.5's) is not priced on that resemblance: it is omitted with its open issue."""
+    for name in ("qwen3.8-flash-next", "qwen3.8-flash-next-fp8"):
+        d = MODELS / name
+        if not (d / "graph.yaml").is_file():
+            pytest.skip(f"{name} is not in this catalog")
+        g = graph_of(d)
+        assert g["encoder"]["towers"] == []
+        [o] = g["encoder"]["omitted"]
+        assert o["modality"] == "image" and "v0.33.0" in o["reason"]
+        assert o["issue"] == "inference-sim/blis-substrate#304"
+        assert g["modality"] == "text_decoder_of_multimodal"
