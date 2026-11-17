@@ -114,6 +114,7 @@ func TestPackRuleSet(t *testing.T) {
 		"moonep-requirements",
 		"offload-spec-known",
 		"quantization-known",
+		"qwen4-exp-qsa-backend",
 		"sequence-parallel-architecture-known",
 		"sequence-parallel-moe-implied",
 		"speculative-method-known",
@@ -1457,5 +1458,41 @@ func TestCUDAGraphModeIsCaseInsensitive(t *testing.T) {
 	d = dep(colocated(pl, engineconfig.Engine{CUDAGraphMode: "none", CUDAGraphCaptureSizes: []int{8, 16}}))
 	if p := run(t, d, graniteGraph()); !strings.Contains(p.Error(), "captures no graph") {
 		t.Errorf("lowercase none should draw the NONE warning for stated sizes:\n%s", p.Error())
+	}
+}
+
+// Qwen4Exp's QSA backend refuses what vLLM v0.33.0 refuses, by rule name, for that architecture
+// only (vllm/models/qwen4_exp/nvidia/qsa.py:188-377).
+func TestQwen4ExpQSABackendRefusals(t *testing.T) {
+	qwen := graniteGraph()
+	qwen.Global.Architecture = "Qwen4ExpForConditionalGeneration"
+	base := deployment.Parallelism{TP: 8, PP: 1, DP: 1}
+	for _, c := range []struct {
+		name string
+		pl   deployment.Parallelism
+		e    engineconfig.Engine
+		bad  bool
+	}{
+		{"defaults", base, engineconfig.Engine{}, false},
+		{"fp8 cache, block 64", base, engineconfig.Engine{BlockSize: 64, CacheDType: "fp8"}, false},
+		{"dcp 2", deployment.Parallelism{TP: 8, PP: 1, DP: 1, DCP: 2}, engineconfig.Engine{}, true},
+		{"pcp 2", deployment.Parallelism{TP: 8, PP: 1, DP: 1, PCP: 2}, engineconfig.Engine{}, true},
+		{"block 24", base, engineconfig.Engine{BlockSize: 24}, true},
+		{"fp8_e5m2 cache", base, engineconfig.Engine{CacheDType: "fp8_e5m2"}, true},
+	} {
+		p := run(t, dep(colocated(c.pl, c.e)), qwen)
+		if got := fired(p, "qwen4-exp-qsa-backend"); got != c.bad {
+			t.Errorf("%s: fired %v, want %v:\n%s", c.name, got, c.bad, p.Error())
+		}
+		// The same settings on another architecture are not this rule's.
+		if p := run(t, dep(colocated(c.pl, c.e)), graniteGraph()); fired(p, "qwen4-exp-qsa-backend") {
+			t.Errorf("%s: fired for an architecture that is not Qwen4Exp", c.name)
+		}
+	}
+	// A KV connector (P/D transfer or offload) is refused too.
+	d := dep(colocated(base, engineconfig.Engine{}))
+	d.Offload = &deployment.Offload{Tiers: []deployment.Tier{{Device: "cpu", Bytes: 1 << 30}}}
+	if p := run(t, d, qwen); !fired(p, "qwen4-exp-qsa-backend") {
+		t.Errorf("an offload connector beside the QSA backend was accepted:\n%s", p.Error())
 	}
 }

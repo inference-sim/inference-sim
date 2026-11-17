@@ -402,6 +402,12 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	if err := checkMuseSparkParallel(architectureOf(in.Model), in.Chip, pool.Parallel); err != nil {
 		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
 	}
+	// A KV connector is the deployment's P/D transfer or its offload tiers.
+	if err := checkQwen4Exp(qsaSettings{Arch: architectureOf(in.Model), TP: pool.Parallel.TP, PP: pool.Parallel.PP,
+		DCP: pool.Parallel.DCP, PCP: pool.Parallel.PCP, BlockSize: engine.BlockSize, CacheDType: engine.CacheDType,
+		KVConnector: in.Deployment.PDTransfer != nil || in.Deployment.Offload != nil}); err != nil {
+		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
+	}
 	settings := vllmsettings.Of(engine)
 	// The quantization vLLM serves is the checkpoint's recipe's, not what --quantization names
 	// (lowerQuantization).
