@@ -1416,7 +1416,7 @@ func tierRate(k kernel.Kernel, tier string, dir kernel.Direction) float64 {
 // cost model itself sizes KV against); every rank on a node reads at once and shares the tier
 // (TierTime's queue depth), and the nodes of a multi-node instance read in parallel, so one
 // node's time is the instance's. At this pin the engine's PoolPlan does not yet state resident
-// weights (blis-latency-kernel#84), so the kernel is the one source; when the plan does, this is
+// weights (https://github.com/inference-sim/blis-latency-kernel/issues/84), so the kernel is the one source; when the plan does, this is
 // the figure to replace. Weights kept in host memory are not in the kernel's figure and are not
 // priced here.
 func weightLoadTime(k kernel.Kernel, gpusPerNode int, tier string, tpDegree int) (time.Duration, error) {
