@@ -150,7 +150,12 @@ type pricer struct {
 }
 
 func (p *pricer) StepTime(b engine.Batch) engine.Duration {
-	kb := kernel.Batch{Reqs: make([]kernel.ReqShape, len(b.Reqs))}
+	// A request that schedules one token is a decode: SGLang's decode pass runs one token per request
+	// (no speculation is modelled, #68), so the kernel counts a request as a prefill only above one.
+	// With the threshold left at zero the kernel prices every decode request through the prefill
+	// attention path (kernel/step.go: `Scheduled > DecodeThreshold`). blis-vllm sets 8 for vLLM's own
+	// classifier (compat/kernelmodel DecodeThreshold); SGLang has no such short-chunk class.
+	kb := kernel.Batch{Reqs: make([]kernel.ReqShape, len(b.Reqs)), DecodeThreshold: 1}
 	decode := len(b.Reqs) > 0
 	for i, r := range b.Reqs {
 		kb.Reqs[i] = kernel.ReqShape{Scheduled: r.Tokens, Computed: r.Computed, PromptLen: r.PromptLen, CachedTokens: r.CachedTokens}

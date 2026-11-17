@@ -113,6 +113,39 @@ func TestTheFactoryRefusesAnotherReleaseAndWhatTheEngineDoesNotModel(t *testing.
 	}
 }
 
+// classifyingKernel prices a batch the way the substrate kernel's step model splits it: a request
+// schedules a prefill chunk when it schedules more tokens than the batch's DecodeThreshold
+// (kernel/step.go), and each such request costs a millisecond more than a decode pass's base 5.
+type classifyingKernel struct{ fakeKernel }
+
+func (c classifyingKernel) StepTime(b kernel.Batch) kernel.StepEstimate {
+	prefills := 0
+	for _, r := range b.Reqs {
+		if r.Computed+r.Scheduled > 0 && r.Scheduled > b.DecodeThreshold {
+			prefills++
+		}
+	}
+	return kernel.StepEstimate{NoOverlap: time.Duration(5+prefills) * time.Millisecond}
+}
+
+// A pass whose requests each schedule one token is a decode pass: the kernel must price it through
+// its decode path, not as sixteen prefill chunks (before the fix the batch carried no decode
+// threshold, so the kernel read every one-token request as a prefill and priced 21 ms, not 5).
+func TestADecodeOnlyPassIsPricedAsDecode(t *testing.T) {
+	p := &pricer{k: classifyingKernel{newHost().k}}
+	var reqs []engine.Scheduled
+	for i := 0; i < 16; i++ {
+		reqs = append(reqs, engine.Scheduled{Tokens: 1, Computed: 4096, PromptLen: 4096})
+	}
+	if got := p.StepTime(engine.Batch{Reqs: reqs}); got != 5000 {
+		t.Errorf("16 one-token requests priced %d us, want 5000 (decode)", got)
+	}
+	chunk := append([]engine.Scheduled{{Tokens: 7, Computed: 0, PromptLen: 7}}, reqs[:3]...)
+	if got := p.StepTime(engine.Batch{Reqs: chunk}); got != 6000 {
+		t.Errorf("a 7-token chunk with 3 decodes priced %d us, want 6000 (one prefill)", got)
+	}
+}
+
 func TestADecodePassIsPaddedToTheCaptureBucketThatHoldsIt(t *testing.T) {
 	h := newHost()
 	p := &pricer{k: h.k, buckets: []int{1, 2, 4, 8}}
