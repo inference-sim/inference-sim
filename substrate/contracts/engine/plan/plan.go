@@ -19,6 +19,7 @@ package plan
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/inference-sim/blis-substrate/contracts/units"
@@ -759,13 +760,12 @@ type DraftPass struct {
 // already here. Its demand is zero bytes, with no link and no floor. A move to or from a tier
 // always carries tokens; Validate refuses an empty one.
 //
-// Two limits, both deferred to M3. A Transfer has one From and one To, so a pool that spans
-// nodes cannot say that every node's workers move their own shard at once
-// (inference-sim/blis-substrate#48): today the engine states the node that holds the tier (the
-// pool's first node when each node holds one), and the cost model prices that one node's link.
-// And a Transfer has one Tokens count, so the blocks each KV cache group moves, which differ
-// in a hybrid model, are not stated (inference-sim/blis-substrate#49): they are lost at this
-// boundary, and the demand is for Tokens at the pool's page size.
+// Two optional fields state what one From and one To and one Tokens cannot (design 6.3). Nodes
+// states a move that every node of a pool makes at once, as an offload job or a pull runs on every
+// worker of a pool that spans nodes: one NodeMove for each node, each moving the move's Tokens for
+// its own node's share of the KV. Groups states the tokens each KV cache group of a hybrid model
+// moves, which differ because a sliding-window group keeps only its window. A move that states
+// neither is one node's move of one count of tokens, as before.
 type Transfer struct {
 	// Tokens moved, and the node and rack at each end: where the bytes leave and where they land.
 	Tokens units.Tokens
@@ -775,6 +775,60 @@ type Transfer struct {
 	Kind TransferKind
 	// Tier names the catalog device for an offload move; "" for a move between pools.
 	Tier string
+	// Nodes, when not nil, is the move as every node of the pool makes it: one entry for each
+	// node whose workers move their own share at the same time. From and To are the first entry.
+	// The cost model prices each entry over its own path and adds the results into one demand
+	// (kernel.Concurrent). Nil is the single move From to To.
+	Nodes *NodeMoves
+	// Groups, when not nil, is the tokens each KV cache group moves, by its index in the plan's
+	// KV. Tokens is the largest count. Nil means Tokens for every group.
+	Groups *GroupMoves
+}
+
+// NodeMoves is the list of a Transfer's Nodes. The lists sit behind pointers so that Transfer stays a
+// comparable type (SUB-1): a nil pointer is a Transfer that states none, which is what every
+// Transfer was before the fields existed. Compare two Transfers with Equal, which compares the
+// lists' contents; == compares the pointers.
+type NodeMoves struct{ Moves []NodeMove }
+
+// GroupMoves is the list of a Transfer's Groups, behind a pointer for the same reason.
+type GroupMoves struct{ Moves []GroupMove }
+
+// NodeList returns the node moves, nil when the transfer states none.
+func (t Transfer) NodeList() []NodeMove {
+	if t.Nodes == nil {
+		return nil
+	}
+	return t.Nodes.Moves
+}
+
+// GroupList returns the group moves, nil when the transfer states none.
+func (t Transfer) GroupList() []GroupMove {
+	if t.Groups == nil {
+		return nil
+	}
+	return t.Groups.Moves
+}
+
+// Equal reports whether two transfers state the same move: the same fields, and node and group
+// lists with the same entries in the same order. A nil list and an empty one are the same.
+func (t Transfer) Equal(u Transfer) bool {
+	return t.Tokens == u.Tokens && t.From == u.From && t.To == u.To && t.Kind == u.Kind && t.Tier == u.Tier &&
+		slices.Equal(t.NodeList(), u.NodeList()) && slices.Equal(t.GroupList(), u.GroupList())
+}
+
+// NodeMove is one node's move within a Transfer that every node of a pool makes: where its bytes
+// leave and where they land, numbered as Transfer.From and To are.
+type NodeMove struct {
+	From Endpoint
+	To   Endpoint
+}
+
+// GroupMove is the tokens one KV cache group moves within a Transfer: Group is the group's index
+// in PoolPlan.KV.
+type GroupMove struct {
+	Group  int
+	Tokens units.Tokens
 }
 
 // Endpoint names where a transfer starts or ends, by node and rack. A transfer within one

@@ -141,3 +141,37 @@ func (d TransferDemand) Check() error {
 	}
 	return nil
 }
+
+// Concurrent adds the demands of moves that run at the same time into one demand: the move of every
+// node of a pool whose workers each move their own share (plan.Transfer.Nodes, design 6.3).
+//
+// Each entry crosses its own links, so a link that two entries name carries both: its Streams
+// are the sum of the entries' streams there, and a link only one entry uses keeps that entry's
+// streams. The payload is the largest entry's, because the move ends when its slowest node ends,
+// and the floor is the largest floor, because the entries run together. The links are in the
+// order they first appear. Every entry that names a link states the same rate for it (a link has
+// one capacity); the smallest stated is kept. Empty demands (a node with nothing to move) add
+// nothing, and Concurrent of no demand is the empty demand.
+func Concurrent(ds ...TransferDemand) TransferDemand {
+	var out TransferDemand
+	at := map[LinkID]int{}
+	for _, d := range ds {
+		if d.Bytes <= 0 && len(d.Links) == 0 {
+			out.Floor = max(out.Floor, d.Floor)
+			continue
+		}
+		out.Bytes = max(out.Bytes, d.Bytes)
+		out.Floor = max(out.Floor, d.Floor)
+		for _, l := range d.Links {
+			i, ok := at[l.Link]
+			if !ok {
+				at[l.Link] = len(out.Links)
+				out.Links = append(out.Links, LinkUse{Link: l.Link, BytesPerSecond: l.BytesPerSecond, Streams: int(l.streams())})
+				continue
+			}
+			out.Links[i].Streams += int(l.streams())
+			out.Links[i].BytesPerSecond = math.Min(out.Links[i].BytesPerSecond, l.BytesPerSecond)
+		}
+	}
+	return out
+}
