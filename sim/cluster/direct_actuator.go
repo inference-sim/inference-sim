@@ -17,6 +17,9 @@ import (
 type DirectActuator struct {
 	cluster     *ClusterSimulator
 	nextInstSeq int // monotonic counter for generating unique instance IDs
+	// drainPolicy is how scale-down drains an instance (InstanceLifecycleConfig.DrainPolicy),
+	// resolved once at construction; WAIT when the config states none (#910).
+	drainPolicy DrainPolicy
 }
 
 // NewDirectActuator constructs a DirectActuator. Panics if cluster is nil.
@@ -24,7 +27,11 @@ func NewDirectActuator(cluster *ClusterSimulator) *DirectActuator {
 	if cluster == nil {
 		panic("NewDirectActuator: cluster must not be nil")
 	}
-	return &DirectActuator{cluster: cluster}
+	name := DrainPolicyName(cluster.config.InstanceLifecycle.DrainPolicy)
+	if name == "" {
+		name = DrainPolicyWait
+	}
+	return &DirectActuator{cluster: cluster, drainPolicy: NewDrainPolicy(name)}
 }
 
 // Apply processes scale decisions. For Delta > 0, places new instances.
@@ -134,8 +141,8 @@ func (a *DirectActuator) scaleDown(d ScaleDecision) error {
 			lastErr = err
 			continue // keep trying remaining iterations (next iteration may find different variant match)
 		}
-		inst.TransitionTo(sim.InstanceStateDraining)
-		logrus.Infof("[actuator] scale-down: draining instance %s for model %q", inst.ID(), d.ModelID)
+		a.drainPolicy.Drain(inst, a.cluster)
+		logrus.Infof("[actuator] scale-down: draining instance %s for model %q (%T)", inst.ID(), d.ModelID, a.drainPolicy)
 	}
 	return lastErr
 }

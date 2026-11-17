@@ -175,32 +175,28 @@ func NewDrainPolicy(name DrainPolicyName) DrainPolicy {
 	}
 }
 
-// drainImmediate terminates the instance immediately.
-// In-flight requests receive no further steps; they complete with whatever progress
-// they have made. New requests are no longer routed to the instance.
+// drainImmediate terminates the instance at once. Every request it holds, waiting or running, is
+// dropped as unservable (the instance's DroppedUnservable counts them, and each request's fate is
+// written, SIM-8); new requests are no longer routed to it, and its GPUs are released.
 type drainImmediate struct{}
 
 func (d *drainImmediate) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	inst.TransitionTo(sim.InstanceStateDraining)
 
-	// C1/I2: Decrement inFlightRequests for all requests that will never complete —
-	// both queued (WaitQ) and in-flight (running batch). Drain the WaitQ so those
-	// requests don't continue processing on the terminated instance.
 	if cs != nil && inst.HasSim() {
-		instID := string(inst.ID())
-		abandoned := inst.QueueDepth() + inst.BatchSize()
-		_ = inst.DrainWaitQueue() // discard queued requests; they won't be re-routed
-		if abandoned > 0 {
-			cs.inFlightRequests[instID] -= abandoned
-			if cs.inFlightRequests[instID] < 0 {
-				cs.inFlightRequests[instID] = 0
-			}
-		}
+		// The drops are counted on the instance, and the cluster's books follow its counters as
+		// they do after any instance event (in-flight decrement, then the drain-completion check
+		// that terminates an empty draining instance and releases its GPUs).
+		before := countersOf(inst)
+		inst.Abandon(cs.clock)
+		cs.afterInstanceEvent(inst, before)
 	}
 
-	inst.TransitionTo(sim.InstanceStateTerminated)
-	if cs != nil {
-		cs.releaseInstanceGPUs(inst)
+	if inst.State != sim.InstanceStateTerminated {
+		inst.TransitionTo(sim.InstanceStateTerminated)
+		if cs != nil {
+			cs.releaseInstanceGPUs(inst)
+		}
 	}
 }
 

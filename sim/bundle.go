@@ -68,6 +68,8 @@ type AnalyzerBundleConfig struct {
 type InstanceLifecycleBundleConfig struct {
 	LoadingDelay              DelayBundleSpec `yaml:"loading_delay"`
 	WarmStartInitialInstances bool            `yaml:"warm_start_initial_instances"`
+	// DrainPolicy is how a scale-down drains an instance (#910): IMMEDIATE, WAIT or REDIRECT. Empty is WAIT.
+	DrainPolicy string `yaml:"drain_policy"`
 }
 
 // AutoscalerBundleConfig holds autoscaler pipeline configuration.

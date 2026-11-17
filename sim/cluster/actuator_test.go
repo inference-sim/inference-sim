@@ -7,6 +7,12 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
+// left reports that a scale-down took inst out of service: Draining while it has work, Terminated
+// at once when it is idle (the default WAIT policy releases an idle instance immediately).
+func left(inst *InstanceSimulator) bool {
+	return inst.State == sim.InstanceStateDraining || inst.State == sim.InstanceStateTerminated
+}
+
 // TestDirectActuatorApply verifies DirectActuator behavior for scale-up and scale-down.
 // T020 from tasks.md — US3 acceptance scenarios 3.2, 3.3.
 func TestDirectActuatorApply(t *testing.T) {
@@ -21,7 +27,7 @@ func TestDirectActuatorApply(t *testing.T) {
 		return inst
 	}
 
-	t.Run("scale_down_transitions_to_draining", func(t *testing.T) {
+	t.Run("scale_down_drains_the_oldest", func(t *testing.T) {
 		// Two active instances for model "m1" with variant A100/TP=1.
 		// Scale-down should drain the lexicographically first (oldest) instance.
 		cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
@@ -38,8 +44,8 @@ func TestDirectActuatorApply(t *testing.T) {
 		}
 
 		// inst-a sorts before inst-b — inst-a should be drained
-		if inst2.State != sim.InstanceStateDraining {
-			t.Errorf("inst-a State = %q, want Draining (oldest by ID)", inst2.State)
+		if left(inst2) != true {
+			t.Errorf("inst-a State = %q, want it drained (oldest by ID)", inst2.State)
 		}
 		if inst1.State != sim.InstanceStateActive {
 			t.Errorf("inst-b State = %q, want Active (not selected)", inst1.State)
@@ -78,8 +84,8 @@ func TestDirectActuatorApply(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Apply returned error: %v", err)
 		}
-		if active.State != sim.InstanceStateDraining {
-			t.Errorf("active inst State = %q, want Draining", active.State)
+		if !left(active) {
+			t.Errorf("active inst State = %q, want it drained", active.State)
 		}
 	})
 
@@ -114,8 +120,8 @@ func TestDirectActuatorApply(t *testing.T) {
 		if err == nil {
 			t.Error("Apply should return error for partial scale-down failure")
 		}
-		if inst.State != sim.InstanceStateDraining {
-			t.Errorf("inst State = %q, want Draining (first iteration should succeed)", inst.State)
+		if !left(inst) {
+			t.Errorf("inst State = %q, want it drained (first iteration should succeed)", inst.State)
 		}
 	})
 
