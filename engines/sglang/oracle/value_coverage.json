@@ -56,10 +56,6 @@
    "kind": "gap",
    "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
   },
-  "config.max_prefill_tokens": {
-   "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
-  },
   "config.need_sort": {
    "kind": "gap",
    "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
@@ -127,6 +123,10 @@
   "resolved.device": {
    "kind": "fixed",
    "reason": "The oracle's base platform is the CPU device (oracle/mocks.json, \"the base platform\")."
+  },
+  "resolved.max_prefill_tokens": {
+   "kind": "gap",
+   "reason": "Only the max_prefill_tokens scenario records this resolved server argument (its record_server_args), and it sets it to 100; a second scenario that records it at another value is added with the others (inference-sim/blis-sglang#32)."
   },
   "sglang_env.SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP": {
    "kind": "gap",
