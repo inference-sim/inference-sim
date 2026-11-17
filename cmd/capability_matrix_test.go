@@ -386,25 +386,6 @@ func capRawCLI(t *testing.T, args ...string) string {
 	return out.String()
 }
 
-// capVariant writes the kernel module's scenario file, edited by each old->new pair, into a fresh
-// directory as variant.yaml.
-func capVariant(t *testing.T, file string, edits ...string) string {
-	t.Helper()
-	scenarios, _, _ := kernelRepos(t)
-	body := readFile(t, filepath.Join(scenarios, file))
-	for i := 0; i+1 < len(edits); i += 2 {
-		if !strings.Contains(body, edits[i]) {
-			t.Fatalf("%s has no %q to edit", file, edits[i])
-		}
-		body = strings.Replace(body, edits[i], edits[i+1], 1)
-	}
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "variant.yaml"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return dir
-}
-
 // pdBase is the committed 3P1D scenario's topology, with dir/file naming the scenario.
 func pdBase(dir, file string) []string {
 	return []string{"--scenarios", dir, "--scenario", file, "--num-instances", "4",

@@ -226,7 +226,9 @@ func rebindsOnceAfterRemoval(t *testing.T, plugin string) {
 			continue
 		}
 		var turn int
-		fmt.Sscanf(r.ID, "s0_t%d", &turn)
+		if _, err := fmt.Sscanf(r.ID, "s0_t%d", &turn); err != nil {
+			t.Fatalf("request %q: its ID does not name a turn: %v", r.ID, err)
+		}
 		if turn > removedAt {
 			after[r.AssignedInstance] = true
 			if r.AssignedInstance == victim {
