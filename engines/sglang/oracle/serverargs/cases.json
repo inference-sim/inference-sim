@@ -1,0 +1,287 @@
+{
+ "description": "Tier-1 default-resolution cases: each is a ServerArgs a target scenario hands SGLang, run through SGLang's own resolution on CPU with the chip's CUDA platform restored (oracle/run_serverargs.py). Chip facts are the device's own reports, each with its source; models are configuration only, at a pinned revision.",
+ "chips": {
+  "H100": {
+   "capability": [
+    9,
+    0
+   ],
+   "device_name": "NVIDIA H100 80GB HBM3",
+   "nvidia_smi_memory_total_mib": 81559,
+   "source": "nvidia-smi memory.total on H100 80GB HBM3, https://thundergolfer.com/blog/nvidia-gpu-memory-capacity; compute capability https://developer.nvidia.com/cuda-gpus"
+  },
+  "H200": {
+   "capability": [
+    9,
+    0
+   ],
+   "device_name": "NVIDIA H200",
+   "nvidia_smi_memory_total_mib": 143771,
+   "source": "nvidia-smi memory.total on H200, https://github.com/NVIDIA/cuda-samples/issues/311; compute capability https://developer.nvidia.com/cuda-gpus"
+  },
+  "B200": {
+   "capability": [
+    10,
+    0
+   ],
+   "device_name": "NVIDIA B200",
+   "nvidia_smi_memory_total_mib": 183359,
+   "source": "nvidia-smi memory.total on B200, https://github.com/NVIDIA/gpu-operator/issues/2155; compute capability https://developer.nvidia.com/cuda-gpus"
+  }
+ },
+ "models": {
+  "qwen2.5-0.5b": {
+   "repo": "Qwen/Qwen2.5-0.5B-Instruct",
+   "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+   "licence": "apache-2.0"
+  },
+  "deepseek-v3": {
+   "repo": "deepseek-ai/DeepSeek-V3",
+   "revision": "e815299b0bcbac849fa540c768ef21845365c9eb",
+   "licence": "deepseek (model card)"
+  },
+  "glm-5.3": {
+   "repo": "zai-org/GLM-5.3",
+   "revision": "ba32f8c19c8738e2c57c71798c601d477a7bf844",
+   "licence": "model card"
+  },
+  "deepseek-v4.1-flash": {
+   "repo": "deepseek-ai/DeepSeek-V4.1-Flash",
+   "revision": "314113f8a7dadb388215396ba5fbee2c610a04d6",
+   "licence": "mit"
+  }
+ },
+ "cases": [
+  {
+   "name": "qwen-h100-defaults",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {}
+  },
+  {
+   "name": "qwen-h200-defaults",
+   "model": "qwen2.5-0.5b",
+   "chip": "H200",
+   "args": {}
+  },
+  {
+   "name": "qwen-b200-defaults",
+   "model": "qwen2.5-0.5b",
+   "chip": "B200",
+   "args": {}
+  },
+  {
+   "name": "qwen-h100-tp2-explicit",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "tp_size": 2,
+    "chunked_prefill_size": 4096,
+    "max_running_requests": 64,
+    "page_size": 16,
+    "schedule_policy": "lpm"
+   }
+  },
+  {
+   "name": "qwen-h100-no-radix",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "disable_radix_cache": true,
+    "schedule_policy": "lpm"
+   }
+  },
+  {
+   "name": "qwen-h100-hicache",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "enable_hierarchical_cache": true
+   }
+  },
+  {
+   "name": "qwen-h100-hicache-file",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "enable_hierarchical_cache": true,
+    "hicache_storage_backend": "file",
+    "hicache_ratio": 3.0
+   }
+  },
+  {
+   "name": "qwen-h100-pd-prefill-nixl",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "disaggregation_mode": "prefill",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "qwen-h100-pd-decode-nixl",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "qwen-h100-pd-decode-nixl-mrr16",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl",
+    "max_running_requests": 16
+   }
+  },
+  {
+   "name": "qwen-h100-mem-fraction",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "mem_fraction_static": 0.7
+   }
+  },
+  {
+   "name": "glm53-h100-tp8",
+   "model": "glm-5.3",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "glm53-h100-tp8-dp8-attn",
+   "model": "glm-5.3",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 8,
+    "enable_dp_attention": true
+   }
+  },
+  {
+   "name": "glm53-h100-tp8-mtp",
+   "model": "glm-5.3",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8,
+    "speculative_algorithm": "EAGLE",
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 1,
+    "speculative_num_draft_tokens": 4
+   }
+  },
+  {
+   "name": "glm53-h100-tp8-nextn",
+   "model": "glm-5.3",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8,
+    "speculative_algorithm": "NEXTN",
+    "speculative_num_steps": 2,
+    "speculative_eagle_topk": 1,
+    "speculative_num_draft_tokens": 4
+   }
+  },
+  {
+   "name": "glm53-h100-tp8-pd-decode",
+   "model": "glm-5.3",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8,
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "dsv3-h200-tp8",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "dsv3-h200-tp8-deepep",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "ep_size": 8,
+    "moe_a2a_backend": "deepep",
+    "dp_size": 8,
+    "enable_dp_attention": true
+   }
+  },
+  {
+   "name": "dsv3-h200-tp8-deepep-tp-attn",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "moe_a2a_backend": "deepep"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-pd-prefill",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "disaggregation_mode": "prefill",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-pd-decode",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-mtp",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "speculative_algorithm": "EAGLE",
+    "speculative_num_steps": 1,
+    "speculative_eagle_topk": 1,
+    "speculative_num_draft_tokens": 2
+   }
+  },
+  {
+   "name": "dsv41-b200-tp8",
+   "model": "deepseek-v4.1-flash",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-hicache",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "enable_hierarchical_cache": true
+   }
+  }
+ ]
+}

@@ -140,6 +140,22 @@ jobs:
         run: python -I oracle/check_peers.py
       - name: the scheduler imports from the pinned checkout in the locked environment
         run: python -I oracle/run_import.py sglang-source
+      # Tier 1: default resolution. Each case of oracle/serverargs/cases.json runs through SGLang's
+      # own ServerArgs(...).resolve_once() on CPU with the case's CUDA chip restored (each
+      # replacement listed in oracle/mocks.json); its models are read as configuration only, at the
+      # revisions cases.json pins. The answers must equal config/testdata/serverargs.json, which the
+      # Go test (config TestResolveAgainstSGLang) compares with config.Resolve field by field.
+      - name: fetch the ServerArgs cases' model configurations at their pinned revisions
+        run: python -I oracle/serverargs/fetch_models.py oracle/serverargs/cases.json serverargs-models
+      - name: resolve every ServerArgs case through SGLang's own pipeline
+        env:
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p oracle-traces
+          python -I oracle/run_serverargs.py sglang-source oracle/serverargs/cases.json serverargs-models > oracle-traces/serverargs.json
+      - name: the committed ServerArgs answers are SGLang's own
+        run: python -I oracle/compare_serverargs.py config/testdata/serverargs.json oracle-traces/serverargs.json
       # Tier 2: every scenario through SGLang's own Scheduler (run_scheduler_process), its event loop
       # unmodified. The runner fails unless every request finishes, the loop ends on the harness's
       # ShutdownReq, every forward pass was launched from SGLang's own event loop at the checkout,
@@ -222,6 +238,8 @@ jobs:
         run: python -W ignore::SyntaxWarning -I fields/gen_fields.py sglang-source fields/status.json --value-classes fields/value_classes.json --check fields.json
       - name: fields/declarations.json is what the generator writes
         run: python -W ignore::SyntaxWarning -I fields/gen_fields.py sglang-source --declarations --check fields/declarations.json
+      - name: config/serverargs_gen.go is what the generator writes
+        run: python -I config/gen_serverargs.py fields/declarations.json --check config/serverargs_gen.go
       - name: fields/value_classes.json is what the generator writes
         run: python -W ignore::SyntaxWarning -I fields/gen_classes.py sglang-source fields.json fields/declarations.json --check fields/value_classes.json
       - name: the generators' tests
