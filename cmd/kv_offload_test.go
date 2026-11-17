@@ -139,11 +139,12 @@ func TestResolveReplayKVOffload(t *testing.T) {
 	})
 }
 
-// runToTraceWithOffload drives runCmd in-process with --kv-offload-config set, writing
+// runToTraceWithOffload drives runCmd in-process over the test scenario with offload, its offload
+// block, inserted, writing
 // a TraceV2 whose header records the resolved offload config. Mirrors the parity
 // harness (runSpecToTraceFiles) plus the one new flag; uses an explicit bandwidth
 // triple in the config so it does not depend on the fixture defaults.yaml device map.
-func runToTraceWithOffload(t *testing.T, offloadPath string, seedVal, horizon int64) (headerFile, dataFile string) {
+func runToTraceWithOffload(t *testing.T, offload string, seedVal, horizon int64) (headerFile, dataFile string) {
 	t.Helper()
 	shape := paritySpecShapes()[0] // chatbot
 	tmpDir := t.TempDir()
@@ -156,15 +157,13 @@ func runToTraceWithOffload(t *testing.T, offloadPath string, seedVal, horizon in
 
 	orig := captureCmdLevelVars()
 	defer orig.restore()
-	origOffload := kvOffloadConfigPath
-	defer func() { kvOffloadConfigPath = origOffload }()
+	scenarios := writeOffloadScenario(t, kernelScenariosDir(t), kernelTestScenario, "", offload)
 
 	traceOutput = tracePrefix
 	workloadSpecPath = specPath
 	workloadType = ""
 	simulationHorizon = horizon
 	seed = seedVal
-	lazyGeneration = false
 	requestTimeoutSecs = 300
 
 	testCmd := &cobra.Command{}
@@ -173,10 +172,10 @@ func runToTraceWithOffload(t *testing.T, offloadPath string, seedVal, horizon in
 	testCmd.Flags().StringVar(&traceOutput, "trace-output", "", "")
 	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	args := []string{
-		"--defaults-filepath", defaultsPath, "--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
+		"--defaults-filepath", defaultsPath, "--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", scenarios, "--registry", kernelRegistryDir(t),
 		"--seed", strconv.FormatInt(seedVal, 10),
 		"--workload-spec", specPath, "--horizon", strconv.FormatInt(horizon, 10),
-		"--trace-output", tracePrefix, "--kv-offload-config", offloadPath,
+		"--trace-output", tracePrefix,
 	}
 	if err := testCmd.ParseFlags(args); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
@@ -185,31 +184,19 @@ func runToTraceWithOffload(t *testing.T, offloadPath string, seedVal, horizon in
 	return tracePrefix + ".yaml", tracePrefix + ".csv"
 }
 
-// T9/BC-G6 end-to-end: a run with a multi-tier --kv-offload-config records the resolved
-// config in the trace header, and replaying that trace reproduces it (header
-// authoritative) without error.
+// T9/BC-G6 end-to-end: a run whose scenario states an offload block records the resolved
+// config in the trace header, and replaying that trace reproduces it (header authoritative)
+// without error. The block states the CPU tier only: the v0.32.0 engine refuses a secondary
+// tier (blis-vllm#63).
 func TestKVOffload_EndToEnd_RunReplayRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	offloadPath := filepath.Join(dir, "offload.yaml")
-	offloadYAML := "kv_offload:\n" +
-		"  cpu_bytes_to_use: 17179869184\n" +
+	offload := "offload:\n" +
+		"  connector: OffloadingConnector\n" +
+		"  spec: TieringOffloadingSpec\n" +
 		"  eviction_policy: lru\n" +
-		"  offload_prompt_only: true\n" +
-		"  secondary_tiers:\n" +
-		"    - type: fs\n" +
-		"      root_dir: /mnt/kv\n" +
-		"      direct_io: true\n" +
-		"      device_class: nvme_gen4\n"
-	if err := os.WriteFile(offloadPath, []byte(offloadYAML), 0644); err != nil {
-		t.Fatal(err)
-	}
-	devices, err := loadCatalogStorageDevices(testData())
-	if err != nil {
-		t.Fatal(err)
-	}
-	nvme := devices["nvme_gen4"]
-
-	headerFile, dataFile := runToTraceWithOffload(t, offloadPath, 20260818, 60_000_000)
+		"  tiers:\n" +
+		"    - tier: cpu_dram\n" +
+		"      bytes: 17179869184\n"
+	headerFile, dataFile := runToTraceWithOffload(t, offload, 20260818, 60_000_000)
 
 	td, err := workload.LoadTraceV2(headerFile, dataFile)
 	if err != nil {
@@ -219,7 +206,7 @@ func TestKVOffload_EndToEnd_RunReplayRoundTrip(t *testing.T) {
 		t.Fatal("run must record kv_offload in the trace header (BC-G6)")
 	}
 	h := td.Header.KVOffload
-	if h.CPUBytesToUse != 17179869184 || h.EvictionPolicy != "lru" || !h.OffloadPromptOnly {
+	if h.CPUBytesToUse != 17179869184 || h.EvictionPolicy != "lru" {
 		t.Errorf("recorded scalars wrong: %+v", h)
 	}
 	// The offload block size defaults to the GPU block size the kernel sized the run with,
@@ -227,10 +214,8 @@ func TestKVOffload_EndToEnd_RunReplayRoundTrip(t *testing.T) {
 	if h.BlockSize <= 0 || h.BlocksPerChunk != 1 || h.TokensPerHash != h.BlockSize {
 		t.Errorf("resolved defaults not recorded: %+v", h)
 	}
-	// The tier records the catalog device it names.
-	if len(h.Tiers) != 1 || h.Tiers[0].DeviceClass != "nvme_gen4" || !h.Tiers[0].DirectIO ||
-		h.Tiers[0].ReadBandwidth != nvme.ReadBandwidth || h.Tiers[0].WriteBandwidth != nvme.WriteBandwidth {
-		t.Errorf("recorded tier %+v, want the catalog's nvme_gen4 %+v", h.Tiers, nvme)
+	if len(h.Tiers) != 0 {
+		t.Errorf("a CPU-only offload block recorded secondary tiers: %+v", h.Tiers)
 	}
 
 	// Replay the trace: the header is authoritative; no flag passed. Must reproduce

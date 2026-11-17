@@ -16,9 +16,13 @@ import (
 // would re-export the kernel's value.
 func TestKVOffload_TheBuildSiteSizesTheBlockAndAReplayKeepsTheHeadersBytes(t *testing.T) {
 	const scenario = "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml"
-	common := []string{"--scenario", scenario, "--seed", "7", "--horizon", "600000000"}
-	_, stderr, err := runKernelCLI(t, append([]string{"run", "--num-requests", "4", "--rate", "4",
-		"--kv-offload-config", writeOffloadYAML(t, "kv_offload:\n  cpu_bytes_to_use: 1024\n")}, common...)...)
+	scenarios, _, _ := kernelRepos(t)
+	cpuTier := func(bytes string) []string {
+		block := "offload:\n  connector: OffloadingConnector\n  spec: CPUOffloadingSpec\n  tiers:\n    - tier: cpu_dram\n      bytes: " + bytes + "\n"
+		return []string{"--scenarios", writeOffloadScenario(t, scenarios, scenario, "", block),
+			"--scenario", scenario, "--seed", "7", "--horizon", "600000000"}
+	}
+	_, stderr, err := runKernelCLI(t, append([]string{"run", "--num-requests", "4", "--rate", "4"}, cpuTier("1024")...)...)
 	if err == nil || !strings.Contains(stderr, "kv_offload: cpu_bytes_to_use (1024) is smaller than one offload chunk") {
 		t.Errorf("a CPU tier smaller than one chunk was not refused: %v\n%s", err, lastLines(stderr, 3))
 	}
@@ -26,8 +30,8 @@ func TestKVOffload_TheBuildSiteSizesTheBlockAndAReplayKeepsTheHeadersBytes(t *te
 	perBlock := regexp.MustCompile(`per_block_bytes: (\d+)`)
 	dir := t.TempDir()
 	run, rerun := filepath.Join(dir, "run"), filepath.Join(dir, "replay")
-	if _, stderr, err := runKernelCLI(t, append([]string{"run", "--num-requests", "20", "--rate", "15", "--trace-output", run,
-		"--kv-offload-config", writeOffloadYAML(t, "kv_offload:\n  cpu_bytes_to_use: 4294967296\n")}, common...)...); err != nil {
+	common := cpuTier("4294967296")
+	if _, stderr, err := runKernelCLI(t, append([]string{"run", "--num-requests", "20", "--rate", "15", "--trace-output", run}, common...)...); err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 3))
 	}
 	header := readFile(t, run+".yaml")

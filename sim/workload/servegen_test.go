@@ -388,7 +388,7 @@ func TestServeGenConversion_HighCVTrace(t *testing.T) {
 		AggregateRate: 22.46,
 		ServeGenData:  &ServeGenDataSpec{Path: dir},
 	}
-	requests, err := GenerateRequests(spec, 1e6, 0)
+	requests, err := generateRequests(spec, 1e6, 0)
 
 	// THEN conversion succeeds despite high CV
 	require.NoError(t, err, "GenerateRequests should succeed with high-CV trace when shape/scale are provided")
@@ -476,7 +476,7 @@ func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 	spec.ServeGenData = nil
 	// Use a 10-second horizon; the time-varying generator uses per-window
 	// distributions from the lifecycle windows.
-	requests, err := GenerateRequests(spec, 10e6, 0)
+	requests, err := generateRequests(spec, 10e6, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -1192,7 +1192,7 @@ func TestGenerateRequests_V1SLOClassNamesAreRefused(t *testing.T) {
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
 			}},
 		}
-		_, err := GenerateRequests(spec, 1_000_000, 20)
+		_, err := generateRequests(spec, 1_000_000, 20)
 		if err == nil {
 			t.Fatalf("slo_class %q: want a refusal, got none", class)
 		}
@@ -1210,7 +1210,7 @@ func TestGenerateRequests_V1SLOClassNamesAreRefused(t *testing.T) {
 			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
 		}},
 	}
-	if _, err := GenerateRequests(spec, 1_000_000, 20); err != nil {
+	if _, err := generateRequests(spec, 1_000_000, 20); err != nil {
 		t.Fatalf("version 1 with slo_class critical: %v", err)
 	}
 }

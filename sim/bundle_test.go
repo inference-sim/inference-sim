@@ -16,7 +16,6 @@ priority:
   policy: slo-based
   slo_priorities:
     critical: 9
-scheduler: priority-fcfs
 `
 	path := writeTempYAML(t, yaml)
 	bundle, err := LoadPolicyBundle(path)
@@ -27,8 +26,25 @@ scheduler: priority-fcfs
 	if bundle.Priority.Policy != "slo-based" {
 		t.Errorf("expected priority policy 'slo-based', got %q", bundle.Priority.Policy)
 	}
-	if bundle.Scheduler != "priority-fcfs" {
-		t.Errorf("expected scheduler 'priority-fcfs', got %q", bundle.Scheduler)
+}
+
+// The scheduler and preemption policy are the engine's, stated in the scenario (#2037): a bundle
+// that still states either is refused with a message naming engine.scheduling_policy.
+func TestLoadPolicyBundle_SchedulerAndPreemptionAreRefusedNamingTheScenarioField(t *testing.T) {
+	for _, c := range []struct{ key, yaml string }{
+		{"scheduler", "scheduler: priority-fcfs\n"},
+		{"preemption", "preemption:\n  policy: priority\n"},
+		{"preemption", "priority:\n  slo_priorities:\n    critical: 9\nscheduler: fcfs\npreemption:\n  policy: fcfs\n"},
+	} {
+		_, err := LoadPolicyBundle(writeTempYAML(t, c.yaml))
+		if err == nil {
+			t.Fatalf("a bundle stating %s was accepted:\n%s", c.key, c.yaml)
+		}
+		for _, want := range []string{c.key + " was removed", "engine.scheduling_policy"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("bundle stating %s: error %q lacks %q", c.key, err, want)
+			}
+		}
 	}
 }
 
@@ -92,8 +108,7 @@ autoscaler:
 
 func TestPolicyBundle_Validate_ValidPolicies(t *testing.T) {
 	bundle := &PolicyBundle{
-		Priority:  PriorityConfig{Policy: "slo-based"},
-		Scheduler: "priority-fcfs",
+		Priority: PriorityConfig{Policy: "slo-based"},
 	}
 	if err := bundle.Validate(); err != nil {
 		t.Errorf("expected no error, got: %v", err)
@@ -107,23 +122,6 @@ func TestPolicyBundle_Validate_EmptyIsValid(t *testing.T) {
 	}
 }
 
-func TestPolicyBundle_Validate_InvalidPolicy(t *testing.T) {
-	tests := []struct {
-		name   string
-		bundle PolicyBundle
-	}{
-		{"bad scheduler", PolicyBundle{Scheduler: "invalid"}},
-		{"bad preemption", PolicyBundle{Preemption: PreemptionConfig{Policy: "random"}}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.bundle.Validate(); err == nil {
-				t.Error("expected validation error")
-			}
-		})
-	}
-}
-
 func writeTempYAML(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -132,14 +130,6 @@ func writeTempYAML(t *testing.T, content string) string {
 		t.Fatal(err)
 	}
 	return path
-}
-
-func TestValidSchedulerNames_ReturnsAllNames(t *testing.T) {
-	names := ValidSchedulerNames()
-	assert.Contains(t, names, "fcfs")
-	assert.Contains(t, names, "priority-fcfs")
-	assert.Contains(t, names, "sjf")
-	assert.Contains(t, names, "reverse-priority")
 }
 
 // ---------------------------------------------------------------------------
@@ -224,7 +214,8 @@ node_pools:
 func TestLoadPolicyBundle_AutoscalerAbsent_IsZero(t *testing.T) {
 	// Existing policy-config files without autoscaler section must parse cleanly (backward compat).
 	yaml := `
-scheduler: fcfs
+priority:
+  policy: constant
 `
 	path := writeTempYAML(t, yaml)
 	bundle, err := LoadPolicyBundle(path)
@@ -334,17 +325,6 @@ func TestPolicyBundle_Validate_NodePool_MaxLessThanInitial(t *testing.T) {
 	}
 }
 
-func TestPreemptionPolicy_ValidNames(t *testing.T) {
-	for _, name := range []string{"", "fcfs", "priority"} {
-		if !IsValidPreemptionPolicy(name) {
-			t.Errorf("IsValidPreemptionPolicy(%q) = false, want true", name)
-		}
-	}
-	if IsValidPreemptionPolicy("random") {
-		t.Error("IsValidPreemptionPolicy(\"random\") = true, want false")
-	}
-}
-
 func TestLoadPolicyBundle_InstanceLifecycleSection(t *testing.T) {
 	yaml := `
 instance_lifecycle:
@@ -371,7 +351,8 @@ instance_lifecycle:
 
 func TestLoadPolicyBundle_InstanceLifecycleAbsent_IsZero(t *testing.T) {
 	yaml := `
-scheduler: fcfs
+priority:
+  policy: constant
 `
 	path := writeTempYAML(t, yaml)
 	bundle, err := LoadPolicyBundle(path)

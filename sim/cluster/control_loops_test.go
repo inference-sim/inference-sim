@@ -15,8 +15,6 @@ import (
 // loops until someone decides which it is (SIM-14).
 var policyFieldsThatAreNotControlLoops = map[string]string{
 	"Priority":          "the engine's request priority, applied inside a step",
-	"Scheduler":         "the engine's scheduling policy, applied inside a step",
-	"Preemption":        "the engine's preemption policy, applied inside a step",
 	"NodePools":         "the infrastructure the cluster runs on, not a policy that acts on it",
 	"InstanceLifecycle": "how long an instance takes to load, a timing of the infrastructure",
 }

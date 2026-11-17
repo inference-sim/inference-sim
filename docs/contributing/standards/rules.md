@@ -49,7 +49,7 @@ Go map iteration is non-deterministic. Any `for k, v := range someMap` that feed
 
 ### R3: Validate ALL numeric parameters
 
-Every numeric flag (`--rate`, `--fitness-weights`, `--kv-cpu-blocks`, etc.) must be validated for: zero, negative, NaN, Inf, and empty string. Missing validation causes infinite loops (Rate=0) or wrong results (NaN weights).
+Every numeric flag (`--rate`, `--fitness-weights`, `--num-requests`, etc.) must be validated for: zero, negative, NaN, Inf, and empty string. Missing validation causes infinite loops (Rate=0) or wrong results (NaN weights).
 
 **Evidence:** `--rate 0` caused an infinite loop deep in the simulation. A snapshot-refresh-interval flag was added without validation (#281).
 
