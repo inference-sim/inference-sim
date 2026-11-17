@@ -751,3 +751,28 @@ func TestHasRecurrentLayersNamesTheModelsThatRunTheMambaHook(t *testing.T) {
 		}
 	}
 }
+
+// UsesMLA is model_config.use_mla, which the offloading connector's layout gates read: GLM-5's
+// attention is multi-head latent attention, so its pool is replicated-layout when it is
+// tensor-parallel only.
+func TestUsesMLAReadsTheGraphsAttention(t *testing.T) {
+	if !openEdited(t, "0.33.0").UsesMLA() {
+		t.Error("glm-5, whose attention is MLA, is not read as using MLA")
+	}
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "scenarios", "llama-3.1-70b-instruct-h200-tp4-4node.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := repos()
+	r.Scenarios = t.TempDir()
+	if err := os.WriteFile(filepath.Join(r.Scenarios, "v.yaml"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Open("v.yaml", r)
+	if err != nil {
+		t.Skipf("the llama fixture does not open at this release: %v", err)
+	}
+	if m.UsesMLA() {
+		t.Error("llama, whose attention is grouped-query, is read as using MLA")
+	}
+}

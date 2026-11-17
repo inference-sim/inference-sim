@@ -327,6 +327,7 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 		"cpu_bytes":       cpu,
 		"bytes_per_block": perBlock,
 		"workers":         m.WorldSize(),
+		"mla":             m.UsesMLA(),
 		"copies":          m.OffloadCopies(),
 	}
 	if o.Spec != "" {

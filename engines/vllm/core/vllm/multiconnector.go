@@ -242,7 +242,7 @@ func (e *Engine) buildConnectors(s *sched.Scheduler, st settings) error {
 		}
 		e.gpu.pd = e.pd
 		if st.offload != nil {
-			if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.specMethod, st.sched.EnablePrefixCaching, st.parallelAgnostic, e.at, s.SetConnector); err != nil {
+			if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.specMethod, st.sched.EnablePrefixCaching, st.layout, e.at, s.SetConnector); err != nil {
 				return err
 			}
 			e.gpu.off = e.off
@@ -273,7 +273,7 @@ func (e *Engine) buildConnectors(s *sched.Scheduler, st settings) error {
 	}); err != nil {
 		return err
 	}
-	if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.specMethod, st.sched.EnablePrefixCaching, st.parallelAgnostic, e.at,
+	if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.specMethod, st.sched.EnablePrefixCaching, st.layout, e.at,
 		func(c sched.Connector, _ sched.ConnectorConfig) error { offConn = c; return nil }); err != nil {
 		return err
 	}

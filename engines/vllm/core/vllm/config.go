@@ -180,8 +180,8 @@ type settings struct {
 	sched     sched.Config
 	queueSize int
 	v2Runner  bool
-	// parallelAgnostic is the offloading connector's is_parallelism_agnostic (parallelismAgnostic).
-	parallelAgnostic bool
+	// layout is what the offloading connector's layout gates read (offloadLayout).
+	layout offloadLayoutFacts
 	// connector is the pool's P/D connector, nil for none; pp is pipeline_parallel_size, which
 	// vLLM's NIXL worker checks it against.
 	connector *connectorConfig
@@ -520,7 +520,7 @@ func resolve(c Config) (settings, error) {
 		KVGroups:             groups,
 	}
 	s.queueSize, s.v2Runner = queue, v2
-	s.parallelAgnostic = parallelismAgnostic(c.KVLayers, v2)
+	s.layout = offloadLayoutFacts{agnostic: parallelismAgnostic(c.KVLayers, v2), plainGroup: len(c.KVLayers) == 0, pp: pp}
 	if v, ok := e.Env["PYTHONHASHSEED"]; ok {
 		s.hashSeed = &v
 	}
@@ -1036,4 +1036,29 @@ func parallelismAgnostic(runs []KVLayerRun, v2 bool) bool {
 		}
 	}
 	return true
+}
+
+// offloadLayoutFacts are what the offloading connector's two layout gates read of the pool:
+// agnostic is parallelismAgnostic over the stated kv_layers (which is true for a model that states
+// none, MLA or not), plainGroup that none are stated, and pp the pipeline_parallel_size.
+type offloadLayoutFacts struct {
+	agnostic, plainGroup bool
+	pp                   int
+}
+
+// offloadLayout is the pair of layout flags the p2p and fs tiers read: is_parallelism_agnostic and
+// replicated_layout (offloading/config.py:196-208 and :217-225@4ba787ec). An MLA model is never
+// parallelism-agnostic (MLAAttentionSpec is excluded); its latent is replicated across the
+// tensor-parallel ranks, which vLLM names replicated_layout when the pool is tensor-parallel only:
+// tp above 1, no pipeline parallelism, world size equal to tp. The run config of such a pool names
+// no parallel size, so MLA pools of different tensor parallelism handshake; a pool with pipeline
+// parallelism names them, so it does not. An MLA model that states kv_layers (DeepSeek V4's groups)
+// is taken as neither: whether its groups' replicas equal tp is not read here.
+// Not read: the mp executor and a single node (replicated_layout's last two terms), and
+// decode or prefill context parallelism.
+func offloadLayout(f offloadLayoutFacts, mla bool, world int) (agnostic, replicated bool) {
+	if !mla {
+		return f.agnostic, false
+	}
+	return false, f.plainGroup && f.pp <= 1 && world > 1
 }

@@ -780,10 +780,10 @@ func TestAHostGivesEachInstanceItsOwnPeerAddress(t *testing.T) {
 // The model's KV bytes a block are the same for every world size, 32 KiB, so one worker's share
 // (bytes_per_block) is 32 KiB over the world, and a chunk, which holds a block's copy of every
 // worker, is 32 KiB whatever the world: the length the p2p handshake compares.
-func p2pEngineOfWorld(t *testing.T, port int, at plan.Endpoint, world int, extra string) *Engine {
+func p2pEngineOfWorld(t *testing.T, port int, at plan.Endpoint, world int, extra string, offload ...string) *Engine {
 	t.Helper()
 	e := mustEngine(t, extra+fmt.Sprintf("kv_offload: {connector: OffloadingConnector, spec: TieringOffloadingSpec, "+
-		"cpu_bytes: 6553600, bytes_per_block: %d, workers: %d, secondary_tiers: [{type: p2p, port: %d}]}\n", 32768/world, world, port))
+		"cpu_bytes: 6553600, bytes_per_block: %d, workers: %d, %ssecondary_tiers: [{type: p2p, port: %d}]}\n", 32768/world, world, strings.Join(offload, ""), port))
 	if err := e.PlaceAt(at); err != nil {
 		t.Fatal(err)
 	}
@@ -854,5 +854,54 @@ func TestParallelismAgnosticIsVLLMsGate(t *testing.T) {
 		if got := parallelismAgnostic(c.runs, c.v2); got != c.want {
 			t.Errorf("%s: parallelismAgnostic = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// A tensor-parallel-only MLA pool is vLLM's replicated_layout (offloading/config.py:196-208@4ba787ec):
+// the latent is the same on every rank, so a prefiller and a decoder of different tensor parallelism
+// handshake and the decoder loads the prompt (inference-sim#2214 for the MLA models).
+func TestAnMLAPoolOfAnotherTensorParallelismLoadsItsPromptFromThePrefiller(t *testing.T) {
+	p := p2pEngineOfWorld(t, 5710, prefillerAt, 4, "", "mla: true, ")
+	d := p2pEngineOfWorld(t, 5711, decoderAt, 8, "", "mla: true, ")
+	w := newP2PWorld(t, p, d)
+	w.placeAll(prefillerAt, decoderAt)
+	w.add(0, 0, kvParams(req("p1", 96, 1), `{"remote_decoder":{"kv_request_id":"kv1"}}`))
+	w.add(0, 1, kvParams(req("d1", 100, 2), fromPrefiller("kv1")))
+	w.run(10_000_000)
+
+	if _, ok := w.nodes[1].finished["d1"]; !ok {
+		t.Fatal("the decoder's request did not finish")
+	}
+	if got := w.nodes[1].first["d1"]; got != 4 {
+		t.Errorf("the decoder's first step computed %d tokens of d1, want the 4 past the prompt", got)
+	}
+}
+
+// What an MLA pool's run config names. replicated_layout needs tp above 1, no pipeline
+// parallelism and a world equal to tp, so a pipeline-parallel MLA pool names tp and pp, and a pool
+// of tp 4 and pp 2 does not agree with one of tp 8 (the same world of 8). A non-MLA model is never
+// replicated, and an MLA model that states kv_layers is neither agnostic nor replicated here.
+func TestAnMLAPoolsRunConfigNamesTheParallelSizesUnlessItIsTensorParallelOnly(t *testing.T) {
+	cfg := func(facts offloadLayoutFacts, mla bool, world int) string {
+		tp, pp, agnostic, replicated := layoutOf(facts, mla, world)
+		return kvtier.Namespace{TokensPerHash: 16, BlocksPerFile: 1, TPSize: tp, PPSize: pp, PCPSize: 1, DCPSize: 1,
+			ParallelAgnostic: agnostic, Replicated: replicated}.RunConfig()
+	}
+	plain := func(pp int) offloadLayoutFacts { return offloadLayoutFacts{agnostic: true, plainGroup: true, pp: pp} }
+	if a, b := cfg(plain(1), true, 4), cfg(plain(1), true, 8); a != b || !strings.Contains(a, `"replicated_layout":true`) {
+		t.Errorf("tensor-parallel-only MLA pools of tp 4 and tp 8 differ or are not replicated:\n%s\n%s", a, b)
+	}
+	if a, b := cfg(plain(2), true, 8), cfg(plain(1), true, 8); a == b {
+		t.Errorf("an MLA pool of tp 4 and pp 2 agrees with one of tp 8:\n%s", a)
+	}
+	if a, b := cfg(plain(2), true, 8), cfg(plain(2), true, 16); a == b {
+		t.Errorf("pipeline-parallel MLA pools of different tp agree:\n%s", a)
+	}
+	if a := cfg(plain(1), true, 1); strings.Contains(a, "replicated_layout") {
+		t.Errorf("a single-GPU MLA pool is replicated: %s", a)
+	}
+	stated := offloadLayoutFacts{agnostic: false, plainGroup: false, pp: 1}
+	if a, b := cfg(stated, true, 4), cfg(stated, true, 8); a == b {
+		t.Errorf("an MLA model with stated kv_layers agrees across tp: %s", a)
 	}
 }
