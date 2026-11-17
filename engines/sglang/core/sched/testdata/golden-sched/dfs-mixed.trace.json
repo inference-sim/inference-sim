@@ -48,6 +48,7 @@
   "random_seed": 0,
   "req_pool_size": 3,
   "retract_decode_steps": 20,
+  "retraction_policy": "length",
   "schedule_low_priority_values_first": false,
   "tree_cache": "UnifiedRadixCache",
   "vocab_size": 151936
@@ -116,7 +117,7 @@
   "max_total_num_tokens": 160
  },
  "provenance": {
-  "blis_sglang_commit": "7b33c1535ebc6f6a90053ebf4a547a1025167122",
+  "blis_sglang_commit": "75dabbe5dd1729bd7ce649500c34e9f14736b272",
   "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
   "mock_version": "gpu-mock/9+f7e50518d4b2",
   "model": "Qwen/Qwen2.5-0.5B-Instruct",
@@ -126,7 +127,7 @@
    "oracle/harness.py": "a3b5bfbc5670969a78dff5d50e24a5e17bbb8d50ed70e1d77825013608c10ac5",
    "oracle/mocks.json": "9782b21a0b9428d105a51cde9983b1554f456ef4e7f7ac11c73992f202104173",
    "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
-   "oracle/run_sched.py": "f7a44c4e7de8c49b9b0430f7a2e8e972f1dd17fb62b1b776520b039c0714c254",
+   "oracle/run_sched.py": "a1c05703893d48e784fae54d729a958a174435435b23e6e1e42d24f71ae517bf",
    "oracle/run_scheduler.py": "7d624d8c7cf66f9daf849d6029f7e5af71bc9ed06fca712f0c1b5b7aa9a96ceb",
    "oracle/scenarios-sched/dfs-mixed.json": "f894e6a298198ed67c962c039d969df8c276a2116d1c954971b5659f422f3a54",
    "oracle/stubs.py": "e30a3a770e3a4f91008449145089328ba8fbb83b35bda7082e1c77e323eb1692",
