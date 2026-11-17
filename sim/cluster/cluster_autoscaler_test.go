@@ -117,3 +117,66 @@ func TestClusterAutoscaler_ProvisionsANodeForAWaitingPlacement(t *testing.T) {
 		}
 	}
 }
+
+// The bin-pack optimizer removes a node only from an underused pool, the most expensive such pool
+// first, never below the floor, never when the allocated GPUs would not fit on the other nodes, at
+// most one per call, and not while a placement waits or a node is coming.
+func TestBinPackOptimizer_Decide(t *testing.T) {
+	pool := func(name string, cost float64, nodes, perNode, allocated int) NodePoolState {
+		return NodePoolState{PoolName: name, GPUType: "A100", GPUsPerNode: perNode, TotalNodes: nodes,
+			GPUCapacity: nodes * perNode, GPUAllocated: allocated, CostPerHour: cost}
+	}
+	b := NewBinPackOptimizer(BinPackConfig{LowWaterMark: 0.3, MinNodesPerPool: 1})
+	for _, tc := range []struct {
+		name  string
+		pools []NodePoolState
+		pend  []PendingPlacement
+		want  []NodeDecision
+	}{
+		{"above the mark", []NodePoolState{pool("a", 10, 4, 8, 16)}, nil, nil},
+		{"below the mark", []NodePoolState{pool("a", 10, 4, 8, 4)}, nil, []NodeDecision{{PoolName: "a", Delta: -1}}},
+		{"the dearest pool first", []NodePoolState{pool("cheap", 5, 4, 8, 2), pool("dear", 20, 4, 8, 2)}, nil,
+			[]NodeDecision{{PoolName: "dear", Delta: -1}}},
+		{"at the floor", []NodePoolState{pool("a", 10, 1, 8, 0)}, nil, nil},
+		{"the work would not fit on the others", []NodePoolState{pool("a", 10, 2, 8, 6)}, nil, nil},
+		{"a placement waits", []NodePoolState{pool("a", 10, 4, 8, 2)}, []PendingPlacement{{Variant: NewVariantSpec("A100", 1)}}, nil},
+	} {
+		got := b.Decide(0, tc.pools, tc.pend)
+		if len(got) != len(tc.want) || (len(got) == 1 && got[0] != tc.want[0]) {
+			t.Errorf("%s: decisions %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	coming := pool("a", 10, 4, 8, 2)
+	coming.ProvisioningNodes = 1
+	if got := b.Decide(0, []NodePoolState{coming}, nil); len(got) != 0 {
+		t.Errorf("a node is coming, yet %v", got)
+	}
+	floored := pool("a", 10, 2, 8, 0)
+	floored.MinNodes = 2
+	if got := b.Decide(0, []NodePoolState{floored}, nil); len(got) != 0 {
+		t.Errorf("the pool's own min_nodes 2 was undershot: %v", got)
+	}
+}
+
+// Through a run: a pool of two idle nodes loses one on a scaling tick, keeping its floor, and the
+// node it loses is the idle one.
+func TestClusterAutoscaler_RemovesAnIdleNode(t *testing.T) {
+	d := newTestDeploymentConfig(1)
+	d.Model = "test-model"
+	d.ModelAutoscalerIntervalUs = 1_000_000
+	d.NodePools = []NodePoolConfig{{Name: "p", GPUType: "A100", GPUsPerNode: 4, InitialNodes: 3, MinNodes: 1, MaxNodes: 3, GPUMemoryGiB: 80}}
+	d.ClusterAutoscaler = ClusterAutoscalerConfig{ScaleDown: ClusterAutoscalerBinPack,
+		BinPackConfig: BinPackConfig{LowWaterMark: 0.5, MinNodesPerPool: 1}}
+	cs := newTestCluster(d, NewSliceRequestSource(newTestRequests(6)), nil)
+	cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, &nopEngine{}, &nopActuator{})
+	mustRun(t, cs)
+	if n := cs.placement.NodeCount(); n != 1 {
+		t.Errorf("%d node(s) left, want the pool reduced to its floor of 1 (one node removed per tick)", n)
+	}
+	if err := cs.placement.VerifyConservation(); err != nil {
+		t.Errorf("GPU conservation after removal: %v", err)
+	}
+	if len(cs.instances) == 0 || cs.instances[0].State == "Terminated" {
+		t.Error("the node holding the instance was removed")
+	}
+}

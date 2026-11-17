@@ -29,6 +29,7 @@ type NodePoolState struct {
 	TotalNodes        int     // nodes that are not terminated, provisioning ones included
 	ProvisioningNodes int     // of those, nodes not yet Ready
 	MaxNodes          int     // the pool's configured ceiling (0: none)
+	MinNodes          int     // the pool's configured floor
 	GPUCapacity       int     // GPUs across the pool's non-terminated nodes
 	GPUAllocated      int     // GPUs occupied by instances
 	CostPerHour       float64 // per node-hour
@@ -51,9 +52,23 @@ type PendingDrivenConfig struct {
 
 // ClusterAutoscalerConfig selects and configures the cluster autoscaler. The zero value is none.
 type ClusterAutoscalerConfig struct {
-	// Policy is "" (no cluster autoscaler) or "pending-driven".
+	// Policy is "" (no scale-up) or "pending-driven".
 	Policy              string `yaml:"policy"`
 	PendingDrivenConfig `yaml:",inline"`
+	// ScaleDown is "" (nodes are never removed) or "bin-pack".
+	ScaleDown     string `yaml:"scale_down"`
+	BinPackConfig `yaml:",inline"`
+}
+
+// ClusterAutoscalerBinPack is the scale-down policy that removes nodes of an underused pool.
+const ClusterAutoscalerBinPack = "bin-pack"
+
+// BinPackConfig configures the bin-pack optimizer.
+type BinPackConfig struct {
+	// LowWaterMark: a pool whose GPU utilization is below it is a candidate for losing a node.
+	LowWaterMark float64 `yaml:"low_water_mark"`
+	// MinNodesPerPool: never remove below this many nodes (a pool's own min_nodes also holds).
+	MinNodesPerPool int `yaml:"min_nodes_per_pool"`
 }
 
 // ClusterAutoscalerPendingDriven is the policy name that adds a node when a placement has waited.
@@ -61,6 +76,18 @@ const ClusterAutoscalerPendingDriven = "pending-driven"
 
 // Validate refuses a config that cannot run.
 func (c ClusterAutoscalerConfig) Validate() error {
+	switch c.ScaleDown {
+	case "":
+	case ClusterAutoscalerBinPack:
+		if math.IsNaN(c.LowWaterMark) || c.LowWaterMark <= 0 || c.LowWaterMark > 1 {
+			return fmt.Errorf("cluster_autoscaler.low_water_mark must be in (0, 1], got %v", c.LowWaterMark)
+		}
+		if c.MinNodesPerPool < 0 {
+			return fmt.Errorf("cluster_autoscaler.min_nodes_per_pool must be >= 0, got %d", c.MinNodesPerPool)
+		}
+	default:
+		return fmt.Errorf("cluster_autoscaler.scale_down %q is not a policy; the policy is %s", c.ScaleDown, ClusterAutoscalerBinPack)
+	}
 	switch c.Policy {
 	case "":
 		return nil
@@ -115,12 +142,76 @@ func (p *PendingDrivenProvisioner) Decide(now int64, pools []NodePoolState, pend
 	return out
 }
 
-// newClusterAutoscaler builds the configured policy, nil for none.
-func newClusterAutoscaler(c ClusterAutoscalerConfig) ClusterAutoscaler {
-	if c.Policy == ClusterAutoscalerPendingDriven {
-		return NewPendingDrivenProvisioner(c.PendingDrivenConfig)
+// BinPackOptimizer removes a node from the most expensive pool whose GPU utilization is below the
+// low-water mark and whose allocated GPUs would still fit on the remaining nodes. It emits at most
+// one decision per call (the next call looks again), and none while a placement waits or a node is
+// on its way, since the pool is then growing, not idle.
+type BinPackOptimizer struct{ cfg BinPackConfig }
+
+// NewBinPackOptimizer returns the optimizer.
+func NewBinPackOptimizer(cfg BinPackConfig) *BinPackOptimizer { return &BinPackOptimizer{cfg: cfg} }
+
+// Decide implements ClusterAutoscaler.
+func (b *BinPackOptimizer) Decide(_ int64, pools []NodePoolState, pending []PendingPlacement) []NodeDecision {
+	if len(pending) > 0 {
+		return nil
 	}
-	return nil
+	var candidates []NodePoolState
+	for _, p := range pools {
+		if p.ProvisioningNodes > 0 || p.GPUCapacity == 0 || p.GPUsPerNode == 0 {
+			continue
+		}
+		floor := max(b.cfg.MinNodesPerPool, p.MinNodes)
+		if p.TotalNodes <= floor || p.TotalNodes <= 0 {
+			continue
+		}
+		if float64(p.GPUAllocated)/float64(p.GPUCapacity) >= b.cfg.LowWaterMark {
+			continue
+		}
+		if p.GPUAllocated > p.GPUCapacity-p.GPUsPerNode { // the work would not fit on the other nodes
+			continue
+		}
+		candidates = append(candidates, p)
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].CostPerHour != candidates[j].CostPerHour {
+			return candidates[i].CostPerHour > candidates[j].CostPerHour
+		}
+		return candidates[i].PoolName < candidates[j].PoolName
+	})
+	return []NodeDecision{{PoolName: candidates[0].PoolName, Delta: -1}}
+}
+
+// composite runs the scale-up and the scale-down policy and joins their decisions.
+type composite struct{ up, down ClusterAutoscaler }
+
+func (c composite) Decide(now int64, pools []NodePoolState, pending []PendingPlacement) []NodeDecision {
+	var out []NodeDecision
+	if c.up != nil {
+		out = append(out, c.up.Decide(now, pools, pending)...)
+	}
+	if c.down != nil {
+		out = append(out, c.down.Decide(now, pools, pending)...)
+	}
+	return out
+}
+
+// newClusterAutoscaler builds the configured policies, nil for none.
+func newClusterAutoscaler(c ClusterAutoscalerConfig) ClusterAutoscaler {
+	var up, down ClusterAutoscaler
+	if c.Policy == ClusterAutoscalerPendingDriven {
+		up = NewPendingDrivenProvisioner(c.PendingDrivenConfig)
+	}
+	if c.ScaleDown == ClusterAutoscalerBinPack {
+		down = NewBinPackOptimizer(c.BinPackConfig)
+	}
+	if up == nil && down == nil {
+		return nil
+	}
+	return composite{up: up, down: down}
 }
 
 // poolStates is the placement manager's pools as the cluster autoscaler sees them, in pool order.
@@ -128,7 +219,7 @@ func (pm *PlacementManager) poolStates() []NodePoolState {
 	out := make([]NodePoolState, 0, len(pm.pools))
 	for _, ps := range pm.pools {
 		s := NodePoolState{PoolName: ps.config.Name, GPUType: ps.config.GPUType, GPUsPerNode: ps.config.GPUsPerNode,
-			MaxNodes: ps.config.MaxNodes, CostPerHour: ps.config.CostPerHour}
+			MaxNodes: ps.config.MaxNodes, MinNodes: ps.config.MinNodes, CostPerHour: ps.config.CostPerHour}
 		for _, n := range pm.nodesByPool[ps.config.Name] {
 			if n.State == NodeStateTerminated {
 				continue
@@ -164,13 +255,14 @@ func (cs *ClusterSimulator) runClusterAutoscaler() {
 		return
 	}
 	pending := cs.placement.Pending()
-	if len(pending) == 0 {
+	if len(pending) == 0 && cs.config.ClusterAutoscaler.ScaleDown == "" {
 		return
 	}
 	decisions := cs.clusterAutoscaler.Decide(cs.clock, cs.placement.poolStates(), pending)
 	sort.SliceStable(decisions, func(i, j int) bool { return decisions[i].PoolName < decisions[j].PoolName })
 	for _, d := range decisions {
-		if d.Delta <= 0 {
+		if d.Delta < 0 {
+			cs.removeNode(d.PoolName)
 			continue
 		}
 		for i := 0; i < d.Delta; i++ {
@@ -192,4 +284,28 @@ func (cs *ClusterSimulator) runClusterAutoscaler() {
 			cs.schedule(&ClusterAutoscalerCheckEvent{At: next}, &cs.lifecycleSender)
 		}
 	}
+}
+
+// removeNode takes one node out of the pool: the newest Ready node that holds no instance. A node
+// with instances on it is not removed (moving them is the drain policies' work, #1C-4); the
+// decision is then dropped and the next call looks again.
+func (cs *ClusterSimulator) removeNode(pool string) {
+	nodes := cs.placement.nodesByPool[pool]
+	for i := len(nodes) - 1; i >= 0; i-- {
+		n := nodes[i]
+		if n.State != NodeStateReady || n.freeCount() != n.TotalGPUs {
+			continue
+		}
+		nodeID := n.ID
+		err := cs.placement.DrainNode(nodeID, func() {
+			cs.schedule(&NodeDrainedEvent{timestamp: cs.clock, nodeID: nodeID}, &cs.lifecycleSender)
+		})
+		if err != nil {
+			logrus.Warnf("[cluster-autoscaler] drain node %s: %v", nodeID, err)
+			return
+		}
+		logrus.Infof("[cluster-autoscaler] removing idle node %s from pool %q", nodeID, pool)
+		return
+	}
+	logrus.Debugf("[cluster-autoscaler] pool %q has no idle node to remove", pool)
 }
