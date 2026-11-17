@@ -9231,8 +9231,8 @@ def test_nemotron_h_modelopt_fp8_places_each_module_at_its_stored_width(tmp_path
     assert g["global"]["weight_dtype"] == "bf16"
     assert _nemotron_role_widths(g, "mamba") == {"recurrent_in_proj": "fp8", "mixer_out": "fp8"}
     assert _nemotron_role_widths(g, "moe") == {
-        "routed_expert_down_proj": "bf16", "experts": "fp8", "shared_experts": "fp8",
-        "routed_expert_up_proj": "bf16"}
+        "routed_expert_down_proj": "bf16", "experts": "fp8", "shared_up": "fp8",
+        "shared_down": "fp8", "router": "bf16", "routed_expert_up_proj": "bf16"}
     assert _nemotron_role_widths(g, "attention") == {"qkv_proj": "bf16", "o_proj": "bf16"}
     assert [n.get("weight_dtype", "bf16") for n in g["head"] if n["op"] == "GEMM"] == ["bf16"]
     assert g["speculator"]["stack"]["pattern"] == ["attention", "mtp_moe"]

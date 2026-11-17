@@ -991,7 +991,9 @@ def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
 
     roles = dict(spec["roles"], router=None, shared_expert_gate=None)
     if spec["shared"]:
-        roles.update(shared_gate_up=spec["shared"][0], shared_down=spec["shared"][1])
+        # A gated shared expert fuses gate and up (shared_gate_up); NemotronH's is ungated (shared_up).
+        up = "shared_gate_up" if spec["shared"][0].endswith("gate_up_proj") else "shared_up"
+        roles.update({up: spec["shared"][0], "shared_down": spec["shared"][1]})
     out = []
     for kind in kinds:
         idx = layers_of.get(kind["id"], [])
