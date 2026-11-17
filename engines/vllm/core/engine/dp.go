@@ -50,6 +50,75 @@ type DP struct {
 	Ranks []*Core
 	Waves []*Wave
 	LB    *LoadBalancer
+	// Fronts are the front ends of a group under hybrid or external balancing, in rank order;
+	// empty under the internal balancer, whose one front end is LB over every rank.
+	Fronts []*Front
+}
+
+// Front is one front end of a group under hybrid or external balancing: an API server whose
+// engine-core client manages only its own ranks, First to First+N-1 (parallel.local_engines_only,
+// vllm/config/parallel.py:652-657@4ba787ec; DPAsyncMPClient.engine_ranks_managed,
+// core_client.py:740-746@4ba787ec). Under external balancing N is 1 and the client is a
+// DPAsyncMPClient, which sends every request to its rank and balances nothing; under hybrid N is
+// the node's ranks and the client is a DPLBAsyncMPClient over them, with LB's counts the
+// coordinator's, sliced to the managed ranks (core_client.py:1588-1600@4ba787ec). Which front end
+// takes a request is the router's choice, outside the engine.
+type Front struct {
+	First int
+	LB    *LoadBalancer
+}
+
+// NewFronts is the front ends of n ranks of local ranks each, every one with clients balancing
+// clients (api_server_count) when it manages more than one rank.
+func NewFronts(n, local, clients int) []*Front {
+	var out []*Front
+	for first := 0; first < n; first += local {
+		out = append(out, &Front{First: first, LB: NewLoadBalancers(local, clients)})
+	}
+	return out
+}
+
+// AddFront routes a request the router sent to front end f and hands it to the rank that front
+// end picks: its only rank under external balancing (get_core_engine_for_request on a
+// DPAsyncMPClient returns the one core engine, core_client.py:1558-1560), the lowest-scored of
+// its node's ranks under hybrid (DPLBAsyncMPClient.get_core_engine_for_request, over the ranks it
+// manages). The wave starts as Add's does: the rank that receives the request wakes the others.
+func (d *DP) AddFront(f int, id string) (int, error) {
+	if f < 0 || f >= len(d.Fronts) {
+		return 0, fmt.Errorf("engine: no front end %d among %d", f, len(d.Fronts))
+	}
+	fr := d.Fronts[f]
+	var rank int
+	if len(fr.LB.Counts) == 1 {
+		rank = fr.First + fr.LB.Pin(id, 0)
+	} else {
+		rank = fr.First + fr.LB.Choose(id)
+	}
+	d.startWave(rank)
+	return rank, nil
+}
+
+// PublishFronts is the coordinator's stats update to every front end: each client keeps the slice
+// of the group's counts for the ranks it manages.
+func (d *DP) PublishFronts(counts [][3]float64) {
+	for _, fr := range d.Fronts {
+		fr.LB.Publish(counts[fr.First : fr.First+len(fr.LB.Counts)])
+	}
+}
+
+// FinishedFront is process_engine_outputs on the front end that routed the request, which owns
+// rank's endpoint.
+func (d *DP) FinishedFront(rank int, id string) {
+	if len(d.Fronts) == 0 {
+		d.LB.Finished(id)
+		return
+	}
+	for _, fr := range d.Fronts {
+		if rank >= fr.First && rank < fr.First+len(fr.LB.Counts) {
+			fr.LB.Finished(id)
+			return
+		}
+	}
 }
 
 // RankStep is what one rank did in one lockstep iteration.

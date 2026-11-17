@@ -884,6 +884,10 @@ jobs:
           # Several load-balancing clients (api_server_count): one DPLBAsyncMPClient each.
           mkdir -p oracle/out/scenarios-dp-clients
           python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-clients oracle/out/scenarios-dp-clients
+          # Hybrid and external load balancing: one client per node or per rank, the router
+          # naming each request's front end.
+          mkdir -p oracle/out/scenarios-dp-modes
+          python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-modes oracle/out/scenarios-dp-modes
       # The multi-client routing is compared with the trace vLLM just produced (no committed
       # golden), and the test must run: a skip would read as a pass (X16).
       - name: the Go routing through several clients equals vLLM's
@@ -893,6 +897,14 @@ jobs:
           set -o pipefail
           go test ./core/engine -run 'TestDPClientsAgainstVLLM' -count=1 -v | tee dpclients.log
           grep -q -- '--- PASS: TestDPClientsAgainstVLLM/dp4-lb-clients2' dpclients.log
+      - name: the Go routing under hybrid and external balancing equals vLLM's
+        env:
+          BLIS_VLLM_DP_MODES_DIR: ${{ github.workspace }}/oracle/out/scenarios-dp-modes
+        run: |
+          set -o pipefail
+          go test ./core/engine -run 'TestDPModesAgainstVLLM' -count=1 -v | tee dpmodes.log
+          grep -q -- '--- PASS: TestDPModesAgainstVLLM/dp4-hybrid-local2$' dpmodes.log
+          grep -q -- '--- PASS: TestDPModesAgainstVLLM/dp4-external-rank-affinity$' dpmodes.log
       - name: every tier-3 golden trace is vLLM's own output
         run: |
           python3 -I oracle/compare_goldens_t3.py core/engine/testdata/golden oracle/out/scenarios-t3

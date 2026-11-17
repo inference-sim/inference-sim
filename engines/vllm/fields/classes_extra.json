@@ -1,4 +1,69 @@
 {
+ "data_parallel_hybrid_lb": {
+  "stated": [
+   {
+    "trace": "oracle/scenarios-dp-modes/dp4-hybrid-local2.json",
+    "values": [
+     true
+    ],
+    "why": "the scenario states hybrid balancing with 2 ranks per node; oracle/run_dp.py runs one DPLBAsyncMPClient per node over that node's ranks, and vLLM's trace is produced by CI (TestDPModesAgainstVLLM)"
+   },
+   {
+    "trace": "core/engine/testdata/golden-dp/dp4-lb.json",
+    "values": [
+     false
+    ],
+    "why": "the recorded DP routing traces state no balancing flag, so oracle/run_dp.py runs vLLM's default, the internal balancer: hybrid false"
+   }
+  ]
+ },
+ "data_parallel_external_lb": {
+  "stated": [
+   {
+    "trace": "oracle/scenarios-dp-modes/dp4-external-rank-affinity.json",
+    "values": [
+     true
+    ],
+    "why": "the scenario states external balancing; oracle/run_dp.py runs each rank as a one-engine front end (vLLM's DPLBAsyncMPClient over that one rank; its DPAsyncMPClient returns the same engine) and vLLM's trace is produced by CI (TestDPModesAgainstVLLM)"
+   },
+   {
+    "trace": "core/engine/testdata/golden-dp/dp4-lb.json",
+    "values": [
+     false
+    ],
+    "why": "the recorded DP routing traces state no balancing flag, so oracle/run_dp.py runs the internal balancer: external false"
+   }
+  ]
+ },
+ "data_parallel_multi_port_external_lb": {
+  "stated": [
+   {
+    "trace": "oracle/scenarios-dp-modes/dp4-external-multi-port.json",
+    "values": [
+     true
+    ],
+    "why": "the scenario states the multi-port launcher, which runs one external rank server per local rank; oracle/run_dp.py runs it as external balancing and vLLM's trace is produced by CI (TestDPModesAgainstVLLM)"
+   },
+   {
+    "trace": "core/engine/testdata/golden-dp/dp4-lb.json",
+    "values": [
+     false
+    ],
+    "why": "the recorded DP routing traces state no balancing flag: multi-port false"
+   }
+  ]
+ },
+ "data_parallel_size_local": {
+  "stated": [
+   {
+    "trace": "oracle/scenarios-dp-modes/dp4-hybrid-local2.json",
+    "values": [
+     2
+    ],
+    "why": "the scenario states 2 ranks per node under hybrid balancing; vLLM's trace is produced by CI (TestDPModesAgainstVLLM)"
+   }
+  ]
+ },
  "api_server_count": {
   "stated": [
    {
