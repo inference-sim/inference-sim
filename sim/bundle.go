@@ -79,6 +79,9 @@ type ClusterAutoscalerBundleConfig struct {
 	Policy             string  `yaml:"policy"`
 	PendingThresholdUs float64 `yaml:"pending_threshold_us"`
 	MaxNodesPerPool    int     `yaml:"max_nodes_per_pool"`
+	ScaleDown          string  `yaml:"scale_down"`
+	LowWaterMark       float64 `yaml:"low_water_mark"`
+	MinNodesPerPool    int     `yaml:"min_nodes_per_pool"`
 }
 
 // AutoscalerBundleConfig holds autoscaler pipeline configuration.
