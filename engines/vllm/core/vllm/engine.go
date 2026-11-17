@@ -693,6 +693,9 @@ type GroupTransferPricer interface {
 // when the pricer prices none. A simulator reads it by type-asserting
 // interface{ TransferTime(engine.Transfer) (engine.Duration, bool) } on the engine.Engine.
 func (e *Engine) TransferTime(t engine.Transfer) (engine.Duration, bool) {
+	if bytes, tier := e.off.tierBytes(t); tier {
+		return tierTransferTime(e.pricer, t, bytes)
+	}
 	p, ok := e.pricer.(TransferPricer)
 	if !ok {
 		return 0, false

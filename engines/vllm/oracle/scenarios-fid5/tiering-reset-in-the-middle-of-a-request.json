@@ -1,5 +1,5 @@
 {
- "description": "TieringOffloadingSpec with no secondary tiers, whose manager forwards to its CPU primary tier: reset_cache while a store is in flight, then the request registered again, as the tiering manager requires (it drops every request's state on reset, vllm/v1/kv_offload/tiering/manager.py:935-980@5df63a72): the cache starts empty at slot 0. The scheduler never completes a pre-reset job (reset_cache's own comment), so this sequence does not either.",
+ "description": "TieringOffloadingSpec with no secondary tiers, whose manager forwards to its CPU primary tier: reset_cache while a store is in flight, then the request registered again, as the tiering manager requires (it drops every request's state on reset, vllm/v1/kv_offload/tiering/manager.py:1141-1199@4ba787ec): the cache starts empty at slot 0. The scheduler never completes a pre-reset job (reset_cache's own comment), so this sequence does not either. From v0.33.0 the connector calls on_reset_flushed once its workers report every job in flight at the reset (vllm/v1/kv_offload/base.py:487-490@4ba787ec), and this sequence does so straight after the reset.",
  "spec": {
   "name": "TieringOffloadingSpec",
   "cpu_bytes_to_use": 32768,
@@ -30,6 +30,9 @@
   },
   {
    "m": "reset_cache"
+  },
+  {
+   "m": "on_reset_flushed"
   },
   {
    "m": "on_new_request",
