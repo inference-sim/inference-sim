@@ -1,0 +1,31 @@
+# A scenario of the dashboard's scenario writer for one fit unit's recorded run (counts only are kept of the units).
+kind: Scenario
+name: deepseek-v4-pro-h200-tp8-dp1-f911e71f33
+engine: {kind: vllm, version: 0.33.0}
+model: deepseek-v4-pro
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+cluster: {hardware: h200, gpus_per_node: 8, nodes: 1}
+acceptance:
+  value: {num_spec_tokens: 2, acceptance_length: 2.29}
+---
+kind: Deployment
+name: deepseek-v4-pro-h200-tp8-dp1-f911e71f33
+pools:
+- role: colocated
+  nodes: 1
+  parallel: {dp: 1, pp: 1, tp: 8}
+  engine:
+    block_size: 256
+    cudagraph_capture_sizes: [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512]
+    enable_chunked_prefill: true
+    enable_prefix_caching: false
+    gpu_memory_utilization: 0.95
+    max_cudagraph_capture_size: 512
+    max_model_len: 2304
+    max_num_batched_tokens: 512
+    max_num_seqs: 512
+    quantization: deepseek_v4_fp8
+    compilation_config: {cudagraph_mode: FULL_DECODE_ONLY}
+    kv_cache_dtype: fp8
+    speculative_config: {method: mtp, num_speculative_tokens: 2}
+router: {endpoint_picker_config: vllm-dp-lb.epp.yaml}

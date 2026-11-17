@@ -19,6 +19,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/core/engine"
+	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
@@ -196,6 +197,9 @@ type settings struct {
 	// request's block-hash chain (resolve_none_hash_seed, vllm/v1/core/kv_cache_utils.py:131-146
 	// @5df63a72). It changes the hashes a KV-event stream publishes, never which blocks hit.
 	hashSeed *string
+	// kvCapacity is the KV cache size the engine core logs at start-up (kv.KVCapacity), the
+	// pool's tokens at max_model_len.
+	kvCapacity kv.Capacity
 	// servesRender is whether the model server answers the router's render endpoints: the
 	// frontend's --enable-scale-out (Engine.EnableScaleOut), false by default. vLLM's
 	// register_scale_out_api_routers answers every render, derender and token-in/token-out route
@@ -486,6 +490,9 @@ func resolve(c Config) (settings, error) {
 	if err := checkKVLayersFit(c, blockSize, maxLen, queue*budget, spec.PrefillLookahead, method); err != nil {
 		return settings{}, err
 	}
+	if s.kvCapacity, err = kvCapacityOf(c, blockSize, maxLen, queue*budget, spec.PrefillLookahead, method); err != nil {
+		return settings{}, err
+	}
 	if err := checkChunkedPrefill(c, chunked, chunkedInput{prefixCaching: prefixCaching, maxModelLen: maxLen,
 		budget: budget, groups: groups, method: method, pp: pp}); err != nil {
 		return settings{}, err
@@ -540,12 +547,6 @@ func resolve(c Config) (settings, error) {
 	s.placement = c.Placement
 	if s.offload, err = checkConnectorPair(s.connector, s.offload); err != nil {
 		return settings{}, err
-	}
-	if s.offload != nil && c.DataParallelSize > 1 {
-		// Each rank would run its own offload connector and CPU tier; the group aggregates a P/D
-		// connector's transfers (DPGroup) but not the offload's jobs, which it routes by request.
-		return settings{}, fmt.Errorf("vllm: kv_offload with data parallelism (dp %d) is not built yet: the "+
-			"data-parallel group does not carry an offload connector's jobs (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/47")
 	}
 	if s.connector != nil && s.connector.Role.producer() && c.DataParallelSize > 1 && c.Placement != nil {
 		// A handoff names no endpoint (engine.Handoff), so the decode side is told only the prefill

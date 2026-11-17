@@ -92057,6 +92057,264 @@
     "BLHNC": 1435968,
     "LBNHC": 1435968
    },
+   "capacity": [
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 16.855967078189302,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 38836
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 71.91358024691358,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 165688
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 16.582995951417004,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 38207
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 70.74898785425101,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 163005
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 9.082039911308204,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 20925
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 38.747228381374725,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 89273
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 9.002197802197802,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 20741
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 38.40659340659341,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 88488
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 4.316122233930453,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 9944
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 18.414120126448893,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 42426
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 4.316122233930453,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 9944
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 18.414120126448893,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 42426
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 4.316122233930453,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 9944
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 18.414120126448893,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 42426
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 4.316122233930453,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 9944
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 18.414120126448893,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 42426
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 15.114391143911439,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 143163
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 64.48339483394834,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 610786
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 14.894545454545455,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 141081
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 63.54545454545455,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 601902
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 8.551148225469728,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 80996
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 36.48225469728601,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 345559
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 8.48033126293996,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 80325
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 36.18012422360248,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 342698
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 1.2079032733706871,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 11441
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 5.153347095252138,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 48812
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 1.206480117820324,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 11427
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 5.147275405007364,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 48754
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 1.0532270506556956,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 9976
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 4.493443044484443,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 42561
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 1.0532270506556956,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 9976
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 4.493443044484443,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 42561
+    }
+   ],
    "group_pages": [
     [
      [
@@ -98939,6 +99197,264 @@
     "BLHNC": 135168,
     "LBNHC": 135168
    },
+   "capacity": [
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 28.248275862068965,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 65084
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 120.51724137931035,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 277671
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 27.125827814569536,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 62497
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 115.72847682119205,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 266638
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 16.99585062240664,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 39158
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 72.5103734439834,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 167063
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 16.582995951417004,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 38207
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 70.74898785425101,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 163005
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 8.962800875273523,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 20650
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 38.23851203501094,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 88101
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 8.962800875273523,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 20650
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 38.23851203501094,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 88101
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 8.962800875273523,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 20650
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 38.23851203501094,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 88101
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 8.962800875273523,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 2304,
+     "num_blocks": 4096,
+     "tokens": 20650
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 38.23851203501094,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 2304,
+     "num_blocks": 17475,
+     "tokens": 88101
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 20.378109452736318,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 193021
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 86.94029850746269,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 823498
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 19.78743961352657,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 187426
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 84.42028985507247,
+     "max_in_flight_tokens": 512,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 799628
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 13.79124579124579,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 130630
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 58.83838383838384,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 557317
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 13.518151815181518,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 128043
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 57.67326732673267,
+     "max_in_flight_tokens": 1024,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 546281
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 2.4960390006093847,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 23642
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 10.648994515539306,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 100867
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 2.4869459623557986,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 23556
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 10.610200364298725,
+     "max_in_flight_tokens": 8192,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 100499
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 2.2057081313947227,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 20892
+    },
+    {
+     "extra_retained_tokens": 0,
+     "max_concurrency": 9.410339256865912,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 89134
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 2.2057081313947227,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 9472,
+     "num_blocks": 4096,
+     "tokens": 20892
+    },
+    {
+     "extra_retained_tokens": 2,
+     "max_concurrency": 9.410339256865912,
+     "max_in_flight_tokens": 32768,
+     "max_model_len": 9472,
+     "num_blocks": 17475,
+     "tokens": 89134
+    }
+   ],
    "group_pages": [
     [
      [

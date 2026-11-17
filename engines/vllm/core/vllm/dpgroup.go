@@ -17,6 +17,7 @@ import (
 	"github.com/inference-sim/blis-substrate/load"
 
 	core "github.com/inference-sim/blis-vllm/core/engine"
+	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
@@ -147,6 +148,11 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 			// engine_id and side-channel port, nixl/base_scheduler.py:76-80@4ba787ec), so each states
 			// its own transfers. The group tells them apart by ID alone (TransferDone).
 			e.pd.stride, e.pd.lane = n, i
+		}
+		if e.off != nil {
+			// Likewise the offloading connector: each rank runs its own, with its own CPU tier
+			// (the engine block's bytes are one engine's), and numbers its jobs the same way.
+			e.off.stride, e.off.lane = n, i
 		}
 		g.ranks = append(g.ranks, &rankState{e: e})
 		g.dp.Ranks = append(g.dp.Ranks, e.core)
@@ -547,6 +553,10 @@ func (g *DPGroup) NextWake(now engine.Time) (engine.Time, bool) {
 	}
 	return now + idlePollUs, true
 }
+
+// KVCacheCapacity is each rank's KV cache size, the figure every engine core of the group logs at
+// start-up (Engine.KVCacheCapacity): the ranks are replicas of one pool, so it is one rank's.
+func (g *DPGroup) KVCacheCapacity() kv.Capacity { return g.ranks[0].e.KVCacheCapacity() }
 
 // InFlightLimit implements engine.Engine: each rank's max_concurrent_batches, as many lockstep
 // iterations' batches as a rank's batch queue holds.

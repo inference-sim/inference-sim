@@ -437,9 +437,71 @@ func TestAPrefillGroupAcrossNodesIsRefusedAndADecodeGroupIsNot(t *testing.T) {
 	}
 }
 
-func TestDataParallelOffloadStaysRefusedByName(t *testing.T) {
-	if _, err := resolve(mustConfig(t, cpuTier+"data_parallel_size: 2\n")); err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/47") {
-		t.Errorf("kv_offload at dp 2: %v, want a refusal naming blis-vllm/issues/47", err)
+// A data-parallel group runs one offloading connector, and so one CPU tier, on each rank (vLLM gives every
+// EngineCore its own connector, vllm/v1/engine/core.py:1417-1421@4ba787ec). A request finishes on the rank the
+// balancer chose and that rank stores its blocks to its own tier: the jobs of the two ranks carry IDs no two ranks
+// share, the host ends each with TransferDone and the group routes it to the rank that started it, and every
+// request completes. Before this the group was refused for carrying no offload jobs (blis-vllm#47).
+func TestADataParallelGroupOffloadsEachRanksBlocksToItsOwnTier(t *testing.T) {
+	he := newHostEngine(t, cpuTier+dpPool(2, 8, 1), 0)
+	h := &host{t: t, engs: []*hostEngine{he}}
+	g := he.e.(*DPGroup)
+	const n = 6
+	for i := 0; i < n; i++ {
+		if err := g.Add(req(strings.Repeat("o", i+1), 80, 4), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.run(func() bool { return len(he.finished) == n && len(he.due) == 0 && len(he.inflight) == 0 })
+	if len(he.finished) != n {
+		t.Fatalf("%d of %d requests finished", len(he.finished), n)
+	}
+	byRank := map[int]int{}
+	ids := map[engine.TransferID]bool{}
+	for _, x := range he.started {
+		if x.Kind != engine.TransferStore {
+			continue
+		}
+		if ids[x.ID] {
+			t.Errorf("transfer ID %d is two jobs", x.ID)
+		}
+		ids[x.ID] = true
+		byRank[int((x.ID-1)%2)]++
+	}
+	if byRank[0] == 0 || byRank[1] == 0 {
+		t.Errorf("stores by rank %v: each rank must store its blocks to its own tier", byRank)
+	}
+	if err := g.TransferDone(1<<40, true, h.now); !errors.Is(err, engine.ErrUnknownTransfer) {
+		t.Errorf("TransferDone of an ID no rank issued = %v, want ErrUnknownTransfer", err)
+	}
+}
+
+// A MultiConnector (NIXL beside the offloading connector) runs on each rank of a group as well: the NIXL
+// handoffs and the offload jobs of a rank share one numbering, so no two jobs of the group, of either connector,
+// share an ID.
+func TestADataParallelGroupRunsAMultiConnectorOnEachRank(t *testing.T) {
+	he := newHostEngine(t, multiBlock(nixlFirst)+dpPool(2, 8, 1), 0)
+	h := &host{t: t, engs: []*hostEngine{he}}
+	g := he.e.(*DPGroup)
+	const n = 6
+	for i := 0; i < n; i++ {
+		if err := g.Add(req(strings.Repeat("m", i+1), 80, 4), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.run(func() bool { return len(he.finished) == n && len(he.due) == 0 && len(he.inflight) == 0 })
+	if len(he.finished) != n {
+		t.Fatalf("%d of %d requests finished", len(he.finished), n)
+	}
+	ids := map[engine.TransferID]bool{}
+	for _, x := range he.started {
+		if ids[x.ID] {
+			t.Errorf("transfer ID %d is two jobs", x.ID)
+		}
+		ids[x.ID] = true
+	}
+	if len(ids) == 0 {
+		t.Error("the offloading child started no job on any rank")
 	}
 }
 

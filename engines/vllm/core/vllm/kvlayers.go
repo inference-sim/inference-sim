@@ -342,3 +342,28 @@ func checkKVLayersFit(c Config, blockSize, maxModelLen, inFlight, prefillLookahe
 	}
 	return nil
 }
+
+// kvCapacityOf is the KV cache size an engine core logs at start-up for this block's pool
+// (kv.KVCapacity): its num_gpu_blocks over the blocks one max_model_len request holds across the
+// KV cache groups, times max_model_len. The zero Capacity when the block states no pool size.
+func kvCapacityOf(c Config, blockSize, maxModelLen, inFlight, prefillLookahead int, method string) (kv.Capacity, error) {
+	if c.NumGPUBlocks <= 0 {
+		return kv.Capacity{}, nil
+	}
+	var layers []kv.Layer
+	if len(c.KVLayers) > 0 {
+		var err error
+		if layers, err = KVLayers(c.KVLayers); err != nil {
+			return kv.Capacity{}, err
+		}
+	}
+	o := kv.GroupOptions{DisableHybrid: c.DisableHybridKVCacheManager != nil && *c.DisableHybridKVCacheManager,
+		TagDraftGroups: TagsDraftGroups(method)}
+	limits := kv.RequestLimits{MaxModelLen: maxModelLen, MaxInFlightTokens: inFlight,
+		ExtraRetained: max(0, prefillLookahead-1)}
+	cp, err := kv.KVCapacity(layers, o, blockSize, limits, int64(c.NumGPUBlocks))
+	if err != nil {
+		return kv.Capacity{}, fmt.Errorf("vllm: kv_layers: %w", err)
+	}
+	return cp, nil
+}
