@@ -4,18 +4,18 @@
   "name": "gpt-oss-120b-h100-fp4-vllm-tp2.r8-s3",
   "engine": {
     "kind": "vllm",
-    "version": "0.32.0"
+    "version": "0.33.0"
   },
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f",
-      "combined_hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f"
+      "hash": "557a5ba3698b4aca5559ce1efbb2964764a6c5ea9dc9f72f25e8e29aad76e0be",
+      "combined_hash": "557a5ba3698b4aca5559ce1efbb2964764a6c5ea9dc9f72f25e8e29aad76e0be"
     },
     "registry": {
       "source": "path",
-      "hash": "96944ae26b4e0d41517f4fa1558a37cd03ddfb4f13c810a7592e79c795dec8d3",
-      "combined_hash": "96944ae26b4e0d41517f4fa1558a37cd03ddfb4f13c810a7592e79c795dec8d3"
+      "hash": "00c8eb6619d2fbd72d22dbf0b57715beed6d03f93f025cfb4d3214111ab86cde",
+      "combined_hash": "00c8eb6619d2fbd72d22dbf0b57715beed6d03f93f025cfb4d3214111ab86cde"
     },
     "released_data": false,
     "build": "unreleased"
@@ -738,7 +738,10 @@
         "cost-model-recurrent",
         "cost-model-memory"
       ],
-      "engine_version": "0.32.0",
+      "engine": {
+        "kind": "vllm",
+        "version": "0.33.0"
+      },
       "cluster": {
         "hardware": "h100",
         "nodes": 1,
@@ -832,6 +835,11 @@
       "e2e_p90_ms",
       "e2e_p95_ms",
       "e2e_p99_ms",
+      "icl_mean_ms",
+      "icl_p50_ms",
+      "icl_p90_ms",
+      "icl_p95_ms",
+      "icl_p99_ms",
       "interactivity_mean",
       "interactivity_of_mean_tpot",
       "interactivity_p50",
@@ -864,9 +872,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.1-0.20261116211231-01cbd6dbe0fb",
+    "substrate": "v0.14.2-0.20261116233741-9f70638aea34",
     "router": "v1.0.0-blis.4",
-    "engine_module": "v0.32.1-0.20261116211503-b75132da28c0"
+    "engine_module": "v0.32.1-0.20261116235522-d1c2a94cdeb2"
   },
   "window": {
     "start_us": 125000,
@@ -898,6 +906,31 @@
     "e2e_p99_ms": {
       "value": 8232.28314,
       "samples": 40,
+      "scope": "cluster"
+    },
+    "icl_mean_ms": {
+      "value": 9.826448317657325,
+      "samples": 20626,
+      "scope": "cluster"
+    },
+    "icl_p50_ms": {
+      "value": 9.731,
+      "samples": 20626,
+      "scope": "cluster"
+    },
+    "icl_p90_ms": {
+      "value": 12.08,
+      "samples": 20626,
+      "scope": "cluster"
+    },
+    "icl_p95_ms": {
+      "value": 12.084,
+      "samples": 20626,
+      "scope": "cluster"
+    },
+    "icl_p99_ms": {
+      "value": 29.89,
+      "samples": 20626,
       "scope": "cluster"
     },
     "interactivity_mean": {
@@ -1667,7 +1700,7 @@
             "Name": "engine_version",
             "Primitive": "",
             "Running": "",
-            "Scope": "0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+            "Scope": "0.31.0: the scenario declares vLLM 0.33.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
         ],
@@ -2038,7 +2071,7 @@
         },
         "skipped_rule_findings": [
           {
-            "message": "pools[0].engine.quantization: \"nvfp4\" is not an in-tree method of engine 0.32.0; if it is an out-of-tree method this is expected, otherwise check the spelling. In-tree methods are [auto_awq auto_gptq awq awq_marlin compressed-tensors deepseek_v4_fp8 experts_int8 fbgemm_fp8 fp8 fp8_per_block fp8_per_channel fp8_per_tensor fp_quant gpt_oss_mxfp4 gptq gptq_marlin humming inc int8_per_channel_weight_only modelopt modelopt_fp4 modelopt_mixed modelopt_mxfp8 moe_wna16 mxfp4 mxfp8 nvfp4_per_token online quark torchao]",
+            "message": "pools[0].engine.quantization: \"nvfp4\" is not an in-tree method of engine 0.33.0; if it is an out-of-tree method this is expected, otherwise check the spelling. In-tree methods are [auto_awq auto_gptq awq awq_marlin compressed-tensors deepseek_v4_fp8 experts_int8 fbgemm_fp8 fp8 fp8_per_block fp8_per_channel fp8_per_tensor fp_quant gpt_oss_mxfp4 gptq gptq_marlin humming inc int8_per_channel_weight_only modelopt modelopt_fp4 modelopt_mixed modelopt_mxfp8 moe_wna16 mxfp4 mxfp8 nvfp4_per_token online quark torchao]",
             "rule": "quantization-known",
             "severity": "warning"
           }

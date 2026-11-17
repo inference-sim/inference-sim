@@ -4,18 +4,18 @@
   "name": "muse-h200-ib-tep8-dspark.r4-s2",
   "engine": {
     "kind": "vllm",
-    "version": "0.32.0"
+    "version": "0.33.0"
   },
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f",
-      "combined_hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f"
+      "hash": "557a5ba3698b4aca5559ce1efbb2964764a6c5ea9dc9f72f25e8e29aad76e0be",
+      "combined_hash": "557a5ba3698b4aca5559ce1efbb2964764a6c5ea9dc9f72f25e8e29aad76e0be"
     },
     "registry": {
       "source": "path",
-      "hash": "96944ae26b4e0d41517f4fa1558a37cd03ddfb4f13c810a7592e79c795dec8d3",
-      "combined_hash": "96944ae26b4e0d41517f4fa1558a37cd03ddfb4f13c810a7592e79c795dec8d3"
+      "hash": "00c8eb6619d2fbd72d22dbf0b57715beed6d03f93f025cfb4d3214111ab86cde",
+      "combined_hash": "00c8eb6619d2fbd72d22dbf0b57715beed6d03f93f025cfb4d3214111ab86cde"
     },
     "released_data": false,
     "build": "unreleased"
@@ -717,7 +717,10 @@
           "source": "internal deployment measurements: 1.84 accepted tokens per DSpark draft at c16 on H100 PP2xTP8, fixed 7-token verify (AL = 1 + accepted)"
         }
       },
-      "engine_version": "0.32.0",
+      "engine": {
+        "kind": "vllm",
+        "version": "0.33.0"
+      },
       "cluster": {
         "hardware": "h200",
         "nodes": 1,
@@ -814,6 +817,11 @@
       "e2e_p90_ms",
       "e2e_p95_ms",
       "e2e_p99_ms",
+      "icl_mean_ms",
+      "icl_p50_ms",
+      "icl_p90_ms",
+      "icl_p95_ms",
+      "icl_p99_ms",
       "interactivity_mean",
       "interactivity_of_mean_tpot",
       "interactivity_p50",
@@ -846,9 +854,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.1-0.20261116211231-01cbd6dbe0fb",
+    "substrate": "v0.14.2-0.20261116233741-9f70638aea34",
     "router": "v1.0.0-blis.4",
-    "engine_module": "v0.32.1-0.20261116211503-b75132da28c0"
+    "engine_module": "v0.32.1-0.20261116235522-d1c2a94cdeb2"
   },
   "window": {
     "start_us": 250000,
@@ -880,6 +888,31 @@
     "e2e_p99_ms": {
       "value": 13087.813100000001,
       "samples": 30,
+      "scope": "cluster"
+    },
+    "icl_mean_ms": {
+      "value": 38.320448556149735,
+      "samples": 4675,
+      "scope": "cluster"
+    },
+    "icl_p50_ms": {
+      "value": 37.106,
+      "samples": 4675,
+      "scope": "cluster"
+    },
+    "icl_p90_ms": {
+      "value": 41.254,
+      "samples": 4675,
+      "scope": "cluster"
+    },
+    "icl_p95_ms": {
+      "value": 76.943,
+      "samples": 4675,
+      "scope": "cluster"
+    },
+    "icl_p99_ms": {
+      "value": 88.462,
+      "samples": 4675,
       "scope": "cluster"
     },
     "interactivity_mean": {
@@ -1491,9 +1524,7 @@
       },
       "colocated": {
         "prefix_cache": {
-          "layout": {
-            "full_eagle": true
-          },
+          "layout": {},
           "model_runner": "v2"
         }
       }
@@ -1528,24 +1559,6 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
-            "Name": "modality",
-            "Primitive": "",
-            "Running": "",
-            "Scope": "text_decoder_of_multimodal: the graph prices the text decoder of a multimodal model: its vision or audio tower, and the encoder work a multimodal request adds, are not priced",
-            "Set": "blis-latency-kernel"
-          },
-          {
-            "KernelMatch": "",
-            "Method": "assumed",
-            "Name": "compute_rate_fp32",
-            "Primitive": "",
-            "Running": "",
-            "Scope": "bf16: FP32 weights run at the TF32 tensor-core rate, taken as half the dense BF16 peak as NVIDIA's datasheets state it for every catalog part; the catalog states no TF32 peak, and the ramp is BF16's",
-            "Set": "blis-latency-kernel"
-          },
-          {
-            "KernelMatch": "",
-            "Method": "assumed",
             "Name": "cudagraph_mode",
             "Primitive": "",
             "Running": "",
@@ -1564,6 +1577,24 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
+            "Name": "modality",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "text_decoder_of_multimodal: the graph prices the text decoder of a multimodal model: its vision or audio tower, and the encoder work a multimodal request adds, are not priced",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
+            "Name": "compute_rate_fp32",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "bf16: FP32 weights run at the TF32 tensor-core rate, taken as half the dense BF16 peak as NVIDIA's datasheets state it for every catalog part; the catalog states no TF32 peak, and the ramp is BF16's",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
             "Name": "routing_imbalance",
             "Primitive": "",
             "Running": "",
@@ -1576,7 +1607,7 @@
             "Name": "engine_version",
             "Primitive": "",
             "Running": "",
-            "Scope": "0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+            "Scope": "0.31.0: the scenario declares vLLM 0.33.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
         ],

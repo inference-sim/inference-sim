@@ -4,18 +4,18 @@
   "name": "glm-5-h200-3p1d-ib.r4-s2-obf0dc613",
   "engine": {
     "kind": "vllm",
-    "version": "0.32.0"
+    "version": "0.33.0"
   },
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f",
-      "combined_hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f"
+      "hash": "557a5ba3698b4aca5559ce1efbb2964764a6c5ea9dc9f72f25e8e29aad76e0be",
+      "combined_hash": "557a5ba3698b4aca5559ce1efbb2964764a6c5ea9dc9f72f25e8e29aad76e0be"
     },
     "registry": {
       "source": "path",
-      "hash": "96944ae26b4e0d41517f4fa1558a37cd03ddfb4f13c810a7592e79c795dec8d3",
-      "combined_hash": "96944ae26b4e0d41517f4fa1558a37cd03ddfb4f13c810a7592e79c795dec8d3"
+      "hash": "00c8eb6619d2fbd72d22dbf0b57715beed6d03f93f025cfb4d3214111ab86cde",
+      "combined_hash": "00c8eb6619d2fbd72d22dbf0b57715beed6d03f93f025cfb4d3214111ab86cde"
     },
     "released_data": false,
     "build": "unreleased"
@@ -712,7 +712,10 @@
         "cost-model-recurrent",
         "cost-model-memory"
       ],
-      "engine_version": "0.32.0",
+      "engine": {
+        "kind": "vllm",
+        "version": "0.33.0"
+      },
       "cluster": {
         "hardware": "h200",
         "fabric": "ib-400g",
@@ -807,6 +810,13 @@
         "value": "2",
         "source": "command_line"
       }
+    ],
+    "files": [
+      {
+        "path": "router/pd-always.yaml",
+        "sha256": "ab9168212bb2fac7077e57349fb8b480941142ba562211450c512c84762e7091",
+        "content": "# llm-d's deploy/config/pd-epp-config.yaml with the always-disagg-pd-decider in place of the\n# prefix-based one: every request is disaggregated (prefill on a prefill-role pod, decode on a\n# decode-role pod). The P/D scenarios here name it in their router block.\napiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n- type: approx-prefix-cache-producer\n  parameters:\n    maxPrefixTokensToMatch: 16384\n    lruCapacityPerServer: 31250\n- type: prefix-cache-scorer\n- type: queue-scorer\n- type: prefill-filter\n- type: decode-filter\n- type: max-score-picker\n- type: always-disagg-pd-decider\n- type: disagg-profile-handler\n  parameters:\n    deciders:\n      prefill: always-disagg-pd-decider\nschedulingProfiles:\n- name: prefill\n  plugins:\n  - pluginRef: prefill-filter\n  - pluginRef: max-score-picker\n  - pluginRef: prefix-cache-scorer\n    weight: 2\n  - pluginRef: queue-scorer\n    weight: 1\n- name: decode\n  plugins:\n  - pluginRef: decode-filter\n  - pluginRef: max-score-picker\n  - pluginRef: prefix-cache-scorer\n    weight: 2\n  - pluginRef: queue-scorer\n    weight: 1\n"
+      }
     ]
   },
   "frame": {
@@ -850,6 +860,11 @@
       "e2e_p90_ms",
       "e2e_p95_ms",
       "e2e_p99_ms",
+      "icl_mean_ms",
+      "icl_p50_ms",
+      "icl_p90_ms",
+      "icl_p95_ms",
+      "icl_p99_ms",
       "interactivity_mean",
       "interactivity_of_mean_tpot",
       "interactivity_p50",
@@ -883,9 +898,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.1-0.20261116211231-01cbd6dbe0fb",
+    "substrate": "v0.14.2-0.20261116233741-9f70638aea34",
     "router": "v1.0.0-blis.4",
-    "engine_module": "v0.32.1-0.20261116211503-b75132da28c0"
+    "engine_module": "v0.32.1-0.20261116235522-d1c2a94cdeb2"
   },
   "window": {
     "start_us": 250000,
@@ -917,6 +932,31 @@
     "e2e_p99_ms": {
       "value": 22564.669590000005,
       "samples": 30,
+      "scope": "cluster"
+    },
+    "icl_mean_ms": {
+      "value": 23.026291119166288,
+      "samples": 13242,
+      "scope": "cluster"
+    },
+    "icl_p50_ms": {
+      "value": 23.463,
+      "samples": 13242,
+      "scope": "cluster"
+    },
+    "icl_p90_ms": {
+      "value": 27.618899999999996,
+      "samples": 13242,
+      "scope": "cluster"
+    },
+    "icl_p95_ms": {
+      "value": 27.634,
+      "samples": 13242,
+      "scope": "cluster"
+    },
+    "icl_p99_ms": {
+      "value": 27.647,
+      "samples": 13242,
       "scope": "cluster"
     },
     "interactivity_mean": {
@@ -1694,6 +1734,15 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
+            "Name": "max_cudagraph_capture_size",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
             "Name": "fabric_bandwidth_efficiency",
             "Primitive": "",
             "Running": "",
@@ -1707,15 +1756,6 @@
             "Primitive": "",
             "Running": "",
             "Scope": "absent: not in the scenario's coefficient sets: no per-kind decode rate for sparse_mla attention, so it is priced with the part-wide attention pair and any per-kind floor is not used",
-            "Set": "blis-latency-kernel"
-          },
-          {
-            "KernelMatch": "",
-            "Method": "assumed",
-            "Name": "max_cudagraph_capture_size",
-            "Primitive": "",
-            "Running": "",
-            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
             "Set": "blis-latency-kernel"
           },
           {
@@ -1751,7 +1791,7 @@
             "Name": "engine_version",
             "Primitive": "",
             "Running": "",
-            "Scope": "0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+            "Scope": "0.31.0: the scenario declares vLLM 0.33.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
         ],
@@ -2163,6 +2203,15 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
+            "Name": "max_cudagraph_capture_size",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
             "Name": "fabric_bandwidth_efficiency",
             "Primitive": "",
             "Running": "",
@@ -2176,15 +2225,6 @@
             "Primitive": "",
             "Running": "",
             "Scope": "absent: not in the scenario's coefficient sets: no per-kind decode rate for sparse_mla attention, so it is priced with the part-wide attention pair and any per-kind floor is not used",
-            "Set": "blis-latency-kernel"
-          },
-          {
-            "KernelMatch": "",
-            "Method": "assumed",
-            "Name": "max_cudagraph_capture_size",
-            "Primitive": "",
-            "Running": "",
-            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
             "Set": "blis-latency-kernel"
           },
           {
@@ -2220,7 +2260,7 @@
             "Name": "engine_version",
             "Primitive": "",
             "Running": "",
-            "Scope": "0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+            "Scope": "0.31.0: the scenario declares vLLM 0.33.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
         ],
