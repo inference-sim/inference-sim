@@ -159,7 +159,7 @@ The cost model (blis-substrate `kernel/`, adapter blis-vllm `compat/kernelmodel`
 
 ## Post-Hoc Saturation Detection
 
-Analyzes completed runs (distinct from the real-time flow-control detector). Package `sim/saturation/`; streaming detectors `composite`, `threshold`, `backlog-drift`, `peak-rate`, each with a false-alarm calibration knob. CLI (on `run` and `replay`): `--detectors <name|comma-list|all>`, `--saturation-config <yaml>`, `--saturation-report <path>` (writes `{"final":{...},"trace":[...]}`), `--saturation-final-window <duration>`. run→replay is byte-identical (INV-13). Full mechanism, tuning knobs, and migration from the pre-#1516 flags: `docs/contributing/saturation-analyzer-extension.md`.
+Analyzes completed runs (distinct from the real-time flow-control detector). Package `sim/saturation/`: one steady-state detector (DEV-10), `settle`, classifying the measured window SETTLED, OVERLOADED or INCOMPLETE from the trend of the backlog; the earlier roster (composite, threshold, backlog-drift, peak-rate) is gone. CLI (on `run` and `replay`): `--detectors settle`, `--saturation-report <path>` (writes the verdict). Statistic and measured false-alarm rate and power: `docs/contributing/saturation-analyzer-extension.md`.
 
 ## File Organization
 

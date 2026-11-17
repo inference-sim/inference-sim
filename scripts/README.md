@@ -330,12 +330,9 @@ Drives `blis run` across a configurable rate sweep against one scenario (a
 blis-schemas Scenario + Deployment file that fixes model, hardware, parallelism
 and engine settings; `blis-latency-kernel` prices every step). For each rate it:
 
-1. Runs `blis run` once with the **detector bank** (`--detectors all`), which
-   fans one deterministic replay out to every post-hoc detector (composite,
-   threshold, backlog-drift, peak-rate) in a single pass (#1519, #1614).
-2. Reads each detector's final verdict from the run's `--saturation-report`
-   (the `"final"` detector→label map, #1517).
-3. Extracts throughput, latency, and all detector verdicts into a single CSV row.
+1. Runs `blis run` once with the steady-state detector (`--detectors settle`, DEV-10).
+2. Reads the detector's state from the run's `--saturation-report`.
+3. Extracts throughput, latency, and the verdict into a single CSV row.
 
 ### Quick start
 
@@ -371,8 +368,7 @@ any directory of scenario YAMLs works.
 | `WORKLOAD` | `chatbot` | Catalog workload preset (chatbot/summarization/contentgen/multidoc) |
 | `NUM_REQUESTS` | `6000` | `--num-requests` per rate |
 | `HORIZON_US` | `600000000` (600s) | `--horizon` per rate |
-| `DETECTORS` | `all` | `--detectors` selection (`all`, or a comma-list like `composite,threshold`) |
-| `FINAL_WINDOW` | `10s` | `--saturation-final-window` (trailing window for the plurality vote) |
+| `DETECTORS` | `settle` | `--detectors` (the one steady-state detector) |
 | `RATES` | `0.5 1 2 4 6 8 10 12 14 16 20 30 40 50 60 80 100` | Space-separated rate sweep |
 | `SEED` | `42` | RNG seed |
 | `OUT_DIR` | `results/saturation-<ts>-<pid>` | Output directory |

@@ -1303,8 +1303,6 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	origTraceOutput := replayTraceOutput
 	origSaturationReport := saturationReport
 	origDetectorName := detectorName
-	origSaturationConfig := saturationConfigPath
-	origSaturationFinalWindow := saturationFinalWindow
 	origGoodputTTFT := goodputSLOTTFT
 	origGoodputITL := goodputSLOITL
 	origGoodputE2E := goodputSLOE2E
@@ -1320,8 +1318,6 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 		replayTraceOutput = origTraceOutput
 		saturationReport = origSaturationReport
 		detectorName = origDetectorName
-		saturationConfigPath = origSaturationConfig
-		saturationFinalWindow = origSaturationFinalWindow
 		goodputSLOTTFT = origGoodputTTFT
 		goodputSLOITL = origGoodputITL
 		goodputSLOE2E = origGoodputE2E
@@ -1338,8 +1334,6 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	replayTraceOutput = ""
 	saturationReport = ""
 	detectorName = ""
-	saturationConfigPath = ""
-	saturationFinalWindow = ""
 	goodputSLOTTFT, goodputSLOITL, goodputSLOE2E = "", "", ""
 	sloPriorityOverrides = nil
 	replaySessionMode = "fixed"
