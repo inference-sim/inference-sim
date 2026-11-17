@@ -39,6 +39,7 @@ columns `vllm_priority`, `x_request_id`, `server_input_tokens`, `send_time_us`,
 | `phases` | list | no | Drain-gated stages in order, below. A phase starts after the previous one drains (`start: after_drain`, plus `offset_us`) or at the clock `offset_us` (`start: at`); `concurrency` limits its requests in flight. Names are lowercase slugs, each used once and each naming at least one request. The format marks phases; the reader decides which count. |
 | `max_nodes_spanned` | integer | no | The most nodes one instance occupied, when more than one. A replay refuses a trace it cannot reproduce. |
 | `router` | mapping | no | The llm-d router inputs the run routed with, below. |
+| `acceptance` | mapping | no | What the workload stated about speculative acceptance: `category`, `thinking` (`on` or `off`) and `value`, as in the [acceptance reference](acceptance.md#workload-terms). A replay resolves the profile from it as the run did; a selector on the command line overrides it. Omitted when the workload stated none. |
 
 A `generated` or `replayed` trace records a BLIS deployment, and a replay keeps its header
 authoritative: it does not add offload tiers or other deployment options the run did not

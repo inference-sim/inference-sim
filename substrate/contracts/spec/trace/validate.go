@@ -5,6 +5,7 @@ import (
 	"regexp"
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 )
 
 // Validate checks the header on its own.
@@ -47,6 +48,17 @@ func (h *Header) Validate() *validate.Problems {
 		p.Field("max_nodes_spanned", "is 1: an instance on one node spans none; omit the key")
 	}
 	h.validatePhases(p)
+	if a := h.Acceptance; a != nil {
+		switch {
+		case a.Category == "" && a.Thinking == "" && a.Value == nil:
+			p.Field("acceptance", "states no category, thinking mode or value; omit the key")
+		case a.Thinking != "" && !a.Thinking.Valid():
+			p.Field("acceptance.thinking", "%q is not one of %v", a.Thinking, acceptance.AllThinkingModes())
+		}
+		if a.Value != nil {
+			p.Merge("acceptance.value", a.Value.Validate())
+		}
+	}
 	if r := h.Router; r != nil && len(r.EPPFlags) == 0 {
 		p.Field("router.epp_flags", "required: the router's command-line flags")
 	}

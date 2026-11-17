@@ -12,7 +12,11 @@
 // another tool's capture, which records no BLIS deployment (inference-sim #2067).
 package trace
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+)
 
 // Version is the trace format this package reads and writes.
 const Version = 4
@@ -52,6 +56,13 @@ type Header struct {
 	// Router records the llm-d router inputs the run routed with, so a replay rebuilds the
 	// same router.
 	Router *Router `yaml:"router,omitempty"`
+	// Acceptance is what the workload that made the trace stated about speculative
+	// acceptance: the category and thinking mode that select a registry profile, and a
+	// value of its own. It is the workload layer of the acceptance resolution
+	// (acceptance.Resolve), so a replay that finds it resolves the profile the run did
+	// (DEV-7, inference-sim#2115). A selector the command line states still overrides it.
+	// Absent when the workload stated none.
+	Acceptance *acceptance.Workload `yaml:"acceptance,omitempty"`
 }
 
 // Phase is one stage of a trace. A phase starts after the previous one drains, or at a stated
