@@ -30,9 +30,6 @@ pools:
       max_num_batched_tokens: 8192
       max_model_len: 262144
       enable_prefix_caching: true
-      # The router renders prompts through this server (token-producer), which vLLM answers only
-      # with --enable-scale-out; without it every render call is a 403 and routing falls to load.
-      enable_scale_out: true
       gpu_memory_utilization: 0.9
       async_scheduling: true
       moe_backend: marlin

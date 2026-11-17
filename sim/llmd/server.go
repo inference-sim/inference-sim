@@ -50,8 +50,6 @@ func (m *modelServers) serve(r *http.Request) (*http.Response, error) {
 			return respond(r, http.StatusServiceUnavailable, "text/plain", []byte("no such model server\n")), nil
 		}
 		return respond(r, http.StatusOK, "text/plain; version=0.0.4", m.metricsText(inst)), nil
-	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/render") && !m.g.rendersServed():
-		return m.renderRefused(r), nil
 	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/v1/completions/render"):
 		return m.renderCompletions(r)
 	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/v1/chat/completions/render"):
@@ -63,34 +61,6 @@ func (m *modelServers) serve(r *http.Request) (*http.Response, error) {
 	default:
 		return respond(r, http.StatusNotFound, "text/plain", []byte("not served by the simulated model server\n")), nil
 	}
-}
-
-// renderDisabledMessage is the text vLLM's disabled scale-out handler answers every render,
-// derender and token-in/token-out route with (vllm/entrypoints/scale_out/factories.py
-// register_scale_out_api_routers at v0.33.0, 4ba787ec).
-const renderDisabledMessage = "Scale-out endpoints are disabled. Restart vllm serve with --enable-scale-out to enable them."
-
-// rendersServed reports whether the model servers answer the router's render calls. The router
-// reaches them through one URL (the token producer's vllm.url), so a call is not tied to an
-// instance: it is answered only when every simulated server answers it, each by its engine's own
-// statement (engine.RenderServing). Servers that differ are answered as the least capable one,
-// since which of them a real load balancer would hit is not known.
-func (g *Gateway) rendersServed() bool {
-	for _, ep := range g.endpoints {
-		if !ep.inst.ServesRender() {
-			return false
-		}
-	}
-	return true
-}
-
-// renderRefused answers a render call as vLLM does when it runs without --enable-scale-out:
-// HTTP 403 and a PermissionDeniedError (create_error_response, error_response.py). The router's
-// token producer counts the failure and goes on without token IDs.
-func (m *modelServers) renderRefused(r *http.Request) *http.Response {
-	b, _ := json.Marshal(map[string]any{"error": map[string]any{
-		"message": renderDisabledMessage, "type": "PermissionDeniedError", "param": nil, "code": http.StatusForbidden}})
-	return respond(r, http.StatusForbidden, "application/json", b)
 }
 
 // renderCompletions answers vLLM's /v1/completions/render for a token-ID prompt: the rendered

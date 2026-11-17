@@ -95,14 +95,8 @@ func compatEngineFactory(lockstepRanks int) func(int, sim.InstanceConfig) (*sim.
 
 // compatEngineFactoryWith is compatEngineFactory with the price each driver's Environment gives a
 // handoff.
-//
-// A wrap function, when given, replaces each single-engine instance's engine before its driver is
-// built (a test double that states what the real engine states through an optional interface).
-func compatEngineFactoryWith(lockstepRanks int, ticks func(tokens int64) int64, wrap ...func(engine.Engine) engine.Engine) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
+func compatEngineFactoryWith(lockstepRanks int, ticks func(tokens int64) int64) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
 	driver := func(eng engine.Engine, cfg cengine.SimConfig) (*sim.EngineDriver, error) {
-		for _, w := range wrap {
-			eng = w(eng)
-		}
 		var pull env.Environment = testutil.FixedPull(cfg.BlockSizeTokens, func(tokens int64, _, _ plan.Endpoint) int64 { return ticks(tokens) })
 		dcfg := sim.EngineDriverConfig{Horizon: cfg.Horizon, ResumeGapFromLastToken: true,
 			ScrapeEngineMetrics: true, ApplyAtStepStart: true, Environment: pull}
