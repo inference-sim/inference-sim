@@ -312,6 +312,14 @@ type PlannedMHC struct {
 // mhcFn matches a hyper-connection mixing GEMM's role.
 var mhcFn = regexp.MustCompile(`^hc_.*fn`)
 
+// ownModule matches the roles of projections the engine builds as modules of their own, so that
+// consecutive column-parallel GEMMs over one hidden state are still separate launches. Gated
+// DeltaNet's in_proj_qkvz and in_proj_ba are two ColumnParallelLinear/MergedColumnParallelLinear
+// modules called one after the other (QwenGatedDeltaNetAttention,
+// vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py:803-851, forward_cuda :1134-1148
+// at v0.33.0), not one matmul with the widths summed.
+var ownModule = regexp.MustCompile(`^recurrent_in_proj`)
+
 // PlannedCache is one cache an attention node names, with its record resolved.
 type PlannedCache struct {
 	model.Cache
@@ -795,7 +803,8 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 			// own kernel costs far more than the same work folded into a 9216-wide one --
 			// and sharded over 8 ranks that 640 becomes 80.
 			merged := false
-			if wasFusable >= 0 {
+			separate := ownModule.MatchString(n.Role)
+			if wasFusable >= 0 && !separate {
 				prev := &pl.DenseGEMMs[wasFusable]
 				if prev.ShardN && g.ShardN && prev.K == g.K && prev.Format == g.Format &&
 					prev.Replicated == g.Replicated && prev.TokenSharded == g.TokenSharded {
@@ -810,6 +819,9 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 			if !merged {
 				pl.DenseGEMMs = append(pl.DenseGEMMs, g)
 				fusable = len(pl.DenseGEMMs) - 1
+				if separate {
+					fusable = -1
+				}
 			}
 			// Weight bytes are per node whether or not the launches fuse: fusing changes
 			// how many kernels read the parameters, not how many parameters there are.
