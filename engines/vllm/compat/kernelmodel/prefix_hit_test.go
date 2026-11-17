@@ -45,7 +45,7 @@ func TestPrefixHit_DeepSeekV41LayoutFollowsTheDraftsWindowCache(t *testing.T) {
 	}
 }
 
-// Each feature vLLM v0.31.0's V2 model runner does not support (config/vllm.py:3051-3103)
+// Each feature vLLM v0.33.0's V2 model runner does not support (vllm/config/vllm.py:3053-3087@4ba787ec)
 // that a deployment can state forces the V1 runner, which turns SWA bounded replay off
 // (deepseek_v41/attention.py:520-526), and so does prefill context parallelism
 // (attention.py:528-537) under the V2 runner.
@@ -59,14 +59,11 @@ func TestPrefixHit_V1RunnerAndPCPTurnBoundedReplayOff(t *testing.T) {
 	}{
 		{"V1-only speculative method", func(p *deployment.Pool) {
 			editPoolEngine(t, p, func(e *engineconfig.Engine) {
-				e.Speculative = &engineconfig.Speculative{Method: "ngram", NumSpecTokens: 3}
+				e.Speculative = &engineconfig.Speculative{Method: "suffix", NumSpecTokens: 3}
 			})
 		}, "v1"},
 		{"dual batch overlap", func(p *deployment.Pool) {
 			editPoolEngine(t, p, func(e *engineconfig.Engine) { e.DBO = &engineconfig.DBO{Enabled: true} })
-		}, "v1"},
-		{"mamba cache mode all", func(p *deployment.Pool) {
-			editPoolEngine(t, p, func(e *engineconfig.Engine) { e.MambaCacheMode = "all" })
 		}, "v1"},
 		{"prefill context parallelism", func(p *deployment.Pool) { p.Parallel.PCP = 2 }, "v2"},
 	} {
@@ -180,6 +177,40 @@ func TestPrefixHit_MTPDropsTheLastBlockOnlyBesideAKVConnector(t *testing.T) {
 			got := m.PrefixHit(nil)
 			if want := (sim.KVPrefixHit{FullEagle: tt.drop}); got.Hit != want {
 				t.Errorf("got %+v (%s), want %+v", got.Hit, got.Note, want)
+			}
+		})
+	}
+}
+
+// vLLM v0.33.0 picks the model runner by its own list (vllm/config/vllm.py:3053-3087@4ba787ec).
+// ngram and the Mamba cache mode "all", which v0.31.0's list sent to V1, now run on V2. suffix,
+// custom_class and dual batch overlap still force V1.
+func TestModelRunner_V033List(t *testing.T) {
+	spec := func(method string) func(e *engineconfig.Engine) {
+		return func(e *engineconfig.Engine) {
+			e.Speculative = &engineconfig.Speculative{Method: method, NumSpecTokens: 3}
+		}
+	}
+	for _, tt := range []struct {
+		name   string
+		edit   func(e *engineconfig.Engine)
+		runner string
+	}{
+		{"no feature", func(*engineconfig.Engine) {}, "v2"},
+		{"ngram", spec("ngram"), "v2"},
+		{"ngram_gpu", spec("ngram_gpu"), "v2"},
+		{"eagle3", spec("eagle3"), "v2"},
+		{"mamba cache mode all", func(e *engineconfig.Engine) { e.MambaCacheMode = "all" }, "v2"},
+		{"suffix", spec("suffix"), "v1"},
+		{"custom_class", spec("custom_class"), "v1"},
+		{"dual batch overlap", func(e *engineconfig.Engine) { e.DBO = &engineconfig.DBO{Enabled: true} }, "v1"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := engineconfig.Engine{BlockSize: 64}
+			tt.edit(&e)
+			got, forcedBy := (&Model{engine: e}).ModelRunner()
+			if got != tt.runner {
+				t.Errorf("runner %q (forced by %v), want %q", got, forcedBy, tt.runner)
 			}
 		})
 	}

@@ -113,24 +113,29 @@ func prefixLayoutOf(g *model.Graph, dep *deployment.Deployment, pool deployment.
 	return l
 }
 
-// v1OnlySpecMethods are the speculative methods vLLM v0.31.0's V2 model runner does not
-// support (config/vllm.py:3073-3083).
-var v1OnlySpecMethods = []string{"ngram", "ngram_gpu", "suffix", "medusa", "mlp_speculator", "custom_class"}
+// v1OnlySpecMethods are the speculative methods vLLM v0.33.0's V2 model runner does not
+// support (vllm/config/vllm.py:3066-3068@4ba787ec9959e566d3b587a796dff07673324da5). ngram moved
+// to V2, and medusa and mlp_speculator are no longer methods.
+var v1OnlySpecMethods = []string{"suffix", "custom_class"}
 
-// ModelRunner is the model runner vLLM v0.31.0 picks for the pool: V2 unless
+// ModelRunner is the model runner vLLM v0.33.0 picks for the pool: V2 unless
 // VllmConfig._get_v2_model_runner_unsupported_features reports a feature
-// (VllmConfig.use_v2_model_runner, config/vllm.py:700-760, with HAS_TRITON on CUDA). It
-// returns "v1" or "v2" and the features that forced V1. Of the checks at
-// config/vllm.py:3051-3103 a deployment states the speculative method (:3073-3083), dual
-// batch overlap (:3094-3095, which without VLLM_USE_V2_MODEL_RUNNER always reports "dual
-// batch overlap", :3245-3246) and the Mamba cache mode (:3100-3101). The rest are at their
-// defaults, which pass: compilation mode VLLM_COMPILE, not STOCK_TORCH_COMPILE (:3056-3057);
-// sequence parallelism off (:3059-3063; enable_sp defaults to IS_DENSE = False at every
-// optimization level, :147, :261-330); no external_launcher (:3067-3071); no parallel
-// drafting outside dflash/dspark (:3088-3092); no elastic EP (:3097-3098). KV connectors,
-// P/D roles, DP/EP, CUDA graph modes and enforce_eager are not on the list. The environment
-// variable, hisparse and watermarking (:702-720), and ROCm's per-architecture V1 default
-// (:722-743) are outside what a deployment states (BLIS's chips are CUDA parts).
+// (VllmConfig.use_v2_model_runner, vllm/config/vllm.py:730-767@4ba787ec, with HAS_TRITON on CUDA).
+// It returns "v1" or "v2" and the features that forced V1. Of the checks at
+// vllm/config/vllm.py:3053-3087, a deployment states two: the speculative method (:3066-3068)
+// and dual batch overlap (:3084-3085). Without VLLM_USE_V2_MODEL_RUNNER, overlap always reports
+// "dual batch overlap" (_get_dbo_unsupported_features, :3222-3233). The rest are at their
+// defaults, which pass:
+//   - no external_launcher pipeline parallelism (:3060-3064);
+//   - parallel drafting only for dflash and dspark, which the check exempts. vLLM sets it for
+//     those two (vllm/config/speculative.py:1581-1582) and no deployment sets it for another
+//     method (:3069-3076);
+//   - no heterogeneous-vocabulary draft (:3081-3082).
+//
+// v0.33.0 dropped the Mamba cache mode from the list, so mamba_cache_mode "all" runs on V2.
+// KV connectors, P/D roles, DP/EP, CUDA graph modes and enforce_eager are not on the list.
+// Three things are outside what a deployment states: the environment variable, and HiSparse
+// and watermarking, which force V2 (:731-746).
 func (m *Model) ModelRunner() (runner string, forcedBy []string) {
 	e := m.engine
 	if sp := e.Speculative; sp != nil && slices.Contains(v1OnlySpecMethods, sp.Method) {
@@ -138,9 +143,6 @@ func (m *Model) ModelRunner() (runner string, forcedBy []string) {
 	}
 	if e.DBO != nil && e.DBO.Enabled {
 		forcedBy = append(forcedBy, "dual batch overlap")
-	}
-	if e.MambaCacheMode == "all" {
-		forcedBy = append(forcedBy, "mamba cache mode all")
 	}
 	if len(forcedBy) > 0 {
 		return "v1", forcedBy
