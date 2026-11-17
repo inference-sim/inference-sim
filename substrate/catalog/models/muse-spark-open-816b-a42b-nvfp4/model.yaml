@@ -1,10 +1,15 @@
 name: muse-spark-open-816b-a42b-nvfp4
+# The checkpoint InferenceX serves. Its config.json at this revision is byte-identical to the
+# unsloth/Muse-Spark-Open-816B-A42B-NVFP4 mirror's at fc6908f53c6882d4ec48fca5ba144e41d21e1f92,
+# from which it was first committed: both trees list it as git blob
+# d2cd088c7fe91bb7c720fb283c68d37a56715e17. The repository is gated, so the licence is read
+# from the provider's API record of the revision.
 source:
   provider: huggingface
-  repo: unsloth/Muse-Spark-Open-816B-A42B-NVFP4
-  revision: fc6908f53c6882d4ec48fca5ba144e41d21e1f92
-  retrieved: 2026-10-29
+  repo: meta-models/Muse-Spark-Open-816B-A42B-NVFP4
+  revision: 6b5fa7bb2d5bcf422a01852ae562a8f7f52b55c3
+  retrieved: 2026-11-16
 licence:
   id: LicenseRef-muse-model-license
-  evidence: https://huggingface.co/unsloth/Muse-Spark-Open-816B-A42B-NVFP4/raw/fc6908f53c6882d4ec48fca5ba144e41d21e1f92/README.md
-drafters: [muse-spark-open-dspark]
+  evidence: https://huggingface.co/api/models/meta-models/Muse-Spark-Open-816B-A42B-NVFP4/revision/6b5fa7bb2d5bcf422a01852ae562a8f7f52b55c3
+drafters: [muse-spark-open-dspark, muse-spark-open-dflash2]
