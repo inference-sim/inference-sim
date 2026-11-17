@@ -1,0 +1,267 @@
+{
+ "description": "Virtual time, unbound_store_timeout_s 5: the prefiller's store for a remote decoder is reaped unfetched at 5 s and its id remembered. The decoder then fetches under that id: the prefiller answers TransferDone(success=False) at once, so the load fails in the next rounds, not at the 30 s load timeout. Past _REAPED_ID_RETENTION_S (60 s) the id is forgotten, so a later store under it parks instead of failing at once.",
+ "instances": [
+  {
+   "spec": {
+    "name": "TieringOffloadingSpec",
+    "cpu_bytes_to_use": 65536,
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1,
+    "blocks_per_chunk": 1,
+    "extra": {
+     "tier_poll_interval_s": 0,
+     "secondary_tiers": [
+      {
+       "type": "p2p",
+       "host": "127.0.0.1",
+       "port": 5710,
+       "unbound_store_timeout_s": 5
+      }
+     ]
+    }
+   }
+  },
+  {
+   "spec": {
+    "name": "TieringOffloadingSpec",
+    "cpu_bytes_to_use": 65536,
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1,
+    "blocks_per_chunk": 1,
+    "extra": {
+     "tier_poll_interval_s": 0,
+     "secondary_tiers": [
+      {
+       "type": "p2p",
+       "host": "127.0.0.1",
+       "port": 5711
+      }
+     ]
+    }
+   }
+  }
+ ],
+ "calls": [
+  {
+   "m": "on_new_request",
+   "inst": 0,
+   "ctx": "p",
+   "params": {
+    "remote_decoder": {
+     "kv_request_id": "u1"
+    }
+   }
+  },
+  {
+   "m": "prepare_store",
+   "inst": 0,
+   "ctx": "p",
+   "keys": [
+    "k1"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "inst": 0,
+   "ctx": "p",
+   "keys": [
+    "k1"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": [
+    "p"
+   ]
+  },
+  {
+   "m": "advance",
+   "s": 5.0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "d",
+   "params": {
+    "remote_prefiller": {
+     "kv_request_id": "u1",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5710
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": [
+    "d"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": []
+  },
+  {
+   "m": "advance",
+   "s": 59.9
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "prepare_store",
+   "inst": 0,
+   "ctx": "p",
+   "keys": [
+    "k2"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "inst": 0,
+   "ctx": "p",
+   "keys": [
+    "k2"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": []
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "advance",
+   "s": 0.2
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "prepare_store",
+   "inst": 0,
+   "ctx": "p",
+   "keys": [
+    "k3"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "inst": 0,
+   "ctx": "p",
+   "keys": [
+    "k3"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": []
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 0,
+   "ctx": "p"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 1,
+   "ctx": "d"
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  }
+ ]
+}
