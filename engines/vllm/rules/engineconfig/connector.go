@@ -6,6 +6,8 @@
 package engineconfig
 
 import (
+	"fmt"
+
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 )
@@ -37,6 +39,11 @@ type ConnectorOptions struct {
 	// KVLoadFailurePolicy is what a failed KV load does: "recompute" the failed blocks, or
 	// "fail" the request, the default (vllm/config/kv_transfer.py:88@5df63a72).
 	KVLoadFailurePolicy string `yaml:"kv_load_failure_policy,omitempty"`
+	// SecondaryTiers are TieringOffloadingSpec's tiers that sit on no catalog device, stated as vLLM
+	// states them in kv_connector_extra_config.secondary_tiers (tiering/spec.py:316-318@4ba787ec): a
+	// p2p tier, the host memory of a peer instance (tiering/p2p/manager.py:232-246). A tier on a
+	// device (fs, obj) is one of the offload block's tiers instead.
+	SecondaryTiers []map[string]any `yaml:"secondary_tiers,omitempty"`
 }
 
 // kvLoadFailurePolicies is vLLM v0.32.0's closed literal (vllm/config/kv_transfer.py:88@5df63a72).
@@ -74,5 +81,11 @@ func ValidateConnectorOptions(p *rules.Problems, at string, c *ConnectorOptions)
 	}
 	if f := c.KVLoadFailurePolicy; f != "" && !kvLoadFailurePolicies[f] {
 		p.Field(at+".connector_options.kv_load_failure_policy", "%q is not recompute or fail", f)
+	}
+	for i, t := range c.SecondaryTiers {
+		if t["type"] != "p2p" {
+			p.Field(fmt.Sprintf("%s.connector_options.secondary_tiers[%d].type", at, i),
+				"%v is not a tier on no device: only p2p is stated here; a tier on a catalog device is one of the offload block's tiers", t["type"])
+		}
 	}
 }
