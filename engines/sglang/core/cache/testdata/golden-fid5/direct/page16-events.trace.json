@@ -3661,14 +3661,14 @@
  ],
  "kind": "direct",
  "provenance": {
-  "blis_sglang_commit": "57a1beb13d8b08ff38fdf85a001aab0000e0c715",
+  "blis_sglang_commit": "162548367baf2623fd41540b7b9ab731c4da8a1b",
   "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
   "mock_version": "gpu-mock/4+4be739f2a212",
   "model": "none: the driver builds SGLang's pools and cache from the sequence's cache block",
   "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
   "oracle_inputs": {
-   "oracle/cache_interfaces.py": "efec800da44c17ff7451eab407e6db60ffb0bd8f842ff909a3195afdc6040f24",
-   "oracle/harness.json": "69ee17fb4b40cba62add8242016e8e527742475c3fd3e5c27aa0014fcdc228f4",
+   "oracle/cache_interfaces.py": "65cbb6a4d473dcccc0d3ce6b262be075d35b54993636aff9d35b655f11f4e264",
+   "oracle/harness.json": "c9fc5c0cf22ba9274aec27d768d097303e166b1b6dc97883ec2972c4b29e27b6",
    "oracle/harness.py": "a1ab29f3421f2a5b504a0096f59cbe38055c8c2615a99d2d7c09bda96b0c5df6",
    "oracle/mocks.json": "8863c3c7c02de293b2ddbad2bb421b5741c95eef87019025d24835e44a84b1e7",
    "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
