@@ -1145,9 +1145,9 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#55"
+    "proof": "oracle/inertness/data_parallel_rpc_port.json"
    },
-   "status": "not_modelled"
+   "status": "proven_inert"
   },
   "config:data_parallel_size": {
    "estimation": {

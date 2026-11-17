@@ -1,0 +1,330 @@
+{
+ "field": "data_parallel_rpc_port",
+ "release": "v0.33.0 4ba787ec9959e566d3b587a796dff07673324da5",
+ "claim": "The engine (scheduler, KV cache, engine core, workers, cost model) makes no decision from data_parallel_rpc_port. It is the TCP port of the front end's handshake socket: the engine-core processes connect to it once at startup to announce themselves and receive their addresses and configuration, and it is never read again. Where it is read at v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5): EngineArgs resolves it into ParallelConfig (vllm/engine/arg_utils.py:2559-2562, a run of the config kind); launch_core_engines builds the handshake address from it (vllm/v1/engine/utils.py:1348-1352, a handshake run); vllm serve --headless builds the address a headless node's engine cores connect to (vllm/entrypoints/cli/serve.py:236-237, a handshake run); the elastic-EP scale-up handshake server binds it (vllm/distributed/elastic_ep/external_elastic_ep.py:462-466, a handshake run); ParallelConfig.compute_hash lists it among the fields that do not enter the compile-cache hash (vllm/config/parallel.py:929, a string in a list, not a read). The Rust front end reads it as handshake_port (rust/src/managed-engine/src/cli.rs:31-35 and 77-80 take --data-parallel-rpc-port, or allocate a free port; rust/src/managed-engine/src/process.rs:54 builds tcp://host:port and :76-77 passes the same flag to the headless Python engine it starts; rust/src/cmd/src/main.rs:124-142 hands it to both): it only forms the same handshake address. Those reads are reviewed by file, the harness does not run Rust, and named_in lists every file of vllm/ and rust/ (tests excluded for rust) that names the field or its flag, so the check fails when the tree names it anywhere else. The rpc_port that vllm/distributed/kv_transfer/kv_connector/v1/mooncake/ and vllm/distributed/ec_transfer/ec_connector/mooncake/ name is a different variable: engine.get_rpc_port() is the Mooncake transfer engine's own port (mooncake_connector.py:1273, ec mooncake/transfer.py:71,80), and lookup_rpc_port (mooncake/store/worker.py:2475) is a key of the connector's extra config; neither reads ParallelConfig.data_parallel_rpc_port, and Mooncake connectors are refused by name. What the runs show: with the process and socket layer replaced by recorders (no port is bound, no process starts), the resolved parallel, scheduler and cache config except the field itself, the number of engine cores and which are local, whether the handshake is local, the coordinator and the elastic scale-up server's expected ranks are identical at every probe. The endpoint differs by exactly the stated port, which the check requires it to carry. What this does not give. The simulator does not model the handshake: start-up time is not priced, and a deployment whose port is taken (the engine would fail to start) is not refused. A recorded run that states the port ran, so neither applies to a scored point.",
+ "probes": [
+  {
+   "label": "default (29550)",
+   "value": 29550
+  },
+  {
+   "label": "13345 (InferenceX P/D recipes)",
+   "value": 13345
+  },
+  {
+   "label": "62100 (vLLM's Rust front end examples)",
+   "value": 62100
+  }
+ ],
+ "runs": [
+  {
+   "id": "config",
+   "kind": "config",
+   "apply": {
+    "engine_args": "data_parallel_rpc_port"
+   },
+   "base": {
+    "data_parallel_size": 2,
+    "data_parallel_size_local": 1,
+    "data_parallel_address": "10.0.0.1"
+   },
+   "observe": [
+    "parallel_config.data_parallel_size",
+    "parallel_config.data_parallel_size_local",
+    "scheduler_config.max_num_seqs",
+    "scheduler_config.max_num_batched_tokens",
+    "cache_config.block_size"
+   ],
+   "echo": "parallel_config.data_parallel_rpc_port",
+   "compare": [
+    "scheduler_config",
+    "cache_config",
+    "parallel_config",
+    "compilation_config"
+   ],
+   "ignore": [
+    "parallel_config.data_parallel_master_port",
+    "parallel_config._data_parallel_master_port_list"
+   ]
+  },
+  {
+   "id": "launch",
+   "kind": "handshake",
+   "entry": "launch_core_engines",
+   "apply": {
+    "engine_args": "data_parallel_rpc_port"
+   },
+   "base": {
+    "data_parallel_size": 2,
+    "data_parallel_size_local": 1,
+    "data_parallel_address": "10.0.0.1"
+   },
+   "echo": "data_parallel_rpc_port",
+   "ignore": [
+    "parallel_config.data_parallel_master_port",
+    "parallel_config._data_parallel_master_port_list"
+   ]
+  },
+  {
+   "id": "headless",
+   "kind": "handshake",
+   "entry": "run_headless",
+   "apply": {
+    "cli": "--data-parallel-rpc-port"
+   },
+   "cli": [
+    "--data-parallel-size",
+    "2",
+    "--data-parallel-size-local",
+    "1",
+    "--data-parallel-start-rank",
+    "1",
+    "--data-parallel-address",
+    "10.0.0.1"
+   ],
+   "echo": "data_parallel_rpc_port",
+   "ignore": [
+    "parallel_config.data_parallel_master_port",
+    "parallel_config._data_parallel_master_port_list"
+   ]
+  },
+  {
+   "id": "elastic",
+   "kind": "handshake",
+   "entry": "elastic_scale_up",
+   "apply": {
+    "engine_args": "data_parallel_rpc_port"
+   },
+   "base": {
+    "data_parallel_size": 2,
+    "data_parallel_size_local": 1,
+    "data_parallel_address": "10.0.0.1"
+   },
+   "echo": "data_parallel_rpc_port",
+   "ignore": [
+    "parallel_config.data_parallel_master_port",
+    "parallel_config._data_parallel_master_port_list"
+   ]
+  }
+ ],
+ "readers": [
+  {
+   "at": "vllm/engine/arg_utils.py:2560",
+   "disposition": {
+    "kind": "run",
+    "run": "config"
+   }
+  },
+  {
+   "at": "vllm/engine/arg_utils.py:2561",
+   "disposition": {
+    "kind": "run",
+    "run": "config"
+   }
+  },
+  {
+   "at": "vllm/v1/engine/utils.py:1351",
+   "reviewed": true,
+   "expr": "parallel_config.data_parallel_rpc_port",
+   "disposition": {
+    "kind": "run",
+    "run": "launch"
+   }
+  },
+  {
+   "at": "vllm/entrypoints/cli/serve.py:236",
+   "reviewed": true,
+   "expr": "parallel_config.data_parallel_rpc_port",
+   "disposition": {
+    "kind": "run",
+    "run": "headless"
+   }
+  },
+  {
+   "at": "vllm/distributed/elastic_ep/external_elastic_ep.py:465",
+   "reviewed": true,
+   "expr": "parallel_config.data_parallel_rpc_port",
+   "disposition": {
+    "kind": "run",
+    "run": "elastic"
+   }
+  }
+ ],
+ "named_aliases": [
+  "data-parallel-rpc-port"
+ ],
+ "named_in": {
+  "vllm": [
+   "vllm/config/parallel.py",
+   "vllm/distributed/elastic_ep/external_elastic_ep.py",
+   "vllm/engine/arg_utils.py",
+   "vllm/entrypoints/cli/serve.py",
+   "vllm/v1/engine/utils.py"
+  ],
+  "rust": [
+   "rust/src/managed-engine/src/cli.rs",
+   "rust/src/managed-engine/src/process.rs"
+  ]
+ },
+ "go_identifiers": [
+  "DataParallelRPCPort",
+  "data_parallel_rpc_port"
+ ],
+ "go_files_allowed": [],
+ "result": {
+  "vllm_commit": "v0.33.0 4ba787ec9959e566d3b587a796dff07673324da5",
+  "problems": [],
+  "named_in": {
+   "rust": 2,
+   "vllm": 5
+  },
+  "runs": {
+   "config": {
+    "decisions": {
+     "default (29550)": "b5c6cfa987df9a3aa0d744c7d1d3a93f769f594df8b689affad978fbba139afe",
+     "13345 (InferenceX P/D recipes)": "b5c6cfa987df9a3aa0d744c7d1d3a93f769f594df8b689affad978fbba139afe",
+     "62100 (vLLM's Rust front end examples)": "b5c6cfa987df9a3aa0d744c7d1d3a93f769f594df8b689affad978fbba139afe"
+    },
+    "identical": true,
+    "compared_sections": [
+     "scheduler_config",
+     "cache_config",
+     "parallel_config",
+     "compilation_config"
+    ],
+    "resolved": {
+     "default (29550)": {
+      "parallel_config.data_parallel_size": 2,
+      "parallel_config.data_parallel_size_local": 1,
+      "scheduler_config.max_num_seqs": 128,
+      "scheduler_config.max_num_batched_tokens": 2048,
+      "cache_config.block_size": 16
+     },
+     "13345 (InferenceX P/D recipes)": {
+      "parallel_config.data_parallel_size": 2,
+      "parallel_config.data_parallel_size_local": 1,
+      "scheduler_config.max_num_seqs": 128,
+      "scheduler_config.max_num_batched_tokens": 2048,
+      "cache_config.block_size": 16
+     },
+     "62100 (vLLM's Rust front end examples)": {
+      "parallel_config.data_parallel_size": 2,
+      "parallel_config.data_parallel_size_local": 1,
+      "scheduler_config.max_num_seqs": 128,
+      "scheduler_config.max_num_batched_tokens": 2048,
+      "cache_config.block_size": 16
+     }
+    },
+    "echo": {
+     "default (29550)": 29550,
+     "13345 (InferenceX P/D recipes)": 13345,
+     "62100 (vLLM's Rust front end examples)": 62100
+    }
+   },
+   "launch": {
+    "decisions": {
+     "default (29550)": "af457725eb2220dd68a54c142c2136b58e54e8469991b22d100b86a80339c832",
+     "13345 (InferenceX P/D recipes)": "af457725eb2220dd68a54c142c2136b58e54e8469991b22d100b86a80339c832",
+     "62100 (vLLM's Rust front end examples)": "af457725eb2220dd68a54c142c2136b58e54e8469991b22d100b86a80339c832"
+    },
+    "identical": true,
+    "endpoint": {
+     "default (29550)": [
+      "tcp://10.0.0.1:29550",
+      "tcp://10.0.0.1:29550"
+     ],
+     "13345 (InferenceX P/D recipes)": [
+      "tcp://10.0.0.1:13345",
+      "tcp://10.0.0.1:13345"
+     ],
+     "62100 (vLLM's Rust front end examples)": [
+      "tcp://10.0.0.1:62100",
+      "tcp://10.0.0.1:62100"
+     ]
+    }
+   },
+   "headless": {
+    "decisions": {
+     "default (29550)": "d724ae310259fee5f2ad58e384c911430f5c097c6d6d79c826c324b3ce6d5338",
+     "13345 (InferenceX P/D recipes)": "d724ae310259fee5f2ad58e384c911430f5c097c6d6d79c826c324b3ce6d5338",
+     "62100 (vLLM's Rust front end examples)": "d724ae310259fee5f2ad58e384c911430f5c097c6d6d79c826c324b3ce6d5338"
+    },
+    "identical": true,
+    "endpoint": {
+     "default (29550)": [
+      "tcp://10.0.0.1:29550"
+     ],
+     "13345 (InferenceX P/D recipes)": [
+      "tcp://10.0.0.1:13345"
+     ],
+     "62100 (vLLM's Rust front end examples)": [
+      "tcp://10.0.0.1:62100"
+     ]
+    }
+   },
+   "elastic": {
+    "decisions": {
+     "default (29550)": "088ce3327544840d619fcf8afd872e13dd042eb17c9f84cb9239f7c188b72653",
+     "13345 (InferenceX P/D recipes)": "088ce3327544840d619fcf8afd872e13dd042eb17c9f84cb9239f7c188b72653",
+     "62100 (vLLM's Rust front end examples)": "088ce3327544840d619fcf8afd872e13dd042eb17c9f84cb9239f7c188b72653"
+    },
+    "identical": true,
+    "endpoint": {
+     "default (29550)": [
+      "tcp://10.0.0.1:29550"
+     ],
+     "13345 (InferenceX P/D recipes)": [
+      "tcp://10.0.0.1:13345"
+     ],
+     "62100 (vLLM's Rust front end examples)": [
+      "tcp://10.0.0.1:62100"
+     ]
+    }
+   }
+  },
+  "readers": [
+   {
+    "at": "vllm/engine/arg_utils.py:2560",
+    "disposition": "run",
+    "ran_in": [
+     "config",
+     "launch",
+     "headless",
+     "elastic"
+    ]
+   },
+   {
+    "at": "vllm/engine/arg_utils.py:2561",
+    "disposition": "run",
+    "ran_in": [
+     "config",
+     "launch",
+     "headless",
+     "elastic"
+    ]
+   },
+   {
+    "at": "vllm/v1/engine/utils.py:1351",
+    "disposition": "run",
+    "ran_in": [
+     "launch"
+    ]
+   },
+   {
+    "at": "vllm/entrypoints/cli/serve.py:236",
+    "disposition": "run",
+    "ran_in": [
+     "headless"
+    ]
+   },
+   {
+    "at": "vllm/distributed/elastic_ep/external_elastic_ep.py:465",
+    "disposition": "run",
+    "ran_in": [
+     "elastic"
+    ]
+   }
+  ],
+  "verdict": "inert"
+ }
+}

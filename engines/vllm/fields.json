@@ -6505,9 +6505,15 @@
     {
       "name": "data_parallel_rpc_port",
       "source": "config",
-      "status": "not_modelled",
+      "status": "proven_inert",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "proof": "oracle/inertness/data_parallel_rpc_port.json"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
         "rule": "none"
