@@ -390,6 +390,22 @@ instance_lifecycle:
   warm_start_initial_instances: false  # true = startup instances skip loading_delay (model pre-deployed); autoscaler-added instances always pay loading_delay
 ```
 
+### Model autoscaler analyzer
+
+The model autoscaler (`autoscaler.interval_us` above 0) reads each model's replicas through an analyzer. The default, `v2-saturation`, is llm-d's workload-variant-autoscaler saturation model (`kv_cache_threshold`, `scale_up_threshold`, `scale_down_boundary`, `avg_input_tokens`). `threshold` is a target-value rule on one per-replica signal, the shape of llm-d's KEDA path (`desired = ceil(sum(signal) / target)`):
+
+```yaml
+autoscaler:
+  interval_us: 15000000
+  analyzer:
+    kind: threshold        # default: v2-saturation
+    signal: in_flight      # in_flight | queue_depth | kv_utilization
+    target: 16             # the value one replica is sized for
+    min_replicas: 1
+```
+
+Replicas still loading count as supply when scaling up, so a slow load is not asked for again. This is not the Kubernetes HPA: its tolerance, `behavior` policies and the metrics pipeline's lags (KEDA polling, Prometheus scrape windows, the HPA sync period) are not modelled; only `hpa_scrape_delay` exists.
+
 !!! note "Node pools and instance lifecycle are YAML-only"
     `node_pools` and `instance_lifecycle` have no corresponding CLI flags. They must be set via `--policy-config`. Omitting them is safe — the simulator falls back to single-pool, no-lifecycle mode for full backward compatibility.
 

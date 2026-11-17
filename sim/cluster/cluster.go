@@ -523,9 +523,15 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 		// effectiveAnalyzerConfig fills zero fields with WVA reference defaults so callers only need interval_us.
 		// Tests that need custom components (stubs, nopActuator) replace cs.autoscaler after construction (same-package access).
 		analyzerCfg := effectiveAnalyzerConfig(config.AutoscalerAnalyzerConfig)
+		var analyzer Analyzer = NewV2SaturationAnalyzer(analyzerCfg)
+		if err := config.AutoscalerAnalyzer.Validate(); err != nil {
+			cs.startupErr = err
+		} else if config.AutoscalerAnalyzer.Kind == AnalyzerKindThreshold {
+			analyzer = NewThresholdAnalyzer(config.AutoscalerAnalyzer, analyzerCfg.MinReplicas)
+		}
 		cs.autoscaler = newAutoscalerPipeline(
 			&DefaultCollector{},
-			NewV2SaturationAnalyzer(analyzerCfg),
+			analyzer,
 			&UnlimitedEngine{},
 			NewDirectActuator(cs),
 			sim.NewStream(config.Seed, streamAutoscaler),
