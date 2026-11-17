@@ -507,19 +507,6 @@
     "core/hicache/counter.go:WaitUntil:<-><=#1:if c.ConsumerIndex < 0 {": "no test kills this mutant yet; tracked in blis-sglang#110 (M3.1)",
     "core/hicache/hicache.go:IsStorageWriter:==->!=#1:return !c.IsMLAModel || c.TPRank == c.DCPRank": "no test kills this mutant yet; tracked in blis-sglang#110 (M3.1)",
     "core/hicache/hicache.go:IsStorageWriter:||->&&#1:return !c.IsMLAModel || c.TPRank == c.DCPRank": "no test kills this mutant yet; tracked in blis-sglang#110 (M3.1)",
-    "lower/lower.go:Alignment:!=->==#1:if alignment%p.AttnCPSize != 0 {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:AttentionBackends:!=->==#2:if a.DecodeAttentionBackend != nil && *a.DecodeAttentionBackend != \"\" {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:AttentionBackends:!=->==#2:if a.PrefillAttentionBackend != nil && *a.PrefillAttentionBackend != \"\" {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:CaptureBatchSizes:>->>=#1:if largest > numMax {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:CaptureBatchSizes:||->&&#1:if a.CudaGraphConfig == nil || len(a.CudaGraphConfig.Decode.Bs) == 0 {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:ParallelOf:==->!=#1:AttnDPEnabled: a.AttnDpSize > 1 || (a.EpJoinMode != nil && *a.EpJoinMode == \"scale\"),": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:RequireMLPTPGather:<=-><#1:if p.NumDPRanks <= 1 {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:RequireMLPTPGather:==->!=#1:case a.MoeDenseTpSize == nil:": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:RequireMLPTPGather:==->!=#1:case b == \"flashinfer\", b == \"flashinfer_megamoe\":": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:RequireMLPTPGather:==->!=#2:case b == \"flashinfer\", b == \"flashinfer_megamoe\":": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:RequireMLPTPGather:>->>=#1:return *a.MoeDenseTpSize > p.TPSize/p.NumDPRanks, nil": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "core/cache/full.go:releaseLock:==->!=#1:if cur.lockRef == 0 {": "no test kills this mutant yet; tracked in blis-sglang#112 (M3.1)",
-    "config/resolve.go:deref:==->!=#1:if *v == nil {": "no test kills this mutant yet; tracked in blis-sglang#114 (M3.1)",
     "core/hicache/controller.go:pageBackup:!=->==#1:if prefix != nil {": "no test kills this mutant yet; tracked in blis-sglang#109 (M3.1)",
     "core/hicache/counter.go:Complete:>=->>#1:if layer < 0 || layer >= len(l.LoadEvents) {": "no test kills this mutant yet; tracked in blis-sglang#110 (M3.1)",
     "core/hicache/host.go:NewHostPool:<=-><#1:if c <= 0 || c%p.pageSize != 0 {": "no test kills this mutant yet; tracked in blis-sglang#108 (M3.1)",
@@ -539,8 +526,6 @@
     "core/sched/scheduler.go:isFullyIdle:||->&&#1:(!s.cfg.EnableOverlap || len(s.resultQueue) == 0) && len(s.waiting) == 0": "no test kills this mutant yet; tracked in blis-sglang#102 (M3.1)",
     "core/sched/scheduler.go:runBatch:>->>=#1:if b.ExtendNumTokens > 0 {": "no test kills this mutant yet; tracked in blis-sglang#102 (M3.1)",
     "core/sched/scheduler.go:processPrefill:||->&&#1:if s.cfg.EnableMetrics || s.cfg.EnableKVEvents {": "no test kills this mutant yet; tracked in blis-sglang#102 (M3.1)",
-    "lower/lower.go:RequireMLPTPGather:==->!=#1:case b == \"none\":": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:CaptureBatchSizes:>->>=#1:if bs > largest {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
     "core/hicache/controller.go:ParseStorageBackendExtraConfig:!=->==#1:if !isNum || err != nil {": "no test kills this mutant yet; tracked in blis-sglang#109 (M3.1)"
   },
   "equivalent": {
@@ -592,6 +577,10 @@
     "core/cache/treecore.go:Less:<-><=#1:return pa[1] < pb[1]": "the branch is entered only when the pairs differ and their first parts are equal, so the second parts differ",
     "core/cache/treecore.go:Less:!=->==#1:if a.lastAccess != b.lastAccess {": "the tie-break is reached only when the priority pairs are equal; every modelled policy but fifo and filo carries lastAccess in its pair, and a creation time is unique per node, so the pairs of two leaves are never equal there",
     "core/cache/treecore.go:Less:<-><=#1:return a.lastAccess < b.lastAccess": "the branch is entered only when lastAccess differs",
-    "core/cache/treecore.go:Less:<-><=#1:return a.id < b.id": "the heap compares two distinct nodes, whose ids differ"
+    "core/cache/treecore.go:Less:<-><=#1:return a.id < b.id": "the heap compares two distinct nodes, whose ids differ",
+    "lower/lower.go:Alignment:!=->==#1:if alignment%p.AttnCPSize != 0 {": "Alignment first calls RequireGatheredBuffer, which calls check, and check refuses every ServerArgs whose attn_cp_size is not 1 (contextParallel, lower/cp.go) before this line is reached; with attn_cp_size 1, alignment%1 is always 0, so the original never multiplies, and the mutant multiplies by attn_cp_size = 1, which leaves alignment unchanged. No input that reaches the line tells them apart.",
+    "lower/lower.go:CaptureBatchSizes:>->>=#1:if largest > numMax {": "when largest equals numMax the mutant appends numMax to a capture list that already holds that value (largest is an element of it); the next loop drops repeated sizes through the seen set and the result is sorted, so the returned sizes are the same either way.",
+    "lower/lower.go:CaptureBatchSizes:>->>=#1:if bs > largest {": "the loop computes the maximum of the capture list; when bs equals largest the mutant assigns largest = bs, the value it already holds, so largest is the same after every iteration.",
+    "core/cache/full.go:releaseLock:==->!=#1:if cur.lockRef == 0 {": "releaseLock has one caller, treeCore.DecLockRef, which calls updateLeaves on the released node right after it returns, so the node's own call here is redundant. For the ancestors reached, every node in the tree other than the root holds a non-nil device value (nodes are created with one and eviction deletes them from the tree: there is no host tier, so no tombstone), so an ancestor of a locked node always has a child with a value and is never a device leaf; updateLeaves(ancestor) with lockRef 0 only deletes an entry that is not in leaves. With lockRef above 0 (the mutant's branch) isDeviceLeaf is false and updateLeaves deletes an entry that acquireLock already removed and no path re-adds while locked. So leaves, evictable and protected are identical after either version."
   }
 }
