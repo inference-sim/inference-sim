@@ -124,44 +124,68 @@ func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 	}
 }
 
-// The report's router configuration routes Muse by its KV cache: on a workload of eight agents,
-// each with its own 16k-token context, two H200 replicas behind it hit their prefix caches more
-// often than behind a load-only router, which places each agent's turns without regard to where
-// its context is cached. It holds only if the 0.33.0 engines' KV events reach the router's
-// precise-prefix producer and name the chains the router was shown.
+// The report's router configuration routes Muse by its KV cache: each of eight agents has its own
+// long context, and two H200 replicas behind a router that follows the engines' KV events keep each
+// agent on the replica that holds its context, where a router that ignores the caches (the
+// load-only configuration) cannot. It holds only if the 0.33.0 engines' KV
+// events reach the router's precise-prefix producer and name the chains the router was shown.
+//
+// Why a cache-ignoring router must miss here, whatever the step times. The KV pool is set to
+// the smallest the scenario serves (gpu_memory_utilization 0.56: one maximum-length request of
+// 262,144 tokens must fit, so the pool is not much larger), and the eight contexts are 40,960 tokens
+// each: 331,776 tokens in all, more than one replica holds, while the four a replica serves under
+// affinity are 166,000 and fit. A router that places a turn without regard to the cache sends
+// turns of all eight agents to one replica, whose pool then evicts the least recently used
+// context before its owner's next turn; a router that follows the cache keeps four agents on each
+// replica and every later turn hits. The earlier form of this test (16,384-token contexts at the
+// pool's full size, every context cached on both replicas after one miss) passed on a margin of a
+// single block hit in 66 (0.7576 against 0.7424) that moved with the step times.
 func TestMuseSparkPrecisePrefixRoutingFollowsTheCache(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the binary and runs two clusters")
 	}
 	blis := builtBlis(t)
 	_, catalog, registry := kernelRepos(t)
-	dir, err := filepath.Abs(filepath.Join("..", "testdata", "scenarios", "muse-spark"))
+	src, err := filepath.Abs(filepath.Join("..", "testdata", "scenarios", "muse-spark"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "scenarios")
+	if err := os.CopyFS(dir, os.DirFS(src)); err != nil {
+		t.Fatal(err)
+	}
 	workload := filepath.Join(tmp, "agents.yaml")
 	if err := os.WriteFile(workload, []byte(museAgents), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	routed, err := os.ReadFile(filepath.Join(dir, "muse-h200-ib-tep8-dspark-routed.yaml"))
+	const (
+		routedName = "muse-h200-ib-tep8-dspark-routed.yaml"
+		picker     = "endpoint_picker_config: router/precise-affinity-flow-control.yaml"
+		fullPool   = "gpu_memory_utilization: 0.9"
+		smallPool  = "gpu_memory_utilization: 0.56"
+	)
+	routed, err := os.ReadFile(filepath.Join(src, routedName))
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !strings.Contains(string(routed), picker) || !strings.Contains(string(routed), fullPool) {
+		t.Fatal("the routed scenario does not name the report's router configuration and a 0.9 pool")
+	}
+	small := strings.Replace(string(routed), fullPool, smallPool, 1)
+	if err := os.WriteFile(filepath.Join(dir, routedName), []byte(small), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The same deployment behind the load-only router, which ignores the engines' caches.
 	loadOnly, err := filepath.Abs(filepath.Join("..", "examples", "llm-d", "load-only.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	const key = "endpoint_picker_config: router/precise-affinity-flow-control.yaml"
-	other := strings.Replace(string(routed), key, "endpoint_picker_config: "+loadOnly, 1)
-	if other == string(routed) {
-		t.Fatal("the routed scenario does not name the report's router configuration")
-	}
-	if err := os.WriteFile(filepath.Join(tmp, "load-only.yaml"), []byte(other), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "load-only.yaml"), []byte(strings.Replace(small, picker, "endpoint_picker_config: "+loadOnly, 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	hitRate := func(scenarios, name string) float64 {
-		c := exec.Command(blis, "run", "--scenarios", scenarios, "--scenario", name, "--catalog", catalog,
+	hitRate := func(name string) float64 {
+		c := exec.Command(blis, "run", "--scenarios", dir, "--scenario", name, "--catalog", catalog,
 			"--registry", registry, "--num-instances", "2", "--num-requests", "64", "--workload-spec", workload)
 		var out, errBuf bytes.Buffer
 		c.Stdout, c.Stderr = &out, &errBuf
@@ -171,15 +195,18 @@ func TestMuseSparkPrecisePrefixRoutingFollowsTheCache(t *testing.T) {
 		// The whole-run prefix-cache hit rate the text summary printed, from the Result (#2058).
 		return clusterFigures(t, out.String())["cache_hit_rate_whole_run"]
 	}
-	precise := hitRate(dir, "muse-h200-ib-tep8-dspark-routed.yaml")
-	load := hitRate(tmp, "load-only.yaml")
-	if precise <= load {
-		t.Errorf("precise prefix routing hit %.4f, load-only %.4f: routing ignores the engines' caches", precise, load)
+	precise := hitRate(routedName)
+	if load := hitRate("load-only.yaml"); precise < load+0.05 {
+		t.Errorf("precise prefix routing hit %.4f, load-only %.4f: routing ignores the engines' caches "+
+			"(it must beat a cache-ignoring router by at least 0.05 here)", precise, load)
+	}
+	if precise < 0.4 {
+		t.Errorf("precise prefix routing hit %.4f; with four contexts a replica, later turns hit and the rate is above 0.4", precise)
 	}
 }
 
 // museAgents is eight agents at 3 requests/s in all, each turn a 512-token message after the
-// agent's own 16,384-token context.
+// agent's own 40,960-token context.
 const museAgents = `version: "2"
 seed: 7
 category: language
@@ -191,7 +218,7 @@ cohorts:
     arrival: {process: poisson}
     prefix_group: agent
     prefix_sharing: per_member
-    prefix_length: 16384
+    prefix_length: 40960
     input_distribution: {type: constant, params: {value: 512}}
     output_distribution: {type: constant, params: {value: 64}}
 `
