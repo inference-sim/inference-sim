@@ -1,0 +1,203 @@
+{
+ "description": "A request whose kv_transfer_params allow only the CPU tier (kv_load_tiers) does not look in the fs tier and computes its whole prompt; one with no filter promotes the same prefix from disk.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 14,
+  "max_model_len": 48,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_page": {
+   "num_kv_heads": 1,
+   "head_size": 512
+  },
+  "transfer": {
+   "load_delay": 1,
+   "store_delay": 1
+  },
+  "connector": {
+   "name": "OffloadingConnector",
+   "kv_role": "kv_both",
+   "extra_config": {
+    "cpu_bytes_to_use": 98304,
+    "spec_name": "TieringOffloadingSpec",
+    "secondary_tiers": [
+     {
+      "type": "fs",
+      "root_dir": "@root/fs",
+      "n_read_threads": 1,
+      "n_write_threads": 0
+     }
+    ]
+   }
+  }
+ },
+ "requests": [
+  {
+   "id": "a",
+   "arrival_step": 0,
+   "prompt": [
+    1085,
+    29058,
+    16323,
+    9520,
+    14793,
+    12430,
+    19407,
+    30652,
+    30949,
+    20250,
+    2923,
+    2792,
+    24513,
+    2854,
+    10807,
+    17572
+   ],
+   "output": [
+    1
+   ]
+  },
+  {
+   "id": "b",
+   "arrival_step": 7,
+   "prompt": [
+    18880,
+    22377,
+    30206,
+    7679,
+    6780,
+    29717,
+    4890,
+    21963,
+    27192,
+    8913,
+    1606,
+    4951,
+    21428,
+    15277,
+    5314,
+    9811
+   ],
+   "output": [
+    1
+   ]
+  },
+  {
+   "id": "c",
+   "arrival_step": 14,
+   "prompt": [
+    30323,
+    15696,
+    7737,
+    5838,
+    28767,
+    17004,
+    26725,
+    19626,
+    29787,
+    27576,
+    23937,
+    7110,
+    24695,
+    4052,
+    29821,
+    8402
+   ],
+   "output": [
+    1
+   ]
+  },
+  {
+   "id": "e",
+   "arrival_step": 21,
+   "prompt": [
+    11766,
+    2663,
+    15268,
+    3997,
+    20754,
+    4291,
+    12208,
+    10937,
+    26030,
+    16239,
+    16268,
+    9269,
+    21610,
+    16475,
+    17976,
+    30641
+   ],
+   "output": [
+    1
+   ]
+  },
+  {
+   "id": "d",
+   "arrival_step": 30,
+   "prompt": [
+    18880,
+    22377,
+    30206,
+    7679,
+    6780,
+    29717,
+    4890,
+    21963,
+    27192,
+    8913,
+    1606,
+    4951,
+    21428,
+    15277,
+    5314,
+    9811,
+    14571,
+    26840,
+    27041,
+    21110
+   ],
+   "output": [
+    1
+   ],
+   "kv_transfer_params": {
+    "kv_load_tiers": [
+     {
+      "medium": "cpu"
+     }
+    ]
+   }
+  },
+  {
+   "id": "f",
+   "arrival_step": 30,
+   "prompt": [
+    1085,
+    29058,
+    16323,
+    9520,
+    14793,
+    12430,
+    19407,
+    30652,
+    30949,
+    20250,
+    2923,
+    2792,
+    24513,
+    2854,
+    10807,
+    17572,
+    2366,
+    13807,
+    4572,
+    19269
+   ],
+   "output": [
+    1
+   ]
+  }
+ ]
+}

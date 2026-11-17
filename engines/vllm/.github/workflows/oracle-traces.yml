@@ -79,8 +79,12 @@ jobs:
           python -I oracle/run_connector.py vllm-source oracle/scenarios/connector oracle/out/scenarios-connector
           mkdir -p oracle/out/scenarios-offloading
           python -I oracle/run_offloading.py vllm-source oracle/scenarios/offloading oracle/out/scenarios-offloading
+          mkdir -p oracle/out/scenarios-offloading-tiering
+          python -I oracle/run_offloading.py vllm-source oracle/scenarios/offloading-tiering oracle/out/scenarios-offloading-tiering
           mkdir -p oracle/out/scenarios-multi
           python -I oracle/run_multiconnector.py vllm-source oracle/scenarios/multiconnector oracle/out/scenarios-multi
+          mkdir -p oracle/out/scenarios-tiering
+          python -I oracle/run_tiering.py vllm-source oracle/scenarios/tiering oracle/out/scenarios-tiering
           # core/kv's block hashes: the generator refuses to write if any hash differs.
           python -I oracle/gen_block_hashes.py vllm-source core/kv/testdata/block_hashes.json > oracle/out/block_hashes.json
       # FID-5: the offload interface traces, recorded (the offloading and multi-connector scenarios) and

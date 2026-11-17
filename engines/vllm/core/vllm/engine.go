@@ -371,6 +371,10 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 		return err
 	}
 	sr.Transfer = tp
+	params, err := e.off.requestParams(r)
+	if err != nil {
+		return err
+	}
 	if r.Adapter != "" {
 		if e.maxLoRAs == 0 {
 			// The input processor refuses an adapter when LoRA is off
@@ -382,7 +386,9 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 		sr.LoRAName = r.Adapter
 		sr.Keys.Extra = loraExtraKey(r.Adapter, r.AdapterPath)
 	}
+	e.off.setParams(r.ID, params)
 	if err := e.s.Add(sr); err != nil {
+		e.off.setParams(r.ID, nil)
 		return fmt.Errorf("vllm: %w", err)
 	}
 	e.reqs[r.ID] = &reqState{req: r, maxTokens: maxTokens}
@@ -699,6 +705,9 @@ type GroupTransferPricer interface {
 // when the pricer prices none. A simulator reads it by type-asserting
 // interface{ TransferTime(engine.Transfer) (engine.Duration, bool) } on the engine.Engine.
 func (e *Engine) TransferTime(t engine.Transfer) (engine.Duration, bool) {
+	if bytes, tier := e.off.tierBytes(t); tier {
+		return tierTransferTime(e.pricer, t, bytes)
+	}
 	p, ok := e.pricer.(TransferPricer)
 	if !ok {
 		return 0, false

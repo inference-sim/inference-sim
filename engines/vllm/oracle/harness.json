@@ -12,6 +12,8 @@
     "core/connector/offloading/testdata/golden/",
     "core/connector/multi/testdata/golden/",
     "core/connector/offloading/testdata/golden-fid5/",
+    "core/connector/tiering/testdata/golden/",
+  "core/connector/tiering/testdata/golden-engine/",
     "core/metrics/testdata/golden/"
   ],
   "golden_files": [

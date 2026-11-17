@@ -870,6 +870,20 @@ jobs:
           python -I oracle/run_offloading.py vllm-source oracle/scenarios/offloading oracle/out/scenarios-offloading
       - name: every offloading golden trace is vLLM's own output
         run: python3 -I oracle/compare_goldens.py core/connector/offloading/testdata/golden oracle/out/scenarios-offloading
+      # The same connector over TieringOffloadingSpec's manager and its fs tier (oracle/run_offloading.py,
+      # run_tiered): vLLM's own tier code over a real directory; core/vllm's replay compares the engine.
+      - name: run every offloading scenario with an fs tier through vLLM's Scheduler
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out/scenarios-offloading-tiering
+          python -I oracle/run_offloading.py vllm-source oracle/scenarios/offloading-tiering oracle/out/scenarios-offloading-tiering
+      - name: every offloading-with-tiers golden trace is vLLM's own output
+        run: python3 -I oracle/compare_goldens.py core/connector/tiering/testdata/golden-engine oracle/out/scenarios-offloading-tiering
       # Tier 4: vLLM's real MultiConnector over its NIXL and offloading children, both orders, on
       # every multi-connector scenario and 3000 fuzz seeds (1000 with hybrid KV cache groups, 1000 with
       # async scheduling).

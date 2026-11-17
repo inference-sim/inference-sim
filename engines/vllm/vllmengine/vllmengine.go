@@ -40,14 +40,17 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/load"
 
@@ -264,12 +267,21 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 			"when the scheduler admits the request (%s)", o.PrefetchDepth, prefetchIssue)
 	}
 	var cpu int64
+	var secondary []map[string]any
 	for i, t := range o.Tiers {
-		if t.Device != cpuTier || i > 0 {
-			return nil, fmt.Errorf("offload.tiers[%d] (%q): only one %s tier, the OffloadingConnector's CPU tier, is "+
-				"modelled; secondary tiers (TieringOffloadingSpec's) are not (%s)", i, t.Device, cpuTier, secondaryTierIssue)
+		if i == 0 && t.Device == cpuTier {
+			cpu = t.Bytes
+			continue
 		}
-		cpu = t.Bytes
+		if i == 0 || o.Spec != "TieringOffloadingSpec" {
+			return nil, fmt.Errorf("offload.tiers[%d] (%q): the first tier is the OffloadingConnector's %s tier, and a "+
+				"tier below it is TieringOffloadingSpec's (%s)", i, t.Device, cpuTier, secondaryTierIssue)
+		}
+		tier, err := fsTierOf(m, i, t)
+		if err != nil {
+			return nil, err
+		}
+		secondary = append(secondary, tier)
 	}
 	if cpu <= 0 {
 		return nil, fmt.Errorf("offload states no %s tier: the OffloadingConnector's tier is host DRAM "+
@@ -312,11 +324,36 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 	if bpc > 0 {
 		c["block_size"] = bpc * e.BlockSize
 	}
+	if len(secondary) > 0 {
+		c["secondary_tiers"] = secondary
+	}
 	var n yaml.Node
 	if err := n.Encode(c); err != nil {
 		return nil, err
 	}
 	return &n, nil
+}
+
+// fsTierOf is a deployment's tier below the CPU tier as TieringOffloadingSpec's fs tier on that
+// catalog device (core/vllm offloadtiers.go), refused unless the kernel prices the device's moves
+// both ways (its offload_tier_<device>_* coefficients), as compat/build refuses an unpriced tier.
+// The deployment states no root_dir: the tier's files are under one named by the device, and which
+// engines share them is the simulator's (core/vllm.TierStorage). The tier's bytes are the device's
+// capacity, which vLLM's fs tier does not bound: it evicts nothing, and a block file is present
+// until something outside vLLM removes it (vllm/v1/kv_offload/tiering/fs/manager.py:86-104@4ba787ec).
+func fsTierOf(m *kernelmodel.Model, i int, t deployment.Tier) (map[string]any, error) {
+	for _, toTier := range []bool{true, false} {
+		dir := kernel.DirectionFromTier
+		if toTier {
+			dir = kernel.DirectionToTier
+		}
+		if d := m.Kernel().TierTime(t.Device, dir, 1<<20, 1); d >= time.Duration(math.MaxInt64/2) {
+			return nil, fmt.Errorf("offload.tiers[%d] (%q): the kernel cannot price a move %s it: the catalog names no "+
+				"such device, or the coefficients carry no offload_tier_%s_* entries for the hardware (%s)", i, t.Device,
+				map[bool]string{true: "to", false: "from"}[toTier], t.Device, secondaryTierIssue)
+		}
+	}
+	return map[string]any{"type": "fs", "root_dir": "/" + t.Device, "device_class": t.Device}, nil
 }
 
 // offloadBytesPerBlock is one worker's KV bytes for one GPU block: the kernel's per-block KV bytes
@@ -718,6 +755,14 @@ func (k kernelPricer) VerifiedDrafts(b engine.Batch) []int {
 func (k kernelPricer) TransferTime(t engine.Transfer) engine.Duration {
 	return engine.Duration(k.m.TierTransferTicksOf("cpu_dram", t.Kind == engine.TransferStore, int64(t.Blocks)*k.blockBytes,
 		int64(t.Blocks)))
+}
+
+// TierTransferTime implements core/vllm.TierPricer: a secondary tier's job of bytes between the CPU
+// tier and its catalog device, t.Move.Tier, as the kernel prices that device (TierTime, one at a
+// time). TierTime's contract is a GPU<->tier move; the job crosses the same device and host link,
+// as compat/build prices the compatibility engine's tier jobs.
+func (k kernelPricer) TierTransferTime(t engine.Transfer, bytes int64) engine.Duration {
+	return engine.Duration(k.m.TierTransferTicksOf(t.Move.Tier, t.Kind == engine.TransferStore, bytes, int64(t.Blocks)))
 }
 
 // GroupTransferTime implements core/vllm.GroupTransferPricer: an offload job of groupBlocks[g]

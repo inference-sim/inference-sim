@@ -6,9 +6,9 @@
   "commit": "4ba787ec9959e566d3b587a796dff07673324da5"
  },
  "counts": {
-  "modelled": 67,
+  "modelled": 68,
   "out_of_scope": 40,
-  "refused": 154
+  "refused": 153
  },
  "items": [
   {
@@ -227,8 +227,13 @@
    "name": "fs",
    "site": "vllm/v1/kv_offload/tiering/factory.py:152",
    "class": "vllm.v1.kv_offload.tiering.fs.manager.FileSystemTierManager",
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/tiering",
+    "core/connector/tiering/testdata/golden",
+    "core/vllm/offloadtiers_test.go"
+   ],
+   "why": "over the CPU primary tier; each job a transfer to or from the tier's device_class, priced on its offload_tier_<device>_* coefficients; the lookup worker and thread pool timed by named substitution (blis-vllm#190); store backpressure refused (blis-vllm#13)"
   },
   {
    "id": "secondary_tier:p2p",

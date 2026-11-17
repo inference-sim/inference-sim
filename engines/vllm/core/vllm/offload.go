@@ -132,6 +132,8 @@ type offload struct {
 	loadReq map[int]string
 	// lastFlush are the last schedule's jobs_to_flush, for a test.
 	lastFlush []int
+	// tiers are TieringOffloadingSpec's secondary tiers (offloadtiers.go); nil with none.
+	tiers *tierSet
 }
 
 // buildOffload installs the OffloadingConnector on the scheduler, refusing what it does not
@@ -229,13 +231,18 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 	for g := range eagle {
 		eagle[g] = spec.EagleBlockDrop && s.KV.GroupSpec(g).Eagle
 	}
+	tiers, err := buildTiers(c, bpc, bs, offloading.ChunkBytes(c.BytesPerBlock, copies, bpc, page), tierNamespace(s, bpc, world))
+	if err != nil {
+		return nil, err
+	}
 	conn, err := offloading.New(offloading.Config{Groups: groups, BlocksPerChunk: bpc, TokensPerHash: s.KV.HashBlockSize(),
-		NumChunks: chunks, OffloadPromptOnly: promptOnly, PrefixCaching: prefixCaching, Workers: world, EagleGroups: eagle})
+		NumChunks: chunks, OffloadPromptOnly: promptOnly, PrefixCaching: prefixCaching, Workers: world, EagleGroups: eagle,
+		Manager: tiers.manager()})
 	if err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
 	o := &offload{conn: conn, blockSize: bs, at: at, next: new(engine.TransferID), early: map[engine.TransferID]bool{}, jobs: map[engine.TransferID]int{}, ids: map[int]engine.TransferID{},
-		groups: map[engine.TransferID][]int{}, flushed: map[int][]int{}, recv: map[string]bool{}, loadReq: map[int]string{}}
+		groups: map[engine.TransferID][]int{}, flushed: map[int][]int{}, recv: map[string]bool{}, loadReq: map[int]string{}, tiers: tiers}
 	// kv_both: the CPU tier is both stored to and loaded from.
 	if err := install(conn, sched.ConnectorConfig{Consumer: true, Producer: true}); err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
@@ -285,6 +292,7 @@ func (o *offload) started(batch int, cb any) []engine.Transfer {
 	for _, j := range m.Stores {
 		add(j, engine.TransferStore)
 	}
+	out = append(out, o.tierTransfers()...)
 	if len(m.Flush) > 0 {
 		o.flushed[batch] = append([]int(nil), m.Flush...)
 	}
@@ -310,6 +318,9 @@ func (o *offload) done(id engine.TransferID, ok bool) error {
 	if o.early[id] {
 		delete(o.early, id)
 		return nil
+	}
+	if tier, err := o.tierDone(id, ok); tier {
+		return err
 	}
 	j, known := o.jobs[id]
 	if !known {
@@ -350,6 +361,7 @@ func (o *offload) take(batch int) (jobs []offloading.Completion, recv []string) 
 		}
 	}
 	delete(o.flushed, batch)
+	o.tierStep()
 	sort.Ints(o.completed)
 	for _, j := range o.completed {
 		jobs = append(jobs, offloading.Completion{Job: j, Workers: o.conn.Workers()})
@@ -369,7 +381,8 @@ func offloadTiers(c *offloadConfig) []plan.KVTier {
 	if c == nil {
 		return nil
 	}
-	return []plan.KVTier{{Device: placement.CPUDRAM, Bytes: units.Rank(units.Bytes(c.CPUBytes / int64(max(c.Workers, 1))))}}
+	cpu := plan.KVTier{Device: placement.CPUDRAM, Bytes: units.Rank(units.Bytes(c.CPUBytes / int64(max(c.Workers, 1))))}
+	return append([]plan.KVTier{cpu}, secondaryPlanTiers(c)...)
 }
 
 // workerMeta is the worker metadata the next applied output carries for the jobs completed: the
