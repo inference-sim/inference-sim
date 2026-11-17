@@ -103,6 +103,12 @@
         "nodes": {
           "type": "integer"
         },
+        "pools": {
+          "items": {
+            "$ref": "#/$defs/scenario.Pool"
+          },
+          "type": "array"
+        },
         "storage": {
           "items": {
             "type": "string"
@@ -141,6 +147,21 @@
       "required": [
         "kind",
         "version"
+      ],
+      "type": "object"
+    },
+    "scenario.Pool": {
+      "additionalProperties": false,
+      "properties": {
+        "hardware": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
       ],
       "type": "object"
     },

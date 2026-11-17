@@ -1928,6 +1928,12 @@
         "nodes": {
           "type": "integer"
         },
+        "pools": {
+          "items": {
+            "$ref": "#/$defs/scenario.Pool"
+          },
+          "type": "array"
+        },
         "storage": {
           "items": {
             "type": "string"
@@ -1996,6 +2002,21 @@
       "required": [
         "gpus_per_node",
         "gpus_per_node_source"
+      ],
+      "type": "object"
+    },
+    "scenario.Pool": {
+      "additionalProperties": false,
+      "properties": {
+        "hardware": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
       ],
       "type": "object"
     },
