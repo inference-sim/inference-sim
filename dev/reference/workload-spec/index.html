@@ -900,6 +900,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -954,6 +958,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1083,6 +1115,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -3895,6 +3955,12 @@
 <td>Total arrival rate in requests/second</td>
 </tr>
 <tr>
+<td><code>phases</code></td>
+<td>list</td>
+<td>No</td>
+<td>Drain-gated stages: <code>name</code>, <code>num_requests</code>, <code>aggregate_rate</code>, <code>start</code>, <code>offset_us</code>, <code>concurrency</code> (see <a href="../../guide/workloads/#drain-gated-phases-warm-up-then-measured">Drain-gated phases</a>)</td>
+</tr>
+<tr>
 <td><code>num_requests</code></td>
 <td>int64</td>
 <td>No</td>
@@ -4022,6 +4088,12 @@
 <td>object</td>
 <td>No</td>
 <td>Activity window configuration</td>
+</tr>
+<tr>
+<td><code>phase</code></td>
+<td>string</td>
+<td>With <code>phases</code></td>
+<td>The workload phase the client sends in (see <a href="../../guide/workloads/#drain-gated-phases-warm-up-then-measured">Drain-gated phases</a>)</td>
 </tr>
 <tr>
 <td><code>multimodal</code></td>

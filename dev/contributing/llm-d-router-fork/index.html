@@ -900,6 +900,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -954,6 +958,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1083,6 +1115,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -3505,7 +3565,7 @@ moves to <code>inference-sim/llm-d-router</code> at the tag, and the PR can leav
 <h2 id="the-contract">The contract<a class="headerlink" href="#the-contract" title="Permanent link">&para;</a></h2>
 <p>BLIS programs against one API: package <code>embed</code> of
 <a href="https://github.com/inference-sim/blis-schemas">blis-schemas</a> (introduced in
-inference-sim/blis-schemas#99), versioned by blis-schemas' own tags. <code>embed.Runtime</code> (with the
+https://github.com/inference-sim/blis-schemas/issues/99), versioned by blis-schemas' own tags. <code>embed.Runtime</code> (with the
 optional <code>embed.RoundTripper</code>) is what BLIS implements; <code>embed.Router</code> and <code>embed.Flight</code> are
 what the router implements; the rest is plain data (<code>Request</code>, <code>Decision</code>, <code>Rejection</code>,
 <code>KVBatch</code>, <code>Requirements</code>, ...). The fork implements the contract with one constructor,

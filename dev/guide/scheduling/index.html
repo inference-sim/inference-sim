@@ -902,6 +902,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -957,6 +961,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1093,10 +1125,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#available-schedulers" class="md-nav__link">
+  <a href="#scheduling-policies" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Available Schedulers
+        Scheduling Policies
       
     </span>
   </a>
@@ -1205,6 +1237,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -3411,10 +3471,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#available-schedulers" class="md-nav__link">
+  <a href="#scheduling-policies" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Available Schedulers
+        Scheduling Policies
       
     </span>
   </a>
@@ -3493,23 +3553,15 @@
 
 <h1 id="scheduling-priority">Scheduling &amp; Priority<a class="headerlink" href="#scheduling-priority" title="Permanent link">&para;</a></h1>
 <p>Routing decides <strong>which instance</strong> receives a request. Scheduling decides <strong>what order</strong> requests are processed within an instance. These are independent policy axes — you can combine any router configuration with any scheduler.</p>
-<p>On vLLM v0.32.0, each instance's engine orders its requests by the pool's engine block <code>scheduling_policy</code>, as vLLM does. Priority scheduling (<code>scheduling_policy: priority</code>, <code>--scheduler priority-fcfs</code> or <code>reverse-priority</code>, <code>--preemption-policy priority</code>, SLO priority overrides) is refused for now. Other <code>--scheduler</code> values are not applied on 0.32.0; the run warns. The priority and scheduler sections below are not yet available on 0.32.0.</p>
-<div class="admonition warning">
-<p class="admonition-title">Deprecated flags</p>
-<p><code>--scheduler</code> and <code>--preemption-policy</code> are deprecated in v0.16.0 and removed in v0.19.0
-(<a href="https://github.com/inference-sim/inference-sim/issues/2037">#2037</a>). State the order in the
-scenario's pool engine block, <code>scheduling_policy</code>, as vLLM does.</p>
-</div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Not yet available on 0.32.0 (refused): priority-FCFS scheduling with SLO-class-based priority in a 4-instance cluster</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>--scheduler<span class="w"> </span>priority-fcfs
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># SLO class is set in the workload spec (slo_class: critical/standard/batch/etc.)</span>
+<p>Each instance's engine orders its requests by its pool's <code>engine.scheduling_policy</code> in the scenario, as vLLM's <code>--scheduling-policy</code> does: <code>fcfs</code> (the default) or <code>priority</code>. No flag or policy-bundle key sets it; <code>--scheduler</code> and <code>--preemption-policy</code> were removed in v0.18.0. On vLLM v0.32.0 priority scheduling (<code>scheduling_policy: priority</code>, SLO priority overrides) is refused for now: the host does not yet carry request priority across the engine contract. The priority sections below describe what <code>priority</code> selects.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># In each pool of the scenario's deployment:</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span><span class="nt">engine</span><span class="p">:</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">      </span><span class="nt">scheduling_policy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fcfs</span><span class="w">   </span><span class="c1"># or priority (refused on 0.33.0 for now)</span>
 </code></pre></div>
 <h2 id="how-priority-works">How Priority Works<a class="headerlink" href="#how-priority-works" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
-<p class="admonition-title">Not yet available on 0.32.0</p>
-<p>Priority scheduling is refused on 0.32.0 for now.</p>
+<p class="admonition-title">Not yet available on 0.33.0</p>
+<p>Priority scheduling is refused on 0.33.0 for now.</p>
 </div>
 <p>Request priority is <strong>static</strong> — set once when the request enters the instance, and never changed.</p>
 <p>At enqueue time (<code>EnqueueRequest</code> and <code>EnqueueDecodeSubRequest</code>), the simulator converts the request's <code>SLOClass</code> to a vLLM-convention priority value via <code>SLOPriorityMap.InvertForVLLM(SLOClass)</code>:</p>
@@ -3532,55 +3584,35 @@ scenario's pool engine block, <code>scheduling_policy</code>, as vLLM does.</p>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">slo_priorities</span><span class="p">:</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span><span class="w">   </span><span class="c1"># make batch non-sheddable</span>
 </code></pre></div>
-<h2 id="available-schedulers">Available Schedulers<a class="headerlink" href="#available-schedulers" title="Permanent link">&para;</a></h2>
-<div class="admonition note">
-<p class="admonition-title">Not yet available on 0.32.0</p>
-<p><code>--scheduler</code> is not applied on 0.32.0 (the run warns), and <code>priority-fcfs</code> and <code>reverse-priority</code> are refused; the engine orders by <code>scheduling_policy</code>.</p>
-</div>
-<p>Each scheduler implements the <code>InstanceScheduler</code> interface: a single <code>OrderQueue</code> method called every step to reorder the wait queue before batch formation.</p>
+<h2 id="scheduling-policies">Scheduling Policies<a class="headerlink" href="#scheduling-policies" title="Permanent link">&para;</a></h2>
+<p>Each policy orders the wait queue every step, before batch formation, through the <code>InstanceScheduler</code> interface's <code>OrderQueue</code> method.</p>
 <table>
 <thead>
 <tr>
-<th>Scheduler</th>
-<th>Flag Value</th>
-<th>Strategy</th>
+<th><code>scheduling_policy</code></th>
+<th>Queue order</th>
+<th>Preemption victim</th>
 <th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>FCFS</strong></td>
-<td><code>--scheduler fcfs</code></td>
-<td>First-Come-First-Served. No reordering — requests are processed in arrival order.</td>
+<td><code>fcfs</code></td>
+<td>First-Come-First-Served. No reordering: requests are processed in arrival order.</td>
+<td>The tail of the running batch.</td>
 <td>Default. Fair and predictable.</td>
 </tr>
 <tr>
-<td><strong>Priority-FCFS</strong></td>
-<td><code>--scheduler priority-fcfs</code></td>
+<td><code>priority</code></td>
 <td>Sort by priority <strong>ascending</strong> (lower value = more urgent, vLLM convention), then by arrival time ascending within the same priority. Ties broken by request ID for determinism.</td>
-<td>Useful when <code>SLOClass</code> is set in the workload spec. Without SLO classes, all requests get Priority=1.0 (standard) and this degrades to FCFS by arrival tiebreak.</td>
-</tr>
-<tr>
-<td><strong>SJF</strong></td>
-<td><code>--scheduler sjf</code></td>
-<td>Shortest Job First. Sort by input token count ascending, then by arrival time, then by ID.</td>
-<td>Optimizes TTFT for short requests but can starve long ones under sustained load. Ignores <code>Request.Priority</code> entirely.</td>
-</tr>
-<tr>
-<td><strong>Reverse-priority</strong></td>
-<td><code>--scheduler reverse-priority</code></td>
-<td>Sort by priority <strong>descending</strong> (highest value = least urgent scheduled first).</td>
-<td>Pathological template for testing only — deliberately causes priority inversions.</td>
+<td>The least-urgent running request.</td>
+<td>Useful when <code>SLOClass</code> is set in the workload spec. Without SLO classes, all requests get Priority=1.0 (standard) and this degrades to FCFS by arrival tiebreak. Refused on 0.33.0 for now.</td>
 </tr>
 </tbody>
 </table>
-<p>All schedulers use <code>sort.SliceStable</code> for deterministic ordering (INV-6).</p>
+<p>Both policies use <code>sort.SliceStable</code> for deterministic ordering (INV-6).</p>
 <h2 id="how-scheduling-and-priority-interact">How Scheduling and Priority Interact<a class="headerlink" href="#how-scheduling-and-priority-interact" title="Permanent link">&para;</a></h2>
-<div class="admonition note">
-<p class="admonition-title">Not yet available on 0.32.0</p>
-<p>This section describes the <code>--scheduler</code> policies, which 0.32.0 does not apply.</p>
-</div>
-<p>The scheduler and priority are composed at each simulation step:</p>
+<p>The scheduling policy and priority are composed at each simulation step:</p>
 <ol>
 <li><strong>Priority is already set</strong> (static — set at enqueue via <code>SLOPriorityMap.InvertForVLLM</code>, not recomputed per step).</li>
 <li><strong>Queue reordering</strong>: Call <code>InstanceScheduler.OrderQueue()</code> on the wait queue.</li>
@@ -3596,16 +3628,12 @@ scenario's pool engine block, <code>scheduling_policy</code>, as vLLM does.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>priority-fcfs</code> + mixed SLO classes</td>
+<td><code>priority</code> + mixed SLO classes</td>
 <td>Critical requests scheduled first, background last.</td>
 </tr>
 <tr>
-<td><code>priority-fcfs</code> + uniform SLO class</td>
+<td><code>priority</code> + uniform SLO class</td>
 <td>All priorities equal — degrades to FCFS by arrival time.</td>
-</tr>
-<tr>
-<td><code>sjf</code> + any SLO class</td>
-<td>SJF by input length (priority ignored).</td>
 </tr>
 <tr>
 <td><code>fcfs</code> + any SLO class</td>
@@ -3620,13 +3648,9 @@ scenario's pool engine block, <code>scheduling_policy</code>, as vLLM does.</p>
 <li>Its progress is reset to zero (recompute mode, matching vLLM's recompute preemption).</li>
 <li>On the next step, the scheduler reorders the full queue including the preempted request.</li>
 </ul>
-<p>This means preempted requests get implicit priority over fresh arrivals in FCFS mode. With <code>priority-fcfs</code> and mixed SLO classes, the preempted request's static priority determines its position relative to other waiting requests.</p>
-<p>By default (<code>--preemption-policy fcfs</code>), the tail of the running batch is evicted. <code>--preemption-policy priority</code> and <code>scheduling_policy: priority</code> are refused on 0.32.0 for now; the rest of this paragraph describes them. When <code>--preemption-policy priority</code> is set, the least-urgent running request is evicted — the one with the <strong>highest Priority value</strong> (vLLM convention: background=7 is least urgent and evicted first). Among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's <code>--scheduling-policy priority</code> preemption behavior (vLLM v0.31.0 <code>vllm/v1/core/sched/scheduler.py:765,777</code>). A scenario stating <code>engine.scheduling_policy: priority</code> selects both <code>priority-fcfs</code> queueing and <code>priority</code> preemption, as vLLM does (<code>fcfs</code> selects <code>fcfs</code> for both); in a prefill/decode deployment each pool takes its own engine's policy. An explicit flag overrides the scenario and is recorded in the results file (<a href="../results/#scenario-overrides">Scenario Overrides</a>).</p>
+<p>This means preempted requests get implicit priority over fresh arrivals in FCFS mode. With <code>priority</code> and mixed SLO classes, the preempted request's static priority determines its position relative to other waiting requests.</p>
+<p>Under <code>scheduling_policy: fcfs</code> (the default), the tail of the running batch is evicted. Under <code>scheduling_policy: priority</code>, which is refused on 0.33.0 for now, the least-urgent running request is evicted — the one with the <strong>highest Priority value</strong> (vLLM convention: background=7 is least urgent and evicted first). Among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's <code>--scheduling-policy priority</code> preemption behavior (vLLM v0.31.0 <code>vllm/v1/core/sched/scheduler.py:765,777</code>). One field sets both the queue order and the preemption victim, as in vLLM: <code>priority</code> is BLIS's <code>priority-fcfs</code> queueing with <code>priority</code> preemption, and <code>fcfs</code> is <code>fcfs</code> for both. In a prefill/decode deployment each pool takes its own engine's policy.</p>
 <h2 id="when-to-use-which">When to Use Which<a class="headerlink" href="#when-to-use-which" title="Permanent link">&para;</a></h2>
-<div class="admonition note">
-<p class="admonition-title">Not yet available on 0.32.0</p>
-<p>On 0.32.0 set the order with the engine block's <code>scheduling_policy: fcfs</code>; the <code>--scheduler</code> choices below are not applied.</p>
-</div>
 <table>
 <thead>
 <tr>
@@ -3638,30 +3662,21 @@ scenario's pool engine block, <code>scheduling_policy</code>, as vLLM does.</p>
 <tbody>
 <tr>
 <td>Uniform traffic, no SLO differentiation</td>
-<td><code>--scheduler fcfs</code> (default)</td>
+<td><code>scheduling_policy: fcfs</code> (default)</td>
 <td>No reordering needed. All requests are equivalent.</td>
 </tr>
 <tr>
 <td>Mixed SLO classes (critical vs background)</td>
-<td><code>--scheduler priority-fcfs</code> with <code>slo_class</code> in workload spec</td>
+<td><code>scheduling_policy: priority</code> with <code>slo_class</code> in the workload spec (refused on 0.33.0 for now)</td>
 <td>Critical requests get Priority=0, scheduled before background (Priority=7).</td>
 </tr>
 <tr>
-<td>Latency-sensitive short requests</td>
-<td><code>--scheduler sjf</code></td>
-<td>Short prompts get processed first. Watch for starvation of long requests under sustained load.</td>
-</tr>
-<tr>
 <td>Low load (&lt; ~10 req/s)</td>
-<td>Any</td>
-<td>Batch sizes are small enough that all schedulers pick the same requests. At low load, all schedulers produce equivalent results within ~5%.</td>
+<td>Either</td>
+<td>Batch sizes are small enough that both policies pick the same requests. At low load, both produce equivalent results within ~5%.</td>
 </tr>
 </tbody>
 </table>
-<div class="admonition tip">
-<p class="admonition-title">SJF starvation risk</p>
-<p>Under sustained high load, SJF can indefinitely delay long-prompt requests as short ones keep arriving. BLIS does not currently implement aging or starvation guards for SJF. If your workload has a mix of short and long prompts at high utilization, prefer <code>--scheduler priority-fcfs</code> with SLO classes instead.</p>
-</div>
 <h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../routing/">Routing</a> — the upstream decision (which instance)</li>

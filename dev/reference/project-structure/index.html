@@ -900,6 +900,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -954,6 +958,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1083,6 +1115,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -3311,12 +3371,12 @@
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── .github/workflows/         # CI configuration (build, lint, test)
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>├── main.go                    # CLI entry point (Cobra)
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>├── cmd/
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│   ├── root.go                # CLI commands and flags (--scenario, --scenarios, --registry, --num-instances, --policy-config, --workload-spec, --trace-level, --counterfactual-k, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --trace-output, --preemption-policy)
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│   ├── root.go                # CLI commands and flags (--scenario, --scenarios, --registry, --num-instances, --policy-config, --workload-spec, --trace-level, --counterfactual-k, --fitness-weights, --trace-output)
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│   ├── router.go              # The llm-d router's inputs: the scenario's router block and pool labels, plus --gateway-latency, --epp-scrape-jitter, --kv-event-delay on run and replay; records them in the TraceV2 header and rebuilds them on replay (INV-13); builds the sim/llmd gateway
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│   ├── engine_build.go        # The one place cmd builds blis-vllm (#2021): hands the scenario and the engine flags, unread, to blis-vllm compat/build, which opens, checks and prices the pools, resolves the KV offload (scenario block + --kv-offload-config), the engine knobs, routing imbalance and speculative acceptance, and reads the catalog's storage-device table
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│   ├── kv_offload.go          # --kv-offload-config flag and the KV-offload trace-header round trip for replay (the resolution itself is blis-vllm compat/build's, via engine_build.go)
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│   ├── engine_build.go        # The one place cmd builds blis-vllm (#2021): hands the scenario, unread, to blis-vllm compat/build, which opens, checks and prices the pools, resolves the KV offload (the scenario's offload block), the engine knobs, routing imbalance and speculative acceptance, and reads the catalog's storage-device table
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│   ├── kv_offload.go          # The KV-offload trace-header round trip for replay (the resolution itself is blis-vllm compat/build's, via engine_build.go)
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│   ├── replay.go              # `blis replay` command: replays TraceV2 file through DES; flags: --trace-header, --trace-data (required), all sim config flags (including --scenario/--scenarios/--registry) shared via registerSimConfigFlags(); --from-result reproduces a Result from its embedded input
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│   ├── network_topology.go    # crossNodeSpanForTrace: normalizes a cluster's widest instance node span for the TraceV2 header (#1530). A span of 0 (no node pools) or 1 (every instance on one node) records nothing, so a run without multi-node placement writes a byte-identical header; only a real multi-node fleet is recorded, and only that makes `blis replay` refuse the trace.
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│   ├── network_topology.go    # crossNodeSpanForTrace: normalizes a cluster's widest instance node span for the TraceV2 header (#2146). A span of 0 (no node pools) or 1 (every instance on one node) records nothing, so a run without multi-node placement writes a byte-identical header; only a real multi-node fleet is recorded, and only that makes `blis replay` refuse the trace.
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│   ├── result_rows.go         # The Result's request_rows: one row per generated request from the fate ledger, the facts noted at creation (RequestFact) and the engine's per-request metrics
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│   ├── from_result.go         # `--from-result` on run and replay: rebuilds the invocation from a Result's embedded scenario, deployment, policy and input.options, checks file options by sha256, and sets rerun_of and revision_changes
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│   ├── convert.go             # `blis convert` subcommands (servegen, preset, inference-perf)
@@ -3324,8 +3384,8 @@
 <a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>│   ├── compose.go             # `blis compose` for merging v2 specs
 <a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>│   ├── catalog_root.go        # The run's data: the catalog and registry embedded in the pinned blis-substrate, replaced by --catalog / BLIS_CATALOG or --registry / BLIS_REGISTRY, with --catalog-overlay / --registry-overlay; runData opens them once
 <a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>│   ├── catalog_provenance.go  # Build pins and each opened pool's kernel evidence (kernelProvenance, buildVersions), the Result's reports.kernel and revisions
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>│   ├── catalog_workloads.go   # Named workload presets read from the catalog: &lt;catalog&gt;/workloads/&lt;name&gt;.yaml (#1769). The single reader and PresetConfig construction site behind `blis run --workload` and `blis convert preset`; strict KnownFields parsing (R10), refusals name the path and list the presets the catalog defines
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>│   ├── catalog_load.go        # Strict WHOLE-catalog load behind the R1/C6 CI gate (#1750): loads every entry through the code path a run uses (models, presets via readCatalogPresetWorkload, devices via loadCatalogStorageDevices), plus strict readers for the two namespaces no run reads yet (`models/*/model.yaml`, `hardware/*.yaml`). Requires both halves of a model entry, refuses a GPU/tensor-parallel key in any catalog-authored YAML, accumulates and sorts problems (INV-6). Driven by scripts/catalog-load-gate.sh; there is deliberately NO validate subcommand
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>│   ├── catalog_workloads.go   # Named workload presets read from the catalog: &lt;catalog&gt;/workloads/&lt;name&gt;.yaml. The single reader and PresetConfig construction site behind `blis run --workload` and `blis convert preset`; strict KnownFields parsing (R10), refusals name the path and list the presets the catalog defines
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>│   ├── catalog_load.go        # Strict WHOLE-catalog load behind the R1/C6 CI gate: loads every entry through the code path a run uses (models, presets via readCatalogPresetWorkload, devices via loadCatalogStorageDevices), plus strict readers for the two namespaces no run reads yet (`models/*/model.yaml`, `hardware/*.yaml`). Requires both halves of a model entry, refuses a GPU/tensor-parallel key in any catalog-authored YAML, accumulates and sorts problems (INV-6). Driven by scripts/catalog-load-gate.sh; there is deliberately NO validate subcommand
 <a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>│   └── default_config.go      # defaults.yaml loading: the LoRA cost coefficients (and `version`) only
 <a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>├── internal/                  # Repo-root internal packages (test tooling; not importable outside this module)
 <a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>│   └── invariantscan/         # AST scan for hand-rolled INV-1 conservation sums (#1720) — used by the guard tests in sim/, sim/cluster/. Root-level rather than sim/internal so cmd/ can import it too.

@@ -894,6 +894,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -948,6 +952,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1077,6 +1109,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -3865,7 +3925,7 @@ MEASURED-OR-RESOLVED.</p>
   Llama-3.1-70B points, whose runs captured no log and so take vLLM's default of prefix caching
   on, plus the 5 minimax points above), the scored figure lies a median 1.998% (at most 6.861%)
   from the cold one on TTFT, and a median 0.0092% (at most 0.1508%) on TPOT. A drain-gated
-  two-phase trace is blis-schemas#56 / inference-sim#1926.</li>
+  two-phase trace is inference-sim/blis-substrate#156 / inference-sim#1926.</li>
 <li><strong>Sent prompt lengths.</strong> The client's prompt construction was reproduced at the run-date and
   today's revision of each tokenizer (<code>testdata/inferencex-workloads/prompt-lengths.json</code>: 360
   points, 7 pinned revisions). It gives <code>|sent - target|</code> = 0 and no server-added token at every

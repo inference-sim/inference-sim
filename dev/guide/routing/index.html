@@ -11,7 +11,7 @@
       
       
       
-        <link rel="prev" href="../">
+        <link rel="prev" href="../capabilities/">
       
       
         <link rel="next" href="../admission/">
@@ -902,6 +902,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -957,6 +961,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1249,6 +1281,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -3767,11 +3827,11 @@ admits every request at once, and results are identical to a run without a route
   blocks' tokens as the router saw them, so the router's index holds, per pod, exactly the
   blocks the engine can serve from its cache. A terminated instance's blocks are cleared.
   Speculative indexing (<code>speculativeIndexing</code>) expires its entries on simulated time. With a CPU
-  KV tier (<code>--kv-cpu-blocks</code>, or the <code>--kv-offload-config</code> chain), a block that becomes ready on
+  KV tier (a <code>cpu_dram</code> tier in the scenario's <code>offload</code> block), a block that becomes ready on
   the CPU tier, or leaves it, is published as a location event on tier <code>cpu</code>, in the same
   ordered stream, so the router indexes each block on every tier that holds it. A file-system
   tier behind the CPU tier publishes only when its <code>enable_kv_events</code> is set (vLLM's default is
-  off): a block written to it is a location event on tier <code>shared_storage</code>, the medium llm-d's
+  off; the v0.33.0 engine refuses a file-system tier, blis-vllm#63): a block written to it is a location event on tier <code>shared_storage</code>, the medium llm-d's
   file-system backend publishes, which the prefix scorer weighs 0.4 by default
   (<code>kvCacheBackendConfigs</code>). With it off, the router cannot follow a block whose only copy is on
   that tier: when the block is promoted back to the CPU tier, its location event names a block
@@ -4021,7 +4081,7 @@ only through a reference such as a flow-control <code>fairnessPolicyRef</code>.<
 <td>Not yet audited for, or not yet moved onto, the hosting runtime.</td>
 </tr>
 <tr>
-<td><code>session-affinity-*</code>, <code>session-id-producer</code>, <code>agent-identity</code>, <code>outlen-bucket</code>, <code>header-profile-handler</code>, <code>header-label-affinity-scorer</code>, <code>endpoint-pin-screener</code></td>
+<td><code>agent-identity</code>, <code>outlen-bucket</code>, <code>header-profile-handler</code>, <code>header-label-affinity-scorer</code>, <code>endpoint-pin-screener</code></td>
 <td>The simulated workload does not send the headers they read.</td>
 </tr>
 <tr>
@@ -4240,7 +4300,7 @@ to an llm-d configuration or is dropped.</p>
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: User Guide">
+          <a href="../capabilities/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Capabilities Guide">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -4250,7 +4310,7 @@ to an llm-d configuration or is dropped.</p>
                 Previous
               </span>
               <div class="md-ellipsis">
-                User Guide
+                Capabilities Guide
               </div>
             </div>
           </a>

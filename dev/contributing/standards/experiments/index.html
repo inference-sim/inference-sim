@@ -900,6 +900,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -954,6 +958,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1083,6 +1115,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -4495,7 +4555,7 @@
 <li><strong>M/M/k baseline</strong>: <a href="https://en.wikipedia.org/wiki/M/M/c_queue">M/M/k</a> is the standard queueing model with Markovian (Poisson) arrivals, Markovian (exponential) service times, and k servers. Under matching assumptions, compare DES queue length distribution against the M/M/k analytical solution. <strong>Caveat:</strong> BLIS uses batching and deterministic service times (priced by blis-latency-kernel), so exact M/M/k matching is not possible. The comparison requires a scenario with <code>max_num_seqs: 1</code> and interpreting the service time distribution as approximately exponential. Divergence may indicate modeling errors OR fundamental architectural differences from M/M/k assumptions.</li>
 <li><strong>Little's Law</strong>: For any stable configuration, verify L = λW (average queue length = arrival rate × average wait time). This is a universal law that must hold. <strong>In BLIS terms:</strong> L = mean <code>still_queued</code> from per-instance metrics (<code>engine.instances</code> in the Result); λ = <code>requests.injected / engine.cluster.simulated_duration_s</code>; W = mean scheduling delay from <code>engine.cluster.scheduling_delay_p99_ms</code> (approximate).</li>
 <li><strong>Phase structure</strong>: Verify that prefill time ∝ prompt tokens and decode time ∝ output tokens by fitting linear models and checking R² &gt; 0.95. <strong>In BLIS terms:</strong> prefill time ≈ TTFT (time to first token); decode time ≈ E2E - TTFT. Vary <code>input_distribution</code> mean while holding <code>output_distribution</code> constant, and vice versa.</li>
-<li><strong>Replay validation</strong>: Compare BLIS simulation output against real inference server traces (e.g., vLLM experiment logs). This tests system composition — whether the simulator's component interactions produce realistic end-to-end behavior — which analytical evaluation of individual components cannot. <strong>Caveat (T_queue_obs masking):</strong> Analytical evaluation that substitutes real observed queue waits into the prediction formula (e.g., <code>TTFT_pred = α(pre-scheduling overhead) + T_queue_obs + T_prefill_pred</code>) never tests queueing prediction. At saturation, T_queue dominates (~120s), making the &lt;0.02% coefficient error an artifact of masking, not evidence of good coefficients. Only full BLIS replay tests the complete prediction pipeline. <strong>In BLIS terms:</strong> Use <code>blis convert inference-perf</code> to convert real experiment specs (verify <code>enable_multi_turn_chat</code> semantics match between the real server config and BLIS conversion — see #517), then compare BLIS metrics (TTFT, E2E, throughput) against real server metrics at matching operating points. H30-H32 established this pattern, finding that both latency backends then in use (since removed) showed identical TTFT underprediction — -17% to -56% depending on model and workload profile, all at sub-saturation; at actual saturation, regime transition amplification produces 2000x divergence — proving the gap is in the scheduling model (zero inter-step overhead), not coefficient accuracy.</li>
+<li><strong>Replay validation</strong>: Compare BLIS simulation output against real inference server traces (e.g., vLLM experiment logs). This tests system composition — whether the simulator's component interactions produce realistic end-to-end behavior — which analytical evaluation of individual components cannot. <strong>Caveat (T_queue_obs masking):</strong> Analytical evaluation that substitutes real observed queue waits into the prediction formula (e.g., <code>TTFT_pred = α(pre-scheduling overhead) + T_queue_obs + T_prefill_pred</code>) never tests queueing prediction. At saturation, T_queue dominates (~120s), making the &lt;0.02% coefficient error an artifact of masking, not evidence of good coefficients. Only full BLIS replay tests the complete prediction pipeline. <strong>In BLIS terms:</strong> Use <code>blis convert inference-perf</code> to convert real experiment specs (verify <code>enable_multi_turn_chat</code> semantics match between the real server config and BLIS conversion), then compare BLIS metrics (TTFT, E2E, throughput) against real server metrics at matching operating points. H30-H32 established this pattern, finding that both latency backends then in use (since removed) showed identical TTFT underprediction — -17% to -56% depending on model and workload profile, all at sub-saturation; at actual saturation, regime transition amplification produces 2000x divergence — proving the gap is in the scheduling model (zero inter-step overhead), not coefficient accuracy.</li>
 </ul>
 <div class="admonition tip">
 <p class="admonition-title">Parameter resolution</p>
@@ -4828,7 +4888,7 @@
 <p>Confirming that "A is better than B" is necessary but not sufficient. The root cause analysis must explain <em>why</em> through a specific code path. A correct directional result with an incorrect explanation is a ticking time bomb — the explanation will mislead future experiments.</p>
 <p><strong>Paradox flag</strong>: If the proposed mechanism predicts the <em>opposite</em> direction of what would be intuitive (e.g., "fewer cache hits improving performance"), treat this as a red flag. Before accepting a paradoxical explanation, independently verify the underlying data. In H10, the claim "fewer cache hits → better TTFT" survived two rounds because the data (from a buggy analyzer) appeared to support it. The corrected data showed cache hits <em>increased</em>, resolving the paradox. When mechanism and intuition disagree, verify the data first.</p>
 <h3 id="rcv-4-validate-causal-claims-with-control-experiments">RCV-4: Validate causal claims with control experiments<a class="headerlink" href="#rcv-4-validate-causal-claims-with-control-experiments" title="Permanent link">&para;</a></h3>
-<p>When a mechanism is proposed (e.g., "<code>maybeOffload</code> causes the TTFT improvement"), design a control experiment that disables <strong>only that mechanism</strong> (e.g., <code>--kv-offload-threshold 1.0</code>). If the effect vanishes, the mechanism is confirmed. If it persists, the explanation is wrong.</p>
+<p>When a mechanism is proposed (e.g., "<code>maybeOffload</code> causes the TTFT improvement"), design a control experiment that disables <strong>only that mechanism</strong> (e.g., H10's control set the offload threshold to 1.0, a flag since removed). If the effect vanishes, the mechanism is confirmed. If it persists, the explanation is wrong.</p>
 <p>Evidence: H10 proposed <code>maybeOffload</code> as the mechanism. The control experiment (threshold=1.0) produced output byte-identical to single-tier, confirming <code>maybeOffload</code> as the sole cause. Without this control, the mechanism question ("does maybeOffload cause the TTFT improvement?") would have remained unverified.</p>
 <h3 id="rcv-5-confirmation-bias-guard-devils-advocate">RCV-5: Confirmation bias guard (Devil's Advocate)<a class="headerlink" href="#rcv-5-confirmation-bias-guard-devils-advocate" title="Permanent link">&para;</a></h3>
 <p>Before sending FINDINGS.md to external review, the experimenter must write a <strong>Devil's Advocate</strong> section: 2-3 sentences arguing the <strong>opposite</strong> of the conclusion. This is a pre-review self-check that forces consideration of alternative interpretations.</p>

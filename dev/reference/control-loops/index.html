@@ -900,6 +900,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -954,6 +958,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1083,6 +1115,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -3325,6 +3385,15 @@ validated</em>.</p>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><code>cluster-autoscaler</code></td>
+<td><code>PolicyBundle.ClusterAutoscaler</code></td>
+<td>ClusterAutoscaler (PendingDrivenProvisioner) over the pending-placement queue, run when a placement is queued and when one reaches its threshold (cluster_autoscaler.go)</td>
+<td>a read-only snapshot of each node pool (nodes, nodes provisioning, GPUs, cost) and the pending placements in arrival order (model, variant, time requested)</td>
+<td>Kubernetes Cluster Autoscaler's reaction to unschedulable pods (it adds a node when a pod has waited); it models no particular release</td>
+<td>verified, not validated</td>
+<td>the policy and the loop are tested against their written contracts (cluster_autoscaler_test.go); no measured node-scaling run has been compared with it</td>
+</tr>
 <tr>
 <td><code>model-autoscaler</code></td>
 <td><code>PolicyBundle.Autoscaler</code></td>

@@ -1116,6 +1116,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -1170,6 +1174,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1299,6 +1331,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -3690,8 +3750,8 @@ engine it reaches only through blis-schemas' <code>engine.Engine</code> interfac
 clock and the event queue, the client timeouts and the metrics; the engine makes every
 scheduling, KV-cache and output decision and prices its own steps. The engine is
 <a href="https://github.com/inference-sim/blis-vllm">blis-vllm</a>, built at one site,
-<code>cmd/engine_build.go</code>, for the scenario's <code>engine_version: "0.32.0"</code>: blis-vllm's translated
-vLLM v0.32.0 engine. A scenario with no <code>engine_version</code> is refused. The core loop is:</p>
+<code>cmd/engine_build.go</code>, for the scenario's <code>engine: {kind: vllm, version: "0.33.0"}</code>: blis-vllm's translated
+vLLM v0.33.0 engine. A scenario that names no engine is refused. The core loop is:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>while events remain and clock &lt; horizon:
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    event = pop earliest event from queue
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    advance clock to event.timestamp
@@ -3849,7 +3909,7 @@ decoding, data parallelism and the KV cache are the engine's: see blis-vllm's
 <p><strong>Causality invariant (INV-5):</strong> <code>arrival_time &lt;= enqueue_time &lt;= schedule_time &lt;= completion_time</code></p>
 <h3 id="preemption">Preemption<a class="headerlink" href="#preemption" title="Permanent link">&para;</a></h3>
 <p>When KV cache pressure forces eviction, running requests are preempted:
-1. Request is removed from the running batch. By default (<code>--preemption-policy fcfs</code>), the tail of the batch is evicted. <code>--preemption-policy priority</code> is refused on 0.32.0 for now.
+1. Request is removed from the running batch. Under the pool's <code>engine.scheduling_policy: fcfs</code> (the default), the tail of the batch is evicted. <code>scheduling_policy: priority</code>, which evicts the least-urgent request, is refused on 0.33.0 for now.
 2. Its KV blocks are freed
 3. It is re-enqueued at the front of the wait queue (not the back)
 4. A debug log is emitted and <code>PreemptionCount</code> is incremented</p>
@@ -3865,7 +3925,7 @@ decoding, data parallelism and the KV cache are the engine's: see blis-vllm's
 <h2 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h2>
 <p>Step time and host overheads come from <strong>blis-latency-kernel</strong>. The engine asks the kernel to
 price each batch it forms (blis-vllm's kernel adapter, <code>compat/kernelmodel</code>), from the model
-graph, chip and coefficients the scenario names; the 0.32.0 engine is priced with the kernel's
+graph, chip and coefficients the scenario names; the 0.33.0 engine is priced with the kernel's
 0.31.0 tuning, and a run says so on stderr. See the
 <a href="../../guide/latency-models/">Latency Models guide</a>.</p>
 <p>Host overheads are charged around the GPU step, never on it:</p>
@@ -3878,7 +3938,7 @@ graph, chip and coefficients the scenario names; the 0.32.0 engine is priced wit
 </ul>
 <p>This matches vLLM, where CPU post-processing runs concurrently with GPU execution.</p>
 <h2 id="scheduling-policies">Scheduling Policies<a class="headerlink" href="#scheduling-policies" title="Permanent link">&para;</a></h2>
-<p>Each instance's engine orders its waiting requests by the pool's engine block <code>scheduling_policy</code>, as vLLM does. Priority scheduling and <code>--preemption-policy priority</code> are refused on 0.32.0 for now. See <a href="../../guide/scheduling/">Scheduling &amp; Priority</a>.</p>
+<p>Each instance's engine orders its waiting requests by the pool's engine block <code>scheduling_policy</code>, as vLLM does. The same field sets the preemption victim. Priority scheduling (<code>scheduling_policy: priority</code>) is refused on 0.33.0 for now. See <a href="../../guide/scheduling/">Scheduling &amp; Priority</a>.</p>
 <h2 id="metrics">Metrics<a class="headerlink" href="#metrics" title="Permanent link">&para;</a></h2>
 <p>BLIS records per-request and aggregate metrics throughout the simulation.</p>
 <h3 id="per-request-metrics">Per-Request Metrics<a class="headerlink" href="#per-request-metrics" title="Permanent link">&para;</a></h3>

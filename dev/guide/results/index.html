@@ -902,6 +902,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -957,6 +961,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1086,6 +1118,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -4085,7 +4145,7 @@ validate is a fatal error naming the problem. Diagnostics go to stderr.</p>
 <tbody>
 <tr>
 <td><code>engine</code></td>
-<td>The engine the scenario names: <code>kind</code> (<code>vllm</code>) and the upstream <code>version</code> it runs (<code>0.32.0</code>).</td>
+<td>The engine the scenario names: <code>kind</code> (<code>vllm</code>) and the upstream <code>version</code> it runs (<code>0.33.0</code>).</td>
 </tr>
 <tr>
 <td><code>data</code></td>
@@ -4129,7 +4189,7 @@ validate is a fatal error naming the problem. Diagnostics go to stderr.</p>
 </tr>
 <tr>
 <td><code>reports.engine</code></td>
-<td>What the engines reported: under <code>cluster</code> the per-step and KV figures, preemptions, cache hit rates, in-flight counts, the server series and the acceptance record, plus the whole-run figures under <code>whole_run</code>; under each pool role its prefix-cache record; under <code>instances</code> each instance's own figures.</td>
+<td>What the engines reported: under <code>cluster</code> the per-step and KV figures, preemptions, cache hit rates, in-flight counts, the server series and the acceptance record, plus the whole-run figures under <code>whole_run</code>; under each pool role its prefix-cache record; under <code>instances</code> each instance's own whole-run figures and, in <code>measured_window</code>, its figures over the Result's measured window (its measured completions, TTFT and E2E mean and percentiles, output tokens per second, and <code>busy_share</code>, <code>prefill_busy_share</code>, <code>decode_busy_share</code> and <code>mfu</code>), so the worst instance can be judged on the window and not on the warmup-inflated run. The same figures appear under <code>cluster</code> over all the instances. Busy share is the simulated time the engine spent running steps over the window's length (steps clipped to the window, overlapping pipeline stages counted once); each step's time is split between prefill and decode by the tokens it scheduled (metric registry, DEV-8). <code>mfu</code> is the estimated model-FLOPs utilization: the steps' model FLOPs (GEMMs, head, attention matmuls, counted from the graph the kernel prices; elementwise work, recurrent mixers and drafter passes are not counted) over the window's length times the instance's GPUs times one GPU's datasheet dense peak; it is absent when the engine states no FLOPs.</td>
 </tr>
 <tr>
 <td><code>reports.router</code></td>
@@ -4141,11 +4201,11 @@ validate is a fatal error naming the problem. Diagnostics go to stderr.</p>
 </tr>
 <tr>
 <td><code>reports.saturation</code></td>
-<td>The detectors' final labels under <code>final</code>, when <code>--detectors</code> ran.</td>
+<td>The steady-state detector's verdict: its state under <code>final.settle</code> and the numbers behind it under <code>detail</code>, when <code>--detectors</code> ran.</td>
 </tr>
 <tr>
 <td><code>overrides</code></td>
-<td>Every setting the run simulated differently from its scenario, and what chose it: a <code>--scheduler</code> or <code>--preemption-policy</code> against the scenario's stated policy, and every other command-line flag that changes what is simulated and was given a value other than its default (<code>--timeout</code>, <code>--num-instances</code>, <code>--prefix-tokens</code>, the token-length flags, the router timing flags, the speculative-decoding flags, ...), as <code>setting</code> (the flag), <code>run</code> (its value; a file flag by <code>sha256:&lt;digest&gt;</code>) and <code>source</code>. A workload spec run without <code>--seed</code> adds <code>workload_seed</code> (the spec's own request seed). Flags that select or tune a reported section without changing what is simulated (<code>--detectors</code>, <code>--saturation-config</code>, <code>--saturation-final-window</code>, <code>--server-series-interval-s</code>, <code>--fitness-weights</code>, <code>--trace-level</code>, <code>--summarize-trace</code>) are recorded the same way, because they change bytes of the document (SIM-10, #2062). Flags that change no byte of it (<code>--output</code>, <code>--format</code>, <code>--view</code>, <code>--log</code>, output paths, <code>--counterfactual-k</code>, <code>--lazy-generation</code>) are not recorded; <code>cmd/result_flags.go</code> lists each with the reason, and a test fails for a new flag listed in neither place. The run's <code>name</code> carries a digest of the overrides, so two runs that differ only in a flag get different names.</td>
+<td>Every setting the run simulated differently from its scenario, and what chose it: every command-line flag that changes what is simulated and was given a value other than its default (<code>--timeout</code>, <code>--num-instances</code>, <code>--prefix-tokens</code>, the token-length flags, the router timing flags, the speculative-decoding flags, ...), as <code>setting</code> (the flag), <code>run</code> (its value; a file flag by <code>sha256:&lt;digest&gt;</code>) and <code>source</code>. A workload spec run without <code>--seed</code> adds <code>workload_seed</code> (the spec's own request seed). Flags that select or tune a reported section without changing what is simulated (<code>--detectors</code>, <code>--saturation-config</code>, <code>--saturation-final-window</code>, <code>--server-series-interval-s</code>, <code>--fitness-weights</code>, <code>--trace-level</code>, <code>--summarize-trace</code>) are recorded the same way, because they change bytes of the document (SIM-10, #2062). Flags that change no byte of it (<code>--output</code>, <code>--format</code>, <code>--view</code>, <code>--log</code>, output paths, <code>--counterfactual-k</code>) are not recorded; <code>cmd/result_flags.go</code> lists each with the reason, and a test fails for a new flag listed in neither place. The run's <code>name</code> carries a digest of the overrides, so two runs that differ only in a flag get different names.</td>
 </tr>
 <tr>
 <td><code>artifacts</code></td>
@@ -4740,24 +4800,14 @@ grade reads this list and not the stderr text.</p>
 <p>All per-request latency fields (<code>ttft_ms</code>, <code>e2e_ms</code>, <code>itl_ms</code>, <code>scheduling_delay_ms</code>) are in <strong>milliseconds</strong> — converted from internal ticks by dividing by 1,000. Aggregate metrics (<code>scheduling_delay_p99_ms</code>, etc.) are also in milliseconds. See <a href="../../reference/configuration/#known-unit-gotchas">Known Unit Gotchas</a> for the full unit reference. Note: hypothesis scripts written before BC-14 may divide <code>scheduling_delay_ms</code> by 1,000 unnecessarily — that field is now already in ms.</p>
 </div>
 <h3 id="scenario-overrides">Scenario Overrides<a class="headerlink" href="#scenario-overrides" title="Permanent link">&para;</a></h3>
-<p>A run reproduces its scenario unless a flag or a policy bundle chooses another value for a
-setting the scenario states. Today those are the two settings vLLM's
-<code>engine.scheduling_policy</code> decides: the waiting queue's order and the preemption victim
-(vLLM <code>fcfs</code> is BLIS <code>--scheduler fcfs</code> with <code>--preemption-policy fcfs</code>; vLLM <code>priority</code> is
-<code>--scheduler priority-fcfs</code> with <code>--preemption-policy priority</code>). An explicit <code>--scheduler</code> or
-<code>--preemption-policy</code>, or a <code>--policy-config</code> bundle's <code>scheduler</code> or <code>preemption.policy</code>, that
-differs from the scenario is kept, since exploring a policy against a fixed deployment is the
-point, and the Result says so:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">"overrides"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="p">{</span><span class="nt">"setting"</span><span class="p">:</span><span class="w"> </span><span class="s2">"scheduler"</span><span class="p">,</span><span class="w"> </span><span class="nt">"input"</span><span class="p">:</span><span class="w"> </span><span class="s2">"priority-fcfs"</span><span class="p">,</span><span class="w"> </span><span class="nt">"run"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sjf"</span><span class="p">,</span><span class="w"> </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"--scheduler"</span><span class="p">}</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="p">]</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="p">}</span>
-</code></pre></div>
-<p>In a prefill/decode deployment each pool runs its own engine's policy, so a run-level choice
-is recorded once per pool whose engine stated otherwise, as <code>"scheduler (prefill pool)"</code> or
-<code>"preemption_policy (decode pool)"</code>.</p>
-<p>A warning on stderr says the same.</p>
+<p>A run reproduces its scenario's engine settings. No flag or policy bundle sets one: the waiting
+queue's order and the preemption victim are the pool's <code>engine.scheduling_policy</code>, as in vLLM
+(vLLM <code>fcfs</code> is BLIS <code>fcfs</code> queueing and <code>fcfs</code> preemption; vLLM <code>priority</code> is BLIS
+<code>priority-fcfs</code> queueing and <code>priority</code> preemption). In a prefill/decode deployment each pool
+runs its own engine's policy. <code>--scheduler</code> and <code>--preemption-policy</code> were removed in v0.18.0,
+and a <code>--policy-config</code> bundle that states <code>scheduler</code> or <code>preemption</code> is refused
+(<a href="https://github.com/inference-sim/inference-sim/issues/2037">#2037</a>). The <code>overrides</code> list
+records the command-line flags that change what is simulated (see the table above).</p>
 <h3 id="closeness-data">Closeness Data<a class="headerlink" href="#closeness-data" title="Permanent link">&para;</a></h3>
 <p>The Result carries what a scoring harness needs to grade a point against the run it measured
 (design 11.3, G1), in two places.</p>
@@ -4783,7 +4833,7 @@ is recorded once per pool whose engine stated otherwise, as <code>"scheduler (pr
   passed on everything each entry states and the implementation each coefficient priced; it does not
   say that every pool registered, nor that a condition was decided. A registry coefficient that states
   no <code>kernel_impls</code> is <code>unkeyed</code>, so the kernel-hash condition cannot be decided for it; at the
-  registry this release pins few coefficients state them (blis-registry#73).</li>
+  registry this release pins few coefficients state them (inference-sim/blis-substrate#149).</li>
 <li><code>resolutions</code> lists, for each pool and each setting the cost model resolves, the engine's value
   beside the host's, with the reason where they differ. A row names its <code>pool</code> by the pool's role
   (<code>colocated</code>, <code>prefill</code>, <code>decode</code>); the engine allows one pool per role. Rows are sorted by
@@ -4796,18 +4846,20 @@ source (<code>embedded</code> or <code>path</code>), content hash and overlays (
 the run, so two runs on different data are different inputs (INV-6). The Result never records
 the path, a fact of the host.</p>
 <h3 id="saturation-detection">Saturation Detection<a class="headerlink" href="#saturation-detection" title="Permanent link">&para;</a></h3>
-<p>Post-hoc saturation analysis classifies a completed run as <code>STABLE</code>, <code>BACKLOGGED</code> or
-<code>OVERLOADED</code>. It is distinct from the llm-d router's saturation detector, which gates admission
-and flow control during the run. Select detectors with
-<code>--detectors &lt;name|comma-list|all&gt;</code> (<code>composite</code>, <code>threshold</code>, <code>backlog-drift</code>, <code>peak-rate</code>),
-tune them with <code>--saturation-config</code>, and write the per-event verdict trace with
-<code>--saturation-report</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/kernel/aisimulate<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">10</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">100</span><span class="w"> </span>--detectors<span class="w"> </span>all<span class="w"> </span>--saturation-report<span class="w"> </span>sat.json
+<p><code>--detectors settle</code> classifies the measured window (the whole run when it has none) as
+<code>SETTLED</code>, <code>OVERLOADED</code> or <code>INCOMPLETE</code>, ending the window at the last arrival (the drain after it is not steady state), by the one steady-state detector of DEV-10. Only a
+settled run gives a steady-state latency figure. It is distinct from the llm-d router's
+saturation detector, which gates admission and flow control during the run. The verdict is in
+<code>reports.saturation</code>: <code>final.settle</code> is the state and <code>detail</code> holds the numbers behind it
+(completions, mean requests in the system, the backlog's growth across the window and its
+one-sided p-value, the latency tail index). <code>--saturation-report</code> writes the same verdict to a
+file.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/kernel/aisimulate<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">10</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">100</span><span class="w"> </span>--detectors<span class="w"> </span>settle<span class="w"> </span>--saturation-report<span class="w"> </span>sat.json
 </code></pre></div>
-<p>Detector mechanics and tuning knobs:
-<a href="../../contributing/saturation-analyzer-extension/">Saturation analyzer</a>.</p>
+<p>The statistic, the constants and the measured false-alarm rate and power are in
+<a href="../../contributing/saturation-analyzer-extension/">Saturation detector</a>.</p>
 <h3 id="per-request-rows">Per-Request Rows<a class="headerlink" href="#per-request-rows" title="Permanent link">&para;</a></h3>
 <p><code>request_rows</code> holds one row per generated request (DEV-9), in creation order. A latency is
 stated only where the request produced the sample: no token, no <code>ttft_us</code>; fewer than two
@@ -4907,7 +4959,7 @@ output tokens, no <code>tpot_us</code>; not completed, no <code>e2e_us</code>.</
 <tr>
 <td><strong>Priority Inversions</strong></td>
 <td>A lower-priority request was scheduled before a higher-priority one</td>
-<td>Check scheduler choice — use <code>priority-fcfs</code> for SLO workloads</td>
+<td>Check the scheduling policy — use <code>engine.scheduling_policy: priority</code> for SLO workloads</td>
 </tr>
 <tr>
 <td><strong>HOL Blocking Events</strong></td>
@@ -5004,29 +5056,29 @@ map onto them.</p>
 <p>When multiple SLO classes are present in the workload, <code>--view summary</code> prints per-class TTFT and E2E distributions. This lets you verify that <code>critical</code> requests meet SLOs even when <code>batch</code> traffic is heavy.</p>
 <h2 id="per-model-metrics">Per-Model Metrics<a class="headerlink" href="#per-model-metrics" title="Permanent link">&para;</a></h2>
 <p>When instances serve different models (multi-model deployment), <code>--view summary</code> prints per-model TTFT mean/p99, E2E mean/p99, and throughput (req/s). This appears automatically when requests carry model tags. Output format:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>=== Per-Model Metrics ===
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>  qwen/qwen3-14b:
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    TTFT: p50=1234.56 p99=5678.90 (n=250)
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    E2E:  p50=9876.54 p99=12345.67 (n=250)
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    Throughput: 50.00 req/s, 6400.00 tok/s
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>=== Per-Model Metrics ===
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>  qwen/qwen3-14b:
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    TTFT: p50=1234.56 p99=5678.90 (n=250)
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    E2E:  p50=9876.54 p99=12345.67 (n=250)
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    Throughput: 50.00 req/s, 6400.00 tok/s
 </code></pre></div>
 <p>These sections are <code>--view summary</code>'s rendering, on stderr; the Result carries the same splits under <code>breakdowns</code> (<code>per_model</code>, <code>per_tenant</code>, <code>sessions</code>, <code>pd</code>).</p>
 <h2 id="per-tenant-metrics">Per-Tenant Metrics<a class="headerlink" href="#per-tenant-metrics" title="Permanent link">&para;</a></h2>
 <p>When requests carry <code>tenant_id</code> labels, <code>--view summary</code> prints per-tenant request counts, total output tokens served, and a <a href="https://en.wikipedia.org/wiki/Fairness_measure">Jain Fairness Index</a> over the token distribution. This section appears automatically and is omitted when no requests carry tenant labels (backward-compatible with legacy and untenanted workloads). A workload with a single named tenant shows the section with Jain=1.0 (trivially fair).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>=== Per-Tenant Metrics ===
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>  alice: requests=50, tokens=12500
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>  bob: requests=50, tokens=12480
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>  Jain Fairness Index: 0.9999
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>=== Per-Tenant Metrics ===
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>  alice: requests=50, tokens=12500
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>  bob: requests=50, tokens=12480
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>  Jain Fairness Index: 0.9999
 </code></pre></div>
 <p>Tenants are listed in lexicographic order. The Jain Fairness Index ranges from <code>1/N</code> (maximally unfair — one tenant receives everything) to <code>1.0</code> (perfectly fair — all tenants receive equal tokens). A balanced two-tenant workload produces a value ≥ 0.99.</p>
 <p>To tag requests with tenant labels, set <code>tenant_id</code> in your workload spec cohort:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">cohorts</span><span class="p">:</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alice-traffic</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alice</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">...</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob-traffic</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob</span>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">cohorts</span><span class="p">:</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alice-traffic</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alice</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob-traffic</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">...</span>
 </code></pre></div>
 <h2 id="session-metrics">Session Metrics<a class="headerlink" href="#session-metrics" title="Permanent link">&para;</a></h2>
 <p>When a workload contains multi-turn sessions (requests with <code>session_id</code>), <code>--view summary</code> prints a <code>=== Session Metrics ===</code> block:</p>
@@ -5100,7 +5152,7 @@ map onto them.</p>
 <p>PD Disaggregation Metrics are produced by both <code>blis run</code> and <code>blis replay</code> for a disaggregated scenario run with <code>--prefill-instances</code>/<code>--decode-instances</code>.</p>
 <h2 id="fitness-evaluation">Fitness Evaluation<a class="headerlink" href="#fitness-evaluation" title="Permanent link">&para;</a></h2>
 <p>For automated multi-configuration comparison:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>--fitness-weights<span class="w"> </span><span class="s2">"p99_ttft:3,mean_e2e:1,throughput:2"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>--fitness-weights<span class="w"> </span><span class="s2">"p99_ttft:3,mean_e2e:1,throughput:2"</span>
 </code></pre></div>
 <p>The score, its per-metric components and the weights are in the Result at <code>router.fitness</code>;
 <code>--view summary</code> also prints them on stderr. <code>--summarize-trace</code> (with <code>--trace-level decisions</code>)
@@ -5135,9 +5187,9 @@ simulated E2E exceeds a theoretical M/M/k E2E, most at high load. To compare wit
 theoretical model, use <code>rho_eff = lambda × step_total</code>, not <code>lambda × E2E_total</code>.</p>
 <h2 id="per-request-results">Per-Request Results<a class="headerlink" href="#per-request-results" title="Permanent link">&para;</a></h2>
 <p>For detailed analysis, read the Result's <code>request_rows</code> (<a href="#per-request-rows">Per-Request Rows</a>):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/kernel/aisimulate<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--output<span class="w"> </span>result.json
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/kernel/aisimulate<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--output<span class="w"> </span>result.json
 </code></pre></div>
 <p>Each row includes TTFT, E2E, scheduling delay, and its fate.</p>
 <h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>

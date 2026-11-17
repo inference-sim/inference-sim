@@ -902,6 +902,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -957,6 +961,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1343,6 +1375,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -3791,7 +3851,7 @@ from its <strong>registry</strong>; every file format involved, the scenario inc
 To read a checkout instead, pass <code>--catalog</code> or set <code>BLIS_CATALOG</code>:</p>
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/inference-sim/blis-substrate.git
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>git<span class="w"> </span>-C<span class="w"> </span>blis-substrate<span class="w"> </span>checkout<span class="w"> </span>v0.14.0
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>git<span class="w"> </span>-C<span class="w"> </span>blis-substrate<span class="w"> </span>checkout<span class="w"> </span>v0.15.0
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_CATALOG</span><span class="o">=</span><span class="nv">$PWD</span>/blis-substrate/catalog<span class="w">   </span><span class="c1"># optional: replaces the embedded catalog (or pass --catalog)</span>
 </code></pre></div>
 <!-- END GENERATED -->
@@ -3836,7 +3896,7 @@ scenarios it was scored on, at
 <p>A scenario is a blis-schemas file of two YAML documents, a <code>Scenario</code> and a <code>Deployment</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Scenario</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">llama-3.1-70b-instruct-h200-fp8-vllm-tp4</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">engine_version</span><span class="p">:</span><span class="w"> </span><span class="s">"0.32.0"</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">engine</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="nv">vllm</span><span class="p p-Indicator">,</span><span class="nt"> version</span><span class="p">:</span><span class="w"> </span><span class="s">"0.33.0"</span><span class="p p-Indicator">}</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">llama-3.1-70b-instruct</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nt">coefficients</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">cost-model-primitives</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">cost-model-collectives</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">cost-model-host-overheads</span><span class="p p-Indicator">,</span>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">               </span><span class="nv">cost-model-attention</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">cost-model-recurrent</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">cost-model-memory</span><span class="p p-Indicator">]</span>
@@ -3869,7 +3929,7 @@ scenarios it was scored on, at
 <h3 id="what-comes-from-the-scenario-and-what-stays-on-the-cli">What comes from the scenario, and what stays on the CLI<a class="headerlink" href="#what-comes-from-the-scenario-and-what-stays-on-the-cli" title="Permanent link">&para;</a></h3>
 <p>The scenario and the kernel supply, with no flag to restate them: the model, the hardware,
 TP/DP/EP, the KV block budget (from the kernel's memory methods, per data-parallel rank),
-block size, <code>max_num_seqs</code>, <code>max_num_batched_tokens</code>, <code>max_model_len</code> (must be stated as an explicit count on 0.32.0; unstated or <code>auto</code> is refused,
+block size, <code>max_num_seqs</code>, <code>max_num_batched_tokens</code>, <code>max_model_len</code> (must be stated as an explicit count on 0.33.0; unstated or <code>auto</code> is refused,
 as is a window one rank's KV cache cannot hold), prefix caching, the KV cache dtype, and the speculative draft length and
 method. The flags that used to state these (<code>--model</code>, <code>--hardware</code>, <code>--tp</code>, <code>--dp</code>,
 <code>--total-kv-blocks</code>, <code>--max-num-seqs</code>, <code>--max-model-len</code>, <code>--kv-cache-dtype</code>,
@@ -3906,8 +3966,10 @@ the <a href="../../reference/configuration/">Configuration Reference</a>.</p>
 <p>A scenario that cannot be resolved -- absent file, unreadable coefficient set, unknown
 engine version, a deployment that does not fit -- aborts the run naming what failed. There
 is no fallback.</p>
-<p>The scenario's <code>engine_version</code> must be <code>"0.32.0"</code>, and a scenario that states none is refused.
-It runs blis-vllm's translated vLLM v0.32.0 engine, priced with the kernel's 0.31.0 tuning (the
+<p>The scenario's <code>engine</code> must be <code>{kind: vllm, version: "0.33.0"}</code>, and a scenario that states none
+is refused. A scenario that states the removed <code>engine_version</code> is refused with a message naming
+<code>engine: {kind, version}</code>.
+It runs blis-vllm's translated vLLM v0.33.0 engine, priced with the kernel's 0.31.0 tuning (the
 run says so on stderr), and refuses priority scheduling for now. The engine block must state
 <code>max_model_len</code> as an explicit number (unstated or <code>auto</code> is refused), plus <code>max_num_seqs</code> and
 <code>max_num_batched_tokens</code>. Any other release is refused, naming it.</p>
@@ -3925,7 +3987,7 @@ fraction of the fabric's nominal rate a transfer reaches (<code>fabric_bandwidth
 nominal line rate, which makes the handoff about 23% fast on <code>ib-400g</code>, and records the choice in
 the Result as an <code>assumed</code> <code>fabric_bandwidth_efficiency</code> under <code>reports.kernel.&lt;pool&gt;.assumptions</code>.
 Every disaggregated scenario this repository ships lists it, and a test requires that.</p>
-<p>At <code>engine_version: "0.32.0"</code> each pool's engine is blis-vllm's v0.32.0 engine, which runs vLLM's
+<p>At <code>engine: {kind: vllm, version: "0.33.0"}</code> each pool's engine is blis-vllm's v0.33.0 engine, which runs vLLM's
 NIXL scheduler as the pool's <code>kv_role</code>: <code>kv_producer</code> for the prefill pool and <code>kv_consumer</code> for the
 decode pool. The prefill leg samples one token and holds its blocks for the pull. The decode leg waits
 in <code>WAITING_FOR_REMOTE_KVS</code> until the pull lands. Under PP the engine refuses what vLLM's NIXL worker
@@ -3970,7 +4032,7 @@ one; any other connector is refused. Three further rules follow from vLLM:</p>
   max-min fairly and re-divided as handoffs start and finish. The floor is never shared. A
   handoff alone takes exactly its demand's <code>AloneTime</code>. With contention off, every handoff is
   priced as if alone.</li>
-<li><strong>Offload tiers (#1940).</strong> The scenario's <code>offload</code> block (or <code>--kv-offload-config</code>, see
+<li><strong>Offload tiers (#1940).</strong> The scenario's <code>offload</code> block (see
   <a href="#kv-offload">KV offload</a>) gives every pool its own tier of that size: llm-d's
   MultiConnector of NIXL and the OffloadingConnector. A pool's tier stores
   what its engine computes. The prefill pool's tier serves prefix hits before compute. The
@@ -4075,7 +4137,7 @@ the ranks. BLIS therefore steps the group's ranks together:</p>
   request. Dummy steps are not work: a rank's clock, and so <code>SimEndedTime</code> and the rates
   divided by it, stop at its last real event.</li>
 </ul>
-<p><strong>How requests reach ranks: <code>parallel.data_parallel_load_balancing</code> (or <code>--dp-load-balancing</code>, deprecated in v0.16.0 and removed in v0.19.0, which may only restate a mode the scenario states).</strong> vLLM v0.31.0's serve flags choose
+<p><strong>How requests reach ranks: <code>parallel.data_parallel_load_balancing</code>, in each pool of the scenario.</strong> vLLM v0.31.0's serve flags choose
 (<code>vllm/engine/arg_utils.py:536-538, 1225-1242</code>; <code>EngineCoreClient.make_async_mp_client</code>,
 <code>vllm/v1/engine/core_client.py:155-166</code>), and lockstep is the same in every mode:</p>
 <table>
@@ -4142,12 +4204,12 @@ llm-d's endpoint picker reads a pod's per-engine series (<code>engine="&lt;rank&
 its rank index (<code>pkg/kvevents/pool.go:134</code>), which is 0 for an internal-balancer pod.</p>
 <p>Known deviations and limits:</p>
 <ul>
-<li>Pad tokens are the kernel's <code>Batch.PadTokens</code> (blis-schemas#74): they run the GEMMs,
+<li>Pad tokens are the kernel's <code>Batch.PadTokens</code> (https://github.com/inference-sim/blis-schemas/issues/74): they run the GEMMs,
   collectives, MoE dispatch and experts, and no attention, logits or sampling; an idle rank's
   dummy batch is all pad. This needs the kernel and schemas from the dsv41 branches, which
   <code>go.mod</code> pins by <code>replace</code> until they are released.</li>
 <li>vLLM also pads every rank under dual-batch overlap (<code>should_ubatch</code>, <code>dp_utils.py:181</code>).
-  BLIS does not model DBO, which the kernel does not price (blis-latency-kernel#48).</li>
+  BLIS does not model DBO, which the kernel does not price (https://github.com/inference-sim/blis-latency-kernel/issues/48).</li>
 <li>One front-end, with the whole in-flight view, stands for the <code>api_server_count</code> front-ends
   (dp by default), so <code>client_count</code> is 1.</li>
 <li>The coordinator's counts are sampled at the first assignment of each 100 ms period, not at
@@ -4188,7 +4250,7 @@ minimum-variance schedule when the source states none). A run that does not spec
 none.</p>
 <ul>
 <li><strong>Method: the engine release's list.</strong> <code>method</code> is checked against the rules pack of the
-  scenario's <code>engine_version</code> (blis-vllm's packs, read through blis-schemas <code>rules.EngineRules</code>), not a list in
+  scenario's <code>engine.version</code> (blis-vllm's packs, read through blis-schemas <code>rules.EngineRules</code>), not a list in
   BLIS, so vLLM 0.31.0 accepts <code>dspark</code> (DeepSeek-V4.1's DSpark), <code>dflash</code>, <code>eagle3</code>,
   <code>suffix</code> and the rest of that release's methods. A method the model graph's speculator
   does not describe, or one vLLM refuses for the model (MTP on DeepSeek-V4.1), is refused
@@ -4251,36 +4313,33 @@ and gated as before (BLIS does not apply vLLM's full-prompt gate to it).</p>
 <p>The scenario's <code>offload</code> block is the run's KV offload configuration (#1910). It maps onto
 vLLM's OffloadingConnector:</p>
 <ul>
-<li><strong>Tiers.</strong> A <code>cpu_dram</code> tier of <code>bytes</code> is the CPU tier (<code>cpu_bytes_to_use</code>). vLLM's
-  defaults apply to everything the schema does not state: block size, <code>offload_prompt_only</code>,
-  <code>tokens_per_hash</code>.</li>
-<li><strong>Accepted settings.</strong> <code>connector</code> may be <code>OffloadingConnector</code> or left out; <code>spec</code> may be
+<li><strong>Tiers.</strong> A <code>cpu_dram</code> tier of <code>bytes</code> is the CPU tier (<code>cpu_bytes_to_use</code>), and it must be
+  the first tier. A tier naming another catalog storage device class is a secondary tier,
+  which the v0.33.0 engine refuses (blis-vllm#63). vLLM's defaults apply to everything the schema does not state:
+  block size, <code>offload_prompt_only</code>, <code>tokens_per_hash</code>.</li>
+<li><strong>Accepted settings.</strong> <code>connector</code> may be <code>OffloadingConnector</code>, <code>SimpleCPUOffloadConnector</code>
+  (one <code>cpu_dram</code> tier) or left out; <code>spec</code> may be
   <code>CPUOffloadingSpec</code>, <code>TieringOffloadingSpec</code>, or left out; <code>eviction_policy</code> may be <code>lru</code>.</li>
 <li><strong>Refused by name:</strong></li>
 <li>another connector or spec;</li>
 <li><code>prefetch_depth</code>;</li>
 <li><code>arc</code>;</li>
-<li>a secondary tier (blis-schemas does not state the fs tier's <code>root_dir</code>, <code>direct_io</code> and
-    thread counts; describe those with <code>--kv-offload-config</code> instead);</li>
+<li>an object-store tier (<code>s3</code>), which vLLM reaches through its <code>obj</code> tier;</li>
 <li>an offload block with no <code>cpu_dram</code> tier.</li>
 <li><strong>0 bytes.</strong> blis-schemas refuses a 0-byte tier, as vLLM refuses <code>cpu_bytes_to_use: 0</code>.</li>
 <li><strong>Per engine.</strong> The block is deployment-level and the schema has no per-pool form, while
   <code>cpu_bytes_to_use</code> belongs to one engine's connector. So every engine gets its own tier of
   the stated bytes: the colocated pool, and each prefill and each decode engine.</li>
-<li><strong>The flag only restates.</strong> <code>--kv-offload-config</code> may restate the scenario's block; it must
-  then resolve identically, or the run is refused naming the fields that differ. With no
-  scenario block, the flag alone configures the offload.</li>
+<li><strong>The only source.</strong> No flag configures offload. On replay the trace header is
+  authoritative, and the scenario's block may only restate it.</li>
 </ul>
-<p><code>--kv-offload-config</code> tiers must each name a catalog <code>device_class</code>; the kernel prices every
-transfer with <code>TierTime</code> for that device at the tier's in-service queue depth. Explicit
-<code>read_bandwidth</code>, <code>write_bandwidth</code> and <code>base_latency</code> in the tier config are refused.
-The legacy <code>--kv-cpu-blocks</code> tier is priced by the kernel from the catalog <code>cpu_dram</code>
-device. See <a href="../kv-cache/">KV Cache &amp; Memory</a>.</p>
+<p>The kernel prices every tier transfer with <code>TierTime</code> for the tier's catalog device at the
+tier's in-service queue depth. See <a href="../kv-cache/">KV Cache &amp; Memory</a>.</p>
 <h2 id="lora">LoRA<a class="headerlink" href="#lora" title="Permanent link">&para;</a></h2>
 <p>The per-step adapter compute overhead is applied to the kernel's step time, and the static
 adapter HBM reservation is set aside from the kernel's KV budget before blocks are counted.
 The LoRA cost coefficients come from <code>--defaults-filepath</code> (the <code>lora:</code> block of
-<code>defaults.yaml</code>) or <code>--lora-config</code>.</p>
+<code>defaults.yaml</code>) or <code>--lora-config</code>. See <a href="../lora/">LoRA Adapters</a>.</p>
 <h2 id="what-it-does-not-yet-do">What it does not yet do<a class="headerlink" href="#what-it-does-not-yet-do" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Predict speculative acceptance (it is an input).</li>

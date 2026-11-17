@@ -11,7 +11,7 @@
       
       
       
-        <link rel="prev" href="../kv-cache/">
+        <link rel="prev" href="../lora/">
       
       
         <link rel="next" href="../cluster/">
@@ -902,6 +902,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -957,6 +961,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1086,6 +1118,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -1398,6 +1458,17 @@
     <span class="md-ellipsis">
       
         Phased Workloads
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#drain-gated-phases-warm-up-then-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Drain-gated phases (warm-up, then measured)
       
     </span>
   </a>
@@ -3921,6 +3992,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#drain-gated-phases-warm-up-then-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Drain-gated phases (warm-up, then measured)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4093,10 +4175,8 @@
 </table>
 <p>Whichever mode states the workload, <code>blis run</code> streams its requests: each client's generator
 produces the next request when the simulation reaches it, so memory holds the requests in flight
-rather than the whole workload. This is the default since v0.16.0 (#1449). The older eager
-generator, which builds every request before the run starts, produces the same requests (INV-6)
-and is selected with <code>--lazy-generation=false</code>, deprecated in v0.16.0 and removed in v0.19.0
-(#1451).</p>
+rather than the whole workload. This is the only path: v0.18.0 deleted the eager generator,
+which built every request before the run started, and its <code>--lazy-generation</code> flag (#1451).</p>
 <div class="admonition note">
 <p class="admonition-title">Migration: <code>--workload traces</code> removed</p>
 <p>The <code>--workload traces</code> and <code>--workload-traces-filepath</code> flags have been removed. They performed lossy statistical approximation (averaged token lengths, constant arrival) rather than faithful replay. For trace replay, use <code>--workload-spec</code> with a <a href="../../reference/workload-spec/">TraceV2 YAML file</a> instead. To export simulation results as TraceV2, use <code>--trace-output &lt;prefix&gt;</code>.</p>
@@ -4664,22 +4744,33 @@ control; see <a href="../admission/">Admission Control</a>.</p>
 <p>Rate fractions are normalized <strong>per-phase</strong>: during 0–50s the co-active fractions are 0.7 + 0.3 = 1.0, so summarization gets 28 req/s and qa gets 12 req/s. During 50–100s, contentgen's fraction (1.0) is the only one active and gets the full 40 req/s. Clients without lifecycle windows are "always-on" and overlap with every phase.</p>
 <p>See <a href="../../reference/workload-spec/#lifecycle-normalization">Lifecycle Normalization</a> for details.</p>
 <p><strong>Arrival spacing inside a window.</strong> Each window generates exactly N = <code>ceil(rate x window_duration_seconds)</code> arrivals. Every arrival lands <strong>strictly before</strong> <code>end_us</code>; that upper bound is unconditional, and it is what keeps a window's arrivals from colliding with the next window's start instant, where they would be attributed to the wrong window's parameters. Because N arrivals inside a window of length D have N+1 surrounding gaps, the effective mean gap is <code>D/(N+1)</code>, not <code>D/N</code> — the window closes with a gap rather than with an arrival. The lower bound is deliberately <strong>not</strong> symmetric: the sampled gaps are rescaled to sum to the window duration exactly and the rounding residual is added only to the trailing gap, so the <em>leading</em> gap can round down to zero and the first arrival can land exactly on <code>start_us</code>. That is legal — a window is half-open, <code>[start_us, end_us)</code> — and rare (measured at roughly one draw in 13,000 for a 100 req/s, 1 s window). It is not the boundary thundering herd that motivated interior placement: that came from putting every co-active client's first arrival on the start instant deterministically, not from one client occasionally landing there. Note that a window whose expected count is fractional still rounds <strong>up</strong>, so any window with a non-zero rate produces at least one arrival.</p>
+<h3 id="drain-gated-phases-warm-up-then-measured">Drain-gated phases (warm-up, then measured)<a class="headerlink" href="#drain-gated-phases-warm-up-then-measured" title="Permanent link">&para;</a></h3>
+<p>A benchmark runs in stages: a warm-up, then the measured phase, each starting when the one before it has drained. Lifecycle windows are time-based and cannot say that. A <code>phases</code> list can. Each phase sends its own <code>num_requests</code>, from the clients that name it with <code>phase</code>, and the engine, KV and prefix-cache state carry across phases, so the measured phase hits the prefix the warm-up left.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nt">aggregate_rate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="nt">phases</span><span class="p">:</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">warmup</span><span class="p p-Indicator">,</span><span class="nt">   num_requests</span><span class="p">:</span><span class="w"> </span><span class="nv">20</span><span class="p p-Indicator">,</span><span class="nt">  concurrency</span><span class="p">:</span><span class="w"> </span><span class="nv">10</span><span class="w"> </span><span class="p p-Indicator">}</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">measured</span><span class="p p-Indicator">,</span><span class="nt"> num_requests</span><span class="p">:</span><span class="w"> </span><span class="nv">100</span><span class="p p-Indicator">,</span><span class="nt"> concurrency</span><span class="p">:</span><span class="w"> </span><span class="nv">10</span><span class="w"> </span><span class="p p-Indicator">}</span><span class="w">   </span><span class="c1"># starts when the warm-up has drained</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="nt">clients</span><span class="p">:</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> id</span><span class="p">:</span><span class="w"> </span><span class="nv">w</span><span class="p p-Indicator">,</span><span class="nt"> phase</span><span class="p">:</span><span class="w"> </span><span class="nv">warmup</span><span class="p p-Indicator">,</span><span class="nt">   rate_fraction</span><span class="p">:</span><span class="w"> </span><span class="nv">1</span><span class="p p-Indicator">,</span><span class="nt"> prefix_group</span><span class="p">:</span><span class="w"> </span><span class="nv">sys</span><span class="p p-Indicator">,</span><span class="nt"> prefix_length</span><span class="p">:</span><span class="w"> </span><span class="nv">512</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">...</span><span class="w"> </span><span class="p p-Indicator">}</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> id</span><span class="p">:</span><span class="w"> </span><span class="nv">m</span><span class="p p-Indicator">,</span><span class="nt"> phase</span><span class="p">:</span><span class="w"> </span><span class="nv">measured</span><span class="p p-Indicator">,</span><span class="nt"> rate_fraction</span><span class="p">:</span><span class="w"> </span><span class="nv">1</span><span class="p p-Indicator">,</span><span class="nt"> prefix_group</span><span class="p">:</span><span class="w"> </span><span class="nv">sys</span><span class="p p-Indicator">,</span><span class="nt"> prefix_length</span><span class="p">:</span><span class="w"> </span><span class="nv">512</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">...</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</code></pre></div>
+<p>A phase has <code>start</code> (<code>after_drain</code>, the default, or <code>at</code> a clock), <code>offset_us</code> (the wait after the drain, or the clock), <code>concurrency</code> (requests in flight; each is sent when one of the phase's earlier requests ends) and an optional <code>aggregate_rate</code>. Every row of the Result and every record of the exported trace carries the phase name, and the exported trace's header lists the phases, so <code>blis replay</code> sends the same stages. The format is the trace header's (blis-substrate#156). A phased workload cannot also use <code>--num-requests</code>, per-client <code>concurrency</code>, lifecycle windows or closed-loop sessions; those are refused by name.</p>
 <h2 id="advanced-features">Advanced Features<a class="headerlink" href="#advanced-features" title="Permanent link">&para;</a></h2>
 <h3 id="multimodal-requests">Multimodal Requests<a class="headerlink" href="#multimodal-requests" title="Permanent link">&para;</a></h3>
 <p>The <code>multimodal</code> field on a client generates requests with combined text, image, audio, and video tokens. Total input = text + (image tokens x image count) + (audio tokens x audio count) + (video tokens x video count).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nt">clients</span><span class="p">:</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">"vision-model"</span>
-<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">    </span><span class="c1"># ... arrival, rate_fraction, etc.</span>
-<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">    </span><span class="nt">multimodal</span><span class="p">:</span>
-<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">      </span><span class="nt">text_distribution</span><span class="p">:</span>
-<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gaussian</span>
-<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">        </span><span class="nt">params</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> mean</span><span class="p">:</span><span class="w"> </span><span class="nv">128</span><span class="p p-Indicator">,</span><span class="nt"> std_dev</span><span class="p">:</span><span class="w"> </span><span class="nv">50</span><span class="p p-Indicator">,</span><span class="nt"> min</span><span class="p">:</span><span class="w"> </span><span class="nv">2</span><span class="p p-Indicator">,</span><span class="nt"> max</span><span class="p">:</span><span class="w"> </span><span class="nv">512</span><span class="w"> </span><span class="p p-Indicator">}</span>
-<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="w">      </span><span class="nt">image_distribution</span><span class="p">:</span>
-<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">constant</span>
-<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="w">        </span><span class="nt">params</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> value</span><span class="p">:</span><span class="w"> </span><span class="nv">576</span><span class="w"> </span><span class="p p-Indicator">}</span><span class="w">        </span><span class="c1"># Tokens per image (e.g., ViT patch count)</span>
-<a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a><span class="w">      </span><span class="nt">image_count_distribution</span><span class="p">:</span>
-<a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">constant</span>
-<a id="__codelineno-14-13" name="__codelineno-14-13" href="#__codelineno-14-13"></a><span class="w">        </span><span class="nt">params</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> value</span><span class="p">:</span><span class="w"> </span><span class="nv">1</span><span class="w"> </span><span class="p p-Indicator">}</span><span class="w">          </span><span class="c1"># One image per request</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nt">clients</span><span class="p">:</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">"vision-model"</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">    </span><span class="c1"># ... arrival, rate_fraction, etc.</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">    </span><span class="nt">multimodal</span><span class="p">:</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">      </span><span class="nt">text_distribution</span><span class="p">:</span>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gaussian</span>
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="w">        </span><span class="nt">params</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> mean</span><span class="p">:</span><span class="w"> </span><span class="nv">128</span><span class="p p-Indicator">,</span><span class="nt"> std_dev</span><span class="p">:</span><span class="w"> </span><span class="nv">50</span><span class="p p-Indicator">,</span><span class="nt"> min</span><span class="p">:</span><span class="w"> </span><span class="nv">2</span><span class="p p-Indicator">,</span><span class="nt"> max</span><span class="p">:</span><span class="w"> </span><span class="nv">512</span><span class="w"> </span><span class="p p-Indicator">}</span>
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="w">      </span><span class="nt">image_distribution</span><span class="p">:</span>
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">constant</span>
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="w">        </span><span class="nt">params</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> value</span><span class="p">:</span><span class="w"> </span><span class="nv">576</span><span class="w"> </span><span class="p p-Indicator">}</span><span class="w">        </span><span class="c1"># Tokens per image (e.g., ViT patch count)</span>
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="w">      </span><span class="nt">image_count_distribution</span><span class="p">:</span>
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">constant</span>
+<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="w">        </span><span class="nt">params</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> value</span><span class="p">:</span><span class="w"> </span><span class="nv">1</span><span class="w"> </span><span class="p p-Indicator">}</span><span class="w">          </span><span class="c1"># One image per request</span>
 </code></pre></div>
 <p>Audio and video follow the same pattern with <code>audio_distribution</code>/<code>audio_count_distribution</code> and <code>video_distribution</code>/<code>video_count_distribution</code>.</p>
 <h3 id="reasoning-multi-turn-with-context-accumulation">Reasoning (Multi-Turn with Context Accumulation)<a class="headerlink" href="#reasoning-multi-turn-with-context-accumulation" title="Permanent link">&para;</a></h3>
@@ -4698,12 +4789,12 @@ control; see <a href="../admission/">Admission Control</a>.</p>
 </ul>
 <h3 id="client-side-network-latency">Client-Side Network Latency<a class="headerlink" href="#client-side-network-latency" title="Permanent link">&para;</a></h3>
 <p>The <code>network</code> field adds client-perspective latency to server-side metrics. Useful for modeling geographically distributed users:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nt">clients</span><span class="p">:</span>
-<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">"remote-user"</span>
-<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">    </span><span class="c1"># ... arrival, rate_fraction, etc.</span>
-<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">    </span><span class="nt">network</span><span class="p">:</span>
-<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">      </span><span class="nt">rtt_ms</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span><span class="w">                      </span><span class="c1"># Round-trip time in milliseconds</span>
-<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">      </span><span class="nt">bandwidth_mbps</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span><span class="w">             </span><span class="c1"># Link bandwidth (affects upload/download delay)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nt">clients</span><span class="p">:</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">"remote-user"</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">    </span><span class="c1"># ... arrival, rate_fraction, etc.</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">    </span><span class="nt">network</span><span class="p">:</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">      </span><span class="nt">rtt_ms</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span><span class="w">                      </span><span class="c1"># Round-trip time in milliseconds</span>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="w">      </span><span class="nt">bandwidth_mbps</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span><span class="w">             </span><span class="c1"># Link bandwidth (affects upload/download delay)</span>
 </code></pre></div>
 <p>Client TTFT = server TTFT + RTT + upload delay. Client E2E = server E2E + RTT + upload delay + download delay. Upload/download delays are computed from token counts (4 bytes per token ID).</p>
 <h2 id="built-in-presets-and-examples">Built-in Presets and Examples<a class="headerlink" href="#built-in-presets-and-examples" title="Permanent link">&para;</a></h2>
@@ -4714,11 +4805,11 @@ the sibling of the <code>models/</code> namespace. The catalog is the embedded c
 preset cannot mean different things per command (#1769; before that, the copy in
 <code>defaults.yaml</code> was the one that moved output while the catalog copy was read by nothing).
 Use them with <code>blis run</code> or the convert command:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1"># Run simulation with a named preset</span>
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span>--workload<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">10</span>
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
-<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="c1"># Convert a preset to a v2 WorkloadSpec YAML for customization</span>
-<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>./blis<span class="w"> </span>convert<span class="w"> </span>preset<span class="w"> </span>--name<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">10</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">100</span><span class="w"> </span>&gt;<span class="w"> </span>chatbot.yaml
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1"># Run simulation with a named preset</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-tp4-4node.yaml<span class="w"> </span>--scenarios<span class="w"> </span>testdata/scenarios<span class="w"> </span>--workload<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">10</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="c1"># Convert a preset to a v2 WorkloadSpec YAML for customization</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>./blis<span class="w"> </span>convert<span class="w"> </span>preset<span class="w"> </span>--name<span class="w"> </span>chatbot<span class="w"> </span>--rate<span class="w"> </span><span class="m">10</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">100</span><span class="w"> </span>&gt;<span class="w"> </span>chatbot.yaml
 </code></pre></div>
 <p>Available presets in the catalog (<code>&lt;catalog&gt;/workloads/</code>):</p>
 <table>
@@ -4858,7 +4949,7 @@ Use them with <code>blis run</code> or the convert command:</p>
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../kv-cache/" class="md-footer__link md-footer__link--prev" aria-label="Previous: KV Cache &amp; Memory">
+          <a href="../lora/" class="md-footer__link md-footer__link--prev" aria-label="Previous: LoRA Adapters">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -4868,7 +4959,7 @@ Use them with <code>blis run</code> or the convert command:</p>
                 Previous
               </span>
               <div class="md-ellipsis">
-                KV Cache & Memory
+                LoRA Adapters
               </div>
             </div>
           </a>

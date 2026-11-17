@@ -900,6 +900,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -954,6 +958,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1083,6 +1115,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -4112,7 +4172,7 @@
 <p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 3.</p>
 <hr />
 <h3 id="r3-validate-all-numeric-parameters">R3: Validate ALL numeric parameters<a class="headerlink" href="#r3-validate-all-numeric-parameters" title="Permanent link">&para;</a></h3>
-<p>Every numeric flag (<code>--rate</code>, <code>--fitness-weights</code>, <code>--kv-cpu-blocks</code>, etc.) must be validated for: zero, negative, NaN, Inf, and empty string. Missing validation causes infinite loops (Rate=0) or wrong results (NaN weights).</p>
+<p>Every numeric flag (<code>--rate</code>, <code>--fitness-weights</code>, <code>--num-requests</code>, etc.) must be validated for: zero, negative, NaN, Inf, and empty string. Missing validation causes infinite loops (Rate=0) or wrong results (NaN weights).</p>
 <p><strong>Evidence:</strong> <code>--rate 0</code> caused an infinite loop deep in the simulation. A snapshot-refresh-interval flag was added without validation (#281).</p>
 <p><strong>Additional evidence:</strong> Issues #508, #509, #382, #383, #384 (fix #520) — <code>NewTieredKVCache</code> accepted <code>cpuBlocks &lt;= 0</code>, <code>NewKVStore</code> did not validate <code>KVOffloadThreshold</code> range or <code>KVTransferBandwidth &gt; 0</code>, and <code>NewSimulator</code> accepted <code>MaxRunningReqs &lt;= 0</code>. Library callers bypass CLI validation entirely.</p>
 <p><strong>Check:</strong> For every new numeric parameter — whether CLI flag or library constructor argument — add validation. CLI: <code>logrus.Fatalf</code> in <code>cmd/root.go</code>. Library: <code>panic</code> or <code>error</code> return in the constructor. Validation must appear before the first consumption site (validate-before-use).</p>
@@ -4157,7 +4217,7 @@
 <hr />
 <h3 id="r10-strict-config-parsing">R10: Strict config parsing<a class="headerlink" href="#r10-strict-config-parsing" title="Permanent link">&para;</a></h3>
 <p>Use <code>yaml.KnownFields(true)</code> or equivalent strict parsing for all config loading — YAML <em>and</em> JSON. Typos in field names must cause parse errors, not silent acceptance of malformed config.</p>
-<p><strong>Evidence:</strong> YAML typos in field names were silently accepted, producing default behavior instead of the user's intended configuration. The same gap existed in JSON: the since-removed <code>hardware_config.json</code> was decoded permissively until #1728, so a misspelled numeric key read as 0 — a plausible-but-wrong bandwidth, MFU or memory capacity with no diagnostic.</p>
+<p><strong>Evidence:</strong> YAML typos in field names were silently accepted, producing default behavior instead of the user's intended configuration. The same gap existed in JSON: the since-removed <code>hardware_config.json</code> was decoded permissively until it was made strict, so a misspelled numeric key read as 0 — a plausible-but-wrong bandwidth, MFU or memory capacity with no diagnostic.</p>
 <p><strong>Check:</strong> Every <code>yaml.Unmarshal</code> / <code>json.Unmarshal</code> or decoder usage on a config path must enable strict/known-fields mode (or an equivalent allowlist check — the hardware-calibration check of the former latency package named the offending key <em>and</em> the GPU entry, which <code>DisallowUnknownFields</code> cannot). Deliberately exempt: parsers for <strong>external payloads</strong> BLIS does not own (HuggingFace <code>config.json</code>, OpenTelemetry and Weka trace records) — those must tolerate unknown fields by contract.</p>
 <p><strong>Enforced:</strong> Micro-plan Phase 8.</p>
 <hr />

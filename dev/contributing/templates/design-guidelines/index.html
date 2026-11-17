@@ -900,6 +900,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -954,6 +958,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1083,6 +1115,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -4871,7 +4931,7 @@
 - Which existing interface is being composed
 - What new behavior the wrapper adds (offloading, caching, monitoring, latency injection)
 - How metrics aggregate across tiers (the wrapper must expose the same metrics interface as the inner module, combining results appropriately)
-- How configuration selects the composition (e.g., <code>--kv-cpu-blocks &gt; 0</code> triggers tiered wrapping)</p>
+- How configuration selects the composition (e.g., a <code>cpu_dram</code> tier in the scenario's <code>offload</code> block triggers tiered wrapping)</p>
 <p><strong>Key principle:</strong> The wrapper must satisfy the same interface contract as the inner module. Any caller that works with the inner module must work identically with the wrapper (Liskov substitution).</p>
 <p><strong>Parallel development:</strong> Wrappers are naturally parallelizable — different tiers or decorators can be developed independently as long as they compose through the same interface.</p>
 <h3 id="56-extension-checklist">5.6 Extension Checklist<a class="headerlink" href="#56-extension-checklist" title="Permanent link">&para;</a></h3>

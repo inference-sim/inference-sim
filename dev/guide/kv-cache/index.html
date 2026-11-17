@@ -14,7 +14,7 @@
         <link rel="prev" href="../latency-models/">
       
       
-        <link rel="next" href="../workloads/">
+        <link rel="next" href="../lora/">
       
       
         
@@ -902,6 +902,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -957,6 +961,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1200,17 +1232,6 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#multi-tier-offload-config-surface-kv-offload-config" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Multi-Tier Offload Config Surface (--kv-offload-config)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#enabling-and-disabling-offload" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1285,6 +1306,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -3534,17 +3583,6 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#multi-tier-offload-config-surface-kv-offload-config" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Multi-Tier Offload Config Surface (--kv-offload-config)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#enabling-and-disabling-offload" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3702,121 +3740,75 @@ nothing to reuse. That is the case for the AISimulate accuracy corpus, whose spe
 </code></pre></div>
 <p>For a workload with max 7,000 input tokens and block size 16: <code>ceil(7000/16) = 438</code> blocks minimum. Below this, requests are dropped. Below ~2x this threshold, cascading preemptions cause severe throughput degradation.</p>
 <h2 id="tiered-caching-gpu-cpu-offload">Tiered Caching (GPU + CPU Offload)<a class="headerlink" href="#tiered-caching-gpu-cpu-offload" title="Permanent link">&para;</a></h2>
-<p>The legacy single CPU tier is enabled with <code>--kv-cpu-blocks</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/kernel/aisimulate<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--kv-cpu-blocks<span class="w"> </span><span class="m">50000</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span>--kv-offload-threshold<span class="w"> </span><span class="m">0</span>.9<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<p>The scenario deployment's <code>offload</code> block configures the offload tiers. It is the only source
+of offload configuration; no flag sets it. It maps onto vLLM's OffloadingConnector:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">offload</span><span class="p">:</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">connector</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">OffloadingConnector</span><span class="w">    </span><span class="c1"># or SimpleCPUOffloadConnector; may be left out</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">spec</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CPUOffloadingSpec</span><span class="w">           </span><span class="c1"># or TieringOffloadingSpec; may be left out</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">eviction_policy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lru</span><span class="w">              </span><span class="c1"># lru only (vLLM's arc is not simulated yet)</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">tiers</span><span class="p">:</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tier</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cpu_dram</span><span class="w">                </span><span class="c1"># the CPU tier (vLLM cpu_bytes_to_use); required, and first</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">      </span><span class="nt">bytes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">17179869184</span>
 </code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Flag</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--kv-cpu-blocks</code></td>
-<td>0</td>
-<td>CPU-tier blocks (0 = disabled)</td>
-</tr>
-<tr>
-<td><code>--kv-offload-threshold</code></td>
-<td>0.9</td>
-<td>GPU utilization fraction above which blocks offload to CPU</td>
-</tr>
-</tbody>
-</table>
-<p>The GPU↔CPU transfer is priced by the kernel from the catalog's <code>cpu_dram</code> storage device (<code>&lt;catalog&gt;/devices/storage.yaml</code>). There are no transfer-rate flags. For a multi-tier hierarchy, use <code>--kv-offload-config</code> instead; the two are mutually exclusive.</p>
-<h3 id="multi-tier-offload-config-surface-kv-offload-config">Multi-Tier Offload Config Surface (<code>--kv-offload-config</code>)<a class="headerlink" href="#multi-tier-offload-config-surface-kv-offload-config" title="Permanent link">&para;</a></h3>
-<div class="admonition warning">
-<p class="admonition-title">Deprecated flag</p>
-<p><code>--kv-offload-config</code> is deprecated in v0.16.0 and removed in v0.19.0
-(<a href="https://github.com/inference-sim/inference-sim/issues/2037">#2037</a>). State the scenario's
-<code>offload</code> block instead; the flag may only restate it.</p>
-</div>
-<p>The scalar flags above cover the single CPU tier. For vLLM's <strong>multi-tier</strong> offload
-(CPU → disk / object store), BLIS captures the full config surface through one strict-YAML
-file — <code>--kv-offload-config &lt;path&gt;</code> — with a single top-level <code>kv_offload:</code> block. This
-mirrors <code>--lora-config</code> / <code>--saturation-config</code>: absent ⇒ the offload subsystem is inert and
-output is byte-identical to a build without it.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/kernel/aisimulate<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>--kv-offload-config<span class="w"> </span>offload.yaml
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-offload.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>--scenarios<span class="w"> </span>my-scenarios<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">kv_offload</span><span class="p">:</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">cpu_bytes_to_use</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">17179869184</span><span class="w">     </span><span class="c1"># required when the block is present</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">block_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span><span class="w">                    </span><span class="c1"># optional; default = GPU block size (mutually</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">                                    </span><span class="c1">#   exclusive with blocks_per_chunk)</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="c1"># blocks_per_chunk: 1             # alternate encoding of block_size (default 1); &gt; 1 coalesces</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">                                    </span><span class="c1">#   GPU blocks into offload chunks (INV-K6)</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="nt">eviction_policy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lru</span><span class="w">              </span><span class="c1"># lru only (vLLM's arc is not simulated yet)</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">  </span><span class="nt">offload_prompt_only</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">         </span><span class="c1"># vLLM DEFAULT (prompt-only). false =&gt; promptAndDecode:</span>
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">                                    </span><span class="c1">#   full decode blocks are offloaded and reused too (see below)</span>
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">  </span><span class="c1"># self_describing_kv_events: false</span>
-<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">  </span><span class="c1"># tokens_per_hash: 16             # default = GPU block size</span>
-<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">  </span><span class="nt">secondary_tiers</span><span class="p">:</span>
-<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fs</span><span class="w">                      </span><span class="c1"># only "fs" is representable today; obj/p2p error loudly</span>
-<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="w">      </span><span class="nt">root_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/mnt/kv-cache</span>
-<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="w">      </span><span class="nt">n_read_threads</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span><span class="w">            </span><span class="c1"># vLLM default 16</span>
-<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="w">      </span><span class="nt">n_write_threads</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span><span class="w">           </span><span class="c1"># vLLM default 16</span>
-<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="w">      </span><span class="nt">locality</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">LOCAL</span><span class="w">               </span><span class="c1"># LOCAL | REMOTE (optional)</span>
-<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="w">      </span><span class="nt">direct_io</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">               </span><span class="c1"># REQUIRED — BLIS makes vLLM's runtime O_DIRECT probe explicit;</span>
-<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="w">                                    </span><span class="c1">#   false (buffered I/O) is refused: not priced yet</span>
-<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="w">      </span><span class="nt">device_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nvme_gen4</span><span class="w">       </span><span class="c1"># REQUIRED — a catalog storage device; the kernel prices transfers</span>
-</code></pre></div>
-<p>Defaults match vLLM knob-for-knob. Anything vLLM accepts either maps to a BLIS config or
-fails <strong>loudly</strong> at startup — never silently ignored: <code>store_threshold &gt;= 2</code> is rejected
-(vLLM's <code>TieringOffloadingSpec</code> rejects it), and <code>obj</code>/<code>p2p</code>/<code>example</code> tier types are rejected
-(no faithful BLIS mapping yet).</p>
-<p>Every tier must name a <code>device_class</code> from the catalog's storage-device table
-(<code>&lt;catalog&gt;/devices/storage.yaml</code> in the catalog in use: the embedded copy, or the directory <code>--catalog</code> / <code>BLIS_CATALOG</code> names); the kernel prices
-each tier transfer from that device (its <code>TierTime</code>). An explicit <code>read_bandwidth</code>,
-<code>write_bandwidth</code> or <code>base_latency</code> on a tier is refused. A catalog device's rates are O_DIRECT
-rates, so a tier with <code>direct_io: false</code> -- vLLM's buffered fallback on filesystems that reject
-O_DIRECT, such as overlayfs -- is refused too, until the kernel prices that regime
-(<a href="https://github.com/inference-sim/blis-latency-kernel/issues/41">blis-latency-kernel#41</a>). A class the catalog does not define, or
-a missing/malformed table, is a hard error naming the path. Under P/D disaggregation each pool
-sizes the tiers by its own bytes per block and prices them with its own kernel. A scenario's own
-<code>offload</code> block is the deployment's tier configuration (#1910): its <code>cpu_dram</code> tier is the CPU
-tier, and <code>--kv-offload-config</code> may only restate it (a disagreement is refused, naming the
-fields). See <a href="../latency-models/#kv-offload">Latency models</a> for the mapping and what it refuses.</p>
-<p><strong>Chunks (<code>blocks_per_chunk</code>, INV-K6).</strong> The tiers hold vLLM's offload chunks: <code>blocks_per_chunk</code> GPU
-blocks keyed by their last block's hash. The CPU tier holds <code>cpu_bytes_to_use // (bytes per block ×
-blocks_per_chunk)</code> chunks, evicts whole chunks in LRU order, and every tier transfer moves one chunk.
-A load starts at the chunk holding the GPU-cached boundary, covers whole chunks, and is skipped when
-it is shorter than one chunk. A store offers whole prompt chunks only. A CPU budget under one chunk
-is refused at startup. blis-schemas' <code>offload</code> block cannot yet state the width (the proposed field
-is <code>offload.blocks_per_chunk</code>), so <code>--kv-offload-config</code> supplies it beside a scenario block. Every
-other field must still agree.</p>
+<p>Here <code>my-scenarios/llama-offload.yaml</code> is a copy of the canonical scenario with the block above
+added to its deployment.</p>
+<p>Each tier names a catalog storage device (<code>&lt;catalog&gt;/devices/storage.yaml</code> in the catalog in
+use: the embedded copy, or the directory <code>--catalog</code> / <code>BLIS_CATALOG</code> names), and the kernel
+prices each tier transfer from that device (its <code>TierTime</code>). There are no transfer-rate flags. A
+class the catalog does not define, or a missing or malformed table, is a hard error naming the
+path. The rules:</p>
+<ul>
+<li>The <code>cpu_dram</code> tier is required, and it must be the first tier: every secondary tier sits
+  behind the CPU tier, as in vLLM.</li>
+<li>A secondary tier is a catalog storage device below the CPU tier (<code>tier: nvme_gen4</code>, with
+  <code>spec: TieringOffloadingSpec</code>); the engine runs it as vLLM's <code>fs</code> tier. Its copies share link
+  capacity with each other and with P/D pulls. A runnable example is
+  <code>examples/capabilities/fs-tier.yaml</code> (<a href="../capabilities/">Capabilities Guide</a>).</li>
+<li>An object store (<code>s3</code>) is refused by name until the engine's <code>obj</code> tier is in the build
+  (blis-vllm#63); so is the peer-to-peer tier's <code>secondary_tiers</code> option.</li>
+<li><code>SimpleCPUOffloadConnector</code> takes one <code>cpu_dram</code> tier and offloads every block.</li>
+<li>Another connector or spec, <code>prefetch_depth</code>, <code>arc</code> and a 0-byte tier are refused by name.</li>
+</ul>
+<p>vLLM's defaults apply to what blis-schemas cannot state: the offload block size (one GPU
+block per chunk), <code>offload_prompt_only: true</code> and <code>tokens_per_hash</code>. Under P/D disaggregation
+each pool sizes the tiers by its own bytes per block and prices them with its own kernel. See
+<a href="../latency-models/#kv-offload">Latency models</a> for the mapping.</p>
+<p><strong>Chunks (INV-K6).</strong> The tiers hold vLLM's offload chunks: GPU blocks keyed by their last
+block's hash. The CPU tier holds <code>cpu_bytes_to_use // (bytes per block × blocks_per_chunk)</code>
+chunks, evicts whole chunks in LRU order, and every tier transfer moves one chunk. A load starts
+at the chunk holding the GPU-cached boundary, covers whole chunks, and is skipped when it is
+shorter than one chunk. A store offers whole prompt chunks only. A CPU budget under one chunk is
+refused at startup. blis-schemas' <code>offload</code> block cannot yet state the width (the proposed field
+is <code>offload.blocks_per_chunk</code>), so a scenario runs one GPU block per chunk.</p>
 <p>The resolved config is recorded in the exported trace header, so a <code>blis run --trace-output</code>
-round-trips through <code>blis replay</code> (INV-13): on replay the header is authoritative and a config
-the binary cannot reproduce fails loudly rather than silently degrading to single-tier.</p>
-<p>The <code>offload_prompt_only</code> knob is an explicit policy over <em>what enters the tiers</em>. Modeling
-vLLM's mechanism (<code>_calc_num_offloadable_tokens</code> + <code>storable_chunks</code>), a request's computed KV is
-truncated to the prompt length when <code>true</code> (the default), then floor-divided into whole chunks — so
-a chunk containing any decode token is never offloaded (a prompt of <code>1.5 ×</code> the chunk size offloads
-exactly 1 chunk). With <code>offload_prompt_only: false</code> (vLLM's <code>promptAndDecode</code>), full decode blocks
-are offloaded too; because BLIS already hashes every completed block prefix-consistently (for
+round-trips through <code>blis replay</code> (INV-13): on replay the header is authoritative, a scenario
+<code>offload</code> block may only restate it, and a config the binary cannot reproduce fails loudly
+rather than silently degrading to single-tier.</p>
+<p><strong>What enters the tiers.</strong> Modeling vLLM's mechanism (<code>_calc_num_offloadable_tokens</code> +
+<code>storable_chunks</code>), a request's computed KV is truncated to the prompt length under vLLM's
+default <code>offload_prompt_only: true</code>, then floor-divided into whole chunks, so a chunk containing
+any decode token is never offloaded (a prompt of <code>1.5 ×</code> the chunk size offloads exactly 1
+chunk). The <code>SimpleCPUOffloadConnector</code> has no prompt-only clamp: full decode blocks are
+offloaded too. Because BLIS hashes every completed block prefix-consistently (for
 <code>block_size &gt; 1</code>), a later request on the same instance whose <strong>input contains earlier output
-tokens</strong> (multi-turn / agentic workloads) reloads that decode KV from the tiers instead of
-recomputing it. A reloaded prefix is billed as a <strong>cache hit</strong> — its tokens are dropped from the
+tokens</strong> (multi-turn / agentic workloads) then reloads that decode KV from the tier instead of
+recomputing it. A reloaded prefix is billed as a <strong>cache hit</strong>: its tokens are dropped from the
 prefill forward pass, so it lowers that request's prefill compute and TTFT rather than being
-charged as a full recompute (#1699; the same correction applies to the legacy <code>--kv-cpu-blocks</code>
-tier). Reuse is single-instance (offload tiers are per-instance and invisible to the router).</p>
+charged as a full recompute (#1699). Reuse is single-instance (offload tiers are per-instance
+and invisible to the router).</p>
 <p>At <code>block_size == 1</code> decode blocks take a guarded allocation path that leaves them unhashed, so
-decode-offload is inert there — a degenerate offload block size (real offload block sizes track
-the GPU block size). With no <code>--kv-offload-config</code>, behavior is unchanged (INV-6).</p>
+decode-offload is inert there. With no <code>offload</code> block, behavior is unchanged (INV-6).</p>
 <h3 id="enabling-and-disabling-offload">Enabling and Disabling Offload<a class="headerlink" href="#enabling-and-disabling-offload" title="Permanent link">&para;</a></h3>
-<p>Offload is <strong>off by default</strong>. There is one switch — the presence of <code>--kv-offload-config</code>
-(or, for the legacy tier, a non-zero <code>--kv-cpu-blocks</code>). The two are mutually exclusive.</p>
+<p>Offload is <strong>off by default</strong>. There is one switch: the presence of an <code>offload</code> block in the
+scenario's deployment.</p>
 <h3 id="sizing-the-cpu-tier">Sizing the CPU Tier<a class="headerlink" href="#sizing-the-cpu-tier" title="Permanent link">&para;</a></h3>
 <p>The CPU tier is configured in <strong>bytes</strong>, but the cache uses it in <strong>blocks</strong> — the same unit as
 the GPU tier. BLIS converts once, at startup:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>block_capacity = floor(cpu_bytes_to_use / per_block_bytes)
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>block_capacity = floor(cpu_bytes_to_use / per_block_bytes)
 </code></pre></div>
 <p><code>per_block_bytes</code> is derived from the model, so it differs per deployment. The rule that matters:
 <strong><code>block_capacity</code> must comfortably exceed the GPU-tier budget.</strong> A CPU tier no larger than the
@@ -3829,14 +3821,14 @@ sampled <code>input_distribution</code> length, not carved out of it.</p>
 <p class="admonition-title"><code>cpu_bytes_to_use</code> is per GPU, not per deployment</p>
 <p>Under tensor parallelism the KV cache is sharded across ranks, so both sides of that division
 are per-rank quantities. The host memory a deployment actually consumes is <code>TP × cpu_bytes_to_use</code>.
-A node-level memory budget must therefore be divided by TP before it goes in the file. This
+A node-level memory budget must therefore be divided by TP before it goes in the <code>cpu_dram</code> tier's <code>bytes</code>. This
 matches vLLM, where <code>cpu_bytes_to_use</code> is likewise a per-worker budget.</p>
 </div>
 <h2 id="chunked-prefill">Chunked Prefill<a class="headerlink" href="#chunked-prefill" title="Permanent link">&para;</a></h2>
 <p>Long prefill sequences can cause <strong>head-of-line (HOL) blocking</strong> — a long prefill occupies a whole step, blocking shorter requests from starting.</p>
 <p>Chunked prefill splits long prefills into smaller chunks. The threshold is the scenario's, stated in a pool's <code>engine</code> block (an engine setting has no flag, inference-sim#2021 B6):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="w">    </span><span class="nt">engine</span><span class="p">:</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">      </span><span class="nt">long_prefill_token_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="w">    </span><span class="nt">engine</span><span class="p">:</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">      </span><span class="nt">long_prefill_token_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">256</span>
 </code></pre></div>
 <div class="admonition info">
 <p class="admonition-title">Chunked prefill benefits TTFT, not ITL</p>
@@ -3850,13 +3842,13 @@ matches vLLM, where <code>cpu_bytes_to_use</code> is likewise a per-worker budge
 <p>KV cache pressure is directly coupled to batch formation. The scenario pool's <code>engine.max_num_seqs</code> (maximum requests in the running batch) and <code>engine.max_num_batched_tokens</code> (token budget per step) are the primary capacity knobs, with vLLM's meaning. Reducing them decreases KV cache pressure but also reduces throughput.</p>
 <h2 id="identifying-the-kv-pressure-cliff">Identifying the KV Pressure Cliff<a class="headerlink" href="#identifying-the-kv-pressure-cliff" title="Permanent link">&para;</a></h2>
 <p>Preemption rates spike non-linearly once the working set exceeds the KV budget. Sweep offered load against a fixed scenario to find it:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">for</span><span class="w"> </span>rate<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">5</span><span class="w"> </span><span class="m">10</span><span class="w"> </span><span class="m">20</span><span class="w"> </span><span class="m">40</span><span class="w"> </span><span class="m">80</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"=== rate=</span><span class="nv">$rate</span><span class="s2"> ==="</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span>--scenarios<span class="w"> </span>testdata/kernel/aisimulate<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">    </span>--rate<span class="w"> </span><span class="nv">$rate</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">    </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s2">"preemption_count|completed_requests"</span>
-<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="k">done</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">for</span><span class="w"> </span>rate<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">5</span><span class="w"> </span><span class="m">10</span><span class="w"> </span><span class="m">20</span><span class="w"> </span><span class="m">40</span><span class="w"> </span><span class="m">80</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"=== rate=</span><span class="nv">$rate</span><span class="s2"> ==="</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span>--scenarios<span class="w"> </span>testdata/kernel/aisimulate<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span>--rate<span class="w"> </span><span class="nv">$rate</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">    </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s2">"preemption_count|completed_requests"</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="k">done</span>
 </code></pre></div>
 <div class="admonition tip">
 <p class="admonition-title">Distribution median drives KV pressure</p>
@@ -3865,7 +3857,7 @@ matches vLLM, where <code>cpu_bytes_to_use</code> is likewise a per-worker budge
 <h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../../concepts/core-engine/#the-engine-interface">Core Engine: The engine interface</a> — where the engine's KV cache sits</li>
-<li><a href="../../reference/configuration/#kv-cache-configuration">Configuration Reference</a> — all KV cache flags</li>
+<li><a href="../../reference/configuration/#kv-cache-configuration">Configuration Reference</a> — KV cache configuration</li>
 <li><a href="../results/">Metrics &amp; Results</a> — understanding preemption rate, cache hit rate, KV thrashing</li>
 </ul>
 
@@ -3920,13 +3912,13 @@ matches vLLM, where <code>cpu_bytes_to_use</code> is likewise a per-worker budge
         
         
           
-          <a href="../workloads/" class="md-footer__link md-footer__link--next" aria-label="Next: Workload Specifications">
+          <a href="../lora/" class="md-footer__link md-footer__link--next" aria-label="Next: LoRA Adapters">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Workload Specifications
+                LoRA Adapters
               </div>
             </div>
             <div class="md-footer__button md-icon">

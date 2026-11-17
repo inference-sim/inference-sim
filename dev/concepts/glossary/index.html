@@ -1511,6 +1511,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -1565,6 +1569,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1694,6 +1726,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -4477,7 +4537,7 @@
 <h3 id="batch-formation">Batch Formation<a class="headerlink" href="#batch-formation" title="Permanent link">&para;</a></h3>
 <p>The process of selecting which requests from the wait queue join the running batch for the next step: vLLM's continuous batching with chunked prefill and preemption. The <a href="#engine">engine</a> does it, in blis-vllm. See <a href="../core-engine/#the-engine-interface">Core Engine: The engine interface</a>.</p>
 <h3 id="blis-vllm">blis-vllm<a class="headerlink" href="#blis-vllm" title="Permanent link">&para;</a></h3>
-<p>The Go module (<code>github.com/inference-sim/blis-vllm</code>) that is BLIS's vLLM engine: vLLM v0.32.0's scheduler, KV cache, MTP, DP and connectors translated to Go and diff-tested against real vLLM, plus the vLLM engine configuration and rules, and the kernel adapter. inference-sim reaches it only through the <a href="#engine">engine</a> interface. See <a href="../architecture/#the-blis-repositories">Cluster Architecture</a>.</p>
+<p>The Go module (<code>github.com/inference-sim/blis-vllm</code>) that is BLIS's vLLM engine: vLLM v0.33.0's scheduler, KV cache, MTP, DP and connectors translated to Go and diff-tested against real vLLM, plus the vLLM engine configuration and rules, and the kernel adapter. inference-sim reaches it only through the <a href="#engine">engine</a> interface. See <a href="../architecture/#the-blis-repositories">Cluster Architecture</a>.</p>
 <h3 id="blis-latency-kernel">blis-latency-kernel<a class="headerlink" href="#blis-latency-kernel" title="Permanent link">&para;</a></h3>
 <p>The Go module (<code>github.com/inference-sim/blis-latency-kernel</code>) that prices everything BLIS needs a cost for: step time, KV and fixed memory, P/D KV transfer, offload tier transfer and host overheads. It reads model graphs, chips, fabrics and storage devices from blis-substrate's catalog and fitted coefficients from its registry. See <a href="../../guide/latency-models/">Latency Models Guide</a>.</p>
 <h3 id="block-kv-block">Block (KV Block)<a class="headerlink" href="#block-kv-block" title="Permanent link">&para;</a></h3>
@@ -4497,7 +4557,7 @@
 <h3 id="e2e-end-to-end-latency">E2E (End-to-End Latency)<a class="headerlink" href="#e2e-end-to-end-latency" title="Permanent link">&para;</a></h3>
 <p>Total time from request arrival to final token completion. Computed as <code>TTFT + sum(ITLs)</code>, where each ITL includes step time plus per-token output processing overhead. See <a href="../core-engine/#metrics">Core Engine: Metrics</a>.</p>
 <h3 id="engine">Engine<a class="headerlink" href="#engine" title="Permanent link">&para;</a></h3>
-<p>What runs one instance's batches, reached through blis-schemas' <code>engine.Engine</code> interface (<code>Add</code>, <code>Schedule</code>, <code>StepTime</code>, <code>Complete</code>, <code>Finish</code>, <code>NextWake</code>, ...). <code>sim.EngineDriver</code> drives it from the event loop. A scenario's <code>engine_version: "0.32.0"</code> selects blis-vllm's translated vLLM v0.32.0 engine; with none stated the scenario is refused. See <a href="../core-engine/">Core Engine</a>.</p>
+<p>What runs one instance's batches, reached through blis-schemas' <code>engine.Engine</code> interface (<code>Add</code>, <code>Schedule</code>, <code>StepTime</code>, <code>Complete</code>, <code>Finish</code>, <code>NextWake</code>, ...). <code>sim.EngineDriver</code> drives it from the event loop. A scenario's <code>engine: {kind: vllm, version: "0.33.0"}</code> selects blis-vllm's translated vLLM v0.33.0 engine; with none stated the scenario is refused. See <a href="../core-engine/">Core Engine</a>.</p>
 <h3 id="endpointpickerconfig">EndpointPickerConfig<a class="headerlink" href="#endpointpickerconfig" title="Permanent link">&para;</a></h3>
 <p>The llm-d router's configuration file (<code>kind: EndpointPickerConfig</code>): the plugins, the <a href="#scheduling-profile">scheduling profiles</a> that compose them, feature gates and the flow-control block. BLIS reads it from the scenario deployment's <code>router.endpoint_picker_config</code> unchanged from a real deployment. See <a href="../../guide/routing/#the-routers-inputs">Routing</a>.</p>
 <h3 id="epp-endpoint-picker">EPP (Endpoint Picker)<a class="headerlink" href="#epp-endpoint-picker" title="Permanent link">&para;</a></h3>
@@ -4535,7 +4595,7 @@
 <h3 id="policy-bundle">Policy Bundle<a class="headerlink" href="#policy-bundle" title="Permanent link">&para;</a></h3>
 <p>A YAML configuration file (<code>--policy-config</code>) that specifies priority, scheduling, preemption, node pools, autoscaling and instance lifecycle in one place. CLI flags override bundle values when explicitly set. Admission, routing and flow control are not in the bundle: they are the llm-d router's configuration. See <a href="../../reference/configuration/">Configuration Reference</a>.</p>
 <h3 id="preemption">Preemption<a class="headerlink" href="#preemption" title="Permanent link">&para;</a></h3>
-<p>KV cache eviction under memory pressure. When the batch formation algorithm cannot allocate blocks for a continuing request, it evicts requests from the batch, frees their blocks, and re-enqueues them at the front of the wait queue. By default (<code>--preemption-policy fcfs</code>), BLIS evicts from the batch tail. <code>--preemption-policy priority</code> is refused on 0.32.0 for now. See <a href="../core-engine/#the-engine-interface">Core Engine: Batch Formation</a>.</p>
+<p>KV cache eviction under memory pressure. When the batch formation algorithm cannot allocate blocks for a continuing request, it evicts requests from the batch, frees their blocks, and re-enqueues them at the front of the wait queue. Under the pool's <code>engine.scheduling_policy: fcfs</code> (the default), BLIS evicts from the batch tail. <code>scheduling_policy: priority</code> is refused on 0.33.0 for now. See <a href="../core-engine/#the-engine-interface">Core Engine: Batch Formation</a>.</p>
 <h3 id="prefill-phase">Prefill Phase<a class="headerlink" href="#prefill-phase" title="Permanent link">&para;</a></h3>
 <p>The initial processing phase where the model computes attention over all input tokens. Prefill is compute-bound for large inputs. After prefill completes, the request transitions to decode. TTFT is recorded at this boundary.</p>
 <h3 id="prefix-caching">Prefix Caching<a class="headerlink" href="#prefix-caching" title="Permanent link">&para;</a></h3>

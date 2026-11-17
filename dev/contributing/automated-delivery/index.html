@@ -900,6 +900,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -954,6 +958,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1083,6 +1115,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -3608,7 +3668,7 @@
 <p>Comment on the sub-issue you want delivered:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>/approve-issue-for-pr-delivery
 </code></pre></div>
-<p><strong>No issue number.</strong> The target is the issue you commented on. An argument would be redundant — you are already on the issue — and a hazard: commenting on #100 with <code>#200</code> would deliver something other than what you are reading. A <code>#N</code> that <em>agrees</em> with the current issue is tolerated, since the earlier documented form used one; a disagreeing one is refused with an explanation rather than silently ignored.</p>
+<p><strong>No issue number.</strong> The target is the issue you commented on. An argument would be redundant — you are already on the issue — and a hazard: commenting on one issue with another issue's <code>#N</code> would deliver something other than what you are reading. A <code>#N</code> that <em>agrees</em> with the current issue is tolerated, since the earlier documented form used one; a disagreeing one is refused with an explanation rather than silently ignored.</p>
 <p>Restricted to repository collaborators, same as <code>/archon-pr-review</code> and <code>@claude</code>. <strong>The
 <em>triggerer</em> is not the only check: the ISSUE AUTHOR must also hold <code>admin</code>/<code>write</code>/<code>maintain</code>
 (#1813).</strong> The delivery agent builds the issue body on a runner with credentials, so a maintainer
@@ -3966,7 +4026,7 @@ regress quietly.</p>
 <li><strong>The stall sweep's stand-down is repository-wide.</strong> One recently started phase suppresses flagging for every delivery. Correct while L1 delivers one sub-issue at a time; a blocker for parallel deliveries.</li>
 <li><strong>Workflow expressions are not unit-tested.</strong> <code>scripts/deliver-gate.sh</code> and the sweep's selection filter have tests; the trigger guards, step conditions and concurrency keys are covered by <code>actionlint</code> plus a live delivery, because nothing in this repository can evaluate a GitHub Actions expression.</li>
 <li><strong>Verify now weighs body + refinements, matching implement.</strong> Verify's prompt runs <code>scripts/deliver-issue-refinements.sh</code> and treats the contracts as body + authoritative comment refinements (<a href="../pr-workflow/#comments-can-refine-the-body">Step 1.5</a>), so it no longer reports an implementation that correctly followed an overriding refinement as a contract divergence. This closes the divergence the earlier revision documented as open; it was applied in a human-run correction round because the automated loop cannot push workflow files (next bullet). The <em>implement</em> phase remains prose-routed through <code>pr-workflow.md</code> for the same token reason — nothing mechanically verifies the implement agent read the digest.</li>
-<li><strong>The loop cannot deliver a change to its own workflow files.</strong> <code>GITHUB_TOKEN</code> has no <code>workflows</code> permission — there is no such permission to grant in a <code>permissions:</code> block — so a push touching <code>.github/workflows/*</code> is rejected with <em>"refusing to allow a GitHub App to create or update workflow … without <code>workflows</code> permission"</em>. Measured, not inferred, while delivering #1782: a docs-and-scripts commit pushes, the same commit with a workflow hunk does not. Consequences worth knowing before approving such an issue: a delivery whose scope is a workflow file will get everything <em>except</em> that file, and behaviour meant for the delivery agents is best placed where the agents already read it (<code>docs/contributing/pr-workflow.md</code>, which the implement prompt points at, and <code>scripts/</code>) rather than inlined into a prompt. Applying a workflow hunk stays a human step.<ul>
+<li><strong>The loop cannot deliver a change to its own workflow files.</strong> <code>GITHUB_TOKEN</code> has no <code>workflows</code> permission — there is no such permission to grant in a <code>permissions:</code> block — so a push touching <code>.github/workflows/*</code> is rejected with <em>"refusing to allow a GitHub App to create or update workflow … without <code>workflows</code> permission"</em>. Measured, not inferred, during a delivery: a docs-and-scripts commit pushes, the same commit with a workflow hunk does not. Consequences worth knowing before approving such an issue: a delivery whose scope is a workflow file will get everything <em>except</em> that file, and behaviour meant for the delivery agents is best placed where the agents already read it (<code>docs/contributing/pr-workflow.md</code>, which the implement prompt points at, and <code>scripts/</code>) rather than inlined into a prompt. Applying a workflow hunk stays a human step.<ul>
 <li><strong>Convention for a workflow hunk a delivery could not push:</strong> commit it as an appliable patch with a header saying what it changes and why it is pending, and have a guard test read the contract out of <em>whichever of the two</em> currently carries it — applying the diff in memory, so a patch that has drifted fails in CI rather than when someone tries to land it. Established by #1715 and #1790; #1675's is still pending (tracked by #1809). The general rule: where a defect can be fixed <em>either</em> in a workflow value or in the script that reads it, fix the script, so the loop is repaired on merge rather than when a human gets to the patch (#1834 did exactly this — its primary fix went into <code>scripts/qa-review/adjudicator.py</code>, and the workflow half followed as a tracked patch).</li>
 </ul>
 </li>
@@ -3977,7 +4037,7 @@ regress quietly.</p>
 <p>The correct phase does still check out and push to the delivery branch, so it requires the target PR to be same-repository, open, and on <code>deliver/issue-&lt;N&gt;</code> — the branch this loop owns.</p>
 <p><strong>Every trigger requires write access.</strong> <code>workflow_dispatch</code> is restricted to users with write access by GitHub, and pushing to a branch in this repository requires it too; a refused dispatch stops before any checkout. The two review triggers do <strong>not</strong> carry that property for free — this repository is public, and submitting a review or a review comment needs only <em>read</em> access, while both events run in the base-repository context with access to secrets. A review-triggered verify is therefore gated on an explicit collaborator permission check (<code>admin</code>/<code>write</code>/<code>maintain</code>), the same one the <code>/approve-issue-for-pr-delivery</code> command uses. Without it, any GitHub user could repeatedly start an agent run holding <code>LITELLM_API_KEY</code>, with <code>pull-requests: write</code> and <code>actions: write</code>, on the single self-hosted runner.</p>
 <p>The check runs in a small <code>ubuntu-latest</code> job, so an unauthorised review never wakes the self-hosted runner at all.</p>
-<p><strong>The triggerer gate is not enough — the PR/issue AUTHOR is also gated (#1813).</strong> A write-access triggerer can point a flow at content authored by someone <em>without</em> write access, and the untrusted input is then the PR/issue body and, on a PR, the diff — which the agent must read, so no comment filter helps and triggering does not sanitise it. Every AI flow (implement, verify, correct, <code>@claude</code>, <code>/blis-pr-review</code>) refuses when the author lacks <code>admin</code>/<code>write</code>/<code>maintain</code>, gating on the <strong>author</strong> rather than fork-status; <code>github-actions[bot]</code>/<code>claude[bot]</code> are trusted so bot-authored deliveries pass. The one decision lives in <code>scripts/deliver-author-gate.sh</code>, run from the default-branch checkout at the workspace root (placed before any event/delivery checkout, per the paragraph above); a probe outage fails closed and loud (never a silent skip). See <a href="../standards/agent-trust/">agent-trust.md</a>.</p>
+<p><strong>The triggerer gate is not enough — the PR/issue AUTHOR is also gated.</strong> A write-access triggerer can point a flow at content authored by someone <em>without</em> write access, and the untrusted input is then the PR/issue body and, on a PR, the diff — which the agent must read, so no comment filter helps and triggering does not sanitise it. Every AI flow (implement, verify, correct, <code>@claude</code>, <code>/blis-pr-review</code>) refuses when the author lacks <code>admin</code>/<code>write</code>/<code>maintain</code>, gating on the <strong>author</strong> rather than fork-status; <code>github-actions[bot]</code>/<code>claude[bot]</code> are trusted so bot-authored deliveries pass. The one decision lives in <code>scripts/deliver-author-gate.sh</code>, run from the default-branch checkout at the workspace root (placed before any event/delivery checkout, per the paragraph above); a probe outage fails closed and loud (never a silent skip). See <a href="../standards/agent-trust/">agent-trust.md</a>.</p>
 <p><strong>The delivery target comes from the event, not from comment text.</strong> The issue delivered is <code>github.event.issue.number</code> — where the command was typed. An optional <code>#N</code> is accepted only when it agrees with that issue and refused when it disagrees, so no untrusted string ever selects the target.</p>
 <p><strong>The verdict marker is read only from bot-authored comments, and only as a comment's last line</strong> — otherwise any human could set a delivery's verdict by quoting it. The same applies to the <code>QA-VERDICT</code> marker and the <code>DELIVER-DISMISSALS</code> count.</p>
 <p><strong>qa-review reads the PR's files but never executes them.</strong> The verify job runs on the self-hosted runner with the LiteLLM secrets in its environment, so the load-bearing invariant is that PR-authored code never runs there. The qa-review answerer does need the PR-head <em>source</em>, so the head is checked out into an ephemeral <code>--detach</code> worktree under <code>$RUNNER_TEMP</code>, removed in an always-run cleanup, and the answerer runs with <code>--no-exec</code> — which drops its <code>go</code> build/test tool from both the implementation map and the advertised tool schema, leaving the read-only <code>read_file</code>/<code>grep</code>/<code>list_dir</code> worktree tools plus the read-only <code>gh_issue</code>/<code>pr_diff</code> tools (added in #1792 so round 0 can verify issue-completeness for F1 — read-only <code>gh</code> network calls, not code execution, so they are kept under <code>--no-exec</code>). The files are read; nothing in them is compiled or run. The adjudicate-only re-verify (#1716) reads the head the same way: the same ephemeral worktree, the same always-run cleanup, the same <code>--no-exec</code> (the adjudicator already carried the same <code>gh_issue</code>/<code>pr_diff</code> tools).</p>

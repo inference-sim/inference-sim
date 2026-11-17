@@ -894,6 +894,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -948,6 +952,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capabilities Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -1077,6 +1109,34 @@
     
   
     KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/lora/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LoRA Adapters
   
 
     
@@ -3563,7 +3623,7 @@ ordering) and the decision by <code>scripts/deliver_author_gate_test.go</code>.<
 <p>The tiers above are about trusting an agent's <em>output</em>. This is the mirror image — what an agent is
 allowed to <em>read</em>.</p>
 <p><em>Who</em> may trigger the AI flows (<code>@claude</code>, <code>/blis-pr-review</code>, <code>/approve-issue-for-pr-delivery</code>) is
-gated to <code>admin</code>/<code>maintain</code>/<code>write</code>, and #1813 further refuses a flow whose PR/issue <em>author</em> lacks
+gated to <code>admin</code>/<code>maintain</code>/<code>write</code>, and the author gate further refuses a flow whose PR/issue <em>author</em> lacks
 that access. <em>What</em> they read was still not gated: on a PR or issue authored by a trusted maintainer,
 this repository is public, so any GitHub user can add a comment or a review — and an agent cannot
 reliably separate "context" from "instruction". So comment text is a prompt-injection surface into
@@ -3608,7 +3668,7 @@ both unsafe to allowlist and would drop the loop's own verdict comments), and pa
 thread cannot silently drop its newest findings. <code>scripts/deliver_trusted_comments_wiring_test.go</code>
 pins that verify/correct assemble the digest in a workflow step and read it by file path (producer +
 consumer + ordering), and <code>scripts/qa_review_filter_test.go</code> pins the Python routing.</p>
-<p><strong><code>claude.yml</code> is OUT OF SCOPE for #1806 — a documented limitation, not a gap to be filled here.</strong>
+<p><strong><code>claude.yml</code> is OUT OF SCOPE for the comment filter — a documented limitation, tracked by #2149.</strong>
 Both its agent jobs invoke <code>claude-code-action</code> in <strong>tag mode</strong> (triggered by the <code>@claude</code> /
 <code>/blis-pr-review</code> comment, with no <code>prompt:</code> we control): the action assembles the PR/issue context —
 comments included — <em>itself</em>, before any workflow step could substitute a filtered digest. There is
@@ -3633,7 +3693,7 @@ scope for exactly this reason.</p>
 untrusted text is": the <strong>PR body</strong>. <code>deliver-verify.yml</code> copies a PR's <code>.body</code> into
 <code>scripts/qa-review/questioner.py</code>, and tag-mode <code>claude-code-action</code> assembles PR context itself. A
 <em>delivery</em> PR is opened by the automation, so its body is as trusted as the flow that wrote it; a
-<em>community</em> PR's body is untrusted, but a community PR is refused up front by the author gate (#1813),
+<em>community</em> PR's body is untrusted, but a community PR is refused up front by the author gate,
 and the residual body axis is #1812. This filter covers comments only.</p>
 <h2 id="known-failure-modes">Known Failure Modes<a class="headerlink" href="#known-failure-modes" title="Permanent link">&para;</a></h2>
 <p>Each failure mode below was discovered in a real PR. The tier system exists
