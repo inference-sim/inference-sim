@@ -295,7 +295,7 @@ def test_gb200_cross_tray_all_reduce_is_gb300s_custom_kernel():
 # The one family measured outside AISimulate: AISimulate has no host-link measurement (its
 # descriptor states the nominal PCIe rate), and InferenceX CollectiveX swap_blocks times
 # vLLM's own copy kernel. A microbenchmark, not an end-to-end row, so it is fit data in
-# full (docs/fitting-principles.md section 3). Named here so no other family follows it in
+# full (the design, §9). Named here so no other family follows it in
 # silently; fit_host_link.py is its writer, gated in test_deepep_ll_graph.py.
 #
 # The second: the Marlin NVFP4 W4A16 grouped ramp on h100/h200. AISimulate carries no Marlin
@@ -367,7 +367,7 @@ def test_no_assumed_entry_smuggles_in_a_foreign_measurement():
     # Measurement sources that are NOT AISimulate and would confound a cross-SKU
     # comparison if a value were taken from them. FPM and InferenceX are this project's
     # other two datasets and are the realistic mistakes: FPM cannot identify a
-    # per-primitive term at all (docs/methodology.md), and InferenceX is evaluation-only.
+    # per-primitive term at all (the design, §9), and InferenceX is evaluation-only.
     RIVALS = ("fpm", "forward pass model", "inferencex", "semianalysis",
               "aiconfigurator", "vidur", "datasheet-only")
     for name in ("cost-model-primitives", "cost-model-collectives"):

@@ -157,7 +157,7 @@ func gitOut(t *testing.T, dir string, args ...string) string {
 // others state what each directory's change must and must not run.
 func TestChangesFilterRunsEachJobForTheFilesItReads(t *testing.T) {
 	script := changesFilterScript(t)
-	all := []string{"apidiff", "catalog", "contracts", "docs", "golang", "kernel", "ledger", "registry"}
+	all := []string{"apidiff", "catalog", "contracts", "golang", "kernel", "ledger", "registry"}
 	cases := []struct {
 		name  string
 		files []string
@@ -165,12 +165,12 @@ func TestChangesFilterRunsEachJobForTheFilesItReads(t *testing.T) {
 	}{
 		{"tag lock only", []string{".github/tags.lock"}, nil},
 		{"a cost model source file", []string{"kernel/step.go"}, []string{"golang", "kernel"}},
-		{"a registry script", []string{"registry/scripts/fit_fabric.py"}, []string{"contracts", "docs", "registry"}},
-		{"documentation only", []string{"docs/contributing/index.md"}, []string{"docs"}},
+		{"a registry script", []string{"registry/scripts/fit_fabric.py"}, []string{"contracts", "registry"}},
+		{"documentation only", []string{"README.md"}, nil},
 		{"the CI workflow", []string{".github/workflows/ci.yml"}, all},
 		{"a contracts source file", []string{"contracts/spec/model/model.go"}, []string{"apidiff", "catalog", "contracts", "golang", "kernel", "ledger", "registry"}},
-		{"a coefficient set, which the cost model embeds", []string{"registry/coefficients/fabric.yaml"}, []string{"contracts", "docs", "kernel", "registry"}},
-		{"a catalog model graph, which the cost model embeds", []string{"catalog/models/m/graph.yaml"}, []string{"catalog", "contracts", "docs", "kernel"}},
+		{"a coefficient set, which the cost model embeds", []string{"registry/coefficients/fabric.yaml"}, []string{"contracts", "kernel", "registry"}},
+		{"a catalog model graph, which the cost model embeds", []string{"catalog/models/m/graph.yaml"}, []string{"catalog", "contracts", "kernel"}},
 		{"the shard weights", []string{"tools/shard/weights-kernel.txt"}, []string{"contracts", "kernel"}},
 		{"go.mod", []string{"go.mod"}, all},
 		{"a ledger source file", []string{"ledger/check.go"}, []string{"contracts", "golang", "ledger"}},
