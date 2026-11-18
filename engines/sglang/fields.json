@@ -15717,12 +15717,35 @@
     {
       "name": "kv_cache_dtype",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#49"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "auto",
+          "fp8_e5m2",
+          "fp8_e4m3",
+          "mxfp8",
+          "bf16",
+          "bfloat16",
+          "nvfp4",
+          "fp4_mx_block16"
+        ],
+        "covered": [
+          "auto",
+          "bf16",
+          "bfloat16",
+          "fp8_e4m3",
+          "fp8_e5m2"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -17080,12 +17103,54 @@
     {
       "name": "quantization",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#49"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "awq",
+          "fp8",
+          "mxfp8",
+          "gptq",
+          "gptq_marlin",
+          "awq_marlin",
+          "bitsandbytes",
+          "gguf",
+          "modelopt",
+          "modelopt_fp8",
+          "modelopt_fp4",
+          "nvfp4_online",
+          "modelopt_mixed",
+          "petit_nvfp4",
+          "w8a8_int8",
+          "w8a8_fp8",
+          "moe_wna16",
+          "w4afp8",
+          "mxfp4",
+          "auto-round",
+          "auto-round-int8",
+          "compressed-tensors",
+          "modelslim",
+          "mxfp_w4a8",
+          "quark",
+          "quark_int4fp8_moe",
+          "quark_mxfp4",
+          "mlx_q4",
+          "mlx_q8",
+          "unquant",
+          "humming"
+        ],
+        "covered": [
+          "fp8"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
