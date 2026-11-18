@@ -46,6 +46,8 @@ layer_kinds:
     d_h: 576
     kv_lora_rank: 512
     qk_rope_head_dim: 64
+    prefill_qk_head_dim: 192
+    prefill_v_head_dim: 128
   - op: GEMM
     role: o_proj
     n: 7168
@@ -128,6 +130,8 @@ layer_kinds:
     d_h: 576
     kv_lora_rank: 512
     qk_rope_head_dim: 64
+    prefill_qk_head_dim: 192
+    prefill_v_head_dim: 128
   - op: GEMM
     role: o_proj
     n: 7168
@@ -251,6 +255,8 @@ layer_kinds:
     d_h: 576
     kv_lora_rank: 512
     qk_rope_head_dim: 64
+    prefill_qk_head_dim: 192
+    prefill_v_head_dim: 128
   - op: GEMM
     role: o_proj
     n: 7168

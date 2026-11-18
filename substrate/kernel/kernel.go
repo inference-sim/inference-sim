@@ -48,6 +48,14 @@ const scorerKernel = "block_index_scores"
 
 // Kernel prices one deployment. Obtain one from New; the zero value is not usable.
 type Kernel struct {
+	// multiHeadMLAPrefill is whether this engine prefills a dense latent layer in the multi-head form
+	// (the graph's prefill widths and the cached latents' re-expansion): vLLM does, for every dense MLA
+	// backend (MLACommonImpl.forward_mha, v0.33.0). SGLang's choice depends on its backend, the cached
+	// prefix and graph capture (attention_backend_handler.py at v0.5.23: MHA one-shot or chunked-KV
+	// without a prefix or past chunked_prefix_cache_threshold, the absorbed method otherwise, and always
+	// under a captured prefill), which is not modelled, so another engine keeps the cache width.
+	multiHeadMLAPrefill bool
+
 	// Resolved configuration, frozen at construction.
 	layout resolve.Layout
 	fabric resolve.Fabric
