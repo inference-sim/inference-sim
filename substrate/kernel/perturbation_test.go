@@ -475,7 +475,9 @@ func TestChangingALabelChangesNoPriceOrIsListed(t *testing.T) {
 	failed := make([]string, len(first))
 	var wg sync.WaitGroup
 	next := make(chan int)
-	for w := 0; w < runtime.GOMAXPROCS(0); w++ {
+	// Two workers: each prices a whole model's graph twice, and the runners that execute this
+	// test have little memory to give several at once.
+	for w := 0; w < min(runtime.GOMAXPROCS(0), 2); w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -487,7 +489,11 @@ func TestChangingALabelChangesNoPriceOrIsListed(t *testing.T) {
 					continue
 				}
 				want := pricesOf(base)
-				g := relabelled(t, *c.in.Model)
+				g, err := relabelledGraph(*c.in.Model)
+				if err != nil {
+					failed[i] = fmt.Sprintf("%s: %v", c.label, err)
+					continue
+				}
 				in := c.in
 				in.Model = &g
 				k, err := New(in)
@@ -540,21 +546,20 @@ func TestChangingALabelChangesNoPriceOrIsListed(t *testing.T) {
 	}
 }
 
-// relabelled returns a copy of the graph with every node Role replaced by a string no code
+// relabelledGraph returns a copy of the graph with every node Role replaced by a string no code
 // compares with, and every reference to a role (a node's Aliases, an architecture override's
 // Role) rewritten to match, so the document stays valid and only the label changes. It walks
 // the whole graph by reflection, so the speculator's own stacks, the embedding, the head and
 // the architecture overrides are renamed with the layer kinds. The empty role stays empty: its
 // absence is itself what several sites read.
-func relabelled(t *testing.T, g model.Graph) model.Graph {
-	t.Helper()
+func relabelledGraph(g model.Graph) (model.Graph, error) {
 	b, err := yaml.Marshal(g)
 	if err != nil {
-		t.Fatal(err)
+		return model.Graph{}, err
 	}
 	var out model.Graph
 	if err := yaml.Unmarshal(b, &out); err != nil {
-		t.Fatalf("copying the graph: %v", err)
+		return model.Graph{}, fmt.Errorf("copying the graph: %v", err)
 	}
 	rename := map[string]string{}
 	visit(reflect.ValueOf(&out), func(f reflect.StructField, v reflect.Value) {
@@ -576,7 +581,7 @@ func relabelled(t *testing.T, g model.Graph) model.Graph {
 			}
 		}
 	})
-	return out
+	return out, nil
 }
 
 // visit calls fn for every settable struct field reachable from v.

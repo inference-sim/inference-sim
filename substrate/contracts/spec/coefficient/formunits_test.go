@@ -154,6 +154,6 @@ func BenchmarkValidateSet(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		s.Validate()
+		_ = s.Validate()
 	}
 }
