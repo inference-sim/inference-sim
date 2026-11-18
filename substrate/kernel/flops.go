@@ -2,6 +2,7 @@ package latencykernel
 
 import (
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 )
 
 // StepFLOPs is the model FLOPs of one forward pass over b, counted from the plan the kernel
@@ -39,11 +40,35 @@ func (k *Kernel) StepFLOPs(b kernel.Batch) float64 {
 			if a.QHeads <= 0 || a.HeadDim <= 0 {
 				continue
 			}
-			var pairs float64
-			for _, r := range b.Reqs {
-				pairs += queryKeyPairs(r.Computed, r.Scheduled, a.Window)
+			// A dense latent layer prefills in the multi-head form (see prefillHeadWidth) and decodes in the
+			// absorbed one at the cache width: the prefill requests' pairs are counted at the prefill
+			// widths, the decode requests' at HeadDim, and each prefill request that resumes on a cached
+			// prefix also runs kv_b_proj over its cached tokens (2 x kv_lora_rank x heads x (nope + v) a
+			// token), which the absorbed form never does. The regime of a request is the kernel's own
+			// (Scheduled above DecodeThreshold is a prefill).
+			multiHead := a.HoldsKV && a.Kind == model.AttentionMLA && k.multiHeadMLAPrefill &&
+				l.AttnKind == model.AttentionMLA && l.AttnPrefillQKDim > 0 && l.AttnPrefillVDim > 0
+			var width, expand float64
+			var prefillPairs, cached, otherPairs float64
+			if multiHead {
+				width = k.prefillHeadWidth(l)
+				if l.AttnKVLoRARank > 0 && k.layout.DCP <= 1 && k.layout.PCP <= 1 {
+					expand = 2 * float64(l.AttnKVLoRARank) *
+						float64(a.QHeads*(l.AttnPrefillQKDim-l.AttnQKRope+l.AttnPrefillVDim))
+				}
 			}
-			total += float64(l.Count) * 4 * float64(a.QHeads) * float64(a.HeadDim) * pairs
+			for _, r := range b.Reqs {
+				pairs := queryKeyPairs(r.Computed, r.Scheduled, a.Window)
+				if multiHead && r.Scheduled > b.DecodeThreshold {
+					prefillPairs += pairs
+					cached += float64(r.Computed)
+				} else {
+					otherPairs += pairs
+				}
+			}
+			total += float64(l.Count) * 4 * float64(a.QHeads) *
+				(float64(a.HeadDim)*otherPairs + width*prefillPairs)
+			total += float64(l.Count) * expand * cached
 		}
 	}
 	total += k.plan.Head.DenseFLOPsPerToken * logitsRows
