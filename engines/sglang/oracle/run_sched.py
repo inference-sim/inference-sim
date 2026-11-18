@@ -41,7 +41,8 @@ import run_scheduler  # noqa: E402
 SCHED_SERVER_ARGS = ("enable_mixed_chunk", "max_prefill_tokens", "schedule_conservativeness",
                      "radix_eviction_policy", "enable_priority_scheduling", "prefill_max_requests",
                      "schedule_low_priority_values_first", "priority_scheduling_preemption_threshold",
-                     "disable_priority_preemption", "abort_on_priority_when_disabled", "max_queued_requests")
+                     "disable_priority_preemption", "abort_on_priority_when_disabled", "max_queued_requests",
+                     "allow_auto_truncate")
 
 ORACLE_INPUTS = run_scheduler.ORACLE_INPUTS + ("oracle/run_sched.py",)
 
@@ -122,7 +123,7 @@ def config_of(s) -> dict:
     from sglang.srt.environ import envs
     from sglang.srt.managers import schedule_policy as sp
 
-    from sglang.srt.runtime_context import get_memory, get_parallel, get_schedule
+    from sglang.srt.runtime_context import get_memory, get_parallel, get_schedule, get_serving
 
     t = s.new_token_ratio_tracker
     return _extend_config(s, {
@@ -155,6 +156,8 @@ def config_of(s) -> dict:
         "tree_cache": type(s.tree_cache).__name__,
         "disaggregation_mode": str(s.disaggregation_mode.value),
         "enable_overlap": bool(s.enable_overlap),
+        "allow_auto_truncate": bool(get_serving().allow_auto_truncate),
+        "context_len": int(s.model_config.context_len),
         "disable_consecutive_prefill_overlap": bool(envs.SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP.get()),
         "random_seed": int(s.server_args.random_seed),
         "schedule_low_priority_values_first": bool(s.schedule_low_priority_values_first),

@@ -73,7 +73,6 @@ def setup(scenario: dict) -> None:
 def config(s, cfg: dict) -> dict:
     from sglang.srt.runtime_context import get_observability
 
-    cfg["context_len"] = int(s.model_config.context_len)
     from sglang.srt.disaggregation.kv_events import uses_dynamo_format
 
     cfg["enable_kv_events"] = bool(s.kv_events_publisher.enable_kv_cache_events)

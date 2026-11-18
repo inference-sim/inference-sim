@@ -265,3 +265,55 @@ func TestFinishReasonsAndAWholePool(t *testing.T) {
 		t.Fatalf("%d blocks in use after both finished, had %d (the radix cache keeps finished prefixes as evictable, not used)", got, before)
 	}
 }
+
+// The server's front rejects an input at or past the context length, and an input with a budget
+// past it, as an error to the client; --allow-auto-truncate cuts them instead (tokenizer_manager.py:
+// 1331-1372@297e54fd).
+func TestTheContextLengthRejectsOrTruncatesAsTheServerDoes(t *testing.T) {
+	tr, _ := load(t, "retract1")
+	long := make([]int32, 60)
+	for i := range long {
+		long[i] = int32(100 + i)
+	}
+	run := func(auto bool, r engine.Request) (*Engine, error) {
+		cfg := tr.Config
+		cfg.ContextLen, cfg.AllowAutoTruncate = 50, auto
+		e := newEngine(t, cfg)
+		return e, e.Add(r, 0)
+	}
+	cases := []struct {
+		name string
+		req  engine.Request
+	}{
+		{"input past the context", engine.Request{ID: "a", Prompt: long, Output: []int32{9, 9}}},
+		{"input and budget past the context", engine.Request{ID: "b", Prompt: long[:40], Output: outputOf(20, 9), MaxOutputTokens: 20}},
+	}
+	for _, c := range cases {
+		if _, err := run(false, c.req); err == nil || !strings.Contains(err.Error(), "context length") {
+			t.Errorf("%s: got %v, want a context-length error", c.name, err)
+		}
+	}
+	// Truncated: the input is cut to the context, and the budget to what is left of it.
+	e, err := run(true, engine.Request{ID: "b", Prompt: long[:40], Output: outputOf(20, 9), MaxOutputTokens: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	emitted := 0
+	for i := 0; i < 40; i++ {
+		b, err := e.Schedule(engine.Time(i))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b.Empty() {
+			continue
+		}
+		res, err := e.Complete(b.ID, engine.Outcome{}, engine.Time(i))
+		if err != nil {
+			t.Fatal(err)
+		}
+		emitted += res.Emitted["b"]
+	}
+	if emitted != 10 {
+		t.Fatalf("the truncated request produced %d tokens, want 10 (context 50 less its 40 input tokens)", emitted)
+	}
+}
