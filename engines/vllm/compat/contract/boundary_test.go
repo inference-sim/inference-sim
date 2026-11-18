@@ -79,7 +79,7 @@ func TestAPullStatesItsMoveFromThePeer(t *testing.T) {
 	}
 	tr := started[0]
 	want := plan.Transfer{Tokens: 80, From: plan.Endpoint{Node: 0, Rack: 0}, To: plan.Endpoint{Node: 1, Rack: 4}, Kind: plan.TransferPeer}
-	if tr.Tier != "" || tr.Move != want {
+	if tr.Tier != "" || !tr.Move.Equal(want) {
 		t.Errorf("pull %+v, want Move %+v and no tier", tr, want)
 	}
 	if err := tr.Validate(); err != nil {
@@ -205,5 +205,25 @@ func TestTheCompatibilityEngineIsPlacedByTheHost(t *testing.T) {
 	}
 	if err := engine.Place(g, plan.Endpoint{Node: 1}, 2); !errors.Is(err, engine.ErrPlacementRejected) {
 		t.Errorf("a group whose ranks fill the nodes placed at node 1: %v, want ErrPlacementRejected", err)
+	}
+}
+
+// A handoff held at an endpoint that cannot exist is refused by the contract's own check, for a negative rack as for a
+// negative node, and a handoff with no endpoint (the pool's first node) is valid.
+func TestHandoffValidateRefusesAnEndpointThatCannotExist(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		at   *plan.Endpoint
+		ok   bool
+	}{
+		{"no endpoint", nil, true},
+		{"node 1 rack 0", &plan.Endpoint{Node: 1, Rack: 0}, true},
+		{"negative node", &plan.Endpoint{Node: -1, Rack: 0}, false},
+		{"negative rack", &plan.Endpoint{Node: 0, Rack: -1}, false},
+	} {
+		err := engine.Handoff{ID: "h", At: c.at}.Validate()
+		if (err == nil) != c.ok {
+			t.Errorf("%s: Validate = %v, want ok=%v", c.name, err, c.ok)
+		}
 	}
 }
