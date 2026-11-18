@@ -141,14 +141,24 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 
 	// The served weight format. A checkpoint is served in the format it was quantized in unless
 	// --quantization names a method; a method that quantizes at load (a bf16 checkpoint served
-	// as fp8) changes the weights the graph states, which is not modelled.
+	// as fp8, or its experts as nvfp4) changes the weights the graph states, which is not modelled.
+	// modelopt_fp4 on a checkpoint whose graph stores nvfp4 nodes (ModelOptFp4Config's serialized path:
+	// layers/quantization/modelopt_quant.py) serves each node as the graph states it, as blis-vllm's
+	// servedDType does (storesNode): the plan names no format and the nvfp4 nodes are priced per node.
 	served := ""
 	if a.Quantization != nil {
 		q := *a.Quantization
-		if q != "fp8" || g.Global.WeightDType != model.DTypeFP8 {
-			return nil, &NotLowered{Name: "quantization=" + q + " on a " + string(g.Global.WeightDType) + " checkpoint", Issue: issueLower}
+		switch {
+		case q == "fp8" && g.Global.WeightDType == model.DTypeFP8:
+			served = "fp8"
+		case q == "modelopt_fp4" && storesNVFP4(g):
+		default:
+			why := " on a " + string(g.Global.WeightDType) + " checkpoint"
+			if q == "modelopt_fp4" {
+				why = " on a checkpoint that stores no nvfp4 weights (SGLang would quantize them on load)"
+			}
+			return nil, &NotLowered{Name: "quantization=" + q + why, Issue: issueLower}
 		}
-		served = "fp8"
 	}
 	p.WeightFormat = served
 
@@ -270,10 +280,18 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 		}
 		p.MoE.Experts, p.MoE.Routing = experts, routing
 		if a.MoeRunnerBackend == "flashinfer_trtllm" {
-			note("moe_runner_backend", "flashinfer_trtllm",
-				"the plan names no experts kernel: the substrate prices FlashInfer's TRT-LLM grouped GEMM on block-FP8 experts by its "+
-					"assumed ramp (graded assumed: the engine release lists no sm_100a build to name a code hash); expert selection "+
-					"runs inside the kernel only for a DeepSeek-V3-method router")
+			if routedExpertsDType(g) == model.DTypeNVFP4 {
+				note("nvfp4_experts_ramp", "flashinfer_trtllm",
+					"the routed experts run FlashInfer's TRT-LLM NVFP4 fused MoE (trtllm_fp4_block_scale_moe, layers/quantization/modelopt_quant.py); "+
+						"the registry holds no NVFP4 grouped-expert ramp for the B200 or B300, so the substrate prices them on the dense NVFP4 "+
+						"linear ramp (measured on FlashInfer's CuTe-DSL kernel), a ramp whose signed median TPOT error on a vLLM NVFP4 model is "+
+						"+10.4 percent on the B200 and +19.8 percent on the B300 (inference-sim/blis-registry#51); the price is borrowed and not corrected")
+			} else {
+				note("moe_runner_backend", "flashinfer_trtllm",
+					"the plan names no experts kernel: the substrate prices FlashInfer's TRT-LLM grouped GEMM on block-FP8 experts by its "+
+						"assumed ramp (graded assumed: the engine release lists no sm_100a build to name a code hash); expert selection "+
+						"runs inside the kernel only for a DeepSeek-V3-method router")
+			}
 		}
 	}
 
@@ -356,9 +374,12 @@ func expertsKernel(a *config.ServerArgs, g *model.Graph) (plan.KernelImpl, plan.
 	case "flashinfer_trtllm":
 		// FlashInfer's TRT-LLM monolithic MoE (layers/moe/moe_runner/flashinfer_trtllm.py): router logits
 		// in, expert selection inside the kernel. The substrate prices it where the plan names no experts
-		// kernel, from the weight format's grouped-GEMM ramp; only the block-fp8 form is priced.
-		if g.Global.WeightDType != model.DTypeFP8 {
-			return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=flashinfer_trtllm on " + string(g.Global.WeightDType) + " experts", Issue: issueLower}
+		// kernel, from the routed experts' format and its grouped-GEMM ramp; the block-fp8 form and the
+		// nvfp4 form (trtllm_fp4_block_scale_moe) are priced.
+		switch routedExpertsDType(g) {
+		case model.DTypeFP8, model.DTypeNVFP4:
+		default:
+			return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=flashinfer_trtllm on " + string(routedExpertsDType(g)) + " experts", Issue: issueLower}
 		}
 		// SGLang selects the experts inside the kernel only when it can bypass its own top-k
 		// (_can_bypass_trtllm_routing, layers/moe/topk.py:613-650, 794-803@297e54fd). That depends on the
@@ -381,4 +402,62 @@ func expertsKernel(a *config.ServerArgs, g *model.Graph) (plan.KernelImpl, plan.
 			"a plain Renormalize softmax router, such as Qwen3 MoE's, bypasses it only when norm_topk_prob holds)", Issue: issueLower}
 	}
 	return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=" + a.MoeRunnerBackend, Issue: issueLower}
+}
+
+// mainStackKinds are the layer kinds the model's own stack uses (its prologue, pattern and epilogue); the
+// speculator's kinds (an MTP module) are not part of what a step without speculation prices.
+func mainStackKinds(g *model.Graph) []model.LayerKind {
+	used := map[string]bool{}
+	for _, list := range [][]string{g.Stack.Prologue, g.Stack.Pattern, g.Stack.Epilogue} {
+		for _, id := range list {
+			used[id] = true
+		}
+	}
+	var out []model.LayerKind
+	for _, lk := range g.LayerKinds {
+		if used[lk.ID] {
+			out = append(out, lk)
+		}
+	}
+	return out
+}
+
+// storesNVFP4 reports whether any weight node of the model's own stack states nvfp4 as its stored width:
+// the checkpoint is NVFP4-serialized (blis-vllm's storesNode).
+func storesNVFP4(g *model.Graph) bool {
+	for _, lk := range mainStackKinds(g) {
+		for _, n := range lk.Nodes {
+			if (n.Op == model.OpGEMM || n.Op == model.OpGroupedGEMM) && n.WeightDType == model.DTypeNVFP4 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// routedExpertsDType is the stored width of the routed experts of the model's own stack: the weight dtype
+// of its routed GroupedGEMM nodes (a shared expert is not routed), the checkpoint's own where a node states
+// none. Mixed widths, or no routed expert, give the empty dtype, which no experts kernel is lowered for.
+func routedExpertsDType(g *model.Graph) model.DType {
+	var d model.DType
+	seen, mixed := false, false
+	for _, lk := range mainStackKinds(g) {
+		for _, n := range lk.Nodes {
+			if n.Op != model.OpGroupedGEMM || n.IsSharedExpert() {
+				continue
+			}
+			w := n.WeightDType
+			if w == "" {
+				w = g.Global.WeightDType
+			}
+			if seen && w != d {
+				mixed = true
+			}
+			d, seen = w, true
+		}
+	}
+	if mixed || !seen {
+		return ""
+	}
+	return d
 }
