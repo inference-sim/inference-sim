@@ -19,7 +19,7 @@ case_() {
 	[[ -z "$input" ]] || input+=$'\n--\n'
 	input+="$(printf '%s\n' "$@")"
 }
-ALL="bench go goldens inpackage kerneltests lint metrics oracle packs_v0_29 packs_v0_31 packs_v0_32 packs_v0_33 race race_guard rest"
+ALL="bench blocksize go goldens inpackage kerneltests lint metrics oracle packs_v0_29 packs_v0_31 packs_v0_32 packs_v0_33 race race_guard rest"
 CENSUS="kernelmodel-census-0 kernelmodel-census-1 kernelmodel-census-2 kernelmodel-census-3"
 ENGINE="vllmengine-0 vllmengine-1"
 EVERY_LEG="core compat $ENGINE $CENSUS"
@@ -47,7 +47,7 @@ case_ "a kernelmodel test"                      "go lint race rest" "$CENSUS" --
 case_ "a kernel-test fixture"                   "inpackage kerneltests race rest" "$EVERY_LEG" -- kerneltests/testdata/direct/x.yaml
 case_ "a kernel test in the kernel package"     "go inpackage" "-" -- kerneltests/_inpackage/caches_test.go
 case_ "a vllmengine Go file"                    "go lint race race_guard rest" "$ENGINE" -- vllmengine/engine.go
-case_ "go.mod"                                  "bench go inpackage kerneltests lint metrics oracle packs_v0_29 packs_v0_31 packs_v0_32 packs_v0_33 race rest" "$EVERY_LEG" -- go.mod
+case_ "go.mod"                                  "bench blocksize go inpackage kerneltests lint metrics oracle packs_v0_29 packs_v0_31 packs_v0_32 packs_v0_33 race rest" "$EVERY_LEG" -- go.mod
 case_ "the lint configuration (a harness copy)"  "lint rest" "-" -- .golangci.yml
 case_ "the CI workflow"                         "$ALL" "$EVERY_LEG" -- .github/workflows/ci.yml
 case_ "the shard tool"                          "inpackage kerneltests oracle race rest" "$EVERY_LEG" -- .github/scripts/shard.py
@@ -56,7 +56,11 @@ case_ "the shard weights"                       "inpackage kerneltests race rest
 case_ "the race legs file"                      "race race_guard" "$EVERY_LEG" -- .github/shards/race-legs.json
 case_ "the selection script"                    "$ALL" "$EVERY_LEG" -- .github/scripts/changed_jobs.py
 case_ "the Go setup action"                     "$ALL" "$EVERY_LEG" -- .github/actions/go-setup/action.yml
-case_ "the oracle environment action"           "oracle" "-" -- .github/actions/oracle-env/action.yml
+case_ "the oracle environment action"           "blocksize oracle" "-" -- .github/actions/oracle-env/action.yml
+case_ "the block-size oracle"                   "blocksize goldens oracle" "-" -- oracle/blocksize/oracle.py
+case_ "the block-size table"                    "bench blocksize go inpackage kerneltests oracle race rest" "core $ENGINE $CENSUS" -- core/vllm/blocksize_table.json
+case_ "ci-light (the block-size check's workflow)" "blocksize" "-" -- .github/workflows/ci-light.yml
+case_ "another oracle script (not the block-size oracle)" "goldens oracle" "-" -- oracle/gen_fuzz.py
 case_ "a script only people run"                "-" "-" -- .github/scripts/measure_weights.py
 case_ "a docs change beside a workflow it does not run" "-" "-" -- docs/feature-matrix.md .github/workflows/blis.yml
 
