@@ -9,13 +9,13 @@
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "2d1849fb44540b8af542e6d40dfbde2905784a942567c3470ea1580eaa183e6b",
-      "combined_hash": "2d1849fb44540b8af542e6d40dfbde2905784a942567c3470ea1580eaa183e6b"
+      "hash": "88ad45237e84b11d89e79e925e0189fcdf95341ed65a4e4ece1ac9c81a625e3e",
+      "combined_hash": "88ad45237e84b11d89e79e925e0189fcdf95341ed65a4e4ece1ac9c81a625e3e"
     },
     "registry": {
       "source": "path",
-      "hash": "8988e9e7570e890ecaa0952465eca4c5827e5036dbed2a134b11c3848df1958f",
-      "combined_hash": "8988e9e7570e890ecaa0952465eca4c5827e5036dbed2a134b11c3848df1958f"
+      "hash": "5d818ced48d99d319b87ff6afe1ad03f88992d788b3a95a33158df54d6855144",
+      "combined_hash": "5d818ced48d99d319b87ff6afe1ad03f88992d788b3a95a33158df54d6855144"
     },
     "released_data": false,
     "build": "unreleased"
@@ -375,8 +375,6 @@
           "hardware": [
             "a100-80",
             "a100-sxm",
-            "b200",
-            "b300",
             "gb200-nvl72",
             "gb300",
             "h100",
@@ -729,6 +727,7 @@
     ],
     "unread_files": [
       "acceptance/inferencex-golden-al.yaml",
+      "acceptance/internal-deployment-measurements.yaml",
       "coefficients/cost-model-collectives-inferencex.yaml",
       "coefficients/cost-model-fabric.yaml",
       "coefficients/cost-model-offload-tiers.yaml",
@@ -887,9 +886,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.15.0",
-    "router": "v1.0.0-blis.5",
-    "engine_module": "v0.33.0-blis.1"
+    "substrate": "v0.15.1-0.20261118162118-b6748ca9d757",
+    "router": "v1.0.0-blis.5.0.20261118163949-601ff6e9d37d",
+    "engine_module": "v0.33.0-blis.1.0.20261118171935-af87ac53acaf"
   },
   "window": {
     "start_us": 0,
@@ -2142,7 +2141,7 @@
         "in_flight_requests_max": 16,
         "in_flight_requests_mean": 13.58891831941602,
         "kv_allocation_failures": 0,
-        "kv_capacity_tokens_per_replica": 4307920,
+        "kv_capacity_tokens_per_replica": 2859717,
         "kv_thrashing_rate": 0,
         "measured_cancelled_requests": 0,
         "measured_context_overflow_requests": 0,
@@ -2203,14 +2202,28 @@
             "busy_share": 0.9952810276987188,
             "decode_busy_share": 0.9555974835886688,
             "e2e_mean_ms": 4077.151222222222,
+            "e2e_p50_ms": 3828.248,
             "e2e_p90_ms": 6494.3644,
             "e2e_p95_ms": 6678.5929,
             "e2e_p99_ms": 7718.106299999999,
+            "itl_mean_ms": 6.659159168265363,
+            "itl_p50_ms": 6.733,
+            "itl_p90_ms": 7.079,
+            "itl_p95_ms": 7.081,
+            "itl_p99_ms": 7.082,
+            "itl_samples": 16159,
             "measured_completed_requests": 27,
             "mfu": 0.004551058293552802,
             "output_tok_s": 1014.1846118005699,
             "prefill_busy_share": 0.0396835441100499,
+            "tpot_mean_ms": 6.686284070217874,
+            "tpot_p50_ms": 6.821552577319587,
+            "tpot_p90_ms": 7.004753263019117,
+            "tpot_p95_ms": 7.014193833000608,
+            "tpot_p99_ms": 7.019311110880083,
+            "tpot_samples": 27,
             "ttft_mean_ms": 91.76777777777778,
+            "ttft_p50_ms": 81.229,
             "ttft_p90_ms": 140.018,
             "ttft_p95_ms": 140.018,
             "ttft_p99_ms": 140.018,
@@ -2250,14 +2263,28 @@
             "busy_share": 0.9175667664748137,
             "decode_busy_share": 0.8607390066364913,
             "e2e_mean_ms": 2924.450972972973,
+            "e2e_p50_ms": 2832.445,
             "e2e_p90_ms": 4610.8045999999995,
             "e2e_p95_ms": 5033.929799999996,
             "e2e_p99_ms": 6884.963240000001,
+            "itl_mean_ms": 6.887998223099704,
+            "itl_p50_ms": 6.736,
+            "itl_p90_ms": 7.073,
+            "itl_p95_ms": 7.4,
+            "itl_p99_ms": 24.449,
+            "itl_samples": 15195,
             "measured_completed_requests": 37,
             "mfu": 0.00526872899125247,
             "output_tok_s": 954.4087487301546,
             "prefill_busy_share": 0.05682775983832253,
+            "tpot_mean_ms": 6.891326350827471,
+            "tpot_p50_ms": 7.030005,
+            "tpot_p90_ms": 7.199065739810162,
+            "tpot_p95_ms": 7.2871159084337345,
+            "tpot_p99_ms": 7.35194984,
+            "tpot_samples": 37,
             "ttft_mean_ms": 95.71764864864865,
+            "ttft_p50_ms": 81.137,
             "ttft_p90_ms": 154.497,
             "ttft_p95_ms": 154.497,
             "ttft_p99_ms": 154.497,
@@ -2330,6 +2357,15 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
+            "Name": "all_reduce_message_limit",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "the custom lane for every message size: the engine runs a message above the custom kernel's size limit on NCCL; the pool's tensor-parallel all-reduce is priced from the custom lane at every size (inference-sim/blis-substrate#392)",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
             "Name": "nontorch_in_budget_bytes_2rank",
             "Primitive": "",
             "Running": "",
@@ -2347,7 +2383,7 @@
           }
         ],
         "evidence_source": "kernel",
-        "evidenced": 119,
+        "evidenced": 128,
         "fallback_or_assumed": [
           {
             "KernelMatch": "unkeyed",
@@ -2702,8 +2738,8 @@
           }
         ],
         "method_counts": {
-          "assumed": 43,
-          "measured": 105,
+          "assumed": 44,
+          "measured": 114,
           "not_charged": 1,
           "vendor_spec": 14
         },
@@ -2753,7 +2789,7 @@
           "sequence-parallel-architecture-known",
           "sequence-parallel-moe-implied"
         ],
-        "total": 163
+        "total": 173
       }
     }
   },

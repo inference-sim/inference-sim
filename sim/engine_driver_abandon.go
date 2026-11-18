@@ -34,7 +34,7 @@ func (d *EngineDriver) Abandon(now int64) int {
 		d.Metrics.DroppedUnservable++
 		d.Metrics.RecordUnserved(req, false)
 		delete(d.Metrics.Requests, req.ID)
-		delete(d.reqs, req.ID)
+		d.dropReq(req.ID)
 		if d.unserved == nil {
 			d.unserved = map[string]bool{}
 		}

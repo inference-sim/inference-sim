@@ -494,10 +494,8 @@ jobs:
       # its `go` build/test tool from both the implementation map and the advertised schema, and
       # the worktree is removed in an always-run cleanup. Go is still installed here, but only to
       # build archon.
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
         if: steps.paused.outputs.paused == 'false'
-        with:
-          go-version-file: go.mod
 
       # THE required checks, produced by the repository's real CI on the delivery branch.
       #
@@ -998,7 +996,7 @@ jobs:
             ```
 
             Weigh the contracts as body + refinements, per
-            @docs/contributing/pr-workflow.md Step 1.5: a refinement overrides the body on any
+            @.github/agent-prompts/pr-workflow.md Step 1.5: a refinement overrides the body on any
             point it addresses, and the later of two conflicting refinements wins. Do NOT raise a
             divergence from the body as a finding when a refinement authorised it — say which
             refinement you read. TARGET BRANCH, `archon-plan:` and `Depends on:` stay BODY-ONLY.

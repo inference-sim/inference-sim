@@ -971,6 +971,22 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 			wantEntry: true, wantTTFT: 4000 + 300, // = 4300
 		},
 		{
+			// ENGINE-STAMPED FIRST TOKEN: the decode engine stamped the client's first token (FirstTokenTime, arrival-relative),
+			// so TTFT is that, not decodeDelay + ITL[0]. Here the request was preempted after its first token: ITL[0] is the
+			// long resume gap and the scheduling delay was re-stamped at re-admission, so the sum (8300 + 30000) would pass the
+			// request's E2E.
+			name: "engine-stamped first token: TTFT is FirstTokenTime",
+			parent: &ParentRequest{
+				ID: "pa", PrefillSubReqID: "pa_prefill", DecodeSubReqID: "pa_decode",
+				OriginalRequest: origReq,
+				ArrivalTime:     0, CompletionTime: 50000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: &sim.Request{FirstTokenTime: 5300, ITL: []int64{30000}},
+			},
+			setDecodeDelay: true, decodeDelay: 8300,
+			wantEntry: true, wantTTFT: 5300,
+		},
+		{
 			// FALLBACK: decode scheduling delay never recorded ⇒ prefill-only.
 			// (Pre-#1510 this case was labeled "TransferCompleteTime=0"; that field is
 			// no longer consulted — the true trigger is the missing decode delay.)
@@ -2093,5 +2109,24 @@ func TestDisaggregation_TokenTotalsAreTheTokensEmittedOnTheParentEntry(t *testin
 	}
 	if got := ComputePerTenantMetrics(m)["t"].TotalTokensServed; got != total {
 		t.Errorf("per-tenant tokens served = %d, want %d, the sum of the emitted counts", got, total)
+	}
+}
+
+// BenchmarkDisaggregationRun times a whole disaggregated run of many requests. Each instance event
+// runs the two completion detectors, which used to visit every pending sub-request of the cluster
+// and now visit the pending sub-requests of the instance that ran.
+func BenchmarkDisaggregationRun(b *testing.B) {
+	for _, n := range []int{200, 2000} {
+		b.Run(fmt.Sprintf("requests=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				cs := newTestCluster(newTestDisaggDeploymentConfig(8, 4, 4), NewSliceRequestSource(newTestRequests(n)), nil)
+				b.StartTimer()
+				if err := cs.Run(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }

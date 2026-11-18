@@ -1,5 +1,5 @@
 #!/bin/bash
-# Reproduce the price-change report (docs/evidence/price-change-report.md).
+# Reproduce the price-change report.
 #
 #   scripts/kernel/price-report.sh OLD_REPO OUT_DIR
 #

@@ -5,6 +5,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+
 	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 
@@ -40,7 +42,7 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 	}
 
 	// Register as pending prefill completion for detection in event loop
-	cs.pendingPrefillCompletions[e.request.ID] = e.parentReq.ID
+	cs.setPendingPrefill(e.request.ID, e.parentReq.ID)
 
 	inst := cs.instanceByID(InstanceID(target))
 	if inst == nil {
@@ -48,6 +50,7 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 	}
 	cs.inFlightRequests[target]++
 	if params, ok := cs.p2pPrefillParams(e.parentReq); ok {
+		e.parentReq.P2P = true
 		e.request.KVTransferParams = params
 	}
 	inst.InjectRequestOnline(e.request, e.time)
@@ -162,7 +165,35 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	}
 	cs.remotePulls[decodeSubReq.ID] = e.parentReq
 	e.parentReq.DecodeWaiting = decodeSubReq
-	decodeInst.AddRemote(decodeSubReq, cs.config.InstanceEndpoint(e.parentReq.PrefillInstanceID), e.time)
+	decodeInst.AddRemote(decodeSubReq, cs.pullSource(e.parentReq), e.time)
+}
+
+// handoffAter is an instance that can say where the KV it holds for a request sits.
+type handoffAter interface {
+	HandoffAt(req *sim.Request) *plan.Endpoint
+}
+
+// handoffPeer is where the decode engine pulls the request's KV from, in the prefill pool's
+// numbering: the node and rack its prefill engine says the KV sits at (engine.Handoff.At, the rank
+// that computed it when a data-parallel group spans nodes), else own, the prefill instance's own
+// endpoint, the first node of its group.
+func handoffPeer(pre handoffAter, sub *sim.Request, own plan.Endpoint) plan.Endpoint {
+	if pre != nil && sub != nil {
+		if at := pre.HandoffAt(sub); at != nil {
+			return *at
+		}
+	}
+	return own
+}
+
+// pullSource is handoffPeer for a parent request's prefill instance.
+func (cs *ClusterSimulator) pullSource(parent *ParentRequest) plan.Endpoint {
+	own := cs.config.InstanceEndpoint(parent.PrefillInstanceID)
+	pre := cs.instanceByID(InstanceID(parent.PrefillInstanceID))
+	if pre == nil {
+		return own
+	}
+	return handoffPeer(pre, parent.PrefillSubReq, own)
 }
 
 // startPull starts the transfer of a handoff whose pull an engine driven through engine.Engine
@@ -466,7 +497,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	// Register decode sub-request so detectDecodeCompletions can stamp
 	// ParentRequest.CompletionTime and read DecodeSubReq.State/ProgressIndex
 	// for timeout detection and context accumulation.
-	cs.pendingDecodeCompletions[decodeSubReq.ID] = e.parentReq.ID
+	cs.setPendingDecode(decodeSubReq.ID, e.parentReq.ID)
 	cs.advanceRequest(e.parentReq.OriginalRequest, sim.LifecycleDecodeQueued)
 	if decodeSubReq.KVTransferParams != "" {
 		// A p2p handoff's decode is an ordinary request to its engine (p2pDecodeParams).

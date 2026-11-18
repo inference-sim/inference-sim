@@ -6,7 +6,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -82,7 +81,8 @@ var (
 	scenarioEngine            engineRef              // the engine the scenario selects (selectEngine); set by adoptKernelDeployment
 	kernelPDOpened            *kernelPools           // the per-role kernels openKernelPools opened; nil for a colocated run
 	scenarioScheduler         string                 // the scheduler the scenario's engine states ("" = none)
-	scenarioOffload           *deployment.Offload    // the scenario deployment's offload block, nil when it states none (#1910)
+	scenarioOffload           *deployment.Offload    // the offload block of the run's first-served pool (prefill under P/D, else the colocated pool), the deployment's applied; nil when it states none (#1910)
+	scenarioDecodeOffload     *deployment.Offload    // the decode pool's, under P/D (pool offload, else the deployment's)
 	scenarioOverrides         []sim.ScenarioOverride // what the run took from other than its scenario (results file)
 	maxModelLen               int64                  // the scenario's engine.max_model_len: max total sequence length (input + output)
 	// The deployment: model, GPU, TP, DP and EP, all from the scenario
@@ -277,23 +277,35 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	// A fresh adoption starts with no scenario facts recorded (tests adopt more than once).
 	scenarioScheduler, scenarioOverrides = "", nil
 	scenarioRouter, scenarioStatesRouter = routerInputs{}, false
-	in := adoptInputs(cmd)
 	// The engine is selected, and a release this build does not run refused (LIF-6), before the
 	// deployment is read: no other check runs on a scenario this build cannot run.
 	if kernelScenario != "" && kernelScenarioDir != "" {
-		ref, err := selectEngine(filepath.Join(kernelScenarioDir, kernelScenario))
+		ref, err := selectEngine(engineScenarioPath())
 		if err != nil {
 			logrus.Fatalf("%v", err)
 		}
 		scenarioEngine = ref
+		if ref.Kind == engineKindSGLang {
+			sglangKernels.reset()
+			if err := adoptSGLangTwin(); err != nil {
+				logrus.Fatalf("%v", err)
+			}
+		}
 	}
+	in := adoptInputs(cmd)
 	a, err := adoptScenario(in)
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
+	if taken, err := takePDTopologyFromPools(cmd, a); err != nil {
+		logrus.Fatalf("%v", err)
+	} else if taken {
+		in.PDTopology = true
+	}
 	shape := a.Shape
-	// The scenario's offload block is the run's tier configuration (#1910).
-	scenarioOffload = shape.Offload
+	// The scenario's offload blocks are the run's tier configuration (#1910): each pool's own, else
+	// the deployment's.
+	scenarioOffload, scenarioDecodeOffload = runOffloads(shape)
 	adoptScenarioEngineKnobs(shape)
 	scenarioShape = shape
 	acceptanceRecord = nil
@@ -323,6 +335,11 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	// The engine the kernel priced, so the simulated scheduler admits against the same caps,
 	// pages and pool (the build site, adoptFirstPoolEngine).
 	adoptFirstPoolEngine(m, settings)
+	if scenarioEngine.Kind == engineKindSGLang {
+		// The prefix-cache record is the host adapter's reading of vLLM's model runner and cache
+		// layout; SGLang's radix cache is the engine's own and reports through its metrics.
+		prefixCacheRecords = nil
+	}
 }
 
 // resolveLatencyConfig builds the latency model for a run or a replay: the blis-latency-kernel
@@ -587,6 +604,9 @@ var runCmd = &cobra.Command{
 		// none (BC-G5). Recorded in the exported trace header below for run/replay parity
 		// (BC-G6).
 		kvOffloadCfg := resolveKVOffloadConfig()
+		// Under P/D the decode pool's offload is its own (a prefill pool can offload while the decode
+		// pool does not); kvOffloadCfg is the prefill pool's.
+		decodeOffloadCfg := resolveDecodeKVOffloadConfig()
 
 		// Resolve the latency model (single code path shared with replayCmd).
 		lr := resolveLatencyConfig(cmd)
@@ -882,6 +902,9 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("policy bundle instance_lifecycle.drain_policy %q is not one of IMMEDIATE, WAIT, REDIRECT", p)
 			}
 			requireWeightSource(bundleInstanceLifecycle.WeightSource, kernelOpened, poolChips)
+		} else {
+			// No bundle places instances in the scenario's pools: refuse pool chips it would ignore.
+			openPoolChips(nil)
 		}
 		// CLI flag overrides bundle value when explicitly set.
 		if cmd.Flags().Changed("model-autoscaler-interval-us") {
@@ -909,6 +932,11 @@ var runCmd = &cobra.Command{
 		kernelPD := openKernelPools()
 		if kernelPD != nil {
 			prefillOverrides, decodeOverrides = kernelPD.overrides()
+			if traceOutput != "" {
+				if err := refuseUnrecordableOffload(kvOffloadCfg, decodeOffloadCfg); err != nil {
+					logrus.Fatalf("--trace-output: %v", err)
+				}
+			}
 		}
 
 		// LoRA control-plane (#1464). loraCfg was resolved once at the top of RunE (for
@@ -942,12 +970,12 @@ var runCmd = &cobra.Command{
 		applyKernelOffloadPricing(&kvOffloadCfg)
 		// A disaggregated run's pools each size and price the offload by their own kernel.
 		if kernelPD != nil {
-			kernelPD.applyOffload(kvOffloadCfg, &prefillOverrides, &decodeOverrides)
+			kernelPD.applyOffload(kvOffloadCfg, decodeOffloadCfg, &prefillOverrides, &decodeOverrides)
 		}
 
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
-		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
+		// DeploymentConfig literal). See .github/agent-prompts/standards/invariants.md INV-13.
 		// The instance counts are final: every instance must fit
 		// its pool, and the P/D handoff pricer places instances by these counts.
 		requireKernelCapacity(kernelPD)
@@ -1185,7 +1213,7 @@ var runCmd = &cobra.Command{
 		// replay shares (INV-13).
 		// With no cap the run generated what arrived before its horizon. blis-schemas requires a
 		// positive bound, so an uncapped run in which nothing arrived records 1, the smallest
-		// bound (docs/guide/results.md states it).
+		// bound.
 		runNumRequests := max(cs.Arrivals(), 1)
 		if maxRequests > 0 {
 			runNumRequests = int(maxRequests)

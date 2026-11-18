@@ -194,3 +194,83 @@ func TestGuidesLockIsOneFullCommit(t *testing.T) {
 		}
 	}
 }
+
+// Every workflow installs Go with the substrate's go-toolchain action at the commit this build pins:
+// stack.json's substrate commit, which is go.mod's selected version. The action reads
+// contracts/toolchain at that commit, so a workflow still naming an older one installs the toolchain
+// of an older substrate than the one the build links (LIF-2). A re-pin moves them together.
+func TestEveryWorkflowInstallsGoWithTheActionAtTheSubstratePin(t *testing.T) {
+	root := repoRoot(t)
+	committed, err := Read(filepath.Join(root, "stack.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, ok := committed.Module("github.com/inference-sim/blis-substrate")
+	if !ok || len(sub.Commit) != 40 {
+		t.Fatalf("stack.json names no 40-hex substrate commit: %+v", sub)
+	}
+	files, err := filepath.Glob(filepath.Join(root, ".github", "workflows", "*.yml"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no workflow files found: %v", err)
+	}
+	const action = "inference-sim/blis-substrate/.github/actions/go-toolchain@"
+	uses := 0
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(b), "\n") {
+			_, rest, found := strings.Cut(line, action)
+			if !found {
+				continue
+			}
+			uses++
+			if got := strings.Fields(rest)[0]; got != sub.Commit {
+				t.Errorf("%s:%d installs Go with the action at %s, but this build pins the substrate at %s (stack.json)",
+					filepath.Base(f), i+1, got, sub.Commit)
+			}
+		}
+	}
+	if uses == 0 {
+		t.Error("non-vacuity: no workflow installs Go with the substrate's go-toolchain action")
+	}
+}
+
+// The shared BLIS checks (blis.yml) run the substrate's reusable workflows by commit, and the selected-version lint inside them reads
+// its module-lint deferral from the checkout at substrate-ref. A workflow or ref at an older substrate than the one this build pins
+// lints the selected versions against that older deferral (it lacked a module a later pin added): the workflow commits and
+// substrate-ref are stack.json's substrate commit, and a re-pin moves them with it (LIF-2).
+func TestTheSharedChecksRunAtTheSubstratePin(t *testing.T) {
+	root := repoRoot(t)
+	committed, err := Read(filepath.Join(root, "stack.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, ok := committed.Module("github.com/inference-sim/blis-substrate")
+	if !ok || len(sub.Commit) != 40 {
+		t.Fatalf("stack.json names no 40-hex substrate commit: %+v", sub)
+	}
+	b, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "blis.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := 0
+	for i, line := range strings.Split(string(b), "\n") {
+		var got string
+		if _, rest, found := strings.Cut(line, "inference-sim/blis-substrate/.github/workflows/shared-"); found {
+			_, got, _ = strings.Cut(rest, ".yml@")
+		} else if _, rest, found := strings.Cut(line, "substrate-ref:"); found {
+			got = rest
+		} else {
+			continue
+		}
+		refs++
+		if got = strings.Fields(got + " x")[0]; got != sub.Commit {
+			t.Errorf("blis.yml:%d runs the shared checks at %s, but this build pins the substrate at %s (stack.json)", i+1, got, sub.Commit)
+		}
+	}
+	if refs != 4 {
+		t.Errorf("non-vacuity: blis.yml names the substrate commit %d times, want 4 (two reusable workflows, two substrate-ref values)", refs)
+	}
+}

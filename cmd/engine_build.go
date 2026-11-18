@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -52,13 +53,41 @@ import (
 // resolveKVOffloadConfig resolves the run's KV offload from the scenario's offload block
 // (#1910), the only source (#2037): build.ResolveKVOffloadConfig is given no file.
 // Single construction site (R4), shared by run and replay for INV-13 parity.
-func resolveKVOffloadConfig() kvOffloadConfig {
-	cfg, err := build.ResolveKVOffloadConfig(kernelScenario, scenarioOffload, "",
-		blockSizeTokens, mustRunData())
+func resolveKVOffloadConfig() kvOffloadConfig { return resolveOffloadBlock(scenarioOffload) }
+
+// resolveDecodeKVOffloadConfig is the decode pool's offload under P/D: its own block, else the
+// deployment's, and none for a pool that states none. The run's one config (resolveKVOffloadConfig)
+// is the prefill pool's (the colocated pool's for a colocated run).
+func resolveDecodeKVOffloadConfig() kvOffloadConfig {
+	return resolveOffloadBlock(scenarioDecodeOffload)
+}
+
+func resolveOffloadBlock(o *deployment.Offload) kvOffloadConfig {
+	cfg, err := build.ResolveKVOffloadConfig(kernelScenario, o, "", blockSizeTokens, mustRunData())
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
 	return cfg
+}
+
+// runOffloads are the offload blocks the run's pools state, each with the deployment's applied:
+// the first-served pool's (the prefill pool's under P/D, else the colocated pool's) and the decode
+// pool's, nil for a pool with none. A shape that lists no pools (a deployment-less run) has the
+// deployment's block for both.
+func runOffloads(sh scenarioShapeT) (first, decode *deployment.Offload) {
+	if len(sh.PoolOffloads) == 0 || len(sh.PoolOffloads) != len(sh.Roles) {
+		return sh.Offload, sh.Offload
+	}
+	first, decode = sh.PoolOffloads[0], sh.PoolOffloads[0]
+	for i, r := range sh.Roles {
+		switch r {
+		case deployment.RolePrefill:
+			first = sh.PoolOffloads[i]
+		case deployment.RoleDecode:
+			decode = sh.PoolOffloads[i]
+		}
+	}
+	return first, decode
 }
 
 // loadCatalogStorageDevices is the run's storage-device table, read by the engine from the
@@ -186,8 +215,9 @@ func poolAcceptanceInputs(in build.AcceptanceInputs) build.AcceptanceInputs {
 // kernelPools is a disaggregated kernel run's per-role wiring: one kernel per pool.
 type kernelPools struct {
 	prefill, decode *kernelmodel.Model
-	// connector is the scenario's pd_transfer.connector.
-	connector string
+	// connector is the prefill pool's KV connector and decodeConnector the decode pool's (each pool's
+	// own pd_transfer.connector, else the deployment's).
+	connector, decodeConnector string
 	// p2p is whether the handoff is vLLM's p2p tier's (build.Pools.P2P).
 	p2p bool
 }
@@ -197,7 +227,7 @@ func (p *kernelPools) pools() *build.Pools {
 	if p == nil {
 		return nil
 	}
-	return &build.Pools{Prefill: p.prefill, Decode: p.decode, Connector: p.connector, P2P: p.p2p}
+	return &build.Pools{Prefill: p.prefill, Decode: p.decode, Connector: p.connector, DecodeConnector: p.decodeConnector, P2P: p.p2p}
 }
 
 // runTopology is the run's instance counts as they stand.
@@ -241,7 +271,7 @@ func openKernelPools() *kernelPools {
 		kernelPDOpened = nil
 		return nil
 	}
-	p := &kernelPools{prefill: bp.Prefill, decode: bp.Decode, connector: bp.Connector, p2p: bp.P2P}
+	p := &kernelPools{prefill: bp.Prefill, decode: bp.Decode, connector: bp.Connector, decodeConnector: bp.DecodeConnector, p2p: bp.P2P}
 	kernelPDOpened = p
 	return p
 }
@@ -339,9 +369,23 @@ func requirePullPricing(p *kernelPools, contention bool) {
 func setEngineFrontend(eng engine.Engine, version string) error {
 	fe, ok := eng.(coreengine.Frontender)
 	if !ok {
+		// SGLang has no such settings; the flags at their defaults state nothing to refuse.
+		if scenarioEngine.Kind == engineKindSGLang && rendererNumWorkers == 1 && apiServerCount == 0 {
+			return nil
+		}
 		return fmt.Errorf("engine %s does not take API-server settings", version)
 	}
-	if err := fe.SetFrontend(coreengine.Frontend{RendererNumWorkers: rendererNumWorkers, APIServerCount: apiServerCount}); err != nil {
+	// An unstated count is vLLM's default for the balancing mode (serve.py:113-129): the ranks
+	// behind one endpoint, which is every rank of an internal balancer, a node's under hybrid, and
+	// one under external. The engine takes an unstated count as one client, so the host states it
+	// (blis-vllm api_server_count: "a caller states the count it ran").
+	count := apiServerCount
+	if g, ok := eng.(interface{ EndpointRanks(int) (int, int) }); ok && count == 0 {
+		if _, n := g.EndpointRanks(0); n > 1 {
+			count = n
+		}
+	}
+	if err := fe.SetFrontend(coreengine.Frontend{RendererNumWorkers: rendererNumWorkers, APIServerCount: count}); err != nil {
 		return fmt.Errorf("--renderer-num-workers / --api-server-count: %w", err)
 	}
 	return nil
@@ -536,11 +580,11 @@ func applyKernelOffloadPricing(cfg *kvOffloadConfig) {
 	}
 }
 
-// applyOffload prices the run's KV offload once per pool, each by that pool's own kernel
-// (build.Pools.PriceOffload), and records it on the pool's overrides. No-op when the run
-// offloads nothing.
-func (p *kernelPools) applyOffload(cfg kvOffloadConfig, prefill, decode *poolOverrides) {
-	pre, dec, ok, err := p.pools().PriceOffload(kernelScenario, cfg, offloadPricing(), runTopology(), fatalf)
+// applyOffload prices each pool's KV offload by that pool's own kernel
+// (build.Pools.PriceOffloadPools), and records it on the pool's overrides: a pool with no offload
+// gets the inert configuration, not the run's. No-op when neither pool offloads.
+func (p *kernelPools) applyOffload(prefillCfg, decodeCfg kvOffloadConfig, prefill, decode *poolOverrides) {
+	pre, dec, ok, err := p.pools().PriceOffloadPools(kernelScenario, prefillCfg, decodeCfg, offloadPricing(), runTopology(), fatalf)
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
@@ -548,6 +592,49 @@ func (p *kernelPools) applyOffload(cfg kvOffloadConfig, prefill, decode *poolOve
 		return
 	}
 	prefill.KVOffload, decode.KVOffload = &pre.Config, &dec.Config
+}
+
+// takePDTopologyFromPools sets the run's instance counts from the scenario's pools when the command
+// line states no topology: a disaggregated scenario names a prefill pool and a decode pool, and the
+// instances a pool holds are its layout's groups the pool's nodes fit (the same count the run would
+// be refused above), so the scenario alone states how many of each the deployment ran
+// (inference-sim#2126). Any topology flag, --num-instances included, keeps the command line's word:
+// the counts are then the flags' and the existing checks apply to them. It reports whether it set
+// the counts, which the caller records as the run's P/D topology.
+func takePDTopologyFromPools(cmd *cobra.Command, a build.Adopted) (bool, error) {
+	if !a.Disaggregated || kernelScenario == "" || cmd.Flags().Changed("num-instances") ||
+		prefillInstances != 0 || decodeInstances != 0 || prefillDecodeInstances != 0 || encodeInstances != 0 {
+		return false, nil
+	}
+	repos := kernelmodel.Repos{Scenarios: kernelScenarioDir, Data: mustRunData()}
+	count := func(role deployment.Role) (int, error) {
+		m, err := kernelmodel.OpenRole(kernelScenario, repos, role)
+		if err != nil {
+			return 0, fmt.Errorf("the scenario's %s pool: %w", role, err)
+		}
+		// A group is one instance for the v0.33.0 engine; the compatibility engine runs one
+		// instance per rank (build.RequireGroupCapacity, build.RequireCapacity).
+		n := m.RankCapacity()
+		if a.CoreEngine {
+			n = m.GroupCapacity()
+		}
+		if n < 1 {
+			return 0, fmt.Errorf("the scenario's %s pool holds no instance at its layout (%v); give it the nodes its layout needs",
+				role, m.GroupLayoutError())
+		}
+		return n, nil
+	}
+	p, err := count(deployment.RolePrefill)
+	if err != nil {
+		return false, err
+	}
+	d, err := count(deployment.RoleDecode)
+	if err != nil {
+		return false, err
+	}
+	prefillInstances, decodeInstances, numInstances = p, d, p+d
+	logrus.Warnf("P/D topology taken from the scenario's pools: %d prefill and %d decode instance(s)", p, d)
+	return true, nil
 }
 
 // adoptInputs are the scenario and roots the command line names, handed over unread, with the
@@ -800,6 +887,9 @@ func streamIntervalOf(m latencyModel) (int, error) {
 // setting the cost model resolves beside the host's, labelled with the pool (result.PoolLabels
 // of the run's deployment) and sorted by setting, then pool.
 func engineResolutions(models []*engineModel, dep deployment.Deployment) ([]result.Resolution, error) {
+	if scenarioEngine.Kind == engineKindSGLang {
+		return sglangResolutions(dep), nil
+	}
 	if len(models) == 0 {
 		return nil, nil
 	}
@@ -935,19 +1025,42 @@ func kvOffloadOfRecord(r *offloadRecord) kvOffloadConfig { return build.KVOffloa
 // allowScenarioAdd is for a converted trace or an agentic replay, which record no BLIS
 // deployment (replayRecordsDeployment), so the scenario's block states their tiers.
 func reconcileReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, allowScenarioAdd bool) kvOffloadConfig {
+	return reconcileReplayBlock(headerBlock, scenarioOffload, allowScenarioAdd)
+}
+
+// reconcileReplayDecodeKVOffload is the same for the decode pool of a P/D replay. The trace header
+// records one offload block, which both pools ran (a run whose pools offload differently writes no
+// trace, refuseUnrecordableOffload), so the decode pool is reconciled against the same record.
+func reconcileReplayDecodeKVOffload(headerBlock *workload.TraceKVOffloadConfig, allowScenarioAdd bool) kvOffloadConfig {
+	return reconcileReplayBlock(headerBlock, scenarioDecodeOffload, allowScenarioAdd)
+}
+
+func reconcileReplayBlock(headerBlock *workload.TraceKVOffloadConfig, scenario *deployment.Offload, allowScenarioAdd bool) kvOffloadConfig {
 	// The scenario's offload block is a source on replay as on run (resolveKVOffloadConfig),
 	// and the result must match the header.
-	stated := scenarioOffload != nil
+	stated := scenario != nil
 	var scenarioCfg kvOffloadConfig
 	if stated {
-		// resolveKVOffloadConfig itself logrus.Fatalf's on a block the engine refuses.
-		scenarioCfg = resolveKVOffloadConfig()
+		// resolveOffloadBlock itself logrus.Fatalf's on a block the engine refuses.
+		scenarioCfg = resolveOffloadBlock(scenario)
 	}
 	cfg, err := resolveReplayKVOffload(headerBlock, stated, scenarioCfg, allowScenarioAdd)
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
 	return cfg
+}
+
+// refuseUnrecordableOffload refuses to write a trace of a P/D run whose pools run different
+// offload: the trace header records one offload block, so a replay could not rebuild the run
+// (INV-13, never silent degradation). A run that writes no trace is unaffected.
+func refuseUnrecordableOffload(prefill, decode kvOffloadConfig) error {
+	if reflect.DeepEqual(prefill, decode) {
+		return nil
+	}
+	return fmt.Errorf("the prefill and decode pools run different KV offload, which a trace header cannot record " +
+		"(it holds one offload block, so a replay could not rebuild the run); run without --trace-output, or give both pools " +
+		"the same offload")
 }
 
 // resolveReplayKVOffload is reconcileReplayKVOffload's error-returning core, over the trace
@@ -976,7 +1089,11 @@ func registerContractEngines() { coreengine.Register() }
 // EngineReleases are the upstream engine releases this binary runs, one per kind, as each
 // engine module records its own (for vLLM, blisvllm.Upstream). stack.json lists them (LIF-6).
 func EngineReleases() []stack.Upstream {
-	return []stack.Upstream{{Kind: blisvllm.Kind, Version: blisvllm.Upstream.Version, Commit: blisvllm.Upstream.Commit}}
+	sk, sv, sc := sglangEngineRelease()
+	return []stack.Upstream{
+		{Kind: sk, Version: sv, Commit: sc},
+		{Kind: blisvllm.Kind, Version: blisvllm.Upstream.Version, Commit: blisvllm.Upstream.Commit},
+	}
 }
 
 // contractRoots are the roots the engine factory reads beside the run's Data: the scenario
@@ -993,6 +1110,9 @@ func contractRoots(scenarioPath string) map[string]string {
 // the data is opened once, not once for each build. A variable so a test can count the builds
 // and the Data each was handed.
 var newContractEngine = func(spec engine.Spec, data *load.Data) (engine.Engine, error) {
+	if spec.Kind == engineKindSGLang {
+		return newSGLangEngine(spec, data)
+	}
 	return coreengine.New(coreengine.Input{Spec: spec, Data: data})
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"slices"
 	"sort"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
@@ -109,7 +110,13 @@ type ClusterSimulator struct {
 	parentRequests            map[string]*ParentRequest // parent request ID → tracking record
 	pendingPrefillCompletions map[string]string         // prefill sub-req ID → parent ID
 	pendingDecodeCompletions  map[string]string         // decode sub-req ID → parent ID
-	pdEvictedAfterPrefill     int                       // INV-1: parents the gateway evicted in transfer or decode (counted gatewayEvicted)
+	// pendingPrefillByInstance and pendingDecodeByInstance index the two maps above by the instance
+	// that serves the sub-request (the parent's PrefillInstanceID, DecodeInstanceID), so the detectors
+	// that run after each instance's event visit that instance's pending sub-requests and not every
+	// pending sub-request of the cluster. Kept in step by the set and clear methods.
+	pendingPrefillByInstance map[string]map[string]string
+	pendingDecodeByInstance  map[string]map[string]string
+	pdEvictedAfterPrefill    int // INV-1: parents the gateway evicted in transfer or decode (counted gatewayEvicted)
 	// transfersInitiated counts every request that reaches
 	// KVTransferStartedEvent (issue #1343: both successful reservations
 	// that enter the transfer pipeline AND drop-at-start cases where the
@@ -355,6 +362,8 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 		cs.parentRequests = make(map[string]*ParentRequest)
 		cs.pendingPrefillCompletions = make(map[string]string)
 		cs.pendingDecodeCompletions = make(map[string]string)
+		cs.pendingPrefillByInstance = make(map[string]map[string]string)
+		cs.pendingDecodeByInstance = make(map[string]map[string]string)
 		cs.prefillHolds = make(map[string][]int64)
 		if config.PDTransferContention {
 			cs.pdContention = true
@@ -628,8 +637,12 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		cs.startTierCopy(inst, id, demand, at)
 	})
 	// A WRITE to a peer is a transfer like a tier copy: it shares the links it crosses.
-	inst.setPeerWritePriced(func(id engine.TransferID, demand kernel.TransferDemand, at int64) {
-		cs.admitTierFlow(demand, at, func(land int64) { inst.drv.PeerWriteLanded(id, land) })
+	inst.setPeerWritePriced(func(id engine.TransferID, request string, demand kernel.TransferDemand, at int64) {
+		alone := sim.TierTicks(demand)
+		cs.admitTierFlow(demand, at, func(land int64) {
+			cs.recordP2PWrite(request, at, land, alone)
+			inst.drv.PeerWriteLanded(id, land)
+		})
 	})
 	cs.registerPeer(inst)
 	inst.onTransition = func(inst *InstanceSimulator) {
@@ -717,7 +730,7 @@ func (cs *ClusterSimulator) fireArrivalHook(req *sim.Request, timeUs int64) {
 		// INV-15, not INV-3 or INV-6 (the IDs this guard cited before #1772):
 		// this is a precondition on the arrival stream the cluster is GIVEN, so
 		// the repair is in the arrival source, not in the clock or in output
-		// ordering. See docs/contributing/standards/invariants.md#inv-15.
+		// ordering. See .github/agent-prompts/standards/invariants.md#inv-15.
 		panic(fmt.Sprintf("ClusterSimulator: arrival hook received out-of-order request %q (timeUs=%d < last=%d) — INV-15 violation: arrivals must be non-decreasing in ArrivalTime",
 			req.ID, timeUs, cs.lastArrivalHookTime))
 	}
@@ -1032,7 +1045,7 @@ func (c *ClusterSimulator) Run() error {
 		// `total` spans the full canonical ledger: every arrival is either admission-
 		// rejected or injected, and every injected request ends in one of INV-1's ten
 		// non-completion terminal buckets (the ten-term form minus `completed`; see
-		// sim/cluster/metrics.go and docs/contributing/standards/invariants.md). Keep this
+		// sim/cluster/metrics.go and .github/agent-prompts/standards/invariants.md). Keep this
 		// in sync with that ledger — a missing term silently makes the absolute claim
 		// over-fire (#2064 review). gatewayTimedOut is already folded into TimedOutRequests
 		// above; GatewayQueueDepth counts requests still held at the horizon.
@@ -1429,9 +1442,9 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 	instID := string(inst.ID())
 	// Phase 1: collect completed sub-request IDs (sorted for determinism)
 	var completedIDs []string
-	for subReqID, parentID := range c.pendingPrefillCompletions {
+	for subReqID, parentID := range c.pendingPrefillByInstance[instID] {
 		parent := c.parentRequests[parentID]
-		if parent == nil || string(parent.PrefillInstanceID) != instID {
+		if parent == nil {
 			continue
 		}
 		if _, completed := inst.Metrics().RequestCompletionTimes[subReqID]; completed {
@@ -1448,7 +1461,7 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 		// cluster clock, which reads that step's START when this detector runs right after
 		// the step event (#1903): the handoff cannot begin before the KV it moves exists.
 		parent.PrefillCompleteTime = parent.PrefillSubReq.DepartureTime
-		delete(c.pendingPrefillCompletions, subReqID)
+		c.clearPendingPrefill(subReqID)
 		c.advanceRequest(parent.OriginalRequest, sim.LifecycleWaitingDecodeKV)
 		c.pdPrefillCompletedCount++
 		c.pdPrefillOutputTokens += parent.PrefillSubReq.GeneratedTokens
@@ -1468,9 +1481,9 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 	// Phase 1: collect completed and timed-out sub-request IDs (sorted for determinism)
 	var completedIDs []string
 	var timedOutIDs []string
-	for subReqID, parentID := range c.pendingDecodeCompletions {
+	for subReqID, parentID := range c.pendingDecodeByInstance[instID] {
 		parent := c.parentRequests[parentID]
-		if parent == nil || string(parent.DecodeInstanceID) != instID {
+		if parent == nil {
 			continue
 		}
 		if _, completed := inst.Metrics().RequestCompletionTimes[subReqID]; completed {
@@ -1500,7 +1513,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		if e2e, ok := pdReportedE2E(inst.Metrics(), subReqID, parent); ok {
 			parent.CompletionTime = max(parent.CompletionTime, parent.ArrivalTime+int64(e2e))
 		}
-		delete(c.pendingDecodeCompletions, subReqID)
+		c.clearPendingDecode(subReqID)
 		c.pdDecodeCompletedCount++
 		c.endRequest(parent.OriginalRequest, sim.FateCompleted, "", parent.CompletionTime)
 		c.parentDone(parent, parent.CompletionTime, DoneCompleted)
@@ -1549,7 +1562,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		// statement is correctly scoped and must NOT be narrowed on the strength
 		// of this line.
 		parent.CompletionTime = c.clock
-		delete(c.pendingDecodeCompletions, subReqID)
+		c.clearPendingDecode(subReqID)
 		c.pdDecodeTimedOutCount++
 		c.endRequest(parent.OriginalRequest, sim.FateTimedOut, "", c.clock)
 		c.parentDone(parent, c.clock, DoneTimedOut)
@@ -1838,6 +1851,29 @@ func mergeInt64Map(dst, src map[string]int64, mapName string) {
 
 func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 	merged := sim.NewMetrics()
+	// The per-step series are appended instance after instance; sized once to their total, the
+	// merged slices hold exactly what they carry, where growth by append leaves up to a doubling of
+	// slack behind. Grow leaves a series nil when it has nothing to hold, as the appends did. The
+	// per-token series (inter-token, client gaps, chunk gaps) are not copied at all: the merged
+	// series joins the instances' segment lists, which are the requests' own slices (sim.IntSeries).
+	var nWait, nRun, nCounters, nOwners, nITLSegs, nGapSegs, nChunkSegs int
+	for _, inst := range c.instances {
+		m := inst.Metrics()
+		nWait += len(m.NumWaitQRequests)
+		nRun += len(m.NumRunningBatchRequests)
+		nITLSegs += m.AllITLs.Segments()
+		nCounters += len(m.RequestStepCounters)
+		nOwners += len(m.StepOwners)
+		nGapSegs += m.ClientGaps.Segments()
+		nChunkSegs += m.ClientChunkGaps.Segments()
+	}
+	merged.NumWaitQRequests = slices.Grow(merged.NumWaitQRequests, nWait)
+	merged.NumRunningBatchRequests = slices.Grow(merged.NumRunningBatchRequests, nRun)
+	merged.AllITLs.Grow(nITLSegs)
+	merged.RequestStepCounters = slices.Grow(merged.RequestStepCounters, nCounters)
+	merged.StepOwners = slices.Grow(merged.StepOwners, nOwners)
+	merged.ClientGaps.Grow(nGapSegs)
+	merged.ClientChunkGaps.Grow(nChunkSegs)
 	for _, inst := range c.instances {
 		m := inst.Metrics()
 		merged.CompletedRequests += m.CompletedRequests
@@ -1869,7 +1905,7 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 			}
 			merged.Requests[k] = v
 		}
-		merged.AllITLs = append(merged.AllITLs, m.AllITLs...)
+		merged.AllITLs.AddAll(m.AllITLs)
 		merged.RequestStepCounters = append(merged.RequestStepCounters, m.RequestStepCounters...)
 
 		// Per-adapter resident-set counts are keyed by adapter id, which — unlike the
@@ -1896,13 +1932,13 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.KVThrashEvents += m.KVThrashEvents
 		merged.KVThrashOpportunities += m.KVThrashOpportunities
 		merged.StepOwners = append(merged.StepOwners, m.StepOwners...)
-		merged.ClientGaps = append(merged.ClientGaps, m.ClientGaps...)
-		merged.ClientChunkGaps = append(merged.ClientChunkGaps, m.ClientChunkGaps...)
+		merged.ClientGaps.AddAll(m.ClientGaps)
+		merged.ClientChunkGaps.AddAll(m.ClientChunkGaps)
 		merged.MeasuredContextOverflows += m.MeasuredContextOverflows
 		merged.MeasuredFailures += m.MeasuredFailures
 		merged.StillQueued += m.StillQueued
 		merged.StillRunning += m.StillRunning
-		if kv := inst.TotalKvCapacityTokens(); kv > 0 &&
+		if kv := inst.ReportedKVCapacityTokens(); kv > 0 &&
 			(merged.KVCapacityTokensPerReplica == 0 || kv < merged.KVCapacityTokensPerReplica) {
 			merged.KVCapacityTokensPerReplica = kv
 		}
@@ -1992,7 +2028,11 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// keeps a non-empty ITL, so it is still served: it keeps its TTFT, scheduling delay
 		// and request row (the user did receive that token), but gets no E2E or completion
 		// stamp, since it did not complete (the E2E block below).
-		servedFirstToken := parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0
+		//
+		// A request whose whole output is one token has no inter-token gap, so its ITL is empty
+		// although it was served: the engine stamped its first-token time (TTFTSet) instead, and
+		// that, not a gap, is what says a token reached the client.
+		servedFirstToken := parent.DecodeSubReq != nil && (len(parent.DecodeSubReq.ITL) > 0 || parent.DecodeSubReq.TTFTSet)
 		served := completed && servedFirstToken
 
 		// Read the decode sub-request's own per-instance measurements before the
@@ -2129,13 +2169,23 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		delete(m.RequestTTFTs, pfx)
 		delete(m.RequestTTFTs, dec)
 		if served {
-			// `served` guarantees DecodeSubReq != nil && len(ITL) > 0, so the decode
+			// `served` guarantees DecodeSubReq != nil and a surviving first token (an ITL
+			// entry, or a stamped first-token time for a one-token output), so the decode
 			// sub-request emitted a first token — including the case where it emitted that
 			// token and THEN timed out mid-generation (a genuine arrival→first-token span;
 			// the user did receive the token). The primary branch additionally needs the
 			// recorded decode scheduling delay; without it, fall back to the prefill-only
 			// TTFT (defensive — decode data partially unavailable).
-			if hasPrefillTTFT && hasDecodeDelay {
+			if len(parent.DecodeSubReq.ITL) == 0 || parent.DecodeSubReq.FirstTokenTime != 0 {
+				// The decode engine stamped the client's first token (an arrival-relative time, since the decode
+				// sub-request arrives with the parent, and the frame the preempted branch of the E2E above reads),
+				// so that is the TTFT. A one-token output has no first-step gap to rebuild it from. The sum below
+				// approximates it by the decode scheduling delay plus the first ITL entry, which is the gap after
+				// the first token: a decode sub-request preempted after its first token resumes much later, and
+				// re-admission re-stamps the scheduling delay, so the sum could pass the request's own E2E (a
+				// Result the validator refuses).
+				m.RequestTTFTs[pid] = float64(parent.DecodeSubReq.FirstTokenTime)
+			} else if hasPrefillTTFT && hasDecodeDelay {
 				firstDecodeStep := float64(parent.DecodeSubReq.ITL[0])
 				newTTFT := float64(decodeDelay) + firstDecodeStep
 				if newTTFT < 0 {
@@ -2284,4 +2334,50 @@ func serverSeriesOfEngines(insts []*InstanceSimulator) *sim.ServerSeriesOutput {
 		out.Engines = append(out.Engines, block.Engines...)
 	}
 	return out
+}
+
+// setPendingPrefill registers a prefill sub-request for completion detection on the instance its
+// parent names.
+func (c *ClusterSimulator) setPendingPrefill(subReqID, parentID string) {
+	c.pendingPrefillCompletions[subReqID] = parentID
+	if parent := c.parentRequests[parentID]; parent != nil {
+		inst := string(parent.PrefillInstanceID)
+		if c.pendingPrefillByInstance[inst] == nil {
+			c.pendingPrefillByInstance[inst] = map[string]string{}
+		}
+		c.pendingPrefillByInstance[inst][subReqID] = parentID
+	}
+}
+
+// clearPendingPrefill removes a prefill sub-request from detection.
+func (c *ClusterSimulator) clearPendingPrefill(subReqID string) {
+	if parentID, ok := c.pendingPrefillCompletions[subReqID]; ok {
+		if parent := c.parentRequests[parentID]; parent != nil {
+			delete(c.pendingPrefillByInstance[string(parent.PrefillInstanceID)], subReqID)
+		}
+		delete(c.pendingPrefillCompletions, subReqID)
+	}
+}
+
+// setPendingDecode registers a decode sub-request for completion detection on the instance its
+// parent names.
+func (c *ClusterSimulator) setPendingDecode(subReqID, parentID string) {
+	c.pendingDecodeCompletions[subReqID] = parentID
+	if parent := c.parentRequests[parentID]; parent != nil {
+		inst := string(parent.DecodeInstanceID)
+		if c.pendingDecodeByInstance[inst] == nil {
+			c.pendingDecodeByInstance[inst] = map[string]string{}
+		}
+		c.pendingDecodeByInstance[inst][subReqID] = parentID
+	}
+}
+
+// clearPendingDecode removes a decode sub-request from detection.
+func (c *ClusterSimulator) clearPendingDecode(subReqID string) {
+	if parentID, ok := c.pendingDecodeCompletions[subReqID]; ok {
+		if parent := c.parentRequests[parentID]; parent != nil {
+			delete(c.pendingDecodeByInstance[string(parent.DecodeInstanceID)], subReqID)
+		}
+		delete(c.pendingDecodeCompletions, subReqID)
+	}
 }

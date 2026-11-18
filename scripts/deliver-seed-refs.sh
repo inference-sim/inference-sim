@@ -154,7 +154,7 @@ else
 fi
 
 # The `## Target branch` section's prose is not fixed. Both of these are documented in
-# docs/contributing/templates/archon-issue-examples.md:
+# .github/agent-prompts/templates/archon-issue-examples.md:
 #
 #     `feature/<name>` (PR against the feature branch, NOT main)
 #     `feature/<name>` → `main`
@@ -186,7 +186,7 @@ fi
 # base with no warning. Reproduced: a `## Notes` heading inside a fence made `feature/WRONG` win.
 #
 # Every documented shape puts the ref on the first line of the section
-# (docs/contributing/templates/archon-issue-examples.md):
+# (.github/agent-prompts/templates/archon-issue-examples.md):
 #
 #     `feature/<name>` (PR against the feature branch, NOT main)
 #     `feature/<name>` → `main`

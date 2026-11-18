@@ -51,7 +51,6 @@ __pycache__/*
 data/
 *.txt
 !testdata/bytegate/cases.txt
-!.github/docs-requirements.txt
 
 # binaries
 #
@@ -83,7 +82,6 @@ hypotheses/*.yaml
 !hypotheses/**/*.yaml
 
 # MkDocs symlink (created at build time, not committed — see C3 in PR #440)
-docs/contributing.md
 
 # uv files
 .python-version

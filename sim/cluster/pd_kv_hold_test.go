@@ -324,7 +324,7 @@ func TestPrefillKVHold_AmpleCapacityChangesNoLatency(t *testing.T) {
 			name   string
 			on, of any
 		}{{"TTFT", on.RequestTTFTs, off.RequestTTFTs}, {"E2E", on.RequestE2Es, off.RequestE2Es},
-			{"ITL", on.AllITLs, off.AllITLs}, {"completed", on.CompletedRequests, off.CompletedRequests}} {
+			{"ITL", on.AllITLs.Flatten(), off.AllITLs.Flatten()}, {"completed", on.CompletedRequests, off.CompletedRequests}} {
 			if !reflect.DeepEqual(m.on, m.of) {
 				rt.Fatalf("%s differs with ample capacity:\nhold %v\nfree %v", m.name, m.on, m.of)
 			}

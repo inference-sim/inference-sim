@@ -20,13 +20,6 @@ golangci-lint run ./...
 
 All three must pass before submitting a PR. CI uses golangci-lint v2.9.0 (see `.github/workflows/ci.yml`).
 
-```bash
-# Local docs preview (requires Python + mkdocs-material)
-pip install mkdocs-material==9.7.3
-# Contributing docs served directly at docs/contributing/index.md
-mkdocs serve
-```
-
 ## Your First Contribution
 
 This walkthrough adds a test, the lightest kind of contribution, and shows you where a request's value reaches the Result document. Follow it step by step to learn the patterns, then apply them to your own contribution.
@@ -87,7 +80,7 @@ Run: `go test ./cmd -run TestResult_RowSLOClass -v`. It passes, so prove it can 
 
 ### Step 4: Add a member of your own
 
-To state a new value on every row, follow the same path: set the field on the request, copy it into `RequestFact` in `noteFacts`, state it in `requestRows`, and add the member to `RequestRow` in blis-substrate `contracts/spec/result`. The last is a substrate change, released and repinned in `go.mod` ([cross-repo changes](docs/contributing/cross-repo-changes.md)).
+To state a new value on every row, follow the same path: set the field on the request, copy it into `RequestFact` in `noteFacts`, state it in `requestRows`, and add the member to `RequestRow` in blis-substrate `contracts/spec/result`. The last is a substrate change, released and repinned in `go.mod` ([cross-repo changes](.github/agent-prompts/cross-repo-changes.md)).
 
 ### Step 5: Verify
 
@@ -112,11 +105,11 @@ gh pr create --title "test: a Result row's slo_class is its client's class" --bo
 
 ## Contributing with Claude Code
 
-> **Canonical source:** [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md). If this section diverges, pr-workflow.md is authoritative.
+> **Canonical source:** [`.github/agent-prompts/pr-workflow.md`](.github/agent-prompts/pr-workflow.md). If this section diverges, pr-workflow.md is authoritative.
 
 BLIS development workflows are orchestrated through [Claude Code](https://claude.ai/code) skills — structured sequences that handle worktree creation, plan generation, multi-perspective review with convergence enforcement, and PR creation. Contributors with Claude Code get the full automated pipeline. Contributors without it follow the manual path below and still go through the same quality gates (maintainers run the automated reviews on submitted PRs).
 
-**Prerequisites:** Claude Code installed with project skills available (`blis-pr-review`, `issue-review`) and general Claude Code skills (`writing-plans`, `executing-plans`, `commit-push-pr`). See [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md) for the full workflow. Before your first contribution, read [`docs/contributing/templates/design-guidelines.md`](docs/contributing/templates/design-guidelines.md) — it covers module architecture, extension types, and DES foundations.
+**Prerequisites:** Claude Code installed with project skills available (`blis-pr-review`, `issue-review`) and general Claude Code skills (`writing-plans`, `executing-plans`, `commit-push-pr`). See [`.github/agent-prompts/pr-workflow.md`](.github/agent-prompts/pr-workflow.md) for the full workflow. Before your first contribution, read [`.github/agent-prompts/templates/design-guidelines.md`](.github/agent-prompts/templates/design-guidelines.md) — it covers module architecture, extension types, and DES foundations.
 
 ### Choosing Your Journey
 
@@ -131,7 +124,7 @@ BLIS development workflows are orchestrated through [Claude Code](https://claude
 The lightest path. For bug fixes, docs updates, and single-PR changes that don't introduce new module boundaries.
 
 1. **Create worktree** — `git worktree add .worktrees/fix-<name> -b fix-<name>`
-2. **Read the issue *and its comment thread*** — `scripts/deliver-issue-refinements.sh <issue-number>`. A body is written once and the design is then refined in comments; a plan made from the body alone builds an out-of-date spec. See [Comments can refine the body](docs/contributing/pr-workflow.md#comments-can-refine-the-body) for which comments carry authority and how they combine with the body
+2. **Read the issue *and its comment thread*** — `scripts/deliver-issue-refinements.sh <issue-number>`. A body is written once and the design is then refined in comments; a plan made from the body alone builds an out-of-date spec. See [Comments can refine the body](.github/agent-prompts/pr-workflow.md#comments-can-refine-the-body) for which comments carry authority and how they combine with the body
 3. **Write plan** — behavioral contracts (GIVEN/WHEN/THEN) and TDD task breakdown
 4. **Review plan** — review for correctness before proceeding
 5. **Human approval** — review contracts and tasks, approve to proceed
@@ -139,7 +132,7 @@ The lightest path. For bug fixes, docs updates, and single-PR changes that don't
 7. **Review code** — review implementation for correctness
 8. **Self-audit + commit** — deliberate critical thinking, then commit and push
 
-Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md)
+Full process: [`.github/agent-prompts/pr-workflow.md`](.github/agent-prompts/pr-workflow.md)
 
 ### New Policy or Extension
 
@@ -147,22 +140,22 @@ For adding a routing policy, admission policy, scorer, scheduler, priority polic
 
 1. **Identify extension type** — see [Adding New Components](#adding-new-components) below
 2. **Create worktree** — `git worktree add .worktrees/<extension-name> -b <extension-name>`
-3. **Write plan** — follow [`docs/contributing/extension-recipes.md`](docs/contributing/extension-recipes.md) for the recipe
+3. **Write plan** — follow [`.github/agent-prompts/extension-recipes.md`](.github/agent-prompts/extension-recipes.md) for the recipe
 4. **Follow steps 4–8 from Bug Fix** (review → approve → implement → review → commit)
 
-No design doc needed for policy templates. Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md)
+No design doc needed for policy templates. Full process: [`.github/agent-prompts/pr-workflow.md`](.github/agent-prompts/pr-workflow.md)
 
 ### New Feature (Idea to PR)
 
 The full pipeline for features that introduce new module boundaries, new interfaces, or span multiple PRs.
 
 **Phase 1 — RFC:**
-1. **Write tracking issue** — following [`docs/contributing/rfc.md`](docs/contributing/rfc.md) (plain-English description + holes/surfaces/contracts)
+1. **Write tracking issue** — following [`.github/agent-prompts/rfc.md`](.github/agent-prompts/rfc.md) (plain-English description + holes/surfaces/contracts)
 2. **Team discusses** — agree on holes, surfaces, contracts in the issue thread
 3. **Human approval** — agreement to proceed
 
 **Phase 2 — Plan** (after agreement):
-4. **Encode .archon plan** — following [`docs/contributing/templates/rfc-to-plan.md`](docs/contributing/templates/rfc-to-plan.md) (Claude encodes, creates sub-issues)
+4. **Encode .archon plan** — following [`.github/agent-prompts/templates/rfc-to-plan.md`](.github/agent-prompts/templates/rfc-to-plan.md) (Claude encodes, creates sub-issues)
 5. **PR0** — create `feature/<name>` branch, persist plan to a new `specs/<NNN>-<feature>/` directory, push
 
 **Phase 3 — Deliver** (repeat for each sub-issue, PRs target the feature branch):
@@ -176,28 +169,28 @@ Each phase produces an artifact that feeds the next. Human approval gates betwee
 If you are not using Claude Code, here is the simplified workflow:
 
 1. **Branch** — `git checkout -b feature/my-change`
-2. **Read the issue and its comment thread** — `scripts/deliver-issue-refinements.sh <issue-number>`. The design may have been corrected in a comment after the body was written; a later comment by someone with write access overrides the body on any point it addresses ([the rule](docs/contributing/pr-workflow.md#comments-can-refine-the-body))
+2. **Read the issue and its comment thread** — `scripts/deliver-issue-refinements.sh <issue-number>`. The design may have been corrected in a comment after the body was written; a later comment by someone with write access overrides the body on any point it addresses ([the rule](.github/agent-prompts/pr-workflow.md#comments-can-refine-the-body))
 3. **Plan** — write behavioral contracts (GIVEN/WHEN/THEN) and a task breakdown. Post as a PR draft or issue comment for review.
 4. **Implement** — follow TDD: write a failing test, implement the minimal code to pass it, run `go test ./...`, run `golangci-lint run ./...`, commit. Repeat for each contract.
 5. **Self-review** — check the [Antipattern Checklist](#antipattern-checklist) below. Run `go build ./... && go test ./... && golangci-lint run ./...` one final time.
 6. **PR** — push your branch and open a PR. Maintainers will run `@claude /blis-pr-review` and `/archon-pr-review`.
 
-For large features: write the RFC following [`docs/contributing/rfc.md`](docs/contributing/rfc.md) and submit for team discussion. The `.archon` encoding can be done with Claude Code after agreement.
+For large features: write the RFC following [`.github/agent-prompts/rfc.md`](.github/agent-prompts/rfc.md) and submit for team discussion. The `.archon` encoding can be done with Claude Code after agreement.
 
-Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md) (the same workflow applies regardless of tooling)
+Full process: [`.github/agent-prompts/pr-workflow.md`](.github/agent-prompts/pr-workflow.md) (the same workflow applies regardless of tooling)
 
 ## Engineering Principles
 
-See [`docs/contributing/standards/principles.md`](docs/contributing/standards/principles.md) for the full principles guide covering: separation of concerns, interface design, configuration design, canonical constructors, output channel separation, error handling boundaries, and BDD/TDD development.
+See [`.github/agent-prompts/standards/principles.md`](.github/agent-prompts/standards/principles.md) for the full principles guide covering: separation of concerns, interface design, configuration design, canonical constructors, output channel separation, error handling boundaries, and BDD/TDD development.
 
 Key points for new contributors:
 - `sim/` is a library — never call `os.Exit` or `logrus.Fatalf`. Return errors. Only `cmd/` may terminate.
 - Write behavioral contracts (GIVEN/WHEN/THEN) before tests. Test observable behavior, not internal structure.
-- If your PR touches request lifecycle, KV cache, or metrics, add or extend invariant tests (see [`docs/contributing/standards/invariants.md`](docs/contributing/standards/invariants.md)).
+- If your PR touches request lifecycle, KV cache, or metrics, add or extend invariant tests (see [`.github/agent-prompts/standards/invariants.md`](.github/agent-prompts/standards/invariants.md)).
 
 ## Antipattern Checklist
 
-23 rules, each tracing to a real bug. See [`docs/contributing/standards/rules.md`](docs/contributing/standards/rules.md) for full details.
+23 rules, each tracing to a real bug. See [`.github/agent-prompts/standards/rules.md`](.github/agent-prompts/standards/rules.md) for full details.
 
 Before submitting a PR, verify:
 
@@ -227,7 +220,7 @@ Before submitting a PR, verify:
 
 ## Adding New Components
 
-BLIS has four extension types. Identify which type your change is, then follow the corresponding recipe. See `docs/contributing/templates/design-guidelines.md` Section 5 for full details.
+BLIS has four extension types. Identify which type your change is, then follow the corresponding recipe. See `.github/agent-prompts/templates/design-guidelines.md` Section 5 for full details.
 
 | Extension Type | What It Is | Design Doc Required? | Example |
 |---|---|---|---|
@@ -261,11 +254,11 @@ a scenario that deploys it.
 
 ### Policy Template (lightest — ~3 files)
 
-1. Implement the interface in the repository that owns the policy (see [extension recipes](docs/contributing/extension-recipes.md)): admission and routing in llm-d-router, the instance scheduler and its priority in blis-vllm (`core/sched`)
+1. Implement the interface in the repository that owns the policy (see [extension recipes](.github/agent-prompts/extension-recipes.md)): admission and routing in llm-d-router, the instance scheduler and its priority in blis-vllm (`core/sched`)
 2. Register in `sim/bundle.go` (valid names map + `IsValid*` function)
 3. Add `case` to factory function
 4. Add behavioral tests (`TestMyPolicy_Scenario_Behavior`)
-5. Update README and the relevant `docs/` guide (not CLAUDE.md — it holds pointers, per its charter)
+5. Update the README (not CLAUDE.md — it holds pointers, per its charter)
 
 ### Subsystem Module (heaviest — new interface + integration)
 
@@ -277,7 +270,7 @@ Requires a design doc defining the module contract (observes / controls / owns /
 4. Integrate into cluster event pipeline
 5. Add CLI flags with full validation
 6. Add behavioral tests + invariant tests
-7. Update README, the relevant `docs/` guide, and the design guidelines module map if needed
+7. Update the README and the design guidelines module map if needed
 
 ### Backend Swap (two phases — extract interface, then add alternative)
 
@@ -318,10 +311,9 @@ See design guidelines Section 5.4 for the full two-phase recipe.
 | Document | What It Covers | When to Read |
 |---|---|---|
 | `CLAUDE.md` | Agent operating context: catalog/deployment rules, canonical commands, and pointers to the standards docs and topic guides (not a per-PR changelog — see its charter) | Always — the starting point for working in this repo |
-| `docs/contributing/standards/rules.md` | 23 antipattern rules with evidence, checks, enforcement | When reviewing or writing code |
-| `docs/contributing/standards/invariants.md` | The invariant registry, grouped by scope (run-level, subsystem) plus a cross-cutting code-boundary group: 19 core invariants (INV-1 through INV-19, the last six enforcement-anchored) plus INV-A, INV-A2, INV-W3, the LoRA family (by pointer), PD disaggregation (INV-PD-*) and pool/transfer (INV-P2-*), with verification strategies. Every `INV-*` ID cited in code is resolvable from it. | When touching request lifecycle, KV cache, metrics, or placement |
-| `docs/contributing/pr-workflow.md` | End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR) | Before starting any PR |
-| `docs/concepts/` | System architecture, core engine, concepts glossary | When learning how BLIS works before contributing |
-| `docs/contributing/templates/design-guidelines.md` | DES foundations, module architecture, extension framework | Before designing a new feature or extending BLIS |
-| `docs/contributing/rfc.md` | RFC template for large features (holes/surfaces/contracts) | When planning a multi-PR feature |
-| `docs/contributing/templates/rfc-to-plan.md` | Claude prompt for encoding RFC into .archon plan | After RFC agreement, before implementation |
+| `.github/agent-prompts/standards/rules.md` | 23 antipattern rules with evidence, checks, enforcement | When reviewing or writing code |
+| `.github/agent-prompts/standards/invariants.md` | The invariant registry, grouped by scope (run-level, subsystem) plus a cross-cutting code-boundary group: 19 core invariants (INV-1 through INV-19, the last six enforcement-anchored) plus INV-A, INV-A2, INV-W3, the LoRA family (by pointer), PD disaggregation (INV-PD-*) and pool/transfer (INV-P2-*), with verification strategies. Every `INV-*` ID cited in code is resolvable from it. | When touching request lifecycle, KV cache, metrics, or placement |
+| `.github/agent-prompts/pr-workflow.md` | End-to-end PR lifecycle (worktree → plan → review → implement → audit → PR) | Before starting any PR |
+| `.github/agent-prompts/templates/design-guidelines.md` | DES foundations, module architecture, extension framework | Before designing a new feature or extending BLIS |
+| `.github/agent-prompts/rfc.md` | RFC template for large features (holes/surfaces/contracts) | When planning a multi-PR feature |
+| `.github/agent-prompts/templates/rfc-to-plan.md` | Claude prompt for encoding RFC into .archon plan | After RFC agreement, before implementation |

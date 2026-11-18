@@ -36,7 +36,7 @@
 # (answerer.py / adjudicator.py call this in `--json` mode). claude.yml is OUT OF SCOPE for #1806: its
 # jobs run claude-code-action in tag mode, which assembles the comment context itself, so no workflow
 # step can substitute a filtered digest — a documented limitation, see the deployment-state paragraph
-# in docs/contributing/standards/agent-trust.md.
+# in .github/agent-prompts/standards/agent-trust.md.
 #
 # ── What it does NOT do ───────────────────────────────────────────────────────────────────────
 #

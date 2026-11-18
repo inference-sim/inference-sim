@@ -2,11 +2,26 @@ kind: Scenario
 name: muse-h200-ib-dep8-dspark
 engine: {kind: vllm, version: "0.33.0"}
 model: muse-spark-open-816b-a42b-nvfp4
-acceptance:
-  value:
-    num_spec_tokens: 7
-    acceptance_length: 2.84
-    source: "internal deployment measurements: 1.84 accepted tokens per DSpark draft at c16 on H100 PP2xTP8, fixed 7-token verify (AL = 1 + accepted)"
+# Acceptance is the registry's profile for this model and drafter at K=7, thinking on, category
+# coding (internal deployment measurements, AL 2.72 on GB200 with vLLM). `blis run` reads only
+# category and thinking from this binding; concurrency is the schema's required lane count.
+workload:
+  replay:
+    scenario: inferencex-agentx-mvp
+    harness_version: 0.12.0
+    corpus:
+      loader: semianalysis_cc_traces_weka_062126_256k
+      format: weka-trace-v7
+      encoding: jsonl
+      source:
+        huggingface: semianalysisai/cc-traces-weka-062126-256k
+        revision: 8fecd2fc56694469f758f0afbbb6335ad3043740
+        file: traces.jsonl
+        split: train
+      sha256: e39cd2ff3eba21d4a3664be51da743ac3d2149a1933898cafc7bfeac8147eeef
+    concurrency: 16
+    category: coding
+    thinking: "on"
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
 cluster:
   hardware: h200

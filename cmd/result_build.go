@@ -1,7 +1,7 @@
 package cmd
 
 // Building the Result document from a finished run (#1871). The mapping from today's
-// MetricsOutput onto the Result's sections is the table in docs/guide/results.md
+// MetricsOutput onto the Result's sections is the table in testdata/result-field-map.md
 // ("Where each MetricsOutput field went"); TestResultFieldMap_EveryMetricsOutputFieldHasAHome
 // keeps that table complete.
 
@@ -185,7 +185,7 @@ func windowRulesOf(m *sim.Metrics, sum sim.MeasuredSummary) windowRules {
 // reads as instant; the rates need a window. Each figure carries the count of samples behind
 // it.
 //
-// Two series were renamed by the registry (docs/guide/results.md has the table): the
+// Two series were renamed by the registry (testdata/result-field-map.md has the table): the
 // per-request (latency - TTFT) / (output tokens - 1), schema 1's itl_*, is tpot_*; and the
 // per-step interval the engine section carried is step_interval_*. Schema 1's itl_* is not
 // the registry's itl, which pools every gap between output tokens: that one is written from
@@ -244,7 +244,7 @@ func standardMetrics(sum sim.MeasuredSummary, m *sim.Metrics, gpus, decodeGPUs i
 		// preemptions is a whole-run total over the engines' steps (contracts/metrics): its
 		// samples are the steps the engines took, which the per-step interval series counts.
 		// A run of no steps states none.
-		if steps := len(m.AllITLs); steps > 0 {
+		if steps := m.AllITLs.Len(); steps > 0 {
 			put("preemptions", float64(m.PreemptionCount), steps)
 		}
 		// itl: the client-observed gaps between output tokens (Request.ClientTokenGaps), over
@@ -383,6 +383,15 @@ func pdBreakdown(pd *cluster.PDMetrics, tierLinks map[string]int, peer cluster.P
 		}
 	}
 	putPeer(out, peer)
+	if pd.P2PHandoffs > 0 {
+		// The handoffs that went through the p2p tier: how many, how many moved no KV (the prompt was
+		// recomputed or already held), and the WRITEs that served the rest. kv_transfer_*_ms above is
+		// the time of those WRITEs.
+		putUnique(out, "p2p_handoffs", float64(pd.P2PHandoffs))
+		putUnique(out, "p2p_handoffs_without_write", float64(pd.P2PHandoffsWithoutWrite))
+		putUnique(out, "p2p_writes", float64(pd.P2PWrites))
+		putUnique(out, "p2p_write_total_ms", pd.P2PWriteTotal/1e3)
+	}
 	for _, pool := range sortedMapKeys(pd.CPUTierHitRate) {
 		putUnique(out, "cpu_tier_hit_rate_"+slugPart(pool), pd.CPUTierHitRate[pool])
 	}
@@ -437,7 +446,7 @@ func sessionBreakdown(sm *cluster.SessionMetrics) map[string]float64 {
 // figures under their registry identifiers; the targets and each class's counts stay in the
 // goodput section. The values are emitGoodput's, unchanged from schema 1: goodput_rps is over
 // the run's simulated length, not the measured window the registry names, and moving it to
-// the window is a validation change of its own (docs/guide/results.md, "Known differences").
+// the window is a validation change of its own.
 func goodputOf(m *sim.Metrics, targets map[string]workload.SLODimTargets, injectedByClass map[string]int64,
 	figures map[string]result.Figure) *result.Goodput {
 	if len(targets) == 0 {

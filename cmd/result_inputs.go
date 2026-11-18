@@ -39,6 +39,7 @@ const (
 	modulePathSubstrate = "github.com/inference-sim/blis-substrate"
 	modulePathRouter    = "github.com/llm-d/llm-d-router"
 	modulePathEngine    = "github.com/inference-sim/blis-vllm"
+	modulePathSGLang    = "github.com/inference-sim/blis-sglang"
 )
 
 // resultRevisions are the versions of the BLIS modules the run was built from.
@@ -59,7 +60,14 @@ func revisionsFrom(info *debug.BuildInfo) result.Revisions {
 			case modulePathRouter:
 				r.Router = depVersion(dep)
 			case modulePathEngine:
-				r.EngineModule = depVersion(dep)
+				if scenarioEngine.Kind != engineKindSGLang {
+					r.EngineModule = depVersion(dep)
+				}
+			case modulePathSGLang:
+				// An SGLang run's engine module is blis-sglang's, not blis-vllm's.
+				if scenarioEngine.Kind == engineKindSGLang {
+					r.EngineModule = depVersion(dep)
+				}
 			}
 		}
 	}
@@ -101,7 +109,7 @@ func resultData(d *load.Data) result.Data {
 // resultScenarioDocs reads the scenario and deployment the run used, through blis-schemas' own
 // strict bundle loader (the same decoding the kernel applies).
 func resultScenarioDocs() (resultDocs, error) {
-	path := filepath.Join(kernelScenarioDir, kernelScenario)
+	path := engineScenarioPath() // the SGLang scenario itself, not its host-side twin
 	sc, dep, err := blisschemas.LoadBundle(path)
 	if err != nil {
 		return resultDocs{}, fmt.Errorf("re-reading the scenario for the Result document: %w", err)
@@ -382,28 +390,124 @@ func engineSection(m *sim.Metrics, sum sim.MeasuredSummary, raw *cluster.RawMetr
 // window is the aggregate's (sum), and the figures are the definitions of the cluster's, taken
 // over the requests this instance served (Metrics.SummaryOver, as the breakdowns do). A run with
 // no measured window states none.
+//
+// A disaggregated run's instances hold sub-request records (a prefill leg and a decode leg per
+// user request), which are not what a user measured, so its figures are the user-level records
+// the cluster's own figures use (ClusterSimulator.projectPDMetrics), selected per instance
+// (instanceUserWindow): a decode instance states the user requests it completed, and a prefill
+// instance the user requests it prefilled.
 func instanceSections(cs *cluster.ClusterSimulator, sum sim.MeasuredSummary) map[string]any {
 	insts := cs.Instances()
 	if len(insts) <= 1 {
 		return nil
+	}
+	// In a disaggregated run, the parent ids each prefill-only instance prefilled.
+	roles := cs.PoolMembership()
+	var prefilled map[string]map[string]bool
+	if roles != nil {
+		prefilled = map[string]map[string]bool{}
+		for _, p := range cs.ParentRequests() {
+			id := string(p.PrefillInstanceID)
+			if prefilled[id] == nil {
+				prefilled[id] = map[string]bool{}
+			}
+			prefilled[id][p.ID] = true
+		}
 	}
 	out := make(map[string]any, len(insts))
 	for _, inst := range insts {
 		id := string(inst.ID())
 		block := toGeneric(inst.Metrics().BuildOutput(id))
 		if m, ok := block.(map[string]any); ok && sum.MeasuredWindowS > 0 {
-			w := inst.Metrics().SummaryOver(func(sim.RequestMetrics) bool { return true }, sum.WindowStartUs, sum.WindowEndUs)
-			m["measured_window"] = map[string]any{
-				"window_start_us": sum.WindowStartUs, "window_end_us": sum.WindowEndUs,
-				"measured_completed_requests": w.MeasuredCompletedRequests,
-				"ttft_mean_ms":                w.TTFTMeanMs, "ttft_p90_ms": w.TTFTP90Ms, "ttft_p95_ms": w.TTFTP95Ms, "ttft_p99_ms": w.TTFTP99Ms,
-				"e2e_mean_ms": w.E2EMeanMs, "e2e_p90_ms": w.E2EP90Ms, "e2e_p95_ms": w.E2EP95Ms, "e2e_p99_ms": w.E2EP99Ms,
-				"output_tok_s": w.OutputThroughputTokS,
-			}
+			m["measured_window"] = instanceMeasuredWindow(cs, inst, sum, roles, prefilled)
 		}
 		out[id] = block
 	}
 	return out
+}
+
+// instanceMeasuredWindow is one instance's measured_window block. In a colocated run the
+// instance's own records are the users' and the figures are taken from them. In a disaggregated
+// run they are taken from the user-level records of the aggregate:
+//
+//   - an instance that completed requests (a decode instance, or any instance serving a request
+//     whole) states the user requests it completed: their TTFT and E2E are the user's, from
+//     arrival, and measured_completed_requests counts them, so the instances' counts add up to
+//     the window's;
+//   - an instance that only prefilled states the user requests it prefilled, as those users saw
+//     them: their TTFT and E2E include the decode leg, so a slow prefill instance shows in its
+//     users' latency. It completes no request (measured_completed_requests is 0), produces no
+//     token (output_tok_s is 0) and has no inter-token gaps; measured_user_requests is the number
+//     of requests behind its figures. A request is counted once under measured_completed_requests
+//     and once more under the measured_user_requests of its prefill instance, which is why the
+//     latter is a separate key.
+//
+// An instance of a shared prefill-decode pool takes the first reading (it completes requests).
+// A disaggregated instance states its pool role and measured_user_requests, so a reader can tell
+// the semantics apart; a colocated instance states neither (its block is as it was, plus the
+// time-per-output-token and inter-token figures).
+func instanceMeasuredWindow(cs *cluster.ClusterSimulator, inst *cluster.InstanceSimulator, sum sim.MeasuredSummary, roles map[string]cluster.PoolRole, prefilled map[string]map[string]bool) map[string]any {
+	id := string(inst.ID())
+	// The cluster's inter-token figures keep a request only when it completes by an explicit window's
+	// end; a derived window ends at the last completion and cuts nothing.
+	var gapEnd int64
+	if sum.MeasuredWindowSource == sim.WindowSourceExplicit {
+		gapEnd = sum.WindowEndUs
+	}
+	if roles == nil {
+		w := inst.Metrics().SummaryOver(func(sim.RequestMetrics) bool { return true }, sum.WindowStartUs, sum.WindowEndUs)
+		mw := measuredWindowFigures(sum, w)
+		addClientITL(mw, inst.Metrics().ClientITLOver(gapEnd))
+		return mw
+	}
+	agg := cs.AggregatedMetrics()
+	role := roles[id]
+	if role.Has(cluster.PoolRolePrefill) && !role.Has(cluster.PoolRoleDecode) {
+		mine := prefilled[id]
+		w := agg.SummaryOver(func(rm sim.RequestMetrics) bool { return mine[rm.ID] }, sum.WindowStartUs, sum.WindowEndUs)
+		mw := measuredWindowFigures(sum, w)
+		mw["role"] = "prefill"
+		mw["measured_user_requests"] = w.MeasuredCompletedRequests
+		mw["measured_completed_requests"] = 0
+		mw["output_tok_s"] = 0.0
+		return mw
+	}
+	w := agg.SummaryOver(func(rm sim.RequestMetrics) bool { return rm.HandledBy == id }, sum.WindowStartUs, sum.WindowEndUs)
+	mw := measuredWindowFigures(sum, w)
+	mw["role"] = role.String()
+	mw["measured_user_requests"] = w.MeasuredCompletedRequests
+	addClientITL(mw, inst.Metrics().ClientITLOver(gapEnd))
+	return mw
+}
+
+// measuredWindowFigures are the window bounds and the request-level figures of w, the
+// definitions of the cluster's: TTFT, E2E, output throughput and time per output token.
+func measuredWindowFigures(sum, w sim.MeasuredSummary) map[string]any {
+	mw := map[string]any{
+		"window_start_us": sum.WindowStartUs, "window_end_us": sum.WindowEndUs,
+		"measured_completed_requests": w.MeasuredCompletedRequests,
+		"ttft_mean_ms":                w.TTFTMeanMs, "ttft_p50_ms": w.TTFTP50Ms, "ttft_p90_ms": w.TTFTP90Ms, "ttft_p95_ms": w.TTFTP95Ms, "ttft_p99_ms": w.TTFTP99Ms,
+		"e2e_mean_ms": w.E2EMeanMs, "e2e_p50_ms": w.E2EP50Ms, "e2e_p90_ms": w.E2EP90Ms, "e2e_p95_ms": w.E2EP95Ms, "e2e_p99_ms": w.E2EP99Ms,
+		"output_tok_s": w.OutputThroughputTokS,
+		// The time per output token, (latency - TTFT) / (OSL - 1) per request (the cluster's
+		// tpot_*): a request of one token has none, so tpot_samples can be below the requests.
+		"tpot_samples": w.RequestITLCount,
+	}
+	if w.RequestITLCount > 0 {
+		mw["tpot_mean_ms"], mw["tpot_p50_ms"], mw["tpot_p90_ms"] = w.RequestITLMeanMs, w.RequestITLP50Ms, w.RequestITLP90Ms
+		mw["tpot_p95_ms"], mw["tpot_p99_ms"] = w.RequestITLP95Ms, w.RequestITLP99Ms
+	}
+	return mw
+}
+
+// addClientITL adds the client-observed inter-token latency (the cluster's itl_*) an instance
+// streamed over the window; none when it streamed no gap.
+func addClientITL(mw map[string]any, g sim.ClientITL) {
+	mw["itl_samples"] = g.Count
+	if g.Count > 0 {
+		mw["itl_mean_ms"], mw["itl_p50_ms"], mw["itl_p90_ms"] = g.MeanMs, g.P50Ms, g.P90Ms
+		mw["itl_p95_ms"], mw["itl_p99_ms"] = g.P95Ms, g.P99Ms
+	}
 }
 
 // schedulingDelayP99 is the p99 of per-request scheduling delay in ms, as MetricsOutput

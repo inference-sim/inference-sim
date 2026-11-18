@@ -10,7 +10,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
 
-// These tests exercise rows of the migration table in docs/guide/routing.md ("From BLIS's former
+// These tests exercise rows of the migration table in the design ("From BLIS's former
 // routing features"): each former BLIS feature's llm-d configuration does, in a simulation, what
 // the former feature was for.
 

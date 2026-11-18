@@ -636,8 +636,8 @@ func TestAggregatedMetrics_CarriesTheMeasuredWindowInputs(t *testing.T) {
 			warm += o.Steps
 		}
 	}
-	if warm != 4*7 || total != len(agg.AllITLs) {
-		t.Errorf("owners hold %d warm-up steps (want 28) and %d in all (AllITLs has %d)", warm, total, len(agg.AllITLs))
+	if warm != 4*7 || total != agg.AllITLs.Len() {
+		t.Errorf("owners hold %d warm-up steps (want 28) and %d in all (AllITLs has %d)", warm, total, agg.AllITLs.Len())
 	}
 	samples := agg.InFlightSamples
 	if len(samples) == 0 || samples[len(samples)-1].Count != 0 {
