@@ -36,13 +36,37 @@ var ErrMambaAllocFailed = errors.New("can not alloc mamba cache")
 // MambaLifecycle is the request-side half of MambaComponent (components/mamba.py:527-727@297e54fd):
 // how a request's mamba state is chosen for the tree when its KV is cached, and what is freed
 // afterwards. It works on the hybrid request pool and a stand-in for the cache's eviction; the
-// tree-side half (nodes, locks, matching, eviction order) is a later stage (blis-sglang#128). The
-// int8 checkpoint pool and ReplaySSM's write cursor are not modelled; a pool that has either is
-// refused where it is built.
+// tree-side half (nodes, locks, matching, eviction order) is a later stage (blis-sglang#128).
 type MambaLifecycle struct {
 	Pool        *HybridRequestPool
 	ExtraBuffer bool
 	Evictor     MambaEvictor
+}
+
+// MambaLifecycleParams are the settings a MambaLifecycle is built from. Int8Checkpoint is a pool
+// with an int8 checkpoint pool (mamba_ckpt_pool: SGLang commits and frees the donated state
+// through it) and ReplaySSM a mamba pool with a ReplaySSM write cursor (replayssm_write_pos: SGLang's
+// no_buffer finished path caps the donated length by the cursor and resets it); neither is modelled.
+type MambaLifecycleParams struct {
+	Pool           *HybridRequestPool
+	ExtraBuffer    bool
+	Evictor        MambaEvictor
+	Int8Checkpoint bool
+	ReplaySSM      bool
+}
+
+// NewMambaLifecycle builds a MambaLifecycle, refusing by name a pool whose lifecycle it does not
+// port.
+func NewMambaLifecycle(p MambaLifecycleParams) (*MambaLifecycle, error) {
+	switch {
+	case p.Int8Checkpoint:
+		return nil, fmt.Errorf("cache: the int8 mamba checkpoint pool is not modelled; refused until it is (inference-sim/blis-sglang#128)")
+	case p.ReplaySSM:
+		return nil, fmt.Errorf("cache: ReplaySSM's write cursor (replayssm_write_pos), which caps a finished request's donated length, is not modelled; refused until it is (inference-sim/blis-sglang#128)")
+	case p.Pool == nil || p.Evictor == nil:
+		return nil, fmt.Errorf("cache: a MambaLifecycle needs its hybrid request pool and an evictor")
+	}
+	return &MambaLifecycle{Pool: p.Pool, ExtraBuffer: p.ExtraBuffer, Evictor: p.Evictor}, nil
 }
 
 // allocMambaSlot is _alloc_mamba_slot (:527-554): one slot of the mamba allocator, evicting for it

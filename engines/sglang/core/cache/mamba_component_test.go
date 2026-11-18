@@ -48,6 +48,9 @@ func intPtrOf(v any) *int {
 	return &n
 }
 
+// The slot ids in these traces after an eviction are the stand-in's (it frees the oldest slot it
+// holds, first in first out); A2 re-records any trace that asserts one against the real tree.
+//
 // MambaComponent's request-side lifecycle, driven by the scenarios' calls, answers and leaves the
 // donated state, the request's slots and the pool as SGLang's own MambaComponent does, including
 // the eviction it asks for when the mamba pool is exhausted.
@@ -90,7 +93,10 @@ func TestMambaLifecycleAnswersAsSGLang(t *testing.T) {
 		if sc.Component.TreeSlots > 0 {
 			tree.slots, _ = pool.Mamba.Alloc(sc.Component.TreeSlots)
 		}
-		life := &MambaLifecycle{Pool: pool, ExtraBuffer: sc.Component.ExtraBuffer, Evictor: tree}
+		life, err := NewMambaLifecycle(MambaLifecycleParams{Pool: pool, ExtraBuffer: sc.Component.ExtraBuffer, Evictor: tree})
+		if err != nil {
+			t.Fatal(err)
+		}
 		reqs := map[string]*Req{}
 		inserts := map[string]*MambaInsert{}
 		results := map[string]*MambaInsertResult{}
@@ -236,5 +242,52 @@ func checkTrackSeqlens(t *testing.T, name string, k int, c map[string]any, rec m
 		if mustJSON(t, last) != mustJSON(t, w["mamba_last_track_seqlen"]) || mustJSON(t, prev) != mustJSON(t, w["mamba_prev_track_seqlen"]) {
 			t.Errorf("%s call %d (%v): %s tracks %v/%v, SGLang %v/%v", name, k, c["m"], rn, last, prev, w["mamba_last_track_seqlen"], w["mamba_prev_track_seqlen"])
 		}
+	}
+}
+
+// A pool whose lifecycle is not ported is refused where the lifecycle is built, by name, with the
+// issue that closes it.
+func TestMambaLifecycleRefusesWhatItDoesNotPort(t *testing.T) {
+	pool := NewHybridRequestPool(2, 6, 32, true, false, true)
+	ev := &treeSlots{pool: pool}
+	for _, tc := range []struct {
+		p    MambaLifecycleParams
+		want string
+	}{
+		{MambaLifecycleParams{Pool: pool, Evictor: ev, Int8Checkpoint: true}, "int8 mamba checkpoint pool"},
+		{MambaLifecycleParams{Pool: pool, Evictor: ev, ReplaySSM: true}, "replayssm_write_pos"},
+		{MambaLifecycleParams{Evictor: ev}, "needs its hybrid request pool"},
+	} {
+		_, err := NewMambaLifecycle(tc.p)
+		if err == nil || !strings.Contains(err.Error(), tc.want) || (tc.want != "needs its hybrid request pool" && !strings.Contains(err.Error(), "blis-sglang#128")) {
+			t.Errorf("%+v: got %v, want a refusal naming %q and the issue", tc.p, err, tc.want)
+		}
+	}
+	if _, err := NewMambaLifecycle(MambaLifecycleParams{Pool: pool, Evictor: ev, ExtraBuffer: true}); err != nil {
+		t.Errorf("a pool the lifecycle ports was refused: %v", err)
+	}
+}
+
+// Under extra_buffer_lazy SGLang drops the request's COW-source tree lock before it evicts for a
+// mamba slot; the port has no tree locks, so an exhausted pool and a request holding one is refused
+// by name rather than evicted for with the lock still held.
+func TestMambaLifecycleRefusesTheLazyLockDrop(t *testing.T) {
+	pool := NewHybridRequestPool(2, 2, 32, true, true, true)
+	pool.Mamba.Alloc(2) // the pool is empty
+	ev := &treeSlots{pool: pool, slots: []int64{1}}
+	life, err := NewMambaLifecycle(MambaLifecycleParams{Pool: pool, ExtraBuffer: true, Evictor: ev})
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := &Req{ID: "r", Lock: &TreeLock{}}
+	if _, err := life.allocMambaSlot(held); err == nil || !strings.Contains(err.Error(), "extra_buffer_lazy") {
+		t.Fatalf("got %v, want a refusal naming extra_buffer_lazy", err)
+	}
+	if len(ev.evictions) != 0 {
+		t.Errorf("the cache was asked to evict %v before the refusal", ev.evictions)
+	}
+	// Without a lock the eviction runs and the freed slot is taken.
+	if slot, err := life.allocMambaSlot(&Req{ID: "r2"}); err != nil || slot != 1 || len(ev.evictions) != 1 {
+		t.Errorf("without a lock: slot %d, error %v, evictions %v; want slot 1 after one eviction", slot, err, ev.evictions)
 	}
 }
