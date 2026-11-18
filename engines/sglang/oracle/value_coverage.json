@@ -108,6 +108,14 @@
    "kind": "fixed",
    "reason": "A run with a harness problem writes no trace, so a golden always records none."
   },
+  "hosts": {
+   "kind": "gap",
+   "reason": "Every HiCache host-pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "hosts[].raises": {
+   "kind": "gap",
+   "reason": "Every HiCache host-pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
   "receive.max_recv_per_poll": {
    "kind": "fixed",
    "reason": "The oracle counts a step per loop iteration and needs the default receive settings; the runner fails otherwise."
@@ -123,10 +131,6 @@
   "resolved.device": {
    "kind": "fixed",
    "reason": "The oracle's base platform is the CPU device (oracle/mocks.json, \"the base platform\")."
-  },
-  "resolved.max_prefill_tokens": {
-   "kind": "gap",
-   "reason": "Only the max_prefill_tokens scenario records this resolved server argument (its record_server_args), and it sets it to 100; a second scenario that records it at another value is added with the others (inference-sim/blis-sglang#32)."
   },
   "sglang_env.SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP": {
    "kind": "gap",

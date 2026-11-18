@@ -223,7 +223,11 @@ func (t *treeCore) eventSeed(n *node) []byte {
 }
 
 // recordStore is KVCacheEventRecorder.record_store (events.py:213-271@297e54fd).
-func (t *treeCore) recordStore(n *node, sessionID *string) {
+func (t *treeCore) recordStore(n *node, sessionID *string) { t.recordStoreMedium(n, sessionID, "GPU") }
+
+// recordStoreMedium is record_store with its medium: "GPU", or "CPU_PINNED" for the host tier
+// (StorageMedium, disaggregation/kv_events.py:261-267@297e54fd).
+func (t *treeCore) recordStoreMedium(n *node, sessionID *string, medium string) {
 	r := &t.events
 	if !r.enabled {
 		return
@@ -255,15 +259,16 @@ func (t *treeCore) recordStore(n *node, sessionID *string) {
 		}
 		h := namespacedBlockHash(hashStrToInt64(hv[page]), seed)
 		r.enqueue(Event{Type: "BlockStored", BlockHashes: []int64{h}, ParentBlockHash: parent, TokenIDs: toks,
-			BlockSize: end - start, Medium: "GPU", CacheSalt: n.key.CacheSalt, SessionID: sessionID})
+			BlockSize: end - start, Medium: medium, CacheSalt: n.key.CacheSalt, SessionID: sessionID})
 		hh := h
 		parent = &hh
 		page++
 	}
 }
 
-// recordRemove is KVCacheEventRecorder.record_remove (events.py:273-302@297e54fd).
-func (t *treeCore) recordRemove(n *node) {
+// recordRemoveMedium is KVCacheEventRecorder.record_remove (events.py:273-302@297e54fd).
+// The medium is "GPU", or "CPU_PINNED" for the host tier.
+func (t *treeCore) recordRemoveMedium(n *node, medium string) {
 	r := &t.events
 	if !r.enabled {
 		return
@@ -277,7 +282,7 @@ func (t *treeCore) recordRemove(n *node) {
 		page++
 	}
 	if len(hashes) > 0 {
-		r.enqueue(Event{Type: "BlockRemoved", BlockHashes: hashes, Medium: "GPU"})
+		r.enqueue(Event{Type: "BlockRemoved", BlockHashes: hashes, Medium: medium})
 	}
 }
 

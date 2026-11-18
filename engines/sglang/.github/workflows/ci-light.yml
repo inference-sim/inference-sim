@@ -414,6 +414,35 @@ jobs:
           python -I oracle/compare_goldens.py $t/recorded "$commit" oracle/scenarios/hicache/recorded core/hicache/testdata/golden-fid5/recorded
           python -I oracle/compare_goldens.py $t/direct "$commit" oracle/scenarios/hicache/direct core/hicache/testdata/golden-fid5/direct
           python -I oracle/compare_goldens.py shard-out/oracle-traces-metrics "$commit" oracle/scenarios-metrics core/metrics/testdata/golden-metrics
+      - name: trace the HiCache host tier
+        if: matrix.group == 'hicache-metrics'
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          o=shard-out/oracle-traces-hicache-l2
+          mkdir -p $o/l2-recorded $o/l2-direct shard-out/oracle-traces-host-pools
+          for s in oracle/scenarios/hicache-l2/recorded/*.json; do
+            python -I oracle/run_hicache.py recorded sglang-source "$s" "$o/l2-recorded/$(basename "$s" .json).trace.json"
+          done
+          for s in oracle/scenarios/hicache-l2/direct/*.json; do
+            python -I oracle/run_hicache.py direct sglang-source "$s" "$o/l2-direct/$(basename "$s" .json).trace.json"
+          done
+          for s in oracle/scenarios-host-pools/*.json; do
+            python -I oracle/run_host_pools.py direct sglang-source "$s" "shard-out/oracle-traces-host-pools/$(basename "$s" .json).trace.json"
+          done
+      - name: every HiCache host tier and host pool golden is SGLang's own output
+        if: matrix.group == 'hicache-metrics'
+        run: |
+          set -euo pipefail
+          commit="${{ steps.pin.outputs.commit }}"
+          t=shard-out/oracle-traces-hicache-l2
+          python -I oracle/compare_goldens.py $t/l2-recorded "$commit" oracle/scenarios/hicache-l2/recorded core/hicache/testdata/golden-fid5/l2-recorded
+          python -I oracle/compare_goldens.py $t/l2-direct "$commit" oracle/scenarios/hicache-l2/direct core/hicache/testdata/golden-fid5/l2-direct
+          python -I oracle/compare_goldens.py shard-out/oracle-traces-host-pools "$commit" oracle/scenarios-host-pools core/hicache/testdata/golden-fid5/host-pools
       # sched: the scheduling loop, every scenario
       - name: trace the scheduling loop
         if: matrix.group == 'sched'

@@ -35,9 +35,21 @@ type node struct {
 	// storage backend first needs them; nil until then.
 	hashValue      []string
 	eventHashValue []string
+
+	// The host tier (unified_tree_core.py:112-158@297e54fd): FULL's host slots (nil when not
+	// backed up), its host lock count and the boundary uuid of a host lock taken on it, the ack
+	// of a backup in flight that covers it, and the anchor of a load-back reading its host slots.
+	hostValue       []int64
+	hostLockRef     int
+	hostUUID        *int64
+	writeThroughAck *NodeID
+	loadBackAnchor  *NodeID
 }
 
 func (n *node) evicted() bool { return n.parent != nil && n.value == nil }
+
+// backuped is UnifiedTreeNode.backuped: FULL KV present on host.
+func (n *node) backuped() bool { return n.hostValue != nil }
 
 // setChild is children[k] = c.
 func (n *node) setChild(k string, c *node) {
@@ -88,6 +100,8 @@ type treeCore struct {
 	evictable, protected int
 
 	walk *insertWalk
+
+	host hostState
 }
 
 func newTreeCore(pageSize int, isEagle, events, dynamo bool) *treeCore {
@@ -128,6 +142,7 @@ func (t *treeCore) reset() {
 	t.root.lockRef = 1
 	t.evictable, t.protected = 0, 0
 	t.leaves = map[*node]bool{}
+	t.host.resetTree()
 }
 
 func (t *treeCore) node(id NodeID) *node {
@@ -212,8 +227,10 @@ func (k Key) matchAt(other Key, offset, page int) int {
 
 // --- matching ---
 
-// MatchPrefix is UnifiedTreeCore.match_prefix (:886-895) and _match_prefix_helper (:905-984)
-// with no host tier.
+// MatchPrefix is UnifiedTreeCore.match_prefix (:886-895), _match_prefix_helper (:905-984) and
+// _match_post_processor (:1012-1068). With HiCache on, a node backed up on host is a valid match
+// boundary too, and the device anchor is tracked apart from it; an evicted node with no host copy
+// ends the walk.
 func (t *treeCore) MatchPrefix(p MatchPrefixParams) MatchResult {
 	key := p.Key
 	if t.isEagle {
@@ -223,25 +240,42 @@ func (t *treeCore) MatchPrefix(p MatchPrefixParams) MatchResult {
 	if key.Len() == 0 {
 		return t.emptyMatch()
 	}
+	sep := t.host.enabled
 	cur := t.root
 	offset := 0
 	var chunks [][]int64
-	best, bestLen := t.root, 0
+	best, bestDev, bestDevLen := t.root, t.root, 0
 	full := 0
+	var actions []CacheAction
+	// FULL's validators (components/full.py:110-121): device only, or device or host.
+	valid := func(n *node) bool { return n.value != nil || (sep && n.backuped()) }
 	update := func(n *node) {
-		if n.value != nil { // FULL's device-only validator (components/full.py:110-121)
-			best, bestLen = n, len(chunks)
+		matched := valid(n)
+		if matched {
+			best = n
+		}
+		if !sep {
+			if matched {
+				bestDev, bestDevLen = n, len(chunks)
+			}
+			return
+		}
+		if n.value != nil {
+			bestDev, bestDevLen = n, len(chunks)
 		}
 	}
 	for offset < key.Len() {
 		child, ok := cur.children[key.childKey(offset, t.pageSize)]
-		if !ok || child.evicted() {
+		if !ok || (child.evicted() && !child.backuped()) {
 			break
 		}
 		pl := child.key.matchAt(key, offset, t.pageSize)
 		full += pl
 		if pl < child.key.Len() {
-			n := t.splitNode(child, pl)
+			n, a := t.splitNode(child, pl)
+			if a != nil {
+				actions = append(actions, *a)
+			}
 			if !n.evicted() {
 				chunks = append(chunks, n.value)
 			}
@@ -249,23 +283,35 @@ func (t *treeCore) MatchPrefix(p MatchPrefixParams) MatchResult {
 			cur = n
 			break
 		}
-		chunks = append(chunks, child.value)
+		if !child.evicted() {
+			chunks = append(chunks, child.value)
+		}
 		cur = child
 		update(cur)
 		offset += pl
 	}
-	// _match_post_processor (:1012-1068): stamp the path with one access time, deeper later.
 	now := t.tick()
 	for n := best; n != nil; n = n.parent {
 		n.lastAccess = now
 		now -= 0.00001
 	}
 	devLen := 0
-	for _, c := range chunks[:bestLen] {
+	for _, c := range chunks[:bestDevLen] {
 		devLen += len(c)
 	}
-	r := MatchResult{DevicePrefixLen: devLen, LastDeviceNode: best.id, LastHostNode: best.id, BestMatchNode: best.id,
-		FullKVHitLength: full}
+	lastHost := bestDev
+	if sep {
+		lastHost = best
+	}
+	r := MatchResult{DevicePrefixLen: devLen, LastDeviceNode: bestDev.id, LastHostNode: lastHost.id, BestMatchNode: best.id,
+		FullKVHitLength: full, Actions: actions}
+	// FullComponent.finalize_match_result_in_tree_core (components/full.py:123-145): the host
+	// slots between the best match and the device anchor.
+	hit := 0
+	for n := best; n != bestDev && n != t.root; n = n.parent {
+		hit += len(n.hostValue)
+	}
+	r.HostHitLength = hit
 	if cur != t.root {
 		id := cur.id
 		r.LastVisitedNode = &id
@@ -294,8 +340,9 @@ func (t *treeCore) CollectFullDeviceIndices(from, until NodeID) []int64 {
 	return out
 }
 
-// splitNode is _split_node (:1467-1530): child's first splitLen units become a new parent.
-func (t *treeCore) splitNode(child *node, splitLen int) *node {
+// splitNode is _split_node (:1467-1530): child's first splitLen units become a new parent. When
+// a backup of child is in flight, the new parent joins its ack and the cache is told.
+func (t *treeCore) splitNode(child *node, splitLen int) (*node, *CacheAction) {
 	nn := t.newNode(child.priority)
 	nn.children = map[string]*node{}
 	nn.setChild(child.key.childKey(splitLen, t.pageSize), child)
@@ -303,6 +350,7 @@ func (t *treeCore) splitNode(child *node, splitLen int) *node {
 	nn.key = child.key.slice(0, splitLen)
 	nn.hitCount = child.hitCount
 	nn.creation = child.creation
+	nn.loadBackAnchor = child.loadBackAnchor
 	oldKey := child.key
 	child.parent = nn
 	child.key = child.key.slice(splitLen, child.key.Len())
@@ -310,10 +358,18 @@ func (t *treeCore) splitNode(child *node, splitLen int) *node {
 	nn.eventHashValue, child.eventHashValue = splitHash(child.eventHashValue, splitLen, t.pageSize)
 	t.full.redistributeOnNodeSplit(nn, child)
 	nn.parent.setChild(oldKey.childKey(0, t.pageSize), nn)
+	var action *CacheAction
+	if ack := child.writeThroughAck; ack != nil {
+		a := *ack
+		nn.writeThroughAck = &a
+		action = &CacheAction{Kind: UpdatePendingBackupOnNodeSplitAction, AckID: &a, OldNode: child.id, NewNode: nn.id,
+			NewChild: child.id}
+	}
 	child.lastAccess = t.tick()
 	t.updateLeaves(nn)
 	t.updateLeaves(child)
-	return nn
+	t.host.trackDuplicate(t, nn)
+	return nn, action
 }
 
 // splitHash is split_node_hash_value (mem_cache/utils.py:217-241@297e54fd).
@@ -327,21 +383,33 @@ func splitHash(h []string, splitLen, page int) ([]string, []string) {
 
 // --- inserting ---
 
+type insertPhase int
+
+const (
+	phaseWalk insertPhase = iota
+	phaseCommit
+	phaseTail
+)
+
+// insertWalk is _InsertWalkState (unified_tree_core.py:400-416@297e54fd): the in-flight
+// resumable insert.
 type insertWalk struct {
-	node   *node
-	key    Key
-	value  []int64
-	p      InsertParams
-	total  int
-	frees  [][]int64
-	result InsertResult
+	phase   insertPhase
+	node    *node
+	key     Key
+	value   []int64
+	p       InsertParams
+	total   int
+	pending []CacheAction
+	result  InsertResult
+	target  *node
+	newLeaf bool
 }
 
 func (t *treeCore) touch(n *node) { n.lastAccess = t.tick() }
 
-// BeginInsert is begin_insert (:1129-1184) and the walk it runs. With the FULL component alone
-// every action the walk emits is a deferrable free (FreeDeviceKV, :1275-1280), so the walk runs
-// to its end in one step.
+// BeginInsert is begin_insert (:1129-1184): the walk runs to its first barrier, a backup, or to
+// its end.
 func (t *treeCore) BeginInsert(p InsertParams) InsertStep {
 	if t.walk != nil {
 		panic("cache: concurrent insert walks")
@@ -357,70 +425,131 @@ func (t *treeCore) BeginInsert(p InsertParams) InsertStep {
 	if key.Len() == 0 {
 		return InsertStep{Result: &InsertResult{LastDeviceNode: t.root.id}}
 	}
-	w := &insertWalk{node: t.root, key: key, value: value, p: p}
-	t.walk = w
-	for w.key.Len() > 0 {
-		child, ok := w.node.children[w.key.childKey(0, t.pageSize)]
-		if !ok {
-			break
+	t.walk = &insertWalk{node: t.root, key: key, value: value, p: p}
+	return t.advanceInsert()
+}
+
+// advanceInsert is _advance_insert (:1248-1273): it suspends when a step emits an action that
+// cannot wait for the next barrier (a BackupKV), handing over everything pending.
+func (t *treeCore) advanceInsert() InsertStep {
+	w := t.walk
+	for {
+		flushed := len(w.pending)
+		switch w.phase {
+		case phaseWalk:
+			t.insertWalkStep(w)
+		case phaseCommit:
+			t.insertCommitStep(w)
+		case phaseTail:
+			t.insertTailStep(w)
+			t.walk = nil
+			r := w.result
+			return InsertStep{Actions: w.pending, Result: &r}
 		}
-		t.touch(child)
-		pl := child.key.matchAt(w.key, 0, t.pageSize)
-		n := child
-		if pl < child.key.Len() {
-			n = t.splitNode(child, pl)
-		}
-		n.priority = max(n.priority, p.Priority)
-		if n.evicted() {
-			t.uneevict(n, w.value[:pl], p.SessionID)
-		} else {
-			// _insert_overlap_step (:1332-1366): the tree keeps its slots; the inserted copies
-			// past the request's own protected prefix are duplicates to free.
-			dupStart := max(0, p.PrevPrefixLen-w.total)
-			if dupStart < pl {
-				w.frees = append(w.frees, append([]int64{}, w.value[dupStart:pl]...))
+		for _, a := range w.pending[flushed:] {
+			if a.Kind == BackupKVAction {
+				out := w.pending
+				w.pending = nil
+				return InsertStep{Actions: out}
 			}
 		}
-		// _finish_insert_walk_node (:1368-1381).
-		if w.total+pl > p.InsertedLen {
-			t.incHitCount(n)
+	}
+}
+
+// insertWalkStep is _insert_walk_step and _insert_overlap_step (:1282-1366).
+func (t *treeCore) insertWalkStep(w *insertWalk) {
+	if w.key.Len() == 0 {
+		w.phase = phaseCommit
+		return
+	}
+	child, ok := w.node.children[w.key.childKey(0, t.pageSize)]
+	if !ok {
+		w.phase = phaseCommit
+		return
+	}
+	t.touch(child)
+	pl := child.key.matchAt(w.key, 0, t.pageSize)
+	n := child
+	if pl < child.key.Len() {
+		var a *CacheAction
+		n, a = t.splitNode(child, pl)
+		if a != nil {
+			w.pending = append(w.pending, *a)
 		}
-		w.node = n
-		w.total += pl
-		w.key = w.key.slice(pl, w.key.Len())
-		w.value = w.value[pl:]
 	}
-	// _insert_commit_step (:1383-1421).
-	target := w.node
-	newLeaf := false
+	n.priority = max(n.priority, w.p.Priority)
+	if n.evicted() {
+		t.uneevict(n, w.value[:pl], w.p.SessionID)
+	} else {
+		// The tree keeps its slots; the inserted copies past the request's own protected prefix
+		// are duplicates to free.
+		dupStart := max(0, w.p.PrevPrefixLen-w.total)
+		if dupStart < pl {
+			w.pending = append(w.pending, CacheAction{Kind: FreeDeviceKVAction,
+				Indices: [][]int64{append([]int64{}, w.value[dupStart:pl]...)}})
+		}
+	}
+	// _finish_insert_walk_node (:1368-1381).
+	if w.total+pl > w.p.InsertedLen && t.incHitCount(n) {
+		w.pending = append(w.pending, t.backupKVAction(n, false))
+	}
+	w.node = n
+	w.total += pl
+	w.key = w.key.slice(pl, w.key.Len())
+	w.value = w.value[pl:]
+}
+
+// insertCommitStep is _insert_commit_step (:1383-1421).
+func (t *treeCore) insertCommitStep(w *insertWalk) {
+	w.target = w.node
 	if w.key.Len() > 0 {
-		target = t.addNewNode(w.node, w.key, w.value, p.Priority, p.SessionID)
-		newLeaf = true
+		w.target = t.addNewNode(w.node, w.key, w.value, w.p.Priority, w.p.SessionID)
+		w.newLeaf = true
 	}
-	w.result = InsertResult{PrefixLen: w.total, LastDeviceNode: target.id}
-	// _insert_tail_step (:1449-1465): a new leaf's hit is counted for write-through.
-	if newLeaf && w.total+target.key.Len() > p.InsertedLen {
-		t.incHitCount(target)
-	}
-	t.walk = nil
-	r := w.result
-	return InsertStep{FreeDeviceKV: w.frees, Result: &r}
+	w.result = InsertResult{PrefixLen: w.total, LastDeviceNode: w.target.id}
+	w.phase = phaseTail
 }
 
-// ResumeInsert, HasOngoingInsert and EndInsert are the resumable walk's other entries; the FULL
-// walk never suspends.
-func (t *treeCore) ResumeInsert() InsertStep { panic("cache: no in-flight insert") }
-func (t *treeCore) HasOngoingInsert() bool   { return t.walk != nil }
-func (t *treeCore) EndInsert() [][]int64 {
-	t.walk = nil
-	return nil
+// insertTailStep is _insert_tail_step and _should_backup_after_insert (:1430-1465): a new leaf
+// past what the request inserted before counts a hit, and is backed up once it has enough.
+func (t *treeCore) insertTailStep(w *insertWalk) {
+	if t.host.writeBack || !w.newLeaf {
+		return
+	}
+	if w.total+w.target.key.Len() > w.p.InsertedLen && t.incHitCount(w.target) {
+		w.pending = append(w.pending, t.backupKVAction(w.target, t.host.writeBack))
+	}
 }
 
-// incHitCount is _inc_hit_count_and_check (:1104-1123) with no host tier: the count only.
-func (t *treeCore) incHitCount(n *node) {
-	if !n.evicted() {
-		n.hitCount++
+// ResumeInsert is resume_insert (:1232-1236).
+func (t *treeCore) ResumeInsert() InsertStep {
+	if t.walk == nil {
+		panic("cache: no in-flight insert")
 	}
+	return t.advanceInsert()
+}
+
+// HasOngoingInsert is has_ongoing_insert (:1238-1240).
+func (t *treeCore) HasOngoingInsert() bool { return t.walk != nil }
+
+// EndInsert is end_insert (:1242-1246): the walk's still-pending actions.
+func (t *treeCore) EndInsert() []CacheAction {
+	w := t.walk
+	t.walk = nil
+	if w == nil {
+		return nil
+	}
+	return w.pending
+}
+
+// incHitCount is _inc_hit_count_and_check (:1104-1123): the count, and whether the node is due
+// a write-through backup. Under write-back nothing counts.
+func (t *treeCore) incHitCount(n *node) bool {
+	if n.evicted() || t.host.writeBack {
+		return false
+	}
+	n.hitCount++
+	return t.host.enabled && !n.backuped() && n.hitCount >= t.host.writeThroughThreshold
 }
 
 // addNewNode is _add_new_node (:1532-1562).
@@ -446,6 +575,7 @@ func (t *treeCore) uneevict(n *node, fresh []int64, sessionID *string) {
 		t.evictable += len(n.value)
 	}
 	t.updateLeaves(n)
+	t.host.trackDuplicate(t, n)
 	if n.parent != nil {
 		t.updateLeaves(n.parent)
 	}
@@ -465,11 +595,17 @@ func (t *treeCore) isDeviceLeaf(n *node) bool {
 	return true
 }
 
+// updateLeaves is _update_evictable_leaf_sets (:1592-1602): both the device and the host set.
 func (t *treeCore) updateLeaves(n *node) {
 	if t.isDeviceLeaf(n) {
 		t.leaves[n] = true
 	} else {
 		delete(t.leaves, n)
+	}
+	if t.isHostLeaf(n) {
+		t.host.leaves[n] = true
+	} else {
+		delete(t.host.leaves, n)
 	}
 }
 
@@ -511,28 +647,84 @@ func (t *treeCore) EvictDeviceNextNode(c ComponentType, tr Tracker) EvictionStep
 	return EvictionStep{Node: &id, MadeProgress: true}
 }
 
-// EvictDeviceLeaf is evict_device_leaf (:1788-1823) with no host tier: the leaf has no backup,
-// so it is deleted (_delete_unbacked_device_leaf, :1903-1929).
+// EvictDeviceLeaf is evict_device_leaf (:1788-1823): a leaf backed up on host is demoted; an
+// unbacked one is deleted under write-through, and under write-back the step carries the backup
+// the cache must run before it demotes the leaf.
 func (t *treeCore) EvictDeviceLeaf(id NodeID, isWriteBack bool) EvictionStep {
 	n := t.node(id)
 	if !t.isDeviceLeaf(n) {
 		panic(fmt.Sprintf("cache: node %d is not a device leaf", id))
 	}
-	step := EvictionStep{DeviceFrees: map[ComponentType][][]int64{}, Tracker: Tracker{}}
-	t.recordRemove(n)
+	step := newStep()
+	switch {
+	case !n.backuped() && isWriteBack:
+		step.BackupKV = t.backupKVAction(n, true).NodeIDs
+	case !n.backuped():
+		t.deleteUnbackedDeviceLeaf(n, &step)
+	default:
+		t.demote(n, &step)
+	}
+	return step
+}
+
+func newStep() EvictionStep {
+	return EvictionStep{DeviceFrees: map[ComponentType][][]int64{}, HostFrees: map[ComponentType][][]int64{}, Tracker: Tracker{}}
+}
+
+// deleteUnbackedDeviceLeaf is _delete_unbacked_device_leaf (:1903-1929) and
+// _release_all_component_layers (:1878-1901).
+func (t *treeCore) deleteUnbackedDeviceLeaf(n *node, step *EvictionStep) {
+	t.releaseAllLayers(n, "GPU", step)
+	parent := n.parent
+	t.removeLeafFromParent(n)
+	t.updateLeaves(parent)
+	t.deleteTombstoneAncestors(parent, step)
+}
+
+// releaseAllLayers frees both of FULL's layers on n (EvictLayer.ALL: the tracker counts the
+// device tokens) and takes n out of both leaf sets.
+func (t *treeCore) releaseAllLayers(n *node, medium string, step *EvictionStep) {
+	t.recordRemoveMedium(n, medium)
 	if n.value != nil {
 		step.DeviceFrees[FullComponentType] = append(step.DeviceFrees[FullComponentType], n.value)
 		step.Tracker[FullComponentType] += len(n.value)
 		t.evictable -= len(n.value)
+		if n.hostValue == nil {
+			step.UnbackedTokens += len(n.value)
+		}
+	}
+	if n.hostValue != nil {
+		step.HostFrees[FullComponentType] = append(step.HostFrees[FullComponentType], n.hostValue)
+		n.hostValue = nil
 	}
 	delete(t.leaves, n)
-	parent := n.parent
-	parent.popChild(n.key.childKey(0, t.pageSize))
+	delete(t.host.leaves, n)
+}
+
+// removeLeafFromParent is _remove_leaf_from_parent (:2212-2221).
+func (t *treeCore) removeLeafFromParent(n *node) {
+	n.parent.popChild(n.key.childKey(0, t.pageSize))
+	t.host.dropDuplicate(n.id)
 	delete(t.nodes, n.id)
-	t.updateLeaves(parent)
-	// _iteratively_delete_tombstone_ancestors (:2289-2346): with no host tier an ancestor keeps
-	// its device value, so the walk stops at once.
-	return step
+}
+
+// deleteTombstoneAncestors is _iteratively_delete_tombstone_ancestors (:2289-2346): childless
+// ancestors with FULL on neither tier are deleted, up to a live or locked node.
+func (t *treeCore) deleteTombstoneAncestors(cur *node, step *EvictionStep) {
+	for cur != t.root && len(cur.children) == 0 {
+		if cur.lockRef > 0 || cur.hostLockRef > 0 {
+			break
+		}
+		if cur.value != nil || cur.hostValue != nil {
+			t.updateLeaves(cur)
+			break
+		}
+		delete(t.host.leaves, cur)
+		t.removeLeafFromParent(cur)
+		parent := cur.parent
+		t.updateLeaves(parent)
+		cur = parent
+	}
 }
 
 func (t *treeCore) EvictableSize() int  { return t.evictable }
