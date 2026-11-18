@@ -106,7 +106,7 @@ func manifestFamilies(t *testing.T) map[string]bool {
 	var m struct {
 		Families []struct{ Name, Class string } `json:"families"`
 	}
-	readJSON(t, "../../docs/metrics-manifest.json", &m)
+	readJSON(t, "../../oracle/metrics/manifest.json", &m)
 	all := map[string]bool{}
 	for _, f := range m.Families {
 		all[f.Name] = f.Class == "exact"
@@ -114,12 +114,12 @@ func manifestFamilies(t *testing.T) map[string]bool {
 	return all
 }
 
-// histogramBounds reads the bucket bounds vLLM registered (docs/metrics-buckets.json),
+// histogramBounds reads the bucket bounds vLLM registered (oracle/metrics/buckets.json),
 // for the request-token histograms recomputed for a scenario's max_model_len.
 func histogramBounds(t *testing.T, maxModelLen int) []Bucketed {
 	t.Helper()
 	var b map[string][]float64
-	readJSON(t, "../../docs/metrics-buckets.json", &b)
+	readJSON(t, "../../oracle/metrics/buckets.json", &b)
 	var out []Bucketed
 	for _, name := range []string{"vllm:iteration_tokens_total", "vllm:request_params_n", "vllm:request_num_preemptions"} {
 		out = append(out, Bucketed{Family: name, Bounds: b[name]})
@@ -364,7 +364,7 @@ func TestMetricsAgainstVLLM(t *testing.T) {
 	families := manifestFamilies(t)
 	goldens, err := filepath.Glob("testdata/golden/*.metrics.json")
 	if err != nil || len(goldens) == 0 {
-		t.Fatalf("no metric goldens (%v): generate them with oracle/run_metrics.py (docs/testing.md)", err)
+		t.Fatalf("no metric goldens (%v): generate them with oracle/run_metrics.py (oracle/README.md)", err)
 	}
 	compared := 0
 	for _, g := range goldens {
@@ -379,7 +379,7 @@ func TestMetricsAgainstVLLM(t *testing.T) {
 				t.Fatalf("the golden has %d per-step records for %d steps", len(want.PerStep), want.Steps)
 			}
 			// Step by step: every gauge and counter sample of an exact family, after each step,
-			// with the earliest divergence reported (#2021 B8).
+			// with the earliest divergence reported (inference-sim issue 2021 B8).
 			steps := 0
 			first := ""
 			got := drive(t, sc, func(i int, m *Model) {

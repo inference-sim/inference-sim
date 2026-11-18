@@ -1,7 +1,7 @@
 name: mutation
 
 # The mutation sweeps: each supported row's one-line mutants must be caught by the tests ci.yml
-# runs (docs/testing.md). They take longer than the core checks, so they run on demand, never on
+# runs (oracle/README.md). They take longer than the core checks, so they run on demand, never on
 # a push or a pull request. Each sweep reads the fuzz corpora the oracle-tier2 job reads, from
 # the same cache (.github/actions/oracle-fuzz), or regenerates them on a miss.
 on:
@@ -50,9 +50,7 @@ jobs:
         uses: ./.github/actions/oracle-fuzz
         with:
           python-version: ${{ steps.python.outputs.python-version }}
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        with:
-          go-version-file: go.mod
+      - uses: inference-sim/blis-substrate/.github/actions/go-toolchain@883a2709c250e4724ce11d1d6ba2cc12662b01e7 # v0.15.0
       - name: mutation sweeps
         run: |
           set -o pipefail

@@ -20,7 +20,7 @@ const BlockSizeIssue = "https://github.com/inference-sim/blis-vllm/issues/68"
 const MaxBlockSizeTP = 16
 
 // blockSizeTable is the output of the block-size oracle (oracle/blocksize/oracle.py). For each
-// model, GPU compute capability and KV dtype it holds the block size vLLM v0.32.0 resolves an
+// model, GPU compute capability and KV dtype it holds the block size vLLM v0.33.0 resolves an
 // unstated block_size to. A combination is resolved only if that size is the same under every
 // setting of the facts a CPU cannot discover: FlashAttention 3 and 4 in the wheel, FlashInfer's
 // TRTLLM kernels, and FlashMLA in the wheel. Otherwise it is refused, naming the fact.
@@ -41,18 +41,29 @@ const MaxBlockSizeTP = 16
 var blockSizeTable []byte
 
 type blockSizeCombination struct {
-	Model        string   `json:"model"`
-	GPU          string   `json:"gpu"`
-	Capability   string   `json:"capability"`
-	KVCacheDType string   `json:"kv_cache_dtype"`
-	Status       string   `json:"status"`
-	BlockSize    int      `json:"block_size"`
-	Backends     []string `json:"backends"`
+	Model        string `json:"model"`
+	GPU          string `json:"gpu"`
+	Capability   string `json:"capability"`
+	KVCacheDType string `json:"kv_cache_dtype"`
+	Status       string `json:"status"`
+	// Path is how the size was resolved: "selector" (the platform's attention selector per layer) or
+	// "layer_backends" (the model hands the platform its own backend classes, as DeepSeek-V4 does).
+	Path      string   `json:"path"`
+	BlockSize int      `json:"block_size"`
+	Backends  []string `json:"backends"`
 	// AssumedFacts are the facts the resolution assumes, each with its evidence; empty when the
 	// size is the same under every setting.
 	AssumedFacts map[string]string `json:"assumed_facts"`
 	ByFacts      map[string]int    `json:"by_facts"`
 	Note         string            `json:"note"`
+}
+
+// blockSizeModelFlags are the model-level facts a model's rows were run with.
+type blockSizeModelFlags struct {
+	// IsMMPrefixLM: the model's attention carries a bidirectional multimodal prefix, which narrows the
+	// backends that may be selected. It holds for a Gemma-4 model unless multimodal inputs are
+	// configuration-disabled (vllm/config/model.py:999-1021@4ba787ec), which the rows do not cover.
+	IsMMPrefixLM bool `json:"is_mm_prefix_lm"`
 }
 
 // blockSizeAssumption is a fact the oracle assumes for a compute capability.
@@ -69,9 +80,11 @@ type blockSizeFile struct {
 		Why  string `json:"why"`
 	} `json:"replacements"`
 	// Assumptions are the facts assumed per compute capability.
-	Assumptions  map[string]map[string]blockSizeAssumption `json:"assumptions"`
-	NotResolved  map[string]string                         `json:"not_resolved"`
-	Combinations []blockSizeCombination                    `json:"combinations"`
+	Assumptions map[string]map[string]blockSizeAssumption `json:"assumptions"`
+	NotResolved map[string]string                         `json:"not_resolved"`
+	// ModelFlags are model-level facts the rows were run with.
+	ModelFlags   map[string]blockSizeModelFlags `json:"model_flags"`
+	Combinations []blockSizeCombination         `json:"combinations"`
 }
 
 var blockSizes = mustLoadBlockSizes()
@@ -86,7 +99,7 @@ func mustLoadBlockSizes() blockSizeFile {
 	return f
 }
 
-// BlockSizeInput is what vLLM v0.32.0's block-size resolution depends on that BLIS knows.
+// BlockSizeInput is what vLLM v0.33.0's block-size resolution depends on that BLIS knows.
 type BlockSizeInput struct {
 	// Model is the catalog model name, and Capability the chip's ComputeCapability ("9.0").
 	Model, Capability string
@@ -107,6 +120,9 @@ type BlockSizeInput struct {
 	UsesTRTLLMAttention bool
 	// MLAPrefillBackend is attention_config.mla_prefill_backend when stated.
 	MLAPrefillBackend string
+	// LanguageModelOnly is engine.language_model_only when true: every modality's limit is 0, so a
+	// multimodal model is text-only and its attention carries no multimodal prefix.
+	LanguageModelOnly bool
 }
 
 // SpeculationAddsAttentionLayers reports whether a pool's speculative_config adds attention
@@ -161,7 +177,7 @@ func selectorEnv(name string) bool {
 	return false
 }
 
-// ResolveBlockSize returns the block size vLLM v0.32.0 resolves an unstated block_size to. It
+// ResolveBlockSize returns the block size vLLM v0.33.0 resolves an unstated block_size to. It
 // does so for the models, GPUs and KV dtypes the block-size oracle (oracle/blocksize) resolves, at
 // a tensor-parallel width up to MaxBlockSizeTP. Otherwise it returns an error naming why, and
 // https://github.com/inference-sim/blis-vllm/issues/68.
@@ -182,7 +198,7 @@ func ResolveBlockSize(in BlockSizeInput) (BlockSize, error) {
 		return BlockSize{}, fmt.Errorf("block_size is not stated, and %s (%s)", why, BlockSizeIssue)
 	}
 	if why, ok := blockSizes.NotResolved[in.Model]; ok {
-		return refuse(fmt.Sprintf("vLLM v0.32.0 resolves it from the attention backends of the model's layers, which are not resolved for %s: %s", in.Model, why))
+		return refuse(fmt.Sprintf("vLLM v0.33.0 resolves it from the attention backends of the model's layers, which are not resolved for %s: %s", in.Model, why))
 	}
 	switch {
 	case in.TP > MaxBlockSizeTP:
@@ -195,6 +211,8 @@ func ResolveBlockSize(in BlockSizeInput) (BlockSize, error) {
 		return refuse("attention_config.use_trtllm_attention is stated, which the oracle does not run")
 	case in.MLAPrefillBackend != "":
 		return refuse("attention_config.mla_prefill_backend is stated, which the oracle does not run")
+	case in.LanguageModelOnly && blockSizes.ModelFlags[in.Model].IsMMPrefixLM:
+		return refuse(fmt.Sprintf("language_model_only is true, which switches off %s's multimodal-prefix attention and so changes the backends the selector may pick; the oracle ran it with multimodal inputs on (vllm/config/model.py:999-1021@4ba787ec)", in.Model))
 	}
 	for k := range in.Env {
 		if selectorEnv(k) {
@@ -212,11 +230,20 @@ func ResolveBlockSize(in BlockSizeInput) (BlockSize, error) {
 			return refuse(fmt.Sprintf("%s on compute capability %s with KV dtype %s is not the same under every setting of what a CPU cannot discover: %s",
 				c.Model, c.Capability, c.KVCacheDType, c.Note))
 		}
-		src := fmt.Sprintf(
-			"vLLM v0.32.0 resolves an unstated block_size from the attention backend it selects (%s) for %s on compute capability %s with KV dtype %s: "+
-				"Platform.update_block_size_for_backend, vllm/platforms/interface.py:757-781@5df63a72, backend selection platforms/cuda.py:83-180, 375-415; "+
-				"the oracle's table, oracle/blocksize",
-			strings.Join(c.Backends, ", "), c.Model, c.Capability, c.KVCacheDType)
+		var src string
+		if c.Path == "layer_backends" {
+			src = fmt.Sprintf(
+				"vLLM v0.33.0 resolves an unstated block_size to the smallest size the attention backends of %s's layers all accept (%s) on compute capability %s: "+
+					"Platform.update_block_size_for_backend, vllm/platforms/interface.py:750-794@4ba787ec, _preferred_block_size_for_backends :700-746; "+
+					"the oracle's table, oracle/blocksize",
+				c.Model, strings.Join(c.Backends, ", "), c.Capability)
+		} else {
+			src = fmt.Sprintf(
+				"vLLM v0.33.0 resolves an unstated block_size from the attention backend it selects (%s) for %s on compute capability %s with KV dtype %s: "+
+					"Platform.update_block_size_for_backend, vllm/platforms/interface.py:750-794@4ba787ec, backend selection platforms/cuda.py; "+
+					"the oracle's table, oracle/blocksize",
+				strings.Join(c.Backends, ", "), c.Model, c.Capability, c.KVCacheDType)
+		}
 		facts := make([]string, 0, len(c.AssumedFacts))
 		for f := range c.AssumedFacts {
 			facts = append(facts, f)

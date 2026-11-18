@@ -12,7 +12,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 )
 
-// TestWritePriceReport is the generator of the figures in docs/evidence/*-price-report.md (design
+// TestWritePriceReport is the generator of the figures in the price-change reports in pull-request bodies (design
 // X13). It runs only when BLIS_PRICE_REPORT names an output file, and writes one tab-separated row
 // for each v0.32.0 pool of the committed scenario fixtures:
 //

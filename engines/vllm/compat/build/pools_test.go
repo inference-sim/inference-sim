@@ -309,7 +309,7 @@ func TestPoolsPriceOffload(t *testing.T) {
 		!strings.Contains(err.Error(), "MultiConnector") {
 		t.Errorf("offload under a plain NIXL connector: %v", err)
 	}
-	p.Connector = "MultiConnector"
+	p.Connector, p.DecodeConnector = "MultiConnector", "MultiConnector"
 	pre, dec, ok, err := p.PriceOffload("variant.yaml", run, OffloadPricing{BlockSizeTokens: 64, KVCPUBlocks: 10}, top, noFatal(t))
 	if err != nil || !ok || pre.TicksPerBlock <= 0 || dec.TicksPerBlock <= 0 {
 		t.Fatalf("legacy tier under a MultiConnector: %+v %+v %v %v", pre, dec, ok, err)
@@ -411,7 +411,7 @@ func TestPoolsPriceOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.Decode, p.Connector = dec, "MultiConnector"
+	p.Decode, p.Connector, p.DecodeConnector = dec, "MultiConnector", "MultiConnector"
 	if p.Prefill.Kernel().SequenceVariableBytes(64) == p.Decode.Kernel().SequenceVariableBytes(64) {
 		t.Fatal("fixture lost its point: both pools hold the same bytes per block")
 	}
@@ -428,5 +428,62 @@ func TestPoolsPriceOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	}
 	if run.PerBlockBytes != 1 {
 		t.Error("PriceOffload mutated the run's description")
+	}
+}
+
+// Each pool runs its own KV connector: a prefill pool's MultiConnector (NIXL beside a CPU tier) and a
+// decode pool's NixlConnector alone are one deployment. The tier is priced for the pool that has it,
+// and the pool that has none holds none; a tier on a pool whose connector is plain NIXL is refused
+// naming the pool.
+func TestPoolsRunTheirOwnConnectorAndOnlyTheOffloadingPoolIsPriced(t *testing.T) {
+	withConnectors := func(prefill, decode string) kernelmodel.Repos {
+		repos := pdVariant(t, "", "")
+		body := readScenario(t, repos)
+		for role, c := range map[string]string{"prefill": prefill, "decode": decode} {
+			marker := "  - role: " + role + "\n"
+			if strings.Count(body, marker) != 1 {
+				t.Fatalf("fixture has no single %s pool", role)
+			}
+			body = strings.Replace(body, marker, marker+"    pd_transfer: {connector: "+c+"}\n", 1)
+		}
+		writeScenario(t, repos, body)
+		return repos
+	}
+	repos := withConnectors("MultiConnector", "NixlConnector")
+	top := Topology{NumInstances: 4, Prefill: 3, Decode: 1}
+	p, warnings, err := OpenPools("variant.yaml", repos, true, top)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Connector != "MultiConnector" || p.DecodeConnector != "NixlConnector" || !p.HoldsPrefillKV() {
+		t.Fatalf("connectors %q / %q, want the prefill pool's MultiConnector and the decode pool's NixlConnector", p.Connector, p.DecodeConnector)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "MultiConnector") {
+		t.Errorf("warnings %q, want the MultiConnector assumption once", warnings)
+	}
+	tier := engine.KVOffloadConfig{Enabled: true, CPUBytesToUse: 1 << 32, BlockSize: 64, BlocksPerChunk: 1,
+		TokensPerHash: 64, EvictionPolicy: "lru", PerBlockBytes: 1}
+	in := OffloadPricing{BlockSizeTokens: 64}
+	pre, dec, ok, err := p.PriceOffloadPools("variant.yaml", tier, engine.KVOffloadConfig{}, in, top, noFatal(t))
+	if err != nil || !ok {
+		t.Fatalf("a tier on the MultiConnector prefill pool only: %v %v", ok, err)
+	}
+	if !pre.Config.IsEnabled() || pre.Config.CPULoadTime == nil {
+		t.Errorf("prefill pool %+v, want its tier priced", pre)
+	}
+	if dec.Config.IsEnabled() || dec.Config.CPULoadTime != nil || len(dec.Config.Tiers) != 0 {
+		t.Errorf("decode pool %+v, want no tier", dec)
+	}
+	// The old call, one description for both pools, puts the tier on the decode pool too, and its
+	// plain NIXL connector cannot run one.
+	if _, _, _, err := p.PriceOffload("variant.yaml", tier, in, top, noFatal(t)); err == nil ||
+		!strings.Contains(err.Error(), "decode pool") || !strings.Contains(err.Error(), "NixlConnector") {
+		t.Errorf("a tier on a plain NIXL decode pool: %v", err)
+	}
+	// A connector BLIS does not model as NIXL's handoff is refused on whichever pool states it.
+	bad := withConnectors("MultiConnector", "MooncakeConnector")
+	if _, _, err := OpenPools("variant.yaml", bad, true, top); err == nil || !strings.Contains(err.Error(), "decode pool") ||
+		!strings.Contains(err.Error(), "MooncakeConnector") {
+		t.Errorf("a decode pool on another connector: %v", err)
 	}
 }

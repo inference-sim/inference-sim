@@ -42,6 +42,7 @@ import (
 
 	core "github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/blis-vllm/core/lora"
 	"github.com/inference-sim/blis-vllm/core/metrics"
 	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
@@ -96,6 +97,8 @@ type Engine struct {
 	// hashSeed is the deployment's PYTHONHASHSEED (nil: unset), the root of every request's
 	// block-hash chain.
 	hashSeed *string
+	// servesRender is whether the server answers the router's render calls (ServesRender).
+	servesRender bool
 	// aborted are the requests Finish aborted, or that finished, while a batch in flight scheduled
 	// them: their entries in reqs go once no batch in flight does.
 	aborted map[string]bool
@@ -110,6 +113,12 @@ type Engine struct {
 	series *serverSeries
 	// adapters numbers LoRA adapters in order of first use (lora_int_id).
 	adapters map[string]int
+	// adapterCache is the worker's LoRA adapter cache (max_cpu_loras, core/lora), nil when LoRA is
+	// off. Each batch that runs makes its adapters resident in it before the step, as the model
+	// runner does (set_active_loras), and adapterEvents holds what that did for the batch most
+	// recently scheduled (AdapterEvents).
+	adapterCache  *lora.Cache
+	adapterEvents []lora.Event
 	// maxLoRAs is max_loras, 0 when LoRA is off; specTokens is num_speculative_tokens.
 	maxLoRAs, specTokens int
 	// async is async scheduling: a decode's drafts are the AsyncScheduler's placeholders, which
@@ -117,6 +126,8 @@ type Engine struct {
 	async bool
 	// pp is pipeline_parallel_size: how many stages a batch runs through (StageTimes).
 	pp int
+	// kvCapacity is the KV cache size the engine core logs at start-up (KVCacheCapacity).
+	kvCapacity kv.Capacity
 	// idleWake is when the engine next polls after an empty schedule that left requests, 0
 	// when none is due.
 	idleWake engine.Time
@@ -160,6 +171,8 @@ type reqState struct {
 	// preemptions and emitted are what the finish record reports.
 	preemptions int
 	emitted     int
+	// lookup is the request's last admission lookup, which its batch reports once it runs.
+	lookup lookupInfo
 }
 
 // pendingBatch is one in-flight batch: the contract's ID and core/engine's batch.
@@ -198,7 +211,12 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 		s: s, pricer: pricer, reqs: map[string]*reqState{}, aborted: map[string]bool{},
 		metrics:  metrics.New(histogramBounds(st.sched.MaxModelLen)),
 		maxLoRAs: st.sched.MaxLoRAs, specTokens: st.sched.Spec.NumTokens, async: st.sched.Async,
-		pp: max(st.sched.DecodeStagger, 1), hashSeed: st.hashSeed,
+		pp: max(st.sched.DecodeStagger, 1), hashSeed: st.hashSeed, servesRender: st.servesRender, kvCapacity: st.kvCapacity,
+	}
+	if st.maxCPULoRAs > 0 {
+		if e.adapterCache, err = lora.New(st.sched.MaxLoRAs, st.maxCPULoRAs); err != nil {
+			return nil, fmt.Errorf("vllm: %w", err)
+		}
 	}
 	if st.sched.Spec.NumTokens > 0 {
 		// A pool that speculates registers the spec_decode counters (SpecDecodingProm); one that
@@ -577,6 +595,25 @@ func (e *Engine) admit(cb core.Batch, now engine.Time) (engine.Batch, error) {
 	return b, nil
 }
 
+// batchAdapters is the LoRA adapters of cb's requests, in the batch's order, each request's once
+// for the base model's zero left out.
+func (e *Engine) batchAdapters(cb core.Batch) []int {
+	var out []int
+	for _, id := range cb.Out.Order {
+		if a := e.s.Request(id).LoRA; a > 0 {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// AdapterEvents is what the worker's adapter cache did to run the batch most recently scheduled:
+// each adapter it loaded from storage because the CPU cache (max_cpu_loras) did not hold it, the
+// one it evicted for it, and the GPU slots it filled and freed, in vLLM's order. A host reads it
+// right after Schedule returns, and a cost model prices the loads. It is nil for a batch with no
+// adapter work and on an engine without LoRA.
+func (e *Engine) AdapterEvents() []lora.Event { return e.adapterEvents }
+
 // takeEmptyFinished reports the requests schedules that ran nothing have finished since the last
 // batch returned: their finish records, which go in that batch's Finished, and their entries.
 func (e *Engine) takeEmptyFinished() []engine.Finished {
@@ -603,23 +640,39 @@ func (e *Engine) takeEmptyFinished() []engine.Finished {
 // batchOf is a scheduled batch in the contract's terms.
 func (e *Engine) batchOf(cb core.Batch) (engine.Batch, error) {
 	b := engine.Batch{}
+	e.noteLookups(cb)
 	for _, id := range cb.Out.Order {
 		r := e.s.Request(id)
 		n := cb.Out.Scheduled[id]
 		computed := r.NumComputed - n
 		sc := engine.Scheduled{ID: id, Tokens: n, Computed: computed, PromptLen: len(r.Prompt),
 			Drafts: len(cb.Out.SpecDecode[id])}
-		if hit, ok := cb.Out.PrefixHit[id]; ok {
-			sc.CachedTokens = hit
+		if st := e.reqs[id]; st != nil && st.lookup.set && !st.lookup.reported {
 			// A lookup vLLM's prefix-cache stats count: at the request's admission with no
 			// computed tokens, when prefix caching is on (record_prefix_cache_stats,
 			// vllm/v1/core/sched/scheduler.py:1508-1511 and kv_cache_manager.py:251-264@4ba787ec).
+			// A request that waited for an asynchronous load reports it in the batch that first
+			// runs it, with the tokens the KV offload tier supplied (OffloadCachedTokens).
+			sc.CachedTokens = st.lookup.cached
 			sc.PrefixLookup = e.prefixCaching()
+			st.lookup.reported = true
 		}
 		b.Reqs = append(b.Reqs, sc)
 	}
 	if err := e.noteVerified(cb.ID, b); err != nil {
 		return engine.Batch{}, err
+	}
+	e.adapterEvents = nil
+	if e.adapterCache != nil && core.Executed(cb) {
+		// The model runner makes the batch's adapters resident before it runs a forward pass
+		// (set_active_loras, vllm/v1/worker/lora_model_runner_mixin.py:93-111@4ba787ec); a schedule
+		// of no tokens runs none. The scheduler admitted at most max_loras adapters (core/sched),
+		// so the cache cannot refuse the batch.
+		ev, err := e.adapterCache.SetActive(e.batchAdapters(cb))
+		if err != nil {
+			return engine.Batch{}, fmt.Errorf("vllm: %w", err)
+		}
+		e.adapterEvents = ev
 	}
 	// skip_drafts (vllm/v1/core/sched/output.py:334@4ba787ec): the drafter proposes nothing after
 	// this step. On one engine the scheduler's flag is the step's; a DPGroup ANDs its ranks'.
@@ -823,9 +876,18 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 	// outcome accepted (at most the real drafts it verified; a -1 padding draft is always
 	// rejected, while under async scheduling every placeholder is the worker's real draft), the
 	// last assigned token as EOS.
-	tokens := map[string][]int64{}
+	tokens := make(map[string][]int64, len(pb.b.Samples))
 	firsts := []string{}
-	emitted := map[string]int{}
+	emitted := make(map[string]int, len(pb.b.Samples))
+	// sampledReqs lists each request that sampled, with the length of its scheduler-side output
+	// before this step's update, in the batch's order; arena holds every request's sampled tokens
+	// in one array (a request's slice is capped at its own end), instead of one array per request.
+	type sampledReq struct {
+		rid    string
+		before int
+	}
+	sampledReqs := make([]sampledReq, 0, len(pb.b.Samples))
+	arena := make([]int64, 0, len(pb.b.Samples))
 	verified, trimmed := e.verified[b.ID]
 	delete(e.verified, b.ID)
 	for _, rid := range pb.b.Samples {
@@ -856,20 +918,24 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 			n += min(max(outcome.Accepted[rid], 0), real)
 		}
 		out := st.req.Output
+		start := len(arena)
 		for j := 0; j < n && st.sampled < len(out); j++ {
 			if st.sampled == len(out)-1 {
-				tokens[rid] = append(tokens[rid], eosToken)
+				arena = append(arena, eosToken)
 			} else {
-				tokens[rid] = append(tokens[rid], int64(out[st.sampled]))
+				arena = append(arena, int64(out[st.sampled]))
 			}
 			st.sampled++
 		}
+		if len(arena) > start {
+			if _, again := tokens[rid]; again {
+				panic("vllm: a request sampled twice in one batch: " + rid)
+			}
+			tokens[rid] = arena[start:len(arena):len(arena)]
+			sampledReqs = append(sampledReqs, sampledReq{rid, len(e.s.Request(rid).Output)})
+		}
 	}
 	e.gpu.tokens = tokens
-	before := map[string]int{}
-	for rid := range tokens {
-		before[rid] = len(e.s.Request(rid).Output)
-	}
 	// Each verifying request's drafts for the spec_decode counters: the drafts it was scheduled
 	// (placeholders included, as make_spec_decoding_stats counts len(scheduled_spec_token_ids)),
 	// and those the target accepted, the tokens sampled beyond the one the step always samples
@@ -882,13 +948,15 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 	}
 	fins := take()
 	e.gpu.tokens = nil
-	res := engine.Result{Emitted: map[string]int{}}
-	for _, rid := range sortedTokens(tokens) {
+	res := engine.Result{Emitted: make(map[string]int, len(sampledReqs))}
+	sort.Slice(sampledReqs, func(i, j int) bool { return sampledReqs[i].rid < sampledReqs[j].rid })
+	for _, sr := range sampledReqs {
+		rid := sr.rid
 		r := e.s.Request(rid)
 		if r == nil {
 			continue // stopped: counted from its finish record below
 		}
-		if got := len(r.Output) - before[rid]; got > 0 {
+		if got := len(r.Output) - sr.before; got > 0 {
 			st := e.reqs[rid]
 			if st.emitted == 0 {
 				firsts = append(firsts, rid)
@@ -1085,6 +1153,16 @@ func (e *Engine) Snapshot() engine.State {
 		KVBlockSize: e.s.BlockSize()}
 }
 
+// KVCacheCapacity is the KV cache size this engine core logs at start-up, "GPU KV cache size: N
+// tokens, Maximum concurrency for M tokens per request: Cx" (update_kv_cache_capacity,
+// vllm/v1/core/kv_cache_utils.py:1136-1154@4ba787ec). It is not the pool's blocks times the block
+// size (Snapshot): a request holds blocks in every KV cache group of a hybrid model, so the pool
+// holds that many requests' worth of max_model_len tokens, which the log prints. It is the zero
+// Capacity when the pool's size is not stated. It is not part of the engine contract: a simulator
+// reporting the pool's size as the engine does looks for it by type assertion on
+// interface{ KVCacheCapacity() kv.Capacity }.
+func (e *Engine) KVCacheCapacity() kv.Capacity { return e.kvCapacity }
+
 // EnableKVEvents turns on the engine's KV cache events (kv_events_config.enable_kv_cache_events),
 // which a simulator calls when a router indexes them: each completed batch then reports its
 // prefix-cache changes in Result.KVEvents.
@@ -1192,15 +1270,6 @@ func extraKeys(keys []kv.ExtraKey) []any {
 			out = append(out, t)
 		}
 	}
-	return out
-}
-
-func sortedTokens(m map[string][]int64) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
 	return out
 }
 

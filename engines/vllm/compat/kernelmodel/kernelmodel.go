@@ -98,6 +98,28 @@ func DraftModelOf(dep *deployment.Deployment, pool int) (string, error) {
 	return e.Speculative.DraftModel, nil
 }
 
+// PlanImplementations are the kernel implementations the kernel is told run, by primitive: the ones
+// the caller reports, and for each primitive the caller reports none for, those the plan's lowered
+// layers state (plan.PoolPlan.ImplementationsByPrimitive, which the kernel documents as what a caller
+// that holds the plan passes). A plan that states no layer adds nothing, so a pool whose lowering names
+// no kernel is built as before. The map given is not changed.
+func PlanImplementations(given map[plan.Primitive][]plan.KernelImpl, p plan.PoolPlan) map[plan.Primitive][]plan.KernelImpl {
+	stated := p.ImplementationsByPrimitive()
+	if len(stated) == 0 {
+		return given
+	}
+	out := make(map[plan.Primitive][]plan.KernelImpl, len(given)+len(stated))
+	for prim, impls := range given {
+		out[prim] = impls
+	}
+	for prim, impls := range stated {
+		if _, ok := out[prim]; !ok {
+			out[prim] = impls
+		}
+	}
+	return out
+}
+
 // LowerPool is the lowering of a pool's engine block as the block states it, without the
 // resolution of block size, memory budget, batch and cache settings that a Model applies first
 // (resolveEngine): what a caller of the kernel's own Open passes as Repos.Lower.
@@ -279,7 +301,7 @@ func identityOf(in latencykernel.Inputs, engine engineconfig.Engine, pk scenario
 		tpRanks:         max(1, pl.TP),
 		latentKV:        allLatent(in.Model),
 		prefillBackoff:  prefillBackoffOf(in.Model, engine.Speculative),
-		prefix:          prefixLayoutOf(in.Model, in.Deployment, pool, engine),
+		prefix:          prefixLayoutOf(in.Model, in.Deployment, in.PoolIndex, pool, engine),
 		capabilityMajor: func() int { f, _ := in.Chip.CapabilityMajor(); return f }(),
 	}
 }
@@ -405,7 +427,7 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	// A KV connector is the deployment's P/D transfer or its offload tiers.
 	if err := checkQwen4Exp(qsaSettings{Arch: architectureOf(in.Model), TP: pool.Parallel.TP, PP: pool.Parallel.PP,
 		DCP: pool.Parallel.DCP, PCP: pool.Parallel.PCP, BlockSize: engine.BlockSize, CacheDType: engine.CacheDType,
-		KVConnector: in.Deployment.PDTransfer != nil || in.Deployment.Offload != nil}); err != nil {
+		KVConnector: in.Deployment.PoolPDTransfer(in.PoolIndex) != nil || in.Deployment.PoolOffload(in.PoolIndex) != nil}); err != nil {
 		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
 	}
 	settings := vllmsettings.Of(engine)
@@ -444,6 +466,9 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 		return nil, err
 	}
 	in.Lowered = low
+	// The kernels the plan states for the layers it names are the implementations the cost model binds
+	// the coefficients of those primitives to (VAL-8).
+	in.Implementations = PlanImplementations(in.Implementations, low.Plan)
 	// How a drafter's passes run is the engine's to state (SUB-6): vLLM's speculator for eagle,
 	// eagle3 and mtp, and DFlash and DSpark; any other method is left unstated and the kernel refuses it.
 	in.DraftFirstPassRows, in.DraftPassRequests = vllmsettings.DraftPasses(engine)
@@ -465,12 +490,15 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	// size, the memory budget and the batch settings the deployment left unstated.
 	m.resolved = resolveEngine(in, engine)
 	m.engine = m.resolved.engine
-	m.assumed = append(languageModelOnlyAssumptions(in.Model, engine), cudagraphAssumptions(engine)...)
+	m.assumed = append(languageModelOnlyAssumptions(in.Model, engine, pool.Parallel.PP), cudagraphAssumptions(engine)...)
 	if m.resolved.mamba != nil {
 		m.assumed = append(m.assumed, m.resolved.mamba.assumptions...)
 	}
 	m.assumed = append(m.assumed, rackHandoffAssumptions(m.id)...)
-	if s := languageModelOnlySubstitution(in.Model, engine); s != nil {
+	if s := languageModelOnlySubstitution(in.Model, engine, pool.Parallel.PP); s != nil {
+		m.substitutions = append(m.substitutions, *s)
+	}
+	if s := sparseMLAPrefillSubstitution(in.Model, low.Plan); s != nil {
 		m.substitutions = append(m.substitutions, *s)
 	}
 	if s := cudagraphSubstitution(engine, k.Resolved().Overrides); s != nil {
@@ -582,6 +610,19 @@ func (m *Model) OffloadCopies() int64 {
 // workers a KV connector runs on, which the OffloadingConnector pends every job on
 // (num_workers, vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:335@5df63a72).
 func (m *Model) WorldSize() int { return m.id.rankGPUs }
+
+// UsesMLA is model_config.use_mla: some attention layer of the graph stores a latent KV (multi-head
+// latent attention, dense or sparse).
+func (m *Model) UsesMLA() bool {
+	for _, k := range m.graph.LayerKinds {
+		for _, n := range k.Nodes {
+			if n.Op == model.OpAttention && n.AttentionKind.LatentKV() {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // RankCapacity is how many data-parallel ranks the pool's nodes hold at its layout: the pool's
 // GPUs divided by the GPUs one rank occupies. A simulator running one replica per rank may run
@@ -1164,10 +1205,16 @@ type Deployment struct {
 type Shape struct {
 	Roles         []deployment.Role
 	StatesOffload bool
-	// PDConnector is the deployment's pd_transfer.connector, "" when it states none.
-	PDConnector string
-	// Offload is the deployment's offload block, nil when it states none.
-	Offload *deployment.Offload
+	// PDConnector is the deployment's pd_transfer.connector, "" when it states none: the default a
+	// pool that states no pd_transfer of its own runs. PoolPDConnectors are each pool's, parallel to
+	// Roles, with that default applied.
+	PDConnector      string
+	PoolPDConnectors []string
+	// Offload is the deployment's offload block, nil when it states none: the default a pool that
+	// states none of its own runs. PoolOffloads are each pool's, parallel to Roles, with that
+	// default applied; nil for a pool with no offload (one that states none, or an empty block).
+	Offload      *deployment.Offload
+	PoolOffloads []*deployment.Offload
 	// LongPrefillTokenThresholds and DPLoadBalancings are each pool's
 	// engine.long_prefill_token_threshold (https://github.com/inference-sim/blis-schemas/issues/75; 0 = unstated) and
 	// parallel.data_parallel_load_balancing (#76; "" = unstated), in pool order.
@@ -1245,7 +1292,7 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 	if err != nil {
 		return Shape{}, fmt.Errorf("%s: %w", scenario, err)
 	}
-	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.Offload != nil,
+	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.StatesOffload(),
 		Model: sc.Model, Acceptance: sc.Acceptance, WorkloadBinding: sc.Workload, EngineVersion: release,
 		Router: dep.Router, Labels: make([]map[string]string, len(dep.Pools)), Dir: filepath.Dir(path)}
 	if dep.PDTransfer != nil {
@@ -1261,6 +1308,18 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 		if err != nil {
 			return Shape{}, fmt.Errorf("%s: %w", scenario, err)
 		}
+		var po *deployment.Offload
+		if o := dep.PoolOffload(i); o != nil {
+			c := *o
+			c.Tiers = append([]deployment.Tier(nil), o.Tiers...)
+			po = &c
+		}
+		pc := ""
+		if t := dep.PoolPDTransfer(i); t != nil {
+			pc = t.Connector
+		}
+		sh.PoolOffloads = append(sh.PoolOffloads, po)
+		sh.PoolPDConnectors = append(sh.PoolPDConnectors, pc)
 		sh.Roles[i] = p.Role
 		sh.Labels[i] = p.Labels
 		sh.LongPrefillTokenThresholds = append(sh.LongPrefillTokenThresholds, e.LongPrefillTokenThreshold)

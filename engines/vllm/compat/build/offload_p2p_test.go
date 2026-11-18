@@ -171,3 +171,20 @@ func TestAnObjectStoreTierResolvesAndIsRefusedForACompatibilityRelease(t *testin
 		t.Errorf("0.33.0 with an s3 tier: %v (CoreEngine %t), want it adopted to the v0.33.0 engine", err, a.CoreEngine)
 	}
 }
+
+// A p2p handoff is the OffloadingConnector alone on both pools: a decode pool that states its own
+// NixlConnector beside a prefill pool's p2p tier is refused, naming the connector it runs.
+func TestOpenPools_RefusesAP2PHandoffWhoseDecodePoolRunsAnotherConnector(t *testing.T) {
+	repos := p2pPDVariant(t, true)
+	body := readScenario(t, repos)
+	marker := "  - role: decode\n"
+	if strings.Count(body, marker) != 1 {
+		t.Fatal("fixture has no single decode pool")
+	}
+	writeScenario(t, repos, strings.Replace(body, marker, marker+"    pd_transfer: {connector: NixlConnector}\n", 1))
+	_, _, err := OpenPools("variant.yaml", repos, true, Topology{NumInstances: 4, Prefill: 3, Decode: 1})
+	if err == nil || !strings.Contains(err.Error(), "p2p tier") || !strings.Contains(err.Error(), "decode pool must run too") ||
+		!strings.Contains(err.Error(), "NixlConnector") {
+		t.Errorf("a p2p handoff with a NIXL decode pool: %v, want the refusal naming the decode pool's connector", err)
+	}
+}

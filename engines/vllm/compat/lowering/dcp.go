@@ -176,11 +176,14 @@ func connectorNames(dep *deployment.Deployment) map[string]bool {
 	if dep == nil {
 		return names
 	}
-	if dep.PDTransfer != nil {
-		names[dep.PDTransfer.Connector] = true
+	// Every block the document states, a pool's own included. A pool's engine would see only its own
+	// connector, so this is the conservative union: it can refuse a layout that a pool beside a
+	// MultiConnector pool would run, never run one the engine refuses.
+	for _, t := range dep.PDTransfers() {
+		names[t.PDTransfer.Connector] = true
 	}
-	if dep.Offload != nil {
-		names[dep.Offload.Connector] = true
+	for _, o := range dep.Offloads() {
+		names[o.Offload.Connector] = true
 	}
 	return names
 }

@@ -81,6 +81,11 @@ type Config struct {
 	// many steps (next_decode_eligible_step, :52-58; scheduler.py:680-684).
 	DecodeStagger    int
 	UseV2ModelRunner bool
+	// LocalPrefillInterval is scheduler_config.prefill_schedule_interval as this Scheduler applies
+	// it itself: the setting on an engine that is not DP-coordinated, 1 (or 0) otherwise
+	// (local_prefill_interval, vllm/v1/core/sched/scheduler.py:395-413@4ba787ec). A data-parallel
+	// engine core throttles through ScheduleThrottled instead.
+	LocalPrefillInterval int
 }
 
 // Status is RequestStatus (vllm/v1/request.py:370).
@@ -214,8 +219,16 @@ type Output struct {
 	Preempted []string
 	// NewIDs are requests admitted from the waiting queue this step.
 	NewIDs []string
-	// PrefixHit is the locally cached tokens of each newly admitted request.
+	// PrefixHit is the locally cached tokens of each request whose admission took a prefix
+	// lookup this step: a request admitted to run, and one parked on an asynchronous KV load
+	// (WAITING_FOR_REMOTE_KVS), which is admitted to the KV cache at this step and runs in a
+	// later one (scheduler.py:1251-1257, 1496-1534@4ba787ec). Only the first is in NewIDs.
 	PrefixHit map[string]int
+	// PrefixExternal is num_external_computed_tokens of each such request: the tokens the KV
+	// connector supplies beyond the local hit (scheduler.py:1251-1257@4ba787ec). It is set, even
+	// at zero, for every request in PrefixHit when a KV connector is configured, and nil
+	// without one.
+	PrefixExternal map[string]int
 	// SpecDecode is scheduled_spec_decode_tokens: the drafts each request verifies this step
 	// (-1 for first-decode padding).
 	SpecDecode map[string][]int64
@@ -275,6 +288,10 @@ type Scheduler struct {
 	deferred map[string]bool
 	// capacityBound is prefill_capacity_bound (scheduler.py:370, :1397-1401).
 	capacityBound bool
+	// lastPrefillStep and numExecutedSteps are last_prefill_step and num_executed_steps
+	// (scheduler.py:414-424): the executed step that last carried prefill, and the steps that
+	// scheduled tokens. lastPrefillStep starts a full interval back, so the first step is never gated.
+	lastPrefillStep, numExecutedSteps int
 	// deferBlockFree is defer_block_free: a KV consumer with more than one batch in flight
 	// defers freeing a request's blocks while a step that may write them is in flight, since a
 	// load may refill them unordered against that write (scheduler.py:184-192). schedSeq and
@@ -339,11 +356,12 @@ func New(cfg Config) (*Scheduler, error) {
 		KV: kv.NewManagerWith(cfg.NumBlocks, cfg.BlockSize, cfg.MaxModelLen, cfg.EnablePrefixCaching, wm,
 			kv.Options{RetentionInterval: cfg.RetentionInterval, PrefixMatchUnit: cfg.PrefixMatchUnit, EagleBlockDrop: drop, PrefillLookahead: cfg.Spec.PrefillLookahead, HashLookahead: lookahead,
 				Groups: cfg.KVGroups, MaxInFlightTokens: max(cfg.MaxConcurrentBatches, 1) * cfg.MaxNumBatchedTokens}),
-		requests: map[string]*Request{},
-		waiting:  queue{priority: cfg.Policy == Priority},
-		holding:  queue{priority: cfg.Policy == Priority},
-		deferred: map[string]bool{},
-		recvDone: map[string]bool{}, recvFailed: map[string]bool{}, inflight: map[*Request]bool{},
+		requests:        map[string]*Request{},
+		waiting:         queue{priority: cfg.Policy == Priority},
+		holding:         queue{priority: cfg.Policy == Priority},
+		deferred:        map[string]bool{},
+		lastPrefillStep: -max(cfg.LocalPrefillInterval, 1),
+		recvDone:        map[string]bool{}, recvFailed: map[string]bool{}, inflight: map[*Request]bool{},
 	}
 	s.mamba = NewMambaSplit(MambaSplitConfig{Groups: cfg.KVGroups, BlockSize: cfg.BlockSize,
 		HashBlockSize: s.KV.HashBlockSize(), MaxNumScheduledTokens: s.maxScheduled(),
@@ -599,6 +617,19 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			}
 		}
 	}
+	// Local prefill cadence (:770-790): hold prefill until the interval since the last
+	// prefill-carrying step has elapsed, with the same capacity escape as the DP gate. This call
+	// becomes executed step numExecutedSteps+1 if it schedules anything.
+	if !deferPrefills && s.cfg.LocalPrefillInterval > 1 && !s.capacityBound &&
+		(s.numExecutedSteps+1)-s.lastPrefillStep < s.cfg.LocalPrefillInterval {
+		for _, r := range s.running {
+			if !r.IsPrefillChunk {
+				deferPrefills = true
+				break
+			}
+		}
+	}
+	prefillAdmitted := false
 	out := Output{Scheduled: map[string]int{}, PrefixHit: map[string]int{}, SpecDecode: map[string][]int64{}}
 	tokenBudget := s.maxScheduled()
 	inputBudget := s.cfg.MaxNumBatchedTokens
@@ -904,6 +935,17 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			if s.connector != nil {
 				s.connector.AfterAlloc(r, s.allocatedBlocks(r.ID), external)
 			}
+			if lookedUp {
+				// The admission's prefix lookup is recorded here, once the blocks are allocated and
+				// whether the request runs now or waits for its load (:1251-1257, 1496-1511).
+				out.PrefixHit[r.ID] = newLocal
+				if s.connector != nil {
+					if out.PrefixExternal == nil {
+						out.PrefixExternal = map[string]int{}
+					}
+					out.PrefixExternal[r.ID] = external
+				}
+			}
 			if async {
 				// WAITING_FOR_REMOTE_KVS (:1320-1341): the blocks are allocated, the load runs
 				// between steps, and the request waits in kv_holding_waiting.
@@ -918,13 +960,13 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			delete(s.deferred, r.ID)
 			s.running = append(s.running, r)
 			admitted = append(admitted, r)
+			// The same predicate as the deferral gate (:1590): a request with one token left, a
+			// full prefix hit or a remote-KV resume, does not restart the cadence.
+			prefillAdmitted = prefillAdmitted || numComputed < r.NumTokens()-1
 			if s.cfg.MaxLoRAs > 0 && r.LoRA > 0 {
 				scheduledLoRAs[r.LoRA] = true
 			}
 			out.Scheduled[r.ID] = numNew
-			if lookedUp {
-				out.PrefixHit[r.ID] = newLocal
-			}
 			tokenBudget -= numNew
 			inputBudget -= numNew + draftSlots
 			r.Status = Running
@@ -956,6 +998,19 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			_, nw := s.Counts()
 			s.capacityBound = nw > len(s.deferred)
 		}
+	}
+
+	// Count this step before stamping the cadence, so that lastPrefillStep includes the step
+	// that carried the prefill (:1621-1629).
+	total := 0
+	for _, n := range out.Scheduled {
+		total += n
+	}
+	if total > 0 {
+		s.numExecutedSteps++
+	}
+	if s.cfg.LocalPrefillInterval > 1 && (prefillScheduled || prefillAdmitted) {
+		s.lastPrefillStep = s.numExecutedSteps
 	}
 
 	for _, r := range scheduledRunning {

@@ -86,9 +86,7 @@ func TestChunkedPrefillOffRefusals(t *testing.T) {
 		{"speculative decoding", "speculative_config: {method: eagle3, num_speculative_tokens: 3}\n",
 			"enable_chunked_prefill false with speculative decoding", ""},
 		{"LoRA", "max_loras: 2\n", "enable_chunked_prefill false with max_loras", "max_loras: 0\n"},
-		{"a KV transfer connector", producer, "enable_chunked_prefill false with a KV transfer connector", ""},
 		{"a KV offload tier", cpuTier, "enable_chunked_prefill false with a KV offload tier", ""},
-		{"data parallelism", "data_parallel_size: 2\n", "enable_chunked_prefill false with data parallelism", "data_parallel_size: 1\n"},
 		{"the adaptive long-prefill cap", "long_prefill_token_threshold: 16\nlong_prefill_token_threshold_adaptive: true\n",
 			"with long_prefill_token_threshold_adaptive", "long_prefill_token_threshold: 16\nlong_prefill_token_threshold_adaptive: false\n"},
 		{"max_num_scheduled_tokens", "max_num_scheduled_tokens: 60\n", "with max_num_scheduled_tokens", "max_num_scheduled_tokens: 0\n"},
@@ -119,6 +117,81 @@ func TestChunkedPrefillOffRefusals(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A KV transfer connector no longer refuses chunked prefill off (inference-sim/blis-vllm#214): the scheduler's
+// decision does not depend on the connector, and the NIXL scenarios run with it off match vLLM
+// (core/connector/nixl, nixl-chunked-off-*). A prefiller, a decoder and kv_both all build, and the
+// first step is the one without a connector: the prompt that fits is scheduled whole, the one that does not
+// waits (vllm/v1/core/sched/scheduler.py:1334-1343@4ba787ec).
+func TestChunkedPrefillOffRunsWithAKVConnector(t *testing.T) {
+	for name, conn := range map[string]string{
+		"producer": producer, "consumer": consumer,
+		"kv_both": "kv_transfer: {connector: NixlConnector, kv_role: kv_both}\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			e, err := build(t, merge(chunkedBase, "enable_chunked_prefill: false\n", conn))()
+			if err != nil {
+				t.Fatalf("chunked prefill off with a %s connector is refused: %v", name, err)
+			}
+			for _, id := range []string{"c0", "c1"} {
+				if err := e.Add(req(id, 40, 3), 0); err != nil {
+					t.Fatal(err)
+				}
+			}
+			b, err := e.Schedule(0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := map[string]int{}
+			for _, s := range b.Reqs {
+				got[s.ID] = s.Tokens
+			}
+			if want := map[string]int{"c0": 40}; !reflect.DeepEqual(got, want) {
+				t.Errorf("first step %v, want %v (c1's 40 do not fit the 24 left)", got, want)
+			}
+		})
+	}
+}
+
+// Data parallelism no longer refuses chunked prefill off: every rank runs the scheduler whose decisions the
+// oracle/scenarios-dp*/*-chunked-off.json scenarios match (core/engine, TestDPAgainstVLLM and
+// TestDPNixlAgainstVLLM). Three prompts on two ranks: the rank holding c0 and c2 admits c0 whole and leaves
+// c2, whose 30 do not fit the 24 left, waiting; with it on c2 takes the 24 that fit.
+func TestChunkedPrefillOffRunsUnderDataParallelism(t *testing.T) {
+	first := func(extra string) map[string]int {
+		e, err := build(t, merge(chunkedBase, "data_parallel_size: 2\n", extra))()
+		if err != nil {
+			t.Fatalf("chunked prefill off under data parallelism is refused: %v", err)
+		}
+		for _, r := range []struct {
+			id string
+			n  int
+		}{{"c0", 40}, {"c1", 40}, {"c2", 30}} {
+			if err := e.Add(req(r.id, r.n, 3), 0); err != nil {
+				t.Fatal(err)
+			}
+		}
+		b, err := e.Schedule(0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]int{}
+		for _, s := range b.Reqs {
+			got[s.ID] = s.Tokens
+		}
+		return got
+	}
+	off, on := first("enable_chunked_prefill: false\n"), first("")
+	if off["c0"] != 40 || off["c1"] != 40 {
+		t.Errorf("off: first step %v, want c0 and c1 whole on their ranks", off)
+	}
+	if _, waits := off["c2"]; waits && off["c2"] != 0 {
+		t.Errorf("off: c2 was scheduled %d tokens, but its 30 do not fit the 24 left on its rank", off["c2"])
+	}
+	if on["c2"] != 24 {
+		t.Errorf("default: c2 got %d tokens, want the 24 that fit", on["c2"])
 	}
 }
 

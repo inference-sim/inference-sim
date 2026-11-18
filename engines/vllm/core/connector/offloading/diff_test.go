@@ -18,7 +18,7 @@ import (
 	"github.com/inference-sim/blis-vllm/internal/upstream"
 )
 
-// eosToken is tests/v1/core/utils.py:43@5df63a72, which the GPU mock samples last.
+// eosToken is tests/v1/core/utils.py:49@4ba787ec, which the GPU mock samples last.
 const eosToken = 50256
 
 // pageSize is the page size the CPU chunk size is rounded up to: the scenarios state a KV page
@@ -58,6 +58,8 @@ type scenario struct {
 		KVGroups []struct {
 			Kind          string `json:"kind"`
 			SlidingWindow int    `json:"sliding_window"`
+			// Eagle marks the group as holding a drafter's layer (KVCacheGroupSpec.is_eagle_group).
+			Eagle bool `json:"eagle"`
 		} `json:"kv_groups"`
 		Transfer struct {
 			LoadDelay  *int `json:"load_delay"`
@@ -70,6 +72,9 @@ type scenario struct {
 	} `json:"config"`
 	Requests []scenarioReq `json:"requests"`
 	MaxSteps int           `json:"max_steps"`
+	// RecordAdmissionStats makes the oracle record each step's admissions: the PrefillStats of
+	// the requests admitted and the prefix-cache and connector queries and hits counted.
+	RecordAdmissionStats bool `json:"record_admission_stats"`
 }
 
 type cpuState struct {
@@ -113,6 +118,12 @@ type step struct {
 	SpecScheduled map[string]int `json:"spec_scheduled,omitempty"`
 	Processed     bool           `json:"processed,omitempty"`
 	QueueLen      int            `json:"queue_len,omitempty"`
+	// PrefillStats is [prompt tokens, local cached, external cached] of each request this step
+	// admitted for the first time, running or parked on an asynchronous load; AdmissionStats is
+	// what the step counted at its admissions: prefix [queries, hits] and connector
+	// [queries, hits, hits by tier] (scenarios that set record_admission_stats only).
+	PrefillStats   map[string][]int `json:"prefill_stats,omitempty"`
+	AdmissionStats *admissionRecord `json:"admission_stats,omitempty"`
 }
 
 type finishRecord struct {
@@ -163,7 +174,7 @@ func configure(t *testing.T, sc scenario) setup {
 	}
 	var spec sched.Spec
 	if sp := c.Speculative; sp != nil {
-		spec = sched.ResolveSpec(sched.SpecOptions{Method: sp.Method, NumTokens: sp.NumTokens})
+		spec = sched.ResolveSpec(sched.SpecOptions{Method: sp.Method, NumTokens: sp.NumTokens, NextnPredictLayers: draftNextnLayers(t, sp.Draft)})
 	}
 	var layers []kv.Group
 	var groups []Group
@@ -171,10 +182,10 @@ func configure(t *testing.T, sc scenario) setup {
 	for _, g := range c.KVGroups {
 		switch g.Kind {
 		case "full":
-			layers = append(layers, kv.Group{Kind: kv.FullAttention})
+			layers = append(layers, kv.Group{Kind: kv.FullAttention, Eagle: g.Eagle})
 			groups = append(groups, Group{BlockSize: c.BlockSize})
 		case "sliding_window":
-			layers = append(layers, kv.Group{Kind: kv.SlidingWindow, Window: g.SlidingWindow})
+			layers = append(layers, kv.Group{Kind: kv.SlidingWindow, Window: g.SlidingWindow, Eagle: g.Eagle})
 			groups = append(groups, Group{BlockSize: c.BlockSize, Window: g.SlidingWindow, ExtraRetained: extra})
 		default:
 			t.Fatalf("unknown KV cache group kind %q", g.Kind)
@@ -229,8 +240,8 @@ func configure(t *testing.T, sc scenario) setup {
 }
 
 // eagleGroups is the groups the scheduler's KV manager flags as the drafter's, which the
-// connector treats as volatile (GroupOffloadConfig.is_eagle_group, offloading/scheduler.py:226-
-// 287@5df63a72): none unless the drafter's block drop is on.
+// connector treats as volatile (GroupOffloadConfig.is_eagle_group, offloading/scheduler.py:208-
+// 239, :265@4ba787ec): none unless the drafter's block drop is on.
 func eagleGroups(spec sched.Spec, s *sched.Scheduler) []bool {
 	out := make([]bool, s.KV.NumGroups())
 	if !spec.EagleBlockDrop {
@@ -423,6 +434,11 @@ func run(t *testing.T, sc scenario) trace {
 		out := s.Schedule()
 		meta := out.KVConnectorMetadata.(Meta)
 		off := offRows(meta)
+		var prefill map[string][]int
+		var adm *admissionRecord
+		if sc.RecordAdmissionStats {
+			prefill, adm = admissionOf(s, conn, out)
+		}
 		o, done := w.execute(meta, i)
 		off.Completed = append([]int{}, done...)
 		mock := map[string][]int64{}
@@ -440,7 +456,8 @@ func run(t *testing.T, sc scenario) trace {
 		if len(aborts) > 0 {
 			s.Abort(aborts)
 		}
-		st := step{Step: i, Scheduled: out.Scheduled, Preempted: sortedStrings(out.Preempted), Aborted: append([]string{}, aborts...)}
+		st := step{Step: i, Scheduled: out.Scheduled, Preempted: sortedStrings(out.Preempted), Aborted: append([]string{}, aborts...),
+			PrefillStats: prefill, AdmissionStats: adm}
 		if len(spec) > 0 {
 			st.SpecScheduled = spec
 		}
@@ -465,6 +482,47 @@ func run(t *testing.T, sc scenario) trace {
 		tr.Steps = append(tr.Steps, st)
 	}
 	return tr
+}
+
+// admissionRecord is a step's admission_stats.
+type admissionRecord struct {
+	Prefix    [2]int `json:"prefix"`
+	Connector []any  `json:"connector"`
+}
+
+// admissionOf is what a schedule's admissions count, as the oracle records it (run_offloading.py
+// prefill_stats and admission_stats): each non-preempted request that took a prefix lookup has
+// PrefillStats [prompt, local, external] (scheduler.py:1251-1257@4ba787ec), counts one prefix-cache
+// query of its prompt and hit of its local part (:1508-1511), and, with a connector, one connector
+// query of the prompt past the local hit and hit of the external tokens split by tier (:1476-1503).
+func admissionOf(s *sched.Scheduler, conn *Scheduler, out sched.Output) (map[string][]int, *admissionRecord) {
+	prefill := map[string][]int{}
+	adm := &admissionRecord{}
+	var cq, ch int
+	tiers := map[string]any{}
+	for id, local := range out.PrefixHit {
+		r := s.Request(id)
+		if r.NumPreemptions > 0 {
+			continue
+		}
+		ext := out.PrefixExternal[id]
+		prefill[id] = []int{r.NumTokens(), local, ext}
+		if s.PrefixCaching() {
+			adm.Prefix[0] += r.NumTokens()
+			adm.Prefix[1] += local
+		}
+		if q := r.NumTokens() - local; q != 0 {
+			cq += q
+			ch += ext
+			for src, n := range conn.ExternalHitSources(r, ext) {
+				k := strings.ToLower(src)
+				prev, _ := tiers[k].(int)
+				tiers[k] = prev + n
+			}
+		}
+	}
+	adm.Connector = []any{cq, ch, tiers}
+	return prefill, adm
 }
 
 func addArrivals(t *testing.T, s *sched.Scheduler, reqs []scenarioReq, next, i int) int {
@@ -905,9 +963,11 @@ func TestCapabilitiesAndTheDrafterGroupRefusal(t *testing.T) {
 			t.Errorf("SetConnector refused the OffloadingConnector beside %+v: %v", cfg, err)
 		}
 	}
+	// A drafter's own group (EAGLE-3, MTP) is built: the volatile trailing chunk is diff-tested against vLLM
+	// v0.33.0 on the offloading-eagle3-* scenarios (TestOffloadingAgainstVLLM).
 	if _, err := New(Config{Groups: []Group{{BlockSize: 4}, {BlockSize: 4, Window: 8}}, TokensPerHash: 4, NumChunks: 4,
-		EagleGroups: []bool{false, true}}); err == nil || !strings.Contains(err.Error(), Issue) {
-		t.Errorf("a drafter's own group: %v, want refused with %s", err, Issue)
+		EagleGroups: []bool{false, true}}); err != nil {
+		t.Errorf("a drafter's own group: %v, want built", err)
 	}
 	if _, err := New(Config{Groups: []Group{{BlockSize: 4}, {BlockSize: 8}}, TokensPerHash: 4, NumChunks: 4}); err == nil ||
 		!strings.Contains(err.Error(), GroupIssue) {
@@ -932,4 +992,18 @@ func TestAnEagle3ScenarioWithPrefixCachingRunsBesideTheConnector(t *testing.T) {
 	if tr := run(t, sc); len(tr.Steps) == 0 {
 		t.Fatal("the scenario ran no step")
 	}
+}
+
+// draftNextnLayers is an MTP drafter's num_nextn_predict_layers, read from its configuration-only
+// checkpoint under oracle/drafts (0 for a scenario with no such drafter).
+func draftNextnLayers(t *testing.T, draft string) int {
+	t.Helper()
+	if draft == "" {
+		return 0
+	}
+	var cfg struct {
+		Layers int `json:"num_nextn_predict_layers"`
+	}
+	readJSON(t, filepath.Join("..", "..", "..", "oracle", "drafts", draft, "config.json"), &cfg)
+	return cfg.Layers
 }

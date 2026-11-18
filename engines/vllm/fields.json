@@ -160,6 +160,25 @@
       }
     },
     {
+      "name": "DYN_REQUEST_PLANE_CODEC",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "the engine's pricing: BLIS hosts no Dynamo request plane (the router is a stand-in), so the codec that encodes each request message between a Dynamo frontend and its workers has no component here to act on, and msgpack is the codec Dynamo selects when the variable is unset or empty (from_config_value, lib/runtime/src/pipeline/network.rs:132-152 at ai-dynamo/dynamo 807aaaa0). A stated json differs only in the encoding cost of each message, which is part of the frontend overhead neither value is priced for",
+        "valid_when": [
+          {
+            "value_in": [
+              "msgpack"
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "EP_DISABLE_GIN",
       "source": "env",
       "status": "not_modelled",
@@ -875,6 +894,29 @@
       }
     },
     {
+      "name": "NCCL_P2P_LEVEL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "NCCL's own choice on a part whose every GPU pair is joined by NVLink through NVSwitch: the path type between such GPUs is NVL, and NCCL allows P2P for a pair whose path type is no greater than the level (ncclTopoCheckP2p, src/graph/paths.cc:383-395 at NVIDIA/nccl v2.32.6-1 ad2d192c). The default level is PATH_PXB (paths.cc:383) and a stated NVL lowers it to PATH_NVL, so the two differ only for a pair whose path is NVB or farther, which a Blackwell HGX B200 or NVL72 node does not have. The latency kernel prices every collective from the NCCL sweep at NCCL's defaults",
+        "valid_when": [
+          {
+            "value_in": [
+              "NVL"
+            ],
+            "compute_capability": {
+              "gte": "10.0",
+              "lt": "11.0"
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "NCCL_P2P_NET_DISABLE",
       "source": "env",
       "status": "not_modelled",
@@ -919,6 +961,25 @@
       }
     },
     {
+      "name": "NCCL_WATCHDOG_TIMEOUT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "nothing: no source searched reads NCCL_WATCHDOG_TIMEOUT, so a stated value and an unset one run alike. The variable is not one of NCCL's (no occurrence in NVIDIA/nccl v2.32.6-1 ad2d192c), PyTorch's ProcessGroupNCCL (v2.11.0 names TORCH_NCCL_* variables, not this) or vLLM's (v0.33.0 4ba787ec names it nowhere)",
+        "valid_when": [
+          {
+            "value_in": [
+              "1800"
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "NO_COLOR",
       "source": "env",
       "status": "not_modelled",
@@ -956,7 +1017,7 @@
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#75"
+        "issue": "inference-sim/blis-vllm#264"
       },
       "estimation": {
         "rule": "none"
@@ -1341,10 +1402,18 @@
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
+        "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "vLLM's own setting: vllm/env_override.py sets TILELANG_CLEANUP_TEMP_FILES to 1 itself when the environment does not state it (os.environ.setdefault), so a run that states 1 runs as an unset one does",
+        "valid_when": [
+          {
+            "value_in": [
+              "1"
+            ]
+          }
+        ]
       }
     },
     {
@@ -1378,6 +1447,55 @@
       },
       "estimation": {
         "rule": "none"
+      }
+    },
+    {
+      "name": "TORCH_CUDA_ARCH_LIST",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "the kernels the run used: TORCH_CUDA_ARCH_LIST lists the compute capabilities torch.utils.cpp_extension compiles a JIT extension for, and unset it compiles for the visible GPUs (_get_cuda_arch_flags, torch/utils/cpp_extension.py:2577-2590 at pytorch v2.11.0), so on a part of capability 10.0 a stated 10.0, and on a part of capability 9.0 (H100, H200) a stated 9.0, builds for the architecture the device has. The kernels' rates come from the registry, which a compile flag does not change",
+        "valid_when": [
+          {
+            "value_in": [
+              "10.0"
+            ],
+            "compute_capability": {
+              "eq": "10.0"
+            }
+          },
+          {
+            "value_in": [
+              "9.0"
+            ],
+            "compute_capability": {
+              "eq": "9.0"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "a run that did not hang: PyTorch's NCCL heartbeat monitor aborts the process when the watchdog thread has not beaten for the timeout (default 8 minutes, getCvarInt(TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC, 60 * 8), ProcessGroupNCCL.cpp:1709 at pytorch v2.11.0), and a stated 1800 differs from the default only in how long a stuck process is waited for before it is killed, which a run that completed never reached",
+        "valid_when": [
+          {
+            "value_in": [
+              "1800"
+            ]
+          }
+        ]
       }
     },
     {
@@ -1467,6 +1585,44 @@
       }
     },
     {
+      "name": "UCX_MAX_RMA_RAILS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "UCX's own default: MAX_RMA_RAILS defaults to 1 (ucp_context_config_table, src/ucp/core/ucp_context.c:233 at openucx/ucx v1.19.0), so a stated 1 is the unset value",
+        "valid_when": [
+          {
+            "value_in": [
+              "1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "UCX_MAX_RNDV_RAILS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "the rate a KV transfer runs at: NIXL's UCX backend moves KV with ucp_get_nbx and ucp_put_nbx, RMA operations whose lanes MAX_RMA_RAILS bounds, not a rendezvous, and MAX_RNDV_RAILS (default 2) bounds the devices a rendezvous uses (src/ucp/core/ucp_context.c:226-228 at openucx/ucx v1.19.0 e4636149); the notification NIXL sends is an active message of a few bytes, below any rendezvous threshold",
+        "valid_when": [
+          {
+            "value_in": [
+              "1"
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "UCX_MEMTYPE_CACHE",
       "source": "env",
       "status": "not_modelled",
@@ -1474,7 +1630,34 @@
         "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "the transport and the rate: the memory type cache stores which address ranges are GPU memory so a lookup need not ask the driver (src/ucs/memory/memtype_cache.c, ucs_memtype_cache_lookup at :324; the option is src/ucs/config/global_opts.c:167-169 at openucx/ucx v1.19.0 e4636149, default try), and turning it off makes UCX ask the driver for each address; it does not choose a transport or change a rate",
+        "valid_when": [
+          {
+            "value_in": [
+              "n"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "UCX_MEMTYPE_REG_WHOLE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "nothing: UCX has no option of this name, so a stated value is read by no code and only draws a warning that the variable is unused (ucs_config_parser warns 'unused environment variable', src/ucs/config/parser.c:2359 at openucx/ucx v1.19.0 e4636149)",
+        "valid_when": [
+          {
+            "value_in": [
+              "n"
+            ]
+          }
+        ]
       }
     },
     {
@@ -1491,6 +1674,25 @@
           {
             "value_in": [
               "1024"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "UCX_RNDV_SCHEME",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "the rate a KV transfer runs at: RNDV_SCHEME chooses how a rendezvous moves its payload (default auto; get_zcopy, put_zcopy, the pipelined schemes and rkey_ptr, src/ucp/core/ucp_context.c:246-252 at openucx/ucx v1.19.0 e4636149), and NIXL's UCX backend moves KV with RMA operations, not a rendezvous",
+        "valid_when": [
+          {
+            "value_in": [
+              "put_zcopy"
             ]
           }
         ]
@@ -2974,10 +3176,18 @@
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
+        "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "the scheduling and the step time: the variable is the period of the statistics log line (vllm/v1/engine/llm_engine.py:467 and vllm/entrypoints/launchers/utils/server_utils.py:83@4ba787ec); a shorter period logs more often from the front end and changes no scheduling decision",
+        "valid_when": [
+          {
+            "value_in": [
+              "1"
+            ]
+          }
+        ]
       }
     },
     {
@@ -3313,9 +3523,19 @@
     {
       "name": "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS",
       "source": "env",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
+        "traces": [
+          "compat/kernelmodel/profiler_graphs_test.go",
+          "core/vllm/readenv_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -3550,6 +3770,33 @@
       },
       "estimation": {
         "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_MXFP4_USE_MARLIN",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#276"
+      },
+      "estimation": {
+        "rule": "substitute",
+        "setting": {
+          "moe_backend": "marlin"
+        },
+        "reason": "env_var_not_in_release: VLLM_MXFP4_USE_MARLIN was read by vLLM v0.22.0 (and earlier) and removed in v0.24.0 (03878d1c2, vllm-project/vllm#44992; deprecated since v0.22.0 by 9b54e50e2, vllm-project/vllm#43148); the v0.33.0 flag that makes the same MoE selection is --moe-backend marlin (and --linear-backend marlin for an MXFP4 linear layer)",
+        "preserves": "the MoE kernel the run used: Marlin (v0.22.0 oracle/mxfp4.py:526-534 returns MARLIN; v0.33.0 oracle/mxfp4.py:378, :675-710 selects MARLIN from --moe-backend marlin; MarlinExperts needs compute capability 7.5 or more). The v0.22.0 variable also forced the MXFP4 linear kernel to Marlin (kernels/linear/__init__.py:736); that half changes nothing for a model whose linear layers are not MXFP4, which is the only case stood in for here (gpt-oss-120b keeps attention in bf16), and the field list cannot test the weight scheme, so the point's estimation text says it",
+        "valid_when": [
+          {
+            "value_in": [
+              "1",
+              "true"
+            ],
+            "compute_capability": {
+              "gte": "7.5"
+            }
+          }
+        ]
       }
     },
     {
@@ -4360,10 +4607,18 @@
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
+        "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "the scheduling and the step time: the variable adds the development routes to the API server (vllm/entrypoints/launchers/api_server/routers.py:46@4ba787ec) and makes the log_error_stack default true (vllm/entrypoints/common/cli_args.py:209@4ba787ec); neither is read by the engine core, and a request that does not error never reaches the stack logging",
+        "valid_when": [
+          {
+            "value_in": [
+              "1"
+            ]
+          }
+        ]
       }
     },
     {
@@ -4738,6 +4993,35 @@
       },
       "estimation": {
         "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#276"
+      },
+      "estimation": {
+        "rule": "substitute",
+        "setting": {
+          "moe_backend": "flashinfer_trtllm",
+          "quantization_config.moe.activation": "mxfp8"
+        },
+        "reason": "env_var_not_in_release: VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8 was read by vLLM v0.22.0 (and earlier) and removed in v0.24.0 (03878d1c2, vllm-project/vllm#44992; deprecated since v0.22.0 by 9b54e50e2, vllm-project/vllm#43148); the v0.33.0 flags that make the same selection are --moe-backend flashinfer_trtllm and quantization_config.moe.activation mxfp8",
+        "preserves": "the MoE kernel the run used: FlashInfer TRT-LLM-gen MXFP4 weights with dynamic MXFP8 activations (v0.22.0 oracle/mxfp4.py:501-509 returns FLASHINFER_TRTLLM_MXFP4_MXFP8 with kMxfp8Dynamic; v0.33.0 oracle/mxfp4.py:361-364, :614-631 selects the same backend from the flags). The variable did nothing else in v0.22.0. A value other than 1, or a part below compute capability 10.0 or at 11.0 and above, has no such kernel in v0.33.0 (TrtLlmMxfp4Experts needs capability family 10), so it is not stood in for and the point is refused by this name",
+        "valid_when": [
+          {
+            "value_in": [
+              "1",
+              "true"
+            ],
+            "compute_capability": {
+              "gte": "10.0",
+              "lt": "11.0"
+            }
+          }
+        ]
       }
     },
     {
@@ -5277,7 +5561,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#75"
+        "issue": "inference-sim/blis-vllm#264"
       },
       "estimation": {
         "rule": "none",
@@ -5403,12 +5687,34 @@
     {
       "name": "api_server_count",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#105"
+        "traces": [
+          "core/engine/testdata/golden-dp/dp4-lb.json",
+          "oracle/scenarios-dp-clients/dp2-kv-pressure-clients2.json",
+          "oracle/scenarios-dp-clients/dp4-lb-clients2.json",
+          "oracle/scenarios-dp-clients/dp4-lb-clients3-lag.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1,
+          2
+        ]
       },
       "estimation": {
-        "rule": "leave_unset"
+        "rule": "none"
       }
     },
     {
@@ -6633,9 +6939,19 @@
     {
       "name": "data_parallel_external_lb",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#86"
+        "traces": [
+          "oracle/scenarios-dp-modes/dp4-external-rank-affinity.json",
+          "core/engine/testdata/golden-dp/dp4-lb.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
         "rule": "leave_unset"
@@ -6644,9 +6960,20 @@
     {
       "name": "data_parallel_hybrid_lb",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#64"
+        "traces": [
+          "oracle/scenarios-dp-modes/dp4-hybrid-local2.json",
+          "oracle/scenarios-dp-modes/dp4-hybrid-local2-lag.json",
+          "core/engine/testdata/golden-dp/dp4-lb.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
         "rule": "leave_unset"
@@ -6655,9 +6982,19 @@
     {
       "name": "data_parallel_multi_port_external_lb",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#86"
+        "traces": [
+          "oracle/scenarios-dp-modes/dp4-external-multi-port.json",
+          "core/engine/testdata/golden-dp/dp4-lb.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -6720,9 +7057,27 @@
     {
       "name": "data_parallel_size_local",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "traces": [
+          "oracle/scenarios-dp-modes/dp4-hybrid-local2.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          2
+        ]
       },
       "estimation": {
         "rule": "leave_unset"
@@ -7625,12 +7980,23 @@
     {
       "name": "enable_scale_out",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#54"
+        "traces": [
+          "core/vllm/testdata/golden-render/stated-false.json",
+          "core/vllm/testdata/golden-render/stated-true.json",
+          "core/vllm/testdata/golden-render/unset.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -8415,12 +8781,20 @@
     {
       "name": "kv_cache_memory_bytes",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#81"
+        "traces": [
+          "vllmengine/kvcachememory_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -9046,12 +9420,29 @@
     {
       "name": "max_cpu_loras",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#5"
+        "traces": [
+          "core/lora/testdata/golden/default-cpu-equals-slots.json",
+          "core/lora/testdata/golden/eviction-and-reload.json",
+          "core/lora/testdata/golden/more-adapters-than-slots.json",
+          "core/lora/testdata/golden/one-slot-three-cached.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -9583,7 +9974,7 @@
             "moe_backend": null
           },
           "evidence": "the registry prices a routed expert group by weight format on the ramp fitted for it (blis-substrate#150, #285), and records that the stated backend is not the one it measured",
-          "differs": "a stated backend (FlashInfer TRT-LLM or CUTLASS, DeepGEMM mega-MoE, Marlin) runs its own kernel with its own ramp; the experts are priced by weight format at the cost model's choice for that format, so the step carries that backend's difference",
+          "differs": "a stated backend (FlashInfer TRT-LLM, CUTLASS or CuteDSL, DeepGEMM mega-MoE, Marlin, or Triton) runs its own kernel with its own ramp; the experts are priced as the engine resolves the field when it is unset, so the step carries that backend's difference. On an SM90 part with block-FP8 experts the engine prices a stated Triton or FlashInfer CUTLASS backend from its own lane (the plan states the kernel, lowering expertsKernel); the point is still carried as this substitution because the unset field resolves Triton at expert-parallel width 1 and FlashInfer CUTLASS above it, so a stated backend that is not that one is priced from the other's lane. A stated marlin on an SM90 part with MXFP4 experts is the kernel the engine already prices: a part with no four-bit peak prices MXFP4 grouped routed experts as vLLM's Marlin W4A16 grouped GEMM on the registry's w4a16_mxfp4_grouped ramp (blis-substrate kernel formatFit; registry fit_marlin_grouped_ramp.py), while the unset field resolves Triton for gpt-oss on SM90 (oracle/mxfp4.py _get_priority_backends_for_gpt_oss, TRITON before MARLIN, vllm@4ba787ec). The SM90 clause is valid for block-FP8 experts (Triton, FlashInfer CUTLASS) and for MXFP4 experts (Marlin) only; the clause grammar cannot test the weight scheme (inference-sim/blis-substrate#384), and the corpus has no other SM90 recipe that states any of these backends",
           "when": [
             {
               "value_in": [
@@ -9591,11 +9982,23 @@
                 "flashinfer_cutlass",
                 "deep_gemm_mega_moe",
                 "deep_gemm_amxf4_mega_moe",
-                "marlin"
+                "marlin",
+                "flashinfer_cutedsl"
               ],
               "compute_capability": {
                 "gte": "10.0",
                 "lt": "11.0"
+              }
+            },
+            {
+              "value_in": [
+                "triton",
+                "flashinfer_cutlass",
+                "marlin"
+              ],
+              "compute_capability": {
+                "gte": "9.0",
+                "lt": "10.0"
               }
             }
           ]

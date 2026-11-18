@@ -61,7 +61,7 @@ func TestMuseSparkArmDOffload(t *testing.T) {
 	// layer pages at PP2 (16 at PP1), each 16 tokens x 2 KV heads a rank at TP8 x 64 x K,V x 1 byte
 	// of fp8 = 4096 bytes.
 	twinO, _ := preparedOffload(t, engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0",
-		Roots: roots(t, "muse-h100-roce-armD-pp1-sync.yaml")})
+		Roots: roots(t, "muse-h200-roce-armD-pp1-sync.yaml")})
 	if twinO.BytesPerBlock != 65536 || twinO.Workers != 8 || twinO.Copies != 8 {
 		t.Fatalf("the PP1 twin's kv_offload %+v, want 65536 bytes a block over 8 workers and copies", twinO)
 	}
@@ -81,7 +81,7 @@ func TestMuseSparkArmDOffload(t *testing.T) {
 	setIfAbsent(&armD.Config, "num_gpu_blocks", "20000")
 	runWithReload(t, armD, 6144, 30_000_000)
 
-	twin := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, "muse-h100-roce-armD-pp1-sync.yaml")}
+	twin := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, "muse-h200-roce-armD-pp1-sync.yaml")}
 	o, blocks := preparedOffload(t, twin)
 	if o.CPUBytes != 512<<30 || o.Workers != 8 || o.Copies != 8 {
 		t.Fatalf("the twin's kv_offload %+v, want 512 GiB over 8 workers' copies", o)
@@ -90,8 +90,13 @@ func TestMuseSparkArmDOffload(t *testing.T) {
 	if chunks := o.CPUBytes / (o.BytesPerBlock * int64(o.Copies)); chunks <= blocks {
 		t.Fatalf("the CPU tier holds %d blocks, the GPU %d: want the tier larger", chunks, blocks)
 	}
-	// a's 6,144-token prompt, then eight prompts of new tokens (more than the GPU pool's 2,653
-	// blocks hold beside it), then b with a's prefix, which the CPU tier serves back.
+	// The twin runs on an H200 node (its weights, 81.0 GiB a GPU, do not fit an H100), whose KV pool holds
+	// 896,400 blocks, which a test cannot cycle through. Its pool is stated at 2,653 blocks, the size the
+	// twin's pool had on an H100 node, as arm D's is stated above (prepare completes only what a block
+	// leaves out). a's 6,144-token prompt, then eight prompts of new tokens (more than 2,653 blocks hold
+	// beside it), then b with a's prefix, which the CPU tier serves back.
+	twin.Config = poolEngine(t, "muse-h200-roce-armD-pp1-sync.yaml")
+	setIfAbsent(&twin.Config, "num_gpu_blocks", "2653")
 	runWithReload(t, twin, 6144, 2_000_000)
 }
 
@@ -168,7 +173,7 @@ func runWithReload(t *testing.T, spec engine.Spec, prompt int, gap engine.Time) 
 // inference-sim#1910), and connector options other than blocks_per_chunk.
 func TestOffloadMappingRefusals(t *testing.T) {
 	Register()
-	raw, err := os.ReadFile(filepath.Join("testdata", "muse-h100-roce-armD-pp1-sync.yaml"))
+	raw, err := os.ReadFile(filepath.Join("testdata", "muse-h200-roce-armD-pp1-sync.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +196,7 @@ func TestOffloadMappingRefusals(t *testing.T) {
 			if err := os.WriteFile(path, []byte(strings.Replace(s, c.old, c.new, 1)), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			r := roots(t, "muse-h100-roce-armD-pp1-sync.yaml")
+			r := roots(t, "muse-h200-roce-armD-pp1-sync.yaml")
 			r[RootScenario] = path
 			_, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r}, nil)
 			if err == nil || !strings.Contains(err.Error(), c.want) {
@@ -205,7 +210,7 @@ func TestOffloadMappingRefusals(t *testing.T) {
 // the chunk's tokens (kv_connector_extra_config block_size, offloading/config.py:98-134@5df63a72).
 func TestOffloadMappingBlocksPerChunk(t *testing.T) {
 	Register()
-	raw, err := os.ReadFile(filepath.Join("testdata", "muse-h100-roce-armD-pp1-sync.yaml"))
+	raw, err := os.ReadFile(filepath.Join("testdata", "muse-h200-roce-armD-pp1-sync.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +219,7 @@ func TestOffloadMappingBlocksPerChunk(t *testing.T) {
 	if err := os.WriteFile(path, []byte(s), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r := roots(t, "muse-h100-roce-armD-pp1-sync.yaml")
+	r := roots(t, "muse-h200-roce-armD-pp1-sync.yaml")
 	r[RootScenario] = path
 	o, _ := preparedOffload(t, engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r})
 	if o.BlockSize != 64 {

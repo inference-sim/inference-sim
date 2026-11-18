@@ -486,7 +486,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:engine_sleep_state": {
@@ -499,42 +499,42 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:estimated_read_bytes_per_gpu_total": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:estimated_write_bytes_per_gpu_total": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:external_prefix_cache_hits": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:external_prefix_cache_queries": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:generation_tokens": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:hf3fs_load_duration_seconds": {
@@ -589,14 +589,14 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:iteration_tokens_total": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:kv_block_idle_before_evict_seconds": {
@@ -615,7 +615,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:kv_offload_allocation_failure": {
@@ -770,7 +770,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/lora-max-loras-skip.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:mm_cache_hits": {
@@ -865,7 +865,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:num_requests_kv_fetch_by_stage": {
@@ -876,154 +876,154 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:num_requests_waiting": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:num_requests_waiting_by_reason": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:prefix_cache_hits": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:prefix_cache_queries": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:prompt_tokens": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:prompt_tokens_by_source": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:prompt_tokens_cached": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:prompt_tokens_cached_by_source": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:request_decode_time_seconds": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:request_generation_tokens": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:request_inference_time_seconds": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:request_max_num_generation_tokens": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:request_num_preemptions": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:request_params_max_tokens": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:request_params_n": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:request_prefill_kv_computed_tokens": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:request_prefill_time_seconds": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:request_prompt_tokens": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:request_queue_time_seconds": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:request_success": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:request_time_per_output_token_seconds": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:rl_weight_update_operation_duration_seconds": {
@@ -1074,35 +1074,35 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/spec-draft-model.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:spec_decode_num_accepted_tokens_per_pos": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/spec-draft-model.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:spec_decode_num_draft_tokens": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/spec-draft-model.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:spec_decode_num_drafts": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/spec-draft-model.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:time_to_first_token_seconds": {
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   "metric_family:vllm:tool_call_parser_invocations_total": {

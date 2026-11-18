@@ -7,7 +7,7 @@ same rules; they are written here so an agent reads them first.
 
 blis-vllm sits between blis-substrate and inference-sim. A change that touches more than one
 repository follows
-[Changes across the repositories](https://github.com/inference-sim/blis-substrate/blob/main/docs/contributing/changes.md#across-blis-repositories).
+[the design](https://inference-sim.github.io/blis-design/) (changes across the repositories).
 In short:
 
 1. **Public artifacts.** Never write internal project, customer or colleague names in a commit,
@@ -36,14 +36,14 @@ In short:
 - **The oracle decides.** Behaviour is checked against vLLM's own classes in CI (`oracle/`).
   The oracle may patch only the GPU, the clock, transports and external services, never a
   decision; every patch is listed in `oracle/mocks.json`, and CI fails on a patch of decision
-  code. Never change a golden trace's decisions without a `golden-reviewed: <trace>: <reason>` trailer, and a "Golden changes" section in the pull request body (`docs/testing.md`).
+  code. Never change a golden trace's decisions without a `golden-reviewed: <trace>: <reason>` trailer, and a "Golden changes" section in the pull request body (`oracle/README.md`).
 - Tests: `go test ./...`; lint: `golangci-lint run ./...` (v2.14.0); the oracle tiers: the
   `oracle-scenarios`, `oracle-inertness` and `oracle-fuzz` jobs of `ci.yml` (the required check `oracle-tier2` is their
   aggregate), step by step, from a Python with `oracle/requirements.lock` installed
   (`pip install --require-hashes --no-deps -r oracle/requirements-hashed.txt`, Linux x86_64;
   `oracle/README.md` gives each runner's command and the environment variables the Go fuzz
   tests read).
-- **Which CI jobs a change runs.** `docs/ci.md`: a job runs when a changed file is one it reads, the slow
+- **Which CI jobs a change runs.** the header of `.github/workflows/ci.yml`: a job runs when a changed file is one it reads, the slow
   suites are shared out over runners, and `.github/scripts/test-changed-jobs.sh` checks the selection.
   A new test that opens a file outside its package, or a new step of `ci.yml` that names a path,
   is covered by `audit_triggers.py` in that script; it tells you which list to extend.

@@ -3,7 +3,7 @@ name: ci
 # What runs, and why it is quick.
 #
 # Precise. The `changes` job reads the files a pull request changes and says which jobs need to run
-# (.github/scripts/changed_jobs.py; docs/ci.md has the table). A job runs when a changed file is one it reads
+# (.github/scripts/changed_jobs.py; .github/workflows/ci.yml has the table). A job runs when a changed file is one it reads
 # and is skipped when none is, so a change to a document runs the cheap jobs, a change to a rules pack runs
 # that pack's check and the tests that link it, and so on. A push to main and a manual run (workflow_dispatch)
 # run every job. The checks that branch protection requires keep their names (go, lint, oracle-tier2,
@@ -30,8 +30,8 @@ on:
     # workflow_dispatch. Retargeting a pull request to main is a change of its base branch, which
     # GitHub reports as the activity type `edited` (not a default type), so `edited` is listed:
     # without it the retarget starts no run. ready_for_review is listed so a draft marked ready is
-    # judged too. (Editing the title or body of a main-based pull request starts a run as well, and
-    # the newer run replaces the one in progress.)
+    # judged too. Editing the title or body of a main-based pull request starts a run as well; that run
+    # does nothing (see the concurrency block).
     branches: [main]
     types: [opened, synchronize, reopened, edited, ready_for_review]
   workflow_dispatch:
@@ -57,14 +57,21 @@ permissions:
 # on main are not touched; a run on main or by hand is never cancelled. Branch protection does not read the
 # cancelled run: the superseding push starts a fresh run of the same checks for the new head, and the `go`
 # job fails, not passes, if a job it needs was cancelled.
+# An edit to a pull request's title or body (not to its base) starts a run, because a retarget is an
+# edit. That run does nothing: it has its own concurrency group, so it cancels no run in progress and no
+# push cancels it, and every job is skipped. The required jobs carry " (edit)" in their names there, so
+# none of its check runs is named like a required check (a newer skipped `go` would otherwise stand in
+# for the run still in progress). The checks that read the text (blis.yml, private-names.yml) are separate
+# workflows and still run.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Which jobs the change needs. On a pull request, from the files it changes against the base it merges
   # into; on a push or a manual run, all of them.
   changes:
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -119,6 +126,7 @@ jobs:
   # Cheap, and run on every change, because a new file read that the lists do not know would otherwise skip
   # a job that needs to run.
   ci-self-test:
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -129,8 +137,8 @@ jobs:
   # The one check branch protection requires is named `go`; it passes only if every job below
   # it passed (or was skipped by the selection), and fails if one failed or was cancelled.
   go:
-    name: go
-    if: always()
+    name: "go${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ always() && (github.event.action != 'edited' || github.event.changes.base) }}
     needs: [changes, ci-self-test, go-build, go-test-kerneltests, go-test-inpackage, go-test-rest, go-bench, go-race-guard, go-race]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -281,7 +289,7 @@ jobs:
           path: ~/.cache/go-build
           key: ${{ steps.go.outputs.build-key }}
 
-  # The speed benchmarks of the v0.32.0 engine: a decode step at 512 and at 32,768 tokens of
+  # The speed benchmarks of the v0.33.0 engine: a decode step at 512 and at 32,768 tokens of
   # context (core/sched), and the engine interface over long decodes (core/vllm). Wall time on a
   # shared runner is too noisy for a hard threshold, so the numbers are recorded in an artifact;
   # the check that fails a build is TestDecodeStepAllocationDoesNotGrowWithContext, which runs
@@ -432,6 +440,7 @@ jobs:
   # Always runs and reports under its name; the lint steps run when Go code, the module files or the lint
   # configuration changed.
   lint:
+    name: "lint${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -534,13 +543,14 @@ jobs:
           path: ~/.cache/go-build
           key: ${{ steps.go.outputs.build-key }}
 
-  # Tier 5: every vllm:* family vLLM v0.32.0 defines, read from its source and classified
-  # exact / derived / unavailable (docs/metrics-manifest.json). A family the release adds or
+  # Tier 5: every vllm:* family vLLM v0.33.0 defines, read from its source and classified
+  # exact / derived / unavailable (oracle/metrics/manifest.json). A family the release adds or
   # drops, or a manifest that is not current, fails here; so does a field list, a kernel table
   # (kernel_impls.json) or a surface.json (X9) that is not current. Runs when fields/, fields.json,
   # kernels/, kernel_impls.json, the manifest, its generator, the connector registry, the surface list,
   # its generator or the evidence it names changed; always reports.
   metrics-manifest:
+    name: "metrics-manifest${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -604,7 +614,7 @@ jobs:
           go run ./cmd/metricsmanifest -vllm vllm-source -check 2>&1 | tee manifest-out/manifest-check.txt
       # X9: surface.json lists every connector, tier, spec, policy, KV-cache spec type, speculative
       # method, scheduler policy, event type, path-loaded component, framework part and metric family
-      # vLLM v0.32.0 registers, each with a status; it is regenerated from the pinned source here and
+      # vLLM v0.33.0 registers, each with a status; it is regenerated from the pinned source here and
       # must equal the committed list. It reads the manifest checked just above.
       - name: surface.json is current for the pinned release, and every item has a status
         if: needs.changes.outputs.metrics == 'true'
@@ -613,7 +623,7 @@ jobs:
         if: needs.changes.outputs.metrics == 'true'
         run: python3 -I tools/surface/test_gen_surface.py
       # The connector registry's entries are connectors the release registers.
-      - name: every registry entry is a connector vLLM v0.32.0 registers
+      - name: every registry entry is a connector vLLM v0.33.0 registers
         if: needs.changes.outputs.metrics == 'true'
         env:
           VLLM_SOURCE: ${{ github.workspace }}/vllm-source
@@ -638,6 +648,7 @@ jobs:
   # A golden trace is vLLM's own output; a commit that changes one must name its reviewer. Runs when a golden
   # directory or the oracle changed (the history it reads can name a golden only then); always reports.
   goldens-reviewed:
+    name: "goldens-reviewed${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -673,8 +684,8 @@ jobs:
   # The required check `oracle-tier2` is the aggregate of the oracle jobs below. It reports under the name
   # branch protection reads and passes only if every part that was selected passed.
   oracle-tier2:
-    name: oracle-tier2
-    if: always()
+    name: "oracle-tier2${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ always() && (github.event.action != 'edited' || github.event.changes.base) }}
     needs: [changes, oracle-scenarios, oracle-inertness, oracle-fuzz]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -687,7 +698,7 @@ jobs:
           if [ -n "$bad" ]; then echo "failed or cancelled: $bad"; exit 1; fi
           echo "every oracle job that was selected passed"
 
-  # Tier 2: vLLM v0.32.0's real Scheduler driven through every scenario, on CPU, and the other scenario-driven
+  # Tier 2: vLLM v0.33.0's (4ba787ec) real Scheduler driven through every scenario, on CPU, and the other scenario-driven
   # oracles. Every committed golden is re-derived from vLLM here on every run. The seeded fuzz corpora are the
   # jobs below this one; the mutation sweeps are mutation.yml's.
   oracle-scenarios:
@@ -729,6 +740,13 @@ jobs:
       # FID-8). The committed answers must equal what the pinned release gives now.
       - name: the lowering's expected answers are vLLM's own
         run: python -I oracle/lower/extract.py vllm-source check core/lower/testdata/vllm_lower.json
+      # Which of Muse Spark's three fused kernels vLLM builds for a layout, and at which step sizes
+      # (core/lower MuseSparkFusionsFor), from the release's own gating code run on this CPU with
+      # the GPU, FlashInfer's MNNVL workspaces and the process group replaced.
+      - name: the Muse Spark fusion decisions are vLLM's own
+        run: |
+          catalog="$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)/catalog/models"
+          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/musefusion/oracle.py vllm-source check core/lower/testdata/muse_fusions.json
       - name: every replacement the lowering oracle makes is listed
         run: |
           python3 -I oracle/lower/check_replacements.py oracle/lower/extract.py oracle/lower/replacements.json
@@ -746,8 +764,8 @@ jobs:
           ORACLE_MODEL: ${{ github.workspace }}/oracle-model
           HF_HUB_OFFLINE: "1"
         run: |
-          python -I oracle/check_manifest.py vllm-source docs/metrics-manifest.json --buckets oracle/out-buckets.json
-          diff -u docs/metrics-buckets.json oracle/out-buckets.json
+          python -I oracle/check_manifest.py vllm-source oracle/metrics/manifest.json --buckets oracle/out-buckets.json
+          diff -u oracle/metrics/buckets.json oracle/out-buckets.json
       - name: run every tier-2 scenario
         env:
           ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
@@ -777,6 +795,33 @@ jobs:
           python -I oracle/run_swa_layout.py vllm-source oracle/scenarios/swa oracle/out/scenarios-swa
       - name: the swa_bounded_replay goldens are vLLM's own output
         run: python3 -I oracle/compare_goldens.py core/sched/testdata/golden-swa oracle/out/scenarios-swa
+      # The worker's LoRA adapter cache (max_cpu_loras): vLLM's own LRUCacheWorkerLoRAManager driven
+      # through the dummy LoRA model of its test suite (oracle/run_lora_cache.py).
+      - name: run the LoRA adapter-cache scenarios
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out/lora-cache
+          python -I oracle/run_lora_cache.py vllm-source oracle/scenarios/lora-cache oracle/out/lora-cache
+      - name: the LoRA adapter-cache goldens are vLLM's own output
+        run: python3 -I oracle/compare_goldens_lora.py core/lora/testdata/golden oracle/out/lora-cache
+      # Whether the server answers the router's render calls (enable_scale_out): vLLM's own
+      # register_scale_out_api_routers decision, run as written (oracle/run_render.py).
+      - name: run the render-endpoint scenarios
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+        run: |
+          mkdir -p oracle/out/render
+          python -I oracle/run_render.py vllm-source oracle/scenarios/render oracle/out/render
+      - name: the render-endpoint goldens are vLLM's own output
+        run: python3 -I oracle/compare_goldens_render.py core/vllm/testdata/golden-render oracle/out/render
       # Tier 5's goldens too: each metric series re-derived from vLLM's own Prometheus logger
       # on the scenario it was made from.
       - name: every metric golden is vLLM's own series
@@ -847,6 +892,30 @@ jobs:
           python -I oracle/run_dp.py vllm-source oracle/scenarios-dp oracle/out/scenarios-dp
           python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-async oracle/out/scenarios-dp-async
           python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-nixl oracle/out/scenarios-dp-nixl
+          # Several load-balancing clients (api_server_count): one DPLBAsyncMPClient each.
+          mkdir -p oracle/out/scenarios-dp-clients
+          python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-clients oracle/out/scenarios-dp-clients
+          # Hybrid and external load balancing: one client per node or per rank, the router
+          # naming each request's front end.
+          mkdir -p oracle/out/scenarios-dp-modes
+          python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-modes oracle/out/scenarios-dp-modes
+      # The multi-client routing is compared with the trace vLLM just produced (no committed
+      # golden), and the test must run: a skip would read as a pass (X16).
+      - name: the Go routing through several clients equals vLLM's
+        env:
+          BLIS_VLLM_DP_CLIENTS_DIR: ${{ github.workspace }}/oracle/out/scenarios-dp-clients
+        run: |
+          set -o pipefail
+          go test ./core/engine -run 'TestDPClientsAgainstVLLM' -count=1 -v | tee dpclients.log
+          grep -q -- '--- PASS: TestDPClientsAgainstVLLM/dp4-lb-clients2' dpclients.log
+      - name: the Go routing under hybrid and external balancing equals vLLM's
+        env:
+          BLIS_VLLM_DP_MODES_DIR: ${{ github.workspace }}/oracle/out/scenarios-dp-modes
+        run: |
+          set -o pipefail
+          go test ./core/engine -run 'TestDPModesAgainstVLLM' -count=1 -v | tee dpmodes.log
+          grep -q -- '--- PASS: TestDPModesAgainstVLLM/dp4-hybrid-local2 (' dpmodes.log
+          grep -q -- '--- PASS: TestDPModesAgainstVLLM/dp4-external-rank-affinity (' dpmodes.log
       - name: every tier-3 golden trace is vLLM's own output
         run: |
           python3 -I oracle/compare_goldens_t3.py core/engine/testdata/golden oracle/out/scenarios-t3

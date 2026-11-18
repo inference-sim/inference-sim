@@ -72,6 +72,9 @@ type offloadConfig struct {
 	// it sizes the CPU tier in chunks (cpu/spec.py:103-121).
 	BytesPerBlock int64 `yaml:"bytes_per_block"`
 	PageSize      int64 `yaml:"page_size,omitempty"`
+	// MLA is model_config.use_mla: the model's attention is compressed (MLA), which the connector's
+	// layout gates read (offloadLayout).
+	MLA bool `yaml:"mla,omitempty"`
 	// Workers is the engine's world size, the connector's num_workers (offloading/scheduler.py:335):
 	// every job is pending on each worker. 1 unstated.
 	Workers int `yaml:"workers,omitempty"`
@@ -116,6 +119,9 @@ type offload struct {
 	at plan.Endpoint
 	// next is the last transfer ID started, shared with the P/D side of an engine that has one.
 	next *engine.TransferID
+	// stride and lane make the IDs of a data-parallel group's ranks distinct, as pd's do: rank r of n
+	// states IDs r+1, r+1+n, ... A zero stride is an engine alone, whose IDs are 1, 2, 3 ...
+	stride, lane int
 	// multi is the MultiConnector the offloading connector is a child of, at index child; nil
 	// when it runs alone. Its metadata and worker metadata are the child's slice of the list's.
 	multi *multi.Connector
@@ -127,8 +133,13 @@ type offload struct {
 	// schedule told the worker to finish, which the next applied output reports done.
 	jobs map[engine.TransferID]int
 	ids  map[int]engine.TransferID
-	// groups are the transfers in flight's GPU blocks in each KV cache group (Job.GroupSizes).
+	// groups are the transfers in flight's GPU blocks in each KV cache group of the engine, in the
+	// scheduler's group order (Job.GroupSizes, which count only the offloaded groups, expanded: a
+	// group that is not offloaded moves no block).
 	groups map[engine.TransferID][]int
+	// kvGroups is the KV cache group of each offloaded group, and numGroups the engine's groups.
+	kvGroups  []int
+	numGroups int
 	// flushed are, by the core batch whose metadata names them, the jobs its worker finishes
 	// before the batch runs (handle_preemptions), which that batch's output reports.
 	flushed map[int][]int
@@ -148,7 +159,7 @@ type offload struct {
 // model. Each KV cache group is offloaded at its block size, a sliding window with the
 // extra_retained_tokens the drafter's prefill lookahead sets (get_kv_cache_configs,
 // vllm/v1/core/kv_cache_utils.py:2582-2589@5df63a72).
-func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method string, prefixCaching bool, at plan.Endpoint, install installer) (*offload, error) {
+func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method string, prefixCaching bool, layout offloadLayoutFacts, at plan.Endpoint, install installer) (*offload, error) {
 	if c.Connector != "OffloadingConnector" {
 		return nil, fmt.Errorf("vllm: kv_offload.connector %q is not modelled through the engine (modelled: "+
 			"OffloadingConnector; registry/connectors.yaml)", c.Connector)
@@ -196,9 +207,15 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 		}
 		bpc = c.BlockSize / bs
 	}
+	// vLLM offloads only the prefix-cacheable groups (get_offloading_group_ids, offloading/config.py:38-45
+	// at v0.33.0): a ring or a bounded-replay window (DeepSeek V4.1's) is not offloaded.
 	var groups []offloading.Group
+	var kvGroups []int
 	extra := max(0, spec.PrefillLookahead-1)
 	for g := 0; g < s.KV.NumGroups(); g++ {
+		if !s.KV.PrefixCacheable(g) {
+			continue
+		}
 		spec := s.KV.GroupSpec(g)
 		gb := s.KV.GroupBlockSize(g)
 		gr := offloading.Group{BlockSize: gb}
@@ -206,6 +223,11 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 			gr.Window, gr.ExtraRetained = spec.Window, extra
 		}
 		groups = append(groups, gr)
+		kvGroups = append(kvGroups, g)
+	}
+	if len(groups) == 0 {
+		return nil, fmt.Errorf("vllm: kv_offload finds no eligible KV cache group: none is prefix-cacheable " +
+			"(KV offloading found no eligible cache groups, offloading/config.py:101-102@4ba787ec)")
 	}
 	page := c.PageSize
 	if page == 0 {
@@ -226,30 +248,24 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 		return nil, fmt.Errorf("vllm: kv_offload.cpu_bytes %d holds no chunk of %d block(s) of %d bytes for %d "+
 			"worker copies (cpu/spec.py:107-121@5df63a72)", c.CPUBytes, bpc, c.BytesPerBlock, copies)
 	}
-	if method == "mtp" {
-		// vLLM flags the group holding an MTP drafter's trailing layers as the drafter's
-		// (_uses_trailing_mtp_layers, _annotate_eagle_groups, vllm/v1/core/kv_cache_utils.py:
-		// 1997-2013, 2029-2085@5df63a72), and the connector then treats its trailing chunk as
-		// volatile (offloading/scheduler.py:226-287, 473-481), which is not diff-tested.
-		return nil, fmt.Errorf("vllm: kv_offload beside an MTP drafter is not modelled: vLLM marks the drafter's KV "+
-			"cache group, whose offload path is not diff-tested (%s)", offloading.Issue)
+	// The groups that hold a drafter's layers (an MTP, EAGLE or EAGLE-3 drafter's, when its block drop is on): the
+	// connector treats the trailing chunk of such a group as volatile (offloading/scheduler.py:208-232@4ba787ec),
+	// diff-tested against vLLM on the offloading-eagle3-* and offloading-mtp* scenarios.
+	eagle := make([]bool, len(kvGroups))
+	for i, g := range kvGroups {
+		eagle[i] = spec.EagleBlockDrop && s.KV.GroupSpec(g).Eagle
 	}
-	// The drafter's groups core/kv flags (DeepSeek V4's), which the connector refuses (offloading.New).
-	eagle := make([]bool, s.KV.NumGroups())
-	for g := range eagle {
-		eagle[g] = spec.EagleBlockDrop && s.KV.GroupSpec(g).Eagle
-	}
-	tiers, err := buildTiers(c, bpc, bs, offloading.ChunkBytes(c.BytesPerBlock, copies, bpc, page), chunks, tierNamespace(s, bpc, world))
+	tiers, err := buildTiers(c, bpc, bs, offloading.ChunkBytes(c.BytesPerBlock, copies, bpc, page), chunks, tierNamespace(s, bpc, world, layout, c.MLA))
 	if err != nil {
 		return nil, err
 	}
-	conn, err := offloading.New(offloading.Config{Groups: groups, BlocksPerChunk: bpc, TokensPerHash: s.KV.HashBlockSize(),
+	conn, err := offloading.New(offloading.Config{Groups: groups, KVGroups: kvGroups, BlocksPerChunk: bpc, TokensPerHash: s.KV.HashBlockSize(),
 		NumChunks: chunks, OffloadPromptOnly: promptOnly, PrefixCaching: prefixCaching, Workers: world, EagleGroups: eagle,
 		Manager: tiers.manager()})
 	if err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
-	o := &offload{conn: conn, blockSize: bs, at: at, next: new(engine.TransferID), early: map[engine.TransferID]bool{}, jobs: map[engine.TransferID]int{}, ids: map[int]engine.TransferID{},
+	o := &offload{conn: conn, kvGroups: kvGroups, numGroups: s.KV.NumGroups(), blockSize: bs, at: at, next: new(engine.TransferID), early: map[engine.TransferID]bool{}, jobs: map[engine.TransferID]int{}, ids: map[int]engine.TransferID{},
 		groups: map[engine.TransferID][]int{}, flushed: map[int][]int{}, recv: map[string]bool{}, loadReq: map[int]string{}, tiers: tiers}
 	// kv_both: the CPU tier is both stored to and loaded from.
 	if err := install(conn, sched.ConnectorConfig{Consumer: true, Producer: true}); err != nil {
@@ -273,10 +289,13 @@ func (o *offload) started(batch int, cb any) []engine.Transfer {
 	}
 	var out []engine.Transfer
 	add := func(j offloading.Job, kind engine.TransferKind) {
-		*o.next++
-		id := *o.next
+		id := o.newID()
 		o.jobs[id], o.ids[j.ID] = j.ID, id
-		o.groups[id] = append([]int(nil), j.GroupSizes...)
+		sizes := make([]int, o.numGroups)
+		for i, n := range j.GroupSizes {
+			sizes[o.kvGroups[i]] = n
+		}
+		o.groups[id] = sizes
 		// Tokens are the widest group's blocks: every group is at one block size (offloading.New),
 		// and a full-attention group moves every block of the range, a window only its own.
 		widest := 0
@@ -306,6 +325,12 @@ func (o *offload) started(batch int, cb any) []engine.Transfer {
 	}
 	o.lastFlush = append(o.lastFlush[:0], m.Flush...)
 	return out
+}
+
+// newID is the next transfer's ID (stride, lane).
+func (o *offload) newID() engine.TransferID {
+	*o.next++
+	return (*o.next-1)*engine.TransferID(max(o.stride, 1)) + engine.TransferID(o.lane) + 1
 }
 
 // groupSizes is a transfer in flight's GPU blocks in each KV cache group, nil for one this

@@ -47,7 +47,7 @@ REST_EXTRA = [
     r"^kerneltests/testdata/",
     r"^testdata/",
     r"^oracle/(scenarios[^/]*/|mocks\.json$|drafts/)",
-    r"^docs/metrics-(manifest|buckets)\.json$",
+    r"^oracle/metrics/(manifest|buckets)\.json$",
     r"^fields\.json$",
     r"^surface\.json$",
     r"^kernel_impls\.json$",
@@ -61,31 +61,42 @@ HARNESS_COPIES = [r"^oracle/check_(mocks|goldens|lock)\.py$", r"^oracle/harness\
 # The census reads kerneltests/testdata (REST_EXTRA); the race legs of other packages read what REST_EXTRA names.
 RACE_EXTRA = REST_EXTRA
 
-# kerneltests/docs is read by the examples package (its documents' code blocks); the other directories under
-# kerneltests/ are packages or testdata inside packages.
-KERNELTESTS_PATHS = [r"^kerneltests/docs/"]
+# The directories under kerneltests/ are packages or testdata inside packages; none holds data that only
+# the job reads, so the list is empty.
+KERNELTESTS_PATHS = []
 # run-inpackage.sh copies the blis-substrate this module pins, the tests under _inpackage and the fixtures under testdata.
 INPACKAGE_PATHS = [r"^kerneltests/(testdata|scripts)/"]
 
-ORACLE_GO = ["./core/sched", "./core/metrics", "./core/engine", "./core/connector/...", "./cmd/provenance", "./core/kv", "./core/vllm"]
+ORACLE_GO = ["./core/sched", "./core/metrics", "./core/engine", "./core/connector/...", "./cmd/provenance", "./core/kv", "./core/vllm", "./core/lora"]
 ORACLE_PATHS = [
     r"^oracle/",
     r"^\.github/actions/oracle-(fuzz|env)/",
     r"^\.github/scripts/shard\.py$",
     r"^\.github/shards/weights-inertness\.txt$",
-    r"^docs/metrics-(manifest|buckets)\.json$",
+    r"^oracle/metrics/(manifest|buckets)\.json$",
     r"^core/kv/testdata/",
+    r"^core/lora/testdata/",
+    r"^core/vllm/testdata/golden-render/",
     r"^compat/quantization/resolved\.json$",
     r"^core/lower/testdata/",
     r"^rules/engineconfig/testdata/",
     r"^rules/v0_32/testdata/",
     r"^rules/v0_33/testdata/",
 ]
+# The block-size oracle (oracle/blocksize) checked against the committed table. ci.yml runs it in oracle-scenarios; a
+# stacked layer's ci-light runs it when one of these changes (the light-blocksize job reads this output).
+BLOCKSIZE_PATHS = [
+    r"^oracle/blocksize/",
+    r"^core/vllm/blocksize(_table\.json|\.go)$",
+    r"^\.github/actions/oracle-env/",
+    r"^oracle/requirements",
+    r"^\.github/workflows/ci-light\.yml$",
+]
 METRICS_GO = ["./cmd/metricsmanifest", "./registry"]
 # The surface list (tools/surface/gen_surface.py) reads its status file, the committed list, and the
 # repository paths a modelled item names as its evidence: the oracle scenarios and the golden traces.
 # The kernel table (kernels/gen_kernel_impls.py) reads kernels/ and the committed kernel_impls.json.
-METRICS_PATHS = [r"^fields/", r"^fields\.json$", r"^docs/metrics-manifest\.json$", r"^tools/surface/",
+METRICS_PATHS = [r"^fields/", r"^fields\.json$", r"^oracle/metrics/manifest\.json$", r"^tools/surface/",
                  r"^surface\.json$", r"^oracle/scenarios", r"^core/.*/testdata/golden",
                  r"^kernels/", r"^kernel_impls\.json$"]
 GOLDEN_PATHS = [r"^oracle/", r"^core/.*/testdata/", r"^tools/migrateengineblock/"]
@@ -237,7 +248,7 @@ def is_lint_go(f):
 
 def decide(files, everything=False, legs_file=LEGS_FILE):
     out = {}
-    jobs = ["go", "bench", "lint", "rest", "kerneltests", "inpackage", "race", "race_guard", "metrics", "goldens", "oracle"] + ["packs_" + k for k in PACKS]
+    jobs = ["go", "bench", "lint", "rest", "kerneltests", "inpackage", "race", "race_guard", "metrics", "goldens", "oracle", "blocksize"] + ["packs_" + k for k in PACKS]
     if everything:
         for j in jobs:
             out[j] = True
@@ -284,6 +295,8 @@ def decide(files, everything=False, legs_file=LEGS_FILE):
 
     od, orf = closure(ORACLE_GO)
     out["oracle"] = any_match(files, modfiles + ORACLE_PATHS) or in_closure(files, od, orf)
+
+    out["blocksize"] = any_match(files, modfiles + BLOCKSIZE_PATHS)
 
     for k, pkg in PACKS.items():
         pd, prf = closure([pkg])

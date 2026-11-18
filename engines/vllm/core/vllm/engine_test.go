@@ -291,7 +291,6 @@ func TestFactoryRefuses(t *testing.T) {
 		{"V1 runner with PP and async", Version, "async_scheduling: true\npipeline_parallel_size: 2\n", "V1 model runner"},
 		{"prefix_match_unit", Version, "prefix_match_unit: 8\n", "prefix_match_unit"},
 		{"max_cpu_loras", Version, "max_cpu_loras: 4\n", "max_cpu_loras"},
-		{"DP prefill throttling", Version, "prefill_schedule_interval: 4\n", "data-parallel"},
 		{"active seqs above max_num_seqs", Version, "max_num_active_seqs: 9\n", "max_num_active_seqs"},
 		// What vLLM v0.32.0 refuses at startup (review I1, S10, S11).
 		{"a KV pool below one max_model_len sequence", Version, "num_gpu_blocks: 32\n", "cannot hold one max_model_len"},
@@ -318,7 +317,7 @@ func TestFactoryRefuses(t *testing.T) {
 		{"adaptive verification without full CUDA graphs", Version, "use_v2_model_runner: true\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\ncompilation_config: {cudagraph_mode: PIECEWISE}\n", "requires full CUDA graphs"},
 		{"adaptive verification with a lowercase piecewise mode", Version, "use_v2_model_runner: true\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\ncompilation_config: {cudagraph_mode: piecewise}\n", "requires full CUDA graphs"},
 		{"adaptive verification with PP", Version, "use_v2_model_runner: true\npipeline_parallel_size: 2\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\n", "pipeline parallelism"},
-		// What rules/v0_32 refuses in an engine block (#2021 B11 step 2).
+		// What rules/v0_32 refuses in an engine block (inference-sim issue 2021 B11 step 2).
 		{"a cache dtype v0.32.0 does not accept", Version, "kv_cache_dtype: fp9\n", "enum-values-known"},
 		{"an all2all backend v0.32.0 does not accept", Version, "all2all_backend: carrier_pigeon\n", "all2all-backend-known"},
 		{"a moe backend v0.32.0 does not accept", Version, "moe_backend: flashinfer_moe_ep_mega_cutedsl\n", "moe_backend"},

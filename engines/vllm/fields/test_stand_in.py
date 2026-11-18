@@ -34,8 +34,35 @@ NVLS = [("1", True), ("2", True), ("0", False), ("", False)]
 # NCCL_MNNVL_ENABLE (NCCL user guide): 2 is the default (use multi-node NVLink where the system has it, else the network);
 # 1 differs only in failing communicator initialization when MNNVL is unsupported, which a completed run did not do.
 MNNVL = [("1", True), ("2", True), ("0", False), ("", False)]
+# The env vars an earlier release read (removed in v0.24.0, 03878d1c2): the rows are v0.33.0's own selection for the flags
+# that replaced them, fused_moe/oracle/mxfp4.py at 4ba787ec (map_mxfp4_backend :352-392, _filter_by_activation :614-631,
+# _get_requested_backends :634-647) and the device each kernel supports (TrtLlmMxfp4Experts: capability family 10,
+# experts/trtllm_mxfp4_moe.py:121-123; MarlinExperts: capability 7.5 and up, experts/marlin_moe.py:592-594).
+# "true" is how the dashboard renders a stated 1: both variables are read as bool(int(value)) (envs.py at 03878d1c2^), so a run
+# that completed stated an integer, and a recorded boolean is its 1.
+MXFP8 = [("true", "10.0", True), ("false", "10.0", False), ("1", "10.0", True), ("1", "10.3", True), ("1", "9.0", False), ("1", "12.0", False), ("0", "10.0", False), ("", "10.0", False)]
+MARLIN_MOE = [("true", "9.0", True), ("false", "9.0", False), ("1", "9.0", True), ("1", "7.5", True), ("1", "10.0", True), ("1", "7.0", False), ("0", "9.0", False), ("", "9.0", False)]
 TLS = [("cuda_copy,rc", True), ("cuda_copy,cuda_ipc,rc", True), ("all", True), ("cuda_copy,cuda_ipc,tcp", False),
        ("tcp", False), ("^rc", False), ("sm,self", False)]
+# The transport and runtime variables of the Dynamo P/D recipes. Each row is what the cited source says; a value the
+# list does not hold is "not shown exact", not "shown different", so only the stated value and a clearly different one
+# are listed. Sources: Dynamo's from_config_value (lib/runtime/src/pipeline/network.rs:132-152 at ai-dynamo/dynamo
+# 807aaaa0), NCCL's ncclTopoCheckP2p (src/graph/paths.cc:383-395 at v2.32.6-1 ad2d192c), PyTorch's
+# ProcessGroupNCCL.cpp:1709 and cpp_extension.py:2577-2590 at v2.11.0, UCX's option tables (src/ucp/core/ucp_context.c
+# and src/ucs/config/global_opts.c at v1.19.0 e4636149) and vLLM v0.33.0's own setdefault and reads.
+DYN_CODEC = [("msgpack", True), ("json", False), ("", False)]
+P2P_LEVEL = [("NVL", "10.0", True), ("NVL", "10.3", True), ("NVL", "9.0", False), ("NVL", "12.0", False),
+             ("PXB", "10.0", False), ("SYS", "10.0", False), ("", "10.0", False)]
+# The stand-in is exact where the stated list is the device's own capability: unset, torch compiles for the visible
+# devices' capabilities (_get_cuda_arch_flags, torch/utils/cpp_extension.py:2577-2590 at v2.11.0).
+ARCH_LIST = [("10.0", "10.0", True), ("10.0", "10.3", False), ("10.0", "9.0", False), ("9.0", "10.0", False), ("", "10.0", False),
+             ("9.0", "9.0", True), ("9.0", "8.0", False), ("9.0", "12.0", False), ("8.0", "9.0", False), ("", "9.0", False)]
+INERT_ONE = {  # field: (the stated value that is exact, a value that is not shown exact)
+    "NCCL_WATCHDOG_TIMEOUT": ("1800", "60"), "TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC": ("1800", "60"),
+    "UCX_MAX_RMA_RAILS": ("1", "4"), "UCX_MAX_RNDV_RAILS": ("1", "4"), "UCX_RNDV_SCHEME": ("put_zcopy", "get_zcopy"),
+    "UCX_MEMTYPE_CACHE": ("n", "y"), "UCX_MEMTYPE_REG_WHOLE": ("n", "y"), "TILELANG_CLEANUP_TEMP_FILES": ("1", "0"),
+    "VLLM_SERVER_DEV_MODE": ("1", "0"), "VLLM_LOG_STATS_INTERVAL": ("1", "0"),
+}
 
 
 def function_from(path, name, env):
@@ -94,6 +121,18 @@ def vectors_from_upstream():
     for field, values in (("NCCL_CUMEM_ENABLE", CUMEM), ("NCCL_NVLS_ENABLE", NVLS), ("NCCL_MNNVL_ENABLE", MNNVL)):
         for value, exact in values:
             rows.append({"field": field, "value": value, "owner": "nccl-user-guide", "exact": exact})
+    for field, cases in (("VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8", MXFP8), ("VLLM_MXFP4_USE_MARLIN", MARLIN_MOE)):
+        for value, cap, exact in cases:
+            rows.append({"field": field, "value": value, "compute_capability": cap, "owner": "mxfp4-oracle-v0.33.0", "exact": exact})
+    for value, exact in DYN_CODEC:
+        rows.append({"field": "DYN_REQUEST_PLANE_CODEC", "value": value, "owner": "dynamo-request-plane-codec", "exact": exact})
+    for value, cap, exact in P2P_LEVEL:
+        rows.append({"field": "NCCL_P2P_LEVEL", "value": value, "compute_capability": cap, "owner": "nccl-paths-p2p-level", "exact": exact})
+    for value, cap, exact in ARCH_LIST:
+        rows.append({"field": "TORCH_CUDA_ARCH_LIST", "value": value, "compute_capability": cap, "owner": "torch-cpp-extension-arch-flags", "exact": exact})
+    for field, (stated, other) in INERT_ONE.items():
+        rows.append({"field": field, "value": stated, "owner": "cited-source", "exact": True})
+        rows.append({"field": field, "value": other, "owner": "cited-source", "exact": False})
     return rows
 
 

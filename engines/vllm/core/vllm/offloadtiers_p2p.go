@@ -297,9 +297,10 @@ func buildP2P(i int, raw map[string]any, topBackpressure map[string]any, chunkBy
 	p := &p2pPeer{addr: cfg.LocalID, placed: map[string]plan.Endpoint{}, every: every}
 	cfg.Now = p.nowS
 	p.ctl = &p2pControl{p: p, conns: map[string]*p2pConn{}}
-	// The fingerprint is the config the handshake compares (FileMapper's run config): the layout
-	// the namespace states.
-	p.data = &p2pData{p: p, numBlocks: chunks, blockLen: chunkBytes, fingerprint: fmt.Sprintf("%+v", ns),
+	// The fingerprint is the config the handshake compares: FileMapper's run config, built with
+	// parallel_agnostic=True (p2p/manager.py:351-356@4ba787ec), so an agnostic layout names no
+	// parallel size and peers of different tensor parallelism agree.
+	p.data = &p2pData{p: p, numBlocks: chunks, blockLen: chunkBytes, fingerprint: ns.RunConfig(),
 		remote: map[string]bool{}, strikes: map[string]int{}, faults: map[string]string{}, peerGen: map[string]int{}}
 	p.tier = kvtier.NewP2PTier(cfg, p.ctl, p.data)
 	p.data.tier = p.tier

@@ -226,6 +226,7 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 	p.Collectives = plan.CollectivePlan{SequenceParallelMoE: lay.SequenceParallelMoE,
 		SequenceParallelModel: lay.ModelSequenceParallel}
 	out.Reported.SMAllReduce = lay.CustomAllReduce
+	out.Encoder = encoderRun(eng, g, pl.TP, pl.PP)
 
 	// The served weight format.
 	quantization := eng.Quantization
@@ -437,7 +438,10 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 	// The CUDA graph mode, per batch (vllm/config/compilation.py:604-640;
 	// vllm/v1/cudagraph_dispatcher.py:233-310 at v0.31.0). FULL_AND_PIECEWISE is v0.31.0's
 	// default.
-	backend := in.Rules.EffectiveAll2AllBackend(eng.All2AllBackend)
+	if err := refuseAll2AllBinding(in.Rules, eng.All2AllBackend, eng.MoEBackend); err != nil {
+		return nil, err
+	}
+	backend := resolvedAll2AllBackend(in.Rules, eng.All2AllBackend, eng.MoEBackend)
 	graphMode := strings.ToUpper(eng.CUDAGraphMode)
 	if graphMode == "" {
 		graphMode = "FULL_AND_PIECEWISE"
@@ -559,6 +563,19 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 		p.MoE.RedundantExperts = e.NumRedundantExperts
 	}
 	p.MoE.Dispatch = dispatchKernel(backend)
+	if stackRoutedExperts(g) > 0 && backend != eng.All2AllBackend && (eng.All2AllBackend != "" || backend != in.Rules.EffectiveAll2AllBackend("")) {
+		// The plan states the backend the engine runs, which is not the one stated: a deprecated
+		// alias or the binding to passthrough beside a self-communicating MoE backend.
+		why := "the backend vLLM runs for the stated all2all_backend " +
+			strconv.Quote(eng.All2AllBackend) + " beside moe_backend " + strconv.Quote(eng.MoEBackend) +
+			" (vllm/config/parallel.py:537, vllm/config/kernel.py:194-227, " +
+			"vllm/distributed/device_communicators/cuda_communicator.py:253-262 at 4ba787ec9959)"
+		if backend == "passthrough" {
+			why += "; the MoE kernel dispatches and combines the tokens itself, so that communication is inside the " +
+				"kernel's price and is not priced as a separate collective"
+		}
+		note("all2all_backend", backend, why)
+	}
 	if p.MoE.Experts, err = expertsKernel(g, &c, eng.MoEBackend); err != nil {
 		return nil, err
 	}
@@ -574,11 +591,13 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 	// allocates, which can differ from the stated dtype; a layout no backend serves is refused
 	// (sparseMLABackend).
 	layout := eng.CacheDType
-	if dsa {
-		heads := 0
+	if dsa || nopeSparseMLA(g, v4) {
+		heads, headSize := 0, 0
 		for _, a := range stackPrimaryAttentions(g) {
 			if a.AttentionKind == model.AttentionSparseMLA && a.NumQHeads > 0 {
 				heads = max(heads, a.NumQHeads)
+				// The head size vLLM's MLA layer hands the selector (mla_attention.py:479-480).
+				headSize = max(headSize, a.KVLoRARank+a.QKRopeHeadDim)
 			}
 		}
 		preHopper, err := c.preHopper()
@@ -588,6 +607,7 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 		be, dsaLayout, err := sparseMLABackend(sparseMLABackendRequest{
 			cache:        eng.CacheDType,
 			headsPerRank: heads / max(lay.TP, 1),
+			headSize:     headSize,
 			sm100:        c.chip.NVFP4Peak > 0,
 			preHopper:    preHopper,
 			tp:           lay.TP,
@@ -600,15 +620,25 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 		}
 		if be == backendFlashInferSM90 {
 			note("sparse_mla_backend", be,
-				"chosen as vLLM v0.31.0 would choose it, which needs FlashInfer 0.6.18 or "+
-					"later installed (flashinfer_mla_sparse_sm90.py:194-199)")
+				"chosen as vLLM would choose it (head size "+strconv.Itoa(headSize)+"), which assumes "+
+					"FlashInfer 0.6.18 or later is installed, the backend's own gate "+
+					"(has_flashinfer_sm90_nope_mla; flashinfer_mla_sparse_sm90.py:194-199); "+
+					"without it vLLM runs "+backendFlashAttnMLASparse+" (blis-vllm#278)")
+			if p.Layers, err = sparseMLAKernels(g, &c, pl.PP, be, note); err != nil {
+				return nil, err
+			}
 		}
-		if st := eng.CacheDType; dsaLayout != st && st != "" {
-			override("cache_dtype", st, dsaLayout, be+" serves this cache as "+dsaLayout+
-				" (_canonicalize_sparse_mla_kv_cache_dtype, "+
-				"vllm/model_executor/layers/attention/mla_attention.py:358-375)")
+		// The layout a backend allocates is stated for the DSA family; a NoPE sparse-MLA model
+		// (GLM-5.3-Flash) is given the backend vLLM selects and the refusals it makes, and keeps the
+		// stated cache and the graph's own cell (its block size and cell are not DSA's).
+		if dsa {
+			if st := eng.CacheDType; dsaLayout != st && st != "" {
+				override("cache_dtype", st, dsaLayout, be+" serves this cache as "+dsaLayout+
+					" (_canonicalize_sparse_mla_kv_cache_dtype, "+
+					"vllm/model_executor/layers/attention/mla_attention.py:358-375)")
+			}
+			layout = dsaLayout
 		}
-		layout = dsaLayout
 	}
 	p.Cache.LatentCellBytes = dsMLAStateBytes[layout]
 
@@ -769,6 +799,62 @@ func expertsKernel(g *model.Graph, c *lowerContext, stated string) (plan.KernelI
 	return blisvllm.Implementation(plan.PrimMoEGroupedGEMM, blisvllm.MoESelection("fp8", member), library, variant, major, minor)
 }
 
+// sparseMLAKernels states, for each layer whose primary attention is a sparse MLA run by
+// FLASHINFER_MLA_SPARSE_SM90, the kernel that backend runs for the prefill and for the decode: its
+// FlashInferMLASparseSM90Impl builds a BatchMLAPagedAttentionWrapper with backend="fa3"
+// (v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py:257-288@4ba787ec) and is supported on
+// compute capability 9.x (:189-190). The registry keys the GLM-5.3 sparse-MLA family to that build
+// (VAL-8), so without the statement the cost model reads no entry of it. The stage of a layer is
+// the pipeline partition's, which the lowering does not compute: at pipeline width above 1 nothing is
+// stated (the family is then not read, as before), and the lowering says so. No other sparse-MLA
+// backend has a registry family keyed to its kernel, so none is stated. The draft model's layers
+// (DraftLayers) are not stated either. The decode is always this kernel (forward_mqa); a prefill of at most
+// the top-k tokens is dense multi-head attention in vLLM, which the pool names (kernelmodel
+// sparseMLAPrefillSubstitution) because the plan states the primitive for the pool, not for a step.
+func sparseMLAKernels(g *model.Graph, c *lowerContext, pp int, backend string, note func(name, value, reason string)) ([]plan.LoweredLayer, error) {
+	major, minor := capability(c.chip)
+	if backend != backendFlashInferSM90 || major != 9 {
+		return nil, nil
+	}
+	if pp > 1 {
+		note("sparse_mla_kernel", "unstated",
+			"the pipeline stage of each layer is not computed here, so at pipeline-parallel width above 1 the "+
+				"sparse-MLA kernel is not stated and no coefficient keyed to it is read")
+		return nil, nil
+	}
+	byID := map[string]model.LayerKind{}
+	for _, lk := range g.LayerKinds {
+		byID[lk.ID] = lk
+	}
+	var out []plan.LoweredLayer
+	for i, id := range g.Stack.Expand() {
+		sparse := false
+		for _, n := range byID[id].Nodes {
+			if n.Op == model.OpAttention && n.ReadsEngineKV() {
+				sparse = n.AttentionKind == model.AttentionSparseMLA
+				break
+			}
+		}
+		if !sparse {
+			continue
+		}
+		for _, prim := range []plan.Primitive{plan.PrimAttentionPrefill, plan.PrimAttentionDecode} {
+			k, err := blisvllm.Implementation(prim, blisvllm.AttentionSelection(backend), "flashinfer",
+				"BatchMLAPagedAttentionWrapper[fa3]", major, minor)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, plan.LoweredLayer{Layer: i, Primitive: prim, KernelImpl: k})
+		}
+	}
+	if len(out) > 0 {
+		note("sparse_mla_kernel", out[0].KernelImpl.Library+" "+out[0].KernelImpl.Variant,
+			"the kernel FlashInferMLASparseSM90Impl runs for the prefill and the decode of each sparse-MLA layer; the "+
+				"registry's GLM-5.3 family is keyed to its build")
+	}
+	return out, nil
+}
+
 // capability is the chip's compute capability, major and minor; 0, 0 when it states none.
 func capability(chip hardware.Chip) (int, int) {
 	major, ok := chip.CapabilityMajor()
@@ -802,12 +888,57 @@ func blockFP8Experts(g *model.Graph) bool {
 	return found
 }
 
+// resolvedAll2AllBackend is the backend the engine runs for the stated one beside the stated MoE
+// backend. A pack that knows the binding to passthrough beside a self-communicating MoE backend
+// (rules/pack ResolvedAll2AllBackend) applies it; any other rules value gives the effective backend.
+func resolvedAll2AllBackend(r subrules.EngineRules, backend, moeBackend string) string {
+	if b, ok := r.(interface {
+		ResolvedAll2AllBackend(backend, moeBackend string) string
+	}); ok {
+		return b.ResolvedAll2AllBackend(backend, moeBackend)
+	}
+	return r.EffectiveAll2AllBackend(backend)
+}
+
+// refuseAll2AllBinding refuses what bind_passthrough_all2all_backend refuses
+// (vllm/config/kernel.py:206-227@4ba787ec9959e566d3b587a796dff07673324da5): a FlashInfer MoE-EP
+// backend beside an explicit all2all_backend other than the default or passthrough, and passthrough
+// beside any other MoE backend. The rules pack refuses both too (moe-ep-backend-binds-passthrough),
+// but a caller can reach the lowering without it (blis-vllm#271). A release whose pack does not know
+// the binding refuses nothing here.
+func refuseAll2AllBinding(r subrules.EngineRules, backend, moeBackend string) error {
+	b, ok := r.(interface {
+		SelfCommunicatingMoEBackend(string) (self, known bool)
+	})
+	if !ok {
+		return nil
+	}
+	self, known := b.SelfCommunicatingMoEBackend(moeBackend)
+	if !known {
+		return nil
+	}
+	stated := r.EffectiveAll2AllBackend(backend)
+	switch {
+	case self && stated != r.EffectiveAll2AllBackend("") && stated != "passthrough":
+		return fmt.Errorf("all2all_backend %q beside moe_backend %q: the MoE backend dispatches and combines itself, "+
+			"and vLLM refuses any explicit all2all_backend with it; leave all2all_backend unset "+
+			"(vllm/config/kernel.py:206-215, https://github.com/inference-sim/blis-vllm/issues/271)", backend, moeBackend)
+	case !self && stated == "passthrough":
+		return fmt.Errorf("all2all_backend passthrough beside moe_backend %q: passthrough is valid only beside a MoE backend "+
+			"that dispatches and combines itself, and vLLM refuses it otherwise "+
+			"(vllm/config/kernel.py:216-227, https://github.com/inference-sim/blis-vllm/issues/271)", moeBackend)
+	}
+	return nil
+}
+
 // dispatchKernel names the all-to-all kernel an MoE dispatch backend runs, in the plan's words:
 // none for the gather-and-scatter dispatches, DeepEP's three by their own names, and any other
 // by its library.
 func dispatchKernel(backend string) plan.KernelImpl {
 	switch backend {
-	case "", "naive", "allgather_reducescatter":
+	case "", "naive", "allgather_reducescatter", "passthrough":
+		// passthrough runs no framework all-to-all: the MoE backend dispatches and combines
+		// itself (vllm/config/parallel.py:232-234@4ba787ec).
 		return plan.KernelImpl{}
 	case "deepep_high_throughput":
 		return plan.DispatchDeepEPHighThroughput

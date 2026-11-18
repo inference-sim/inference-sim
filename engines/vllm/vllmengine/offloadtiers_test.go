@@ -13,7 +13,7 @@ import (
 // tier below the CPU tier, written to a temporary file; its roots.
 func tieredScenario(t *testing.T, tier string) map[string]string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("testdata", "muse-h100-roce-armD-pp1-sync.yaml"))
+	raw, err := os.ReadFile(filepath.Join("testdata", "muse-h200-roce-armD-pp1-sync.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +28,7 @@ func tieredScenario(t *testing.T, tier string) map[string]string {
 	if err := os.WriteFile(path, []byte(s), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r := roots(t, "muse-h100-roce-armD-pp1-sync.yaml")
+	r := roots(t, "muse-h200-roce-armD-pp1-sync.yaml")
 	r[RootScenario] = path
 	return r
 }

@@ -164,6 +164,7 @@ func resolveBlockSize(in latencykernel.Inputs, e engineconfig.Engine, pool deplo
 		Env:                 e.Env,
 		UsesTRTLLMAttention: e.UseTRTLLMAttention != nil,
 		MLAPrefillBackend:   e.MLAPrefillBackend,
+		LanguageModelOnly:   e.LanguageModelOnly != nil && *e.LanguageModelOnly,
 	})
 }
 

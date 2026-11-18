@@ -7,6 +7,7 @@
 package offloading
 
 import (
+	"container/heap"
 	"fmt"
 	"sort"
 )
@@ -429,12 +430,15 @@ func (r rank) less(o rank) bool {
 // chunk has a recency rank, assigned on insert and on a request's access; eviction takes the
 // evictable chunks of lowest rank. At v0.33.0 an active request's keys share one provisional
 // rank across store batches, so a running request's prefix is not evicted between its batches;
-// finalization commits its recency. vLLM keeps a lazy heap; the order it evicts in is the ranks',
-// which this keeps directly.
+// finalization commits its recency. The evictable chunks live in vLLM's lazy-invalidating
+// min-heap of (rank, key) entries (lru.py:16, 70-102): a recency change pushes a new entry,
+// and an entry that no longer matches its key's rank or evictability is dropped when popped, so
+// an eviction of k chunks costs O(k log n) rather than a sort of every evictable chunk.
 type lruPolicy struct {
 	chunks    map[Key]*chunk
 	ranks     map[Key]rank
 	evictable map[Key]bool
+	heap      entryHeap
 	// born is the order chunks entered the cache in (Python's dict order of LRUCachePolicy.chunks),
 	// which a trace's listing of equal ranks follows; the eviction order breaks ties by key bytes.
 	born     map[Key]int
@@ -443,6 +447,37 @@ type lruPolicy struct {
 	// generation is _cache_generation, which clear advances so no request keeps a rank taken
 	// before the reset.
 	generation int
+}
+
+// heapEntry is _HeapEntry: a rank and the key it was taken for.
+type heapEntry struct {
+	rank rank
+	key  Key
+}
+
+// entryHeap is the min-heap of heapq, ordered by rank and then by the key's bytes. compared
+// counts the entries it has compared, which is the cost of the policy's heap work.
+type entryHeap struct {
+	items    []heapEntry
+	compared int
+}
+
+func (h *entryHeap) Len() int { return len(h.items) }
+func (h *entryHeap) Less(i, j int) bool {
+	h.compared++
+	a, b := h.items[i], h.items[j]
+	if a.rank != b.rank {
+		return a.rank.less(b.rank)
+	}
+	return a.key < b.key
+}
+func (h *entryHeap) Swap(i, j int) { h.items[i], h.items[j] = h.items[j], h.items[i] }
+func (h *entryHeap) Push(x any)    { h.items = append(h.items, x.(heapEntry)) }
+func (h *entryHeap) Pop() any {
+	n := len(h.items) - 1
+	e := h.items[n]
+	h.items = h.items[:n]
+	return e
 }
 
 func newLRU() *lruPolicy {
@@ -463,6 +498,7 @@ func (p *lruPolicy) remove(k Key) {
 // clear is clear (lru.py:165-172): it also advances the cache generation.
 func (p *lruPolicy) clear() {
 	p.chunks, p.ranks, p.evictable, p.born, p.next = map[Key]*chunk{}, map[Key]rank{}, map[Key]bool{}, map[Key]int{}, 0
+	p.heap.items = p.heap.items[:0]
 	p.generation++
 }
 
@@ -501,6 +537,7 @@ func (p *lruPolicy) onRequestAccess(keys []Key, a *reqAccess) {
 		return
 	}
 	rr := p.requestRank(a)
+	var updated []Key
 	for _, k := range keys {
 		pos, ok := a.positions[k]
 		if _, cached := p.chunks[k]; !ok || !cached {
@@ -511,7 +548,11 @@ func (p *lruPolicy) onRequestAccess(keys []Key, a *reqAccess) {
 			continue
 		}
 		p.ranks[k] = nr
+		if p.evictable[k] {
+			updated = append(updated, k)
+		}
 	}
+	p.updateHeap(updated)
 }
 
 // onRequestFinished is on_request_finished (lru.py:154-163): the request's keys in head-to-tail
@@ -541,28 +582,67 @@ func (p *lruPolicy) insert(k Key, c *chunk, a *reqAccess) {
 	}
 	if c.refCnt == 0 {
 		p.evictable[k] = true
+		p.push(k)
 	}
 }
 
 // touch is _update_recency (lru.py:86-88, _assign_new_rank :63-68): each present key, in order,
 // gets the next rank.
 func (p *lruPolicy) touch(keys []Key) {
+	var updated []Key
 	for _, k := range keys {
 		if _, ok := p.chunks[k]; ok {
 			p.next++
 			p.ranks[k] = rank{p.next, 0}
+			if p.evictable[k] {
+				updated = append(updated, k)
+			}
 		}
 	}
+	p.updateHeap(updated)
 }
 
-// before orders two keys as vLLM's heap does its (rank, key) entries: by rank, then by the key's
-// bytes. A request's keys in two KV cache groups at one position share a rank, so the key decides.
-func (p *lruPolicy) before(a, b Key) bool {
-	ra, rb := p.ranks[a], p.ranks[b]
-	if ra != rb {
-		return ra.less(rb)
+// push is _push_evictable (lru.py:70-74): an entry for the key at its current rank.
+func (p *lruPolicy) push(k Key) { heap.Push(&p.heap, heapEntry{p.ranks[k], k}) }
+
+// isCurrent is _is_current (lru.py:76-78): the entry still names its key's rank, and the key is
+// still evictable.
+func (p *lruPolicy) isCurrent(e heapEntry) bool {
+	r, ok := p.ranks[e.key]
+	return p.evictable[e.key] && ok && r == e.rank
+}
+
+// rebuild is the heap rebuilt from the evictable keys alone, with each at its current rank.
+func (p *lruPolicy) rebuild() {
+	p.heap.items = p.heap.items[:0]
+	for k := range p.evictable {
+		p.heap.items = append(p.heap.items, heapEntry{p.ranks[k], k})
 	}
-	return a < b
+	heap.Init(&p.heap)
+}
+
+// maybeCompact is _maybe_compact_heap (lru.py:80-84): once lazy entries outnumber the evictable
+// keys twice over (and 64), they are dropped.
+func (p *lruPolicy) maybeCompact() {
+	if len(p.heap.items) < max(64, 2*len(p.evictable)) {
+		return
+	}
+	p.rebuild()
+}
+
+// updateHeap is _update_heap (lru.py:90-102): a large update rebuilds the heap, a small one pushes.
+func (p *lruPolicy) updateHeap(updated []Key) {
+	if len(updated) == 0 {
+		return
+	}
+	if len(updated) >= max(64, len(p.evictable)/4) {
+		p.rebuild()
+		return
+	}
+	for _, k := range updated {
+		p.push(k)
+	}
+	p.maybeCompact()
 }
 
 // eviction is one evicted chunk with its key.
@@ -571,34 +651,65 @@ type eviction struct {
 	chunk *chunk
 }
 
-// evict is evict (lru.py:115-160): the n evictable, unprotected chunks of lowest rank, least
-// recent first, or nil (and nothing changed) if there are fewer.
+// evict is evict (lru.py:175-220): the n evictable, unprotected chunks of lowest (rank, key),
+// least recent first, or nil (and nothing changed) if there are fewer. Entries popped on the way
+// that no longer match their key are dropped; protected keys are pushed back.
 func (p *lruPolicy) evict(n int, protected map[Key]bool) []eviction {
 	if n == 0 {
 		return []eviction{}
 	}
-	cands := make([]Key, 0, len(p.evictable))
-	for k := range p.evictable {
-		if !protected[k] {
-			cands = append(cands, k)
+	var selected, deferred []heapEntry
+	picked := map[Key]bool{}
+	for p.heap.Len() > 0 && len(selected) < n {
+		e := heap.Pop(&p.heap).(heapEntry)
+		if !p.isCurrent(e) {
+			continue
 		}
+		// Re-pinning without a recency change can leave an equivalent lazy entry behind: each
+		// key is selected once.
+		if picked[e.key] {
+			continue
+		}
+		if protected[e.key] {
+			deferred = append(deferred, e)
+			continue
+		}
+		selected = append(selected, e)
+		picked[e.key] = true
 	}
-	if len(cands) < n {
+	if len(selected) < n {
+		for _, e := range selected {
+			heap.Push(&p.heap, e)
+		}
+		for _, e := range deferred {
+			heap.Push(&p.heap, e)
+		}
 		return nil
 	}
-	sort.Slice(cands, func(i, j int) bool { return p.before(cands[i], cands[j]) })
+	for _, e := range deferred {
+		heap.Push(&p.heap, e)
+	}
 	out := make([]eviction, n)
-	for i, k := range cands[:n] {
+	for i, e := range selected {
+		k := e.key
 		out[i] = eviction{k, p.chunks[k]}
 		delete(p.evictable, k)
 		delete(p.chunks, k)
 		delete(p.ranks, k)
 		delete(p.born, k)
 	}
+	p.maybeCompact()
 	return out
 }
 
-func (p *lruPolicy) markEvictable(k Key)    { p.evictable[k] = true }
+// markEvictable is mark_evictable (lru.py:222-229): a chunk whose store or last load completed.
+func (p *lruPolicy) markEvictable(k Key) {
+	p.evictable[k] = true
+	p.push(k)
+	p.maybeCompact()
+}
+
+// markNonEvictable is mark_non_evictable (lru.py:231-233): a load pins the chunk; its heap entries go stale.
 func (p *lruPolicy) markNonEvictable(k Key) { delete(p.evictable, k) }
 
 // inRankOrder lists the cached chunks, least recent first: a trace's view of the CPU tier.

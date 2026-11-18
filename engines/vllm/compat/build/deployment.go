@@ -120,14 +120,14 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 	// vLLM's p2p tier (connector_options.secondary_tiers) came with the v0.33.0 engine, which builds
 	// it (core/vllm offloadtiers_p2p.go); the compatibility engine has no such tier, and the offload
 	// it resolves drops the option (KVOffloadBlockFromDeployment), so a release it runs is refused.
-	if !core && StatesP2PTier(shape.Offload) {
+	if !core && slices.ContainsFunc(shape.PoolOffloads, StatesP2PTier) {
 		return Adopted{}, fmt.Errorf("scenario %q: offload.connector_options.secondary_tiers states vLLM's p2p tier, "+
 			"which the %s releases the compatibility engine models do not have; it runs on the v%s engine, so state engine.version %q",
 			in.Scenario, strings.Join(CompatVersions(), " and "), vllm.Version, vllm.Version)
 	}
 	// vLLM's obj tier, on an object store, came with the v0.33.0 engine too (vllmengine); the
 	// compatibility engine models the fs tier only.
-	if !core && StatesObjectStoreTier(shape.Offload) {
+	if !core && slices.ContainsFunc(shape.PoolOffloads, StatesObjectStoreTier) {
 		return Adopted{}, fmt.Errorf("scenario %q: offload states a tier on an object store, which vLLM reaches through its obj "+
 			"tier; the compatibility engine (the %s releases) models the fs tier only, and the v%s engine runs it, so state "+
 			"engine.version %q", in.Scenario, strings.Join(CompatVersions(), " and "), vllm.Version, vllm.Version)

@@ -19,6 +19,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/core/engine"
+	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
@@ -59,6 +60,27 @@ type Config struct {
 	// the factory builds a data-parallel group of that many ranks behind one endpoint (DPGroup).
 	// Unstated or 1 is one engine.
 	DataParallelSize int `yaml:"data_parallel_size,omitempty"`
+	// APIServerCount is vLLM's api_server_count: the API-server processes in front of a
+	// data-parallel group, each a DPLBAsyncMPClient that balances the ranks with its own in-flight
+	// counts scaled by this count, from its own scan start (vllm/v1/engine/core_client.py:1747-1750,
+	// 1786, 1800@4ba787ec). Requests reach the clients in turn. Unstated or 1 is one client, which
+	// sees every request; vLLM's own default for an internal balancer is the group's size
+	// (vllm/entrypoints/cli/serve.py:123-126@4ba787ec), which a caller states. A single engine has
+	// no balancer, so the count does not change it.
+	APIServerCount int `yaml:"api_server_count,omitempty"`
+	// DataParallelSizeLocal is vLLM's data_parallel_size_local: the data-parallel ranks on one
+	// node (vllm/config/parallel.py:149@4ba787ec). It sizes a hybrid balancer's front end, which
+	// balances only its node's ranks. Unstated is every rank.
+	DataParallelSizeLocal int `yaml:"data_parallel_size_local,omitempty"`
+	// DataParallelHybridLB, DataParallelExternalLB and DataParallelMultiPortExternalLB are vLLM's
+	// load-balancing flags. External (or the multi-port launcher, which starts one external rank
+	// server per local rank) gives every rank its own endpoint and front end, a DPAsyncMPClient
+	// that balances nothing; hybrid gives each node one endpoint whose front end, a
+	// DPLBAsyncMPClient, balances that node's ranks. The router outside the engine picks the
+	// endpoint (DPGroup.AddToEndpoint). See resolveDPBalancing for the flags' resolution.
+	DataParallelHybridLB            bool `yaml:"data_parallel_hybrid_lb,omitempty"`
+	DataParallelExternalLB          bool `yaml:"data_parallel_external_lb,omitempty"`
+	DataParallelMultiPortExternalLB bool `yaml:"data_parallel_multi_port_external_lb,omitempty"`
 	// MambaModel is whether the model runs vLLM's MambaModelConfig hook: a Mamba or hybrid
 	// attention/Mamba model (ModelConfig.is_hybrid, vllm/config/model.py:2023-2032@5df63a72, or a
 	// Mamba architecture, vllm/model_executor/models/config.py:1073-1095@5df63a72). It is the model's,
@@ -159,6 +181,8 @@ type settings struct {
 	sched     sched.Config
 	queueSize int
 	v2Runner  bool
+	// layout is what the offloading connector's layout gates read (offloadLayout).
+	layout offloadLayoutFacts
 	// connector is the pool's P/D connector, nil for none; pp is pipeline_parallel_size, which
 	// vLLM's NIXL worker checks it against.
 	connector *connectorConfig
@@ -175,12 +199,82 @@ type settings struct {
 	// request's block-hash chain (resolve_none_hash_seed, vllm/v1/core/kv_cache_utils.py:131-146
 	// @5df63a72). It changes the hashes a KV-event stream publishes, never which blocks hit.
 	hashSeed *string
+	// maxCPULoRAs is the capacity of the worker's adapter cache (max_cpu_loras, resolved); 0 when LoRA is off.
+	maxCPULoRAs int
+	// kvCapacity is the KV cache size the engine core logs at start-up (kv.KVCapacity), the
+	// pool's tokens at max_model_len.
+	kvCapacity kv.Capacity
+	// servesRender is whether the model server answers the router's render endpoints: the
+	// frontend's --enable-scale-out (Engine.EnableScaleOut), false by default. vLLM's
+	// register_scale_out_api_routers answers every render, derender and token-in/token-out route
+	// with HTTP 403 unless it is set or the server runs in a dedicated token-only mode, which
+	// this engine does not model (tokens_only stays refused).
+	servesRender bool
 }
 
 // dpSettings are a data-parallel group's settings.
 type dpSettings struct {
 	ranks, syncInterval, prefillInterval int
 	statsIntervalUs                      int64
+	// clients is the number of load-balancing clients (api_server_count), at least 1.
+	clients int
+	// balancing is how the ranks are exposed (dpInternal, dpHybrid or dpExternal) and local the
+	// ranks behind one endpoint: every rank for internal, the node's for hybrid, one for external.
+	balancing string
+	local     int
+}
+
+// The data-parallel balancing modes the engine runs (vllm/v1/engine/core_client.py:155-166@4ba787ec
+// for the client each makes).
+const (
+	dpInternal = "internal"
+	dpHybrid   = "hybrid"
+	dpExternal = "external"
+)
+
+// resolveDPBalancing is EngineArgs.create_engine_config's resolution of the load-balancing flags
+// for a group of dp ranks (vllm/engine/arg_utils.py:2383-2392, 2447-2538@4ba787ec) and
+// make_async_mp_client's choice of client. The group is the whole data-parallel deployment: a
+// rank's own --data-parallel-rank or --data-parallel-start-rank only says which pod runs it.
+//   - hybrid and external together are refused;
+//   - external, or the multi-port launcher that starts external rank servers, runs one rank per
+//     endpoint, and a stated data_parallel_size_local other than 1 is refused;
+//   - hybrid needs data_parallel_size_local, runs as external when it is 1, and as internal when
+//     it is every rank;
+//   - a group of one rank has no balancer.
+func resolveDPBalancing(c Config, dp int) (mode string, local int, err error) {
+	external := c.DataParallelExternalLB || c.DataParallelMultiPortExternalLB
+	if c.DataParallelSizeLocal < 0 {
+		return "", 0, fmt.Errorf("vllm: data_parallel_size_local %d: it counts ranks and is not negative", c.DataParallelSizeLocal)
+	}
+	if c.DataParallelHybridLB && external {
+		return "", 0, fmt.Errorf("vllm: data_parallel_hybrid_lb and data_parallel_external_lb cannot be enabled together; " +
+			"vLLM refuses the pair (arg_utils.py:2383-2390@4ba787ec)")
+	}
+	if dp <= 1 {
+		return dpInternal, 1, nil
+	}
+	local = c.DataParallelSizeLocal
+	switch {
+	case external:
+		if local != 0 && local != 1 {
+			return "", 0, fmt.Errorf("vllm: an external data-parallel rank requires data_parallel_size_local 1; got %d "+
+				"(arg_utils.py:2476-2482@4ba787ec)", local)
+		}
+		return dpExternal, 1, nil
+	case c.DataParallelHybridLB && local == 0:
+		return "", 0, fmt.Errorf("vllm: data_parallel_hybrid_lb requires data_parallel_size_local, the ranks on each node " +
+			"(arg_utils.py:2527-2532@4ba787ec)")
+	case c.DataParallelHybridLB && local == 1:
+		return dpExternal, 1, nil // not eligible with one rank per node: vLLM switches to external
+	case c.DataParallelHybridLB && local < dp:
+		if dp%local != 0 {
+			return "", 0, fmt.Errorf("vllm: data_parallel_size %d is not a whole number of nodes of data_parallel_size_local %d: "+
+				"each hybrid front end balances the same number of ranks", dp, local)
+		}
+		return dpHybrid, local, nil
+	}
+	return dpInternal, dp, nil // hybrid with every rank local disables itself
 }
 
 // maxModelLenIssue is the open issue an unstated max_model_len cites (design X28).
@@ -199,7 +293,7 @@ func resolve(c Config) (settings, error) {
 	if err := refuseNotVisible(c); err != nil {
 		return s, err
 	}
-	if err := refuseUnmodelled(e, c.DataParallelSize > 1); err != nil {
+	if err := refuseUnmodelled(e); err != nil {
 		return s, err
 	}
 	if c.NumGPUBlocks < 2 {
@@ -364,12 +458,6 @@ func resolve(c Config) (settings, error) {
 			"speculative decoding: on V1 it is only supported with EAGLE, MTP, draft_model, ngram_gpu, DSpark or "+
 			"DFlash drafters (vllm/config/vllm.py:1651-1680@4ba787ec)", method)
 	}
-	if async && v2 && !asyncSpecMethod(method) {
-		// The V2 runner runs async scheduling with this drafter, stated or resolved, which is not
-		// diff-tested here: async with drafts is checked for MTP and DSpark only.
-		return s, fmt.Errorf("vllm: async scheduling with a %s drafter on the V2 model runner is not modelled (%s186)",
-			method, issueBase)
-	}
 	if err := engine.CheckConfig(pp, async, v2); err != nil {
 		return s, fmt.Errorf("vllm: %w", err)
 	}
@@ -377,11 +465,13 @@ func resolve(c Config) (settings, error) {
 	// Async scheduling with a drafter runs the AsyncScheduler's placeholder drafts
 	// (async_scheduler.py:25-58@5df63a72), diff-tested with MTP and DSpark against vLLM's own
 	// EngineCore through the batch queue (core/engine/testdata/golden/t3-async-mtp*.json,
-	// t3-async-dspark.json).
+	// t3-async-dspark.json, t3-async-ngram.json). The V2 runner takes any drafter with it, ngram
+	// included, stated or resolved on.
 	// max_concurrent_batches > 1 runs vLLM's batch queue: the adapter keeps step_with_batch_queue's
 	// loop state (an empty schedule occupies a slot, a full queue blocks on the oldest batch, and a
 	// blocked step schedules nothing until that batch completes; vllm/v1/engine/core.py:698-810@5df63a72).
 
+	s.servesRender = e.EnableScaleOut != nil && *e.EnableScaleOut
 	prefixCaching := e.EnablePrefixCaching == nil || *e.EnablePrefixCaching
 	if err := checkMambaCache(c, prefixCaching); err != nil {
 		return settings{}, err
@@ -391,12 +481,16 @@ func resolve(c Config) (settings, error) {
 	if e.MaxLoRAs > 0 {
 		maxLoRAs = e.MaxLoRAs
 	}
-	groups, err := KVGroups(c.KVLayers, e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager,
-		TagsDraftGroups(method))
+	// The engine's block size is passed: layers of unequal pages are unified against it (kv.unifyPageSizes).
+	groups, err := KVGroupsWith(c.KVLayers, kv.GroupOptions{DisableHybrid: e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager,
+		TagDraftGroups: TagsDraftGroups(method), BlockSize: blockSize})
 	if err != nil {
 		return settings{}, err
 	}
 	if err := checkKVLayersFit(c, blockSize, maxLen, queue*budget, spec.PrefillLookahead, method); err != nil {
+		return settings{}, err
+	}
+	if s.kvCapacity, err = kvCapacityOf(c, blockSize, maxLen, queue*budget, spec.PrefillLookahead, method); err != nil {
 		return settings{}, err
 	}
 	if err := checkChunkedPrefill(c, chunked, chunkedInput{prefixCaching: prefixCaching, maxModelLen: maxLen,
@@ -429,8 +523,13 @@ func resolve(c Config) (settings, error) {
 		DecodeStagger:        pp,
 		UseV2ModelRunner:     v2,
 		KVGroups:             groups,
+		// An engine that is not DP-coordinated applies prefill_schedule_interval itself
+		// (vllm/v1/core/sched/scheduler.py:395-425@4ba787ec); a data-parallel group's engine core
+		// throttles instead (DPGroup, core.Wave), so its ranks' Schedulers keep the interval at 1.
+		LocalPrefillInterval: localPrefillInterval(e.PrefillScheduleInterval, c.DataParallelSize),
 	}
 	s.queueSize, s.v2Runner = queue, v2
+	s.layout = offloadLayoutFacts{agnostic: parallelismAgnostic(c.KVLayers, v2), plainGroup: len(c.KVLayers) == 0, pp: pp}
 	if v, ok := e.Env["PYTHONHASHSEED"]; ok {
 		s.hashSeed = &v
 	}
@@ -441,6 +540,11 @@ func resolve(c Config) (settings, error) {
 		o.env = e.Env
 		s.offload = &o
 	}
+	// max_cpu_loras: None resolves to max_loras (vllm/config/lora.py:120-121@4ba787ec); the worker's
+	// adapter cache (core/lora) has that capacity. Validate has refused a value below max_loras.
+	if maxLoRAs > 0 {
+		s.maxCPULoRAs = max(e.MaxCPULoRAs, maxLoRAs)
+	}
 	if c.Placement != nil {
 		if err := c.Placement.Validate(); err != nil {
 			return settings{}, fmt.Errorf("vllm: placement: %w", err)
@@ -450,28 +554,15 @@ func resolve(c Config) (settings, error) {
 	if s.offload, err = checkConnectorPair(s.connector, s.offload); err != nil {
 		return settings{}, err
 	}
-	if s.offload != nil && c.DataParallelSize > 1 {
-		// Each rank would run its own offload connector and CPU tier; the group aggregates a P/D
-		// connector's transfers (DPGroup) but not the offload's jobs, which it routes by request.
-		return settings{}, fmt.Errorf("vllm: kv_offload with data parallelism (dp %d) is not built yet: the "+
-			"data-parallel group does not carry an offload connector's jobs (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/47")
-	}
-	if s.connector != nil && s.connector.Role.producer() && c.DataParallelSize > 1 && c.Placement != nil {
-		// A handoff names no endpoint (engine.Handoff), so the decode side is told only the prefill
-		// instance's first node (engine.Request.Peer). A prefill group whose ranks sit on several nodes
-		// would price every pull from the first node's links, wrong for a request computed on another
-		// rank. This is a limit of the contract (inference-sim/blis-substrate#48), not of vLLM, which
-		// starts such a group; it is refused until Handoff carries the owning rank's endpoint. A decode
-		// group has no such limit: each rank states its own node as the end of its pulls.
-		if n := c.Placement.GroupNodes(c.DataParallelSize, rankWidth(*c.Placement)); n > 1 {
-			return settings{}, fmt.Errorf("vllm: a %s group of %d data-parallel ranks spans %d nodes: the engine contract's handoff "+
-				"names no endpoint, so a pull could not be priced from the node of the rank that holds the KV "+
-				"(inference-sim/blis-substrate#48); vLLM itself starts such a group. Keep a prefill group on one node, "+
-				"or wait for a handoff that carries its rank's endpoint", c.KVTransfer.Role, c.DataParallelSize, n)
-		}
+	if c.APIServerCount < 0 {
+		return settings{}, fmt.Errorf("vllm: api_server_count %d: it counts API-server processes and is not negative", c.APIServerCount)
 	}
 	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: e.DPSyncInterval,
-		prefillInterval: max(e.PrefillScheduleInterval, 1), statsIntervalUs: c.DPStatsIntervalUs}
+		prefillInterval: max(e.PrefillScheduleInterval, 1), statsIntervalUs: c.DPStatsIntervalUs,
+		clients: max(c.APIServerCount, 1)}
+	if s.dp.balancing, s.dp.local, err = resolveDPBalancing(c, s.dp.ranks); err != nil {
+		return settings{}, err
+	}
 	if s.dp.syncInterval == 0 {
 		s.dp.syncInterval = 16
 	}
@@ -644,7 +735,7 @@ func resolveAsync(stated *bool, method string, pp int, v2 bool) bool {
 // refuseUnmodelled refuses engine settings whose effect on scheduling this engine does not
 // model, each with the reason. Settings that only change step time (backends, graph modes,
 // quantization, memory utilization) are the cost model's and pass through untouched.
-func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
+func refuseUnmodelled(e engineconfig.Engine) error {
 	if keys := unreadEnv(e.Env); len(keys) > 0 {
 		// blis-schemas' Env rule: a consumer refuses, or discloses, every key it cannot honour,
 		// and never ignores one (spec/deployment/deployment.go Engine.Env).
@@ -664,17 +755,13 @@ func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
 		// (vllm/config/scheduler.py:203@4ba787ec); 0 is the block's unstated.
 		return fmt.Errorf("vllm: prefill_schedule_interval %d is below 1, which vLLM refuses "+
 			"(vllm/config/scheduler.py:203@4ba787ec)", e.PrefillScheduleInterval)
-	case e.PrefillScheduleInterval > 1 && !dataParallel:
-		// Without a data-parallel group the Scheduler applies the interval itself: it holds prefill
-		// until the interval has passed since the last prefill-carrying step, with a capacity escape
-		// (local_prefill_interval, vllm/v1/core/sched/scheduler.py:395-425, 770-790, 1612-1629
-		// @4ba787ec). That cadence is not ported, so stating it is refused rather than dropped.
-		return fmt.Errorf("vllm: prefill_schedule_interval %d without a data-parallel group is the scheduler's local "+
-			"prefill cadence, which is not modelled (%s172)", e.PrefillScheduleInterval, issueBase)
-	case e.MaxCPULoRAs != 0 && e.MaxCPULoRAs != max(e.MaxLoRAs, 1):
-		// LoRAConfig.max_cpu_loras: None, which becomes max_loras (vllm/config/lora.py:42, 120-121@5df63a72),
-		// and max_loras defaults to 1 (:35); a stated value equal to that is the default.
-		return fmt.Errorf("vllm: max_cpu_loras is not modelled (https://github.com/inference-sim/blis-vllm/issues/5)")
+	case e.MaxCPULoRAs > 0 && e.MaxCPULoRAs < max(e.MaxLoRAs, 1):
+		// LoRAConfig._validate_lora_config (vllm/config/lora.py:123-126@4ba787ec).
+		return fmt.Errorf("vllm: max_cpu_loras (%d) must be >= max_loras (%d)", e.MaxCPULoRAs, max(e.MaxLoRAs, 1))
+	case e.MaxCPULoRAs > 1 && e.MaxLoRAs == 0:
+		// LoRAConfig exists only when LoRA is on (max_loras stated); without it the cache the field
+		// sizes does not exist. A 1 is what an unset max_loras resolves to (core/lora, vllm/config/lora.py).
+		return fmt.Errorf("vllm: max_cpu_loras %d sizes the adapter cache of a LoRA engine; set max_loras", e.MaxCPULoRAs)
 	}
 	// mamba_cache_mode and mamba_ssm_cache_dtype are checked on their resolved values (checkMambaCache),
 	// and swa_bounded_replay after the model runner is resolved (resolve).
@@ -695,8 +782,6 @@ type unreadSetting struct {
 const issueBase = "https://github.com/inference-sim/blis-vllm/issues/"
 
 var unreadSettings = []unreadSetting{
-	// CacheConfig.kv_cache_memory_bytes: None (vllm/config/cache.py:257@5df63a72).
-	{"kv_cache_memory_bytes", "kv_cache_memory_bytes", issueBase + "81", func(e engineconfig.Engine) bool { return e.KVCacheMemoryBytes != nil }},
 	// AttentionConfig.use_trtllm_attention: None, auto-detect (vllm/config/attention.py:74@5df63a72);
 	// a stated true or false is a choice. Which prefill kernel runs is the engine's to resolve and
 	// to report as the implementation of attention.prefill, which this engine does not do yet; the
@@ -789,7 +874,7 @@ func refuseUnreadSettings(e engineconfig.Engine) error {
 }
 
 // readEnv are the engine environment variables this engine reads (resolveV2Runner).
-var readEnv = append([]string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER", "UCX_CUDA_IPC_ENABLE_MNNVL"}, p2pEnvNames...)
+var readEnv = append([]string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER", "UCX_CUDA_IPC_ENABLE_MNNVL", "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS"}, p2pEnvNames...)
 
 // inertEnv are the environment variables the engine accepts without reading: fields.json proves each
 // inert (oracle/inertness/<name>.json), so stating one changes nothing the engine decides. Python
@@ -853,7 +938,7 @@ func fullCUDAGraphs(mode string) bool {
 }
 
 // checkRules runs the v0.33.0 rules pack (rules/v0_33) over the engine block, the startup check
-// #2021 B11 step 2 gives the engine: the values the release accepts and the refusals it makes.
+// inference-sim issue 2021 B11 step 2 gives the engine: the values the release accepts and the refusals it makes.
 // The block is one pool's engine, and it is all the engine is given: the model graph, the cluster
 // and the pool's parallel widths other than pipeline_parallel_size are not in it. So a refusal
 // stands only where the block decides it whatever those widths are: the pack runs once for each
@@ -918,4 +1003,61 @@ func checkRulesWith(pack rules.EngineRules, e engineconfig.Engine, pp int) error
 	}
 	return fmt.Errorf("vllm: the engine block fails vLLM %s's rules: %s", pack.EngineVersion(),
 		strings.Join(lines, "; "))
+}
+
+// localPrefillInterval is the Scheduler's local_prefill_interval: the stated prefill_schedule_interval
+// when data_parallel_size is 1, otherwise 1 (vllm/v1/core/sched/scheduler.py:395-413@4ba787ec).
+func localPrefillInterval(interval, dataParallelSize int) int {
+	if dataParallelSize > 1 {
+		return 1
+	}
+	return max(interval, 1)
+}
+
+// parallelismAgnostic is the offloading connector's is_parallelism_agnostic, which the p2p and fs tiers
+// read to drop the parallel sizes from the layout they compare and name files by
+// (vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:217-225@4ba787ec,
+// FileMapper.from_offloading_spec, vllm/v1/kv_offload/file_mapper.py:100-127). It holds for a model
+// of one non-MLA full-attention KV cache group, off the V2 model runner. A model that states no
+// kv_layers is one full-attention group. A compressed (MLA) group, an indexer group, a sliding
+// window, a state layer, a draft layer or several groups are not agnostic.
+//
+// Not read here, so a layout that fails them is taken as agnostic: that the KV heads are sharded
+// across the tensor-parallel ranks (num_kv_heads x tp == total KV heads), per-token-head KV scales,
+// and decode or prefill context parallelism. The engine states none of them.
+func parallelismAgnostic(runs []KVLayerRun, v2 bool) bool {
+	if v2 {
+		return false
+	}
+	for _, r := range runs {
+		if r.Spec != "full" || r.Draft {
+			return false
+		}
+	}
+	return true
+}
+
+// offloadLayoutFacts are what the offloading connector's two layout gates read of the pool:
+// agnostic is parallelismAgnostic over the stated kv_layers (which is true for a model that states
+// none, MLA or not), plainGroup that none are stated, and pp the pipeline_parallel_size.
+type offloadLayoutFacts struct {
+	agnostic, plainGroup bool
+	pp                   int
+}
+
+// offloadLayout is the pair of layout flags the p2p and fs tiers read: is_parallelism_agnostic and
+// replicated_layout (offloading/config.py:196-208 and :217-225@4ba787ec). An MLA model is never
+// parallelism-agnostic (MLAAttentionSpec is excluded); its latent is replicated across the
+// tensor-parallel ranks, which vLLM names replicated_layout when the pool is tensor-parallel only:
+// tp above 1, no pipeline parallelism, world size equal to tp. The run config of such a pool names
+// no parallel size, so MLA pools of different tensor parallelism handshake; a pool with pipeline
+// parallelism names them, so it does not. An MLA model that states kv_layers (DeepSeek V4's groups)
+// is taken as neither: whether its groups' replicas equal tp is not read here.
+// Not read: the mp executor and a single node (replicated_layout's last two terms), and
+// decode or prefill context parallelism.
+func offloadLayout(f offloadLayoutFacts, mla bool, world int) (agnostic, replicated bool) {
+	if !mla {
+		return f.agnostic, false
+	}
+	return false, f.plainGroup && f.pp <= 1 && world > 1
 }

@@ -30,7 +30,7 @@ connectors:
   # (vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py:133@4ba787ec). The schema's
   # "composite" role is for it: it names no transfer or offload of its own, so it is served as
   # neither pd_transfer nor offload. The children modelled are NixlConnector and
-  # OffloadingConnector (docs/multiconnector.md); any other child is refused where the engine
+  # OffloadingConnector (core/vllm/multiconnector.go); any other child is refused where the engine
   # block is built.
   MultiConnector:
     upstream: KVConnectorBase_V1

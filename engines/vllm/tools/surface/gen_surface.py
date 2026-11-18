@@ -13,7 +13,7 @@ Usage:
     python3 -I tools/surface/gen_surface.py <vllm-source> tools/surface/status.json --check surface.json
     python3 -I tools/surface/gen_surface.py <vllm-source> --items     (the derived item ids, one per line)
 
-The working directory is the blis-vllm checkout: evidence paths and docs/metrics-manifest.json
+The working directory is the blis-vllm checkout: evidence paths and oracle/metrics/manifest.json
 are read from it (--repo names another).
 
 The release is the one provenance.go's Upstream record names unless --upstream-tag and
@@ -54,7 +54,7 @@ What is read, by category (each item's "site" is the file and line it was read a
                        offloading manager, spec and worker, the CPU tier's cache policy, the
                        tiering layer's parent and secondary-tier managers, and the backpressure
                        policy and detector.
-  metric_family        every family of docs/metrics-manifest.json, which cmd/metricsmanifest
+  metric_family        every family of oracle/metrics/manifest.json, which cmd/metricsmanifest
                        generates from every Prometheus constructor in the pinned source and CI checks
                        current in the same job.
 
@@ -551,14 +551,14 @@ def frameworks(src):
 
 
 def metric_families(repo):
-    path = os.path.join(repo, "docs/metrics-manifest.json")
+    path = os.path.join(repo, "oracle/metrics/manifest.json")
     try:
         with open(path, encoding="utf-8") as f:
             man = json.load(f)
     except (OSError, ValueError) as e:
-        raise GenError("docs/metrics-manifest.json: %s" % e)
+        raise GenError("oracle/metrics/manifest.json: %s" % e)
     if man.get("vllm") != UPSTREAM["tag"].lstrip("v"):
-        raise GenError("docs/metrics-manifest.json is for vLLM %s, not %s" % (man.get("vllm"), UPSTREAM["tag"]))
+        raise GenError("oracle/metrics/manifest.json is for vLLM %s, not %s" % (man.get("vllm"), UPSTREAM["tag"]))
     out = []
     for fam in man["families"]:
         rel, line = fam["defined"].rsplit(":", 1)

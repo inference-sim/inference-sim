@@ -214,13 +214,28 @@ func open(s engine.Spec, given *load.Data) (pool, error) {
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %w", err)
 	}
+	if err := refuseDenseLocalCadence(filepath.Base(path), m.Deployment().MoE, par.DP, resolvedInterval(node)); err != nil {
+		return pool{}, err
+	}
 	blocks, kvBytes, err := poolBlocks(m, st)
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
 	}
-	off, err := offloadOf(m, shape.Offload)
+	// The pool's own offload and connector, else the deployment's (Shape.PoolOffloads): a prefill pool
+	// can run NIXL beside a CPU tier while the decode pool runs NIXL alone.
+	poolOffload, poolConnector := shape.Offload, shape.PDConnector
+	if i := s.Pool; i >= 0 && i < len(shape.PoolOffloads) {
+		poolOffload, poolConnector = shape.PoolOffloads[i], shape.PoolPDConnectors[i]
+	}
+	off, err := offloadOf(m, poolOffload)
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
+	}
+	if _, kt := mapGet(&node, "kv_transfer"); !kt && poolConnector == multiConnector && off == nil && m.Role() != deployment.RoleColocated {
+		return pool{}, fmt.Errorf("vllmengine: %s: the %s pool (pools[%d]) runs pd_transfer.connector %s but offloads nothing, and a "+
+			"MultiConnector over NIXL alone is not modelled; give the pool an offload block, or state pd_transfer: {connector: "+
+			"NixlConnector} on this pool (a pool's own pd_transfer overrides the deployment's)",
+			filepath.Base(path), m.Role(), s.Pool, multiConnector)
 	}
 	// The settings as the release resolves them (Model.Engine), which the kernel prices and the
 	// engine block is completed with, so the scheduler and the cost model run one engine.
@@ -229,7 +244,7 @@ func open(s engine.Spec, given *load.Data) (pool, error) {
 		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
 	}
 	return pool{model: m, resolved: resolved, blocks: blocks, kvBytes: kvBytes, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1),
-		role: m.Role(), connector: shape.PDConnector, offload: off}, nil
+		role: m.Role(), connector: poolConnector, offload: off}, nil
 }
 
 // offloadIssue tracks the offload connectors and options the engine does not model (the tier-4
@@ -327,6 +342,7 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 		"cpu_bytes":       cpu,
 		"bytes_per_block": perBlock,
 		"workers":         m.WorldSize(),
+		"mla":             m.UsesMLA(),
 		"copies":          m.OffloadCopies(),
 	}
 	if o.Spec != "" {
@@ -1024,3 +1040,32 @@ type (
 	Frontend   = vllm.Frontend
 	Frontender = vllm.Frontender
 )
+
+// denseLocalCadenceIssue tracks the dense-model data-parallel ranks' own local prefill cadence.
+const denseLocalCadenceIssue = "https://github.com/inference-sim/blis-vllm/issues/268"
+
+// refuseDenseLocalCadence refuses a dense (non-MoE) model at data_parallel_size above 1 with
+// prefill_schedule_interval above 1. vLLM v0.33.0 reconfigures each rank of such a deployment to
+// data_parallel_size 1, so the rank is not DP-coordinated and its Scheduler applies the interval as
+// its own local cadence (vllm/v1/core/sched/scheduler.py:398-403 at v0.33.0). DPGroup runs the ranks
+// as one lockstep wave under the engine-core cadence, which is the MoE regime, so running the
+// combination would price a different throttle without saying so.
+func refuseDenseLocalCadence(scenario string, moe bool, dp, interval int) error {
+	if moe || dp <= 1 || interval <= 1 {
+		return nil
+	}
+	return fmt.Errorf("vllmengine: %s: dense_dp_local_prefill_cadence: prefill_schedule_interval %d on a dense model at "+
+		"data_parallel_size %d gives each rank vLLM v0.33.0's own local cadence, which the data-parallel group does not "+
+		"model (%s)", scenario, interval, dp, denseLocalCadenceIssue)
+}
+
+// resolvedInterval is the engine block's stated prefill_schedule_interval, 0 when unstated.
+func resolvedInterval(node yaml.Node) int {
+	var b struct {
+		Interval int `yaml:"prefill_schedule_interval"`
+	}
+	if err := node.Decode(&b); err != nil {
+		return 0
+	}
+	return b.Interval
+}

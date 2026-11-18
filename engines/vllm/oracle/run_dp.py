@@ -169,6 +169,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                 block_size=block_size,
                 max_model_len=cfg.get("max_model_len"),
                 scheduling_policy=cfg.get("scheduling_policy", "fcfs"),
+                enable_chunked_prefill=cfg.get("enable_chunked_prefill", True),
                 **({"async_scheduling": True, "scheduler_cls": AsyncScheduler} if async_sched else {}),
             ))
 
@@ -236,18 +237,58 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     ParallelConfig.sync_dp_state = staticmethod(scripted_sync)
 
     # The front end's load balancer, with the state get_core_engine_for_request reads.
-    client = object.__new__(DPLBAsyncMPClient)
-    client.client_count = 1
-    client.reqs_in_flight = {}
-    # The open streaming-input sessions, empty as DPLBAsyncMPClient.__init__ makes it
-    # (vllm/v1/engine/core_client.py:1728-1729@4ba787ec); no request here opens one.
-    client.streaming_reqs = set()
-    client.engine_inflight = Counter()
-    client.core_engines = [bytes([i, 0]) for i in range(dp)]
-    client.lb_engines = [[0, 0, 0.0] for _ in range(dp)]
-    client.eng_start_index = 0
-    client.vllm_config = SimpleNamespace(use_v2_model_runner=False,
-                                         parallel_config=SimpleNamespace(all2all_backend="allgather_reducescatter"))
+    # api_server_count clients, each its own DPLBAsyncMPClient with its own copy of the counts,
+    # its own in-flight count and its own rotating start, as each API-server process holds them
+    # (core_client.py:1747-1750@4ba787ec). A scenario states client_count (default 1); a request
+    # states the "client" it reaches, else the next client in turn (the kernel's spread of
+    # connections over the processes sharing the listening socket, serve.py:298@4ba787ec).
+    client_count = int(cfg.get("client_count", 1))
+    # Under internal balancing one DPLBAsyncMPClient manages every rank; under hybrid one per node
+    # manages that node's ranks only; under external one DPAsyncMPClient per rank sends every request
+    # to its rank. A client manages local ranks only when local_engines_only is set
+    # (vllm/config/parallel.py:652-657@4ba787ec; DPAsyncMPClient.engine_ranks_managed,
+    # core_client.py:740-746@4ba787ec), and a request names the front end the router chose: its
+    # "endpoint". Several clients per front end are not scenario here (client_count is 1).
+    # The scenario states vLLM's own flags, resolved as EngineArgs.create_engine_config does
+    # (vllm/engine/arg_utils.py:2447-2538@4ba787ec): external (or the multi-port launcher) is one
+    # rank per front end; hybrid with 1 < data_parallel_size_local < dp is one front end per node;
+    # anything else is the internal balancer over every rank.
+    size_local = cfg.get("data_parallel_size_local")
+    if cfg.get("data_parallel_external_lb") or cfg.get("data_parallel_multi_port_external_lb"):
+        balancing, local = "external", 1
+    elif cfg.get("data_parallel_hybrid_lb") and size_local and 1 < size_local < dp:
+        balancing, local = "hybrid", int(size_local)
+    else:
+        balancing, local = "internal", dp
+    if balancing != "internal":
+        assert client_count == 1 and dp % local == 0, (client_count, dp, local)
+    clients = []
+    # The ranks each client manages, in client order (DPAsyncMPClient.engine_ranks_managed).
+    managed_of: list[list[int]] = []
+    client_of: dict[str, int] = {}
+    fronts = range(0, dp, local) if balancing != "internal" else range(client_count)
+    for client_index, first in enumerate(fronts):
+        managed = list(range(first, first + local)) if balancing != "internal" else list(range(dp))
+        engines = [bytes([i, 0]) for i in managed]
+        # External balancing is a DPAsyncMPClient per rank, whose get_core_engine_for_request returns
+        # its one core engine (core_client.py:1558-1560@4ba787ec). It is run here as the same
+        # DPLBAsyncMPClient over that one engine, which also returns it; vLLM's DPAsyncMPClient is not
+        # built (its state is not among oracle/mocks.json's), so the external routing is the
+        # one-engine case of the balancer, not DPAsyncMPClient's own method.
+        client = object.__new__(DPLBAsyncMPClient)
+        client.client_count = client_count
+        client.core_engines = engines
+        client.lb_engines = [[0, 0, 0.0] for _ in managed]
+        client.eng_start_index = (len(managed) * (client_index if balancing == "internal" else 0)) // client_count
+        managed_of.append(managed)
+        client.reqs_in_flight = {}
+        # The open streaming-input sessions, empty as DPLBAsyncMPClient.__init__ makes it
+        # (vllm/v1/engine/core_client.py:1728-1729@4ba787ec); no request here opens one.
+        client.streaming_reqs = set()
+        client.engine_inflight = Counter()
+        client.vllm_config = SimpleNamespace(use_v2_model_runner=False,
+                                             parallel_config=SimpleNamespace(all2all_backend="allgather_reducescatter"))
+        clients.append(client)
 
     routed: dict[str, int] = {}
     steps = []
@@ -264,10 +305,14 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         # The coordinator rebinds lb_engines to the counts it last received
         # (core_client.py:1562-1575), stats_lag steps old.
         idx = len(history) - 1 - stats_lag
-        if idx >= 0:
-            client.lb_engines = [list(c) for c in history[idx]]
-        else:
-            client.lb_engines = [[0, 0, 0.0] for _ in range(dp)]
+        for client in clients:
+            # The coordinator's counts cover every engine; the client slices the ones it manages
+            # (core_client.py:1588-1600@4ba787ec).
+            m = managed_of[clients.index(client)]
+            if idx >= 0:
+                client.lb_engines = [list(c) for c in history[idx][m[0]:m[-1] + 1]]
+            else:
+                client.lb_engines = [[0, 0, 0.0] for _ in m]
 
     def step_batch_queue(i, s, core, r_rec) -> bool:
         # The rank's busy-loop step with a batch queue: step_with_batch_queue, the step_fn
@@ -291,14 +336,14 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                     r_rec["finished"].append(o.request_id)
                     finished[o.request_id] = {"reason": str(o.finish_reason), "rank": i,
                                               "output_tokens": sampled[o.request_id], "step": step}
-                    if (eng := client.reqs_in_flight.pop(o.request_id, None)) is not None:
-                        client.engine_inflight[eng] -= 1
+                    finish_client_side(o.request_id)
         r_rec["finished"].sort()
         r_rec["queue_len"] = len(core.batch_queue)
         return executed
 
     def finish_client_side(o_request_id: str) -> None:
         # process_engine_outputs (core_client.py:1703-1710).
+        client = clients[client_of[o_request_id]]
         if (eng := client.reqs_in_flight.pop(o_request_id, None)) is not None:
             client.engine_inflight[eng] -= 1
 
@@ -393,10 +438,16 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             # The routing reads only these fields of an EngineCoreRequest; resumable is its
             # default, False (vllm/v1/engine/__init__.py:147@4ba787ec), as for every request
             # that is not a streaming-input session (core_client.py:1751-1759).
+            if balancing != "internal":
+                # The router outside the engine chose the front end.
+                client_of[r["id"]] = r["endpoint"]
+            else:
+                client_of[r["id"]] = r["client"] if "client" in r else len(client_of) % client_count
+            client = clients[client_of[r["id"]]]
             engine = client.get_core_engine_for_request(SimpleNamespace(
                 request_id=r["id"], data_parallel_rank=r.get("rank") if connector else None, pooling_params=None,
                 resumable=False))
-            rank = client.core_engines.index(engine)
+            rank = managed_of[client_of[r["id"]]][client.core_engines.index(engine)]
             routed[r["id"]] = rank
             arrivals.append([r["id"], rank])
             ranks[rank].add_request(req)
@@ -451,8 +502,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                             finished[o.request_id] = {"reason": str(o.finish_reason), "rank": i,
                                                       "output_tokens": sampled[o.request_id], "step": step}
                             # process_engine_outputs (core_client.py:1703-1710).
-                            if (eng := client.reqs_in_flight.pop(o.request_id, None)) is not None:
-                                client.engine_inflight[eng] -= 1
+                            finish_client_side(o.request_id)
                 r_rec["finished"].sort()
             unfinished = s.has_unfinished_requests()
             if not executed and (unfinished or core.engines_running):

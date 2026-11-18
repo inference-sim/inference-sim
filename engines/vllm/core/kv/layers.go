@@ -175,12 +175,19 @@ func GroupLayers(layers []Layer, o GroupOptions) ([]Group, error) {
 // groupLayers is GroupLayers with each group's layers, by index: vLLM's KVCacheGroupSpec
 // layer_names, which get_kv_cache_config_from_groups sizes the pool from.
 func groupLayers(layers []Layer, o GroupOptions) ([]Group, [][]int, error) {
+	g, m, _, err := groupAndLayers(layers, o)
+	return g, m, err
+}
+
+// groupAndLayers is groupLayers with the layers as grouped: after unify_kv_cache_spec_page_size a layer of a smaller page
+// states a larger block size, and the pool is sized from those layers, not the ones the model registered.
+func groupAndLayers(layers []Layer, o GroupOptions) ([]Group, [][]int, []Layer, error) {
 	if len(layers) == 0 {
-		return nil, nil, errors.New("kv: a model with no KV cache layers")
+		return nil, nil, nil, errors.New("kv: a model with no KV cache layers")
 	}
 	for _, l := range layers {
 		if l.Spec == LayerMamba && l.MambaCacheMode != "" && l.MambaCacheMode != "none" && l.MambaCacheMode != "align" {
-			return nil, nil, fmt.Errorf("kv: mamba_cache_mode %q is not modelled: only \"none\" and \"align\" are", l.MambaCacheMode)
+			return nil, nil, nil, fmt.Errorf("kv: mamba_cache_mode %q is not modelled: only \"none\" and \"align\" are", l.MambaCacheMode)
 		}
 	}
 	all := make([]int, len(layers))
@@ -191,11 +198,11 @@ func groupLayers(layers []Layer, o GroupOptions) ([]Group, [][]int, error) {
 	if o.DisableHybrid {
 		var err error
 		if work, err = unifyHybrid(layers); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 	if uniformType(work) {
-		return []Group{groupOf(work[0])}, [][]int{all}, nil
+		return []Group{groupOf(work[0])}, [][]int{all}, work, nil
 	}
 	if deepseek(work) && o.DisableHybrid {
 		// vLLM v0.32.0 does not start this deployment: unify_hybrid_kv_cache_specs promotes each
@@ -204,7 +211,7 @@ func groupLayers(layers []Layer, o GroupOptions) ([]Group, [][]int, error) {
 		// replace_as, which passes every field of the old spec except extra_retained_tokens to
 		// the new class (vllm/v1/kv_cache_interface.py:119-138), and MLAAttentionSpec has no
 		// bounded_replay field (:686-702, :956). So this is vLLM's refusal, not a gap of ours.
-		return nil, nil, errors.New("vLLM does not start DeepSeek V4 or V4.1 with disable_hybrid_kv_cache_manager: " +
+		return nil, nil, nil, errors.New("vLLM does not start DeepSeek V4 or V4.1 with disable_hybrid_kv_cache_manager: " +
 			"true: promoting the sliding-window MLA caches to MLA attention raises TypeError (unexpected keyword " +
 			"argument 'bounded_replay', unify_hybrid_kv_cache_specs, vllm/v1/core/kv_cache_utils.py:1746-1754 at " +
 			"vLLM v0.32.0), so there is no deployment to price; drop disable_hybrid_kv_cache_manager from the " +
@@ -213,17 +220,21 @@ func groupLayers(layers []Layer, o GroupOptions) ([]Group, [][]int, error) {
 	if o.blockOuter(work) {
 		g, members, err := packedGroups(work, o.BlockSize)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if g != nil {
-			return g, members, nil
+			return g, members, work, nil
 		}
 	}
 	if deepseek(work) {
-		return nil, nil, errors.New("kv: DeepSeek V4's KV layers of one page size are not modelled")
+		return nil, nil, nil, errors.New("kv: DeepSeek V4's KV layers of one page size are not modelled")
+	}
+	work, err := unifyPageSizes(work, o.BlockSize)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	if err := checkEqualPages(work, o.BlockSize); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	var buckets []Group
 	of := map[Group][]int{}
@@ -257,7 +268,7 @@ func groupLayers(layers []Layer, o GroupOptions) ([]Group, [][]int, error) {
 			members = append(members, m)
 		}
 	}
-	return out, members, nil
+	return out, members, work, nil
 }
 
 // unifyHybrid is unify_hybrid_kv_cache_specs (kv_cache_utils.py:1799-1822@5df63a72) with
@@ -304,6 +315,64 @@ func unifyHybrid(layers []Layer) ([]Layer, error) {
 	return out, nil
 }
 
+// unifyPageSizes is unify_kv_cache_spec_page_size (vllm/v1/core/kv_cache_planning.py:346-408@4ba787ec) for the layers the
+// grouping reaches when their pages differ (get_kv_cache_groups :1113-1200: not one spec, not one uniform type, not
+// block-outermost). As vLLM does, a layer of a smaller page whose page divides the largest takes the block size
+// block_size * (max_page / page), whatever its kind (full attention, sliding windows, the MLA kinds, the circular buffer).
+// Only when the page does not divide does vLLM differ by kind, and the port refuses by name: an MLA-kind layer (the
+// compressed latent and the indexer, MLAAttentionSpec) raises NotImplementedError in vLLM, which then tries the
+// full-allocation fallback (:400-406); any other attention layer is padded (page_size_padded, :396-399), which is not
+// modelled (blis-vllm#295). A Mamba layer is neither unified nor counted for the largest page (vLLM pads a smaller Mamba page and takes
+// it into the maximum; the port refuses a Mamba page unequal to the attention page, checkEqualPages, as before). engine is
+// the engine's block size, which a layer that states none has; without it the pages are not comparable and the layers
+// are returned as they are (checkEqualPages then refuses unequal elements per token).
+func unifyPageSizes(layers []Layer, engine int) ([]Layer, error) {
+	if engine <= 0 {
+		return layers, nil
+	}
+	maxPage := 0
+	for _, l := range layers {
+		if l.Spec != LayerMamba {
+			maxPage = max(maxPage, pageAt(l, engine))
+		}
+	}
+	equal := true
+	for _, l := range layers {
+		if l.Spec != LayerMamba && pageAt(l, engine) != maxPage {
+			equal = false
+		}
+	}
+	if equal {
+		return layers, nil
+	}
+	out := slices.Clone(layers)
+	for i, l := range out {
+		p := pageAt(l, engine)
+		if l.Spec == LayerMamba || p == maxPage {
+			continue
+		}
+		if maxPage%p != 0 {
+			if l.Spec == LayerMLA || l.Spec == LayerIndexer {
+				return nil, fmt.Errorf("kv: an MLA-kind layer's page of %d bytes does not divide the largest page, %d: vLLM raises "+
+					"NotImplementedError (unify_kv_cache_spec_page_size :400-406@4ba787ec: padding is only for non-MLA attention layers) "+
+					"and tries the full-allocation fallback, which is not modelled", p, maxPage)
+			}
+			return nil, fmt.Errorf("kv: a layer's page of %d bytes does not divide the largest page, %d: vLLM pads it "+
+				"(page_size_padded, unify_kv_cache_spec_page_size :396-399@4ba787ec), which is not modelled (blis-vllm#295)", p, maxPage)
+		}
+		if l.BlockSize == 0 {
+			l.BlockSize = engine
+		}
+		l.BlockSize *= maxPage / p
+		if got := pageAt(l, engine); got != maxPage {
+			return nil, fmt.Errorf("kv: a layer of a page of %d bytes scaled to %d tokens a block has a page of %d bytes, not the largest, %d "+
+				"(vLLM asserts the unified page equals the maximum): not modelled", p, l.BlockSize, got, maxPage)
+		}
+		out[i] = l
+	}
+	return out, nil
+}
+
 // checkEqualPages refuses what vLLM's uniform-page-size grouping assumes and this port does not
 // unify: the attention layers are of one page in elements per token at the engine's one block
 // size, and a Mamba layer's page, padded to the attention page at start-up
@@ -321,6 +390,11 @@ func checkEqualPages(layers []Layer, blockSize int) error {
 		}
 		if first == nil {
 			first = &layers[i]
+		} else if blockSize > 0 {
+			if pageAt(l, blockSize) != pageAt(*first, blockSize) {
+				return fmt.Errorf("kv: KV layers of unequal page sizes (%d and %d bytes) remain after unify_kv_cache_spec_page_size: not modelled",
+					pageAt(*first, blockSize), pageAt(l, blockSize))
+			}
 		} else if page(l) != page(*first) {
 			return fmt.Errorf("kv: KV layers of unequal page sizes (%d and %d elements per token) "+
 				"need vLLM's packed KV cache groups of several block sizes, which are not modelled",

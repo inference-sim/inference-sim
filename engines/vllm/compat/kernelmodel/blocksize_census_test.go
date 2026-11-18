@@ -263,10 +263,10 @@ func TestBlockSizeResolutionOverTheCensusFixtures(t *testing.T) {
 		// A slice sees part of the fixtures, so its counts are part of the totals; the unsliced run asserts them.
 		return
 	}
-	if nV032 != 679 || nStated != 354 || nRefused != 26 || nResolved != 299 || nHybridPieces != 9 ||
-		statedClass["reproduced"] != 0 || statedClass["refused"] != 318 || statedClass["differs"] != 36 || len(statedDiffers) != 36 {
+	if nV032 != 679 || nStated != 354 || nRefused != 22 || nResolved != 303 || nHybridPieces != 9 ||
+		statedClass["reproduced"] != 71 || statedClass["refused"] != 247 || statedClass["differs"] != 36 || len(statedDiffers) != 36 {
 		t.Errorf("the census counts changed: %d fixtures; stated %d (reproduced %d, refused %d, differs %d); no size stated: refused %d (hybrid %d), resolved %d; "+
-			"want 679; 354 (0, 318, 36); 26 (9), 299", nV032, nStated, statedClass["reproduced"], statedClass["refused"], statedClass["differs"],
+			"want 679; 354 (71, 247, 36); 22 (9), 303", nV032, nStated, statedClass["reproduced"], statedClass["refused"], statedClass["differs"],
 			nRefused, nHybridPieces, nResolved)
 	}
 }

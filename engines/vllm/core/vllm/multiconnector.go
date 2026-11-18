@@ -131,7 +131,7 @@ func childOrder(c *connectorConfig) (pair, error) {
 	if len(kids) != 2 {
 		return p, fmt.Errorf("vllm: kv_transfer.kv_connector_extra_config.connectors has %d child(ren): a MultiConnector "+
 			"is modelled over one NIXL connector and the OffloadingConnector, in the order vLLM should try them "+
-			"(docs/multiconnector.md)", len(kids))
+			"(core/vllm/multiconnector.go)", len(kids))
 	}
 	haveNixl, haveOff := false, false
 	for i, k := range kids {
@@ -242,7 +242,7 @@ func (e *Engine) buildConnectors(s *sched.Scheduler, st settings) error {
 		}
 		e.gpu.pd = e.pd
 		if st.offload != nil {
-			if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.specMethod, st.sched.EnablePrefixCaching, e.at, s.SetConnector); err != nil {
+			if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.specMethod, st.sched.EnablePrefixCaching, st.layout, e.at, s.SetConnector); err != nil {
 				return err
 			}
 			e.gpu.off = e.off
@@ -273,7 +273,7 @@ func (e *Engine) buildConnectors(s *sched.Scheduler, st settings) error {
 	}); err != nil {
 		return err
 	}
-	if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.specMethod, st.sched.EnablePrefixCaching, e.at,
+	if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.specMethod, st.sched.EnablePrefixCaching, st.layout, e.at,
 		func(c sched.Connector, _ sched.ConnectorConfig) error { offConn = c; return nil }); err != nil {
 		return err
 	}

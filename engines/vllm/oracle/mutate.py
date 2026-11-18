@@ -171,7 +171,7 @@ MUTANTS = [
 
 
 # Mutants the tier-2 scenarios cannot catch yet, each a coverage gap recorded in
-# docs/testing.md.
+# oracle/README.md.
 KNOWN_GAPS: set[str] = set()
 
 
