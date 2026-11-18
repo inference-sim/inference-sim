@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -52,13 +53,41 @@ import (
 // resolveKVOffloadConfig resolves the run's KV offload from the scenario's offload block
 // (#1910), the only source (#2037): build.ResolveKVOffloadConfig is given no file.
 // Single construction site (R4), shared by run and replay for INV-13 parity.
-func resolveKVOffloadConfig() kvOffloadConfig {
-	cfg, err := build.ResolveKVOffloadConfig(kernelScenario, scenarioOffload, "",
-		blockSizeTokens, mustRunData())
+func resolveKVOffloadConfig() kvOffloadConfig { return resolveOffloadBlock(scenarioOffload) }
+
+// resolveDecodeKVOffloadConfig is the decode pool's offload under P/D: its own block, else the
+// deployment's, and none for a pool that states none. The run's one config (resolveKVOffloadConfig)
+// is the prefill pool's (the colocated pool's for a colocated run).
+func resolveDecodeKVOffloadConfig() kvOffloadConfig {
+	return resolveOffloadBlock(scenarioDecodeOffload)
+}
+
+func resolveOffloadBlock(o *deployment.Offload) kvOffloadConfig {
+	cfg, err := build.ResolveKVOffloadConfig(kernelScenario, o, "", blockSizeTokens, mustRunData())
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
 	return cfg
+}
+
+// runOffloads are the offload blocks the run's pools state, each with the deployment's applied:
+// the first-served pool's (the prefill pool's under P/D, else the colocated pool's) and the decode
+// pool's, nil for a pool with none. A shape that lists no pools (a deployment-less run) has the
+// deployment's block for both.
+func runOffloads(sh scenarioShapeT) (first, decode *deployment.Offload) {
+	if len(sh.PoolOffloads) == 0 || len(sh.PoolOffloads) != len(sh.Roles) {
+		return sh.Offload, sh.Offload
+	}
+	first, decode = sh.PoolOffloads[0], sh.PoolOffloads[0]
+	for i, r := range sh.Roles {
+		switch r {
+		case deployment.RolePrefill:
+			first = sh.PoolOffloads[i]
+		case deployment.RoleDecode:
+			decode = sh.PoolOffloads[i]
+		}
+	}
+	return first, decode
 }
 
 // loadCatalogStorageDevices is the run's storage-device table, read by the engine from the
@@ -186,8 +215,9 @@ func poolAcceptanceInputs(in build.AcceptanceInputs) build.AcceptanceInputs {
 // kernelPools is a disaggregated kernel run's per-role wiring: one kernel per pool.
 type kernelPools struct {
 	prefill, decode *kernelmodel.Model
-	// connector is the scenario's pd_transfer.connector.
-	connector string
+	// connector is the prefill pool's KV connector and decodeConnector the decode pool's (each pool's
+	// own pd_transfer.connector, else the deployment's).
+	connector, decodeConnector string
 	// p2p is whether the handoff is vLLM's p2p tier's (build.Pools.P2P).
 	p2p bool
 }
@@ -197,7 +227,7 @@ func (p *kernelPools) pools() *build.Pools {
 	if p == nil {
 		return nil
 	}
-	return &build.Pools{Prefill: p.prefill, Decode: p.decode, Connector: p.connector, P2P: p.p2p}
+	return &build.Pools{Prefill: p.prefill, Decode: p.decode, Connector: p.connector, DecodeConnector: p.decodeConnector, P2P: p.p2p}
 }
 
 // runTopology is the run's instance counts as they stand.
@@ -241,7 +271,7 @@ func openKernelPools() *kernelPools {
 		kernelPDOpened = nil
 		return nil
 	}
-	p := &kernelPools{prefill: bp.Prefill, decode: bp.Decode, connector: bp.Connector, p2p: bp.P2P}
+	p := &kernelPools{prefill: bp.Prefill, decode: bp.Decode, connector: bp.Connector, decodeConnector: bp.DecodeConnector, p2p: bp.P2P}
 	kernelPDOpened = p
 	return p
 }
@@ -550,11 +580,11 @@ func applyKernelOffloadPricing(cfg *kvOffloadConfig) {
 	}
 }
 
-// applyOffload prices the run's KV offload once per pool, each by that pool's own kernel
-// (build.Pools.PriceOffload), and records it on the pool's overrides. No-op when the run
-// offloads nothing.
-func (p *kernelPools) applyOffload(cfg kvOffloadConfig, prefill, decode *poolOverrides) {
-	pre, dec, ok, err := p.pools().PriceOffload(kernelScenario, cfg, offloadPricing(), runTopology(), fatalf)
+// applyOffload prices each pool's KV offload by that pool's own kernel
+// (build.Pools.PriceOffloadPools), and records it on the pool's overrides: a pool with no offload
+// gets the inert configuration, not the run's. No-op when neither pool offloads.
+func (p *kernelPools) applyOffload(prefillCfg, decodeCfg kvOffloadConfig, prefill, decode *poolOverrides) {
+	pre, dec, ok, err := p.pools().PriceOffloadPools(kernelScenario, prefillCfg, decodeCfg, offloadPricing(), runTopology(), fatalf)
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
@@ -995,19 +1025,42 @@ func kvOffloadOfRecord(r *offloadRecord) kvOffloadConfig { return build.KVOffloa
 // allowScenarioAdd is for a converted trace or an agentic replay, which record no BLIS
 // deployment (replayRecordsDeployment), so the scenario's block states their tiers.
 func reconcileReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, allowScenarioAdd bool) kvOffloadConfig {
+	return reconcileReplayBlock(headerBlock, scenarioOffload, allowScenarioAdd)
+}
+
+// reconcileReplayDecodeKVOffload is the same for the decode pool of a P/D replay. The trace header
+// records one offload block, which both pools ran (a run whose pools offload differently writes no
+// trace, refuseUnrecordableOffload), so the decode pool is reconciled against the same record.
+func reconcileReplayDecodeKVOffload(headerBlock *workload.TraceKVOffloadConfig, allowScenarioAdd bool) kvOffloadConfig {
+	return reconcileReplayBlock(headerBlock, scenarioDecodeOffload, allowScenarioAdd)
+}
+
+func reconcileReplayBlock(headerBlock *workload.TraceKVOffloadConfig, scenario *deployment.Offload, allowScenarioAdd bool) kvOffloadConfig {
 	// The scenario's offload block is a source on replay as on run (resolveKVOffloadConfig),
 	// and the result must match the header.
-	stated := scenarioOffload != nil
+	stated := scenario != nil
 	var scenarioCfg kvOffloadConfig
 	if stated {
-		// resolveKVOffloadConfig itself logrus.Fatalf's on a block the engine refuses.
-		scenarioCfg = resolveKVOffloadConfig()
+		// resolveOffloadBlock itself logrus.Fatalf's on a block the engine refuses.
+		scenarioCfg = resolveOffloadBlock(scenario)
 	}
 	cfg, err := resolveReplayKVOffload(headerBlock, stated, scenarioCfg, allowScenarioAdd)
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
 	return cfg
+}
+
+// refuseUnrecordableOffload refuses to write a trace of a P/D run whose pools run different
+// offload: the trace header records one offload block, so a replay could not rebuild the run
+// (INV-13, never silent degradation). A run that writes no trace is unaffected.
+func refuseUnrecordableOffload(prefill, decode kvOffloadConfig) error {
+	if reflect.DeepEqual(prefill, decode) {
+		return nil
+	}
+	return fmt.Errorf("the prefill and decode pools run different KV offload, which a trace header cannot record " +
+		"(it holds one offload block, so a replay could not rebuild the run); run without --trace-output, or give both pools " +
+		"the same offload")
 }
 
 // resolveReplayKVOffload is reconcileReplayKVOffload's error-returning core, over the trace

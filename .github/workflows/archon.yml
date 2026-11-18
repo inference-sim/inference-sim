@@ -53,7 +53,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: inference-sim/blis-substrate/.github/actions/go-toolchain@fa28d5116739dc582efdb7694acf15a294cdc62b # blis-substrate commit this build pins (stack.json)
+      - uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
 
       - name: Parse archon ref
         id: parse

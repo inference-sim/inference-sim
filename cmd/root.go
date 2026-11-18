@@ -81,7 +81,8 @@ var (
 	scenarioEngine            engineRef              // the engine the scenario selects (selectEngine); set by adoptKernelDeployment
 	kernelPDOpened            *kernelPools           // the per-role kernels openKernelPools opened; nil for a colocated run
 	scenarioScheduler         string                 // the scheduler the scenario's engine states ("" = none)
-	scenarioOffload           *deployment.Offload    // the scenario deployment's offload block, nil when it states none (#1910)
+	scenarioOffload           *deployment.Offload    // the offload block of the run's first-served pool (prefill under P/D, else the colocated pool), the deployment's applied; nil when it states none (#1910)
+	scenarioDecodeOffload     *deployment.Offload    // the decode pool's, under P/D (pool offload, else the deployment's)
 	scenarioOverrides         []sim.ScenarioOverride // what the run took from other than its scenario (results file)
 	maxModelLen               int64                  // the scenario's engine.max_model_len: max total sequence length (input + output)
 	// The deployment: model, GPU, TP, DP and EP, all from the scenario
@@ -302,8 +303,9 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 		in.PDTopology = true
 	}
 	shape := a.Shape
-	// The scenario's offload block is the run's tier configuration (#1910).
-	scenarioOffload = shape.Offload
+	// The scenario's offload blocks are the run's tier configuration (#1910): each pool's own, else
+	// the deployment's.
+	scenarioOffload, scenarioDecodeOffload = runOffloads(shape)
 	adoptScenarioEngineKnobs(shape)
 	scenarioShape = shape
 	acceptanceRecord = nil
@@ -602,6 +604,9 @@ var runCmd = &cobra.Command{
 		// none (BC-G5). Recorded in the exported trace header below for run/replay parity
 		// (BC-G6).
 		kvOffloadCfg := resolveKVOffloadConfig()
+		// Under P/D the decode pool's offload is its own (a prefill pool can offload while the decode
+		// pool does not); kvOffloadCfg is the prefill pool's.
+		decodeOffloadCfg := resolveDecodeKVOffloadConfig()
 
 		// Resolve the latency model (single code path shared with replayCmd).
 		lr := resolveLatencyConfig(cmd)
@@ -927,6 +932,11 @@ var runCmd = &cobra.Command{
 		kernelPD := openKernelPools()
 		if kernelPD != nil {
 			prefillOverrides, decodeOverrides = kernelPD.overrides()
+			if traceOutput != "" {
+				if err := refuseUnrecordableOffload(kvOffloadCfg, decodeOffloadCfg); err != nil {
+					logrus.Fatalf("--trace-output: %v", err)
+				}
+			}
 		}
 
 		// LoRA control-plane (#1464). loraCfg was resolved once at the top of RunE (for
@@ -960,7 +970,7 @@ var runCmd = &cobra.Command{
 		applyKernelOffloadPricing(&kvOffloadCfg)
 		// A disaggregated run's pools each size and price the offload by their own kernel.
 		if kernelPD != nil {
-			kernelPD.applyOffload(kvOffloadCfg, &prefillOverrides, &decodeOverrides)
+			kernelPD.applyOffload(kvOffloadCfg, decodeOffloadCfg, &prefillOverrides, &decodeOverrides)
 		}
 
 		// Unified cluster path (used for all values of numInstances).
