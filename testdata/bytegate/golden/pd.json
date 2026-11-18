@@ -1079,7 +1079,7 @@
     "simulator": "(devel)",
     "substrate": "v0.15.1-0.20261118081908-fa28d5116739",
     "router": "v1.0.0-blis.5.0.20261117234546-d98de1a5df58",
-    "engine_module": "v0.33.0-blis.1.0.20261118083634-b764039ea50a"
+    "engine_module": "v0.33.0-blis.1.0.20261118125334-8dbf92b0f881"
   },
   "window": {
     "start_us": 250000,
