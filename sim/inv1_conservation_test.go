@@ -9,7 +9,7 @@ import (
 )
 
 // inv1InstanceTerms lists the five terms of INV-1's single-instance specialisation,
-// in the order docs/contributing/standards/invariants.md states them.
+// in the order .github/agent-prompts/standards/invariants.md states them.
 // TestINV1_InstanceHelperMatchesRegistry asserts this equals the terms parsed out of
 // the registry, so the helper cannot drift from the statement it enforces.
 //
@@ -38,7 +38,7 @@ func inv1Accounted(m *Metrics) int {
 // full-pipeline clause `num_requests == injected_requests + rejected_requests`,
 // which a looser match would pick up.
 func TestINV1_InstanceHelperMatchesRegistry(t *testing.T) {
-	const registryPath = "../docs/contributing/standards/invariants.md"
+	const registryPath = "../.github/agent-prompts/standards/invariants.md"
 	data, err := os.ReadFile(registryPath)
 	if err != nil {
 		t.Fatalf("cannot read the invariant registry at %s: %v", registryPath, err)

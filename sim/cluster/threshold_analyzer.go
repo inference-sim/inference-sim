@@ -17,7 +17,7 @@ import (
 // UnlimitedEngine.scaleUpN then adds ceil(Required / target) = ceil(sum / target) - replicas, the HPA
 // desired-replicas step. Scale-down is the symmetric floor, and never takes the model below
 // MinReplicas. It is not the Kubernetes HPA: tolerance, behaviour policies and the metrics
-// pipeline's lags are not modelled (docs/guide/autoscaling.md states the limits).
+// pipeline's lags are not modelled.
 
 // Analyzer kinds a deployment can select.
 const (

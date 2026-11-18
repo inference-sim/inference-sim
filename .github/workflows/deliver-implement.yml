@@ -575,7 +575,7 @@ jobs:
             comment is where an open question belongs, and the verify phase reads it.
 
             For the same reason: do NOT invoke `superpowers:brainstorming`. The only skills in
-            scope are the six @docs/contributing/pr-workflow.md actually names —
+            scope are the six @.github/agent-prompts/pr-workflow.md actually names —
             `superpowers:using-git-worktrees`, `superpowers:writing-plans`,
             `superpowers:executing-plans`, `superpowers:systematic-debugging`,
             `superpowers:verification-before-completion` and
@@ -624,7 +624,7 @@ jobs:
             commits and the PR, say in your final comment what you found and what you kept, and
             CONTINUE from there. Do not start over and do not revert someone else's work.
 
-            Then follow @docs/contributing/pr-workflow.md and implement the issue — WITH THE THREE
+            Then follow @.github/agent-prompts/pr-workflow.md and implement the issue — WITH THE THREE
             EXCEPTIONS BELOW, which override it. That document is written for a human working with
             another human, so parts of it assume a partner who answers. You do not have one, and a
             pointer to a document that says STOP is a contradictory instruction, which is worse than
@@ -646,7 +646,7 @@ jobs:
               the allow list.
             - Do NOT edit `CLAUDE.md` unless THIS issue carries the `docs:claude-md` label.
               CLAUDE.md is loaded into every session, so it is agent operating context, not a
-              changelog — per-PR rationale belongs in the commit body and the relevant `docs/`
+              changelog — per-PR rationale belongs in the commit body and the design
               guide. The verify phase withholds `ready-for-merge` from an unlabelled CLAUDE.md
               edit, so making one here only sends the delivery to needs-human.
             - Every contract in the sub-issue gets a test that would fail if the contract were

@@ -15,7 +15,7 @@ with prefix_len = --random-prefix-len (default 0; no launcher passes it), r =
 --random-range-ratio (RANDOM_RANGE_RATIO: 0.8 in every benchmark workflow), and num_prompts =
 10 * CONC. Each concurrency point is its own workflow job and its own client process, so the
 generator is freshly seeded per point. This script reproduces exactly those calls, per point,
-and writes the vectors in request order. docs/kernel-exclusive/APPLES-TO-APPLES.md cites every
+and writes the vectors in request order. docs/kernel-exclusive/APPLES-TO-APPLES.md (removed by X29; read it at tag v0.18.0) cites every
 line this depends on.
 
 The vectors are TARGET lengths. The client then builds a text prompt from token ids, decodes and
@@ -24,7 +24,7 @@ tokenizer residual ("mismatch") is not in the measurements and is not modelled b
 It is instead reconstructed offline by scripts/inferencex_prompt_lengths.py at the point's pinned
 tokenizer revisions and verified: for every verified point the residual is zero, so the sent length
 equals the target this script emits. See tools/harness/promptlengths.go and
-docs/kernel-exclusive/APPLES-TO-APPLES.md "The sent prompt lengths".
+docs/kernel-exclusive/APPLES-TO-APPLES.md (removed by X29; read it at tag v0.18.0) "The sent prompt lengths".
 
 Usage (numpy required; any version -- legacy RandomState streams are frozen by NEP 19):
 

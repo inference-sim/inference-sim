@@ -28,8 +28,13 @@ on:
 
 # A new push to a pull request supersedes the run on the old head: nothing about the old head can
 # be required any more. Pushes to main and dispatches have unique groups and are never cancelled.
+# An edit of a pull request's title or body (not of its base; a retarget is also an edit) starts a run too.
+# That run has a group of its own, so it cancels no run in progress, and every job is skipped. The jobs
+# that report a name a ruleset requires carry " (edit)" in it on that run, so no skipped check run is named
+# like a required one (the newest check run of a name is the one read). A retarget runs the full set.
+# blis.yml, golden-change.yml and private-names.yml read the text and still run on an edit.
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -47,6 +52,7 @@ jobs:
   # steps and still succeeds, because a skipped job named by a matrix template never reports the
   # name the ruleset waits for. The jobs that are not required are skipped whole.
   changes:
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -96,9 +102,10 @@ jobs:
           cat groups.txt >> "$GITHUB_OUTPUT"
 
   build:
+    name: "build${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     # Required check: it always reports. Its steps run when a non-test Go file or a module file changed.
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event.action != 'edited' || github.event.changes.base) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -136,7 +143,7 @@ jobs:
     # Every entry always runs and skips its steps when its group is off: a job skipped whole
     # under a matrix template would not report the name a ruleset waits for, and a job-level
     # "if" cannot read the matrix. A skipped entry costs seconds on a runner.
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event.action != 'edited' || github.event.changes.base) }}
     runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
     timeout-minutes: 25
     strategy:
@@ -259,7 +266,7 @@ jobs:
   test-shards:
     needs: changes
     name: test (${{ matrix.name }}, ${{ matrix.packages }}, ${{ matrix.timeout }})
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event.action != 'edited' || github.event.changes.base) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -335,7 +342,7 @@ jobs:
   test-llmd-shards:
     needs: changes
     name: test (${{ matrix.name }}, ${{ matrix.packages }}, ${{ matrix.timeout }})
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event.action != 'edited' || github.event.changes.base) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -403,8 +410,8 @@ jobs:
   # itself failed. A skipped shard (group off) is a success.
   test-workload-cmd:
     needs: [changes, test-shards]
-    name: test (workload & cmd, ./sim/workload ./cmd, 10m)
-    if: ${{ !cancelled() }}
+    name: "test (workload & cmd, ./sim/workload ./cmd, 10m)${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ !cancelled() && (github.event.action != 'edited' || github.event.changes.base) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -446,8 +453,8 @@ jobs:
   # the delivery loop and people read the name).
   test-llmd:
     needs: [changes, test-llmd-shards]
-    name: test (llm-d router, ./sim/llmd, 10m)
-    if: ${{ !cancelled() }}
+    name: "test (llm-d router, ./sim/llmd, 10m)${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ !cancelled() && (github.event.action != 'edited' || github.event.changes.base) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -475,9 +482,10 @@ jobs:
         run: scripts/ci-shard-verify.sh 2 gathered/llmd
 
   lint:
+    name: "lint${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     # Required check: it always reports; the linter runs when a Go file or a module file changed.
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event.action != 'edited' || github.event.changes.base) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -643,7 +651,7 @@ jobs:
 
   selected-deps:
     needs: [changes, selected-deps-shards]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event.action != 'edited' || github.event.changes.base) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -773,7 +781,7 @@ jobs:
   # (its group off) is a success and a job skipped because the filter broke is not.
   required:
     needs: [changes, build, test, test-shards, test-workload-cmd, test-llmd-shards, test-llmd, lint, stack, selected-deps-shards, selected-deps, actionlint, claude-md-size]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event.action != 'edited' || github.event.changes.base) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

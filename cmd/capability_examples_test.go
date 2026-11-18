@@ -3,7 +3,7 @@ package cmd
 // The capability examples: one scenario per M3.0 capability under examples/capabilities/, each run
 // through the real CLI (the same path a reader's `blis run` takes, on the vendored catalog and
 // registry) and each asserting the capability's observable effect against a control arm that has
-// the capability off, so an example that is accepted but inert fails. docs/guide/capabilities.md
+// the capability off, so an example that is accepted but inert fails. the design
 // shows each example's YAML; the examples are the files these tests run.
 //
 // Every run is small (tens of requests) and CPU-light. The runs are subprocesses that share no

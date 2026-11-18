@@ -1,10 +1,7 @@
 package cluster
 
 import (
-	"os"
 	"reflect"
-	"sort"
-	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -54,47 +51,4 @@ func TestControlLoops_EveryConfigurablePolicyIsListedOrDeclaredNotALoop(t *testi
 			t.Errorf("policyFieldsThatAreNotControlLoops names PolicyBundle.%s, which does not exist", name)
 		}
 	}
-}
-
-const (
-	controlLoopsPage  = "../../docs/reference/control-loops.md"
-	controlLoopsBegin = "<!-- BEGIN GENERATED from sim/cluster/control_loops.go -->"
-	controlLoopsEnd   = "<!-- END GENERATED -->"
-)
-
-func renderControlLoops() string {
-	loops := ControlLoops()
-	sort.Slice(loops, func(i, j int) bool { return loops[i].Name < loops[j].Name })
-	var b strings.Builder
-	b.WriteString("| Control loop | Configured by | Components | Reads | Models | Validation status | Evidence |\n|---|---|---|---|---|---|---|\n")
-	for _, l := range loops {
-		b.WriteString("| `" + l.Name + "` | `PolicyBundle." + l.PolicyField + "` | " + l.Component + " | " + l.Published +
-			" | " + l.Upstream + " | " + string(l.Status) + " | " + l.Evidence + " |\n")
-	}
-	return b.String()
-}
-
-// The page lists the loops as the code does. Run with BLIS_UPDATE_CONTROL_LOOPS=1 to rewrite the
-// generated block.
-func TestControlLoopsPage(t *testing.T) {
-	src, err := os.ReadFile(controlLoopsPage)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(src)
-	i, j := strings.Index(text, controlLoopsBegin), strings.Index(text, controlLoopsEnd)
-	if i < 0 || j < i {
-		t.Fatalf("%s has no generated block between %q and %q", controlLoopsPage, controlLoopsBegin, controlLoopsEnd)
-	}
-	want := text[:i+len(controlLoopsBegin)] + "\n" + renderControlLoops() + text[j:]
-	if want == text {
-		return
-	}
-	if os.Getenv("BLIS_UPDATE_CONTROL_LOOPS") == "1" {
-		if err := os.WriteFile(controlLoopsPage, []byte(want), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return
-	}
-	t.Errorf("%s is out of date with sim/cluster/control_loops.go; run BLIS_UPDATE_CONTROL_LOOPS=1 go test ./sim/cluster -run TestControlLoopsPage", controlLoopsPage)
 }

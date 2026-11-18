@@ -18,7 +18,7 @@ const (
 	// routerConstructor is the one fork package BLIS may import, and New the one identifier it
 	// may use from it: the fork's implementation of blis-schemas embed.Constructor.
 	routerConstructor = routerModule + "/pkg/embed"
-	forkGuide         = "docs/contributing/llm-d-router-fork.md"
+	forkGuide         = ".github/agent-prompts/llm-d-router-fork.md"
 	// routerReferenceConfigs is the one other fork package BLIS may import, and FS the one
 	// identifier it may use from it: the read-only embed.FS holding the fork's reference
 	// EndpointPicker configurations and their index. It holds no router code, so it ties BLIS to

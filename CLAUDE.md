@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > **Charter — read before adding anything here.** CLAUDE.md is agent *operating context*, not a
 > changelog. It is loaded into every session, so it stays small. Per-PR rationale, "behavior
 > change" notes, migration tables, and byte-identity evidence go in the **commit body** and the
-> relevant **`docs/` guide** — never here. Add to CLAUDE.md only a durable fact an agent needs
+> design (https://inference-sim.github.io/blis-design/) — never here. Add to CLAUDE.md only a durable fact an agent needs
 > *every* session that has no more-authoritative home; when a fact has a canonical doc, CLAUDE.md
 > carries a **pointer, not a copy**. A CI job enforces a size ceiling on this file.
 
@@ -19,9 +19,9 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 
 ## Catalog and deployment rules (mandatory)
 
-Every `blis run` / `blis replay` obeys these; see `docs/getting-started/` and `docs/reference/configuration.md` for detail.
+Every `blis run` / `blis replay` obeys these; see README.md and `blis --help` for detail.
 
-1. **The data in use.** A run reads the catalog and registry embedded in the blis-substrate module `stack.json` pins; no flag or env var is needed, and nothing is fetched. `--catalog <dir>` (or `BLIS_CATALOG`) and `--registry <dir>` (or `BLIS_REGISTRY`) name a directory with the layout of blis-substrate's `catalog/` or `registry/` that replaces that embedded copy whole; the flag wins, announced on stderr. `--catalog-overlay`/`--registry-overlay` add entries by identity (the run opens its data once, overlays included, and every engine reads that Data). The Result records the data under `data`. To use a checkout (`docs/getting-started/installation.md#catalog-compatibility` is canonical):
+1. **The data in use.** A run reads the catalog and registry embedded in the blis-substrate module `stack.json` pins; no flag or env var is needed, and nothing is fetched. `--catalog <dir>` (or `BLIS_CATALOG`) and `--registry <dir>` (or `BLIS_REGISTRY`) name a directory with the layout of blis-substrate's `catalog/` or `registry/` that replaces that embedded copy whole; the flag wins, announced on stderr. `--catalog-overlay`/`--registry-overlay` add entries by identity (the run opens its data once, overlays included, and every engine reads that Data). The Result records the data under `data`. To use a checkout (`README.md` is canonical):
 
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
@@ -31,19 +31,19 @@ export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embed
 ```
 <!-- END GENERATED -->
 2. **A model runs iff it is in the catalog.** It is resolved from its derived graph, `<catalog>/models/<short-name>/graph.yaml`, never from `config.json`; an absent entry is refused naming that path (NS-6). No run-time HuggingFace fetch; no command creates or modifies a catalog file. Add a model by adding its catalog entry to blis-substrate's `catalog/`.
-3. **A scenario is required** on both `run` and `replay`: `--scenario <file> --scenarios <dir>`. The scenario (a blis-substrate contracts Scenario + Deployment YAML) fixes model, hardware, parallelism and engine settings; there are no `--model`/`--hardware`/`--tp` flags. Pinned releases: `docs/getting-started/installation.md`.
+3. **A scenario is required** on both `run` and `replay`: `--scenario <file> --scenarios <dir>`. The scenario (a blis-substrate contracts Scenario + Deployment YAML) fixes model, hardware, parallelism and engine settings; there are no `--model`/`--hardware`/`--tp` flags. Pinned releases: `stack.json` (README.md prints them).
 4. **Named workload presets** come from `<catalog>/workloads/<name>.yaml` — used by `run --workload` and `convert preset --name` (both read the catalog in use).
 
 ## Build and Run Commands
 
 One canonical form per command. `--help` and the guides carry the full flag surface — by home:
 
-- routing, admission, flow control: the embedded llm-d router (the scenario's `router:` block) → `docs/guide/routing.md`, `docs/guide/admission.md`; the router fork → `docs/contributing/llm-d-router-fork.md`
-- the latency kernel, scenarios, P/D, DP/EP, speculative decoding → `docs/guide/latency-models.md` (+ `docs/reference/models.md`)
-- KV-offload (the scenario's `offload` block) → `docs/guide/kv-cache.md`
-- `replay`, trace header modes, closed-loop/corpus sessions → `docs/guide/replay.md`
-- workloads & `convert` → `docs/guide/workloads.md`
-- saturation detectors → `docs/contributing/saturation-analyzer-extension.md`
+- routing, admission, flow control: the embedded llm-d router (the scenario's `router:` block) → the design (https://inference-sim.github.io/blis-design/); the router fork → `.github/agent-prompts/llm-d-router-fork.md`
+- the latency kernel, scenarios, P/D, DP/EP, speculative decoding → the design (https://inference-sim.github.io/blis-design/); `blis schema` and `blis fields` print the scenario reference
+- KV-offload (the scenario's `offload` block) → the design (https://inference-sim.github.io/blis-design/) and `blis schema`
+- `replay`, trace header modes, closed-loop/corpus sessions → the design (https://inference-sim.github.io/blis-design/); `blis replay --help`
+- workloads & `convert` → `blis convert --help` and the design (https://inference-sim.github.io/blis-design/)
+- saturation detectors → `.github/agent-prompts/saturation-analyzer-extension.md`
 
 ```bash
 # Build
@@ -79,23 +79,23 @@ golangci-lint run ./...            # lint (v2.14.0); run before pushing
 
 BLIS follows a layered design-document hierarchy (read the design guidelines first when designing anything new):
 
-- **Design guidelines** (`docs/contributing/templates/design-guidelines.md`): target architecture, DES foundations, module contracts, extension framework.
+- **Design guidelines** (`.github/agent-prompts/templates/design-guidelines.md`): target architecture, DES foundations, module contracts, extension framework.
 - **Design docs** (per-feature): behavioral specs — what modules do and why, never how.
-- **RFC + `.archon` plan** (multi-PR features): tracking issue with holes/surfaces/contracts (`docs/contributing/rfc.md`), encoded into a machine-checkable plan.
-- **Implementation plans** (single PR): behavioral contracts + TDD tasks — follow `docs/contributing/pr-workflow.md`.
+- **RFC + `.archon` plan** (multi-PR features): tracking issue with holes/surfaces/contracts (`.github/agent-prompts/rfc.md`), encoded into a machine-checkable plan.
+- **Implementation plans** (single PR): behavioral contracts + TDD tasks — follow `.github/agent-prompts/pr-workflow.md`.
 
 **Module architecture:** a domain-agnostic simulation kernel (event queue, clock, RNG, statistics) plus domain-specific modules (router, scheduler, KV cache manager, latency model, autoscaler, batch formation). Each module has a six-aspect behavioral contract; see design guidelines §4–§5 for the module map and the four extension recipes.
 
 ### BDD/TDD, PR Workflow, Standards — pointers (canonical sources)
 
-- **BDD/TDD:** write behavioral contracts first, tests before code, table-driven tests, test laws not just values, and prefer tests that survive a rewrite. Canonical: `docs/contributing/standards/principles.md` (BDD/TDD section).
-- **PR workflow:** follow `docs/contributing/pr-workflow.md` (worktree → source audit → plan → review → implement → self-audit → commit). Before approving a plan, validate it: task dependencies are startable, all template sections present, the executive summary is clear to a newcomer, and no task is under-specified. An RFC (`docs/contributing/rfc.md`) precedes implementation for changes that introduce/modify module boundaries; smaller changes go straight to the PR workflow.
-- **Code review:** check antipattern rules R1–R23 — `docs/contributing/standards/rules.md`. Watch R8–R10 (exported mutable maps, YAML pointer types, strict config parsing). Always run `go test ./...` and lint after fixes.
-- **Engineering principles** (`docs/contributing/standards/principles.md`): `sim/` is a library (never terminates); dependency direction `cmd/ → sim/cluster/ → sim/`; single-method interfaces with factory validation; config grouped by module (R16); canonical constructors in one place (R4); **stdout = one `Result` document (#1871), stderr = diagnostics**; CLI errors → `logrus.Fatalf`, library → `error`/`panic`, never a silent `continue` (R1).
+- **BDD/TDD:** write behavioral contracts first, tests before code, table-driven tests, test laws not just values, and prefer tests that survive a rewrite. Canonical: `.github/agent-prompts/standards/principles.md` (BDD/TDD section).
+- **PR workflow:** follow `.github/agent-prompts/pr-workflow.md` (worktree → source audit → plan → review → implement → self-audit → commit). Before approving a plan, validate it: task dependencies are startable, all template sections present, the executive summary is clear to a newcomer, and no task is under-specified. An RFC (`.github/agent-prompts/rfc.md`) precedes implementation for changes that introduce/modify module boundaries; smaller changes go straight to the PR workflow.
+- **Code review:** check antipattern rules R1–R23 — `.github/agent-prompts/standards/rules.md`. Watch R8–R10 (exported mutable maps, YAML pointer types, strict config parsing). Always run `go test ./...` and lint after fixes.
+- **Engineering principles** (`.github/agent-prompts/standards/principles.md`): `sim/` is a library (never terminates); dependency direction `cmd/ → sim/cluster/ → sim/`; single-method interfaces with factory validation; config grouped by module (R16); canonical constructors in one place (R4); **stdout = one `Result` document (#1871), stderr = diagnostics**; CLI errors → `logrus.Fatalf`, library → `error`/`panic`, never a silent `continue` (R1).
 
 ### Key Invariants
 
-Full registry (19 core invariants INV-1…INV-19 plus INV-A, the LoRA/PD/pool families, and NS-6), with verification strategies: **`docs/contributing/standards/invariants.md`** — the canonical source; every `INV-*` cited in `sim/`/`cmd/` resolves there. The ones you touch most:
+Full registry (19 core invariants INV-1…INV-19 plus INV-A, the LoRA/PD/pool families, and NS-6), with verification strategies: **`.github/agent-prompts/standards/invariants.md`** — the canonical source; every `INV-*` cited in `sim/`/`cmd/` resolves there. The ones you touch most:
 
 - **INV-1 Request conservation** — injected == completed + all still-in-flight/dropped/rejected terms at end (ten-term cluster form; five-term single-instance form).
 - **INV-6 Determinism** — same resolved input at the same revisions ⇒ byte-identical `Result` (stdout) outside `runtime`; wall-clock timing goes to stderr.
@@ -104,7 +104,7 @@ Full registry (19 core invariants INV-1…INV-19 plus INV-A, the LoRA/PD/pool fa
 
 ### Notable subsystems (pointers)
 
-Every cluster run routes with the real llm-d router (EPP) embedded in-process (`sim/llmd`); BLIS has no routing/admission/flow-control logic of its own: `docs/guide/routing.md`. LoRA control plane, MoE data-parallel placement + expert parallelism, speculative decoding/MTP, tiered KV-offload, and per-detector saturation live in the guides mapped above and `docs/reference/*` (and `git log` for history). Extension recipes for schedulers, KV tiers, trace records, and metrics: `docs/contributing/extension-recipes.md`.
+Every cluster run routes with the real llm-d router (EPP) embedded in-process (`sim/llmd`); BLIS has no routing/admission/flow-control logic of its own: the design (https://inference-sim.github.io/blis-design/). LoRA control plane, MoE data-parallel placement + expert parallelism, speculative decoding/MTP, tiered KV-offload, and per-detector saturation live in the design and the code (and `git log` for history). Extension recipes for schedulers, KV tiers, trace records, and metrics: `.github/agent-prompts/extension-recipes.md`.
 
 ### Code Style
 
@@ -117,11 +117,10 @@ Every cluster run routes with the real llm-d router (EPP) embedded in-process (`
 GitHub Actions run on all PRs to main:
 
 - `.github/workflows/ci.yml` — build (`go build ./...`), lint (`golangci-lint`, v2.14.0), tests, and a CLAUDE.md size-ceiling check.
-- `.github/workflows/docs.yml` — MkDocs site (PR build-only; deploy on push to main; versioned on tag).
 
 ## Cross-Repository Changes (BLIS repositories)
 
-A change that also touches blis-substrate, blis-vllm or the llm-d router fork is one review set, released bottom-up; this repo's steps: `docs/contributing/cross-repo-changes.md`. Rules an agent must follow: never write internal project, customer or colleague names in public artifacts (run the name scan before a push); never commit third-party data, and give derived values their source URL plus commit or sha256; pin dependencies by release tag or exact pushed head, never a `go.mod` `replace` (sole exception: the llm-d router fork, see `docs/contributing/llm-d-router-fork.md`), and push blis-substrate -> blis-vllm and the router fork -> inference-sim; compare the same quantity on the same points, with gates declared before the data and held-out evidence from a script; mutation-check every behaviour-change test; use the shared tooling (the substrate's validators, push gate, `git merge-tree --write-tree origin/main HEAD`).
+A change that also touches blis-substrate, blis-vllm or the llm-d router fork is one review set, released bottom-up; this repo's steps: `.github/agent-prompts/cross-repo-changes.md`. Rules an agent must follow: never write internal project, customer or colleague names in public artifacts (run the name scan before a push); never commit third-party data, and give derived values their source URL plus commit or sha256; pin dependencies by release tag or exact pushed head, never a `go.mod` `replace` (sole exception: the llm-d router fork, see `.github/agent-prompts/llm-d-router-fork.md`), and push blis-substrate -> blis-vllm and the router fork -> inference-sim; compare the same quantity on the same points, with gates declared before the data and held-out evidence from a script; mutation-check every behaviour-change test; use the shared tooling (the substrate's validators, push gate, `git merge-tree --write-tree origin/main HEAD`).
 
 ## Agent Behavioral Instructions
 
@@ -131,7 +130,7 @@ The following are for Claude Code and other AI assistants. Human contributors ca
 
 When triggered via `@claude /blis-pr-review` on a PR, follow the blis-pr-review skill exactly. For all other triggers (questions, debugging, etc.), respond normally without creating a PR unless explicitly asked.
 
-The `/blis-pr-review` path runs with a **read-only** token (`contents: read`, #1697): it can post the review comment but cannot push. Report findings — do not fix them, and do not attempt a commit or push (it fails with 403). Every other `@claude` trigger keeps `contents: write`. See `docs/contributing/standards/agent-trust.md`.
+The `/blis-pr-review` path runs with a **read-only** token (`contents: read`, #1697): it can post the review comment but cannot push. Report findings — do not fix them, and do not attempt a commit or push (it fails with 403). Every other `@claude` trigger keeps `contents: write`. See `.github/agent-prompts/standards/agent-trust.md`.
 
 ### Context Management
 
@@ -155,39 +154,38 @@ Pick the template that matches your situation, reproduce its structure, and appl
 
 ## Latency Estimation
 
-The cost model (blis-substrate `kernel/`, adapter blis-vllm `compat/kernelmodel`) is the only backend: it prices step time, KV/fixed memory, P/D transfer, offload tier transfer and host overheads; coefficients come from blis-substrate's `registry/`. There is no `--latency-model` flag. Detail: `docs/guide/latency-models.md`.
+The cost model (blis-substrate `kernel/`, adapter blis-vllm `compat/kernelmodel`) is the only backend: it prices step time, KV/fixed memory, P/D transfer, offload tier transfer and host overheads; coefficients come from blis-substrate's `registry/`. There is no `--latency-model` flag.
 
 ## Post-Hoc Saturation Detection
 
-Analyzes completed runs (distinct from the real-time flow-control detector). Package `sim/saturation/`: one steady-state detector (DEV-10), `settle`, classifying the measured window SETTLED, OVERLOADED or INCOMPLETE from the trend of the backlog; the earlier roster (composite, threshold, backlog-drift, peak-rate) is gone. CLI (on `run` and `replay`): `--detectors settle`, `--saturation-report <path>` (writes the verdict). Statistic and measured false-alarm rate and power: `docs/contributing/saturation-analyzer-extension.md`.
+Analyzes completed runs (distinct from the real-time flow-control detector). Package `sim/saturation/`: one steady-state detector (DEV-10), `settle`, classifying the measured window SETTLED, OVERLOADED or INCOMPLETE from the trend of the backlog; the earlier roster (composite, threshold, backlog-drift, peak-rate) is gone. CLI (on `run` and `replay`): `--detectors settle`, `--saturation-report <path>` (writes the verdict). Statistic and measured false-alarm rate and power: `.github/agent-prompts/saturation-analyzer-extension.md`.
 
 ## File Organization
 
-For the full annotated file tree, see `docs/reference/project-structure.md`.
 
 ## Key Data Flow
 
-Request pipeline: Arrival → Admission → Routing → WaitQueue → Batch Formation → Step Execution → Completion. Admission and Routing apply in cluster mode only; single-instance skips to WaitQueue. Full diagram: `docs/concepts/architecture.md`.
+Request pipeline: Arrival → Admission → Routing → WaitQueue → Batch Formation → Step Execution → Completion. Admission and Routing apply in cluster mode only; single-instance skips to WaitQueue.
 
 ## Project Governance Documents
 
 ### Standards (what rules apply)
 
-- `docs/contributing/standards/rules.md` — 23 antipattern rules (R1–R23), each with evidence and enforcement.
-- `docs/contributing/standards/invariants.md` — the invariant registry (see *Key Invariants* above).
-- `docs/contributing/standards/principles.md` — engineering principles; also the source-of-truth map for where each fact is canonical.
-- `docs/contributing/standards/agent-trust.md` — agent trust boundaries (Trusted / Verify-after / Never-trust).
+- `.github/agent-prompts/standards/rules.md` — 23 antipattern rules (R1–R23), each with evidence and enforcement.
+- `.github/agent-prompts/standards/invariants.md` — the invariant registry (see *Key Invariants* above).
+- `.github/agent-prompts/standards/principles.md` — engineering principles; also the source-of-truth map for where each fact is canonical.
+- `.github/agent-prompts/standards/agent-trust.md` — agent trust boundaries (Trusted / Verify-after / Never-trust).
 
 ### Process (how to do each activity)
 
-- `docs/contributing/pr-workflow.md` — end-to-end PR workflow. **Step 1.5:** the source document is the issue body **plus** the design refinements in its comment thread; `scripts/deliver-issue-refinements.sh <issue>` prints the comments that carry authority (author holds `admin`/`write`/`maintain`; a refinement overrides the body; later refinements win; target branch / `archon-plan:` / `Depends on:` stay body-only).
-- `docs/contributing/issue-comment-authority.md` — decision record for that rule.
-- `docs/contributing/automated-delivery.md` — the L1 `/approve-issue-for-pr-delivery` loop.
-- `docs/contributing/rfc.md`, `docs/contributing/templates/rfc-to-plan.md` — RFC template and `.archon` encoding.
+- `.github/agent-prompts/pr-workflow.md` — end-to-end PR workflow. **Step 1.5:** the source document is the issue body **plus** the design refinements in its comment thread; `scripts/deliver-issue-refinements.sh <issue>` prints the comments that carry authority (author holds `admin`/`write`/`maintain`; a refinement overrides the body; later refinements win; target branch / `archon-plan:` / `Depends on:` stay body-only).
+- `.github/agent-prompts/issue-comment-authority.md` — decision record for that rule.
+- `.github/agent-prompts/automated-delivery.md` — the L1 `/approve-issue-for-pr-delivery` loop.
+- `.github/agent-prompts/rfc.md`, `.github/agent-prompts/templates/rfc-to-plan.md` — RFC template and `.archon` encoding.
 
 ### Templates & Plans
 
-- `docs/contributing/templates/design-guidelines.md` — start here when designing anything new.
+- `.github/agent-prompts/templates/design-guidelines.md` — start here when designing anything new.
 - Active plans: a local plans directory, gitignored. Archived design docs are gone.
 
 ## Active Technologies

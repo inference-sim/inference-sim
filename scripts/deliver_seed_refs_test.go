@@ -62,7 +62,7 @@ type seedRefsCase struct {
 	wantUnclosed string // unclosed_fence; "" is treated as "false"
 }
 
-// The two shapes documented in docs/contributing/templates/archon-issue-examples.md, plus the
+// The two shapes documented in .github/agent-prompts/templates/archon-issue-examples.md, plus the
 // standalone issue that has neither section. deliver-implement.yml bases the delivery branch on
 // target_branch and seeds archon_plan into the draft PR body, so a wrong answer here either fills
 // the PR diff with unrelated commits or silently disables the dist ratchet.
@@ -170,7 +170,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 
 		// --- Fenced code blocks (review finding on #1723) ---
 		//
-		// docs/contributing/templates/archon-issue-examples.md presents the whole sub-issue
+		// .github/agent-prompts/templates/archon-issue-examples.md presents the whole sub-issue
 		// template inside a fence, `## Target branch` and a `feature/...` ref included. A
 		// contributor pasting that example in alongside their real content must not have the
 		// EXAMPLE win. A fictional placeholder would fail the remote check and fall back, but a

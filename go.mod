@@ -127,7 +127,7 @@ require (
 )
 
 // The one permitted replace (design X11): the llm-d router fork keeps upstream's module path, so
-// a replace is the only way to substitute it (docs/contributing/llm-d-router-fork.md). A release
+// a replace is the only way to substitute it (.github/agent-prompts/llm-d-router-fork.md). A release
 // names a -blis.N tag, and this one names router fork commit d98de1a5, built on v1.0.0-blis.5.
 replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.5.0.20261117234546-d98de1a5df58
 

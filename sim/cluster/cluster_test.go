@@ -2149,7 +2149,7 @@ func TestBatchRequestsNotSerialized(t *testing.T) {
 // SimEndedTime is a max over per-instance metrics, each from that INSTANCE's clock, so
 // what keeps it honest is the instance-level skip in ProcessNextEvent; deleting the
 // cluster restore leaves this test green (measured). See INV-3 in
-// docs/contributing/standards/invariants.md.
+// .github/agent-prompts/standards/invariants.md.
 func TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
 	config := func() DeploymentConfig {
 		d := compatDeployment(cengine.SimConfig{

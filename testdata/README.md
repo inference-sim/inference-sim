@@ -37,7 +37,7 @@ change is meant to move should move.
 
 ### Companion invariant tests
 
-Per R7 (docs/contributing/standards/rules.md), every golden test MUST have a companion
+Per R7 (.github/agent-prompts/standards/rules.md), every golden test MUST have a companion
 invariant test. The companions are:
 - `TestSimulator_GoldenDataset` -> inline INV-1, INV-4, INV-5 checks (sim/simulator_test.go)
 - `TestInstanceSimulator_GoldenDataset_Equivalence` -> `TestInstanceSimulator_GoldenDataset_Invariants` (sim/cluster/instance_test.go)

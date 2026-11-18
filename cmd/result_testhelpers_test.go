@@ -31,7 +31,7 @@ func clusterFigures(t *testing.T, stdout string) map[string]float64 {
 	r := parseResult(t, stdout)
 	q := r.Requests
 	drop := func(d result.DropReason) float64 { return float64(q.Dropped[d]) }
-	// The schema 1 ledger, from the fates of schema 2 (docs/guide/results.md has the table).
+	// The schema 1 ledger, from the fates of schema 2 (testdata/result-field-map.md has the table).
 	// injected is what arrived and was not refused at admission.
 	out := map[string]float64{
 		"completed_requests":     float64(q.Completed),
@@ -141,7 +141,7 @@ func resultDoc(t *testing.T, stdout string) map[string]any {
 // the document has it.
 func resultValue(doc map[string]any, path string) (any, bool) {
 	// Schema 1 carried the component sections at the top level; schema 2 carries them under
-	// reports (docs/guide/results.md). A test written against the old path reads the new one.
+	// reports. A test written against the old path reads the new one.
 	for _, c := range []string{"engine.", "router.", "kernel.", "saturation."} {
 		if strings.HasPrefix(path, c) {
 			path = "reports." + path
