@@ -769,14 +769,14 @@ func (l *loggingCore) CollectFullDeviceIndices(from, until NodeID) []int64 {
 }
 func (l *loggingCore) BeginInsert(p InsertParams) InsertStep {
 	s := l.TreeCore.BeginInsert(p)
-	l.add(coreCall{m: "begin_insert", ints: []int{s.Result.PrefixLen}, nodes: []NodeID{s.Result.LastDeviceNode}, slots: s.FreeDeviceKV})
+	l.add(coreCall{m: "begin_insert", ints: []int{s.Result.PrefixLen}, nodes: []NodeID{s.Result.LastDeviceNode}, slots: s.FreeDeviceKV()})
 	return s
 }
 func (l *loggingCore) HasOngoingInsert() bool {
 	l.add(coreCall{m: "has_ongoing_insert"})
 	return l.TreeCore.HasOngoingInsert()
 }
-func (l *loggingCore) EndInsert() [][]int64 {
+func (l *loggingCore) EndInsert() []CacheAction {
 	l.add(coreCall{m: "end_insert"})
 	return l.TreeCore.EndInsert()
 }

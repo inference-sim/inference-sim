@@ -1,0 +1,206 @@
+{
+ "description": "Write-through on a host pool the size of the device pool, page size 1. Two prefixes are backed up and demoted to host. evict_host then frees host leaves, least recently used first, so the older prefix is gone from both tiers and a match ends where it was. A load-back of a path shorter than the load-back threshold is declined, and one past a memory quota too.",
+ "model": "Qwen/Qwen2.5-0.5B-Instruct",
+ "seed": 0,
+ "cache": {
+  "page_size": 1,
+  "kv_size": 32,
+  "max_num_reqs": 4,
+  "max_context_len": 64,
+  "layer_num": 2,
+  "head_num": 2,
+  "head_dim": 4
+ },
+ "hicache": {
+  "write_policy": "write_through",
+  "io_backend": "direct",
+  "mem_layout": "layer_first",
+  "ratio": 1.0
+ },
+ "calls": [
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 12,
+   "as": "a"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+   ],
+   "value": "a"
+  },
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 16,
+   "as": "b"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    100,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115
+   ],
+   "value": "b"
+  },
+  {
+   "on": "cache",
+   "m": "check_hicache_events"
+  },
+  {
+   "boundary": true
+  },
+  {
+   "on": "cache",
+   "m": "check_hicache_events"
+  },
+  {
+   "on": "cache",
+   "m": "evict",
+   "num_tokens": 28
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    100,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115
+   ]
+  },
+  {
+   "on": "cache",
+   "m": "evict_host",
+   "num_tokens": 12
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+   ]
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    100,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107
+   ],
+   "as": "short"
+  },
+  {
+   "on": "cache",
+   "m": "load_back",
+   "node": "short"
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    100,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115
+   ],
+   "as": "m"
+  },
+  {
+   "on": "cache",
+   "m": "load_back",
+   "node": "m",
+   "mem_quota": 8
+  },
+  {
+   "on": "cache",
+   "m": "load_back",
+   "node": "m"
+  },
+  {
+   "on": "cache",
+   "m": "ready_to_load_host_cache"
+  },
+  {
+   "boundary": true
+  },
+  {
+   "on": "cache",
+   "m": "loading_check"
+  },
+  {
+   "on": "cache",
+   "m": "evictable_size"
+  }
+ ]
+}
