@@ -315,15 +315,17 @@ func unifyHybrid(layers []Layer) ([]Layer, error) {
 	return out, nil
 }
 
-// unifyPageSizes is unify_kv_cache_spec_page_size (vllm/v1/core/kv_cache_planning.py:346-408@4ba787ec) for the attention
-// layers the grouping reaches when their pages differ (get_kv_cache_groups :1113-1200: not one spec, not one uniform
-// type, not block-outermost): every layer of a smaller page takes the block size that makes its page the largest,
-// block_size * (max_page / page), when the largest is a multiple of its page. Full attention and sliding windows are the
-// layers the port unifies. A page that does not divide the largest, which vLLM pads for a non-MLA attention layer
-// (page_size_padded), and an MLA-kind layer, for which it raises NotImplementedError and tries the full-allocation
-// fallback, are refused by name: neither is modelled. A Mamba layer is neither unified nor counted for the largest page (vLLM pads a smaller Mamba page and takes it
-// into the maximum; the port refuses a Mamba page unequal to the attention page, checkEqualPages, as before). engine is the engine's block size, which a layer that states none has; without it the pages
-// are not comparable and the layers are returned as they are (checkEqualPages then refuses unequal elements per token).
+// unifyPageSizes is unify_kv_cache_spec_page_size (vllm/v1/core/kv_cache_planning.py:346-408@4ba787ec) for the layers the
+// grouping reaches when their pages differ (get_kv_cache_groups :1113-1200: not one spec, not one uniform type, not
+// block-outermost). As vLLM does, a layer of a smaller page whose page divides the largest takes the block size
+// block_size * (max_page / page), whatever its kind (full attention, sliding windows, the MLA kinds, the circular buffer).
+// Only when the page does not divide does vLLM differ by kind, and the port refuses by name: an MLA-kind layer (the
+// compressed latent and the indexer, MLAAttentionSpec) raises NotImplementedError in vLLM, which then tries the
+// full-allocation fallback (:398-407); any other attention layer is padded (page_size_padded, :388-394), which is not
+// modelled (blis-vllm#295). A Mamba layer is neither unified nor counted for the largest page (vLLM pads a smaller Mamba page and takes
+// it into the maximum; the port refuses a Mamba page unequal to the attention page, checkEqualPages, as before). engine is
+// the engine's block size, which a layer that states none has; without it the pages are not comparable and the layers
+// are returned as they are (checkEqualPages then refuses unequal elements per token).
 func unifyPageSizes(layers []Layer, engine int) ([]Layer, error) {
 	if engine <= 0 {
 		return layers, nil
@@ -349,18 +351,23 @@ func unifyPageSizes(layers []Layer, engine int) ([]Layer, error) {
 		if l.Spec == LayerMamba || p == maxPage {
 			continue
 		}
-		if l.Spec != LayerFull && l.Spec != LayerSlidingWindow {
-			return nil, fmt.Errorf("kv: unify_kv_cache_spec_page_size for a layer of this kind (page of %d bytes beside %d) "+
-				"raises NotImplementedError in vLLM and falls to a full-allocation fallback: not modelled", p, maxPage)
-		}
 		if maxPage%p != 0 {
+			if l.Spec == LayerMLA || l.Spec == LayerIndexer {
+				return nil, fmt.Errorf("kv: an MLA-kind layer's page of %d bytes does not divide the largest page, %d: vLLM raises "+
+					"NotImplementedError (unify_kv_cache_spec_page_size :398-407@4ba787ec: padding is only for non-MLA attention layers) "+
+					"and tries the full-allocation fallback, which is not modelled", p, maxPage)
+			}
 			return nil, fmt.Errorf("kv: a layer's page of %d bytes does not divide the largest page, %d: vLLM pads it "+
-				"(page_size_padded, unify_kv_cache_spec_page_size :388-394@4ba787ec), which is not modelled", p, maxPage)
+				"(page_size_padded, unify_kv_cache_spec_page_size :388-394@4ba787ec), which is not modelled (blis-vllm#295)", p, maxPage)
 		}
 		if l.BlockSize == 0 {
 			l.BlockSize = engine
 		}
 		l.BlockSize *= maxPage / p
+		if got := pageAt(l, engine); got != maxPage {
+			return nil, fmt.Errorf("kv: a layer of a page of %d bytes scaled to %d tokens a block has a page of %d bytes, not the largest, %d "+
+				"(vLLM asserts the unified page equals the maximum): not modelled", p, l.BlockSize, got, maxPage)
+		}
 		out[i] = l
 	}
 	return out, nil

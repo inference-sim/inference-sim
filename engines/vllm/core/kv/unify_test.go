@@ -69,10 +69,36 @@ func TestUnifyPageSizesAreVLLMs(t *testing.T) {
 	if _, err = unifyPageSizes([]Layer{big, odd}, 16); err == nil || !strings.Contains(err.Error(), "does not divide") {
 		t.Errorf("a page that does not divide: %v", err)
 	}
-	// An MLA-kind layer raises NotImplementedError in vLLM: refused by name.
-	mla := Layer{Spec: LayerMLA, KVHeads: 1, HeadSize: 256, ElemBytes: 2}
-	if _, err = unifyPageSizes([]Layer{big, mla}, 16); err == nil || !strings.Contains(err.Error(), "NotImplementedError") {
-		t.Errorf("an MLA layer beside a larger page: %v", err)
+	// An MLA-kind layer whose page divides the largest is unified by the ratio, as vLLM does for any non-Mamba layer
+	// (unify_kv_cache_spec_page_size :380-387@4ba787ec tests divisibility before the kind). Before this was refused.
+	for _, spec := range []LayerSpec{LayerMLA, LayerIndexer, LayerSlidingWindowMLA, LayerCircularBuffer} {
+		l := Layer{Spec: spec, KVHeads: 1, HeadSize: 256, ElemBytes: 2, StateBytes: 512}
+		if spec == LayerSlidingWindowMLA {
+			l.Window = 128
+		}
+		if p := pageAt(l, 16); p != 8192 {
+			t.Fatalf("spec %v: page %d, want 8192", spec, p)
+		}
+		got, err := unifyPageSizes([]Layer{big, l}, 16)
+		if err != nil || got[1].BlockSize != 16*8 || pageAt(got[1], 16) != 65536 {
+			t.Errorf("spec %v beside 65,536 bytes: %+v, %v (want block size 128, page 65,536)", spec, got, err)
+		}
+	}
+	// A page that does not divide: an MLA-kind layer is vLLM's own NotImplementedError (no padding for MLA) ...
+	for _, spec := range []LayerSpec{LayerMLA, LayerIndexer} {
+		l := Layer{Spec: spec, KVHeads: 1, HeadSize: 192, ElemBytes: 2, StateBytes: 384} // 16 x 384 = 6,144; 65,536 / 6,144 is not whole
+		_, err := unifyPageSizes([]Layer{big, l}, 16)
+		if err == nil || !strings.Contains(err.Error(), "NotImplementedError") || !strings.Contains(err.Error(), "MLA-kind") {
+			t.Errorf("spec %v that does not divide: %v (want vLLM's NotImplementedError)", spec, err)
+		}
+	}
+	// ... and any other attention layer is padded by vLLM, which the port does not model: refused as such, with the issue.
+	for _, spec := range []LayerSpec{LayerSlidingWindow, LayerSlidingWindowMLA, LayerCircularBuffer} {
+		l := Layer{Spec: spec, KVHeads: 1, HeadSize: 192, ElemBytes: 2, StateBytes: 384, Window: 128}
+		_, err := unifyPageSizes([]Layer{big, l}, 16)
+		if err == nil || strings.Contains(err.Error(), "NotImplementedError") || !strings.Contains(err.Error(), "not modelled (blis-vllm#295)") {
+			t.Errorf("spec %v that does not divide: %v (want the padding refusal citing blis-vllm#295)", spec, err)
+		}
 	}
 }
 
