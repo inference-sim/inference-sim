@@ -187,18 +187,32 @@ func TestContractEngine_RootBesideDataIsRefusedAndDataAloneBuilds(t *testing.T) 
 }
 
 // A scenario whose engine the factory refuses at startup (a combination the engine does not
-// build, such as a prefill data-parallel group that spans nodes) is a refusal the user can fix, so the CLI
-// reports it as one message and exits 1, and does not dump a goroutine trace (exit 2).
+// build, here a pool with no room for a KV cache block) is a refusal the user can fix, so the CLI
+// reports it as one message and exits 1, and does not dump a goroutine trace (exit 2). The fixture
+// was a prefill data-parallel group that spans nodes until blis-vllm#267 made the engine build it.
 func TestCLI_AnEngineRefusedAtStartupIsAFatalMessageNotAPanic(t *testing.T) {
 	scenarios, err := filepath.Abs(pdScenarios)
 	if err != nil {
 		t.Fatal(err)
 	}
 	const name = "minimax-m2.5-gb200-1p1d-dp2.yaml"
-	if _, statErr := os.Stat(filepath.Join(scenarios, name)); statErr != nil {
-		t.Fatalf("the fixture this test runs is missing from %s: %v", pdScenarios, statErr)
+	raw, err := os.ReadFile(filepath.Join(scenarios, name))
+	if err != nil {
+		t.Fatalf("the fixture this test runs is missing from %s: %v", pdScenarios, err)
 	}
-	args := []string{"run", "--scenarios", scenarios, "--scenario", name,
+	// A GPU memory utilization that leaves no room for the cache after the weights.
+	tight := strings.ReplaceAll(string(raw), "gpu_memory_utilization: 0.9", "gpu_memory_utilization: 0.05")
+	if tight == string(raw) {
+		t.Fatal("the fixture states no gpu_memory_utilization to lower")
+	}
+	dir := filepath.Join(t.TempDir(), "scenarios") // the scenario names a router configuration beside it
+	if err := os.CopyFS(dir, os.DirFS(scenarios)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(tight), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"run", "--scenarios", dir, "--scenario", name,
 		"--num-instances", "2", "--prefill-instances", "1", "--decode-instances", "1", "--num-requests", "4"}
 	_, stderr, runErr := runKernelCLI(t, args...)
 	if runErr == nil {
@@ -207,7 +221,7 @@ func TestCLI_AnEngineRefusedAtStartupIsAFatalMessageNotAPanic(t *testing.T) {
 	if strings.Contains(stderr, "goroutine ") || strings.Contains(stderr, "panic:") {
 		t.Errorf("a startup refusal dumped a panic:\n%s", lastLines(stderr, 6))
 	}
-	if !strings.Contains(stderr, "level=fatal") || !strings.Contains(stderr, "spans 2 nodes") {
+	if !strings.Contains(stderr, "level=fatal") || !strings.Contains(stderr, "No available memory for the cache blocks") {
 		t.Errorf("the refusal is not reported as a fatal message naming why:\n%s", lastLines(stderr, 4))
 	}
 	var ee *exec.ExitError

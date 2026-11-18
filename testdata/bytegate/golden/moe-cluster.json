@@ -9,13 +9,13 @@
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "2d1849fb44540b8af542e6d40dfbde2905784a942567c3470ea1580eaa183e6b",
-      "combined_hash": "2d1849fb44540b8af542e6d40dfbde2905784a942567c3470ea1580eaa183e6b"
+      "hash": "3c47fae6c2692e8f2fcb10b45618f753a0e270f62afb34063e9a7e18d4b899d0",
+      "combined_hash": "3c47fae6c2692e8f2fcb10b45618f753a0e270f62afb34063e9a7e18d4b899d0"
     },
     "registry": {
       "source": "path",
-      "hash": "8988e9e7570e890ecaa0952465eca4c5827e5036dbed2a134b11c3848df1958f",
-      "combined_hash": "8988e9e7570e890ecaa0952465eca4c5827e5036dbed2a134b11c3848df1958f"
+      "hash": "93e0bb2ce83b462a31129198b1a0eb04d8bdc29c50437ef7b10c29c255416e2b",
+      "combined_hash": "93e0bb2ce83b462a31129198b1a0eb04d8bdc29c50437ef7b10c29c255416e2b"
     },
     "released_data": false,
     "build": "unreleased"
@@ -375,8 +375,6 @@
           "hardware": [
             "a100-80",
             "a100-sxm",
-            "b200",
-            "b300",
             "gb200-nvl72",
             "gb300",
             "h100",
@@ -729,6 +727,7 @@
     ],
     "unread_files": [
       "acceptance/inferencex-golden-al.yaml",
+      "acceptance/internal-deployment-measurements.yaml",
       "coefficients/cost-model-collectives-inferencex.yaml",
       "coefficients/cost-model-fabric.yaml",
       "coefficients/cost-model-offload-tiers.yaml",
@@ -887,9 +886,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.15.0",
-    "router": "v1.0.0-blis.5",
-    "engine_module": "v0.33.0-blis.1"
+    "substrate": "v0.15.1-0.20261117235131-cc87f253efe2",
+    "router": "v1.0.0-blis.5.0.20261117234546-d98de1a5df58",
+    "engine_module": "v0.33.0-blis.1.0.20261117235229-b43d81d53103"
   },
   "window": {
     "start_us": 33333,
@@ -2794,7 +2793,7 @@
         "in_flight_requests_max": 102,
         "in_flight_requests_mean": 54.272605949170845,
         "kv_allocation_failures": 0,
-        "kv_capacity_tokens_per_replica": 4307920,
+        "kv_capacity_tokens_per_replica": 4302128,
         "kv_thrashing_rate": 0,
         "measured_cancelled_requests": 0,
         "measured_context_overflow_requests": 0,

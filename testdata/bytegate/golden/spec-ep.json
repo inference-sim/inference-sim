@@ -9,13 +9,13 @@
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "2d1849fb44540b8af542e6d40dfbde2905784a942567c3470ea1580eaa183e6b",
-      "combined_hash": "2d1849fb44540b8af542e6d40dfbde2905784a942567c3470ea1580eaa183e6b"
+      "hash": "3c47fae6c2692e8f2fcb10b45618f753a0e270f62afb34063e9a7e18d4b899d0",
+      "combined_hash": "3c47fae6c2692e8f2fcb10b45618f753a0e270f62afb34063e9a7e18d4b899d0"
     },
     "registry": {
       "source": "path",
-      "hash": "8988e9e7570e890ecaa0952465eca4c5827e5036dbed2a134b11c3848df1958f",
-      "combined_hash": "8988e9e7570e890ecaa0952465eca4c5827e5036dbed2a134b11c3848df1958f"
+      "hash": "93e0bb2ce83b462a31129198b1a0eb04d8bdc29c50437ef7b10c29c255416e2b",
+      "combined_hash": "93e0bb2ce83b462a31129198b1a0eb04d8bdc29c50437ef7b10c29c255416e2b"
     },
     "released_data": false,
     "build": "unreleased"
@@ -375,8 +375,6 @@
           "hardware": [
             "a100-80",
             "a100-sxm",
-            "b200",
-            "b300",
             "gb200-nvl72",
             "gb300",
             "h100",
@@ -864,9 +862,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.15.0",
-    "router": "v1.0.0-blis.5",
-    "engine_module": "v0.33.0-blis.1"
+    "substrate": "v0.15.1-0.20261117235131-cc87f253efe2",
+    "router": "v1.0.0-blis.5.0.20261117234546-d98de1a5df58",
+    "engine_module": "v0.33.0-blis.1.0.20261117235229-b43d81d53103"
   },
   "window": {
     "start_us": 250000,
@@ -1530,7 +1528,7 @@
         "in_flight_requests_max": 23,
         "in_flight_requests_mean": 10.983095839792734,
         "kv_allocation_failures": 0,
-        "kv_capacity_tokens_per_replica": 6890960,
+        "kv_capacity_tokens_per_replica": 5151584,
         "kv_thrashing_rate": 0,
         "measured_cancelled_requests": 0,
         "measured_context_overflow_requests": 0,
@@ -1631,10 +1629,10 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
-            "Name": "modality",
+            "Name": "encoder",
             "Primitive": "",
             "Running": "",
-            "Scope": "text_decoder_of_multimodal: the graph prices a vision tower, but the engine states none resident, so the tower's weights and any encode step are not priced",
+            "Scope": "priced as a substitution: the tower is priced with the decoder's GEMM efficiency ramp (BF16) and its measured prefill-attention rate, bidirectional and with no KV cache; no allowed data measures an encoder step, so every point with an encode step is capped, and the tower's collectives and fused kernels are not priced",
             "Set": "blis-latency-kernel"
           },
           {
@@ -2084,14 +2082,6 @@
           "qwen4-exp-qsa-backend",
           "sequence-parallel-architecture-known",
           "sequence-parallel-moe-implied"
-        ],
-        "substitutions": [
-          {
-            "priced": "true",
-            "reason": "muse-spark-open-816b-a42b-nvfp4 is a multimodal checkpoint, so vLLM keeps its vision tower and projector resident and profiles the encoder, which the catalog graph does not price (it holds the text decoder only); the weights, KV blocks and step time are those of language_model_only: true",
-            "setting": "language_model_only",
-            "stated": "unset"
-          }
         ],
         "total": 164
       }

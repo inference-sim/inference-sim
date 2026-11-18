@@ -467,6 +467,10 @@ func (i *InstanceSimulator) ReleaseHeldKV(req *sim.Request, now int64) {
 	i.drv.ReleaseHandoff(req, now)
 }
 
+// HandoffAt is where this instance's engine says req's held KV sits (engine.Handoff.At), in its
+// pool's numbering; nil when it states nothing.
+func (i *InstanceSimulator) HandoffAt(req *sim.Request) *plan.Endpoint { return i.drv.HandoffAt(req) }
+
 // KVBlocksOf returns the GPU blocks req holds on this instance (the store's own slice).
 func (i *InstanceSimulator) KVBlocksOf(req *sim.Request) []int64 {
 	return i.drv.HandoffBlocks(req) // the KV its engine holds for the pull (Result.Handoffs)
