@@ -792,7 +792,7 @@
  {
   "ID": "LIF-1",
   "Title": "",
-  "Statement": "A tag names one commit forever. Tags are never moved or deleted; a mistake gets a new tag."
+  "Statement": "A tag names one commit forever, and a pinned commit stays on its branch forever. Tags are never moved or deleted; a mistake gets a new tag. A main or release branch that an inference-sim release pins is never rewritten."
  },
  {
   "ID": "LIF-2",

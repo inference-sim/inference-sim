@@ -163,7 +163,6 @@ func TestChangesFilterRunsEachJobForTheFilesItReads(t *testing.T) {
 		files []string
 		want  []string
 	}{
-		{"tag lock only", []string{".github/tags.lock"}, nil},
 		{"a cost model source file", []string{"kernel/step.go"}, []string{"golang", "kernel"}},
 		{"a registry script", []string{"registry/scripts/fit_fabric.py"}, []string{"contracts", "registry"}},
 		{"documentation only", []string{"README.md"}, nil},

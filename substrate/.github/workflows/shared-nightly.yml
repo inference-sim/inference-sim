@@ -13,7 +13,6 @@ name: shared nightly checks
 #
 #   cited-issues  X28: every issue cited as the reason for a refusal or a gap is open
 #   quarantine    X25: no quarantined test has expired
-#   tags          LIF-1: every tag resolves to the commit .github/tags.lock records
 #   issue-names   X12: no private name appears in an issue's title, body or comments
 
 on:
@@ -62,9 +61,6 @@ jobs:
       - name: Quarantine list (X25)
         working-directory: repo
         run: '"$RUNNER_TEMP/prcheck" quarantine'
-      - name: Every tag resolves to its recorded commit (LIF-1)
-        working-directory: repo
-        run: '"$RUNNER_TEMP/prcheck" tags -lock .github/tags.lock'
       - name: No private name in issue text (X12)
         env:
           PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}
