@@ -930,6 +930,49 @@ func TestRunCmd_KernelBackend_DisaggregatedSpeculation(t *testing.T) {
 	}
 }
 
+// Each pool is priced from its OWN offload description: a decode pool's tier of another size is the
+// decode pool's, an inert decode config leaves the decode pool with no tier, and neither is the
+// prefill pool's. A decode pool given the prefill pool's description fails each assertion.
+func TestKernelPools_ApplyOffload_EachPoolFromItsOwnDescription(t *testing.T) {
+	_, catalog, registry := kernelRepos(t)
+	dir := writeScenarioVariant(t, "cost-model-fabric]", "cost-model-fabric, cost-model-offload-tiers]", "pd_transfer", "pd_transfer")
+	repos := reposOf(dir, catalog, registry)
+	pools := &kernelPools{connector: "MultiConnector", decodeConnector: "MultiConnector"}
+	for _, c := range []struct {
+		role deployment.Role
+		dst  **kernelmodel.Model
+	}{{deployment.RolePrefill, &pools.prefill}, {deployment.RoleDecode, &pools.decode}} {
+		m, err := kernelmodel.OpenRole("variant.yaml", repos, c.role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		*c.dst = m
+	}
+	saved := blockSizeTokens
+	defer func() { blockSizeTokens = saved }()
+	blockSizeTokens = 64
+
+	tier := func(cpu int64) kvOffloadConfig {
+		return kvOffloadConfig{Enabled: true, CPUBytesToUse: cpu, PerBlockBytes: 1,
+			Tiers: []kvOffloadTier{{DeviceClass: "nvme_gen4", DirectIO: true}}}
+	}
+	var pre, dec poolOverrides
+	pools.applyOffload(tier(1<<32), tier(1<<31), &pre, &dec)
+	if pre.KVOffload == nil || dec.KVOffload == nil ||
+		pre.KVOffload.CPUBytesToUse != 1<<32 || dec.KVOffload.CPUBytesToUse != 1<<31 {
+		t.Fatalf("CPU tier bytes prefill %v decode %v, want each pool's own %d and %d", pre.KVOffload, dec.KVOffload, int64(1)<<32, int64(1)<<31)
+	}
+
+	pre, dec = poolOverrides{}, poolOverrides{}
+	pools.applyOffload(tier(1<<32), kvOffloadConfig{}, &pre, &dec)
+	if pre.KVOffload == nil || !pre.KVOffload.IsEnabled() {
+		t.Errorf("prefill pool %+v, want its tier", pre.KVOffload)
+	}
+	if dec.KVOffload == nil || dec.KVOffload.IsEnabled() || len(dec.KVOffload.Tiers) != 0 {
+		t.Errorf("decode pool %+v, want the inert description (an override that is nil would inherit the run's)", dec.KVOffload)
+	}
+}
+
 // Each pool of a disaggregated run sizes and prices the run's one offload description by its
 // own kernel. The fixture's decode pool caches in bf16 and its prefill pool in fp8, so their
 // blocks hold different bytes, and a pool priced by the other's kernel cannot pass:

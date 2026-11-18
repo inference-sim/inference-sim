@@ -146,3 +146,20 @@ func TestRunCmd_PoolsWithDifferentOffloadWriteNoTrace(t *testing.T) {
 		t.Errorf("a trace of pools that offload differently: err %v\n%s", err, lastLines(stderr, 3))
 	}
 }
+
+// A tier on the decode pool beside the decode pool's own plain NIXL connector is refused where the
+// pools are priced, naming the decode pool and its connector (the prefill pool's MultiConnector must
+// not stand in for it).
+func TestRunCmd_ADecodePoolTierBesideItsOwnNixlIsRefusedNamingThePool(t *testing.T) {
+	dir := variantDir(t, func(s string) string {
+		return strings.Replace(s, "    pd_transfer: {connector: NixlConnector}\n",
+			"    pd_transfer: {connector: NixlConnector}\n    offload:\n      connector: OffloadingConnector\n      spec: TieringOffloadingSpec\n      tiers:\n        - {tier: cpu_dram, bytes: 1099511627776}\n", 1)
+	})
+	_, stderr, err := runPoolKV(t, dir, poolKVScenario)
+	if err == nil {
+		t.Fatal("a decode pool tier beside plain NIXL ran")
+	}
+	if !strings.Contains(stderr, "offloads KV in the decode pool") || !strings.Contains(stderr, "pd_transfer.connector \\\"NixlConnector") {
+		t.Errorf("the refusal does not name the decode pool and its connector:\n%s", lastLines(stderr, 3))
+	}
+}

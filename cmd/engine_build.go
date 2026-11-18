@@ -271,7 +271,7 @@ func openKernelPools() *kernelPools {
 		kernelPDOpened = nil
 		return nil
 	}
-	p := &kernelPools{prefill: bp.Prefill, decode: bp.Decode, connector: bp.Connector, p2p: bp.P2P}
+	p := &kernelPools{prefill: bp.Prefill, decode: bp.Decode, connector: bp.Connector, decodeConnector: bp.DecodeConnector, p2p: bp.P2P}
 	kernelPDOpened = p
 	return p
 }
