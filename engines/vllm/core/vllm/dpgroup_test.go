@@ -25,6 +25,7 @@ type dpGoldenScenario struct {
 		NumBlocks               int    `json:"num_blocks"`
 		MaxModelLen             int    `json:"max_model_len"`
 		EnablePrefixCaching     bool   `json:"enable_prefix_caching"`
+		EnableChunkedPrefill    *bool  `json:"enable_chunked_prefill"`
 		SchedulingPolicy        string `json:"scheduling_policy"`
 		DataParallelSize        int    `json:"data_parallel_size"`
 		PrefillScheduleInterval int    `json:"prefill_schedule_interval"`
@@ -126,6 +127,9 @@ func dpGroupDivergence(t *testing.T, sc dpGoldenScenario, want dpGoldenTrace) st
 		"dp_sync_interval: %d\ndp_stats_interval_us: %d\n",
 		c.BlockSize, c.MaxNumSeqs, c.MaxNumBatchedTokens, maxLen, c.NumBlocks, c.AsyncScheduling, policy, c.EnablePrefixCaching,
 		c.DataParallelSize, max(c.PrefillScheduleInterval, 1), max(c.DPSyncInterval, 1), max(c.StatsInterval, 1))
+	if c.EnableChunkedPrefill != nil {
+		src += fmt.Sprintf("enable_chunked_prefill: %t\n", *c.EnableChunkedPrefill)
+	}
 	// The oracle builds each rank's Scheduler with vLLM's create_scheduler, which makes no
 	// startup check of the KV cache against max_model_len; a KV-pressure scenario states fewer
 	// blocks than one max_model_len sequence. So the settings are resolved at a window the
