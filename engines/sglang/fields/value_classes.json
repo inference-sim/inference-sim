@@ -380,42 +380,6 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
-      "value": "dsv4",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "dsv4",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "dsa",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "dsa",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "flashinfer",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "flashinfer",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "dsa",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "flashinfer",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "flashinfer",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
       "value": "trtllm_mla",
       "trace": "config/testdata/serverargs.json"
      },
@@ -1066,14 +1030,6 @@
      {
       "value": "fa3",
       "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "flashinfer",
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": "flashinfer",
-      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": "fa3",
@@ -1594,42 +1550,6 @@
      },
      {
       "value": 16384,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8192,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8192,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8192,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8192,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 32768,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 32768,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8192,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 32768,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 32768,
       "trace": "config/testdata/serverargs.json"
      },
      {
@@ -2559,34 +2479,6 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
       "value": 262144,
       "trace": "config/testdata/serverargs.json"
      },
@@ -3150,42 +3042,6 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 512,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 512,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 512,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 512,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
       "value": 512,
       "trace": "config/testdata/serverargs.json"
      },
@@ -3812,14 +3668,6 @@
      {
       "value": null,
       "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 512,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": 512,
-      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": 512,
@@ -4068,42 +3916,6 @@
      },
      {
       "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
       "trace": "config/testdata/serverargs.json"
      },
      {
@@ -4928,42 +4740,6 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
-      "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
       "value": 8,
       "trace": "config/testdata/serverargs.json"
      },
@@ -5645,14 +5421,6 @@
      },
      {
       "value": 4,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": 1,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": 1,
       "trace": "lower/testdata/sglang_lower.json"
      },
      {
@@ -5853,50 +5621,6 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
       "value": false,
       "trace": "config/testdata/serverargs.json"
      },
@@ -6519,18 +6243,6 @@
      {
       "value": false,
       "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": true,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": true,
-      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": true,
@@ -6944,66 +6656,6 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
-      "value": "fp8_e5m2",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "fp8_e4m3",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "fp8_e4m3",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "bfloat16",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "bfloat16",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "fp8_e5m2",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "bfloat16",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "bfloat16",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "bfloat16",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "bf16",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "auto",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "fp8_e4m3",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "fp8_e4m3",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "fp8_e4m3",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "fp8_e4m3",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
       "value": "auto",
       "trace": "config/testdata/serverargs.json"
      },
@@ -7641,30 +7293,6 @@
      },
      {
       "value": "fp8_e4m3",
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": "fp8_e4m3",
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": "fp8_e4m3",
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": "fp8_e4m3",
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": "bfloat16",
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": "bfloat16",
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": "bf16",
       "trace": "lower/testdata/sglang_lower.json"
      },
      {
@@ -7874,42 +7502,6 @@
      },
      {
       "value": 16384,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 16384,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 16384,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 16384,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 16384,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 32768,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 32768,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 16384,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 32768,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 32768,
       "trace": "config/testdata/serverargs.json"
      },
      {
@@ -8797,42 +8389,6 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
-      "value": 256,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 256,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 512,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 512,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 512,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 512,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
       "value": 48,
       "trace": "config/testdata/serverargs.json"
      },
@@ -9605,58 +9161,6 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
-      "value": 0.897,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 0.897,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 0.85,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 0.85,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 0.85,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 0.85,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 0.85,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 0.82,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 0.82,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 0.85,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 0.85,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 0.82,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 0.82,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
       "value": 0.846,
       "trace": "config/testdata/serverargs.json"
      },
@@ -10374,34 +9878,6 @@
      }
     ],
     "stated": [
-     {
-      "value": "<model>",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "<model>",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "<model>",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "<model>",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "<model>",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "<model>",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "<model>",
-      "trace": "config/testdata/serverargs.json"
-     },
      {
       "value": "<model>",
       "trace": "config/testdata/serverargs.json"
@@ -12007,34 +11483,6 @@
      },
      {
       "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 1,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 1,
       "trace": "lower/testdata/sglang_lower.json"
      }
     ],
@@ -12580,38 +12028,6 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "fp8",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": "fp8",
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": null,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
       "value": "fp8",
       "trace": "config/testdata/serverargs.json"
      },
@@ -13225,10 +12641,6 @@
      },
      {
       "value": "modelopt_fp4",
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": "fp8",
       "trace": "lower/testdata/sglang_lower.json"
      },
      {
@@ -13675,70 +13087,6 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
       "value": 4,
       "trace": "config/testdata/serverargs.json"
      },
@@ -14901,34 +14249,6 @@
      {
       "value": 1,
       "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": 8,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": 8,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": 8,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": 8,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": 8,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": 8,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": 8,
-      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": 8,
