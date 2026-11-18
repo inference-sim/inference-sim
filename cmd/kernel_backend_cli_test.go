@@ -756,8 +756,9 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 		name, want string
 		args       []string
 	}{
-		{"a disaggregated scenario run without a P/D topology", "needs a P/D topology",
-			pd(plain)},
+		// --num-instances alone is no topology: the counts must name both roles.
+		{"a disaggregated scenario run with only --num-instances", "needs a P/D topology",
+			pd(plain, "--num-instances", "4")},
 		{"a pool stating no max_model_len", "states no engine.max_model_len",
 			pd(writeScenarioVariant(t, "      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n  - role: decode",
 				"      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n  - role: decode"), topology...)},
@@ -806,6 +807,46 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 	if out, stderr, err := runKernelCLI(t, pd(plain, topology...)...); err != nil ||
 		!completedIs(out, 6) {
 		t.Errorf("a topology exactly filling the pools was not served: %v\n%s", err, lastLines(stderr, 3))
+	}
+}
+
+// The scenario's pools state the P/D topology: a disaggregated scenario run with no topology flag
+// takes the instances each pool holds, and serves exactly as the same run with the counts stated
+// (inference-sim#2126). A flag keeps the command line's word.
+func TestRunCmd_KernelBackend_PDTopologyIsTakenFromThePools(t *testing.T) {
+	plain := writeScenarioVariant(t)
+	args := func(extra ...string) []string {
+		return append([]string{"run", "--scenarios", plain, "--scenario", "variant.yaml",
+			"--num-requests", "6", "--rate", "3"}, extra...)
+	}
+	fromPools, stderr, err := runKernelCLI(t, args()...)
+	if err != nil || !completedIs(fromPools, 6) {
+		t.Fatalf("no topology flag: %v\n%s", err, lastLines(stderr, 3))
+	}
+	if !strings.Contains(stderr, "P/D topology taken from the scenario's pools: 3 prefill and 1 decode") {
+		t.Errorf("the run did not say it took the topology from the pools:\n%s", lastLines(stderr, 6))
+	}
+	stated, stderr, err := runKernelCLI(t, args("--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1")...)
+	if err != nil || !completedIs(stated, 6) {
+		t.Fatalf("stated topology: %v\n%s", err, lastLines(stderr, 3))
+	}
+	if a, b := e2eMean(t, fromPools), e2eMean(t, stated); a != b {
+		t.Errorf("the pools' topology gave mean E2E %v ms, the same counts stated gave %v ms", a, b)
+	}
+	// A replay of that run states no topology either, and takes the same pools'.
+	prefix := filepath.Join(t.TempDir(), "trace")
+	if _, stderr, err := runKernelCLI(t, args("--trace-output", prefix, "--seed", "9")...); err != nil {
+		t.Fatalf("run with a trace: %v\n%s", err, lastLines(stderr, 3))
+	}
+	rep, stderr, err := runKernelCLI(t, "replay", "--trace-header", prefix+".yaml", "--trace-data", prefix+".csv",
+		"--scenarios", plain, "--scenario", "variant.yaml", "--seed", "9")
+	if err != nil || !completedIs(rep, 6) {
+		t.Errorf("replay with no topology flag: %v\n%s", err, lastLines(stderr, 3))
+	}
+	// A smaller topology stated on the command line is the command line's.
+	smaller, stderr, err := runKernelCLI(t, args("--num-instances", "2", "--prefill-instances", "1", "--decode-instances", "1")...)
+	if err != nil || !completedIs(smaller, 6) || strings.Contains(stderr, "taken from the scenario's pools") {
+		t.Errorf("a stated topology was replaced by the pools': %v\n%s", err, lastLines(stderr, 3))
 	}
 }
 
