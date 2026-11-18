@@ -252,7 +252,7 @@ func TestAnEnvVarOfAnEarlierReleaseIsTranslatedToThisReleasesFlags(t *testing.T)
 	if _, ok := fields.Approximate(mb, fields.Facts{Value: "flashinfer_trtllm", ComputeCapability: "10.0"}); !ok {
 		t.Error("the B200 translation (flashinfer_trtllm on 10.0) is not approximated by moe_backend's rule")
 	}
-	if _, ok := fields.Approximate(mb, fields.Facts{Value: "marlin", ComputeCapability: "9.0"}); ok {
-		t.Error("marlin on 9.0 is approximated by moe_backend's rule; the H200 translation was counted as refused there")
+	if _, ok := fields.Approximate(mb, fields.Facts{Value: "marlin", ComputeCapability: "9.0"}); !ok {
+		t.Error("the H200 translation (marlin on 9.0) is not approximated by moe_backend's rule")
 	}
 }
