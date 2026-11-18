@@ -53,7 +53,10 @@ TLS = [("cuda_copy,rc", True), ("cuda_copy,cuda_ipc,rc", True), ("all", True), (
 DYN_CODEC = [("msgpack", True), ("json", False), ("", False)]
 P2P_LEVEL = [("NVL", "10.0", True), ("NVL", "10.3", True), ("NVL", "9.0", False), ("NVL", "12.0", False),
              ("PXB", "10.0", False), ("SYS", "10.0", False), ("", "10.0", False)]
-ARCH_LIST = [("10.0", "10.0", True), ("10.0", "10.3", False), ("10.0", "9.0", False), ("9.0", "10.0", False), ("", "10.0", False)]
+# The stand-in is exact where the stated list is the device's own capability: unset, torch compiles for the visible
+# devices' capabilities (_get_cuda_arch_flags, torch/utils/cpp_extension.py:2577-2590 at v2.11.0).
+ARCH_LIST = [("10.0", "10.0", True), ("10.0", "10.3", False), ("10.0", "9.0", False), ("9.0", "10.0", False), ("", "10.0", False),
+             ("9.0", "9.0", True), ("9.0", "8.0", False), ("9.0", "12.0", False), ("8.0", "9.0", False), ("", "9.0", False)]
 INERT_ONE = {  # field: (the stated value that is exact, a value that is not shown exact)
     "NCCL_WATCHDOG_TIMEOUT": ("1800", "60"), "TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC": ("1800", "60"),
     "UCX_MAX_RMA_RAILS": ("1", "4"), "UCX_MAX_RNDV_RAILS": ("1", "4"), "UCX_RNDV_SCHEME": ("put_zcopy", "get_zcopy"),
