@@ -131,7 +131,7 @@ func childOrder(c *connectorConfig) (pair, error) {
 	if len(kids) != 2 {
 		return p, fmt.Errorf("vllm: kv_transfer.kv_connector_extra_config.connectors has %d child(ren): a MultiConnector "+
 			"is modelled over one NIXL connector and the OffloadingConnector, in the order vLLM should try them "+
-			"(docs/multiconnector.md)", len(kids))
+			"(core/vllm/multiconnector.go)", len(kids))
 	}
 	haveNixl, haveOff := false, false
 	for i, k := range kids {

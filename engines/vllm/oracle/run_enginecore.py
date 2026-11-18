@@ -62,7 +62,7 @@ def main() -> None:
     vllm_root, path = sys.argv[1], sys.argv[2]
     if os.path.isdir(path):
         out_dir = sys.argv[3] if len(sys.argv) > 3 else path
-        # Golden traces are never overwritten without review (docs/testing.md).
+        # Golden traces are never overwritten without review (oracle/README.md).
         if "testdata/golden" in os.path.abspath(out_dir).replace(os.sep, "/") and \
                 os.environ.get("BLIS_VLLM_ALLOW_GOLDEN_UPDATE") != "1":
             sys.exit("refusing to write golden traces: set BLIS_VLLM_ALLOW_GOLDEN_UPDATE=1, and add "

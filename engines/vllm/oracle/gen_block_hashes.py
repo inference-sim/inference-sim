@@ -18,7 +18,7 @@ committed ones means vLLM's hashing moved, and the file must not be overwritten 
 The file is written compact (no indentation): the large-block cases hold some 600 thousand
 token ids, one per line otherwise.
 
-The provenance block records what every oracle trace does (docs/testing.md, "Provenance"): the
+The provenance block records what every oracle trace does (oracle/README.md, "Provenance"): the
 vLLM version, commit and installed distribution, the Python version and the platform, the two
 lock hashes, the blis-vllm commit and the mocks. The generator loads no model, runs no scenario
 and replaces nothing, so it records no model and no scenario digest, its mock list is empty and

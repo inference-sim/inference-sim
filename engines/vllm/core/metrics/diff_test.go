@@ -364,7 +364,7 @@ func TestMetricsAgainstVLLM(t *testing.T) {
 	families := manifestFamilies(t)
 	goldens, err := filepath.Glob("testdata/golden/*.metrics.json")
 	if err != nil || len(goldens) == 0 {
-		t.Fatalf("no metric goldens (%v): generate them with oracle/run_metrics.py (docs/testing.md)", err)
+		t.Fatalf("no metric goldens (%v): generate them with oracle/run_metrics.py (oracle/README.md)", err)
 	}
 	compared := 0
 	for _, g := range goldens {

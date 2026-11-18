@@ -3,7 +3,7 @@ name: ci
 # What runs, and why it is quick.
 #
 # Precise. The `changes` job reads the files a pull request changes and says which jobs need to run
-# (.github/scripts/changed_jobs.py; docs/ci.md has the table). A job runs when a changed file is one it reads
+# (.github/scripts/changed_jobs.py; .github/workflows/ci.yml has the table). A job runs when a changed file is one it reads
 # and is skipped when none is, so a change to a document runs the cheap jobs, a change to a rules pack runs
 # that pack's check and the tests that link it, and so on. A push to main and a manual run (workflow_dispatch)
 # run every job. The checks that branch protection requires keep their names (go, lint, oracle-tier2,

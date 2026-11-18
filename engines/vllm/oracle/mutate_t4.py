@@ -162,7 +162,7 @@ SUITES = {
 }
 
 # Mutants no input can tell apart from the code, for vLLM's NIXL pull connector on one
-# full-attention KV cache group (docs/testing.md, "Tier 4"). Each reason is why, from vLLM's
+# full-attention KV cache group (oracle/README.md, "Tier 4"). Each reason is why, from vLLM's
 # own code; a connector or layout that makes one observable must add a scenario and remove it.
 EQUIVALENT = {
     # A NIXL pull is planned once (update_state_after_alloc clears do_remote_prefill,

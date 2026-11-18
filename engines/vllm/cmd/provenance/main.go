@@ -3,7 +3,7 @@
 // Command provenance prints, as JSON, the Go side of a CI run's provenance: blis-vllm's
 // identity as the build records it (blisvllm.ProvenanceFor), the commit the run checks, the Go
 // toolchain and the platform. CI writes it into the oracle artifact beside the traces, whose
-// own provenance block is the Python side's (docs/testing.md, "Provenance"), so every result in
+// own provenance block is the Python side's (oracle/README.md, "Provenance"), so every result in
 // the artifact can be reproduced from the two together.
 //
 // Usage: go run ./cmd/provenance [commit]
