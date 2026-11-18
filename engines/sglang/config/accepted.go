@@ -89,6 +89,13 @@ func checkAccepted(args *ServerArgs, in Input) error {
 		if !differs(args, &def, name) {
 			continue
 		}
+		// An empty custom_weight_loader is the value SGLang's resolution gives an unset one
+		// (model_path_hook.py handle_load_format: `if custom_weight_loader is None: = []`), and a server's
+		// own record of its resolved arguments states it; it loads no custom weight loader, so it is the
+		// default, not a setting.
+		if name == "custom_weight_loader" && len(args.CustomWeightLoader) == 0 {
+			continue
+		}
 		v := args.value(name)
 		allowed, ok := acceptedFields[name]
 		if !ok {
