@@ -208,6 +208,15 @@ func TestPyFloorDivSigns(t *testing.T) {
 			t.Errorf("%v // %v = %v, want %v", tc.a, tc.b, got, tc.want)
 		}
 	}
+	// Python's float // rounds a quotient that is half way between two integers down: a-mod can round,
+	// so div is not always integer-valued. The expected values are Python's own (a // b).
+	for _, tc := range []struct{ a, b, want float64 }{
+		{-264.26025509360613, -7.130746716220041e-14, 3705926820994823},
+	} {
+		if got := pyFloorDiv(tc.a, tc.b); got != tc.want {
+			t.Errorf("%v // %v = %v, want %v (Python)", tc.a, tc.b, got, tc.want)
+		}
+	}
 	if got := pyFloorDiv(-0.0, 5); !math.Signbit(got) && got != 0 {
 		t.Errorf("-0 // 5 = %v", got)
 	}
