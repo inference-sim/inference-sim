@@ -480,6 +480,13 @@ func (g *DPGroup) Complete(id engine.BatchID, outcome engine.Outcome, end engine
 			for k := range h.Blocks {
 				h.Blocks[k] += off
 			}
+			// A request's KV sits on the node of the rank that computed it, so a group whose ranks
+			// span nodes states that node for the peer's pull. A group on one node states nothing:
+			// the host reads the pool's first node, as before.
+			if g.spansNodes() {
+				at := e.at
+				h.At = &at
+			}
 			res.Handoffs = append(res.Handoffs, h)
 		}
 	}
@@ -614,6 +621,11 @@ func (g *DPGroup) Assumptions() []string { return g.ranks[0].e.Assumptions() }
 func (g *DPGroup) Plan() plan.PoolPlan { return g.ranks[0].e.Plan() }
 
 var _ engine.Planned = (*DPGroup)(nil)
+
+// spansNodes reports whether the group's ranks sit on more than one node.
+func (g *DPGroup) spansNodes() bool {
+	return g.pool != nil && g.pool.GroupNodes(len(g.ranks), rankWidth(*g.pool)) > 1
+}
 
 // rankWidth is the workers of one data-parallel rank, tensor x pipeline.
 func rankWidth(p placement.Placement) int { return max(p.Tensor, 1) * max(p.Pipeline, 1) }

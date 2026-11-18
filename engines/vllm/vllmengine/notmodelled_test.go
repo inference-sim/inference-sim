@@ -171,7 +171,7 @@ var noDefaultValue = map[string]string{
 // The test checks each really reaches the kernel's settings (vllmsettings.Of), so an entry cannot
 // outlive the kernel reading the key.
 var pricedByTheKernel = map[string]string{
-	"all2all_backend":                   "all2all_backend: allgather_reducescatter\n#75",
+	"all2all_backend":                   "all2all_backend: allgather_reducescatter\n#264",
 	"disable_custom_all_reduce":         "disable_custom_all_reduce: true\n#78",
 	"disable_cascade_attn":              "disable_cascade_attn: false\n#78",
 	"enforce_eager":                     "enforce_eager: true\n#59",

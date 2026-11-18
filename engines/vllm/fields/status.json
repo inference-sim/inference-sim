@@ -174,7 +174,7 @@
     }
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#75"
+    "issue": "inference-sim/blis-vllm#264"
    },
    "status": "not_modelled"
   },
@@ -3473,7 +3473,7 @@
       "moe_backend": null
      },
      "evidence": "the registry prices a routed expert group by weight format on the ramp fitted for it (blis-substrate#150, #285), and records that the stated backend is not the one it measured",
-     "differs": "a stated backend (FlashInfer TRT-LLM or CUTLASS, DeepGEMM mega-MoE, Marlin) runs its own kernel with its own ramp; the experts are priced by weight format at the cost model's choice for that format, so the step carries that backend's difference",
+     "differs": "a stated backend (FlashInfer TRT-LLM, CUTLASS or CuteDSL, DeepGEMM mega-MoE, Marlin, or Triton) runs its own kernel with its own ramp; the experts are priced as the engine resolves the field when it is unset, so the step carries that backend's difference. On an SM90 part with block-FP8 experts the engine prices a stated Triton or FlashInfer CUTLASS backend from its own lane (the plan states the kernel, lowering expertsKernel); the point is still carried as this substitution because the unset field resolves Triton at expert-parallel width 1 and FlashInfer CUTLASS above it, so a stated backend that is not that one is priced from the other's lane. The SM90 clause is valid for block-FP8 experts only; the clause grammar cannot test the weight scheme (inference-sim/blis-substrate#384), and the corpus has no other SM90 recipe that states either backend",
      "when": [
       {
        "value_in": [
@@ -3481,11 +3481,22 @@
         "flashinfer_cutlass",
         "deep_gemm_mega_moe",
         "deep_gemm_amxf4_mega_moe",
-        "marlin"
+        "marlin",
+        "flashinfer_cutedsl"
        ],
        "compute_capability": {
         "gte": "10.0",
         "lt": "11.0"
+       }
+      },
+      {
+       "value_in": [
+        "triton",
+        "flashinfer_cutlass"
+       ],
+       "compute_capability": {
+        "gte": "9.0",
+        "lt": "10.0"
        }
       }
      ]
@@ -6125,7 +6136,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#75"
+    "issue": "inference-sim/blis-vllm#264"
    },
    "status": "not_modelled"
   },

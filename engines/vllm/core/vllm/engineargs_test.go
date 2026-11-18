@@ -59,18 +59,6 @@ var unstatedRefused = map[string]string{
 	"default-max-model-len-unstated":          "max_model_len must be stated",
 }
 
-// notModelledRefused are the shapes vLLM accepts and the factory refuses by design as not
-// modelled, each with its issue: they are compared as "the factory refuses, and says why".
-var notModelledRefused = map[string]string{
-	// v0.33.0 runs async scheduling with an ngram drafter on the V2 runner
-	// (vllm/config/vllm.py:1651-1719@4ba787ec), which is not diff-tested; the V1 path is
-	// TestAsyncSchedulingWithNgramFollowsTheModelRunner's.
-	"not-modelled-async-with-ngram-stated": "issues/186",
-	// The same, with async_scheduling unstated: on V2 it resolves to on (:1685-1719).
-	"accepted-ngram":                    "issues/186",
-	"default-async-unstated-with-ngram": "issues/186",
-}
-
 // engineBlockOf maps an EngineArgs keyword to the engine block's own key and value.
 func engineBlockOf(args map[string]any) string {
 	var b strings.Builder
@@ -150,15 +138,6 @@ func TestEngineArgsAgainstVLLM(t *testing.T) {
 				t.Fatal(err)
 			}
 			got, err := resolve(cfg)
-			if reason, ok := notModelledRefused[c.Name]; ok {
-				if !want.Accepted {
-					t.Fatalf("vLLM refused %s, which the factory refuses as not modelled: drop it from notModelledRefused", c.Name)
-				}
-				if err == nil || !strings.Contains(err.Error(), reason) {
-					t.Errorf("the factory should refuse %s as not modelled (%q); got %v", c.Name, reason, err)
-				}
-				return
-			}
 			if reason, ok := unstatedRefused[c.Name]; ok {
 				if !want.Accepted {
 					t.Fatalf("vLLM refused %s, which the factory expects it to resolve", c.Name)
@@ -209,12 +188,12 @@ func TestEngineArgsAgainstVLLM(t *testing.T) {
 			}
 		})
 	}
-	// 39 shapes: 15 accepted by both, 16 refused by both, 5 that leave a setting unstated which
-	// vLLM resolves from the model and GPU and the factory refuses by design (unstatedRefused), and
-	// 3 that vLLM accepts and the factory refuses as not modelled (notModelledRefused). So the two
-	// agree on acceptance in 31 of 39, not in all of them.
-	if accepted != 15 || refused != 16 || len(unstatedRefused) != 5 || len(notModelledRefused) != 3 {
-		t.Errorf("%d accepted, %d refused, %d unstated-by-design and %d not-modelled cases compared; want 15, 16, 5 and 3: the file changed",
-			accepted, refused, len(unstatedRefused), len(notModelledRefused))
+	// 39 shapes: 18 accepted by both (the ngram drafter with async scheduling stated, unstated or
+	// off among them: vLLM runs it on the V2 runner), 16 refused by both, and 5 that leave a setting
+	// unstated which vLLM resolves from the model and GPU and the factory refuses by design
+	// (unstatedRefused). So the two agree on acceptance in 34 of 39, not in all of them.
+	if accepted != 18 || refused != 16 || len(unstatedRefused) != 5 {
+		t.Errorf("%d accepted, %d refused and %d unstated-by-design cases compared; want 18, 16 and 5: the file changed",
+			accepted, refused, len(unstatedRefused))
 	}
 }

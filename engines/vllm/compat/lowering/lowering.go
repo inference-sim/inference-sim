@@ -438,7 +438,10 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 	// The CUDA graph mode, per batch (vllm/config/compilation.py:604-640;
 	// vllm/v1/cudagraph_dispatcher.py:233-310 at v0.31.0). FULL_AND_PIECEWISE is v0.31.0's
 	// default.
-	backend := in.Rules.EffectiveAll2AllBackend(eng.All2AllBackend)
+	if err := refuseAll2AllBinding(in.Rules, eng.All2AllBackend, eng.MoEBackend); err != nil {
+		return nil, err
+	}
+	backend := resolvedAll2AllBackend(in.Rules, eng.All2AllBackend, eng.MoEBackend)
 	graphMode := strings.ToUpper(eng.CUDAGraphMode)
 	if graphMode == "" {
 		graphMode = "FULL_AND_PIECEWISE"
@@ -560,6 +563,19 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 		p.MoE.RedundantExperts = e.NumRedundantExperts
 	}
 	p.MoE.Dispatch = dispatchKernel(backend)
+	if stackRoutedExperts(g) > 0 && backend != eng.All2AllBackend && (eng.All2AllBackend != "" || backend != in.Rules.EffectiveAll2AllBackend("")) {
+		// The plan states the backend the engine runs, which is not the one stated: a deprecated
+		// alias or the binding to passthrough beside a self-communicating MoE backend.
+		why := "the backend vLLM runs for the stated all2all_backend " +
+			strconv.Quote(eng.All2AllBackend) + " beside moe_backend " + strconv.Quote(eng.MoEBackend) +
+			" (vllm/config/parallel.py:537, vllm/config/kernel.py:194-227, " +
+			"vllm/distributed/device_communicators/cuda_communicator.py:253-262 at 4ba787ec9959)"
+		if backend == "passthrough" {
+			why += "; the MoE kernel dispatches and combines the tokens itself, so that communication is inside the " +
+				"kernel's price and is not priced as a separate collective"
+		}
+		note("all2all_backend", backend, why)
+	}
 	if p.MoE.Experts, err = expertsKernel(g, &c, eng.MoEBackend); err != nil {
 		return nil, err
 	}
@@ -803,12 +819,57 @@ func blockFP8Experts(g *model.Graph) bool {
 	return found
 }
 
+// resolvedAll2AllBackend is the backend the engine runs for the stated one beside the stated MoE
+// backend. A pack that knows the binding to passthrough beside a self-communicating MoE backend
+// (rules/pack ResolvedAll2AllBackend) applies it; any other rules value gives the effective backend.
+func resolvedAll2AllBackend(r subrules.EngineRules, backend, moeBackend string) string {
+	if b, ok := r.(interface {
+		ResolvedAll2AllBackend(backend, moeBackend string) string
+	}); ok {
+		return b.ResolvedAll2AllBackend(backend, moeBackend)
+	}
+	return r.EffectiveAll2AllBackend(backend)
+}
+
+// refuseAll2AllBinding refuses what bind_passthrough_all2all_backend refuses
+// (vllm/config/kernel.py:206-227@4ba787ec9959e566d3b587a796dff07673324da5): a FlashInfer MoE-EP
+// backend beside an explicit all2all_backend other than the default or passthrough, and passthrough
+// beside any other MoE backend. The rules pack refuses both too (moe-ep-backend-binds-passthrough),
+// but a caller can reach the lowering without it (blis-vllm#271). A release whose pack does not know
+// the binding refuses nothing here.
+func refuseAll2AllBinding(r subrules.EngineRules, backend, moeBackend string) error {
+	b, ok := r.(interface {
+		SelfCommunicatingMoEBackend(string) (self, known bool)
+	})
+	if !ok {
+		return nil
+	}
+	self, known := b.SelfCommunicatingMoEBackend(moeBackend)
+	if !known {
+		return nil
+	}
+	stated := r.EffectiveAll2AllBackend(backend)
+	switch {
+	case self && stated != r.EffectiveAll2AllBackend("") && stated != "passthrough":
+		return fmt.Errorf("all2all_backend %q beside moe_backend %q: the MoE backend dispatches and combines itself, "+
+			"and vLLM refuses any explicit all2all_backend with it; leave all2all_backend unset "+
+			"(vllm/config/kernel.py:206-215, https://github.com/inference-sim/blis-vllm/issues/271)", backend, moeBackend)
+	case !self && stated == "passthrough":
+		return fmt.Errorf("all2all_backend passthrough beside moe_backend %q: passthrough is valid only beside a MoE backend "+
+			"that dispatches and combines itself, and vLLM refuses it otherwise "+
+			"(vllm/config/kernel.py:216-227, https://github.com/inference-sim/blis-vllm/issues/271)", moeBackend)
+	}
+	return nil
+}
+
 // dispatchKernel names the all-to-all kernel an MoE dispatch backend runs, in the plan's words:
 // none for the gather-and-scatter dispatches, DeepEP's three by their own names, and any other
 // by its library.
 func dispatchKernel(backend string) plan.KernelImpl {
 	switch backend {
-	case "", "naive", "allgather_reducescatter":
+	case "", "naive", "allgather_reducescatter", "passthrough":
+		// passthrough runs no framework all-to-all: the MoE backend dispatches and combines
+		// itself (vllm/config/parallel.py:232-234@4ba787ec).
 		return plan.KernelImpl{}
 	case "deepep_high_throughput":
 		return plan.DispatchDeepEPHighThroughput

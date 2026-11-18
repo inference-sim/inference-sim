@@ -287,7 +287,11 @@ func Pack() *pack.Pack {
 		// back to 'allgather_reducescatter'").
 		DefaultAll2AllBackend: "allgather_reducescatter",
 		All2AllBackendRenames: map[string]string{
-			"pplx": "allgather_reducescatter", "naive": "allgather_reducescatter"},
+			"pplx": "allgather_reducescatter", "naive": "allgather_reducescatter",
+			// A deprecated alias: the CUDA communicator runs it as flashinfer_nvlink_two_sided
+			// (vllm/distributed/device_communicators/cuda_communicator.py:253-262@4ba787ec).
+			"flashinfer_all2allv": "flashinfer_nvlink_two_sided"},
+		SelfCommunicatingMoEBackends: set("flashinfer_moe_ep_cutedsl", "flashinfer_moe_ep_mega_deep_gemm"),
 
 		// _NGRAM_LAYER_FIELDS (vllm/config/engram.py), and EngramConfig.cpu_offload: bool = True.
 		EngramArchitectures: set(rules.ArchDeepseekV41, "Qwen4ExpForCausalLM",
