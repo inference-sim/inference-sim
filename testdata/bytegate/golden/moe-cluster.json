@@ -14,8 +14,8 @@
     },
     "registry": {
       "source": "path",
-      "hash": "1cb5fce0d6a3e037724ae337333f4850e37bbeebaaf6e428acff1470db94c624",
-      "combined_hash": "1cb5fce0d6a3e037724ae337333f4850e37bbeebaaf6e428acff1470db94c624"
+      "hash": "5d818ced48d99d319b87ff6afe1ad03f88992d788b3a95a33158df54d6855144",
+      "combined_hash": "5d818ced48d99d319b87ff6afe1ad03f88992d788b3a95a33158df54d6855144"
     },
     "released_data": false,
     "build": "unreleased"
@@ -886,9 +886,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.15.1-0.20261118081908-fa28d5116739",
+    "substrate": "v0.15.1-0.20261118162118-b6748ca9d757",
     "router": "v1.0.0-blis.5.0.20261117234546-d98de1a5df58",
-    "engine_module": "v0.33.0-blis.1.0.20261118125334-8dbf92b0f881"
+    "engine_module": "v0.33.0-blis.1.0.20261118162419-79a73499472f"
   },
   "window": {
     "start_us": 33333,
@@ -3075,6 +3075,15 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
+            "Name": "all_reduce_message_limit",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "the custom lane for every message size: the engine runs a message above the custom kernel's size limit on NCCL; the pool's tensor-parallel all-reduce is priced from the custom lane at every size (inference-sim/blis-substrate#392)",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
             "Name": "nontorch_in_budget_bytes_2rank",
             "Primitive": "",
             "Running": "",
@@ -3092,7 +3101,7 @@
           }
         ],
         "evidence_source": "kernel",
-        "evidenced": 119,
+        "evidenced": 128,
         "fallback_or_assumed": [
           {
             "KernelMatch": "unkeyed",
@@ -3447,8 +3456,8 @@
           }
         ],
         "method_counts": {
-          "assumed": 43,
-          "measured": 105,
+          "assumed": 44,
+          "measured": 114,
           "not_charged": 1,
           "vendor_spec": 14
         },
@@ -3498,7 +3507,7 @@
           "sequence-parallel-architecture-known",
           "sequence-parallel-moe-implied"
         ],
-        "total": 163
+        "total": 173
       }
     }
   },
