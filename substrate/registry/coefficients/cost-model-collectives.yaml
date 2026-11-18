@@ -5218,7 +5218,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.164x against 1.317x under max(size/peak, floor). 249.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.164x against 1.317x under max(size/peak, floor). 249.25 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.181x (the all-message fit scores them at 1.179x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_4rank_gb300:
       value: 204250.0
       units: bytes_per_us
@@ -5228,7 +5228,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.147x against 1.286x under max(size/peak, floor). 204.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.147x against 1.286x under max(size/peak, floor). 204.25 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.135x (the all-message fit scores them at 1.133x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_peak_rate_all_reduce_nccl_fp16_4rank_gb300:
       value: 211648.1
       units: bytes_per_us
@@ -6037,7 +6037,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.116x against 1.256x under max(size/peak, floor). 246.00 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.116x against 1.256x under max(size/peak, floor). 246.00 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.136x (the all-message fit scores them at 1.128x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_4rank_gb200_nvl72:
       value: 201250.0
       units: bytes_per_us
@@ -6047,7 +6047,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.154x against 1.295x under max(size/peak, floor). 201.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.154x against 1.295x under max(size/peak, floor). 201.25 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.139x (the all-message fit scores them at 1.136x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_8rank_gb200_nvl72:
       value: 134750.0
       units: bytes_per_us
@@ -6057,7 +6057,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.23/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.7), all_reduce, half, 8 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.117x against 1.271x under max(size/peak, floor). 134.75 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.117x against 1.271x under max(size/peak, floor). 134.75 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.139x (the all-message fit scores them at 1.110x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_16rank_gb200_nvl72:
       value: 164000.0
       units: bytes_per_us
@@ -6067,7 +6067,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.23/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.7), all_reduce, half, 16 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.084x against 1.209x under max(size/peak, floor). 164.00 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.084x against 1.209x under max(size/peak, floor). 164.00 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.079x (the all-message fit scores them at 1.079x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_peak_rate_all_reduce_nccl_fp16_16rank_gb200_nvl72:
       value: 194880.0
       units: bytes_per_us
@@ -7452,7 +7452,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.185x against 1.369x under max(size/peak, floor). 126.00 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.185x against 1.369x under max(size/peak, floor). 126.00 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.181x (the all-message fit scores them at 1.184x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_4rank_h200:
       value: 103500.0
       units: bytes_per_us
@@ -7462,7 +7462,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.129x against 1.286x under max(size/peak, floor). 103.50 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.129x against 1.286x under max(size/peak, floor). 103.50 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.135x (the all-message fit scores them at 1.138x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_8rank_h200:
       value: 92500.0
       units: bytes_per_us
@@ -7472,7 +7472,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.173x against 1.346x under max(size/peak, floor). 92.50 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.173x against 1.346x under max(size/peak, floor). 92.50 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.181x (the all-message fit scores them at 1.181x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_peak_rate_all_reduce_nccl_fp16_8rank_h200:
       value: 131566.0
       units: bytes_per_us
@@ -7573,7 +7573,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.213x against 1.413x under max(size/peak, floor). 121.75 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.213x against 1.413x under max(size/peak, floor). 121.75 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.182x (the all-message fit scores them at 1.206x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_4rank_h100:
       value: 100750.0
       units: bytes_per_us
@@ -7583,7 +7583,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.142x against 1.307x under max(size/peak, floor). 100.75 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.142x against 1.307x under max(size/peak, floor). 100.75 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.141x (the all-message fit scores them at 1.148x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_8rank_h100:
       value: 91250.0
       units: bytes_per_us
@@ -7593,7 +7593,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.162x against 1.331x under max(size/peak, floor). 91.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.162x against 1.331x under max(size/peak, floor). 91.25 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.166x (the all-message fit scores them at 1.166x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_peak_rate_all_reduce_nccl_fp16_8rank_h100:
       value: 127156.7
       units: bytes_per_us
@@ -7694,7 +7694,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.125x against 1.270x under max(size/peak, floor). 245.75 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.125x against 1.270x under max(size/peak, floor). 245.75 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.144x (the all-message fit scores them at 1.140x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_4rank_b200:
       value: 201250.0
       units: bytes_per_us
@@ -7704,7 +7704,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.154x against 1.297x under max(size/peak, floor). 201.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.154x against 1.297x under max(size/peak, floor). 201.25 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.136x (the all-message fit scores them at 1.136x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_8rank_b200:
       value: 132500.0
       units: bytes_per_us
@@ -7714,7 +7714,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.124x against 1.287x under max(size/peak, floor). 132.50 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.124x against 1.287x under max(size/peak, floor). 132.50 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.155x (the all-message fit scores them at 1.116x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_peak_rate_all_reduce_nccl_fp16_8rank_b200:
       value: 201141.5
       units: bytes_per_us
@@ -7815,7 +7815,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.153x against 1.304x under max(size/peak, floor). 246.50 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.153x against 1.304x under max(size/peak, floor). 246.50 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.163x (the all-message fit scores them at 1.173x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_4rank_b300:
       value: 202750.0
       units: bytes_per_us
@@ -7825,7 +7825,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.168x against 1.312x under max(size/peak, floor). 202.75 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.168x against 1.312x under max(size/peak, floor). 202.75 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.166x (the all-message fit scores them at 1.163x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_8rank_b300:
       value: 135250.0
       units: bytes_per_us
@@ -7835,7 +7835,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.120x against 1.283x under max(size/peak, floor). 135.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.120x against 1.283x under max(size/peak, floor). 135.25 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.147x (the all-message fit scores them at 1.109x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_peak_rate_all_reduce_nccl_fp16_8rank_b300:
       value: 201021.0
       units: bytes_per_us
@@ -8117,7 +8117,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/l40s/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 2 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.148x against 1.288x under max(size/peak, floor). 9.75 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.148x against 1.288x under max(size/peak, floor). 9.75 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.120x (the all-message fit scores them at 1.129x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_4rank_l40s:
       value: 1750.0
       units: bytes_per_us
@@ -8127,7 +8127,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/l40s/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 4 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.052x against 1.217x under max(size/peak, floor). 1.75 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.052x against 1.217x under max(size/peak, floor). 1.75 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.059x (the all-message fit scores them at 1.065x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_8rank_l40s:
       value: 425.0
       units: bytes_per_us
@@ -8137,7 +8137,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/l40s/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 8 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.153x against 1.485x under max(size/peak, floor). 0.42 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.153x against 1.485x under max(size/peak, floor). 0.42 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.184x (the all-message fit scores them at 1.182x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_peak_rate_all_reduce_nccl_fp16_8rank_l40s:
       value: 607.4
       units: bytes_per_us
@@ -8448,7 +8448,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 2 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.254x against 1.440x under max(size/peak, floor). 78.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.254x against 1.440x under max(size/peak, floor). 78.25 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.278x (the all-message fit scores them at 1.278x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_4rank_a100_sxm:
       value: 61250.0
       units: bytes_per_us
@@ -8458,7 +8458,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 4 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.166x against 1.343x under max(size/peak, floor). 61.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.166x against 1.343x under max(size/peak, floor). 61.25 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.155x (the all-message fit scores them at 1.165x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_8rank_a100_sxm:
       value: 48500.0
       units: bytes_per_us
@@ -8468,7 +8468,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 8 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.142x against 1.306x under max(size/peak, floor). 48.50 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.142x against 1.306x under max(size/peak, floor). 48.50 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.147x (the all-message fit scores them at 1.147x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_peak_rate_all_reduce_nccl_fp16_8rank_a100_sxm:
       value: 63521.5
       units: bytes_per_us
@@ -9261,7 +9261,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 2 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.254x against 1.440x under max(size/peak, floor). 78.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.254x against 1.440x under max(size/peak, floor). 78.25 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.278x (the all-message fit scores them at 1.278x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_4rank_a100_80:
       value: 61250.0
       units: bytes_per_us
@@ -9271,7 +9271,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 4 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.166x against 1.343x under max(size/peak, floor). 61.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.166x against 1.343x under max(size/peak, floor). 61.25 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.155x (the all-message fit scores them at 1.165x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_transition_rate_all_reduce_nccl_fp16_8rank_a100_80:
       value: 48500.0
       units: bytes_per_us
@@ -9281,7 +9281,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 8 ranks, 21 messages", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.142x against 1.306x under max(size/peak, floor). 48.50 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.142x against 1.306x under max(size/peak, floor). 48.50 GB/s. Held out by message size: the triple fitted on every second of the 21 messages scores the other 10 at 1.147x (the all-message fit scores them at 1.147x). The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_peak_rate_all_reduce_nccl_fp16_8rank_a100_80:
       value: 63521.5
       units: bytes_per_us

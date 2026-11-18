@@ -125,11 +125,28 @@ def entry(name, value, units, fitted, chip, cite, rationale):
             "      rationale: >", f"        {rationale}"]
 
 
+def held_out(g):
+    """Fit the estimators on every second message and score the others (geometric mean |ratio|), against
+    the same score of the fit on all of them: how far the lane's form generalises across message sizes."""
+    pts = g.points
+    half = fc.Group((g.op, g.dtype, g.ranks), pts[0::2])
+    if not half.usable:
+        return None
+    form = lambda f, p, r: (lambda size: max(f + size / r, size / p))  # noqa: E731
+    out = fc.log_error(pts[1::2], form(half.floor_us, half.peak_bytes_per_us, half.transition_rate))
+    full = fc.log_error(pts[1::2], form(g.floor_us, g.peak_bytes_per_us, g.transition_rate))
+    return out, full, len(pts[1::2])
+
+
 def lane_entries(chip, sku, directory, version, w, g, versionnote):
     stem = f"all_reduce_nccl_fp16_{w}rank_{chip.replace('-', '_')}"
     cite = (f"NVIDIA AISimulate systems/data/{sku}/comm/nccl/{directory}/nccl_perf.parquet "
             f"(aisimulate {AISIMULATE_SHA[:8]}; version column: {version}), all_reduce, half, "
             f"{w} ranks, {len(g.points)} messages")
+    ho = held_out(g)
+    holdout = (f"Held out by message size: the triple fitted on every second of the {len(g.points)} messages "
+               f"scores the other {ho[2]} at {ho[0]:.3f}x (the all-message fit scores them at {ho[1]:.3f}x). "
+               if ho else "")
     lane = ("The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves "
             "NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves "
             "the node); the plain all_reduce_fp16 entries are the custom kernel's lane. "
@@ -145,7 +162,7 @@ def lane_entries(chip, sku, directory, version, w, g, versionnote):
               True, chip, cite, f"The rate that prices a forward pass's all-reduce, "
               f"grid-searched on the three-parameter form the kernel evaluates; geometric error "
               f"{g.error_three_param:.3f}x against {g.error_two_param:.3f}x under "
-              f"max(size/peak, floor). {g.transition_rate / 1e3:.2f} GB/s. {lane}"),
+              f"max(size/peak, floor). {g.transition_rate / 1e3:.2f} GB/s. {holdout}{lane}"),
     ]
 
 
