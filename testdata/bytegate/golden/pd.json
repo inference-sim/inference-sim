@@ -9,13 +9,13 @@
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "3c47fae6c2692e8f2fcb10b45618f753a0e270f62afb34063e9a7e18d4b899d0",
-      "combined_hash": "3c47fae6c2692e8f2fcb10b45618f753a0e270f62afb34063e9a7e18d4b899d0"
+      "hash": "ebbd4600dfa8536de9e65106741c94a3fc4e78347a76a5eb0f37082b9887c485",
+      "combined_hash": "ebbd4600dfa8536de9e65106741c94a3fc4e78347a76a5eb0f37082b9887c485"
     },
     "registry": {
       "source": "path",
-      "hash": "93e0bb2ce83b462a31129198b1a0eb04d8bdc29c50437ef7b10c29c255416e2b",
-      "combined_hash": "93e0bb2ce83b462a31129198b1a0eb04d8bdc29c50437ef7b10c29c255416e2b"
+      "hash": "1cb5fce0d6a3e037724ae337333f4850e37bbeebaaf6e428acff1470db94c624",
+      "combined_hash": "1cb5fce0d6a3e037724ae337333f4850e37bbeebaaf6e428acff1470db94c624"
     },
     "released_data": false,
     "build": "unreleased"
@@ -1077,9 +1077,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.15.1-0.20261117235131-cc87f253efe2",
+    "substrate": "v0.15.1-0.20261118031048-87daa470f568",
     "router": "v1.0.0-blis.5.0.20261117234546-d98de1a5df58",
-    "engine_module": "v0.33.0-blis.1.0.20261117235229-b43d81d53103"
+    "engine_module": "v0.33.0-blis.1.0.20261118050536-e79aae77dcc5"
   },
   "window": {
     "start_us": 250000,
