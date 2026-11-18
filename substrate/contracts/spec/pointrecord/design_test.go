@@ -1,29 +1,41 @@
 package pointrecord
 
 import (
+	"encoding/json"
+	"os"
 	"sort"
 	"testing"
 )
 
 // designRevision is the revision of the published design (inference-sim/blis-design, the file
-// blis-target-design.html) that designG5 below was read from. The lists restate the design
-// because the design is another repository; a change to either must change the other, and a
+// blis-target-design.html) that designG2 below was read from. That list restates the design by
+// hand because the design is another repository; a change to either must change the other, and a
 // reader checks the list against the section at this revision.
 const designRevision = "bc25a5c86584fa73daedacda098fa4b38a98d3c0"
 
 // designG5 is the list of section 11.4, "Reasons a point is not scored (G5)", in the order the
-// section gives it. COV-5 makes it closed: any other reason fails CI.
-var designG5 = []G5Code{
-	"code_not_visible", "router_unsupported", "value_not_recorded", "field_not_modelled",
-	"field_unclassified", "engine_unsupported", "topology_unsupported", "not_in_catalog",
-	"field_not_in_release", "value_conflict", "build_unparseable",
+// section gives it, as testdata/design-g5.json holds it: go run ./tools/invariants snapshot writes
+// that file from the published design, so the list cannot drift from the section by hand.
+// COV-5 makes it closed: any other reason fails CI.
+var designG5 = loadDesignG5()
+
+func loadDesignG5() []G5Code {
+	raw, err := os.ReadFile("testdata/design-g5.json")
+	if err != nil {
+		panic(err)
+	}
+	var codes []G5Code
+	if err := json.Unmarshal(raw, &codes); err != nil {
+		panic(err)
+	}
+	return codes
 }
 
 // TestTheG5ReasonsAreTheDesignsClosedList holds g5Codes equal to section 11.4's list, in both
 // directions, so neither a missing reason nor an extra one passes (COV-5).
 func TestTheG5ReasonsAreTheDesignsClosedList(t *testing.T) {
-	if len(designG5) != 11 {
-		t.Fatalf("design %s section 11.4 lists eleven reasons; the test restates %d", designRevision, len(designG5))
+	if len(designG5) == 0 {
+		t.Fatal("testdata/design-g5.json lists no reason (non-vacuity)")
 	}
 	want := map[G5Code]bool{}
 	for _, c := range designG5 {

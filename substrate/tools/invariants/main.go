@@ -308,6 +308,9 @@ func questions(reg *invariants.Registry, repo, changedPath string, stdout io.Wri
 const (
 	designSnapshot = "contracts/invariants/testdata/design.json"
 	planSnapshot   = "contracts/invariants/testdata/plan-status.tsv"
+	// g5Snapshot is the reasons of design section 11.4, which contracts/spec/pointrecord's test
+	// holds the record's closed list equal to (COV-5).
+	g5Snapshot = "contracts/spec/pointrecord/testdata/design-g5.json"
 )
 
 func snapshot(root, designPath, planPath string, check bool, stderr io.Writer) error {
@@ -337,15 +340,25 @@ func snapshot(root, designPath, planPath string, check bool, stderr io.Writer) e
 	if err := enc.Encode(items); err != nil {
 		return err
 	}
+	g5, err := parseG5Reasons(string(d))
+	if err != nil {
+		return err
+	}
+	var gj bytes.Buffer
+	genc := json.NewEncoder(&gj)
+	genc.SetIndent("", " ")
+	if err := genc.Encode(g5); err != nil {
+		return err
+	}
 	var pt strings.Builder
 	pt.WriteString("# The release plan's §3.2 status table: identifier, status, In CI by.\n")
 	pt.WriteString("# Written by go run ./tools/invariants snapshot from the published plan; do not edit.\n")
 	for _, r := range rows {
 		fmt.Fprintf(&pt, "%s\t%s\t%s\n", r.ID, r.Status, r.By)
 	}
-	out := map[string]string{designSnapshot: dj.String(), planSnapshot: pt.String()}
+	out := map[string]string{designSnapshot: dj.String(), planSnapshot: pt.String(), g5Snapshot: gj.String()}
 	stale := false
-	for _, rel := range []string{designSnapshot, planSnapshot} {
+	for _, rel := range []string{designSnapshot, planSnapshot, g5Snapshot} {
 		full := filepath.Join(root, rel)
 		if check {
 			got, err := os.ReadFile(full)

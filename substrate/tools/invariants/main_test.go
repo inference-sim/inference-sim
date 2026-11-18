@@ -258,3 +258,26 @@ func TestAPracticeIsListedInTheMaintainerChecklist(t *testing.T) {
 		t.Errorf("empty checklist rendered:\n%s", s)
 	}
 }
+
+// The snapshot reads section 11.4's reasons, in order, from the design's list items and refuses a
+// design with none or with one twice.
+func TestParseG5Reasons(t *testing.T) {
+	doc := `<h3 id="s11-3">11.3</h3><ul><li><code>not_a_reason</code>: x</li></ul>
+<h3 id="s11-4">11.4 Reasons a point is not scored (G5)</h3>
+<ul><li><code>code_not_visible</code>: the run loaded code. This takes precedence over <code>field_not_modelled</code>.</li>
+<li><code>value_not_recorded</code>: a value.</li></ul><p>Order of reasons.</p>
+<h3 id="s11-5">11.5</h3>`
+	got, err := parseG5Reasons(doc)
+	if err != nil || strings.Join(got, ",") != "code_not_visible,value_not_recorded" {
+		t.Fatalf("got %v, %v", got, err)
+	}
+	if _, err := parseG5Reasons(strings.Replace(doc, "value_not_recorded", "code_not_visible", 1)); err == nil {
+		t.Error("a reason listed twice was accepted")
+	}
+	if _, err := parseG5Reasons(`<h3 id="s11-4">x</h3><ul></ul><h3 id="s11-5">y</h3>`); err == nil {
+		t.Error("a section with no reason was accepted")
+	}
+	if _, err := parseG5Reasons("<p>nothing</p>"); err == nil {
+		t.Error("a design with no section 11.4 was accepted")
+	}
+}
