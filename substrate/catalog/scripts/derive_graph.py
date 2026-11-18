@@ -5951,6 +5951,16 @@ def handler_nemotron_h(cfg, raw, model):
     used = list(dict.fromkeys(vector))
     kinds = [catalogue[n] for n in used]
     stack = compress(list(vector))
+    # vLLM derives max_model_len from max_position_embeddings; a config that scales its
+    # RoPE would shorten or lengthen it, and none of the committed NemotronH configs does.
+    if raw.get("rope_scaling") or raw.get("rope_parameters"):
+        raise DeriveError(f"{model}: the config scales its RoPE, so max_model_len is not "
+                          f"max_position_embeddings")
+    positions = require_key(cfg, "max_position_embeddings", model)
+    if isinstance(positions, bool) or int(positions) != positions or positions < 1:
+        raise DeriveError(f"{model}: max_position_embeddings is {positions!r}, not a positive "
+                          f"whole number")
+    window = {"global": {"context_window": int(positions)}}
     quant = raw.get("quantization_config") or {}
     method = str(quant.get("quant_method", "")).lower()
     uniform = method == "modelopt" and str(quant.get("quant_algo", "")).upper() != "MIXED_PRECISION"
@@ -5963,7 +5973,7 @@ def handler_nemotron_h(cfg, raw, model):
     if not spec:
         if uniform:
             kinds = modelopt_place_widths(kinds, stack, raw, model)
-        return kinds, stack
+        return kinds, stack, window
     mtp = nemotron_h_vector(mtp_vector, model, "the MTP layer pattern")
     unknown = sorted(set(mtp) - set(catalogue))
     if unknown:
@@ -6006,7 +6016,7 @@ def handler_nemotron_h(cfg, raw, model):
         if own["id"] not in {k["id"] for k in kinds}:
             kinds.append(own)
         pattern.append(own["id"])
-    return kinds, stack, {"speculator": {
+    return kinds, stack, {**window, "speculator": {
         "method": speculative_method(architecture_of(raw, model), model),
         "num_spec_tokens": spec,
         "stack": {"pattern": pattern, "repeat": 1},
