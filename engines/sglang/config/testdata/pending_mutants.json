@@ -141,17 +141,6 @@
    "issue": "inference-sim/blis-sglang#53"
   },
   {
-   "id": "config/attention.go:mlaBackendPageConstraints:||->&&#1:if (is(a, \"trtllm_mla\") || is(d, \"trtllm_mla\")) && !in(32, 64) {",
-   "needs": {
-    "value": [
-     "attention_backend",
-     "trtllm_mla"
-    ]
-   },
-   "stage": "S17",
-   "issue": "inference-sim/blis-sglang#53"
-  },
-  {
    "id": "config/attention.go:mlaBackendPageConstraints:||->&&#1:if (is(a, \"cutedsl_mla\") || is(d, \"cutedsl_mla\") || is(p, \"cutedsl_mla\")) && !in(32, 64) {",
    "needs": {
     "value": [
@@ -294,14 +283,6 @@
    "issue": "inference-sim/blis-sglang#38"
   },
   {
-   "id": "config/hooks.go:handleMissingDefaultValues:==->!=#1:if r.cfg.SpeculativeDraftModelQuantization == nil {",
-   "needs": {
-    "field": "speculative_draft_model_quantization"
-   },
-   "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
-  },
-  {
    "id": "config/hooks.go:handleDecodeContextParallelism:&&->||#1:if r.cfg.DcpCommBackend == nil && r.cfg.DcpSize <= 1 {",
    "needs": {
     "field": "dcp_size"
@@ -375,24 +356,6 @@
   },
   {
    "id": "config/models.go:dsaSplitBackendResolution:==->!=#1:case r.model.Architecture == \"GlmMoeDsaForCausalLM\" && major == 12 && kv == \"fp8_e4m3\":",
-   "needs": {
-    "chip": "sm120",
-    "architecture": "GlmMoeDsaForCausalLM"
-   },
-   "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
-  },
-  {
-   "id": "config/models.go:dsaSplitBackendResolution:==->!=#2:case r.model.Architecture == \"GlmMoeDsaForCausalLM\" && major == 12 && kv == \"fp8_e4m3\":",
-   "needs": {
-    "chip": "sm120",
-    "architecture": "GlmMoeDsaForCausalLM"
-   },
-   "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
-  },
-  {
-   "id": "config/models.go:dsaSplitBackendResolution:&&->||#2:case r.model.Architecture == \"GlmMoeDsaForCausalLM\" && major == 12 && kv == \"fp8_e4m3\":",
    "needs": {
     "chip": "sm120",
     "architecture": "GlmMoeDsaForCausalLM"
