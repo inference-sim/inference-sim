@@ -1,6 +1,7 @@
 package latencykernel
 
 import (
+	"math"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
@@ -187,5 +188,80 @@ func TestMLAPrefillWidthsAreVLLMsOnly(t *testing.T) {
 			t.Errorf("sglang scenario, %d scheduled over %d cached: %v s with the widths, %v s without; an engine other than vLLM keeps the cache width",
 				c.scheduled, c.computed, a, b)
 		}
+	}
+}
+
+func stepFLOPs(t *testing.T, in Inputs, reqs ...kernel.ReqShape) float64 {
+	t.Helper()
+	return mustKernel(t, in).StepFLOPs(kernel.Batch{DecodeThreshold: 1, Reqs: reqs})
+}
+
+// mlaLayers is the layers of in's model that run an mla attention node, and its query heads, widths and rank.
+func mlaLayers(t *testing.T, in Inputs) (layers, heads, lora, qk, v, rope int) {
+	t.Helper()
+	k := mustKernel(t, in)
+	for _, l := range k.plan.Layers {
+		if l.AttnKind == model.AttentionMLA {
+			layers += l.Count
+			heads, lora, qk, v, rope = l.AttnQHeads, l.AttnKVLoRARank, l.AttnPrefillQKDim, l.AttnPrefillVDim, l.AttnQKRope
+		}
+	}
+	if layers == 0 || qk == 0 {
+		t.Fatalf("no mla layer states prefill widths in %d layers", len(k.plan.Layers))
+	}
+	return
+}
+
+// The model FLOPs behind the MFU figure count a dense latent layer's prefill pairs at the widths it runs
+// them in (4 x heads x (qk + v) / 2 a pair, not 4 x heads x the cache width), and each prefill request's cached
+// tokens through kv_b_proj (2 x kv_lora_rank x heads x (nope + v) a token); decode keeps the cache width.
+func TestStepFLOPsCountsMLAPrefillAtThePrefillWidths(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stated := quantCase(t, d, "kimi-k2.5", "h200")
+	cleared := withMLAPrefill(stated, 0, 0, true)
+	layers, heads, lora, qk, v, rope := mlaLayers(t, stated)
+	const dh = 576 // kv_lora_rank + rope: the width the cleared graph counts at
+	near := func(got, want float64, what string) {
+		t.Helper()
+		if math.Abs(got-want) > 1e-9*math.Abs(want) {
+			t.Errorf("%s: %v FLOPs, want %v", what, got, want)
+		}
+	}
+	// A prefill from scratch: the saving is exactly the width change over the layer's causal pairs.
+	pairs := queryKeyPairs(0, 8192, 0)
+	near(stepFLOPs(t, cleared, kernel.ReqShape{Scheduled: 8192, PromptLen: 8192})-
+		stepFLOPs(t, stated, kernel.ReqShape{Scheduled: 8192, PromptLen: 8192}),
+		float64(layers)*4*float64(heads)*(dh-float64(qk+v)/2)*pairs, "8192-token prefill, width saving")
+	// A prefill resuming on a cached prefix also pays the expansion of the cached tokens.
+	cachedReq := kernel.ReqShape{Scheduled: 512, Computed: 16384, PromptLen: 16896}
+	extra := stepFLOPs(t, stated, cachedReq) - stepFLOPs(t, cleared, cachedReq)
+	wantExtra := float64(layers) * (4*float64(heads)*(float64(qk+v)/2-dh)*queryKeyPairs(16384, 512, 0) +
+		2*float64(lora)*float64(heads*(qk-rope+v))*16384)
+	near(extra, wantExtra, "512 tokens over 16384 cached")
+	// Decode keeps the cache width: one token per request is the same with or without the widths.
+	decode := []kernel.ReqShape{{Scheduled: 1, Computed: 8191, PromptLen: 8192}, {Scheduled: 1, Computed: 4095, PromptLen: 4096}}
+	if a, b := stepFLOPs(t, stated, decode...), stepFLOPs(t, cleared, decode...); a != b {
+		t.Errorf("decode step: %v FLOPs with the widths, %v without", a, b)
+	}
+}
+
+// An engine that is not vLLM keeps the cache width in the FLOPs count as in the price.
+func TestStepFLOPsOfAnotherEngineKeepsTheCacheWidth(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stated := quantCase(t, d, "kimi-k2.5", "h200")
+	other := stated
+	sc := *stated.Scenario
+	sc.Engine = &scenario.Engine{Kind: "sglang", Version: sc.EngineRelease()}
+	other.Scenario = &sc
+	cleared := withMLAPrefill(other, 0, 0, true)
+	r := kernel.ReqShape{Scheduled: 512, Computed: 16384, PromptLen: 16896}
+	if a, b := stepFLOPs(t, other, r), stepFLOPs(t, cleared, r); a != b {
+		t.Errorf("sglang scenario: %v FLOPs with the widths, %v without", a, b)
 	}
 }
