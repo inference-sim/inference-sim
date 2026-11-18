@@ -852,6 +852,82 @@
     "tp_size": 8,
     "kv_cache_dtype": "fp8_e5m2"
    }
+  },
+  {
+   "name": "dsr1-h200-tp8-tokenizer-path",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "tokenizer_path": "/models/deepseek-r1/tokenizer"
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-loader-extra-config",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "model_loader_extra_config": "{\"enable_multithread_load\": true, \"num_threads\": 8}"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-dsa-flashmla-sparse",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "dsa_prefill_backend": "flashmla_sparse",
+    "dsa_decode_backend": "flashmla_sparse"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-dsa-fa3-trtllm",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "dsa_prefill_backend": "fa3",
+    "dsa_decode_backend": "trtllm"
+   }
   }
  ]
 }

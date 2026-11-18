@@ -169,6 +169,20 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 	// the mamba_ssm_dtype default is float32 (arg_groups/fields/mamba.py@297e54fd).
 	p.Cache.StateElementBytes = 4
 
+	// The DSA attention backends: the plan carries no attention backend, and the substrate prices DSA
+	// attention from the model graph's sparse-MLA lane, so the choice is not priced; it is a note.
+	if a.DsaPrefillBackend != nil || a.DsaDecodeBackend != nil {
+		pb, db := "", ""
+		if a.DsaPrefillBackend != nil {
+			pb = *a.DsaPrefillBackend
+		}
+		if a.DsaDecodeBackend != nil {
+			db = *a.DsaDecodeBackend
+		}
+		note("dsa_backends", "prefill="+pb+" decode="+db,
+			"the plan carries no attention backend: the substrate prices DSA attention from the graph's sparse-MLA lane, so the backend choice is not priced")
+	}
+
 	// Batch limits and the page.
 	if a.PageSize == nil || a.MemFractionStatic == nil {
 		return nil, fmt.Errorf("page_size and mem_fraction_static must resolve")

@@ -159,3 +159,30 @@ func TestLoweringRefusesWhatItCannotKnowByName(t *testing.T) {
 		}
 	}
 }
+
+// A DSA pool names its resolved prefill and decode backends in a note: the plan has no slot for an
+// attention backend, so the choice is stated, not priced. A model with no DSA attention states none.
+func TestADSAPoolNotesItsAttentionBackendsAsUnpriced(t *testing.T) {
+	l, err := lowerPool(t, "glm-5", 8, "mem_fraction_static: 0.85\ndsa_prefill_backend: fa3\ndsa_decode_backend: trtllm\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ""
+	for _, n := range l.Notes {
+		if n.Name == "dsa_backends" {
+			got = n.Value
+		}
+	}
+	if got != "prefill=fa3 decode=trtllm" {
+		t.Errorf("dsa_backends note %q, want prefill=fa3 decode=trtllm", got)
+	}
+	d, err := lowerPool(t, "deepseek-r1-0528", 8, "mem_fraction_static: 0.82\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range d.Notes {
+		if n.Name == "dsa_backends" {
+			t.Errorf("a model with no DSA attention states backends %q", n.Value)
+		}
+	}
+}
