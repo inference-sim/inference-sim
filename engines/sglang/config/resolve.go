@@ -333,6 +333,7 @@ func (r *resolver) run() {
 	r.handleDataParallelism()
 	r.handleLoadBalanceMethod()
 	// handle_context_parallelism, handle_kv_cache_sharding, handle_moe_kernel_config: no change here.
+	r.handleMoeKernelConfig()
 	r.handleA2AMoE()
 	// handle_shared_experts_tp, handle_eplb_and_dispatch: no change here.
 	r.handleExpertDistributionMetrics()

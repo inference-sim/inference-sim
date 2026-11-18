@@ -56,9 +56,9 @@ var qwen35Hybrid = map[string]bool{
 }
 
 // qwen35Overrides runs the model overrides SGLang registers for the Qwen3.5 family, in the order
-// the registry collects them (qwen3_5.py before qwen3_moe.py), then the passes that read them:
-// the shared-expert fusion switch for the MoE runner they chose and the Mamba radix-cache
-// resolution with its validation (model_hook.py:730-737).
+// the registry collects them (qwen3_5.py before qwen3_moe.py), then the Mamba radix-cache
+// resolution with its validation (model_hook.py:730-737). The shared-expert fusion switch for the
+// MoE runner they chose runs later, in handle_moe_kernel_config (moe_fusion.go).
 func (r *resolver) qwen35Overrides() {
 	if qwen35Hybrid[r.model.Architecture] {
 		r.qwen35HybridOverrides()
@@ -66,7 +66,6 @@ func (r *resolver) qwen35Overrides() {
 	if qwen3MoeFamily[r.model.Architecture] {
 		r.qwen3MoeFamilyOverrides()
 	}
-	r.moeRunnerFusionDisable()
 	r.handleMambaRadixCache()
 }
 
@@ -141,16 +140,6 @@ func contains2(l []string, v string) bool {
 		}
 	}
 	return false
-}
-
-// moeRunnerFusionDisable is _moe_runner_fusion_disable (overrides.py:1529-1553): shared-expert
-// fusion is switched off for the MoE runners that do not fuse them.
-func (r *resolver) moeRunnerFusionDisable() {
-	switch r.cfg.MoeRunnerBackend {
-	case "lora_triton", "lora_cutedsl", "lora_marlin", "flashinfer_cutedsl",
-		"flashinfer_trtllm", "experimental_sgl_trtllm", "flashinfer_trtllm_routed":
-		r.declare("_moe_runner_fusion_disable", "disable_shared_experts_fusion", true)
-	}
 }
 
 // supportsMambaCacheExtraBuffer is supports_mamba_cache_extra_buffer (overrides.py:~440-452) on
