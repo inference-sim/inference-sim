@@ -18,7 +18,7 @@ import (
 //	issue: inference-sim/blis-substrate#14   # the issue that owns the work
 //	added: 2026-11-05                         # the day the file was added; not in the future
 //	expires: 2026-12-05                       # at most 30 days after added (plan §3.3)
-//	modules: [blis-substrate, blis-vllm]      # the BLIS modules whose commit pin is deferred
+//	modules: [blis-substrate, blis-vllm, blis-sglang]  # the BLIS modules whose commit pin is deferred
 //	reason: one line
 //
 // A malformed, unowned, over-long, future-dated or expired file defers nothing and adds a
@@ -38,8 +38,10 @@ var issueName = regexp.MustCompile(`^[\w.-]+/[\w.-]+#\d+$`)
 // maxDeferral is the longest a deferral may last, counted from the day it was added.
 const maxDeferral = 30 * 24 * time.Hour
 
-// deferrableModules are the BLIS modules the draft pull requests pin by commit.
-var deferrableModules = map[string]bool{"blis-substrate": true, "blis-vllm": true, "llm-d-router": true}
+// deferrableModules are the BLIS modules pinned by commit: in drafts, and, from M3.1, the lower
+// repositories (blis-design: only inference-sim is tagged; the others are pinned by commit and a tag
+// is optional).
+var deferrableModules = map[string]bool{"blis-substrate": true, "blis-vllm": true, "blis-sglang": true, "llm-d-router": true}
 
 // deferrable reports whether a finding is a listed BLIS module pinned by commit.
 func deferrable(finding string, modules []string) bool {
@@ -101,7 +103,7 @@ func ApplyDeferral(src []byte, today time.Time, findings []string) (fail, deferr
 	}
 	for _, m := range d.Modules {
 		if !deferrableModules[m] {
-			bad = append(bad, fmt.Sprintf("modlint-deferral.yaml: modules names %q; only blis-substrate, blis-vllm and llm-d-router are pinned by commit in drafts", m))
+			bad = append(bad, fmt.Sprintf("modlint-deferral.yaml: modules names %q; only blis-substrate, blis-vllm, blis-sglang and llm-d-router are pinned by commit", m))
 		}
 	}
 	added, aerr := time.Parse("2006-01-02", d.Added)
