@@ -29,7 +29,8 @@ const chunkedOffKnown = "oracle/scenarios/chunked-prefill-off*.json and oracle/s
 	"run vLLM's Scheduler with it off on one full-attention KV group, with and without prefix caching, " +
 	"preemption, KV events, a long-prefill cap, priority scheduling and async scheduling at one pipeline stage; " +
 	"oracle/scenarios/connector/nixl-chunked-off-*.json run it with the NIXL connector as a prefiller, a decoder (a pull that " +
-	"fails and recomputes included) and both at once"
+	"fails and recomputes included) and both at once; oracle/scenarios-dp*/*-chunked-off.json run it under data parallelism, " +
+	"alone, with KV pressure, and with NIXL as a producer, a consumer, an async consumer and a consumer whose pull fails"
 
 // ResolveChunkedPrefill is the enable_chunked_prefill that runs: the stated value, else True, the
 // default of a causal decoder (SchedulerConfig, vllm/config/scheduler.py:134@5df63a72;
@@ -83,8 +84,6 @@ func checkChunkedPrefill(c Config, chunked bool, in chunkedInput) error {
 		with = "max_loras"
 	case c.KVOffload != nil:
 		with = "a KV offload tier"
-	case c.DataParallelSize > 1:
-		with = "data parallelism"
 	case in.pp > 1:
 		with = "pipeline parallelism"
 	case len(in.groups) > 1:

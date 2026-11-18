@@ -21,6 +21,7 @@ type dpScenario struct {
 		MaxModelLen               int    `json:"max_model_len"`
 		LongPrefillTokenThreshold int    `json:"long_prefill_token_threshold"`
 		EnablePrefixCaching       bool   `json:"enable_prefix_caching"`
+		EnableChunkedPrefill      *bool  `json:"enable_chunked_prefill"`
 		SchedulingPolicy          string `json:"scheduling_policy"`
 		DataParallelSize          int    `json:"data_parallel_size"`
 		PrefillScheduleInterval   int    `json:"prefill_schedule_interval"`
@@ -120,7 +121,7 @@ func runDP(t *testing.T, sc dpScenario) dpTrace {
 		s, err := sched.New(sched.Config{
 			MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 			NumBlocks: c.NumBlocks, MaxModelLen: maxLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
-			EnableChunkedPrefill: true, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
+			EnableChunkedPrefill: c.EnableChunkedPrefill == nil || *c.EnableChunkedPrefill, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
 			ReserveFullSequence: true, Async: c.AsyncScheduling, DecodeStagger: 1, MaxConcurrentBatches: queue,
 		})
 		if err != nil {

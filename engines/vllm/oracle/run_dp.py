@@ -169,6 +169,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                 block_size=block_size,
                 max_model_len=cfg.get("max_model_len"),
                 scheduling_policy=cfg.get("scheduling_policy", "fcfs"),
+                enable_chunked_prefill=cfg.get("enable_chunked_prefill", True),
                 **({"async_scheduling": True, "scheduler_cls": AsyncScheduler} if async_sched else {}),
             ))
 
