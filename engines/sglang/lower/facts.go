@@ -105,8 +105,13 @@ func ModelFactsOf(g *model.Graph) (config.ModelFacts, error) {
 		}
 	})
 	// _deepseek_moe_quant_resolution reads the first expert tensor of a DeepseekV3ForCausalLM
-	// checkpoint that declares no quantization: float8_e4m3fn is a checkpoint whose graph serves
-	// fp8 weights.
+	// checkpoint's safetensors header when the checkpoint declares no quantization. The lowering has
+	// no header: this fact is read from the graph's weight dtype (an fp8 graph stands for a
+	// float8_e4m3fn header). A graph whose dtype is bf16 for a checkpoint whose header is fp8 would
+	// differ from SGLang here. The catalog graph is derived from the checkpoint's config.json, not
+	// its safetensors header, so this holds only as far as the weight dtype follows the header;
+	// TestBlackwellModelFactsMatchTheOracle holds the four catalog graphs of DeepSeek-R1 and GLM-5
+	// to the oracle's reading of the header.
 	f.HasFP8WeightsInCheckpoint = arch == "DeepseekV3ForCausalLM" && g.Global.WeightDType == model.DTypeFP8
 	switch g.Global.WeightDType {
 	case model.DTypeBF16:

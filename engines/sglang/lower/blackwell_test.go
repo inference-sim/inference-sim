@@ -4,12 +4,10 @@ package lower
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"reflect"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 
 	"github.com/inference-sim/blis-sglang/config"
@@ -21,11 +19,6 @@ func chipFile(t *testing.T, name string) *hardware.Chip {
 	readYAML(t, "testdata/"+name+".yaml", &c)
 	c.Name = name
 	return &c
-}
-
-func blackwellPool(t *testing.T, g, chip string, tp int, block string) (*plan.Lowered, error) {
-	t.Helper()
-	return Pool(PoolInput{Deployment: pool(t, tp, block), Model: graph(t, g), Chip: chipFile(t, chip)})
 }
 
 // B200 (compute capability 10.0) and B300 (10.3) are SM100 to SGLang's resolution, which reads the
@@ -73,8 +66,8 @@ func TestBlackwellModelFactsMatchTheOracle(t *testing.T) {
 
 // DeepSeek-R1 on a B200 or B300 at SGLang's defaults: trtllm_mla, FlashInfer's TRT-LLM MoE runner
 // (fp8 from the checkpoint's declaration, nvfp4 from none), and no prefill CUDA graph. The runner's
-// kernel is not lowered, so the pool is refused naming it.
-func TestBlackwellDeepSeekResolvesAndRefusesTheRunnerByName(t *testing.T) {
+// kernel is not named (the substrate prices it from the experts' format), so the pool lowers.
+func TestBlackwellDeepSeekResolvesAndLowersTheTRTLLMRunner(t *testing.T) {
 	for _, tc := range []struct{ graph, chip string }{
 		{"deepseek-r1-0528", "b200"}, {"deepseek-r1-0528", "b300"}, {"deepseek-r1-0528-fp4-v2", "b200"},
 	} {
@@ -88,10 +81,9 @@ func TestBlackwellDeepSeekResolvesAndRefusesTheRunnerByName(t *testing.T) {
 			a.CudaGraphConfig.Prefill.Backend != "disabled" {
 			t.Errorf("%s on %s: attention %v, runner %q, prefill graph %q", tc.graph, tc.chip, a.AttentionBackend, a.MoeRunnerBackend, a.CudaGraphConfig.Prefill.Backend)
 		}
-		_, err = Pool(in)
-		var nl *NotLowered
-		if !errors.As(err, &nl) || nl.Name != "moe_runner_backend=flashinfer_trtllm" {
-			t.Errorf("%s on %s: got %v, want a refusal naming moe_runner_backend=flashinfer_trtllm", tc.graph, tc.chip, err)
+		// The runner is lowered on block-fp8 experts (blis-sglang#135) and on nvfp4 experts (nvfp4_test.go).
+		if _, err = Pool(in); err != nil {
+			t.Errorf("%s on %s: %v", tc.graph, tc.chip, err)
 		}
 	}
 }
