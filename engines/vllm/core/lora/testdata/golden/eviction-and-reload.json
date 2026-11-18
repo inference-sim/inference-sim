@@ -10,7 +10,7 @@
   "max_loras": 2
  },
  "provenance": {
-  "blis_vllm_commit": "d19117a710e6058e707871db0d6167607c496bf7",
+  "blis_vllm_commit": "08f5efeae8586d967a220d7866062c448b9bf4c0",
   "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
   "mock_version": "gpu-mock/9+2ee0b3b47a9c",
   "mocks": [
@@ -53,7 +53,7 @@
    "oracle/mocks.json": "9521f9f69e212f249e79b33614003c43dea5642e45499afa48b893737fc49f9b",
    "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
    "oracle/run_lora_cache.py": "804bd9fad3a45a8dccb01482f41fb47cc655af925e59ac5f2e3e29298af61007",
-   "oracle/run_scheduler.py": "8aeea68a1dce3a32b9b8458ce710812c7851769e67bc3cc28414750054916b3a",
+   "oracle/run_scheduler.py": "48ef014382a90ec1a4b3f3c09fd5e9aeae2325868af45926a7ab17bc3f1211d7",
    "oracle/scenarios/lora-cache/eviction-and-reload.json": "b2dc6afbbd9b3233a1752d53c8c166ff423ff776800286ec4a7a718cf0c41a67"
   },
   "platform": "linux-x86_64",

@@ -99,14 +99,14 @@ func gcdOf(a, b int64) int64 {
 // page of these specs.
 func PoolBytesPerBlock(layers []Layer, o GroupOptions, blockSize int) (int64, error) {
 	o = o.at(blockSize)
-	_, members, err := groupLayers(layers, o)
+	_, members, sized, err := groupAndLayers(layers, o)
 	if err != nil {
 		return 0, err
 	}
 	groups := make([]PageGroup, len(members))
 	for i, m := range members {
 		for _, j := range m {
-			l := layers[j]
+			l := sized[j]
 			if l.BlockSize == 0 {
 				l.BlockSize = blockSize
 			}
@@ -134,7 +134,7 @@ func StagePoolBytesPerBlock(layers []Layer, on []bool, o GroupOptions, blockSize
 		return 0, fmt.Errorf("kv: %d stage flags for %d layers", len(on), len(layers))
 	}
 	o = o.at(blockSize)
-	_, members, err := groupLayers(layers, o)
+	_, members, sized, err := groupAndLayers(layers, o)
 	if err != nil {
 		return 0, err
 	}
@@ -145,7 +145,7 @@ func StagePoolBytesPerBlock(layers []Layer, on []bool, o GroupOptions, blockSize
 			if !on[j] {
 				continue
 			}
-			l := layers[j]
+			l := sized[j]
 			if l.BlockSize == 0 {
 				l.BlockSize = blockSize
 			}
@@ -174,7 +174,7 @@ func StageGroupCopyBytes(layers []Layer, on []bool, o GroupOptions, blockSize in
 		return nil, fmt.Errorf("kv: %d stage flags for %d layers", len(on), len(layers))
 	}
 	o = o.at(blockSize)
-	_, members, err := groupLayers(layers, o)
+	_, members, sized, err := groupAndLayers(layers, o)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +194,7 @@ func StageGroupCopyBytes(layers []Layer, on []bool, o GroupOptions, blockSize in
 			if !on[j] {
 				continue
 			}
-			l := layers[j]
+			l := sized[j]
 			if l.BlockSize == 0 {
 				l.BlockSize = blockSize
 			}
@@ -231,7 +231,7 @@ type GroupPage struct {
 // a PoolPlan's KV groups state. The widest group's bytes are the pool's stride (PoolBytesPerBlock).
 func GroupPages(layers []Layer, o GroupOptions, blockSize int) ([]GroupPage, error) {
 	o = o.at(blockSize)
-	groups, members, err := groupLayers(layers, o)
+	groups, members, sized, err := groupAndLayers(layers, o)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +240,7 @@ func GroupPages(layers []Layer, o GroupOptions, blockSize int) ([]GroupPage, err
 	for i, m := range members {
 		var sum int64
 		for _, j := range m {
-			l := layers[j]
+			l := sized[j]
 			if l.BlockSize == 0 {
 				l.BlockSize = blockSize
 			}

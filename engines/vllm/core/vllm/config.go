@@ -481,8 +481,9 @@ func resolve(c Config) (settings, error) {
 	if e.MaxLoRAs > 0 {
 		maxLoRAs = e.MaxLoRAs
 	}
-	groups, err := KVGroups(c.KVLayers, e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager,
-		TagsDraftGroups(method))
+	// The engine's block size is passed: layers of unequal pages are unified against it (kv.unifyPageSizes).
+	groups, err := KVGroupsWith(c.KVLayers, kv.GroupOptions{DisableHybrid: e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager,
+		TagDraftGroups: TagsDraftGroups(method), BlockSize: blockSize})
 	if err != nil {
 		return settings{}, err
 	}

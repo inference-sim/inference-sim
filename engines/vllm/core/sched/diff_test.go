@@ -210,7 +210,7 @@ func run(t *testing.T, sc scenario) trace {
 		Spec: spec, MaxLoRAs: c.MaxLoRAs, KVEvents: c.KVEvents,
 		LocalPrefillInterval: c.SchedulerConfig.PrefillScheduleInterval,
 		KVGroups: kvGroups(t, c.KVGroups, c.KVLayers, kv.GroupOptions{DisableHybrid: c.DisableHybridKVCacheManager,
-			TagDraftGroups: c.Speculative != nil && trailingDrafter(c.Speculative.Method)}),
+			TagDraftGroups: c.Speculative != nil && trailingDrafter(c.Speculative.Method), BlockSize: c.BlockSize}),
 	})
 	if err != nil {
 		t.Fatal(err)

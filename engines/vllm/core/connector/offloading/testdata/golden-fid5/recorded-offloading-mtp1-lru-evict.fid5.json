@@ -2156,7 +2156,7 @@
   }
  ],
  "provenance": {
-  "blis_vllm_commit": "6ec999bedbd9f66528569411f3b726551650917d",
+  "blis_vllm_commit": "08f5efeae8586d967a220d7866062c448b9bf4c0",
   "kind": "recorded",
   "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
   "mock_version": "gpu-mock/9+2ee0b3b47a9c",
@@ -2205,7 +2205,7 @@
    "oracle/run_kv_interfaces.py": "aa603da115b13b5a2ec6d78c4072589179a570ce878e803c07b65ad49a6161d7",
    "oracle/run_multiconnector.py": "62eb25ec9ab35893791f4b62f1b32cf9aef06acaa6db5765f8f4684b6154cfb2",
    "oracle/run_offloading.py": "5a345a6de6d6c6fb15a1b0b80a4aac5a72d0418c2150707046da9e3d6520136d",
-   "oracle/run_scheduler.py": "8aeea68a1dce3a32b9b8458ce710812c7851769e67bc3cc28414750054916b3a",
+   "oracle/run_scheduler.py": "48ef014382a90ec1a4b3f3c09fd5e9aeae2325868af45926a7ab17bc3f1211d7",
    "oracle/scenarios/offloading/offloading-mtp1-lru-evict.json": "5bb3915fa2636d019bcf8c038d828271f81597bb92cc3aa5f37868fa50cd18d6"
   },
   "platform": "linux-x86_64",

@@ -447,6 +447,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     }
     if scheduler.has_mamba_layers:
         out["kv_config"] = mamba_config(scheduler)
+    if cfg.get("engine_core_block_sizes"):
+        out["kv_blocks"] = block_config(scheduler)
     if pool_sizes:
         out["kv_pool"] = pool_sizes[-1]
         pool_sizes.clear()
@@ -619,9 +621,11 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
     helpers.CacheConfig = cache_config
     helpers.KVCacheConfig = kv_cache_config
     real_scheduler_cls = (extra or {}).get("scheduler_cls")
-    if cfg.get("kv_layers") and any(r["spec"] in ("mla", "sliding_window_mla", "circular_buffer", "mamba")
-                                    for r in cfg["kv_layers"]):
-        # Groups of several block sizes: the engine core hands the Scheduler the block sizes
+    if cfg.get("kv_layers") and (cfg.get("engine_core_block_sizes") or
+                                 any(r["spec"] in ("mla", "sliding_window_mla", "circular_buffer", "mamba")
+                                     for r in cfg["kv_layers"])):
+        # Groups of several block sizes (the layers' own, or, for "engine_core_block_sizes", the block sizes
+        # unify_kv_cache_spec_page_size gives layers of unequal pages): the engine core hands the Scheduler the block sizes
         # vLLM's own resolve_kv_cache_block_sizes resolves from the groups, the scheduler block
         # size (their LCM) as block_size and hash_block_size beside it (vllm/v1/engine/core.py:
         # 170-182, 361-374@5df63a72), where the helper passes its one block_size. The class is
@@ -804,6 +808,19 @@ def mamba_config(scheduler) -> dict:
         "num_blocks": scheduler.kv_cache_manager.block_pool.num_gpu_blocks,
         "groups": groups,
     }
+
+
+def block_config(scheduler) -> dict:
+    """The block sizes the Scheduler resolved for groups of layers of unequal pages: the scheduler and hash
+    block sizes (resolve_kv_cache_block_sizes) and each KV cache group's spec type, block size and page, in the
+    order of the "blocks" lists. Recorded for scenarios that ask for it ("engine_core_block_sizes")."""
+    groups = []
+    for g in scheduler.kv_cache_manager.kv_cache_config.kv_cache_groups:
+        s = g.kv_cache_spec
+        groups.append({"type": type(s).__name__, "block_size": s.block_size, "page_size_bytes": s.page_size_bytes,
+                       "layers": len(g.layer_names)})
+    return {"scheduler_block_size": scheduler.block_size, "hash_block_size": scheduler.hash_block_size,
+            "num_blocks": scheduler.kv_cache_manager.block_pool.num_gpu_blocks, "groups": groups}
 
 
 def blis_vllm_commit() -> str:
