@@ -166,8 +166,8 @@ type Scheduler struct {
 // what the normal loop does not model.
 func New(cfg Config, tree cache.PrefixCache, alloc cache.Allocator, pool cache.ReqToTokenPool, sampledToken int64) (*Scheduler, error) {
 	switch {
-	case cfg.RetractionPolicy != "" && cfg.RetractionPolicy != "length":
-		return nil, fmt.Errorf("sched: the %s retraction policy is not modelled (%s)", cfg.RetractionPolicy, RetractionRefusal)
+	case cfg.RetractionPolicy != "" && cfg.RetractionPolicy != "length" && cfg.RetractionPolicy != "priority":
+		return nil, fmt.Errorf("sched: the %s retraction policy does not exist in SGLang v0.5.23 (choices: length, priority)", cfg.RetractionPolicy)
 	case cfg.DisaggregationMode != "null" && cfg.DisaggregationMode != "":
 		return nil, fmt.Errorf("sched: disaggregation mode %q belongs to S25 (%s)", cfg.DisaggregationMode, Refusal)
 	case cfg.PPSize > 1:

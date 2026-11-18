@@ -42,7 +42,7 @@ SCHED_SERVER_ARGS = ("enable_mixed_chunk", "max_prefill_tokens", "schedule_conse
                      "radix_eviction_policy", "enable_priority_scheduling", "prefill_max_requests",
                      "schedule_low_priority_values_first", "priority_scheduling_preemption_threshold",
                      "disable_priority_preemption", "abort_on_priority_when_disabled", "max_queued_requests",
-                     "allow_auto_truncate")
+                     "allow_auto_truncate", "retraction_policy")
 
 ORACLE_INPUTS = run_scheduler.ORACLE_INPUTS + ("oracle/run_sched.py",)
 
@@ -157,6 +157,7 @@ def config_of(s) -> dict:
         "disaggregation_mode": str(s.disaggregation_mode.value),
         "enable_overlap": bool(s.enable_overlap),
         "allow_auto_truncate": bool(get_serving().allow_auto_truncate),
+        "retraction_policy": str(get_schedule().retraction_policy),
         "context_len": int(s.model_config.context_len),
         "disable_consecutive_prefill_overlap": bool(envs.SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP.get()),
         "random_seed": int(s.server_args.random_seed),
