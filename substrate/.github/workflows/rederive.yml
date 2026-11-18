@@ -67,7 +67,7 @@ jobs:
       GOTOOLCHAIN: local
       # The AISimulate commit the committed values re-derive at. Pinned by SHA because the
       # repository's history moves; bump it deliberately, together with the diff the
-      # writers produce at the new commit (docs/reproducing-coefficients.md).
+      # writers produce at the new commit (registry/scripts/rederive.sh lists every writer).
       # The repository is ai-dynamo/aisim since its rename (f85518b3); the package moved from
       # python/aisimulate/src/aisimulate_core to python/aisim/src/aisim_core with it.
       AISIMULATE_SHA: 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18

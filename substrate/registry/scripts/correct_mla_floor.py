@@ -37,7 +37,7 @@ own (6.91% -> 6.38%). The FLOOR is the whole regression: either arm carrying it 
 to losing to it. No chip family regresses under this correction and b200 improves slightly
 (13.14% -> 13.03%).
 
-This is the standing rule in docs/methodology.md doing its job: "no per-primitive fit ships
+This is the standing rule in the design's registry rules (§9) doing its job: "no per-primitive fit ships
 without an end-to-end check", because "the kernel's accuracy rests on partially cancelling
 errors". The MLA pair is the sixth entry in that list -- a correction that improved a
 per-primitive measurement and made the end-to-end score worse.
@@ -103,7 +103,7 @@ RATIONALE = (
     "terms gives overall TPOT mean|e| of 14.98% here against 17.43% for the module-derived "
     "floor, and kimi-k2.5 TPOT of 6.38% against 14.57% -- the module floor alone flips the "
     "kernel from beating AISimulate's 15.39% to losing to it. No chip family regresses and "
-    "b200 improves (13.14% -> 13.03%). Per docs/methodology.md, no per-primitive fit ships "
+    "b200 improves (13.14% -> 13.03%). Per the design's registry rules (§9), no per-primitive fit ships "
     "without an end-to-end check; this is that check rejecting the measured-looking value. "
     "TO REPLACE THIS WITH A MEASUREMENT: an attention-only MLA sweep, measuring the kernel "
     "without its projections. Subtracting a modelled projection cost from the module figure "

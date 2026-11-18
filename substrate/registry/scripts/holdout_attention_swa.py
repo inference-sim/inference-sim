@@ -8,7 +8,7 @@ sliding-window sweep varies `window_size` over five widths, and the window is th
 reason this kind is fitted apart from full attention — `kv_bytes` reads
 `min(context, window)` positions, so a held-out width is a byte count the fit never saw.
 Holding one out and scoring it is therefore a test along the dimension that defines the
-kernel, which is what §4 of docs/methodology.md asks a split to do.
+kernel, which is what the design's registry rules (§9) ask of a split.
 
 WHAT IT DOES NOT DO. It never writes a coefficient and never selects a lane. It reports,
 so a relane can be defended with a held-out number rather than a residual.

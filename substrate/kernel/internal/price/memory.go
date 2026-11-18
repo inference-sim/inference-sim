@@ -92,11 +92,13 @@ func PagedBytes(tokens, blockSize int, bytesPerToken float64) int64 {
 //     default when prefix caching is on.
 //   - RecurrentCacheAll: one page per block position up to the context bound, which makes
 //     the state proportional to maxModelLen and so a variable cost rather than a fixed one.
+//   - RecurrentCacheTracked: a working page plus the engine's tracking slots plus the
+//     speculative blocks.
 //
 // A memory model that treated the state as fixed in every mode would understate the third
 // by the block count — 8192x at a 131072 context and 16-token blocks.
 func RecurrentStateBytes(pageBytes float64, mode RecurrentCacheMode,
-	maxModelLen, blockSize, specBlocks, prefillCheckpointBlocks int) float64 {
+	maxModelLen, blockSize, specBlocks, prefillCheckpointBlocks, trackingSlots int) float64 {
 	if pageBytes <= 0 {
 		return 0
 	}
@@ -109,6 +111,8 @@ func RecurrentStateBytes(pageBytes float64, mode RecurrentCacheMode,
 		return pageBytes * float64(pages+specBlocks)
 	case RecurrentCacheAlign:
 		return pageBytes * float64(2+specBlocks+prefillCheckpointBlocks)
+	case RecurrentCacheTracked:
+		return pageBytes * float64(1+trackingSlots+specBlocks)
 	default:
 		return pageBytes * float64(1+specBlocks)
 	}
@@ -121,6 +125,8 @@ const (
 	RecurrentCacheNone  RecurrentCacheMode = "none"
 	RecurrentCacheAlign RecurrentCacheMode = "align"
 	RecurrentCacheAll   RecurrentCacheMode = "all"
+	// RecurrentCacheTracked is a working state and the engine's tracking slots beside it.
+	RecurrentCacheTracked RecurrentCacheMode = "tracked"
 )
 
 // ProportionalToContext reports whether a mode makes the state grow with the context

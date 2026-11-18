@@ -57,6 +57,9 @@ type CacheFormat struct {
 	StateElementBytes float64
 	// Recurrent is how many states a recurrent layer keeps for a request.
 	Recurrent RecurrentStates
+	// TrackingSlots is, under RecurrentTracked, how many slots beside its working slot a request
+	// holds to snapshot its state for the prefix cache; it is 0 under every other word.
+	TrackingSlots int
 }
 
 // RecurrentStates is how many states a recurrent layer keeps for one request.
@@ -70,11 +73,17 @@ const (
 	RecurrentPageAligned RecurrentStates = "page_aligned"
 	// RecurrentEveryPage keeps a state for every KV page, so the state grows with the context.
 	RecurrentEveryPage RecurrentStates = "every_page"
+	// RecurrentTracked keeps a working state and TrackingSlots more a request holds beside it to
+	// snapshot the state at intervals of the engine's own, so a cached prefix resumes from a
+	// snapshot. SGLang's mamba radix cache with the extra_buffer strategy holds two such slots
+	// with the overlap schedule and one without it or with extra_buffer_lazy
+	// (get_mamba_tracking_slots, mem_cache/allocation_sizing.py:11-19@297e54fd).
+	RecurrentTracked RecurrentStates = "tracked"
 )
 
 // Valid reports whether r is a known word.
 func (r RecurrentStates) Valid() bool {
-	return r == RecurrentLatest || r == RecurrentPageAligned || r == RecurrentEveryPage
+	return r == RecurrentLatest || r == RecurrentPageAligned || r == RecurrentEveryPage || r == RecurrentTracked
 }
 
 // MoEPlan is how the engine runs a mixture-of-experts layer.
@@ -210,6 +219,11 @@ func (p PoolPlan) ValidateResolved() error {
 			"(0, 1], or 0 for not stated", p.MemoryFraction))
 	}
 	word("Cache.Recurrent", string(p.Cache.Recurrent), p.Cache.Recurrent.Valid())
+	negative("Cache.TrackingSlots", int64(p.Cache.TrackingSlots))
+	if tracked := p.Cache.Recurrent == RecurrentTracked; tracked != (p.Cache.TrackingSlots > 0) && p.Cache.TrackingSlots >= 0 {
+		bad = append(bad, fmt.Sprintf("Cache.TrackingSlots is %d under Cache.Recurrent %q; the tracked "+
+			"word states at least one slot and every other word states none", p.Cache.TrackingSlots, p.Cache.Recurrent))
+	}
 	width("Cache.ElementBytes", p.Cache.ElementBytes)
 	width("Cache.LatentCellBytes", p.Cache.LatentCellBytes)
 	width("Cache.StateElementBytes", p.Cache.StateElementBytes)
