@@ -38,7 +38,7 @@ groups)
     resolve) echo '^(config/testdata/serverargs\.json|oracle/(run_serverargs|compare_serverargs|run_import)\.py|oracle/serverargs/)' ;;
     lower) echo '^(lower/testdata/|oracle/lower/|oracle/serverargs/|oracle/run_scheduler\.py|oracle/scenarios/[^/]*\.json$|oracle/testdata/golden/)' ;;
     sched) echo '^(core/sched/testdata/|oracle/(run_sched|gen_fuzz)\.py|oracle/scenarios-sched/)' ;;
-    cache) echo '^(core/cache/testdata/|oracle/(run_cache_iface|run_dfs_order|run_pools|cache_interfaces)\.py|oracle/scenarios/(cache/|[^/]*\.json$)|oracle/scenarios-(cache-iface|dfs-order|pools)/)' ;;
+    cache) echo '^(core/cache/testdata/|oracle/(run_cache_iface|run_dfs_order|run_pools|run_mamba_pools|cache_interfaces)\.py|oracle/scenarios/(cache/|[^/]*\.json$)|oracle/scenarios-(cache-iface|dfs-order|pools|mamba-pools)/)' ;;
     hicache-metrics) echo '^(core/(hicache|metrics)/testdata/|oracle/(run_hicache[^/]*|run_host_pools|run_metrics|run_sched|step_runner)\.py|oracle/scenarios/hicache|oracle/scenarios-(metrics|host-pools)/)' ;;
     esac
   }

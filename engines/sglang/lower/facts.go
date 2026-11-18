@@ -3,6 +3,7 @@
 package lower
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strconv"
@@ -59,6 +60,12 @@ type archFacts struct {
 	// fp8Block is the block size of the architecture's fp8 checkpoint
 	// (quantization_config.weight_block_size), which the graph's weight_dtype does not carry.
 	fp8Block []int
+	// multimodal is a model whose checkpoint carries a vision tower: textModelType is the language
+	// model's own type, and the tower's depth and width are the vision_config's (the facts
+	// adjust_mem_fraction_for_vlm reads).
+	multimodal                 bool
+	textModelType              string
+	visionLayers, visionHidden int
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -66,6 +73,9 @@ func ptr[T any](v T) *T { return &v }
 var archTable = map[string]archFacts{
 	"DeepseekV3ForCausalLM": {modelType: "deepseek_v3", asymmetricKV: true, fp8Block: []int{128, 128}},
 	"GlmMoeDsaForCausalLM":  {modelType: "glm_moe_dsa", dsa: true, dsaIndexKpool: ptr(1), fp8Block: []int{128, 128}},
+	// Qwen3.5 (qwen35.go): a hybrid of Gated DeltaNet and attention layers with a vision tower.
+	"Qwen3_5MoeForConditionalGeneration": {modelType: "qwen3_5_moe", fp8Block: []int{128, 128},
+		multimodal: true, textModelType: "qwen3_5_moe_text", visionLayers: 24, visionHidden: 1152},
 }
 
 // ModelFactsOf is the model as SGLang's resolution reads it, from the catalog graph. The graph
@@ -80,9 +90,13 @@ func ModelFactsOf(g *model.Graph) (config.ModelFacts, error) {
 	}
 	hidden := g.Global.HiddenSize
 	f := config.ModelFacts{
-		Architecture: arch, ModelType: t.modelType, TextModelType: t.modelType,
+		Architecture: arch, ModelType: t.modelType, TextModelType: cmp.Or(t.textModelType, t.modelType),
 		AttentionArch: "MHA", IsDeepseekDSA: t.dsa, DSAIndexKpool: t.dsaIndexKpool,
 		HasAsymmetricKV: t.asymmetricKV, HiddenSize: &hidden,
+	}
+	if t.multimodal {
+		f.IsMultimodal, f.MultimodalBreakableGraphSupported, f.HasVisionConfig = true, true, true
+		f.VisionNumHiddenLayers, f.VisionHiddenSize = ptr(t.visionLayers), ptr(t.visionHidden)
 	}
 	g.EachNode(func(_ string, n model.Node) {
 		if n.Op == model.OpAttention && (n.AttentionKind == model.AttentionMLA || n.AttentionKind == model.AttentionSparseMLA) {

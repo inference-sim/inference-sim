@@ -312,6 +312,20 @@ jobs:
           for s in oracle/scenarios-pools/*.json; do
             python -I oracle/run_pools.py direct sglang-source "$s" "shard-out/oracle-traces-pools/direct/$(basename "$s" .json).trace.json"
           done
+      # S48 (#94): the hybrid mamba pools, the state budget and the request-slot cap
+      # (oracle/run_mamba_pools.py).
+      - name: trace the hybrid mamba pools
+        if: ${{ !cancelled() && matrix.group == 'cache' }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p shard-out/oracle-traces-mamba-pools
+          for s in oracle/scenarios-mamba-pools/*.json; do
+            python -I oracle/run_mamba_pools.py direct sglang-source "$s" "shard-out/oracle-traces-mamba-pools/$(basename "$s" .json).trace.json"
+          done
       # FID-5 (design §7.6) for HiCache: the controller, layer counter, L2 transfer, host pool and
       # storage interfaces traced as SGLang's own classes answer them, the controller's threads and
       # device events run by the step-driven runner (oracle/step_runner.py, FID-1). Recorded: each
@@ -481,6 +495,9 @@ jobs:
       - name: every scheduling golden is SGLang's own output
         if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
         run: python -I oracle/compare_goldens.py traces/oracle-traces-sched "${{ steps.pin.outputs.commit }}" oracle/scenarios-sched core/sched/testdata/golden-sched
+      - name: every hybrid mamba pool golden is SGLang's own output
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        run: python -I oracle/compare_goldens.py traces/oracle-traces-mamba-pools "${{ steps.pin.outputs.commit }}" oracle/scenarios-mamba-pools core/cache/testdata/golden-pools/mamba
       - name: every metrics golden is SGLang's own output
         if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
         run: python -I oracle/compare_goldens.py traces/oracle-traces-metrics "${{ steps.pin.outputs.commit }}" oracle/scenarios-metrics core/metrics/testdata/golden-metrics
@@ -528,6 +545,12 @@ jobs:
         with:
           name: oracle-traces-sched
           path: traces/oracle-traces-sched/
+      - name: upload the hybrid mamba pool traces
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-mamba-pools
+          path: traces/oracle-traces-mamba-pools/
       - name: upload the metrics traces
         if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

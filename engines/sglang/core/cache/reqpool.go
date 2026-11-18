@@ -127,3 +127,6 @@ func (p *RequestPool) SchedulableTokenCapacity(physicalCapacity int) int { retur
 
 // AllocAuxToLengths is memory_pool.py:490-500@297e54fd: nothing with no aux cache.
 func (p *RequestPool) AllocAuxToLengths(reqPoolIndices, targetSeqLens []int) {}
+
+// FreeRows is free_slots: the rows not held, in the order they will be taken from the tail.
+func (p *RequestPool) FreeRows() []int { return slices.Clone(p.free) }

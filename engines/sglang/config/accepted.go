@@ -62,6 +62,11 @@ var acceptedFields = map[string][]any{
 	"reasoning_parser":                   nil,
 	"context_length":                     nil,
 	"pp_size":                            {1},
+	// The hybrid (Mamba) pool settings of the Qwen3.5 family (qwen35.go): the strategy of the Mamba
+	// radix cache, the dtype of its SSM states, and the vision tower's attention backend.
+	"mamba_radix_cache_strategy": {"auto", "no_buffer", "extra_buffer", "extra_buffer_lazy"},
+	"mamba_ssm_dtype":            {nil, "float32", "bfloat16", "float16"},
+	"mm_attention_backend":       {nil, "sdpa", "fa3", "fa4", "triton_attn", "flashinfer_cudnn"},
 }
 
 // refusedFieldIssue names, for a field another open issue covers, that issue instead of the
@@ -79,10 +84,11 @@ var refusedFieldIssue = map[string]string{
 // quantization pass (_deepseek_moe_quant_resolution, overrides.py:763-843@297e54fd) can read the
 // checkpoint's weights, which Resolve does not have.
 var acceptedModels = map[string][]int{
-	"Qwen2ForCausalLM":      {9, 10},
-	"GlmMoeDsaForCausalLM":  {9},
-	"DeepseekV3ForCausalLM": {9},
-	"DeepseekV4ForCausalLM": {9, 10},
+	"Qwen2ForCausalLM":                   {9, 10},
+	"GlmMoeDsaForCausalLM":               {9},
+	"DeepseekV3ForCausalLM":              {9},
+	"DeepseekV4ForCausalLM":              {9, 10},
+	"Qwen3_5MoeForConditionalGeneration": {9, 10},
 }
 
 // checkAccepted refuses an input outside the space Resolve models.
@@ -150,7 +156,7 @@ func checkAccepted(args *ServerArgs, in Input) error {
 		return &NotModelled{Name: "chip", Value: in.Chip.MemoryMiB,
 			Reason: "the chip's memory must be stated", Issue: issueRest}
 	}
-	if in.Model.IsMultimodal && in.Model.HasVisionConfig {
+	if in.Model.IsMultimodal && in.Model.HasVisionConfig && in.Model.VisionHiddenSize == nil {
 		return &NotModelled{Name: "architecture", Value: in.Model.Architecture,
 			Reason: "Resolve does not model the vision-encoder memory adjustment", Issue: issueRest}
 	}

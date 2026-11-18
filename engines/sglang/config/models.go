@@ -42,6 +42,8 @@ func (r *resolver) handleModelSpecificAdjustments() {
 	case r.isDeepseekV4():
 		r.deepseekV4Overrides()
 		r.applyDeepseekV4Defaults()
+	case qwen35Hybrid[r.model.Architecture] || qwen3MoeFamily[r.model.Architecture]:
+		r.qwen35Overrides()
 	}
 	if deepseekFamily[r.model.Architecture] && r.model.IsDeepseekDSA {
 		// SGLANG_DSA_PREFILL_DENSE_ATTN_KV_LEN_THRESHOLD is an environment default, not a field.

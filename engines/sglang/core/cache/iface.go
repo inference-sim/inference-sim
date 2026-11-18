@@ -159,6 +159,8 @@ type ReqKV struct {
 	CacheInsertedLen  int `json:"cache_inserted_len"`
 	KVCommittedLen    int `json:"kv_committed_len"`
 	KVAllocatedLen    int `json:"kv_allocated_len"`
+	// Mamba is the recurrent state the request holds under a hybrid model, or nil.
+	Mamba *MambaKV `json:"-"`
 }
 
 // Req is a request as the cache framework sees it: its tokens, its KV record, the node its
