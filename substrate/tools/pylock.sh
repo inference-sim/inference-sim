@@ -18,7 +18,6 @@ locks=(
   "catalog/scripts/requirements-dev.in catalog/scripts/requirements-dev.txt 3.12"
   "registry/scripts/requirements.in registry/scripts/requirements.txt 3.11"
   "registry/scripts/requirements-fit.in registry/scripts/requirements-fit.txt 3.11"
-  "docs/requirements.in docs/requirements.txt 3.12"
 )
 check=false
 [ "${1:-}" = "--check" ] && check=true

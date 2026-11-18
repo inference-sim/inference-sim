@@ -1,7 +1,7 @@
 # CANDIDATE entries, NOT READ by the lookup: this directory is outside the registry's data
 # directories (acceptance, coefficients, routing), so the loader and the validators skip it.
 # The h100 dense Marlin W8A16 MXFP8 ramp is recorded here because it has no held-out unit and
-# so no verdict (docs/kernel/concepts/hopper-dense-mxfp8-ramp.md); the `assumed` bound in cost-model-primitives.yaml keeps pricing h100.
+# so no verdict (registry/gates/criteria/hopper-dense-mxfp8-ramp.md); the `assumed` bound in cost-model-primitives.yaml keeps pricing h100.
 # WRITTEN by scripts/emit_marlin_dense_transfer.py, which checks it. Do not edit by hand.
 coefficients:
   - gemm_eps_max_w8a16_mxfp8:

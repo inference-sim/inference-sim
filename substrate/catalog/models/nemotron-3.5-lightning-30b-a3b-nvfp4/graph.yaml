@@ -11,6 +11,7 @@ global:
   tie_word_embeddings: false
   weight_dtype: bf16
   architecture: NemotronHForCausalLM
+  context_window: 1048576
 layer_kinds:
 - id: mamba
   nodes:

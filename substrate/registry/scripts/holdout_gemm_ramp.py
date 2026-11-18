@@ -6,7 +6,7 @@ prices every dense matmul in every layer, so it is the coefficient family with t
 reach and the one whose generalization matters most. `fit_gemm_envelope.py` reports an RMS
 residual on the rows it fitted. That is not a generalization test.
 
-§4 of docs/methodology.md asks for splits along a dimension generalization has to cross,
+the design's registry rules (§9) ask for splits along a dimension generalization has to cross,
 not at random, because a random row split puts near-duplicate shapes on both sides. Two
 such dimensions exist in the sweep and this script tests both:
 

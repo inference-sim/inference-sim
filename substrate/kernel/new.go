@@ -416,6 +416,8 @@ func construct(in Inputs) (*Kernel, error) {
 		k.recurrentCacheMode = price.RecurrentCacheAlign
 	case plan.RecurrentEveryPage:
 		k.recurrentCacheMode = price.RecurrentCacheAll
+	case plan.RecurrentTracked:
+		k.recurrentCacheMode = price.RecurrentCacheTracked
 	default:
 		k.recurrentCacheMode = price.RecurrentCacheMode(k.low.Cache.Recurrent)
 	}

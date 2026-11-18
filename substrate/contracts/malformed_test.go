@@ -33,7 +33,7 @@ import (
 // contracts/conformance/doctest, made from a valid example of its document. Each loader
 // reads from a file, as a caller does.
 func TestEveryLoaderRefusesTheMalformedSet(t *testing.T) {
-	ex := func(name string) string { return filepath.Join("..", "docs", "contracts", "examples", name) }
+	ex := func(name string) string { return filepath.Join("testdata", "examples", name) }
 	cat := func(rel string) string { return filepath.Join("..", "catalog", rel) }
 	via := func(name string, load func(string) error) func([]byte) error {
 		return func(b []byte) error {
@@ -141,7 +141,7 @@ func jsonToYAML(t *testing.T, b []byte) []byte {
 // SUB-12: every declared field is read. Each value in each loader's valid example is
 // changed in turn; the loader must load something different, or refuse.
 func TestEveryLoaderReadsEveryFieldItsExampleStates(t *testing.T) {
-	ex := func(name string) string { return filepath.Join("..", "docs", "contracts", "examples", name) }
+	ex := func(name string) string { return filepath.Join("testdata", "examples", name) }
 	cat := func(rel string) string { return filepath.Join("..", "catalog", rel) }
 	dir := t.TempDir()
 	file := func(b []byte) string {

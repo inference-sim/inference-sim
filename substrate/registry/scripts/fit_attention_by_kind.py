@@ -82,7 +82,7 @@ MIN_POINTS = 200
 # varies.
 #
 # It is NOT correct as a statement about the data, and an earlier revision of
-# docs/methodology.md read it that way. The vLLM MLA MODULE tables
+# the design's registry rules (§9) read it that way. The vLLM MLA MODULE tables
 # (mla/vllm/*/mla_generation_module_perf.parquet, 137,874 rows across parts) carry `model`
 # and `architecture`, so the geometry is resolvable from blis-catalog and the fit is
 # well-posed. scripts/fit_attention_mla.py does it and relane_attention_mla.py commits it

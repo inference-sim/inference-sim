@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Maintain the MLA decode pair in place, from fit_attention_mla.py.
 
-WHAT THIS COMMITS, AND WHY IT IS NOW POSSIBLE. `docs/methodology.md` recorded MLA as
+WHAT THIS COMMITS, AND WHY IT IS NOW POSSIBLE. The design's registry rules (§9) recorded MLA as
 unfittable, and commit 587c1be kept that as a negative result:
 
     MLA and sparse MLA are reported as unfittable rather than fitted from a guess. Their

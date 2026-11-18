@@ -5951,6 +5951,16 @@ def handler_nemotron_h(cfg, raw, model):
     used = list(dict.fromkeys(vector))
     kinds = [catalogue[n] for n in used]
     stack = compress(list(vector))
+    # vLLM derives max_model_len from max_position_embeddings; a config that scales its
+    # RoPE would shorten or lengthen it, and none of the committed NemotronH configs does.
+    if raw.get("rope_scaling") or raw.get("rope_parameters"):
+        raise DeriveError(f"{model}: the config scales its RoPE, so max_model_len is not "
+                          f"max_position_embeddings")
+    positions = require_key(cfg, "max_position_embeddings", model)
+    if isinstance(positions, bool) or int(positions) != positions or positions < 1:
+        raise DeriveError(f"{model}: max_position_embeddings is {positions!r}, not a positive "
+                          f"whole number")
+    window = {"global": {"context_window": int(positions)}}
     quant = raw.get("quantization_config") or {}
     method = str(quant.get("quant_method", "")).lower()
     uniform = method == "modelopt" and str(quant.get("quant_algo", "")).upper() != "MIXED_PRECISION"
@@ -5963,7 +5973,7 @@ def handler_nemotron_h(cfg, raw, model):
     if not spec:
         if uniform:
             kinds = modelopt_place_widths(kinds, stack, raw, model)
-        return kinds, stack
+        return kinds, stack, window
     mtp = nemotron_h_vector(mtp_vector, model, "the MTP layer pattern")
     unknown = sorted(set(mtp) - set(catalogue))
     if unknown:
@@ -6006,7 +6016,7 @@ def handler_nemotron_h(cfg, raw, model):
         if own["id"] not in {k["id"] for k in kinds}:
             kinds.append(own)
         pattern.append(own["id"])
-    return kinds, stack, {"speculator": {
+    return kinds, stack, {**window, "speculator": {
         "method": speculative_method(architecture_of(raw, model), model),
         "num_spec_tokens": spec,
         "stack": {"pattern": pattern, "repeat": 1},
@@ -6726,6 +6736,15 @@ def handler_muse_spark(cfg, raw, model):
       * The native finalize (_finalize_chunk, muse_moe_runner.py:433-439) materialises a
         (tokens x top_k x moe_hidden_size) fp32 intermediate; it runs only on Blackwell at
         TP > 1 above 8192 tokens or where FlashInfer's TP finalize is unavailable.
+      * Each layer with a positive layer_rope_theta builds its own RotaryEmbedding, a
+        non-persistent fp32 cos/sin buffer of max_position_embeddings rows by head_dim
+        (MuseSpark1xAttention, model.py:1081-1092, not the shared get_rope; rotary_embedding/
+        base.py:59-63, 94-103), 256 MiB at 1M positions, on every rank and not sharded. The
+        graph states it as a replicated Gather on those layers, so the weights a rank holds
+        include it (inference-sim/blis-substrate#378). The fused QK-norm/RoPE kernel that reads
+        a row per token is the qk_norm_rope node's, so the Gather is resident only: it adds
+        bytes and neither a launch nor traffic. vLLM changed this after v0.33.0 (#65206 shares
+        one table), so the graph is the v0.33.0 path.
       * The final logit soft-cap (final_logit_softcapping) runs on the sampled rows'
         vocabulary-wide logits, which no node of a head can scope to sampled rows, so it
         is not priced.
@@ -6773,6 +6792,16 @@ def handler_muse_spark(cfg, raw, model):
     base = base_dtype(cfg, raw, model)
     act = DTYPE_WIDTHS[base]
     fp32 = DTYPE_WIDTHS["fp32"]
+
+    # Which layers build a RoPE cos/sin table (layer_rope_theta > 0, model.py:970-974). A
+    # config that states none builds one on every layer from its single rope_theta; this
+    # handler reads the per-layer vector the checkpoint states, and refuses a vector of the
+    # wrong length.
+    rope_theta = cfg.get("layer_rope_theta")
+    if rope_theta is not None and len(rope_theta) != layers:
+        raise DeriveError(f"{model}: layer_rope_theta has {len(rope_theta)} entries for {layers} layers")
+    has_rope = [bool(rope_theta[i] > 0) if rope_theta is not None else True for i in range(layers)]
+    max_positions = whole(require_key(cfg, "max_position_embeddings", model), "max_position_embeddings")
 
     # Which layers' experts the checkpoint quantizes. A layer the exclusion list names
     # keeps the base width; the rest carry the method's.
@@ -6826,7 +6855,19 @@ def handler_muse_spark(cfg, raw, model):
             node["tp"] = tp
         return node
 
-    def attention_nodes(win):
+    def rope_table(rope):
+        # The layer's own cos/sin buffer, fp32, head_dim wide (cos and sin halves), one row
+        # per position, replicated: 1,048,576 x 64 x 4 B = 256 MiB. The fused QK-norm and RoPE
+        # kernel that indexes it is the qk_norm_rope node's, so the table is resident only.
+        # This is vLLM v0.33.0's NVIDIA path; vllm-project/vllm#65206 (after v0.33.0) shares
+        # one table across the layers (get_rope), a release difference this graph does not
+        # state.
+        if not rope:
+            return []
+        return [{"op": "Gather", "role": "rope_cos_sin_cache", "rows": max_positions,
+                 "row_bytes": dh * fp32, "resident_only": True}]
+
+    def attention_nodes(win, rope):
         # The target always projects Q, K, V and the output gate in one fused linear that
         # slices by head group and cannot replicate a KV head (use_o_gate is True off the
         # drafter, model.py:977; MuseSpark1xQKVOGateParallelLinear asserts
@@ -6843,6 +6884,7 @@ def handler_muse_spark(cfg, raw, model):
             # QK-norm and RoPE read and write Q and K once, fused with the cache insert,
             # whose record the attention's cache accounts for.
             traffic("qk_norm_rope", 2 * (nq + nkv) * dh * act),
+            *rope_table(rope),
             attn,
             # The per-head output norm and its sigmoid gate: read the output and the gate,
             # write the gated output.
@@ -6887,17 +6929,21 @@ def handler_muse_spark(cfg, raw, model):
                  sharded_at_decode=dict(MUSE_SHARDED_PROJECTION, min_tokens_across_nodes=32)),
         ]
 
-    kinds, sequence, seen = [], [], set()
+    kinds, sequence, seen, rope_of = [], [], set(), {}
     for i, t in enumerate(attn_types):
         win = window if t == "sliding_attention" else None
         dtype = base if i in bf16_experts else expert_fmt
         kid = ("swa" if win else "full") + "_moe" + (
             "_" + base if expert_fmt and i in bf16_experts else "")
+        if kid in rope_of and rope_of[kid] != has_rope[i]:
+            raise DeriveError(f"{model}: layers of kind {kid} differ in whether they build a "
+                              f"RoPE table (layer {i}); one layer kind cannot price both")
+        rope_of[kid] = has_rope[i]
         sequence.append(kid)
         if kid in seen:
             continue
         seen.add(kid)
-        nodes = attention_nodes(win) + moe_nodes(dtype)
+        nodes = attention_nodes(win, has_rope[i]) + moe_nodes(dtype)
         kinds.append({"id": kid, "nodes": nodes, "edges": chain(nodes)})
 
     embed = {"op": "Gather", "role": "embed_tokens", "rows": vocab,
@@ -7013,10 +7059,28 @@ def handler_muse_spark_dspark(cfg, raw, model):
     attention = {"op": "Attention", "holds_engine_kv": True, "kind": "swa", "n_q": nq, "n_kv": nkv, "d_h": dh,
                  "window": window, "kv_heads_not_replicated": True}
 
+    # Each draft layer builds its own RotaryEmbedding, in every engine build (the draft path keeps
+    # it where vllm-project/vllm#65206 shares the target's, model.py MuseSpark1xAttention): a
+    # cos/sin table of max_position_embeddings rows by head_dim values, fp32 when the config
+    # computes the outer product in fp32 and the activation width otherwise, replicated and
+    # resident (inference-sim/blis-substrate#378). A draft layer that skips RoPE
+    # (every_n_layers_nope) is not priced here.
+    rope_table = []
+    if cfg.get("use_rope", True):
+        if cfg.get("every_n_layers_nope") is not None:
+            raise DeriveError(f"{model}: every_n_layers_nope; a draft layer without RoPE is not "
+                              f"priced here")
+        rope_width = fp32 if cfg.get("rope_use_fp32_in_outer_product", False) else act
+        rope_table = [{"op": "Gather", "role": "rope_cos_sin_cache",
+                       "rows": whole(require_key(cfg, "max_position_embeddings", model),
+                                     "max_position_embeddings"),
+                       "row_bytes": dh * rope_width, "resident_only": True}]
+
     layer = [
         traffic("input_norm", _muse_boundary_bytes(hidden, act), tp="replicated"),
         gemm("qkv_gate_proj", 2 * (nq + nkv) * dh, hidden),
         traffic("qk_norm_rope", 2 * (nq + nkv) * dh * act),
+        *rope_table,
         attention,
         traffic("o_norm_gate", 3 * nq * dh * act),
         gemm("o_proj", hidden, nq * dh),

@@ -445,6 +445,9 @@ func (n Node) validate(p *validate.Problems, at string) {
 	if n.Shared != nil && n.Op != OpGroupedGEMM {
 		p.Field(at+".shared", "only a GroupedGEMM node is a group of experts")
 	}
+	if n.ResidentOnly && n.Op != OpGather {
+		p.Field(at+".resident_only", "only a Gather node is a table")
+	}
 	if n.KVHeadsNotReplicated && n.Op != OpAttention {
 		p.Field(at+".kv_heads_not_replicated", "only an Attention node has KV heads")
 	}
@@ -691,8 +694,15 @@ func (n Node) validate(p *validate.Problems, at string) {
 			p.Field(at+".rows", "must be positive for this op, got %d", n.Rows)
 		}
 		requirePositive(p, at, "row_bytes", n.RowBytes)
-		requirePositive(p, at, "rows_per_token", n.RowsPerToken)
-		requirePositive(p, at, "out_bytes_per_token", n.OutBytesPerToken)
+		if n.ResidentOnly {
+			// A table held for another node's fused kernel is read by no lookup of its own.
+			if n.RowsPerToken != 0 || n.OutBytesPerToken != 0 {
+				p.Field(at+".resident_only", "a resident-only table is read by no lookup, so it states no rows_per_token or out_bytes_per_token")
+			}
+		} else {
+			requirePositive(p, at, "rows_per_token", n.RowsPerToken)
+			requirePositive(p, at, "out_bytes_per_token", n.OutBytesPerToken)
+		}
 		if int64(n.RowsPerToken) > n.Rows && n.Rows > 0 {
 			p.Field(at+".rows_per_token", "%d exceeds the table's %d rows", n.RowsPerToken, n.Rows)
 		}

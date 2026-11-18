@@ -8,7 +8,7 @@ were real rather than hypothetical:
   * The prefill pair drifted on all seven parts. `work_scale` is a fraction of the bf16
     GEMM ramp, commit 5be809b relaned that ramp, and the prefill numerators were never
     refitted against the new denominator. Nothing could notice.
-  * `docs/reproducing-coefficients.md` carried a KDA recipe (`kda/sglang/0.5.16`, the
+  * the former reproducing-coefficients page carried a KDA recipe (`kda/sglang/0.5.16`, the
     `kda_fused_decode` row) that regenerates SUPERSEDED values -- a rate 6.4x too fast,
     from an AMD-only kernel that runs on no CUDA deployment.
 

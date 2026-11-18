@@ -435,6 +435,20 @@ type Handoff struct {
 	// Blocks are the engine's IDs of the KV blocks held, opaque to the simulator, which may
 	// count distinct blocks across handoffs: a block a prefix cache shares appears in several.
 	Blocks []int64
+	// At is where the held KV sits, in the engine's own pool's numbering (plan.Endpoint): the node
+	// and rack of the rank that computed it. A pool whose data-parallel ranks sit on several nodes
+	// holds each request's KV on one rank's node, and the peer's pull reads from there: a host sets
+	// the peer's Request.Peer from At. Nil means the pool's first node, the only place a pool on
+	// one node holds anything, and what a handoff meant before the field.
+	At *plan.Endpoint
+}
+
+// Validate reports a handoff whose held KV has an endpoint that cannot exist.
+func (h Handoff) Validate() error {
+	if h.At != nil && (h.At.Node < 0 || h.At.Rack < 0) {
+		return fmt.Errorf("engine: handoff %s: held at %+v", h.ID, *h.At)
+	}
+	return nil
 }
 
 // Finished is one request an engine finished.

@@ -63,7 +63,7 @@ func selectedBy(t *testing.T, changed ...string) map[string]string {
 }
 
 // A change under load/ reaches the ledger job, because ledger imports load. The hand-written
-// list in ci.yml skipped the ledger, catalog, registry and docs jobs on such a change.
+// list in ci.yml skipped the ledger, catalog, and registry jobs on such a change.
 func TestAChangeUnderLoadSelectsTheLedgerJob(t *testing.T) {
 	got := selectedBy(t, "load/load.go")
 	for _, job := range []string{"ledger", "kernel", "contracts"} {
@@ -73,17 +73,14 @@ func TestAChangeUnderLoadSelectsTheLedgerJob(t *testing.T) {
 	}
 }
 
-// The selection stays narrow where nothing reaches: a docs page runs neither the ledger nor the
-// cost model.
-func TestADocsChangeSelectsNeitherLedgerNorKernel(t *testing.T) {
-	got := selectedBy(t, "docs/index.md")
+// The selection stays narrow where nothing reaches: a README change runs neither the ledger nor
+// the cost model.
+func TestAReadmeChangeSelectsNeitherLedgerNorKernel(t *testing.T) {
+	got := selectedBy(t, "README.md")
 	for _, job := range []string{"ledger", "kernel", "registry", "catalog"} {
 		if got[job] != "false" {
-			t.Errorf("a change to docs/index.md selects the %s job (outputs %v)", job, got)
+			t.Errorf("a change to README.md selects the %s job (outputs %v)", job, got)
 		}
-	}
-	if got["docs"] != "true" {
-		t.Errorf("a change to docs/index.md does not select the docs job (outputs %v)", got)
 	}
 }
 

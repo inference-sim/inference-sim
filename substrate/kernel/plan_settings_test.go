@@ -199,6 +199,9 @@ func TestEachResolvedPlanSettingMovesAPrice(t *testing.T) {
 		{"CacheFormat.LatentCellBytes", latent, nil, func(l *plan.Lowered) { l.Plan.Cache.LatentCellBytes = 656 }},
 		{"CacheFormat.StateElementBytes", hybrid, nil, func(l *plan.Lowered) { l.Plan.Cache.StateElementBytes = 2 }},
 		{"CacheFormat.Recurrent", hybrid, nil, func(l *plan.Lowered) { l.Plan.Cache.Recurrent = plan.RecurrentEveryPage }},
+		{"CacheFormat.TrackingSlots", hybrid, func(l *plan.Lowered) {
+			l.Plan.Cache.Recurrent, l.Plan.Cache.TrackingSlots = plan.RecurrentTracked, 1
+		}, func(l *plan.Lowered) { l.Plan.Cache.TrackingSlots = 2 }},
 		{"MoEPlan.Dispatch", routed, nil, func(l *plan.Lowered) {
 			l.Plan.MoE.Dispatch = plan.DispatchDeepEPLowLatency
 		}},

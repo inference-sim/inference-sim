@@ -765,6 +765,10 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 		if !ok {
 			launches = 1
 		}
+		if n.Op == model.OpGather && n.ResidentOnly {
+			// A table held for another node's fused kernel: resident bytes, no launch.
+			launches = 0
+		}
 		if o.RoutingLaunch && n.Op == model.OpGroupedGEMM && !n.IsSharedExpert() {
 			launches++
 		}

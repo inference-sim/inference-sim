@@ -2744,9 +2744,10 @@ def test_nemotron_h_parses_the_character_form_of_the_layer_vector():
         "num_local_experts": 8, "num_experts_per_tok": 2, "moe_intermediate_size": 1024,
         "mamba_num_heads": 64, "ssm_state_size": 128, "conv_kernel": 4,
         "mamba_head_dim": 64, "n_groups": 8,
-        "hybrid_override_pattern": "M-*E", "dtype": "bfloat16",
+        "hybrid_override_pattern": "M-*E", "dtype": "bfloat16", "max_position_embeddings": 4096,
     }
-    kinds, stack = dg.handler_nemotron_h(cfg, cfg, "synthetic")
+    kinds, stack, extras = dg.handler_nemotron_h(cfg, cfg, "synthetic")
+    assert extras["global"]["context_window"] == 4096
     assert layer_sequence(stack) == ["mamba", "mlp", "attention", "moe"], (
         "the character form must map M/-/*/E to state-space, MLP, attention and MoE")
     assert {k["id"] for k in kinds} == {"mamba", "mlp", "attention", "moe"}
@@ -5844,6 +5845,66 @@ def test_muse_spark_layers_follow_layer_types():
             assert attn["kind"] == "swa" and attn["window"] == t["sliding_window"], i
         assert (attn["n_q"], attn["n_kv"], attn["d_h"]) == (128, 16, 64)
     assert sum(lt == "full_attention" for lt in t["layer_types"]) == 16
+
+
+def test_muse_spark_states_a_rope_table_on_exactly_the_layers_that_rotate(tmp_path):
+    """MuseSpark1xAttention builds its own fp32 cos/sin table in every layer whose
+    layer_rope_theta is positive (46 of 62 here), replicated on every rank
+    (inference-sim/blis-substrate#378). The graph states it as a Gather of max_position_embeddings
+    rows of head_dim fp32 values, resident only, on those layers and no other; a layer kind that would mix
+    rotating and non-rotating layers is refused."""
+    for model in (MUSE, MUSE_NVFP4):
+        raw = config_of(model)
+        t = text_config(raw)
+        g = graph_of(model)
+        rotating = [i for i, th in enumerate(t["layer_rope_theta"]) if th > 0]
+        assert len(rotating) == 46
+        for i in range(t["num_hidden_layers"]):
+            tables = [n for n in _kind_of(g, i)["nodes"] if n.get("role") == "rope_cos_sin_cache"]
+            if i in rotating:
+                assert len(tables) == 1 and tables[0]["op"] == "Gather", i
+                assert tables[0]["rows"] == t["max_position_embeddings"], i
+                assert tables[0]["row_bytes"] == t["head_dim"] * 4, i
+                assert "shard" not in tables[0], i  # replicated
+                # resident memory, not step work: no lookup of its own to launch or move rows
+                assert tables[0]["resident_only"] is True, i
+                assert "rows_per_token" not in tables[0] and "out_bytes_per_token" not in tables[0], i
+            else:
+                assert not tables, i
+    raw = config_of(MUSE)
+    bad = json.loads(json.dumps(raw))
+    bad["text_config"]["layer_rope_theta"][2] = 0  # a sliding layer that does not rotate
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match="RoPE table"):
+        _derive_raw(bad, tmp_path)
+    short = json.loads(json.dumps(raw))
+    short["text_config"]["layer_rope_theta"].pop()
+    with pytest.raises(derive_graph.DeriveError, match="layer_rope_theta"):
+        _derive_raw(short, tmp_path)
+
+
+def test_muse_spark_dspark_drafter_holds_a_rope_table_in_each_layer(tmp_path):
+    """The DSpark drafter's attention builds its own RotaryEmbedding in every layer, in every
+    engine build (vllm-project/vllm#65206 shares only the target's): max_position_embeddings
+    rows of head_dim values, fp32 because its config computes the outer product in fp32,
+    resident and not a step's work (inference-sim/blis-substrate#378)."""
+    raw = config_of(MUSE_DSPARK)
+    t = text_config(raw)
+    g = graph_of(MUSE_DSPARK)
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    tables = [n for n in kinds["dspark_layer"]["nodes"] if n.get("role") == "rope_cos_sin_cache"]
+    assert len(tables) == 1 and tables[0]["op"] == "Gather" and tables[0]["resident_only"] is True
+    assert tables[0]["rows"] == t["max_position_embeddings"]
+    assert tables[0]["row_bytes"] == t["head_dim"] * 4 and t["rope_use_fp32_in_outer_product"]
+    assert g["speculator"]["stack"]["repeat"] == t["num_hidden_layers"] == 5
+    bad = json.loads(json.dumps(raw))
+    badt = bad.get("text_config", bad)
+    badt["every_n_layers_nope"] = 4
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match="every_n_layers_nope"):
+        _derive_raw(bad, tmp_path)
 
 
 def test_muse_spark_experts_run_at_the_latent_width():
@@ -10123,3 +10184,39 @@ def test_qwen4_exp_fused_expert_tensors_are_one_unquantized_module(tmp_path):
     bad = {"mtp.layers.0.mlp.experts.down_proj": {"dtype": "F8_E4M3", "shape": [16, 256, 32]}}
     with pytest.raises(deriver().DeriveError, match="fused expert tensor"):
         derive_graph.header_module_widths(bad, "x")
+
+
+NEMOTRON_H_ENTRIES = ("nemotron-3-ultra-550b-a55b-bf16", "nemotron-3-ultra-550b-a55b-nvfp4",
+                      "nemotron-3.5-lightning-30b-a3b-bf16", "nemotron-3.5-lightning-30b-a3b-nvfp4")
+
+
+@pytest.mark.parametrize("name", NEMOTRON_H_ENTRIES)
+def test_nemotron_h_states_the_context_window_its_config_gives_vllm(name):
+    """vLLM's max_model_len is max_position_embeddings when the config scales no RoPE, and a
+    Mamba hybrid needs it (mamba_cache_mode none sets mamba_block_size to it), so the graph
+    states it as its context window."""
+    d = MODELS / name
+    if not d.is_dir():
+        pytest.skip(f"{name} is not in the catalog")
+    assert graph_of(d)["global"]["context_window"] == text_config(config_of(d))["max_position_embeddings"]
+
+
+def test_nemotron_h_super_states_the_window_of_its_pinned_config():
+    """The licence keeps this config out of the tree (X12), so only the derived value is
+    committed; it is the max_position_embeddings of the config the entry pins by hash."""
+    assert graph_of(MODELS / "nemotron-3-super-120b-a12b-fp8")["global"]["context_window"] == 262144
+
+
+def test_nemotron_h_refuses_a_config_that_scales_its_rope(tmp_path):
+    """A scaled RoPE changes the length vLLM serves, so max_position_embeddings alone would
+    state the wrong window."""
+    name = NEMOTRON_H_ENTRIES[2]
+    d = MODELS / name
+    if not d.is_dir():
+        pytest.skip(f"{name} is not in the catalog")
+    raw = config_of(d)
+    raw["rope_scaling"] = {"rope_type": "yarn", "factor": 4.0}
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match="scales its RoPE"):
+        _derive_raw(raw, tmp_path, name)
