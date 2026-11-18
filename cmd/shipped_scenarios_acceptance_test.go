@@ -58,7 +58,9 @@ func TestShippedSpeculativeScenariosRunWithoutAcceptanceFlags(t *testing.T) {
 	}
 }
 
-// Every Muse-Spark scenario that drafts resolves the acceptance its README says. // of the matrix take the registry's GB200 profile (2.72). The three H100 measured arms with DSpark
+// Every Muse-Spark scenario that drafts resolves the acceptance its README says. The 16 runnable
+// scenarios of the matrix (two of its 18 are the refused H200 DP8 files) take the registry's GB200
+// profile (2.72). The three H100 measured arms with DSpark
 // (armC, armC-routed, armD) keep a scenario pin of 2.84: the registry has no H100 Muse profile, and
 // 2.84 is the internal measurement on H100 PP2xTP8 those arms reproduce. The glob finds every
 // drafting scenario, so none falls back to a pin unnoticed, and a new one must be stated here.
@@ -115,6 +117,6 @@ func TestEveryMuseSparkDraftingScenarioResolvesItsDocumentedAcceptance(t *testin
 		})
 	}
 	if drafting != 21 {
-		t.Errorf("%d drafting Muse scenarios, want 21 (18 resolved from the registry, 3 pinned H100 arms): state any new one in this test", drafting)
+		t.Errorf("%d drafting Muse scenarios, want 21 (18 from the registry, two of them refused, and 3 pinned H100 arms): state any new one in this test", drafting)
 	}
 }
