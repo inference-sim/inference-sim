@@ -11,6 +11,8 @@
 #   ci-light-select.sh groups     the oracle groups the layer reaches, as a JSON array for a matrix: resolve, lower,
 #                                 sched, cache, hicache-metrics. A group is reached when a file its runners, scenarios,
 #                                 goldens or answers are made of changes, or when a file every group shares changes.
+# The metrics goldens name oracle/run_sched.py among the files their run executed, so a change to it reaches the
+# hicache-metrics group as well as sched.
 # A change to Go code alone reaches no group: go test of its package judges it against the committed goldens, and the
 # goldens are compared with SGLang's output by the layer that changes them or the oracle that produces them.
 set -euo pipefail
@@ -37,7 +39,7 @@ groups)
     lower) echo '^(lower/testdata/|oracle/lower/|oracle/serverargs/|oracle/run_scheduler\.py|oracle/scenarios/[^/]*\.json$|oracle/testdata/golden/)' ;;
     sched) echo '^(core/sched/testdata/|oracle/(run_sched|gen_fuzz)\.py|oracle/scenarios-sched/)' ;;
     cache) echo '^(core/cache/testdata/|oracle/(run_cache_iface|run_dfs_order|run_pools|cache_interfaces)\.py|oracle/scenarios/(cache/|[^/]*\.json$)|oracle/scenarios-(cache-iface|dfs-order|pools)/)' ;;
-    hicache-metrics) echo '^(core/(hicache|metrics)/testdata/|oracle/(run_hicache[^/]*|run_host_pools|run_metrics|step_runner)\.py|oracle/scenarios/hicache|oracle/scenarios-(metrics|host-pools)/)' ;;
+    hicache-metrics) echo '^(core/(hicache|metrics)/testdata/|oracle/(run_hicache[^/]*|run_host_pools|run_metrics|run_sched|step_runner)\.py|oracle/scenarios/hicache|oracle/scenarios-(metrics|host-pools)/)' ;;
     esac
   }
   everything=0
