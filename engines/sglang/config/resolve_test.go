@@ -169,3 +169,31 @@ func TestResolveRefusesWhatItDoesNotModelByName(t *testing.T) {
 		t.Errorf("P/D over mooncake: got %v, want NotModelled naming disaggregation_transfer_backend and #18", err)
 	}
 }
+
+// A server's record of its resolved arguments states custom_weight_loader as an empty list; SGLang's
+// resolution gives an unset field the same value, so it is not a setting and resolves like the unset
+// one. A real loader is still refused.
+func TestAnEmptyCustomWeightLoaderIsTheUnsetOne(t *testing.T) {
+	c := readAnswers(t).Cases[0]
+	in := func(extra map[string]any) Input {
+		args := map[string]any{"model_path": "<model>"}
+		for k, v := range extra {
+			args[k] = v
+		}
+		return Input{Args: args, Chip: c.Chip, Model: c.ModelFacts}
+	}
+	want, err := Resolve(in(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Resolve(in(map[string]any{"custom_weight_loader": []any{}}))
+	if err != nil {
+		t.Fatalf("an empty custom_weight_loader was refused: %v", err)
+	}
+	if len(got.Args.CustomWeightLoader) != len(want.Args.CustomWeightLoader) || len(got.Args.CustomWeightLoader) != 0 {
+		t.Errorf("resolved %v, the unset field resolves %v", got.Args.CustomWeightLoader, want.Args.CustomWeightLoader)
+	}
+	if _, err := Resolve(in(map[string]any{"custom_weight_loader": []any{"x.y"}})); err == nil {
+		t.Error("a real custom weight loader was accepted")
+	}
+}
