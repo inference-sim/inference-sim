@@ -41,7 +41,7 @@ func TestSaveResults_InstanceID_InJSON(t *testing.T) {
 	m.RequestTTFTs = map[string]float64{"req1": 10000}
 	m.RequestE2Es = map[string]float64{"req1": 50000}
 	m.RequestITLs = map[string]float64{"req1": 1000}
-	m.AllITLs = []int64{1000}
+	m.AllITLs = SeriesOf(1000)
 	m.RequestSchedulingDelays = map[string]int64{"req1": 500}
 	m.Requests = map[string]RequestMetrics{
 		"req1": {
@@ -91,7 +91,7 @@ func TestSaveResults_InstanceID_Empty(t *testing.T) {
 	m.RequestTTFTs = map[string]float64{"req1": 10000}
 	m.RequestE2Es = map[string]float64{"req1": 50000}
 	m.RequestITLs = map[string]float64{"req1": 1000}
-	m.AllITLs = []int64{1000}
+	m.AllITLs = SeriesOf(1000)
 	m.RequestSchedulingDelays = map[string]int64{"req1": 500}
 	m.Requests = map[string]RequestMetrics{
 		"req1": {
@@ -141,7 +141,7 @@ func TestSaveResults_InstanceID_Default(t *testing.T) {
 	m.RequestTTFTs = map[string]float64{"req1": 10000}
 	m.RequestE2Es = map[string]float64{"req1": 50000}
 	m.RequestITLs = map[string]float64{"req1": 1000}
-	m.AllITLs = []int64{1000}
+	m.AllITLs = SeriesOf(1000)
 	m.RequestSchedulingDelays = map[string]int64{"req1": 500}
 	m.Requests = map[string]RequestMetrics{
 		"req1": {
@@ -217,7 +217,7 @@ func TestSaveResults_NoWallClockFields(t *testing.T) {
 	m.TotalOutputTokens = 100
 	m.RequestTTFTs["req1"] = 10.0
 	m.RequestE2Es["req1"] = 100.0
-	m.AllITLs = []int64{10}
+	m.AllITLs = SeriesOf(10)
 	m.RequestSchedulingDelays["req1"] = 5
 
 	tmpDir := t.TempDir()
@@ -255,7 +255,7 @@ func TestSaveResults_ConservationFields(t *testing.T) {
 		m.RequestE2Es[id] = float64(i * 100)
 		m.RequestSchedulingDelays[id] = int64(i * 5)
 	}
-	m.AllITLs = []int64{10, 20, 30, 40, 50, 60, 70, 80}
+	m.AllITLs = SeriesOf(10, 20, 30, 40, 50, 60, 70, 80)
 
 	tmpDir := t.TempDir()
 	outPath := filepath.Join(tmpDir, "results.json")
@@ -322,7 +322,7 @@ func TestSaveResults_ZeroRuntime_NoInfinity(t *testing.T) {
 	m.RequestTTFTs["r1"] = 100.0
 	m.RequestE2Es["r1"] = 200.0
 	m.RequestITLs["r1"] = 50.0
-	m.AllITLs = []int64{50}
+	m.AllITLs = SeriesOf(50)
 	m.RequestSchedulingDelays["r1"] = 100
 	m.Requests["r1"] = NewRequestMetrics(&Request{ID: "r1", InputTokens: make([]TokenID, 10), OutputTokens: make([]TokenID, 5)}, 0)
 

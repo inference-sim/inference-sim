@@ -403,31 +403,23 @@ func reciprocalPerSecond(ms float64) float64 {
 
 // measuredStepIntervals returns, sorted, the AllITLs entries of the measured requests whose
 // completion is in the window, walking all in step with its owners.
-func measuredStepIntervals(all []int64, owners []StepOwner, inWindow func(int64) bool) []int64 {
-	var out []int64
-	at := 0
-	for _, o := range owners {
-		if o.Phase.Measured() && inWindow(o.CompletionUs) {
-			out = append(out, all[at:at+o.Steps]...)
-		}
-		at += o.Steps
-	}
-	slices.Sort(out)
-	return out
+func measuredStepIntervals(all IntSeries, owners []StepOwner, inWindow func(int64) bool) []int64 {
+	return measuredOwned(all, owners, func(o StepOwner) int { return o.Steps }, inWindow)
 }
 
 // measuredOwned is measuredStepIntervals for a series that StepOwners attributes by count:
 // Metrics.ClientGaps (count ClientGaps) or Metrics.ClientChunkGaps (count ClientChunkGaps). It
 // returns, sorted, the entries of the measured requests whose completion is in the window.
-func measuredOwned(all []int64, owners []StepOwner, count func(StepOwner) int, inWindow func(int64) bool) []int64 {
+func measuredOwned(all IntSeries, owners []StepOwner, count func(StepOwner) int, inWindow func(int64) bool) []int64 {
 	var out []int64
-	at := 0
+	cur := seriesCursor{s: all}
 	for _, o := range owners {
 		n := count(o)
 		if o.Phase.Measured() && inWindow(o.CompletionUs) {
-			out = append(out, all[at:at+n]...)
+			cur.take(n, func(piece []int64) { out = append(out, piece...) })
+		} else {
+			cur.take(n, nil)
 		}
-		at += n
 	}
 	slices.Sort(out)
 	return out

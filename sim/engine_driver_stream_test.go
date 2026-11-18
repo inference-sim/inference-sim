@@ -95,13 +95,13 @@ func TestEngineDriver_StreamIntervalMovesClientITLAndLeavesTheRestAlone(t *testi
 			}
 			return out
 		}
-		if !reflect.DeepEqual(gd.Metrics.AllITLs, bd.Metrics.AllITLs) ||
+		if !reflect.DeepEqual(gd.Metrics.AllITLs.Flatten(), bd.Metrics.AllITLs.Flatten()) ||
 			!reflect.DeepEqual(stepOwners(gd.Metrics.StepOwners), stepOwners(bd.Metrics.StepOwners)) {
 			t.Errorf("interval %d: the per-step interval series moved", s)
 		}
-		if len(gd.Metrics.ClientChunkGaps) >= len(bd.Metrics.ClientChunkGaps) {
+		if gd.Metrics.ClientChunkGaps.Len() >= bd.Metrics.ClientChunkGaps.Len() {
 			t.Errorf("interval %d: %d client chunk gaps, want fewer than the default's %d: one per group",
-				s, len(gd.Metrics.ClientChunkGaps), len(bd.Metrics.ClientChunkGaps))
+				s, gd.Metrics.ClientChunkGaps.Len(), bd.Metrics.ClientChunkGaps.Len())
 		}
 		var clients, steps int
 		for i := range base {

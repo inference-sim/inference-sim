@@ -35,7 +35,7 @@ func measuredFixture() *Metrics {
 	add("r4", PhaseUnset, 2_000_000, 400_000, 2_400_000, 5, 0)
 	add("c1", PhaseProfile, 3_000_000, 50_000, 0, 0, 0)
 	add("w1", PhaseWarmup, 0, 10, 5_000_000, 100, 9)
-	m.AllITLs = []int64{10_000, 20_000, 30_000, 20_000, 40_000}
+	m.AllITLs = SeriesOf(10_000, 20_000, 30_000, 20_000, 40_000)
 	m.StepOwners = []StepOwner{
 		{CompletionUs: 1_100_000, Steps: 1, Phase: PhaseProfile}, // r1
 		{CompletionUs: 1_700_000, Steps: 1, Phase: PhaseProfile}, // r2
@@ -143,7 +143,7 @@ func TestBuildMeasured_WithNoPhaseEveryCompletedRequestIsMeasured(t *testing.T) 
 	delete(m.RequestE2Es, "w1")
 	delete(m.RequestTTFTs, "w1")
 	m.CompletedRequests--
-	m.AllITLs = m.AllITLs[:3]
+	m.AllITLs = SeriesOf(m.AllITLs.Flatten()[:3]...)
 	m.StepOwners = m.StepOwners[:3]
 	legacy := m.BuildOutput("cluster")
 	out, lat := m.buildMeasured()

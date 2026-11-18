@@ -35,7 +35,7 @@ type Metrics struct {
 	RequestTTFTs            map[string]float64 // list of all requests' TTFT
 	RequestITLs             map[string]float64 // list of all requests' ITL
 	RequestSchedulingDelays map[string]int64   // list of all requests' scheduling delays
-	AllITLs                 []int64            // list of all requests' ITL
+	AllITLs                 IntSeries          // list of all requests' ITL
 	RequestE2Es             map[string]float64 // list of all requests' latencies
 	RequestCompletionTimes  map[string]float64 // list of all requests' completion times in ticks
 	RequestStepCounters     []int              // list of all requests' num of steps between scheduled and finished
@@ -88,11 +88,11 @@ type Metrics struct {
 	StepOwners []StepOwner
 	// ClientGaps is every completed request's client-observed inter-token series
 	// (Request.ClientTokenGaps), in append order, attributed to requests by StepOwners.
-	ClientGaps []int64
+	ClientGaps IntSeries
 	// ClientChunkGaps is every completed request's gaps between the chunks streamed to its
 	// client (Request.ClientITL: one per chunk after the first), in append order, attributed
 	// to requests by StepOwners. It is the registry's icl, vllm bench serve's ITL.
-	ClientChunkGaps []int64
+	ClientChunkGaps IntSeries
 	// MeasuredContextOverflows and MeasuredFailures count measured requests that were never
 	// served (RecordUnserved).
 	MeasuredContextOverflows int
@@ -243,7 +243,6 @@ func NewMetrics() *Metrics {
 		CompletedRequests:       0,
 		RequestTTFTs:            make(map[string]float64),
 		RequestITLs:             make(map[string]float64),
-		AllITLs:                 []int64{},
 		RequestE2Es:             make(map[string]float64),
 		RequestCompletionTimes:  make(map[string]float64),
 		RequestSchedulingDelays: make(map[string]int64),
@@ -310,7 +309,7 @@ func (m *Metrics) BuildOutput(instanceID string) MetricsOutput {
 		output.E2EP99Ms = CalculatePercentile(sortedE2Es, 99)
 
 		// --- ITL Calculations --- (a sorted copy: AllITLs stays aligned with StepOwners)
-		sortedITLs := slices.Sorted(slices.Values(m.AllITLs))
+		sortedITLs := slices.Sorted(m.AllITLs.All)
 		output.ITLMeanMs = CalculateMean(sortedITLs)
 		output.ITLP90Ms = CalculatePercentile(sortedITLs, 90)
 		output.ITLP95Ms = CalculatePercentile(sortedITLs, 95)

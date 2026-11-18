@@ -57,7 +57,7 @@ func metricsOf(rows []genRow) *Metrics {
 			m.RequestE2Es[id] = float64(r.e2e)
 			m.RequestCompletionTimes[id] = float64(r.arrival + r.e2e)
 			m.CompletedRequests++
-			m.AllITLs = append(m.AllITLs, r.steps...)
+			m.AllITLs.Add(r.steps)
 			m.StepOwners = append(m.StepOwners, StepOwner{CompletionUs: r.arrival + r.e2e, Steps: len(r.steps), Phase: r.phase})
 		}
 	}
