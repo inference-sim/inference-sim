@@ -534,11 +534,11 @@
  ],
  "kind": "direct",
  "provenance": {
-  "blis_sglang_commit": "2204f5266684b53a9f822f8f0f936f88b390a077+dirty",
-  "lockfile_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "blis_sglang_commit": "af1835ba1112bb4b66791d3b9ab47f029428c012",
+  "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
   "mock_version": "gpu-mock/9+f7e50518d4b2",
   "model": "qwen2.5-0.5b",
-  "model_revision": "r",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
   "oracle_inputs": {
    "oracle/harness.json": "dad4a88c3b69c528ce64aea735f7de22c97eaf086b72a3876fc72fa853d4b268",
    "oracle/mocks.json": "9782b21a0b9428d105a51cde9983b1554f456ef4e7f7ac11c73992f202104173",
@@ -548,7 +548,7 @@
    "oracle/scenarios-mamba-component/boundaries.json": "65c3efe53fb06ab8540325da3f64755afd2510b5c9ee245e0ca04640b9d19625",
    "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
   },
-  "platform": "darwin-arm64",
+  "platform": "linux-x86_64",
   "python": "3.12.16",
   "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
   "scenario_sha256": "65c3efe53fb06ab8540325da3f64755afd2510b5c9ee245e0ca04640b9d19625",
