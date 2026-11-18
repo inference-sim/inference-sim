@@ -262,7 +262,7 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 			note("moe_runner_backend", "flashinfer_trtllm",
 				"the plan names no experts kernel: the substrate prices FlashInfer's TRT-LLM grouped GEMM on block-FP8 experts by its "+
 					"assumed ramp (graded assumed: the engine release lists no sm_100a build to name a code hash); expert selection "+
-					"runs inside the monolithic kernel")
+					"runs inside the kernel only for a DeepSeek-V3-method router")
 		}
 	}
 
@@ -339,7 +339,25 @@ func expertsKernel(a *config.ServerArgs, g *model.Graph) (plan.KernelImpl, plan.
 		if g.Global.WeightDType != model.DTypeFP8 {
 			return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=flashinfer_trtllm on " + string(g.Global.WeightDType) + " experts", Issue: issueLower}
 		}
-		return plan.KernelImpl{}, plan.RoutingFused, nil
+		// SGLang selects the experts inside the kernel only when it can bypass its own top-k
+		// (_can_bypass_trtllm_routing, layers/moe/topk.py:613-650, 794-803@297e54fd). That depends on the
+		// router's method, grouped top-k, correction bias, scoring function, renormalisation and shared
+		// slots, which the model graph does not carry; they are the architecture's own, so the answer is
+		// stated per architecture from the model code, and an architecture not listed is refused by name
+		// rather than guessed:
+		//   - DeepseekV3ForCausalLM, GlmMoeDsaForCausalLM: the DeepSeek-V3 method (grouped top-k with a
+		//     correction bias, renormalised): the kernel takes the logits, selection is fused.
+		//   - DeepseekV4ForCausalLM: sqrt-softplus scoring (config.sqrtsoftplus_log1p), which the bypass
+		//     test refuses: SGLang runs its own top-k, a launch of its own.
+		switch g.Global.Architecture {
+		case "DeepseekV3ForCausalLM", "GlmMoeDsaForCausalLM":
+			return plan.KernelImpl{}, plan.RoutingFused, nil
+		case "DeepseekV4ForCausalLM":
+			return plan.KernelImpl{}, plan.RoutingSeparate, nil
+		}
+		return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=flashinfer_trtllm on " + g.Global.Architecture +
+			" (whether SGLang bypasses its own top-k depends on the router's method, scoring and renormalisation, which the graph does not carry; " +
+			"a plain Renormalize softmax router, such as Qwen3 MoE's, bypasses it only when norm_topk_prob holds)", Issue: issueLower}
 	}
 	return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=" + a.MoeRunnerBackend, Issue: issueLower}
 }
