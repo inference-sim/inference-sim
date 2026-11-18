@@ -9,13 +9,13 @@
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "2d1849fb44540b8af542e6d40dfbde2905784a942567c3470ea1580eaa183e6b",
-      "combined_hash": "2d1849fb44540b8af542e6d40dfbde2905784a942567c3470ea1580eaa183e6b"
+      "hash": "88ad45237e84b11d89e79e925e0189fcdf95341ed65a4e4ece1ac9c81a625e3e",
+      "combined_hash": "88ad45237e84b11d89e79e925e0189fcdf95341ed65a4e4ece1ac9c81a625e3e"
     },
     "registry": {
       "source": "path",
-      "hash": "8988e9e7570e890ecaa0952465eca4c5827e5036dbed2a134b11c3848df1958f",
-      "combined_hash": "8988e9e7570e890ecaa0952465eca4c5827e5036dbed2a134b11c3848df1958f"
+      "hash": "5d818ced48d99d319b87ff6afe1ad03f88992d788b3a95a33158df54d6855144",
+      "combined_hash": "5d818ced48d99d319b87ff6afe1ad03f88992d788b3a95a33158df54d6855144"
     },
     "released_data": false,
     "build": "unreleased"
@@ -375,8 +375,6 @@
           "hardware": [
             "a100-80",
             "a100-sxm",
-            "b200",
-            "b300",
             "gb200-nvl72",
             "gb300",
             "h100",
@@ -729,6 +727,7 @@
     ],
     "unread_files": [
       "acceptance/inferencex-golden-al.yaml",
+      "acceptance/internal-deployment-measurements.yaml",
       "coefficients/cost-model-collectives-inferencex.yaml",
       "coefficients/cost-model-fabric.yaml",
       "coefficients/cost-model-offload-tiers.yaml",
@@ -882,9 +881,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.15.0",
-    "router": "v1.0.0-blis.5",
-    "engine_module": "v0.33.0-blis.1"
+    "substrate": "v0.15.1-0.20261118162118-b6748ca9d757",
+    "router": "v1.0.0-blis.5.0.20261118163949-601ff6e9d37d",
+    "engine_module": "v0.33.0-blis.1.0.20261118171935-af87ac53acaf"
   },
   "window": {
     "start_us": 125000,
@@ -1669,7 +1668,7 @@
         "in_flight_requests_max": 35,
         "in_flight_requests_mean": 18.759417579470774,
         "kv_allocation_failures": 0,
-        "kv_capacity_tokens_per_replica": 4307920,
+        "kv_capacity_tokens_per_replica": 2859717,
         "kv_thrashing_rate": 0,
         "measured_cancelled_requests": 0,
         "measured_context_overflow_requests": 0,
@@ -1761,6 +1760,15 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
+            "Name": "all_reduce_message_limit",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "the custom lane for every message size: the engine runs a message above the custom kernel's size limit on NCCL; the pool's tensor-parallel all-reduce is priced from the custom lane at every size (inference-sim/blis-substrate#392)",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
             "Name": "nontorch_in_budget_bytes_2rank",
             "Primitive": "",
             "Running": "",
@@ -1778,7 +1786,7 @@
           }
         ],
         "evidence_source": "kernel",
-        "evidenced": 119,
+        "evidenced": 128,
         "fallback_or_assumed": [
           {
             "KernelMatch": "unkeyed",
@@ -2133,8 +2141,8 @@
           }
         ],
         "method_counts": {
-          "assumed": 43,
-          "measured": 105,
+          "assumed": 44,
+          "measured": 114,
           "not_charged": 1,
           "vendor_spec": 14
         },
@@ -2184,7 +2192,7 @@
           "sequence-parallel-architecture-known",
           "sequence-parallel-moe-implied"
         ],
-        "total": 163
+        "total": 173
       }
     }
   },

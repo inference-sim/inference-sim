@@ -34,7 +34,7 @@ name: Deliver — Guard Self-Test
 # worse than no check at all. Two consequences, handled rather than accepted:
 #
 #   - Run it MANUALLY (or wait for the weekly run) whenever a reporter guard changes. The last
-#     result is linked from docs/contributing/automated-delivery.md.
+#     result is linked from .github/agent-prompts/automated-delivery.md.
 #   - The half that CAN run on every PR — asserting the phases still use the guard this exercises —
 #     lives in scripts/deliver_guards_test.go, inside the existing `test (scripts)` CI group.
 on:
@@ -124,7 +124,7 @@ jobs:
           # that the NEW guard fires; whether the old one also would is history, and
           # `always() && !success()` is a strict superset either way. A change in this value is the
           # useful signal — it means the platform moved, or the rationale in
-          # `docs/contributing/automated-delivery.md` needs revisiting.
+          # `.github/agent-prompts/automated-delivery.md` needs revisiting.
           if [[ "$OLD" == "true" ]]; then
             echo "::notice::failure() || cancelled() ALSO fired on this cancelled step, which #1684 item 0 predicted it would not. The new guard is a strict superset so nothing regresses, but the rationale in the docs would need revisiting."
           else

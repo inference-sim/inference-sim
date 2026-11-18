@@ -8,6 +8,27 @@ name: deepseek-v4.1-flash-h100-1p1d-dspark5
 engine: {kind: vllm, version: "0.33.0"}
 
 model: deepseek-v4.1-flash
+# The workload's category and thinking mode select the registry's DSpark acceptance profile for
+# this model (InferenceX, coding prompts, thinking on), so the scenario runs without the
+# --speculative-category and --speculative-thinking flags. `blis run` reads only those two terms
+# from this binding; concurrency is the schema's required lane count, not a load.
+workload:
+  replay:
+    scenario: inferencex-agentx-mvp
+    harness_version: 0.12.0
+    corpus:
+      loader: semianalysis_cc_traces_weka_062126_256k
+      format: weka-trace-v7
+      encoding: jsonl
+      source:
+        huggingface: semianalysisai/cc-traces-weka-062126-256k
+        revision: 8fecd2fc56694469f758f0afbbb6335ad3043740
+        file: traces.jsonl
+        split: train
+      sha256: e39cd2ff3eba21d4a3664be51da743ac3d2149a1933898cafc7bfeac8147eeef
+    concurrency: 16
+    category: coding
+    thinking: "on"
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
 
 cluster:

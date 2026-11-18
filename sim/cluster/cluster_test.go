@@ -393,7 +393,7 @@ func TestClusterSimulator_AggregatedMetrics_Correctness(t *testing.T) {
 		sumTTFTs += len(m.RequestTTFTs)
 		sumE2Es += len(m.RequestE2Es)
 		sumITLs += len(m.RequestITLs)
-		sumAllITLs += len(m.AllITLs)
+		sumAllITLs += m.AllITLs.Len()
 		sumITLSum += m.ITLSum
 	}
 	if len(agg.Requests) != sumRequests {
@@ -405,8 +405,8 @@ func TestClusterSimulator_AggregatedMetrics_Correctness(t *testing.T) {
 	if len(agg.RequestE2Es) != sumE2Es {
 		t.Errorf("aggregated len(RequestE2Es): got %d, want %d (sum)", len(agg.RequestE2Es), sumE2Es)
 	}
-	if len(agg.AllITLs) != sumAllITLs {
-		t.Errorf("aggregated len(AllITLs): got %d, want %d (sum)", len(agg.AllITLs), sumAllITLs)
+	if agg.AllITLs.Len() != sumAllITLs {
+		t.Errorf("aggregated len(AllITLs): got %d, want %d (sum)", agg.AllITLs.Len(), sumAllITLs)
 	}
 	if agg.ITLSum != sumITLSum {
 		t.Errorf("aggregated ITLSum: got %d, want %d (sum)", agg.ITLSum, sumITLSum)
@@ -838,7 +838,7 @@ func TestClusterSimulator_Causality_PerInstance(t *testing.T) {
 			totalChecked++
 		}
 
-		for i, itl := range m.AllITLs {
+		for i, itl := range m.AllITLs.Flatten() {
 			if itl < 0 {
 				t.Errorf("negative ITL: instance %d, index %d: %d", idx, i, itl)
 			}
@@ -2149,7 +2149,7 @@ func TestBatchRequestsNotSerialized(t *testing.T) {
 // SimEndedTime is a max over per-instance metrics, each from that INSTANCE's clock, so
 // what keeps it honest is the instance-level skip in ProcessNextEvent; deleting the
 // cluster restore leaves this test green (measured). See INV-3 in
-// docs/contributing/standards/invariants.md.
+// .github/agent-prompts/standards/invariants.md.
 func TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
 	config := func() DeploymentConfig {
 		d := compatDeployment(cengine.SimConfig{

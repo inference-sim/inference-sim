@@ -203,6 +203,20 @@ func (i *InstanceSimulator) TotalKvCapacityTokens() int64 {
 	return s.KVBlocksTotal * int64(s.KVBlockSize)
 }
 
+// ReportedKVCapacityTokens is the KV cache size the instance's engine reports in vLLM's own
+// definition (reportedKVTokens), for the Result's kv_capacity_tokens_per_replica. An engine that
+// reports none gives TotalKvCapacityTokens, the pool's blocks x block size. The scheduler, the
+// autoscaler and the saturation analyzer keep reading TotalKvCapacityTokens, which is the pool.
+func (i *InstanceSimulator) ReportedKVCapacityTokens() int64 {
+	if i.drv == nil {
+		return 0
+	}
+	if t, ok := reportedKVTokens(i.drv.Engine()); ok {
+		return t
+	}
+	return i.TotalKvCapacityTokens()
+}
+
 // KvTokensInUse returns current KV cache occupancy in tokens.
 // Returns 0 when the KV cache is not yet initialized.
 func (i *InstanceSimulator) KvTokensInUse() int64 {
@@ -322,15 +336,20 @@ func (i *InstanceSimulator) LatencyTotals() LatencyTotals {
 	if m == nil || m.CompletedRequests == 0 {
 		return LatencyTotals{}
 	}
-	ids := make([]string, 0, len(m.RequestITLs))
-	for id := range m.RequestITLs {
+	// TTFT is summed over every completed request, ITL over those that have a sample: a request
+	// with fewer than two output tokens has a TTFT and no ITL (#1894), as LatencyStats counts them.
+	ids := make([]string, 0, len(m.RequestE2Es))
+	for id := range m.RequestE2Es {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
 	t := LatencyTotals{Completed: m.CompletedRequests, InTokens: int64(m.TotalInputTokens), OutTokens: int64(m.TotalOutputTokens)}
 	for _, id := range ids {
-		t.ITLSumUs += m.RequestITLs[id]
 		t.TTFTSumUs += m.RequestTTFTs[id]
+		if itl, ok := m.RequestITLs[id]; ok {
+			t.ITLSumUs += itl
+			t.ITLCount++
+		}
 	}
 	return t
 }
@@ -406,7 +425,7 @@ func (i *InstanceSimulator) ConsumeWarmUpRequest() {
 }
 
 // validInstanceTransitions maps valid source → target pairs for instance lifecycle.
-// This table IS INV-14 (see docs/contributing/standards/invariants.md#inv-14): the
+// This table IS INV-14 (see .github/agent-prompts/standards/invariants.md#inv-14): the
 // legal edge set, which is also monotone — every edge advances the instance along
 // Scheduling < Loading < WarmingUp < Active < Draining < Terminated and none regresses.
 // Adding a backward edge here fails TestInstanceStateMachine_NoBackwardTransitions.
@@ -466,6 +485,10 @@ func (i *InstanceSimulator) ReleaseHeldKV(req *sim.Request, now int64) {
 	}
 	i.drv.ReleaseHandoff(req, now)
 }
+
+// HandoffAt is where this instance's engine says req's held KV sits (engine.Handoff.At), in its
+// pool's numbering; nil when it states nothing.
+func (i *InstanceSimulator) HandoffAt(req *sim.Request) *plan.Endpoint { return i.drv.HandoffAt(req) }
 
 // KVBlocksOf returns the GPU blocks req holds on this instance (the store's own slice).
 func (i *InstanceSimulator) KVBlocksOf(req *sim.Request) []int64 {
@@ -540,7 +563,7 @@ func (i *InstanceSimulator) setTierPriced(f func(id engine.TransferID, demand ke
 }
 
 // setPeerWritePriced installs the cluster's handling of a WRITE to a peer: it joins the link arbiter.
-func (i *InstanceSimulator) setPeerWritePriced(f func(id engine.TransferID, demand kernel.TransferDemand, at int64)) {
+func (i *InstanceSimulator) setPeerWritePriced(f func(id engine.TransferID, request string, demand kernel.TransferDemand, at int64)) {
 	if i.drv != nil {
 		i.drv.OnPeerWritePriced = f
 	}

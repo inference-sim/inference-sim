@@ -12,17 +12,17 @@ import (
 
 // TestResultFieldMap_EveryMetricsOutputFieldHasAHome is #1871's acceptance criterion that
 // every field of the MetricsOutput JSON has a home in the Result or is listed as dropped with
-// its reason: the docs/guide/results.md table names each field, and a field added to
+// its reason: the testdata/result-field-map.md table names each field, and a field added to
 // MetricsOutput without a row fails here.
 func TestResultFieldMap_EveryMetricsOutputFieldHasAHome(t *testing.T) {
-	data, err := os.ReadFile("../docs/guide/results.md")
+	data, err := os.ReadFile("../testdata/result-field-map.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 	doc := string(data)
 	start, end := strings.Index(doc, "<!-- result-field-map -->"), strings.Index(doc, "<!-- /result-field-map -->")
 	if start < 0 || end < start {
-		t.Fatal("docs/guide/results.md has no result-field-map table")
+		t.Fatal("testdata/result-field-map.md has no result-field-map table")
 	}
 	mapped := map[string]bool{}
 	cell := regexp.MustCompile("`([a-z0-9_]+)`")
@@ -88,7 +88,7 @@ func TestResultFieldMap_EveryNamedHomeExistsInAnEmittedResult(t *testing.T) {
 		"profiling_start":                      "an agentic replay's explicit window (frame.phases.measured.start)",
 		"profiling_end":                        "an agentic replay's explicit window (frame.phases.measured.stop)",
 	}
-	data, err := os.ReadFile("../docs/guide/results.md")
+	data, err := os.ReadFile("../testdata/result-field-map.md")
 	if err != nil {
 		t.Fatal(err)
 	}

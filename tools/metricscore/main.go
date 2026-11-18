@@ -448,7 +448,7 @@ func main() {
 	fmt.Println("calculate_metrics's means over those requests. The sent prompt lengths are verified")
 	fmt.Println("equal to those targets per point by testdata/inferencex-workloads/prompt-lengths.json; a")
 	fmt.Println("point it does not verify carries a gap (-gaps). Not reproduced: run settings")
-	fmt.Println("blis-schemas cannot express. See docs/kernel-exclusive/APPLES-TO-APPLES.md.")
+	fmt.Println("blis-schemas cannot express. See docs/kernel-exclusive/APPLES-TO-APPLES.md (removed by X29; read it at tag v0.18.0).")
 	fmt.Println()
 	fmt.Println("Tiers, decided per sweep from the coverage gaps (-gaps), the worst point deciding:")
 	fmt.Println("  STRICT                every point has an engine log; every setting it passed is carried;")

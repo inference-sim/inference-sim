@@ -128,9 +128,11 @@ func (d *EngineDriver) LandRemote(req *Request, now int64) {
 	}
 	req.State = StateQueued
 	// A remote-prefilled request's prompt was looked up on its prefill engine: none is recorded here.
-	d.reqs[req.ID] = &driverReq{req: req, remote: true, lookedUp: true}
+	dr := &driverReq{req: req, remote: true, lookedUp: true}
+	d.reqs[req.ID] = dr
 	if req.Deadline > 0 && req.Deadline <= d.Horizon {
-		d.schedule(&driverTimeoutEvent{at: req.Deadline, req: req})
+		dr.timeout = &driverTimeoutEvent{at: req.Deadline, req: req}
+		d.schedule(dr.timeout)
 	}
 	d.stepAfterArrivals(now)
 }
@@ -190,6 +192,15 @@ func (d *EngineDriver) HandoffBlocks(req *Request) []int64 {
 		panic(fmt.Sprintf("engine driver: %s left no KV for a pull", req.ID))
 	}
 	return h.Blocks
+}
+
+// HandoffAt is where the engine says req's held KV sits (engine.Handoff.At: the node and rack of
+// the rank that computed it, in the prefill pool's numbering), nil when it states nothing.
+func (d *EngineDriver) HandoffAt(req *Request) *plan.Endpoint {
+	if h, ok := d.holds[req.ID]; ok {
+		return h.At
+	}
+	return nil
 }
 
 // ReleaseHandoff ends the hold of req's prefill KV at now: the pull completed, or the hold ran out.

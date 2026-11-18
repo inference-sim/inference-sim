@@ -359,8 +359,22 @@ func okValidate(r rules.EngineRules) bool {
 // through blis-schemas' engine.Engine contract; the host's types are its own. The offline
 // scoring tools, which open kernels through blis-vllm's adapter themselves, live under tools/.
 func TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite(t *testing.T) {
+	onlyThroughBuildSite(t, "github.com/inference-sim/blis-vllm", "cmd/engine_build.go")
+}
+
+// The same rule for blis-sglang: the SGLang engine is built in cmd/sglang_engine.go, the file
+// newContractEngine hands an sglang spec to, and no other package or file under sim/ or cmd/
+// imports a blis-sglang package.
+func TestTheBinaryReachesBlisSGLangOnlyThroughTheBuildSite(t *testing.T) {
+	onlyThroughBuildSite(t, "github.com/inference-sim/blis-sglang", "cmd/sglang_engine.go")
+}
+
+// onlyThroughBuildSite checks that no package the binary links, and no non-test file under sim/
+// or cmd/, imports a package of module except cmd's file site.
+func onlyThroughBuildSite(t *testing.T, module, site string) {
+	t.Helper()
 	allowed := map[string]bool{
-		"github.com/inference-sim/inference-sim/cmd": true, // cmd/engine_build.go, checked per file below
+		"github.com/inference-sim/inference-sim/cmd": true, // checked per file below
 	}
 	out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}|{{join .Imports \",\"}}", "..").Output()
 	if err != nil {
@@ -374,8 +388,8 @@ func TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite(t *testing.T) {
 		}
 		linked++
 		for _, imp := range strings.Split(imports, ",") {
-			if strings.HasPrefix(imp, "github.com/inference-sim/blis-vllm") && !allowed[pkg] {
-				t.Errorf("%s imports %s; the binary reaches blis-vllm only through cmd/engine_build.go", pkg, imp)
+			if strings.HasPrefix(imp, module) && !allowed[pkg] {
+				t.Errorf("%s imports %s; the binary reaches %s only through %s", pkg, imp, module, site)
 			}
 		}
 	}
@@ -384,7 +398,7 @@ func TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite(t *testing.T) {
 	}
 
 	// Under sim/ and cmd/, in every package and not only the binary's, only the build site.
-	sites := map[string]bool{"cmd/engine_build.go": true}
+	sites := map[string]bool{site: true}
 	seen := map[string]bool{}
 	for _, tree := range []string{"cmd", "sim"} {
 		err := filepath.WalkDir(filepath.Join("..", tree), func(f string, d fs.DirEntry, err error) error {
@@ -406,10 +420,10 @@ func TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite(t *testing.T) {
 			}
 			rel = filepath.ToSlash(rel)
 			for _, imp := range parsed.Imports {
-				if strings.HasPrefix(strings.Trim(imp.Path.Value, `"`), "github.com/inference-sim/blis-vllm") {
+				if strings.HasPrefix(strings.Trim(imp.Path.Value, `"`), module) {
 					seen[rel] = true
 					if !sites[rel] {
-						t.Errorf("%s imports %s; only cmd/engine_build.go may", rel, imp.Path.Value)
+						t.Errorf("%s imports %s; only %s may", rel, imp.Path.Value, site)
 					}
 				}
 			}
@@ -421,7 +435,7 @@ func TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite(t *testing.T) {
 	}
 	for site := range sites {
 		if !seen[site] {
-			t.Errorf("non-vacuity: %s imports no blis-vllm package, so the per-file check sees nothing", site)
+			t.Errorf("non-vacuity: %s imports no %s package, so the per-file check sees nothing", site, module)
 		}
 	}
 }

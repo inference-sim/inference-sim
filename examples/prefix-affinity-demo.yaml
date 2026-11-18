@@ -38,7 +38,7 @@
 # Expected: prefix-affinity.yaml concentrates shared-prefix requests onto
 # fewer instances (visible in Target Distribution); load-only.yaml spreads
 # them across instances. Both configurations are llm-d EndpointPickerConfigs;
-# see docs/guide/routing.md.
+# see the design (https://inference-sim.github.io/blis-design/).
 #
 # Reading the result: with a single hot prefix, affinity sends almost every
 # shared-prefix request to one instance. Its prefix cache then serves them all

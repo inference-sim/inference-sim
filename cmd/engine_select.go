@@ -31,7 +31,7 @@ const engineKindVLLM = "vllm"
 // builtEngineReleases maps each engine kind this build registers to the upstream release it
 // runs. It is the list stack.json records (LIF-6); one release per kind.
 func builtEngineReleases() map[string]string {
-	return map[string]string{engineKindVLLM: "0.33.0"}
+	return map[string]string{engineKindVLLM: "0.33.0", engineKindSGLang: "0.5.23"}
 }
 
 // lastReleaseRunning maps an engine release this build does not run to the newest

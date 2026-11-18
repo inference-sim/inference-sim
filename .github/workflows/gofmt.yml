@@ -17,10 +17,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version-file: go.mod
-          cache: false
+        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
 
       - name: gofmt every tracked Go file
         run: bash scripts/gofmt-check.sh

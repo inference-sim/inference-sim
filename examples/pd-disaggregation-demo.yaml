@@ -50,7 +50,7 @@
 #                             tokens reach nonCachedTokens (llm-d-router
 #                             deploy/config/pd-epp-config.yaml)
 #
-#   See docs/guide/routing.md for the supported plugins.
+#   See the design (https://inference-sim.github.io/blis-design/) for the supported plugins.
 
 priority:
   policy: constant

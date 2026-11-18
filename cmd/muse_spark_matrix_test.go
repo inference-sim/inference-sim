@@ -131,8 +131,11 @@ func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 // events reach the router's precise-prefix producer and name the chains the router was shown.
 //
 // Why a cache-ignoring router must miss here, whatever the step times. The KV pool is set to
-// the smallest the scenario serves (gpu_memory_utilization 0.56: one maximum-length request of
-// 262,144 tokens must fit, so the pool is not much larger), and the eight contexts are 40,960 tokens
+// the smallest the scenario serves (gpu_memory_utilization 0.657: one maximum-length request of
+// 262,144 tokens must fit, so the pool is not much larger; it was 0.56 until blis-vllm#247 put
+// the vision tower's bytes in the resident weights and 0.567 until blis-substrate#379 put Muse Spark's
+// per-layer RoPE tables there too, each of which leaves the smaller pool too small for four
+// contexts, where precise routing and load-only routing both hit 0.37), and the eight contexts are 40,960 tokens
 // each: 331,776 tokens in all, more than one replica holds, while the four a replica serves under
 // affinity are 166,000 and fit. A router that places a turn without regard to the cache sends
 // turns of all eight agents to one replica, whose pool then evicts the least recently used
@@ -163,7 +166,7 @@ func TestMuseSparkPrecisePrefixRoutingFollowsTheCache(t *testing.T) {
 		routedName = "muse-h200-ib-tep8-dspark-routed.yaml"
 		picker     = "endpoint_picker_config: router/precise-affinity-flow-control.yaml"
 		fullPool   = "gpu_memory_utilization: 0.9"
-		smallPool  = "gpu_memory_utilization: 0.56"
+		smallPool  = "gpu_memory_utilization: 0.657"
 	)
 	routed, err := os.ReadFile(filepath.Join(src, routedName))
 	if err != nil {

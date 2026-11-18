@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/sirupsen/logrus"
 
@@ -58,7 +57,7 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 		refusePriority("the --policy-config priority.slo_priorities override would be ignored")
 	}
 	registerContractEngines()
-	scenarioPath := filepath.Join(kernelScenarioDir, kernelScenario)
+	scenarioPath := engineScenarioPath()
 	// The run opens its catalog and registry once (runData) and every engine of the run reads
 	// that Data, so the Result's hashes and its one selected-entry report cover the lookups of
 	// every pool's engine (blis-vllm#90, design §3.3, VAL-6).

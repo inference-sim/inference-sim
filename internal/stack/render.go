@@ -24,12 +24,6 @@ import (
 var RenderedDocs = []string{
 	"CLAUDE.md",
 	"README.md",
-	"docs/index.md",
-	"docs/getting-started/installation.md",
-	"docs/getting-started/quickstart.md",
-	"docs/getting-started/tutorial.md",
-	"docs/guide/latency-models.md",
-	"docs/reference/configuration.md",
 }
 
 var blockRE = regexp.MustCompile(`(?s)<!-- BEGIN GENERATED from stack\.json: ([a-z-]+) -->\n(.*?)<!-- END GENERATED -->`)

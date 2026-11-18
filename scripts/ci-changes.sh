@@ -119,7 +119,7 @@ classify() {
     testdata/recurrent/*)                 mark cmd ;;
     testdata/goldendataset.json)          mark cluster llmd root ;;
     testdata/README.md)                   mark other ;;
-    docs/*|README.md|CONTRIBUTING.md|mkdocs.yml)
+    README.md|CONTRIBUTING.md)
                                           mark core cluster cmd scripts stack ;;
     AGENTS.md)                            mark core cluster cmd scripts stack workload other ;;
     CLAUDE.md)                            mark core cluster cmd scripts stack workload other claudemd ;;
@@ -137,9 +137,10 @@ classify() {
     Dockerfile|k8s/*|.github/archon-trigger-anchor.patch|.archon-version)
                                           mark scripts ;;
     .claude/*)                            mark scripts cmd ;;
+    .github/agent-prompts/*)              mark scripts ;;
     # Deleting these left every job green (scratch run with the whole tree present otherwise).
     LICENSE|.gitignore|.github/ISSUE_TEMPLATE/*|.github/pull_request_template.md|\
-    .github/docs-requirements.txt|specs/*)
+    specs/*)
                                           hit=1 ;;
   esac
   [ "$hit" -eq 1 ]

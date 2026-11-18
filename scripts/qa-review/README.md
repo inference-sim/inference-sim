@@ -181,7 +181,7 @@ prompt-injection surface into this LLM; the filter keeps only comments whose
 author holds write access (plus this repo's automation) and a read failure
 surfaces as an `COMMENT-READ-FAILED` marker rather than an empty thread. See the
 comment-text section in
-[docs/contributing/standards/agent-trust.md](../../docs/contributing/standards/agent-trust.md).
+[.github/agent-prompts/standards/agent-trust.md](../../.github/agent-prompts/standards/agent-trust.md).
 
 The tool loop has a finite budget (`MAX_TOOL_TURNS = 24`). Exhausting it is a
 normal outcome, not an error, so the loop **degrades instead of crashing**: it

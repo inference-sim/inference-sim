@@ -12,7 +12,7 @@ Invoke the `/pr-review-toolkit:review-pr` skill with the following BLIS-specific
 
 --- ARCHON CONTEXT (read-only — never run archon yourself) ---
 
-Check if `/archon-pr-review` output exists in a previous PR comment (triggered manually by a contributor or maintainer). Do NOT run archon yourself — just read the output if it exists. If it does, incorporate its verdict (FAST-TRACK / REALIZES / EXCEEDS / CONFLICTS) and findings per @docs/contributing/archon/pr-review-context.md. If it doesn't exist yet, note this but proceed.
+Check if `/archon-pr-review` output exists in a previous PR comment (triggered manually by a contributor or maintainer). Do NOT run archon yourself — just read the output if it exists. If it does, incorporate its verdict (FAST-TRACK / REALIZES / EXCEEDS / CONFLICTS) and findings per @.github/agent-prompts/archon/pr-review-context.md. If it doesn't exist yet, note this but proceed.
 
 Evaluate whether the PR fully and correctly addresses all requirements and reviewer concerns. In particular, assess:
 
@@ -22,13 +22,13 @@ Modularity and clarity of API boundaries/contracts
 Behavioral integrity, including both behavioral and non-structural tests
 Test coverage and quality (not just structure, but meaningful validation of behavior)
 Performance implications and potential regressions
-Adherence to our @docs/contributing/standards
+Adherence to our @.github/agent-prompts/standards
 Documentation quality, completeness, and accuracy (both user-facing and developer-facing)
 All reviews and comments in this PR are addressed
 
 --- 10 CODE REVIEW PERSPECTIVES ---
 
-Review from the 10 code review perspectives defined in @docs/contributing/perspectives.md (Code Review Perspectives section). Each catches issues the others miss: substance, code quality, test quality, UX, automated reviewer sim, DES expert, vLLM expert, distributed platform, performance, security.
+Review from the 10 code review perspectives defined in @.github/agent-prompts/perspectives.md (Code Review Perspectives section). Each catches issues the others miss: substance, code quality, test quality, UX, automated reviewer sim, DES expert, vLLM expert, distributed platform, performance, security.
 
 --- CROSS-PATH PARITY (run / replay) ---
 

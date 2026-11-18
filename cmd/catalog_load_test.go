@@ -185,7 +185,7 @@ func TestCatalogStrictLoad_CommittedFixtureCatalog(t *testing.T) {
 // checkout.
 //
 // Wiring that script into .github/workflows/ci.yml as a `catalog-load` job is a PENDING HUMAN
-// EDIT — the delivery loop's token cannot push workflow files (docs/contributing/automated-delivery.md),
+// EDIT — the delivery loop's token cannot push workflow files (.github/agent-prompts/automated-delivery.md),
 // so the job body is quoted verbatim in the script's header for a human to paste. Until it
 // lands, this test runs on demand rather than on every PR; the unconditional coverage is
 // TestCatalogStrictLoad_CommittedFixtureCatalog over the substrate's catalog.

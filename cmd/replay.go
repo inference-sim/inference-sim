@@ -380,6 +380,9 @@ Example:
 		// deployment: the scenario's offload block is its tiers.
 		kvOffloadCfg := reconcileReplayKVOffload(traceData.Header.KVOffload,
 			!replayRecordsDeployment(traceData.Header, agx != nil))
+		// The decode pool of a P/D replay reconciles its own scenario offload against the same record.
+		decodeOffloadCfg := reconcileReplayDecodeKVOffload(traceData.Header.KVOffload,
+			!replayRecordsDeployment(traceData.Header, agx != nil))
 
 		// Resolve the latency model (single code path shared with runCmd).
 		lr := resolveLatencyConfig(cmd)
@@ -466,7 +469,7 @@ Example:
 		if kernelPD != nil {
 			prefillOverrides, decodeOverrides = kernelPD.overrides()
 			// Each pool sizes and prices the offload by its own kernel, as in runCmd (INV-13).
-			kernelPD.applyOffload(kvOffloadCfg, &prefillOverrides, &decodeOverrides)
+			kernelPD.applyOffload(kvOffloadCfg, decodeOffloadCfg, &prefillOverrides, &decodeOverrides)
 		}
 
 		logrus.Infof("Starting replay with %d KV blocks, horizon=%dticks", totalKVBlocks, replayHorizon)
@@ -475,7 +478,7 @@ Example:
 
 		// Build cluster config (same as runCmd, using replayHorizon instead of simulationHorizon).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/root.go (runCmd
-		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
+		// DeploymentConfig literal). See .github/agent-prompts/standards/invariants.md INV-13.
 		requireKernelCapacity(kernelPD)
 		requirePullPricing(kernelPD, pdTransferContention)
 		scenarioTopology, topologyErr := scenarioEndpointTopology(kernelOpened, kernelPD, numInstances, prefillInstances, decodeInstances)

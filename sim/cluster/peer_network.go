@@ -176,6 +176,22 @@ func (cs *ClusterSimulator) PeerStats() PeerStats {
 	return PeerStats{Sent: cs.peers.sent, Delivered: cs.peers.delivered, Dropped: cs.peers.dropped, LatencyTicks: cs.peers.latency}
 }
 
+// recordP2PWrite notes that a WRITE for the handoff of request (the parent's id, the kv_request_id)
+// started at start, landed at land, and would have taken alone on the fabric. A WRITE of no
+// disaggregated parent (a colocated peer's) is not a handoff and is not recorded.
+func (cs *ClusterSimulator) recordP2PWrite(request string, start, land, alone int64) {
+	p := cs.parentRequests[request]
+	if p == nil {
+		return
+	}
+	if p.P2PWrites == 0 || start < p.P2PWriteStart {
+		p.P2PWriteStart = start
+	}
+	p.P2PWriteLand = max(p.P2PWriteLand, land)
+	p.P2PWriteAloneTicks += alone
+	p.P2PWrites++
+}
+
 // p2pHandoff reports whether parent's P/D handoff goes through vLLM's p2p KV tier: both its prefill
 // and its decode instance are peered (an engine with a p2p tier and an address). Their addresses are
 // returned. A handoff whose instances are not both peered goes through the P/D connector's pull.

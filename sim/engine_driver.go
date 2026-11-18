@@ -189,8 +189,10 @@ type EngineDriver struct {
 	OnTierPriced func(id engine.TransferID, demand kernel.TransferDemand, at int64)
 	// OnPeerWritePriced, when set, receives an engine's WRITE to a peer at the instant it starts,
 	// with its demand: the host shares link capacity with it and reports it landed
-	// (PeerWriteLanded). Unset, a WRITE takes its demand alone (TierTicks).
-	OnPeerWritePriced func(id engine.TransferID, demand kernel.TransferDemand, at int64)
+	// (PeerWriteLanded). request is the request the WRITE serves (engine.Transfer.Request): for a
+	// disaggregated handoff over the p2p tier, the kv_request_id the orchestrator allocated. Unset,
+	// a WRITE takes its demand alone (TierTicks).
+	OnPeerWritePriced func(id engine.TransferID, request string, demand kernel.TransferDemand, at int64)
 	// peerRouter carries the engine's peer messages (engine.Peered); peerWrites are the WRITEs in
 	// flight through OnPeerWritePriced.
 	peerRouter PeerRouter
@@ -210,6 +212,8 @@ type EngineDriver struct {
 
 type driverReq struct {
 	req *Request
+	// timeout is the request's pending client-deadline event, nil without one (dropReq).
+	timeout *driverTimeoutEvent
 	// prefillLen is the runner's prefill_len for the request, its prompt plus the outputs before
 	// its last admission (states.py:104-110@5df63a72); 0 until the driver times a batch for it.
 	prefillLen   int
@@ -518,9 +522,11 @@ func (e *driverQueuedEvent) run(d *EngineDriver) {
 	d.Metrics.TotalInputTokens += len(req.InputTokens)
 	d.Metrics.EngineAccepted++
 	req.State = StateQueued
-	d.reqs[req.ID] = &driverReq{req: req}
+	dr := &driverReq{req: req}
+	d.reqs[req.ID] = dr
 	if req.Deadline > 0 && req.Deadline <= d.Horizon {
-		d.schedule(&driverTimeoutEvent{at: req.Deadline, req: req})
+		dr.timeout = &driverTimeoutEvent{at: req.Deadline, req: req}
+		d.schedule(dr.timeout)
 	}
 	d.stepAfterArrivals(e.at)
 }
@@ -663,7 +669,7 @@ func (e *driverTimeoutEvent) Timestamp() int64 { return e.at }
 func (e *driverTimeoutEvent) Priority() int    { return PriorityTimeout }
 func (e *driverTimeoutEvent) run(d *EngineDriver) {
 	req := e.req
-	if req.State == StateTimedOut || e.dead(d) {
+	if req == nil || req.State == StateTimedOut || e.dead(d) {
 		return
 	}
 	if err := d.eng.Finish(req.ID, engine.FinishTimeout, e.at); err != nil {
@@ -673,7 +679,7 @@ func (e *driverTimeoutEvent) run(d *EngineDriver) {
 	req.State = StateTimedOut
 	d.Metrics.TimedOutRequests++
 	d.Metrics.RecordTimeout(req)
-	delete(d.reqs, req.ID)
+	d.dropReq(req.ID)
 	d.done(req, e.at)
 	d.kick(e.at)
 }
@@ -681,7 +687,20 @@ func (e *driverTimeoutEvent) run(d *EngineDriver) {
 // dead reports a timeout whose request already left the engine: completed, or failed by the
 // engine before it emitted anything (finish).
 func (e *driverTimeoutEvent) dead(d *EngineDriver) bool {
-	return e.req.State == StateCompleted || d.unserved[e.req.ID]
+	return e.req == nil || e.req.State == StateCompleted || d.unserved[e.req.ID]
+}
+
+// dropReq removes a request from the driver's books and lets go of its pending deadline event's
+// hold on it. The event stays in the queue until its time, which for a request that completed long
+// before can be hours of simulated time away (aiperf's default client timeout is 6 h); a held
+// *Request keeps its prompt alive for all of it, which grew a long agentic replay's memory without
+// bound (inference-sim#2201).
+func (d *EngineDriver) dropReq(id string) {
+	if r := d.reqs[id]; r != nil && r.timeout != nil {
+		r.timeout.req = nil
+		r.timeout = nil
+	}
+	delete(d.reqs, id)
 }
 
 // kick schedules as many batches as the engine admits at now, each starting when the GPU is
@@ -998,9 +1017,13 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 		d.kvEventSink(end, events)
 	}
 	tokenAt := end + d.cfg.OutputTokenProcessingTime
-	firsts := map[string]bool{}
-	for _, id := range res.FirstTokens {
-		firsts[id] = true
+	// The ids of the step's first tokens; most steps have none, and a nil map reads as empty.
+	var firsts map[string]bool
+	if len(res.FirstTokens) > 0 {
+		firsts = make(map[string]bool, len(res.FirstTokens))
+		for _, id := range res.FirstTokens {
+			firsts[id] = true
+		}
 	}
 	ids := make([]string, 0, len(res.Emitted))
 	for id := range res.Emitted {
@@ -1012,7 +1035,8 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 		if r == nil {
 			continue
 		}
-		n := res.Emitted[id]
+		emittedNow := res.Emitted[id]
+		n := emittedNow
 		grouped := d.cfg.StreamInterval > 1
 		firstStep := false
 		if n > 0 {
@@ -1059,17 +1083,17 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 		}
 		if !grouped && firstStep {
 			// The first chunk is the step's tokens, the first output and whatever else it emitted.
-			r.req.ClientFirstTokens = res.Emitted[id]
+			r.req.ClientFirstTokens = emittedNow
 		}
 		if grouped {
 			stepGap := int64(0)
 			if n > 0 {
 				stepGap = r.req.ITL[len(r.req.ITL)-1]
 			}
-			d.deliver(r, res.Emitted[id], end, firstStep, stepGap)
+			d.deliver(r, emittedNow, end, firstStep, stepGap)
 		}
-		r.emitted += res.Emitted[id]
-		if res.Emitted[id] > 0 {
+		r.emitted += emittedNow
+		if emittedNow > 0 {
 			if rm, ok := d.Metrics.Requests[id]; ok {
 				rm.emittedTokens = r.emitted
 				d.Metrics.Requests[id] = rm
@@ -1183,7 +1207,7 @@ func (d *EngineDriver) finish(r *driverReq, f engine.Finished, end int64) {
 	d.Metrics.DroppedUnservable++
 	d.Metrics.RecordUnserved(req, false)
 	delete(d.Metrics.Requests, req.ID)
-	delete(d.reqs, req.ID)
+	d.dropReq(req.ID)
 	if d.unserved == nil {
 		d.unserved = map[string]bool{}
 	}
@@ -1236,7 +1260,7 @@ func (d *EngineDriver) complete(r *driverReq, f engine.Finished, end int64) {
 		Req: req, TTFT: req.FirstTokenTime, OutputTokens: f.OutputTokens, E2E: e2e, ITL: itl,
 		Steps: d.stepIdx - r.scheduledIdx, Clock: clock, Overhead: overhead,
 	})
-	delete(d.reqs, req.ID)
+	d.dropReq(req.ID)
 	d.done(req, end)
 }
 
@@ -1263,7 +1287,7 @@ func (d *EngineDriver) Evict(req *Request, now int64) bool {
 	}
 	d.noteFreed(req.ID)
 	req.State = StateCompleted
-	delete(d.reqs, req.ID)
+	d.dropReq(req.ID)
 	d.kick(now)
 	return true
 }
@@ -1286,7 +1310,7 @@ func (d *EngineDriver) DrainWaiting(now int64) []*Request {
 			panic(fmt.Sprintf("engine driver: the engine drained %s, which the driver does not hold", id))
 		}
 		out = append(out, r.req)
-		delete(d.reqs, id)
+		d.dropReq(id)
 	}
 	d.rearmWake(now)
 	return out

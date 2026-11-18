@@ -185,7 +185,10 @@ func (cs *ClusterSimulator) Schedule(at int64, priority int, daemon bool, fn fun
 		cs.daemonQueued++
 	}
 	cs.schedule(ev, &cs.routerSender)
-	return func() { ev.cancelled = true }
+	// A cancelled event stays in the queue until its time, which can be the end of a long run (a
+	// client deadline hours out), so cancelling drops the closure: it holds the request, its prompt
+	// and its router flight (inference-sim#2201).
+	return func() { ev.cancelled, ev.fn = true, nil }
 }
 
 // SetGateway installs the gateway. It must be called before Run.
@@ -303,7 +306,7 @@ func (cs *ClusterSimulator) evictParent(parent *ParentRequest) bool {
 		if inst == nil || !inst.EvictRequest(prefill, cs.clock) {
 			return false // not yet in its prefill engine's queue
 		}
-		delete(cs.pendingPrefillCompletions, parent.PrefillSubReqID)
+		cs.clearPendingPrefill(parent.PrefillSubReqID)
 		cs.releaseInFlight(prefill.AssignedInstance)
 	case parent.DecodeWaiting != nil:
 		// Waiting for decode KV: the decode engine holds the handoff and has not started its pull
@@ -337,7 +340,7 @@ func (cs *ClusterSimulator) evictParent(parent *ParentRequest) bool {
 		if inst == nil || !inst.EvictRequest(decode, cs.clock) {
 			return false
 		}
-		delete(cs.pendingDecodeCompletions, parent.DecodeSubReqID)
+		cs.clearPendingDecode(parent.DecodeSubReqID)
 		cs.releaseInFlight(string(parent.DecodeInstanceID))
 		cs.pdEvictedAfterPrefill++
 	}
@@ -420,7 +423,7 @@ func (cs *ClusterSimulator) dispatchDisaggregated(req *sim.Request, p Placement)
 		prefillSubReq.MaxOutputLen = 1
 	}
 	parent.PrefillSubReq = prefillSubReq
-	cs.pendingPrefillCompletions[prefillSubReq.ID] = parent.ID
+	cs.setPendingPrefill(prefillSubReq.ID, parent.ID)
 	cs.advanceRequest(req, sim.LifecyclePrefillQueued)
 	cs.schedule(&PrefillRoutingEvent{time: cs.clock, request: prefillSubReq, parentReq: parent}, &cs.routerSender)
 	cs.gateway.OnDispatched(req, cs.clock)

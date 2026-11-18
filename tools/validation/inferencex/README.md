@@ -102,4 +102,4 @@ tests are not run in CI. Run them by hand.
 ## See also
 
 - blis-substrate, file docs/registry/fitting-principles.md (in that repository): how coefficients are fitted and held out.
-- `docs/contributing/cross-repo-changes.md` (here and in each BLIS repo): the cross-repository change process.
+- `.github/agent-prompts/cross-repo-changes.md` (here and in each BLIS repo): the cross-repository change process.

@@ -69,7 +69,7 @@ func TestLoadReplaySpec_AcceptsTheSubstratesCommentKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := func(rel string) string { return filepath.Join(root, rel) }
-	for _, rel := range []string{"docs/contracts/examples/workload-replay.yaml", "catalog/workloads/agentx-mvp.yaml"} {
+	for _, rel := range []string{"contracts/testdata/examples/workload-replay.yaml", "catalog/workloads/agentx-mvp.yaml"} {
 		t.Run(filepath.Base(rel), func(t *testing.T) {
 			r, err := loadReplaySpec(dir(rel))
 			if err != nil {

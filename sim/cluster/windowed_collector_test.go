@@ -22,13 +22,13 @@ func TestWindowedCollector_KeepsTheLastTicksAndTheTicksOwnLatency(t *testing.T) 
 	state := func(clock int64) *sim.ClusterState { return &sim.ClusterState{Clock: clock} }
 
 	// Tick 1 (t=1s): 10 requests completed so far, mean TTFT 100 µs, mean ITL 10 µs.
-	totals["i0"] = LatencyTotals{Completed: 10, TTFTSumUs: 1000, ITLSumUs: 100, InTokens: 1000, OutTokens: 500}
+	totals["i0"] = LatencyTotals{Completed: 10, TTFTSumUs: 1000, ITLSumUs: 100, ITLCount: 10, InTokens: 1000, OutTokens: 500}
 	got := w.Collect(state(1_000_000))
 	if r := got[0].Replicas[0]; r.TTFT != 100 || r.ITL != 10 || r.DispatchRate != 10 || r.AvgInTokens != 100 {
 		t.Errorf("tick 1: %+v, want TTFT 100, ITL 10, 10 req/s, 100 input tokens", r)
 	}
 	// Tick 2 (t=2s): 4 more requests, each TTFT 500 and ITL 50: the tick's own mean, not the cumulative.
-	totals["i0"] = LatencyTotals{Completed: 14, TTFTSumUs: 3000, ITLSumUs: 300, InTokens: 1400, OutTokens: 700}
+	totals["i0"] = LatencyTotals{Completed: 14, TTFTSumUs: 3000, ITLSumUs: 300, ITLCount: 14, InTokens: 1400, OutTokens: 700}
 	got = w.Collect(state(2_000_000))
 	if r := got[0].Replicas[0]; r.TTFT != 500 || r.ITL != 50 || r.DispatchRate != 4 {
 		t.Errorf("tick 2: %+v, want TTFT 500, ITL 50, 4 req/s (this tick's completions)", r)
@@ -72,5 +72,27 @@ func TestWindowedCollector_ClusterWiring(t *testing.T) {
 	d.CollectorWindowSize = -1
 	if newTestCluster(d, NewSliceRequestSource(nil), nil).startupErr == nil {
 		t.Error("a negative window was accepted")
+	}
+}
+
+// A one-token completion has a TTFT and no ITL sample (#1894). In a tick that completes one of each,
+// the window's TTFT is the mean over both and its ITL is the multi-token request's alone: the
+// totals the instance reports carry the TTFT of the one-token request and count only one ITL
+// sample, so neither mean is divided by the wrong population (#2217).
+func TestWindowedCollector_AOneTokenCompletionCountsInTTFTAndNotInITL(t *testing.T) {
+	m := sim.NewMetrics()
+	m.CompletedRequests = 2
+	m.RequestE2Es = map[string]float64{"one": 300, "many": 900}
+	m.RequestTTFTs = map[string]float64{"one": 100, "many": 300}
+	m.RequestITLs = map[string]float64{"many": 50}
+	inst := &InstanceSimulator{drv: &sim.EngineDriver{Metrics: m}}
+	tot := inst.LatencyTotals()
+	if tot.Completed != 2 || tot.TTFTSumUs != 400 || tot.ITLSumUs != 50 || tot.ITLCount != 1 {
+		t.Fatalf("totals %+v, want 2 completed, TTFT sum 400, ITL sum 50 over 1 sample", tot)
+	}
+	w := NewWindowedCollector(stubCollector{}, 3, func(string) (LatencyTotals, bool) { return tot, true })
+	got := w.Collect(&sim.ClusterState{Clock: 1_000_000})
+	if r := got[0].Replicas[0]; r.TTFT != 200 || r.ITL != 50 {
+		t.Errorf("window TTFT %v and ITL %v, want 200 (mean over both completions) and 50 (the one ITL sample)", r.TTFT, r.ITL)
 	}
 }
