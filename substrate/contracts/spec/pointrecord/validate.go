@@ -23,8 +23,9 @@ var (
 )
 
 var g5Codes = map[G5Code]bool{CodeNotVisible: true, RouterUnsupported: true, ValueNotRecorded: true,
-	FieldNotModelled: true, FieldUnclassified: true, EngineUnsupported: true, TopologyUnsupported: true,
-	NotInCatalog: true, FieldNotInRelease: true, ValueConflict: true, BuildUnparseable: true}
+	FieldNotModelled: true, FieldUnclassified: true, EngineUnsupported: true, ChipNotModelled: true,
+	TopologyUnsupported: true, NotInCatalog: true, FieldNotInRelease: true, ValueConflict: true, BuildUnparseable: true,
+	MeasurementContaminated: true}
 
 // Valid reports whether c is one of the reasons of design §11.4.
 func (c G5Code) Valid() bool { return g5Codes[c] }

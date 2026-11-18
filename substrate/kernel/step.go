@@ -489,6 +489,16 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 			denseShapedSeconds += rows * g.FLOPsPerToken / div / (peak * eff)
 		}
 
+		// A latent layer's prefill expands the cached latents it attends over through kv_b_proj, which the absorbed
+		// form decode runs in avoids (see mlaContextTokens).
+		if ctx := k.mlaContextTokens(l, s); ctx > 0 {
+			var gfits []gemmFit
+			if fits != nil {
+				gfits = fits[i]
+			}
+			denseShapedSeconds += k.mlaContextExpandSeconds(l, gfits, ctx)
+		}
+
 		if l.ExpertFLOPsPerTokenPerExpert > 0 {
 			// A rank computes only the tokens routed to the experts it holds.
 			//
@@ -674,7 +684,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 				attnSMSeconds += pf.seconds(float64(s.prefillRequests),
 					float64(s.prefillTokens), read)
 			} else if s.prefillRequests > 0 {
-				sm, fl := k.prefillAttention(layerCausalFLOPs*heads*float64(l.AttnHeadDim), s, l.AttnKind)
+				sm, fl := k.prefillAttention(layerCausalFLOPs*heads*k.prefillHeadWidth(l), s, l.AttnKind)
 				attnSMSeconds += sm
 				flops += fl
 			}
@@ -809,6 +819,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 		mhcSM, mhcBytes := k.mhcSeconds(l, s, sp)
 		elementwise = math.Max(elementwise-mhcBytes, 0)
 		elementwise += k.contextBytes(l, s)
+		elementwise += k.mlaContextBytes(l, kv[i].perToken, s)
 		gatherBytes, hostSeconds := k.gatherTraffic(l, s)
 		elementwise += gatherBytes
 

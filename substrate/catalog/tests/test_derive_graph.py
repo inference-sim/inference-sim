@@ -10220,3 +10220,40 @@ def test_nemotron_h_refuses_a_config_that_scales_its_rope(tmp_path):
     import derive_graph  # noqa: E402
     with pytest.raises(derive_graph.DeriveError, match="scales its RoPE"):
         _derive_raw(raw, tmp_path, name)
+
+
+def _attention_nodes(g):
+    return [n for k in g["layer_kinds"] for n in k["nodes"] if n["op"] == "Attention"]
+
+
+def test_an_mla_node_states_the_widths_vllm_prefills_it_in():
+    """vLLM prefills a dense latent layer in the multi-head form (q and k nope + rope wide, v v_head_dim wide) and
+    decodes it in the absorbed form at the cache width d_h; the node states the first so a cost model does not
+    price prefill at the second. Checked for every committed config that states a latent layer."""
+    seen = 0
+    for d in sorted(MODELS.iterdir()):
+        cfg_path = d / "config.json"
+        if not cfg_path.is_file() or not (d / "graph.yaml").is_file():
+            continue
+        t = text_config(json.loads(cfg_path.read_text()))
+        for n in _attention_nodes(graph_of(d)):
+            if n.get("kind") == "mla":
+                seen += 1
+                nope, rope = int(t["qk_nope_head_dim"]), int(t.get("qk_rope_head_dim") or 0)
+                v = int(t.get("v_head_dim") or nope)
+                assert (n["prefill_qk_head_dim"], n["prefill_v_head_dim"]) == (nope + rope, v), d.name
+            else:
+                assert "prefill_qk_head_dim" not in n and "prefill_v_head_dim" not in n, (d.name, n.get("kind"))
+    assert seen >= 8, f"non-vacuity: only {seen} mla nodes checked"
+
+
+def test_the_mla_prefill_widths_come_from_the_config(tmp_path):
+    raw = config_of(MODELS / "kimi-k2.5")
+    g = _derive_raw(raw, tmp_path, "kimi-k2.5")
+    (n,) = {(a["prefill_qk_head_dim"], a["prefill_v_head_dim"]) for a in _attention_nodes(g) if a["kind"] == "mla"}
+    assert n == (192, 128)
+    t = text_config(raw)
+    bumped = json.loads(json.dumps(raw))
+    text_config(bumped)["v_head_dim"] = 64
+    g = _derive_raw(bumped, tmp_path, "kimi-k2.5")
+    assert {(a["prefill_qk_head_dim"], a["prefill_v_head_dim"]) for a in _attention_nodes(g) if a["kind"] == "mla"} == {(192, 64)}, t.get("v_head_dim")

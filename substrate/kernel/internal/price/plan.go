@@ -231,6 +231,12 @@ type PlannedLayer struct {
 	// (vllm/model_executor/layers/attention/mla_attention.py:697-708 at v0.31.0).
 	AttnKVLoRARank int
 
+	// AttnPrefillQKDim and AttnPrefillVDim are the widths of the multi-head form an mla layer
+	// prefills in (graph prefill_qk_head_dim, prefill_v_head_dim), and AttnQKRope the rope part
+	// of the query and key width. Zero where the graph states none, and the layer's prefill is
+	// priced at AttnHeadDim, the cache width, as before.
+	AttnPrefillQKDim, AttnPrefillVDim, AttnQKRope int
+
 	// Attentions is every attention kernel this layer launches, in graph order.
 	//
 	// A layer with one attention has one entry and the singular fields repeat it. The
@@ -944,6 +950,8 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 				pl.AttnKind, pl.AttnWindow = n.AttentionKind, n.Window
 				pl.AttnIndexTopK, pl.AttnCompressRatio = n.IndexTopK, n.CompressRatio
 				pl.AttnKVLoRARank = n.KVLoRARank
+				pl.AttnPrefillQKDim, pl.AttnPrefillVDim = n.PrefillQKHeadDim, n.PrefillVHeadDim
+				pl.AttnQKRope = n.QKRopeHeadDim
 				pl.AttnReplicated = n.TP == model.TPReplicated
 				pl.AttnCaches = caches
 			}

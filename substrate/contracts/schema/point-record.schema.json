@@ -178,11 +178,13 @@
             "field_not_modelled",
             "field_unclassified",
             "engine_unsupported",
+            "chip_not_modelled",
             "topology_unsupported",
             "not_in_catalog",
             "field_not_in_release",
             "value_conflict",
-            "build_unparseable"
+            "build_unparseable",
+            "measurement_contaminated"
           ],
           "type": "string"
         },

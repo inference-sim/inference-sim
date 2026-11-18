@@ -540,6 +540,11 @@ func (n Node) validate(p *validate.Problems, at string) {
 		p.Field(at+".index_topk", "only priced by a sparse_mla or sparse_gqa attention node")
 	}
 
+	// The prefill widths belong to an mla attention node; the attention case below checks the rest.
+	if (n.PrefillQKHeadDim != 0 || n.PrefillVHeadDim != 0) && n.Op != OpAttention {
+		p.Field(at+".prefill_qk_head_dim", "only an mla attention node states prefill widths")
+	}
+
 	// conv_dilation spaces a short convolution's taps, so any other node that states it
 	// would price a convolution it does not run.
 	if n.ConvDilation != 0 && (n.Op != OpRecurrentUpdate || n.RecurrentKind != RecurrentShortConv) {
@@ -603,6 +608,20 @@ func (n Node) validate(p *validate.Problems, at string) {
 			p.Field(at+".n_kv",
 				"%s stores one latent vector per token, so n_kv must be 1, got %d",
 				n.AttentionKind, n.NumKVHeads)
+		}
+		// The prefill widths of a latent layer's multi-head form: both or neither, positive, an mla node only, and a
+		// query and key width that holds the rope part the cache also carries.
+		if n.PrefillQKHeadDim != 0 || n.PrefillVHeadDim != 0 {
+			switch {
+			case n.AttentionKind != AttentionMLA:
+				p.Field(at+".prefill_qk_head_dim", "only an mla attention node runs a multi-head prefill form over a latent cache, got %s", n.AttentionKind)
+			case n.PrefillQKHeadDim < 1 || n.PrefillVHeadDim < 1:
+				p.Field(at+".prefill_qk_head_dim", "prefill_qk_head_dim and prefill_v_head_dim are stated together and positive, got %d and %d",
+					n.PrefillQKHeadDim, n.PrefillVHeadDim)
+			case n.PrefillQKHeadDim <= n.QKRopeHeadDim:
+				p.Field(at+".prefill_qk_head_dim", "must exceed qk_rope_head_dim %d (the non-rope part is the rest), got %d",
+					n.QKRopeHeadDim, n.PrefillQKHeadDim)
+			}
 		}
 		if n.AttentionKind == AttentionSWA && n.Window < 1 {
 			p.Field(at+".window", "sliding-window attention requires a positive window")

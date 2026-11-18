@@ -28,6 +28,7 @@ X25	new	M1
 X26	new	M1
 X27	new	M1
 X28	new	M1
+X29	new	M1
 SUB-1	ci	now
 SUB-2	ci	now
 SUB-3	partial	M4
@@ -102,6 +103,7 @@ CFG-2	partial	M3
 CFG-3	partial	M4
 CFG-4	partial	M3
 CFG-5	new	M3
+CFG-6	new	M3
 FID-1	partial	M2
 FID-2	partial	M3
 FID-3	partial	M3

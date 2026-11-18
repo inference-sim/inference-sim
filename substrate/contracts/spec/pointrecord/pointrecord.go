@@ -130,6 +130,9 @@ const (
 	FieldNotModelled  G5Code = "field_not_modelled"
 	FieldUnclassified G5Code = "field_unclassified"
 	EngineUnsupported G5Code = "engine_unsupported"
+	// ChipNotModelled: the run's chip is one the release does not model, such as AMD's MI300X,
+	// MI325X and MI355X; the Subject names the chip, and the point stays in the coverage counts.
+	ChipNotModelled G5Code = "chip_not_modelled"
 	// TopologyUnsupported: the run was measured on a deployment the scoring harness cannot
 	// write as a scenario, such as several engines (a prefill and decode split, or a run
 	// across nodes).
@@ -141,6 +144,10 @@ const (
 	// (design §11.2).
 	ValueConflict    G5Code = "value_conflict"
 	BuildUnparseable G5Code = "build_unparseable"
+	// MeasurementContaminated: the run's server log shows that the measurement is not of the
+	// scenario it is labelled with, such as a single-turn point whose request count is not the
+	// benchmark client's multiple of the concurrency (Subject request_count_mismatch).
+	MeasurementContaminated G5Code = "measurement_contaminated"
 )
 
 // Substitution is one departure from an exact comparison.
