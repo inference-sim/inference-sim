@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"math"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -53,5 +55,67 @@ func TestShippedSpeculativeScenariosRunWithoutAcceptanceFlags(t *testing.T) {
 				t.Errorf("acceptance length %v, want the registry profile's %v", length, c.wantAL)
 			}
 		})
+	}
+}
+
+// Every Muse-Spark scenario that drafts resolves the acceptance its README says. The 18 scenarios
+// of the matrix take the registry's GB200 profile (2.72). The three H100 measured arms with DSpark
+// (armC, armC-routed, armD) keep a scenario pin of 2.84: the registry has no H100 Muse profile, and
+// 2.84 is the internal measurement on H100 PP2xTP8 those arms reproduce. The glob finds every
+// drafting scenario, so none falls back to a pin unnoticed, and a new one must be stated here.
+func TestEveryMuseSparkDraftingScenarioResolvesItsDocumentedAcceptance(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs every drafting Muse scenario")
+	}
+	dir := "../testdata/scenarios/muse-spark"
+	files, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(files)
+	pinnedArms := map[string]bool{"muse-h100-roce-armC.yaml": true, "muse-h100-roce-armC-routed.yaml": true, "muse-h100-roce-armD.yaml": true}
+	// vLLM refuses these on Hopper (data parallelism above one), before acceptance matters.
+	refused := map[string]bool{"muse-h200-ib-dep8-dspark.yaml": true, "muse-h200-ib-dep8-dspark-128k.yaml": true}
+	drafting := 0
+	for _, f := range files {
+		name := filepath.Base(f)
+		if !strings.Contains(name, "dspark") && !pinnedArms[name] {
+			continue
+		}
+		drafting++
+		t.Run(name, func(t *testing.T) {
+			args := []string{"run", "--scenarios", dir, "--scenario", name, "--rate", "2", "--num-requests", "4", "--seed", "1"}
+			if strings.HasSuffix(name, "-routed.yaml") {
+				args = append(args, "--num-instances", "2")
+			}
+			stdout, stderr, err := runKernelCLI(t, args...)
+			if refused[name] {
+				if err == nil || !strings.Contains(stderr, "requires data parallelism 1") {
+					t.Fatalf("want vLLM's Hopper data-parallelism refusal, got err=%v\n%s", err, lastLines(stderr, 3))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("%v\n%s", err, lastLines(stderr, 4))
+			}
+			cluster := resultDoc(t, stdout)["reports"].(map[string]any)["engine"].(map[string]any)["cluster"].(map[string]any)
+			acc, _ := cluster["acceptance"].(map[string]any)
+			if acc == nil {
+				t.Fatal("the Result records no acceptance")
+			}
+			wantLayer, wantAL := "registry", 2.72
+			if pinnedArms[name] {
+				wantLayer, wantAL = "scenario", 2.84
+			}
+			if acc["source_layer"] != wantLayer {
+				t.Errorf("source_layer %v, want %s", acc["source_layer"], wantLayer)
+			}
+			if length, _ := acc["length"].(float64); math.Abs(length-wantAL) > 1e-9 {
+				t.Errorf("acceptance length %v, want %v", length, wantAL)
+			}
+		})
+	}
+	if drafting != 21 {
+		t.Errorf("%d drafting Muse scenarios, want 21 (18 resolved from the registry, 3 pinned H100 arms): state any new one in this test", drafting)
 	}
 }
