@@ -210,12 +210,12 @@ func TestAnEnvVarOfAnEarlierReleaseIsTranslatedToThisReleasesFlags(t *testing.T)
 			[]struct {
 				value, cc string
 				exact     bool
-			}{{"1", "10.0", true}, {"1", "10.3", true}, {"1", "9.0", false}, {"1", "12.0", false}, {"0", "10.0", false}, {"", "10.0", false}}},
+			}{{"true", "10.0", true}, {"false", "10.0", false}, {"1", "10.0", true}, {"1", "10.3", true}, {"1", "9.0", false}, {"1", "12.0", false}, {"0", "10.0", false}, {"", "10.0", false}}},
 		{"VLLM_MXFP4_USE_MARLIN", map[string]any{"moe_backend": "marlin"},
 			[]struct {
 				value, cc string
 				exact     bool
-			}{{"1", "9.0", true}, {"1", "10.0", true}, {"1", "7.5", true}, {"1", "7.0", false}, {"0", "9.0", false}}},
+			}{{"true", "9.0", true}, {"false", "9.0", false}, {"1", "9.0", true}, {"1", "10.0", true}, {"1", "7.5", true}, {"1", "7.0", false}, {"0", "9.0", false}}},
 	} {
 		f, ok := byName[c.name]
 		if !ok {

@@ -619,6 +619,20 @@
  },
  {
   "field": "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
+  "value": "true",
+  "compute_capability": "10.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": true
+ },
+ {
+  "field": "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
+  "value": "false",
+  "compute_capability": "10.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": false
+ },
+ {
+  "field": "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
   "value": "1",
   "compute_capability": "10.0",
   "owner": "mxfp4-oracle-v0.33.0",
@@ -656,6 +670,20 @@
   "field": "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
   "value": "",
   "compute_capability": "10.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": false
+ },
+ {
+  "field": "VLLM_MXFP4_USE_MARLIN",
+  "value": "true",
+  "compute_capability": "9.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": true
+ },
+ {
+  "field": "VLLM_MXFP4_USE_MARLIN",
+  "value": "false",
+  "compute_capability": "9.0",
   "owner": "mxfp4-oracle-v0.33.0",
   "exact": false
  },

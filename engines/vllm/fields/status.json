@@ -8265,7 +8265,8 @@
     "valid_when": [
      {
       "value_in": [
-       "1"
+       "1",
+       "true"
       ],
       "compute_capability": {
        "gte": "7.5"
@@ -9262,7 +9263,8 @@
     "valid_when": [
      {
       "value_in": [
-       "1"
+       "1",
+       "true"
       ],
       "compute_capability": {
        "gte": "10.0",
