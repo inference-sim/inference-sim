@@ -238,3 +238,27 @@ func TestResolveTakesNSAAsTheDSABackend(t *testing.T) {
 	}
 	t.Fatal("the glm5-h200-tp8-recipe case is not in the answers")
 }
+
+// A case name stands for one case: the answers are keyed by it, so a repeated name would be recorded
+// once and counted twice.
+func TestNoCaseNameOfTheOracleIsRepeated(t *testing.T) {
+	b, err := os.ReadFile("../oracle/serverargs/cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Cases []struct {
+			Name string `json:"name"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(b, &f); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, c := range f.Cases {
+		if seen[c.Name] {
+			t.Errorf("the case %s is listed twice", c.Name)
+		}
+		seen[c.Name] = true
+	}
+}
