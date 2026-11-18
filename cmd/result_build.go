@@ -383,6 +383,15 @@ func pdBreakdown(pd *cluster.PDMetrics, tierLinks map[string]int, peer cluster.P
 		}
 	}
 	putPeer(out, peer)
+	if pd.P2PHandoffs > 0 {
+		// The handoffs that went through the p2p tier: how many, how many moved no KV (the prompt was
+		// recomputed or already held), and the WRITEs that served the rest. kv_transfer_*_ms above is
+		// the time of those WRITEs.
+		putUnique(out, "p2p_handoffs", float64(pd.P2PHandoffs))
+		putUnique(out, "p2p_handoffs_without_write", float64(pd.P2PHandoffsWithoutWrite))
+		putUnique(out, "p2p_writes", float64(pd.P2PWrites))
+		putUnique(out, "p2p_write_total_ms", pd.P2PWriteTotal/1e3)
+	}
 	for _, pool := range sortedMapKeys(pd.CPUTierHitRate) {
 		putUnique(out, "cpu_tier_hit_rate_"+slugPart(pool), pd.CPUTierHitRate[pool])
 	}

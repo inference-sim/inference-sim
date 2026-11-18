@@ -50,6 +50,7 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 	}
 	cs.inFlightRequests[target]++
 	if params, ok := cs.p2pPrefillParams(e.parentReq); ok {
+		e.parentReq.P2P = true
 		e.request.KVTransferParams = params
 	}
 	inst.InjectRequestOnline(e.request, e.time)

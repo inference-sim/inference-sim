@@ -65,6 +65,16 @@ type PDMetrics struct {
 	// PrefillKVHoldPeakTokens is the most KV any one prefill instance held at once for pulls
 	// not yet complete (INV-PD-7); zero when the deployment does not hold.
 	PrefillKVHoldPeakTokens int64
+	// P2PHandoffs are the handoffs that went through vLLM's p2p KV tier and completed, and
+	// P2PHandoffsWithoutWrite those of them whose KV no WRITE moved: the decode engine held the
+	// prompt already, or its peer connect was rejected and it recomputed the prompt (with pools of
+	// unequal tensor parallelism and a layout that is not parallelism-agnostic, vLLM's handshake
+	// compares the parallel sizes: inference-sim#2214). P2PWrites are the WRITEs that landed, and
+	// P2PWriteTotal their summed duration (microseconds). For a p2p handoff with a WRITE, the
+	// transfer duration (TransferDuration) is the time from the first WRITE's start to the last's
+	// landing, and its queueing delay what the contended links added to the WRITEs alone.
+	P2PHandoffs, P2PHandoffsWithoutWrite, P2PWrites int
+	P2PWriteTotal                                   float64
 	// CPUTierHitRate is, per pool, the share of looked-up prompt tokens the pool's CPU
 	// offload tier served (reloaded tokens over looked-up tokens, summed over the pool's
 	// instances), keyed "prefill" and "decode"; absent for a pool with no lookups.
@@ -116,6 +126,8 @@ func CollectPDMetrics(
 
 	var ttftValues, transferValues, delayValues []float64
 	var disaggCount, droppedAtDecodeKV int
+	var p2pHandoffs, p2pNoWrite, p2pWrites int
+	var p2pTotal float64
 
 	for _, p := range sorted {
 		// BC-6: count requests that completed KV transfer.
@@ -142,7 +154,22 @@ func CollectPDMetrics(
 
 		// BC-2: transfer duration = complete - start (microseconds).
 		// Guard: require both timestamps set and completion >= start.
-		if p.TransferStartTime > 0 && p.TransferCompleteTime >= p.TransferStartTime {
+		//
+		// A p2p handoff is not a pull of the cluster's: the decode engine loads the prompt from
+		// the prefill engine's WRITE, so its transfer is the WRITE (first start to last landing).
+		if p.P2P && p.TransferCompleteTime > 0 {
+			p2pHandoffs++
+			if p.P2PWrites == 0 {
+				p2pNoWrite++
+			}
+		}
+		if p.P2PWrites > 0 && p.P2PWriteLand >= p.P2PWriteStart {
+			d := p.P2PWriteLand - p.P2PWriteStart
+			transferValues = append(transferValues, float64(d))
+			delayValues = append(delayValues, float64(max(0, d-p.P2PWriteAloneTicks)))
+			p2pWrites += p.P2PWrites
+			p2pTotal += float64(d)
+		} else if p.TransferStartTime > 0 && p.TransferCompleteTime >= p.TransferStartTime {
 			d := p.TransferCompleteTime - p.TransferStartTime
 			transferValues = append(transferValues, float64(d))
 			delayValues = append(delayValues, float64(max(0, d-p.TransferAloneTicks)))
@@ -160,6 +187,7 @@ func CollectPDMetrics(
 		TransferQueueDelay:    NewDistribution(delayValues),
 		TransferQueueDelayP90: percentileOf(delayValues, 90),
 		CPUTierHitRate:        collectPoolCPUTierHitRate(poolMembership, metricsByID),
+		P2PHandoffs:           p2pHandoffs, P2PHandoffsWithoutWrite: p2pNoWrite, P2PWrites: p2pWrites, P2PWriteTotal: p2pTotal,
 	}
 
 	pd.PrefillThroughput, pd.DecodeThroughput, pd.LoadImbalanceRatio =

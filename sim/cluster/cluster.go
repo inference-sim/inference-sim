@@ -637,8 +637,12 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		cs.startTierCopy(inst, id, demand, at)
 	})
 	// A WRITE to a peer is a transfer like a tier copy: it shares the links it crosses.
-	inst.setPeerWritePriced(func(id engine.TransferID, demand kernel.TransferDemand, at int64) {
-		cs.admitTierFlow(demand, at, func(land int64) { inst.drv.PeerWriteLanded(id, land) })
+	inst.setPeerWritePriced(func(id engine.TransferID, request string, demand kernel.TransferDemand, at int64) {
+		alone := sim.TierTicks(demand)
+		cs.admitTierFlow(demand, at, func(land int64) {
+			cs.recordP2PWrite(request, at, land, alone)
+			inst.drv.PeerWriteLanded(id, land)
+		})
 	})
 	cs.registerPeer(inst)
 	inst.onTransition = func(inst *InstanceSimulator) {

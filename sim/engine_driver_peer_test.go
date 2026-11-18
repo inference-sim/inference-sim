@@ -165,7 +165,7 @@ func TestEngineDriver_APeerWriteLandsAfterItsDemandAloneOrWhenTheHostSays(t *tes
 	shared := newPeering(t, "a:1")
 	d = NewEngineDriver(shared, EngineDriverConfig{Horizon: 1 << 40, Environment: peerEnv(100)})
 	var started int64 = -1
-	d.OnPeerWritePriced = func(id engine.TransferID, _ kernel.TransferDemand, at int64) {
+	d.OnPeerWritePriced = func(id engine.TransferID, _ string, _ kernel.TransferDemand, at int64) {
 		started = at
 		d.schedule(&peerLandEvent{at: at + 300, id: id})
 	}

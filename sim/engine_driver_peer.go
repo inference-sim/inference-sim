@@ -149,7 +149,7 @@ func (d *EngineDriver) startPeerWrite(t engine.Transfer, demand kernel.TransferD
 			d.peerWrites = map[engine.TransferID]bool{}
 		}
 		d.peerWrites[t.ID] = true
-		d.OnPeerWritePriced(t.ID, demand, now)
+		d.OnPeerWritePriced(t.ID, t.Request, demand, now)
 		return
 	}
 	d.schedule(&driverTierTransferDone{at: now + TierTicks(demand), id: t.ID})
