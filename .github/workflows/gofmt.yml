@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Go
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@87daa470f568a60cbdfbecc9408ec7e3fc64db6e # blis-substrate commit this build pins (stack.json)
+        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@fa28d5116739dc582efdb7694acf15a294cdc62b # blis-substrate commit this build pins (stack.json)
 
       - name: gofmt every tracked Go file
         run: bash scripts/gofmt-check.sh

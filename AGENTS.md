@@ -37,7 +37,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: An accuracy change's success criteria are committed before any commit that reads its held-out data
 - **X9** (new; target ci by M3) For every pinned upstream release, each feature the upstream offers has exactly one status in a generated list.
   - `new`, pull_request: Coverage of the llm-d stack's published configurations is computed and published per release
-- **X11** (partial; target ci by M1) Pins are exact release tags.
+- **X11** (partial; target ci by M1) Pins are exact commits.
   - `new`, pull_request: Selected-version lint (LIF-2), in every repository: no replace outside inference-sim
   - `new`, pull_request: In inference-sim, exactly one, from github.com/llm-d/llm-d-router to github.com/inference-sim/llm-d-router at a -blis.N tag
   - `new`, pull_request: No other module requiring github.com/llm-d/llm-d-router
@@ -85,6 +85,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, nightly: A nightly job in every repository that resolves each cited issue and fails on a closed one
   - `new`, pull_request: A pull-request check that refuses a change closing an issue still cited elsewhere
   - `new`, nightly: The nightly job also reports an issue closed outside a merge
+- **X29** (new; target ci by M1) Each engine module, the substrate, the router fork and inference-sim document themselves in one README.md.
+  - `new`, practice: GitHub Pages is not enabled and no workflow generates or deploys documentation
 - **SUB-12** (partial; target ci by M2) Every loader of a BLIS document refuses unknown keys, duplicate keys, numbers that do not convert exactly, non-finite numbers and recursive aliases.
   - `new`, pull_request: The shared set of malformed documents, run against the repository's loaders
 - **SUB-14** (new; target ci by M2) The memory breakdown closes.
@@ -109,7 +111,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: Tests that build two engine kinds in one binary, and that refuse any scenario using engine_version with a message naming engine: {kind, version}
 - **SIM-2** (ci; target reached) No silent degradation: unsupported or ambiguous input is refused with a message; library code returns errors and never exits the process.
   - `ci`, pull_request: Refusal tests (`cmd: TestRunCmd_KernelBackend_ScenarioRefusals`)
-- **SIM-3** (new; target ci by M1) Every release publishes stack.json: the exact tag of every BLIS module and every upstream release it was built and tested with, the Go toolchain version, and the llm-d guides commit.
+- **SIM-3** (new; target ci by M1) Every release publishes stack.json: the exact commit of every BLIS module, with its pseudo-version, and every upstream release it was built and tested with, the Go toolchain version, and the llm-d guides commit.
   - `new`, release: A release check that stack.json matches go list -m all, go version and guides.lock for the tagged build
 - **SIM-4** (new; target ci by M1) The byte gate (a fixed scenario set whose output must not change in a refactor) runs inside this repository.
   - `new`, pull_request: The byte gate job in inference-sim's CI, on every pull request
@@ -191,21 +193,22 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to compute an error
 - **COV-12** (partial; target ci by M3) The scored simulation receives the requests the measured run sent: the same requests, in the same order, with the same prompt lengths, output lengths and shared prefixes.
   - `ci`, pull_request: The single-turn recomputation of the client's seed-0 lengths and the sent-length check, in inference-sim's tools/harness, until they move into the dashboard's harness (`tools/harness: TestEveryMeasuredOrResolvedPointSentItsTarget`)
-- **LIF-1** (new; target ci by M1) A tag names one commit forever.
-  - `new`, practice: Protected tags
-  - `new`, nightly: A nightly check that every tag resolves to its recorded commit
-- **LIF-2** (partial; target ci by M1) In every build, each BLIS module resolves to the exact version the release records in stack.json, and the router fork resolves to a -blis.N tag through inference-sim's one replace directive (X11).
+- **LIF-1** (new; target ci by M1) A tag names one commit forever, and a pinned commit stays on its branch forever.
+  - `new`, release: The release bot confirms at each release that the tag is an annotated tag on the checked commit and that every pinned commit is on its branch
+  - `new`, practice: A tag rule on v* blocks updating and deleting a tag
+  - `new`, practice: Branch protection blocks force-pushes to main and release branches
+- **LIF-2** (partial; target ci by M1) In every build, each BLIS module resolves to the exact commit the release records in stack.json, and the router fork resolves to the commit stack.json records through inference-sim's one replace directive (X11).
   - `new`, pull_request: Selected-version lint (go list -m all), which for the router reads the replace target that go list -m -json reports, not the placeholder version on the require line
   - `new`, pull_request: A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain
   - `new`, pull_request: A CI step that fails if go version differs from it
   - `new`, release: The pre-release test of every engine and router package against the simulator's selected versions (§3.2)
-- **LIF-3** (new; target ci by M1) Only the release bot cuts releases, and only from a commit where every ci invariant passed.
+- **LIF-3** (new; target ci by M1) Only the release bot cuts releases.
   - `new`, practice: Repository settings that let only the release bot and people with write access create tags
   - `new`, nightly: A nightly check that every tag made by a person is annotated and listed in its release notes
 - **LIF-6** (new; target ci by M1) Each inference-sim release runs exactly one upstream release of each engine, of llm-d and of each KV store blis-kvstore models, and lists them in stack.json.
   - `new`, pull_request: A refusal test per engine kind
   - `new`, pull_request: A check that the message's release names match stack.json history
-- **LIF-7** (new; target ci by M1) A deprecated feature is removed by the first release after its deprecation that may break compatibility: a MAJOR release, or a MINOR release while the repository is at v0.
+- **LIF-7** (new; target ci by M1) A deprecated feature is removed by the first inference-sim release after its deprecation that may break compatibility: a MAJOR release, or a MINOR release while inference-sim is at v0.
   - `new`, pull_request: A whole-program dead-code check (Go's deadcode), run in stack CI's workspace from the main packages of every binary BLIS ships, with test files not counted as reaching code. Upstream files in the router fork, and the interfaces in contracts/, are exempt
 
 ### Maintainer practices
@@ -215,7 +218,9 @@ repository as a whole and confirms it when the repository's settings change (des
 
 - [ ] **X17** The protected branch requires the repository's named checks, including formatting and lint
 - [ ] **X20** The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name. Encouraged, never checked before the closing step after M4
-- [ ] **LIF-1** Protected tags
+- [ ] **X29** GitHub Pages is not enabled and no workflow generates or deploys documentation
+- [ ] **LIF-1** A tag rule on v* blocks updating and deleting a tag
+- [ ] **LIF-1** Branch protection blocks force-pushes to main and release branches
 - [ ] **LIF-3** Repository settings that let only the release bot and people with write access create tags
 
 ### Agent guidance
