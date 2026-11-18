@@ -262,7 +262,7 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 			note("moe_runner_backend", "flashinfer_trtllm",
 				"the plan names no experts kernel: the substrate prices FlashInfer's TRT-LLM grouped GEMM on block-FP8 experts by its "+
 					"assumed ramp (graded assumed: the engine release lists no sm_100a build to name a code hash); expert selection "+
-					"runs inside the monolithic kernel")
+					"runs inside the kernel only for a DeepSeek-V3-method router")
 		}
 	}
 
@@ -339,7 +339,23 @@ func expertsKernel(a *config.ServerArgs, g *model.Graph) (plan.KernelImpl, plan.
 		if g.Global.WeightDType != model.DTypeFP8 {
 			return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=flashinfer_trtllm on " + string(g.Global.WeightDType) + " experts", Issue: issueLower}
 		}
+		// SGLang selects the experts inside the kernel only when it can bypass its own top-k
+		// (_can_bypass_trtllm_routing, layers/moe/topk.py:613-640, 794-803@297e54fd): a DeepSeek-V3-method
+		// router (grouped top-k with a score-correction bias, renormalised). The architectures here that
+		// route that way are DeepseekV3ForCausalLM and GlmMoeDsaForCausalLM (routing_method_type
+		// DeepSeekV3); any other runs its own top-k first (output format STANDARD) and the kernel takes
+		// the selected experts, so the selection is a launch of its own.
+		if !routesLikeDeepSeekV3(g.Global.Architecture) {
+			return plan.KernelImpl{}, plan.RoutingSeparate, nil
+		}
 		return plan.KernelImpl{}, plan.RoutingFused, nil
 	}
 	return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=" + a.MoeRunnerBackend, Issue: issueLower}
+}
+
+// routesLikeDeepSeekV3 reports whether SGLang's router for the architecture is the DeepSeek-V3 method, the
+// one the TRT-LLM runner takes whole (routing_method_type DeepSeekV3 with grouped top-k and a correction
+// bias, python/sglang/srt/models/deepseek_v2.py and glm4_moe.py@297e54fd).
+func routesLikeDeepSeekV3(architecture string) bool {
+	return architecture == "DeepseekV3ForCausalLM" || architecture == "GlmMoeDsaForCausalLM"
 }

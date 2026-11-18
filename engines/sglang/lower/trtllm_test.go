@@ -71,3 +71,26 @@ func TestTheTRTLLMExpertsRunnerIsLoweredWithoutANamedKernel(t *testing.T) {
 		t.Errorf("another runner must stay refused by name, got %v", err)
 	}
 }
+
+// The TRT-LLM runner takes expert selection whole only for a DeepSeek-V3-method router; another
+// architecture runs SGLang's own top-k first, so the selection is a launch of its own.
+func TestTheTRTLLMRunnerFusesRoutingOnlyForADeepSeekV3Router(t *testing.T) {
+	a := r1Args(t)
+	a.MoeRunnerBackend = "flashinfer_trtllm"
+	for _, tc := range []struct {
+		arch string
+		want plan.MoERouting
+	}{
+		{"DeepseekV3ForCausalLM", plan.RoutingFused},
+		{"GlmMoeDsaForCausalLM", plan.RoutingFused},
+		{"DeepseekV4ForCausalLM", plan.RoutingSeparate},
+		{"Qwen3MoeForCausalLM", plan.RoutingSeparate},
+	} {
+		g := graph(t, "deepseek-r1-0528")
+		g.Global.Architecture = tc.arch
+		_, routing, err := expertsKernel(&a, g)
+		if err != nil || routing != tc.want {
+			t.Errorf("%s: routing %q err %v, want %q", tc.arch, routing, err, tc.want)
+		}
+	}
+}
