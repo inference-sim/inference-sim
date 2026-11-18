@@ -2,6 +2,7 @@ package coefficient
 
 import (
 	"regexp"
+	"sync"
 
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
 )
@@ -75,10 +76,28 @@ var formUnitRes = func() []*regexp.Regexp {
 // RequiredUnit returns the unit a formula requires of the coefficient name, and false when no
 // family in FormUnits covers the name.
 func RequiredUnit(name string) (FormUnit, bool) {
+	// Every validation of every entry asks, and the families are a few dozen patterns tried in
+	// order, so the answer for a name is kept: the table is fixed after init and the answer is a
+	// function of the name alone.
+	if v, ok := requiredUnitCache.Load(name); ok {
+		r := v.(requiredUnitResult)
+		return r.unit, r.found
+	}
+	r := requiredUnitResult{}
 	for i, re := range formUnitRes {
 		if re.MatchString(name) {
-			return FormUnits[i], true
+			r = requiredUnitResult{FormUnits[i], true}
+			break
 		}
 	}
-	return FormUnit{}, false
+	requiredUnitCache.Store(name, r)
+	return r.unit, r.found
 }
+
+type requiredUnitResult struct {
+	unit  FormUnit
+	found bool
+}
+
+// requiredUnitCache maps a coefficient name to RequiredUnit's answer for it.
+var requiredUnitCache sync.Map

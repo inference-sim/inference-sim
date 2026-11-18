@@ -1,8 +1,8 @@
 package coefficient
 
 import (
-	"fmt"
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
@@ -58,7 +58,7 @@ func (s *Set) Validate() *validate.Problems {
 	// a like-for-like migration.
 	seen := map[string]bool{}
 	for i, e := range s.Coefficients {
-		at := fmt.Sprintf("coefficients[%d]", i)
+		at := "coefficients[" + strconv.Itoa(i) + "]"
 		if e.Name == "" {
 			p.Field(at+".name", "required")
 		} else {
@@ -108,7 +108,7 @@ func (e Entry) validate(p *validate.Problems, at string) {
 	// that changes nothing but reads as two links.
 	seenFabric := map[string]bool{}
 	for j, f := range e.Scope.Fabric {
-		fat := fmt.Sprintf("%s.scope.fabric[%d]", at, j)
+		fat := at + ".scope.fabric[" + strconv.Itoa(j) + "]"
 		switch {
 		case strings.TrimSpace(f) == "":
 			p.Field(fat, "names a catalog networks/ fabric and must not be empty")
@@ -204,7 +204,7 @@ func (e Entry) validate(p *validate.Problems, at string) {
 	// stores these as plain strings, so "" cannot be told from absent without presence
 	// tracking, and no committed set carries a blank one — so this is left unchecked.
 	for j, src := range e.Sources {
-		sat := fmt.Sprintf("%s.sources[%d]", at, j)
+		sat := at + ".sources[" + strconv.Itoa(j) + "]"
 		if !src.Kind.Valid() {
 			p.Field(sat+".kind", "%q is not one of %v", src.Kind, vocab.AllSourceKinds())
 		}
@@ -304,7 +304,7 @@ func MayStateFitRange(m vocab.Method) bool {
 func ValidateFitRange(p *validate.Problems, at string, bounds []Bound) {
 	seenDim := map[string]bool{}
 	for i, b := range bounds {
-		bat := fmt.Sprintf("%s[%d]", at, i)
+		bat := at + "[" + strconv.Itoa(i) + "]"
 		if !vocab.FitDim(b.Dim).Valid() {
 			p.Field(bat+".dim", "%q is not one of %v", b.Dim, vocab.AllFitDims())
 		}
