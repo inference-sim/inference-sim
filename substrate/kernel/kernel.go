@@ -496,7 +496,7 @@ func (k *Kernel) sequenceBoundedBytes(caches float64) int64 {
 		}
 		spec := k.numSpecTokens()
 		per := price.RecurrentStateBytes(k.recurrentRankBytes(l), mode,
-			k.maxModelLen, k.blockSize, spec, 0)
+			k.maxModelLen, k.blockSize, spec, 0, k.low.Cache.TrackingSlots)
 		// The state is replicated across context-parallel ranks and sharded by tensor
 		// parallelism (recurrentRankBytes).
 		total += per * float64(l.Count)
@@ -592,7 +592,7 @@ func (k *Kernel) SequenceVariableBytes(tokens int) int64 {
 				continue
 			}
 			total += int64(price.RecurrentStateBytes(k.recurrentRankBytes(l), mode,
-				tokens, k.blockSize, spec, 0) * float64(l.Count))
+				tokens, k.blockSize, spec, 0, k.low.Cache.TrackingSlots) * float64(l.Count))
 		}
 	}
 	return total
