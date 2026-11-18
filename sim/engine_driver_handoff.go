@@ -128,9 +128,11 @@ func (d *EngineDriver) LandRemote(req *Request, now int64) {
 	}
 	req.State = StateQueued
 	// A remote-prefilled request's prompt was looked up on its prefill engine: none is recorded here.
-	d.reqs[req.ID] = &driverReq{req: req, remote: true, lookedUp: true}
+	dr := &driverReq{req: req, remote: true, lookedUp: true}
+	d.reqs[req.ID] = dr
 	if req.Deadline > 0 && req.Deadline <= d.Horizon {
-		d.schedule(&driverTimeoutEvent{at: req.Deadline, req: req})
+		dr.timeout = &driverTimeoutEvent{at: req.Deadline, req: req}
+		d.schedule(dr.timeout)
 	}
 	d.stepAfterArrivals(now)
 }

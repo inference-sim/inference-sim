@@ -210,6 +210,8 @@ type EngineDriver struct {
 
 type driverReq struct {
 	req *Request
+	// timeout is the request's pending client-deadline event, nil without one (dropReq).
+	timeout *driverTimeoutEvent
 	// prefillLen is the runner's prefill_len for the request, its prompt plus the outputs before
 	// its last admission (states.py:104-110@5df63a72); 0 until the driver times a batch for it.
 	prefillLen   int
@@ -518,9 +520,11 @@ func (e *driverQueuedEvent) run(d *EngineDriver) {
 	d.Metrics.TotalInputTokens += len(req.InputTokens)
 	d.Metrics.EngineAccepted++
 	req.State = StateQueued
-	d.reqs[req.ID] = &driverReq{req: req}
+	dr := &driverReq{req: req}
+	d.reqs[req.ID] = dr
 	if req.Deadline > 0 && req.Deadline <= d.Horizon {
-		d.schedule(&driverTimeoutEvent{at: req.Deadline, req: req})
+		dr.timeout = &driverTimeoutEvent{at: req.Deadline, req: req}
+		d.schedule(dr.timeout)
 	}
 	d.stepAfterArrivals(e.at)
 }
@@ -663,7 +667,7 @@ func (e *driverTimeoutEvent) Timestamp() int64 { return e.at }
 func (e *driverTimeoutEvent) Priority() int    { return PriorityTimeout }
 func (e *driverTimeoutEvent) run(d *EngineDriver) {
 	req := e.req
-	if req.State == StateTimedOut || e.dead(d) {
+	if req == nil || req.State == StateTimedOut || e.dead(d) {
 		return
 	}
 	if err := d.eng.Finish(req.ID, engine.FinishTimeout, e.at); err != nil {
@@ -673,7 +677,7 @@ func (e *driverTimeoutEvent) run(d *EngineDriver) {
 	req.State = StateTimedOut
 	d.Metrics.TimedOutRequests++
 	d.Metrics.RecordTimeout(req)
-	delete(d.reqs, req.ID)
+	d.dropReq(req.ID)
 	d.done(req, e.at)
 	d.kick(e.at)
 }
@@ -681,7 +685,20 @@ func (e *driverTimeoutEvent) run(d *EngineDriver) {
 // dead reports a timeout whose request already left the engine: completed, or failed by the
 // engine before it emitted anything (finish).
 func (e *driverTimeoutEvent) dead(d *EngineDriver) bool {
-	return e.req.State == StateCompleted || d.unserved[e.req.ID]
+	return e.req == nil || e.req.State == StateCompleted || d.unserved[e.req.ID]
+}
+
+// dropReq removes a request from the driver's books and lets go of its pending deadline event's
+// hold on it. The event stays in the queue until its time, which for a request that completed long
+// before can be hours of simulated time away (aiperf's default client timeout is 6 h); a held
+// *Request keeps its prompt alive for all of it, which grew a long agentic replay's memory without
+// bound (inference-sim#2201).
+func (d *EngineDriver) dropReq(id string) {
+	if r := d.reqs[id]; r != nil && r.timeout != nil {
+		r.timeout.req = nil
+		r.timeout = nil
+	}
+	delete(d.reqs, id)
 }
 
 // kick schedules as many batches as the engine admits at now, each starting when the GPU is
@@ -1183,7 +1200,7 @@ func (d *EngineDriver) finish(r *driverReq, f engine.Finished, end int64) {
 	d.Metrics.DroppedUnservable++
 	d.Metrics.RecordUnserved(req, false)
 	delete(d.Metrics.Requests, req.ID)
-	delete(d.reqs, req.ID)
+	d.dropReq(req.ID)
 	if d.unserved == nil {
 		d.unserved = map[string]bool{}
 	}
@@ -1236,7 +1253,7 @@ func (d *EngineDriver) complete(r *driverReq, f engine.Finished, end int64) {
 		Req: req, TTFT: req.FirstTokenTime, OutputTokens: f.OutputTokens, E2E: e2e, ITL: itl,
 		Steps: d.stepIdx - r.scheduledIdx, Clock: clock, Overhead: overhead,
 	})
-	delete(d.reqs, req.ID)
+	d.dropReq(req.ID)
 	d.done(req, end)
 }
 
@@ -1263,7 +1280,7 @@ func (d *EngineDriver) Evict(req *Request, now int64) bool {
 	}
 	d.noteFreed(req.ID)
 	req.State = StateCompleted
-	delete(d.reqs, req.ID)
+	d.dropReq(req.ID)
 	d.kick(now)
 	return true
 }
@@ -1286,7 +1303,7 @@ func (d *EngineDriver) DrainWaiting(now int64) []*Request {
 			panic(fmt.Sprintf("engine driver: the engine drained %s, which the driver does not hold", id))
 		}
 		out = append(out, r.req)
-		delete(d.reqs, id)
+		d.dropReq(id)
 	}
 	d.rearmWake(now)
 	return out
