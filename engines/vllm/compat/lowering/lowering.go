@@ -807,7 +807,10 @@ func expertsKernel(g *model.Graph, c *lowerContext, stated string) (plan.KernelI
 // (VAL-8), so without the statement the cost model reads no entry of it. The stage of a layer is
 // the pipeline partition's, which the lowering does not compute: at pipeline width above 1 nothing is
 // stated (the family is then not read, as before), and the lowering says so. No other sparse-MLA
-// backend has a registry family keyed to its kernel, so none is stated.
+// backend has a registry family keyed to its kernel, so none is stated. The draft model's layers
+// (DraftLayers) are not stated either. The decode is always this kernel (forward_mqa); a prefill of at most
+// the top-k tokens is dense multi-head attention in vLLM, which the pool names (kernelmodel
+// sparseMLAPrefillSubstitution) because the plan states the primitive for the pool, not for a step.
 func sparseMLAKernels(g *model.Graph, c *lowerContext, pp int, backend string, note func(name, value, reason string)) ([]plan.LoweredLayer, error) {
 	major, minor := capability(c.chip)
 	if backend != backendFlashInferSM90 || major != 9 {

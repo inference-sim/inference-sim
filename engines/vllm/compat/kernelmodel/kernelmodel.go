@@ -498,6 +498,9 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	if s := languageModelOnlySubstitution(in.Model, engine, pool.Parallel.PP); s != nil {
 		m.substitutions = append(m.substitutions, *s)
 	}
+	if s := sparseMLAPrefillSubstitution(in.Model, low.Plan); s != nil {
+		m.substitutions = append(m.substitutions, *s)
+	}
 	if s := cudagraphSubstitution(engine, k.Resolved().Overrides); s != nil {
 		m.substitutions = append(m.substitutions, *s)
 	}
