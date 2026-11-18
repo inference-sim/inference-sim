@@ -295,6 +295,8 @@ func construct(in Inputs) (*Kernel, error) {
 	fab.InterNodeEfficiency = fabricEfficiency
 
 	k := &Kernel{layout: layout, fabric: fab, pool: pool, chip: *in.Chip, rules: in.Rules,
+		multiHeadMLAPrefill: in.Scenario == nil || in.Scenario.Engine == nil ||
+			in.Scenario.Engine.Kind == "" || in.Scenario.Engine.Kind == legacyRulesKind,
 		family: family, architecture: g.Global.Architecture, graph: g,
 		switching: sw, drafterName: drafter,
 		statedFirstPassRows: in.DraftFirstPassRows, statedPassRequests: in.DraftPassRequests}

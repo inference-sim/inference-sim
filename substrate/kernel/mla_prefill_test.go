@@ -5,6 +5,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/load"
 )
 
@@ -164,5 +165,27 @@ func TestCatalogStatesPrefillWidthsOnMLAOnly(t *testing.T) {
 	}
 	if !sawMLA || !sawSparse {
 		t.Errorf("non-vacuity: the catalog has mla %v and sparse_mla %v attention", sawMLA, sawSparse)
+	}
+}
+
+// SGLang's prefill of a dense latent layer is the multi-head form or the absorbed one by backend, prefix and
+// graph capture (attention_backend_handler.py at v0.5.23); the kernel does not model that choice, so a scenario
+// of another engine keeps the cache width and its prices are those of a graph with no prefill widths.
+func TestMLAPrefillWidthsAreVLLMsOnly(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stated := quantCase(t, d, "kimi-k2.5", "h200")
+	other := stated
+	sc := *stated.Scenario
+	sc.Engine = &scenario.Engine{Kind: "sglang", Version: sc.EngineRelease()}
+	other.Scenario = &sc
+	cleared := withMLAPrefill(other, 0, 0, true)
+	for _, c := range []struct{ scheduled, computed int }{{8192, 0}, {512, 16384}} {
+		if a, b := mlaStep(t, other, c.scheduled, c.computed), mlaStep(t, cleared, c.scheduled, c.computed); a != b {
+			t.Errorf("sglang scenario, %d scheduled over %d cached: %v s with the widths, %v s without; an engine other than vLLM keeps the cache width",
+				c.scheduled, c.computed, a, b)
+		}
 	}
 }

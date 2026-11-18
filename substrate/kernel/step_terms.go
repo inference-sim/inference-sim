@@ -474,9 +474,10 @@ func (k *Kernel) noteShardedProjections() {
 // cache width (kv_lora_rank + rope, 576 for DeepSeek-V3 and Kimi-K2.5), the width of the absorbed form
 // decode runs in; vLLM prefills a dense latent layer in the multi-head form (MLACommonImpl.forward_mha,
 // vllm/model_executor/layers/attention/mla_attention.py at v0.33.0), q and k 192 wide, v 128, a mean
-// of 160. Sparse MLA keeps the cache width: it runs another kernel and has its own measured forms.
-func prefillHeadWidth(l *price.PlannedLayer) float64 {
-	if l.AttnKind == model.AttentionMLA && l.AttnPrefillQKDim > 0 && l.AttnPrefillVDim > 0 {
+// of 160. Sparse MLA keeps the cache width: it runs another kernel and has its own measured forms, and so
+// does an engine that is not vLLM (see Kernel.multiHeadMLAPrefill).
+func (k *Kernel) prefillHeadWidth(l *price.PlannedLayer) float64 {
+	if k.multiHeadMLAPrefill && l.AttnKind == model.AttentionMLA && l.AttnPrefillQKDim > 0 && l.AttnPrefillVDim > 0 {
 		return float64(l.AttnPrefillQKDim+l.AttnPrefillVDim) / 2
 	}
 	return float64(l.AttnHeadDim)
@@ -492,7 +493,7 @@ func prefillHeadWidth(l *price.PlannedLayer) float64 {
 // widths, and under context parallelism, whose gather path (_context_parallel_compute_prefill_context)
 // is not priced.
 func (k *Kernel) mlaContextTokens(l *price.PlannedLayer, s *stepShape) float64 {
-	if l.AttnKind != model.AttentionMLA || l.AttnPrefillQKDim <= 0 || l.AttnPrefillVDim <= 0 ||
+	if !k.multiHeadMLAPrefill || l.AttnKind != model.AttentionMLA || l.AttnPrefillQKDim <= 0 || l.AttnPrefillVDim <= 0 ||
 		l.AttnKVLoRARank <= 0 || k.layout.DCP > 1 || k.layout.PCP > 1 {
 		return 0
 	}

@@ -684,7 +684,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 				attnSMSeconds += pf.seconds(float64(s.prefillRequests),
 					float64(s.prefillTokens), read)
 			} else if s.prefillRequests > 0 {
-				sm, fl := k.prefillAttention(layerCausalFLOPs*heads*prefillHeadWidth(l), s, l.AttnKind)
+				sm, fl := k.prefillAttention(layerCausalFLOPs*heads*k.prefillHeadWidth(l), s, l.AttnKind)
 				attnSMSeconds += sm
 				flops += fl
 			}
