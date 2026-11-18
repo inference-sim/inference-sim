@@ -14,7 +14,7 @@ func TestIntSeriesReadsAsTheFlatSequence(t *testing.T) {
 	a.Add(src)
 	a.Add(nil)
 	a.Add([]int64{30})
-	src = append(src, 99) // a later append writes inside the spare capacity
+	_ = append(src, 99) // a later append writes inside the spare capacity
 	if got, want := a.Flatten(), []int64{10, 20, 30}; !slices.Equal(got, want) || a.Len() != 3 || a.Segments() != 2 {
 		t.Fatalf("series %v (len %d, %d segments), want %v in 2 segments", got, a.Len(), a.Segments(), want)
 	}
