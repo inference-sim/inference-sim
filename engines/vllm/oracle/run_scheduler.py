@@ -218,7 +218,7 @@ def main() -> None:
         # Batch mode: every *.json scenario in the directory, each trace written beside it as
         # <name>.trace.json. One interpreter for many scenarios, which a fuzz corpus needs.
         out_dir = sys.argv[3] if len(sys.argv) > 3 else scenario_path
-        # Golden traces are never overwritten without review (oracle/README.md).
+        # Golden traces are never overwritten without review (docs/testing.md).
         if "testdata/golden" in os.path.abspath(out_dir).replace(os.sep, "/") and \
                 os.environ.get("BLIS_VLLM_ALLOW_GOLDEN_UPDATE") != "1":
             sys.exit("refusing to write golden traces: set BLIS_VLLM_ALLOW_GOLDEN_UPDATE=1, and add "
@@ -663,7 +663,7 @@ def v2_runner_env(v2: bool):
     (vllm/config/vllm.py:2976-2979@5df63a72) and which needs Triton on the host (:724, 3189): with
     v2, HAS_TRITON is set True and VLLM_USE_V2_MODEL_RUNNER=1 (oracle/mocks.json). The scheduler
     is the same class either way; selecting the V2 runner is the environment, not a decision
-    (oracle/README.md). Returns the function that restores both. oracle/run_connector.py's
+    (docs/testing.md). Returns the function that restores both. oracle/run_connector.py's
     drafter scenarios use it too."""
     import vllm.config.vllm as vllm_config_module  # noqa: E402
 
