@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"slices"
 	"sort"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
@@ -1846,6 +1847,28 @@ func mergeInt64Map(dst, src map[string]int64, mapName string) {
 
 func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 	merged := sim.NewMetrics()
+	// The per-token and per-step series are appended instance after instance; sized once to their
+	// total, the merged slices hold exactly what they carry, where growth by append leaves up to a
+	// doubling of slack behind (a long run's inter-token series are over 800 MB each). Grow leaves
+	// a series nil when it has nothing to hold, as the appends did.
+	var nWait, nRun, nITL, nCounters, nOwners, nGaps, nChunks int
+	for _, inst := range c.instances {
+		m := inst.Metrics()
+		nWait += len(m.NumWaitQRequests)
+		nRun += len(m.NumRunningBatchRequests)
+		nITL += len(m.AllITLs)
+		nCounters += len(m.RequestStepCounters)
+		nOwners += len(m.StepOwners)
+		nGaps += len(m.ClientGaps)
+		nChunks += len(m.ClientChunkGaps)
+	}
+	merged.NumWaitQRequests = slices.Grow(merged.NumWaitQRequests, nWait)
+	merged.NumRunningBatchRequests = slices.Grow(merged.NumRunningBatchRequests, nRun)
+	merged.AllITLs = slices.Grow(merged.AllITLs, nITL)
+	merged.RequestStepCounters = slices.Grow(merged.RequestStepCounters, nCounters)
+	merged.StepOwners = slices.Grow(merged.StepOwners, nOwners)
+	merged.ClientGaps = slices.Grow(merged.ClientGaps, nGaps)
+	merged.ClientChunkGaps = slices.Grow(merged.ClientChunkGaps, nChunks)
 	for _, inst := range c.instances {
 		m := inst.Metrics()
 		merged.CompletedRequests += m.CompletedRequests
