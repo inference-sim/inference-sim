@@ -258,12 +258,15 @@
    }
   },
   "config:attention_backend": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "traces": [
+     "config/testdata/serverargs.json",
+     "lower/testdata/sglang_lower.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:attn_cp_size": {
@@ -384,12 +387,15 @@
    }
   },
   "config:chunked_prefill_size": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "traces": [
+     "config/testdata/serverargs.json",
+     "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:completion_template": {
@@ -438,12 +444,15 @@
    }
   },
   "config:context_length": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "traces": [
+     "config/testdata/serverargs.json",
+     "lower/testdata/sglang_lower.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:cp_strategy": {
@@ -519,12 +528,15 @@
    }
   },
   "config:cuda_graph_max_bs_decode": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "traces": [
+     "config/testdata/serverargs.json",
+     "lower/testdata/sglang_lower.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:cuda_graph_max_bs_prefill": {
@@ -645,12 +657,14 @@
    }
   },
   "config:decode_log_interval": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#9"
+    "traces": [
+     "core/metrics/testdata/golden-metrics/k-chunked-retract.trace.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:decoupled_spec_bind_endpoint": {
@@ -933,12 +947,16 @@
    }
   },
   "config:disable_radix_cache": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#3"
+    "traces": [
+     "config/testdata/serverargs.json",
+     "oracle/scenarios-sched/chunked-retract.json",
+     "oracle/scenarios-sched/nocache-fcfs.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:disable_shared_experts_fusion": {
@@ -1122,9 +1140,12 @@
    }
   },
   "config:dp_size": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "traces": [
+     "config/testdata/serverargs.json",
+     "lower/testdata/sglang_lower.json"
+    ]
    },
    "estimation": {
     "rule": "none"
@@ -1482,12 +1503,15 @@
    }
   },
   "config:enable_flashinfer_allreduce_fusion": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "traces": [
+     "config/testdata/serverargs.json",
+     "lower/testdata/sglang_lower.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:enable_flexkv": {
@@ -2715,12 +2739,12 @@
    }
   },
   "config:host": {
-   "status": "not_modelled",
+   "status": "inert_unproven",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#9"
+    "note": "No proof file: the field is a free string, which the substrate's value classes cannot list for a proof (a proven-inert enumeration lists every value). Reviewed reading at SGLang v0.5.23 297e54fd: it binds the HTTP/gRPC server and is the PD bootstrap address (disaggregation/common/conn.py:345); the scheduler loop and the model runner's step do not read it. lower.TestInertFieldsChangeNoDecision shows resolution and the lowered plan unchanged at 0.0.0.0 and 127.0.0.1."
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:http2_initial_connection_window_size": {
@@ -3264,12 +3288,15 @@
    }
   },
   "config:max_running_requests": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "traces": [
+     "config/testdata/serverargs.json",
+     "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:max_total_tokens": {
@@ -3291,12 +3318,14 @@
    }
   },
   "config:mem_fraction_static": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "traces": [
+     "config/testdata/serverargs.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:min_free_slots_delay": {
@@ -3426,9 +3455,11 @@
    }
   },
   "config:model_path": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "traces": [
+     "config/testdata/serverargs.json"
+    ]
    },
    "estimation": {
     "rule": "none"
@@ -3705,9 +3736,9 @@
    }
   },
   "config:port": {
-   "status": "not_modelled",
+   "status": "proven_inert",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#9"
+    "proof": "oracle/inertness/port.json"
    },
    "estimation": {
     "rule": "none"
@@ -3732,12 +3763,15 @@
    }
   },
   "config:pp_size": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "traces": [
+     "config/testdata/serverargs.json",
+     "lower/testdata/sglang_lower.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:pre_warm_nccl": {
@@ -3957,12 +3991,12 @@
    }
   },
   "config:reasoning_parser": {
-   "status": "not_modelled",
+   "status": "inert_unproven",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#9"
+    "note": "No proof file: the field is a free string, which the substrate's value classes cannot list for a proof. Reviewed reading at SGLang v0.5.23 297e54fd: the scheduler builds a ReasoningParser from it (managers/scheduler.py:940-960) to find the think-end tokens, which count a request's reasoning tokens for usage reporting (managers/schedule_batch.py:2240-2283) and gate grammar-constrained output (constrained/base_grammar_backend.py:448-465; grammar requests are refused by name, blis-sglang#81); no batch is formed or priced differently. lower.TestInertFieldsChangeNoDecision shows resolution and the lowered plan unchanged at glm45 and qwen3."
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:remote_instance_weight_loader_backend": {
@@ -4146,12 +4180,12 @@
    }
   },
   "config:served_model_name": {
-   "status": "not_modelled",
+   "status": "inert_unproven",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#9"
+    "note": "No proof file: the field is a free string, which the substrate's value classes cannot list for a proof. Reviewed reading at SGLang v0.5.23 297e54fd: the model-name label of metrics and of the OpenAI-compatible model list (disaggregation/decode_kvcache_offload_manager.py:110,129; entrypoints); no scheduling or pricing decision reads it. lower.TestInertFieldsChangeNoDecision shows resolution and the lowered plan unchanged at glm-5-fp8."
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:shared_experts_tp_size": {
@@ -4668,9 +4702,9 @@
    }
   },
   "config:stream_interval": {
-   "status": "not_modelled",
+   "status": "proven_inert",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#9"
+    "proof": "oracle/inertness/stream_interval.json"
    },
    "estimation": {
     "rule": "none"
@@ -4776,12 +4810,12 @@
    }
   },
   "config:tool_call_parser": {
-   "status": "not_modelled",
+   "status": "inert_unproven",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#9"
+    "note": "No proof file: the field is a free string, which the substrate's value classes cannot list for a proof. Reviewed reading at SGLang v0.5.23 297e54fd: the OpenAI-serving layer and, for gpt-oss, the detokenizer's output cleanup (managers/detokenizer_manager.py:159-161); the deprecated names qwen25 and glm45 are replaced by their successors in resolution (serving_hook.py:272-281), which config models and the oracle checks (cases dsv3-h200-tp8-deprecated-tool-parser, glm5-h200-tp8-deprecated-glm-parser). lower.TestInertFieldsChangeNoDecision shows the lowered plan unchanged at glm47 and qwen."
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:tool_server": {
@@ -4803,9 +4837,12 @@
    }
   },
   "config:tp_size": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "traces": [
+     "config/testdata/serverargs.json",
+     "lower/testdata/sglang_lower.json"
+    ]
    },
    "estimation": {
     "rule": "none"
@@ -4857,12 +4894,12 @@
    }
   },
   "config:trust_remote_code": {
-   "status": "not_modelled",
+   "status": "inert_unproven",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "note": "No proof file: the dashboard scorer reads a proven-inert boolean as needing a value list the substrate forbids for one, so the field stays unproven. Reviewed reading at SGLang v0.5.23 297e54fd: it is passed to the loaders of the model configuration, tokenizer and processor (managers/tp_worker.py, managers/tokenizer_manager.py, arg_groups/*_hook.py); the catalog fixes the architecture, so loading vendor code selects no kernel and changes no schedule. lower.TestInertFieldsChangeNoDecision shows resolution and the lowered plan unchanged at true and false."
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:trust_request_chat_template": {

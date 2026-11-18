@@ -1,0 +1,331 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright 2023-2024 SGLang Team
+// Derived from python/sglang/srt/layers/quantization/fp8.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
+// Derived from python/sglang/srt/model_executor/cuda_graph_config.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
+// Derived from python/sglang/srt/distributed/device_communicators/custom_all_reduce.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
+
+package lower
+
+import (
+	"fmt"
+	"slices"
+
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/units"
+
+	"github.com/inference-sim/blis-sglang/config"
+)
+
+// PoolInput is the documents the lowering of one pool reads: the deployment and the pool it
+// selects, the catalog graph of the model and the catalog chip. The caller loads them; this
+// package imports no loader (X7).
+type PoolInput struct {
+	Deployment *deployment.Deployment
+	PoolIndex  int
+	Model      *model.Graph
+	Chip       *hardware.Chip
+}
+
+// Args are the pool's ServerArgs as the lowering and the engine both read them: the engine block's
+// fields by SGLang's own names, with the pool's tensor- and data-parallel widths (they are the
+// pool's, not the block's: a block that states them must agree). A pool with parallelism beyond
+// tensor and data is refused by name.
+func Args(in PoolInput) (map[string]any, error) {
+	if in.Deployment == nil {
+		return nil, fmt.Errorf("lowering a pool needs its deployment")
+	}
+	if in.PoolIndex < 0 || in.PoolIndex >= len(in.Deployment.Pools) {
+		return nil, fmt.Errorf("pool index %d is outside the deployment's %d pool(s)", in.PoolIndex, len(in.Deployment.Pools))
+	}
+	pool := in.Deployment.Pools[in.PoolIndex]
+	args := map[string]any{}
+	if !pool.Engine.IsZero() {
+		if err := pool.Engine.Decode(&args); err != nil {
+			return nil, fmt.Errorf("the pool's engine block: %w", err)
+		}
+	}
+	if args == nil {
+		args = map[string]any{}
+	}
+	pl := pool.Parallel
+	if pl.PP > 1 || pl.DCP > 1 || pl.PCP > 1 || pl.EnableExpertParallel {
+		return nil, &NotLowered{Name: "pool parallelism beyond tensor and data (pp, dcp, pcp, expert parallel)", Issue: issueLower}
+	}
+	for name, want := range map[string]int{"tp_size": max(pl.TP, 1), "dp_size": max(pl.DP, 1)} {
+		if got, ok := args[name]; ok {
+			n, isInt := asInt(got)
+			if !isInt || n != want {
+				return nil, fmt.Errorf("the engine block states %s %v and the pool's parallelism states %d: they must agree", name, got, want)
+			}
+		}
+		args[name] = want
+	}
+	if _, ok := args["model_path"]; !ok {
+		// The catalog names the model; SGLang's ServerArgs requires a path and the resolution reads
+		// only the model's facts, which the graph supplies.
+		args["model_path"] = "<model>"
+	}
+	return args, nil
+}
+
+// Resolve resolves the pool's engine block as SGLang resolves a ServerArgs (Args, the chip and the
+// model). Anything outside the input space config models is refused by name (config.NotModelled).
+func Resolve(in PoolInput) (*config.Resolved, error) {
+	if in.Model == nil || in.Chip == nil {
+		return nil, fmt.Errorf("lowering a pool needs its model graph and chip")
+	}
+	args, err := Args(in)
+	if err != nil {
+		return nil, err
+	}
+	chip, err := ChipOf(in.Chip)
+	if err != nil {
+		return nil, err
+	}
+	facts, err := ModelFactsOf(in.Model)
+	if err != nil {
+		return nil, err
+	}
+	return config.Resolve(config.Input{Args: args, Chip: chip, Model: facts})
+}
+
+func asInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case uint64:
+		return int(n), true
+	case float64:
+		return int(n), float64(int(n)) == n
+	}
+	return 0, false
+}
+
+// Pool lowers one pool: it resolves the engine block (Resolve) and states, in the plan's neutral
+// words, every setting SGLang resolved that the cost model prices. Each is read from the SGLang
+// code its comment cites; the cost model applies no default of its own (SUB-6).
+func Pool(in PoolInput) (*plan.Lowered, error) {
+	res, err := Resolve(in)
+	if err != nil {
+		return nil, err
+	}
+	return Lower(&res.Args, in.Model, in.Chip)
+}
+
+// Lower is Pool over arguments already resolved.
+func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Lowered, error) {
+	if err := check(a); err != nil {
+		return nil, err
+	}
+	out := &plan.Lowered{}
+	p := &out.Plan
+	note := func(name, value, reason string) {
+		out.Notes = append(out.Notes, plan.Note{Name: name, Value: value, Reason: reason})
+	}
+	override := func(field, requested, resolved, reason string) {
+		out.Overrides = append(out.Overrides, plan.Override{Field: field, Requested: requested, Resolved: resolved, Reason: reason})
+	}
+	_ = override
+	hasRecurrent, moe := false, false
+	g.EachNode(func(_ string, n model.Node) {
+		hasRecurrent = hasRecurrent || n.Op == model.OpRecurrentUpdate
+		moe = moe || n.Op == model.OpGroupedGEMM
+	})
+	if hasRecurrent {
+		return nil, &NotLowered{Name: "a recurrent (hybrid linear-attention) layer", Issue: "inference-sim/blis-sglang#94"}
+	}
+	if a.EnableTwoBatchOverlap || a.EnableSingleBatchOverlap {
+		return nil, &NotLowered{Name: "two-batch / single-batch overlap", Issue: issueLower}
+	}
+
+	// The served weight format. A checkpoint is served in the format it was quantized in unless
+	// --quantization names a method; a method that quantizes at load (a bf16 checkpoint served
+	// as fp8) changes the weights the graph states, which is not modelled.
+	served := ""
+	if a.Quantization != nil {
+		q := *a.Quantization
+		if q != "fp8" || g.Global.WeightDType != model.DTypeFP8 {
+			return nil, &NotLowered{Name: "quantization=" + q + " on a " + string(g.Global.WeightDType) + " checkpoint", Issue: issueLower}
+		}
+		served = "fp8"
+	}
+	p.WeightFormat = served
+
+	// The KV cache format: kv_cache_dtype (kv_cache_hook.py:40-47@297e54fd) names the element.
+	switch a.KvCacheDtype {
+	case "auto", "bfloat16", "float16", "half":
+		p.Cache.Record, p.Cache.ElementBytes = "", 2
+	case "fp8_e4m3", "fp8_e5m2":
+		p.Cache.Record, p.Cache.ElementBytes = "fp8", 1
+	default:
+		return nil, &NotLowered{Name: "kv_cache_dtype=" + a.KvCacheDtype, Issue: issueLower}
+	}
+	// A recurrent state is absent here (refused above); the kernel requires the width stated, and
+	// the mamba_ssm_dtype default is float32 (arg_groups/fields/mamba.py@297e54fd).
+	p.Cache.StateElementBytes = 4
+
+	// Batch limits and the page.
+	if a.PageSize == nil || a.MemFractionStatic == nil {
+		return nil, fmt.Errorf("page_size and mem_fraction_static must resolve")
+	}
+	p.PageTokens = units.Tokens(*a.PageSize)
+	p.MemoryFraction = *a.MemFractionStatic
+	if a.ContextLength != nil {
+		p.MaxContext = units.Tokens(*a.ContextLength)
+	}
+	decode := a.CudaGraphConfig.Decode
+	reqs := 0
+	if a.MaxRunningRequests != nil {
+		reqs = *a.MaxRunningRequests
+	} else {
+		// SGLang derives the request limit from the pool the model runner sizes after the
+		// weights load (resolve_max_num_reqs, kv_cache_configurator.py@297e54fd), which the
+		// cost model cannot know before it prices the weights; the decode graphs' largest batch
+		// stands in as the bound the step limit is read for.
+		reqs = maxInt(decode.Bs)
+		note("max_running_requests", fmt.Sprint(reqs),
+			"stated by no field: SGLang sizes it from the KV pool; the largest decode CUDA-graph batch bounds a step")
+	}
+	if reqs <= 0 {
+		return nil, fmt.Errorf("max_running_requests resolves to %d", reqs)
+	}
+	p.Batch.Requests = reqs
+	// The tokens one step schedules: a prefill chunk (chunked_prefill_size) or, with chunking off,
+	// the prefill budget (max_prefill_tokens); a decode step schedules one token per request.
+	budget := a.MaxPrefillTokens
+	if a.ChunkedPrefillSize != nil && *a.ChunkedPrefillSize > 0 {
+		budget = min(budget, *a.ChunkedPrefillSize)
+		if budget <= 0 {
+			budget = *a.ChunkedPrefillSize
+		}
+	}
+	p.Batch.Tokens = units.Tokens(max(budget, reqs))
+
+	// CUDA graphs (cuda_graph_config.py:119-193@297e54fd): decode captures by batch size; prefill
+	// is captured per token count.
+	p.Graphs.Decode = launchOf(decode.Backend)
+	p.Graphs.Other = launchOf(a.CudaGraphConfig.Prefill.Backend)
+	if p.Graphs.Decode == plan.LaunchPiecewise {
+		return nil, &NotLowered{Name: "a piecewise decode CUDA graph", Issue: issueLower}
+	}
+	if p.Graphs.Decode != plan.LaunchEager {
+		p.Graphs.Mode = plan.GraphByBatch
+		for _, bs := range decode.Bs {
+			if bs <= reqs {
+				p.Graphs.Buckets = append(p.Graphs.Buckets, bs)
+			}
+		}
+		slices.Sort(p.Graphs.Buckets)
+	}
+	ceiling := 0
+	if p.Graphs.Decode != plan.LaunchEager {
+		ceiling = maxInt(p.Graphs.Buckets)
+	}
+	if p.Graphs.Other != plan.LaunchEager {
+		ceiling = max(ceiling, maxInt(a.CudaGraphConfig.Prefill.Bs))
+	}
+	p.Graphs.Ceiling = units.Tokens(ceiling)
+	if (p.Graphs.Decode != plan.LaunchEager || p.Graphs.Other != plan.LaunchEager) && ceiling <= 0 {
+		return nil, fmt.Errorf("cuda_graph_config captures no size")
+	}
+	switch {
+	case p.Graphs.Decode == plan.LaunchGraph && p.Graphs.Other == plan.LaunchEager,
+		p.Graphs.Decode == plan.LaunchGraph && p.Graphs.Other == plan.LaunchPiecewise,
+		p.Graphs.Decode == plan.LaunchGraph && p.Graphs.Other == plan.LaunchGraph,
+		p.Graphs.Decode == plan.LaunchEager && p.Graphs.Other == plan.LaunchEager:
+	default:
+		return nil, &NotLowered{Name: fmt.Sprintf("decode graphs %s with prefill graphs %s", p.Graphs.Decode, p.Graphs.Other), Issue: issueLower}
+	}
+
+	// The overlap schedule keeps one step in flight while the next is scheduled
+	// (disable_overlap_schedule, scheduler.py event_loop_overlap@297e54fd).
+	p.InFlight = 1
+	if !a.DisableOverlapSchedule {
+		p.InFlight = 2
+	}
+
+	// The routed experts' kernel (layers/quantization/fp8.py:2962-2972@297e54fd): under
+	// moe_runner_backend auto, a block-fp8 MoE runs Triton's fused_moe unless the DeepEP-family
+	// all-to-all selects DeepGEMM; the all-to-all backends are refused above (config).
+	if moe {
+		experts, routing, err := expertsKernel(a, g)
+		if err != nil {
+			return nil, err
+		}
+		p.MoE.Experts, p.MoE.Routing = experts, routing
+	}
+
+	// Allreduce: SGLang's CustomAllreduce handles a width in {2, 4, 6, 8} unless disabled
+	// (custom_all_reduce.py:41,90@297e54fd); the cost model prices that backend as it does the SM
+	// all-reduce.
+	out.Reported.SMAllReduce = a.TpSize > 1 && !a.DisableCustomAllReduce &&
+		slices.Contains([]int{2, 4, 6, 8}, a.TpSize)
+
+	// FlashInfer all-reduce fusion. Resolution turns it on (backend "auto") for the architectures
+	// of overrides.py:929 on SM90/SM100 at tp > 1 without attention DP or an all-to-all
+	// (overrides.py:984-1001@297e54fd), and --enable-flashinfer-allreduce-fusion states the same
+	// backend (serving_hook.py:284-297). A step of at most FUSE_ALLREDUCE_MAX_BATCH_SIZE tokens
+	// (layer_boundary/residual/add_norm.py:141-157) then runs each layer's two all-reduces
+	// (attention to FFN, FFN to the next layer's attention: fusions/allreduce.py:68-163) with the
+	// residual add and the norm that follows in one kernel, so two of a layer's norm nodes run
+	// inside the all-reduce kernel the layer already launches. The first layer has no all-reduce
+	// before its input norm; the plan states the per-layer figure, so that one launch is counted
+	// as fused.
+	if b := a.FlashinferAllreduceFusionBackend; b != nil && *b != "" {
+		if *b != "auto" {
+			return nil, &NotLowered{Name: "flashinfer_allreduce_fusion_backend=" + *b, Issue: issueLower}
+		}
+		if a.TpSize > 1 && !ParallelOf(a).AttnDPEnabled {
+			p.Launches = []plan.LaunchChange{{FromTokens: 1, ToTokens: allreduceFusionMaxTokens, PerLayer: -2}}
+			note("flashinfer_allreduce_fusion", "auto",
+				"two norm launches per layer run inside the all-reduce kernel for steps of at most "+
+					"2048 tokens; the first layer's input norm follows no all-reduce and is counted as fused too")
+		}
+	}
+	return out, nil
+}
+
+// allreduceFusionMaxTokens is FUSE_ALLREDUCE_MAX_BATCH_SIZE (layer_boundary/residual/add_norm.py:141@297e54fd).
+const allreduceFusionMaxTokens = 2048
+
+// launchOf is the plan's launch word for a CUDA-graph backend: a full graph, a breakable graph
+// (attention eager between captured pieces, the plan's piecewise), or none.
+func launchOf(backend string) plan.Launch {
+	switch backend {
+	case "full":
+		return plan.LaunchGraph
+	case "breakable":
+		return plan.LaunchPiecewise
+	}
+	return plan.LaunchEager
+}
+
+func maxInt(l []int) int {
+	m := 0
+	for _, v := range l {
+		m = max(m, v)
+	}
+	return m
+}
+
+// expertsKernel is the kernel SGLang runs the routed experts with, for a block-fp8 or bf16
+// checkpoint under the resolved moe_runner_backend. Every backend this does not name is refused
+// by name until its kernel is lowered.
+func expertsKernel(a *config.ServerArgs, g *model.Graph) (plan.KernelImpl, plan.MoERouting, error) {
+	if a2aBackend(a) != "none" {
+		return plan.KernelImpl{}, "", &NotLowered{Name: "moe_a2a_backend=" + a2aBackend(a), Issue: issueLower}
+	}
+	switch a.MoeRunnerBackend {
+	case "auto", "triton":
+		if g.Global.WeightDType != model.DTypeFP8 {
+			return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=" + a.MoeRunnerBackend + " on " + string(g.Global.WeightDType) + " experts", Issue: issueLower}
+		}
+		return plan.ExpertsTriton, plan.RoutingSeparate, nil
+	}
+	return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=" + a.MoeRunnerBackend, Issue: issueLower}
+}

@@ -26,9 +26,17 @@ type Pool struct {
 	ContextLen      int
 	EOSTokenIDs     []int64
 	VocabSize       int
+	// Args are the pool's ServerArgs fields by SGLang's names, as the host lowered the pool with
+	// them (the engine block with the pool's tensor- and data-parallel widths: lower.Args). Nil
+	// reads the spec's engine block alone.
+	Args map[string]any
 	// Env is the process environment the settings read; the zero value is the defaults.
 	Env *sglang.Env
 }
+
+// RootScenario is the key of engine.Spec.Roots that names the scenario file a host opens the
+// pool from.
+const RootScenario = "scenario"
 
 // Host opens the pool a spec selects.
 type Host interface {
@@ -48,13 +56,15 @@ func newFromDocument(h Host, s engine.Spec) (engine.Engine, error) {
 	if s.UpstreamVersion != "" && s.UpstreamVersion != blissglang.Upstream.Version {
 		return nil, fmt.Errorf("sglangengine: this build models SGLang %s, not %s", blissglang.Upstream.Version, s.UpstreamVersion)
 	}
-	var args map[string]any
-	if err := s.Config.Decode(&args); err != nil {
-		return nil, fmt.Errorf("sglangengine: the engine block: %w", err)
-	}
 	pool, err := h.Open(s)
 	if err != nil {
 		return nil, err
+	}
+	args := pool.Args
+	if args == nil {
+		if err := s.Config.Decode(&args); err != nil {
+			return nil, fmt.Errorf("sglangengine: the engine block: %w", err)
+		}
 	}
 	res, err := config.Resolve(config.Input{Args: args, Chip: pool.Chip, Model: pool.Model})
 	if err != nil {

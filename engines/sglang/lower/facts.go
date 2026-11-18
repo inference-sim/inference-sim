@@ -1,0 +1,107 @@
+// Original to blis-sglang.
+
+package lower
+
+import (
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+
+	"github.com/inference-sim/blis-sglang/config"
+)
+
+// chipMemoryMiB is what nvidia-smi reports as memory.total for each chip the catalog names and the
+// oracle's cases state (oracle/serverargs/cases.json "chips", each with its source). SGLang reads
+// this figure, not the catalog's GiB, in get_device_memory_capacity (utils/common.py@297e54fd), so
+// a chip with no entry is refused rather than converted by a guess.
+var chipMemoryMiB = map[string]float64{
+	"H100": 81559,
+	"H200": 143771,
+	"B200": 183359,
+}
+
+// ChipOf is the chip as SGLang's resolution reads it: the compute capability from the catalog chip
+// and the nvidia-smi memory the oracle's cases state for it.
+func ChipOf(c *hardware.Chip) (config.Chip, error) {
+	major, minor, ok := capability(c.ComputeCapability)
+	if !ok {
+		return config.Chip{}, fmt.Errorf("chip %q states no ComputeCapability (%q), which SGLang's resolution reads", c.Name, c.ComputeCapability)
+	}
+	mib, ok := chipMemoryMiB[strings.ToUpper(c.Name)]
+	if !ok {
+		return config.Chip{}, &NotLowered{Name: "chip " + c.Name, Issue: issueLower}
+	}
+	return config.Chip{Capability: [2]int{major, minor}, MemoryMiB: mib}, nil
+}
+
+func capability(s string) (major, minor int, ok bool) {
+	a, b, found := strings.Cut(s, ".")
+	if !found {
+		return 0, 0, false
+	}
+	major, err1 := strconv.Atoi(a)
+	minor, err2 := strconv.Atoi(b)
+	return major, minor, err1 == nil && err2 == nil && major > 0
+}
+
+// archFacts are the facts of a checkpoint's configuration that the catalog graph does not carry,
+// by the architecture SGLang serves it with (the oracle records them for each model it resolves:
+// model_facts in config/testdata/serverargs.json, compared in TestModelFactsMatchTheOracle).
+type archFacts struct {
+	modelType     string
+	dsa           bool
+	dsaIndexKpool *int
+	asymmetricKV  bool
+	// fp8Block is the block size of the architecture's fp8 checkpoint
+	// (quantization_config.weight_block_size), which the graph's weight_dtype does not carry.
+	fp8Block []int
+}
+
+func ptr[T any](v T) *T { return &v }
+
+var archTable = map[string]archFacts{
+	"DeepseekV3ForCausalLM": {modelType: "deepseek_v3", asymmetricKV: true, fp8Block: []int{128, 128}},
+	"GlmMoeDsaForCausalLM":  {modelType: "glm_moe_dsa", dsa: true, dsaIndexKpool: ptr(1), fp8Block: []int{128, 128}},
+}
+
+// ModelFactsOf is the model as SGLang's resolution reads it, from the catalog graph. The graph
+// states the architecture, the hidden width, the served weight format and its block scale; the
+// rest is the architecture's own (archTable). An architecture, or a weight format, outside what the
+// oracle covers is refused by name.
+func ModelFactsOf(g *model.Graph) (config.ModelFacts, error) {
+	arch := g.Global.Architecture
+	t, ok := archTable[arch]
+	if !ok {
+		return config.ModelFacts{}, &NotLowered{Name: "architecture " + arch, Issue: issueLower}
+	}
+	hidden := g.Global.HiddenSize
+	f := config.ModelFacts{
+		Architecture: arch, ModelType: t.modelType, TextModelType: t.modelType,
+		AttentionArch: "MHA", IsDeepseekDSA: t.dsa, DSAIndexKpool: t.dsaIndexKpool,
+		HasAsymmetricKV: t.asymmetricKV, HiddenSize: &hidden,
+	}
+	g.EachNode(func(_ string, n model.Node) {
+		if n.Op == model.OpAttention && (n.AttentionKind == model.AttentionMLA || n.AttentionKind == model.AttentionSparseMLA) {
+			f.AttentionArch = "MLA"
+		}
+	})
+	switch g.Global.WeightDType {
+	case model.DTypeBF16:
+	case model.DTypeFP8:
+		// The fp8 checkpoint of these architectures is block-quantized (the oracle's model_facts
+		// record weight_block_size); a graph that states a scale of another block is a different
+		// quant method.
+		if s := g.Global.WeightScale; t.fp8Block == nil || s != nil && s.Elements != t.fp8Block[0]*t.fp8Block[1] {
+			return config.ModelFacts{}, &NotLowered{Name: "fp8 weights of another block scale", Issue: issueLower}
+		}
+		m := "fp8"
+		f.QuantMethod, f.QuantWeightBlockSize = &m, slices.Clone(t.fp8Block)
+	default:
+		return config.ModelFacts{}, &NotLowered{Name: "weight format " + string(g.Global.WeightDType), Issue: issueLower}
+	}
+	return f, nil
+}

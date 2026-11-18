@@ -132,7 +132,10 @@
   {
    "id": "config/attention.go:mlaBackendPageConstraints:||->&&#1:if is(a, \"flashmla\") || is(d, \"flashmla\") {",
    "needs": {
-    "field": "attention_backend"
+    "value": [
+     "attention_backend",
+     "flashmla"
+    ]
    },
    "stage": "S17",
    "issue": "inference-sim/blis-sglang#53"
@@ -140,7 +143,10 @@
   {
    "id": "config/attention.go:mlaBackendPageConstraints:||->&&#1:if (is(a, \"trtllm_mla\") || is(d, \"trtllm_mla\")) && !in(32, 64) {",
    "needs": {
-    "field": "attention_backend"
+    "value": [
+     "attention_backend",
+     "trtllm_mla"
+    ]
    },
    "stage": "S17",
    "issue": "inference-sim/blis-sglang#53"
@@ -148,7 +154,10 @@
   {
    "id": "config/attention.go:mlaBackendPageConstraints:||->&&#1:if (is(a, \"cutedsl_mla\") || is(d, \"cutedsl_mla\") || is(p, \"cutedsl_mla\")) && !in(32, 64) {",
    "needs": {
-    "field": "attention_backend"
+    "value": [
+     "attention_backend",
+     "cutedsl_mla"
+    ]
    },
    "stage": "S17",
    "issue": "inference-sim/blis-sglang#53"
@@ -156,7 +165,10 @@
   {
    "id": "config/attention.go:mlaBackendPageConstraints:||->&&#2:if (is(a, \"cutedsl_mla\") || is(d, \"cutedsl_mla\") || is(p, \"cutedsl_mla\")) && !in(32, 64) {",
    "needs": {
-    "field": "attention_backend"
+    "value": [
+     "attention_backend",
+     "cutedsl_mla"
+    ]
    },
    "stage": "S17",
    "issue": "inference-sim/blis-sglang#53"
@@ -164,7 +176,10 @@
   {
    "id": "config/attention.go:mlaBackendPageConstraints:||->&&#2:if (is(a, \"trtllm_mha\") || is(d, \"trtllm_mha\") || is(p, \"trtllm_mha\") || is(sd, \"trtllm_mha\")) && !in(16, 32, 64, 128) {",
    "needs": {
-    "field": "attention_backend"
+    "value": [
+     "attention_backend",
+     "trtllm_mha"
+    ]
    },
    "stage": "S17",
    "issue": "inference-sim/blis-sglang#53"
@@ -172,7 +187,10 @@
   {
    "id": "config/attention.go:mlaBackendPageConstraints:||->&&#3:if (is(a, \"trtllm_mha\") || is(d, \"trtllm_mha\") || is(p, \"trtllm_mha\") || is(sd, \"trtllm_mha\")) && !in(16, 32, 64, 128) {",
    "needs": {
-    "field": "attention_backend"
+    "value": [
+     "attention_backend",
+     "trtllm_mha"
+    ]
    },
    "stage": "S17",
    "issue": "inference-sim/blis-sglang#53"
@@ -180,7 +198,10 @@
   {
    "id": "config/attention.go:mlaBackendPageConstraints:||->&&#1:if (is(a, \"hpc_ops\") || is(d, \"hpc_ops\") || is(p, \"hpc_ops\")) && !in(64) {",
    "needs": {
-    "field": "attention_backend"
+    "value": [
+     "attention_backend",
+     "hpc_ops"
+    ]
    },
    "stage": "S17",
    "issue": "inference-sim/blis-sglang#53"
@@ -188,7 +209,10 @@
   {
    "id": "config/attention.go:mlaBackendPageConstraints:||->&&#2:if (is(a, \"hpc_ops\") || is(d, \"hpc_ops\") || is(p, \"hpc_ops\")) && !in(64) {",
    "needs": {
-    "field": "attention_backend"
+    "value": [
+     "attention_backend",
+     "hpc_ops"
+    ]
    },
    "stage": "S17",
    "issue": "inference-sim/blis-sglang#53"
@@ -196,7 +220,10 @@
   {
    "id": "config/attention.go:fa4PageConstraint:||->&&#1:if (is(a, \"fa4\") || is(d, \"fa4\") || is(p, \"fa4\")) && !r.model.useMLA() && r.chip.isSM100() && topk <= 1 {",
    "needs": {
-    "field": "attention_backend"
+    "value": [
+     "attention_backend",
+     "fa4"
+    ]
    },
    "stage": "S17",
    "issue": "inference-sim/blis-sglang#53"
@@ -204,7 +231,10 @@
   {
    "id": "config/attention.go:fa4PageConstraint:||->&&#2:if (is(a, \"fa4\") || is(d, \"fa4\") || is(p, \"fa4\")) && !r.model.useMLA() && r.chip.isSM100() && topk <= 1 {",
    "needs": {
-    "field": "attention_backend"
+    "value": [
+     "attention_backend",
+     "fa4"
+    ]
    },
    "stage": "S17",
    "issue": "inference-sim/blis-sglang#53"
@@ -212,7 +242,10 @@
   {
    "id": "config/attention.go:fa4PageConstraint:<=-><#1:if (is(a, \"fa4\") || is(d, \"fa4\") || is(p, \"fa4\")) && !r.model.useMLA() && r.chip.isSM100() && topk <= 1 {",
    "needs": {
-    "field": "attention_backend"
+    "value": [
+     "attention_backend",
+     "fa4"
+    ]
    },
    "stage": "S17",
    "issue": "inference-sim/blis-sglang#53"
@@ -331,22 +364,6 @@
    },
    "stage": "T1 rest",
    "issue": "inference-sim/blis-sglang#49"
-  },
-  {
-   "id": "config/models.go:deepseekFamilyOverrides:&&->||#1:if r.cfg.AttentionBackend == nil && r.cfg.PrefillAttentionBackend == nil && r.cfg.DecodeAttentionBackend == nil {",
-   "needs": {
-    "field": "attention_backend"
-   },
-   "stage": "S17",
-   "issue": "inference-sim/blis-sglang#53"
-  },
-  {
-   "id": "config/models.go:deepseekFamilyOverrides:&&->||#2:if r.cfg.AttentionBackend == nil && r.cfg.PrefillAttentionBackend == nil && r.cfg.DecodeAttentionBackend == nil {",
-   "needs": {
-    "field": "attention_backend"
-   },
-   "stage": "S17",
-   "issue": "inference-sim/blis-sglang#53"
   },
   {
    "id": "config/models.go:deepseekFamilyOverrides:!=->==#1:if r.model.DSAIndexKpool != nil {",
@@ -493,7 +510,10 @@
   {
    "id": "config/speculative.go:handleEagleFamily:||->&&#1:if p, d := r.attentionBackends(); (is(p, \"trtllm_mha\") || is(d, \"trtllm_mha\")) && topk > 1 {",
    "needs": {
-    "field": "attention_backend"
+    "value": [
+     "attention_backend",
+     "trtllm_mha"
+    ]
    },
    "stage": "S17",
    "issue": "inference-sim/blis-sglang#53"
@@ -501,15 +521,10 @@
   {
    "id": "config/speculative.go:handleEagleFamily:>->>=#1:if p, d := r.attentionBackends(); (is(p, \"trtllm_mha\") || is(d, \"trtllm_mha\")) && topk > 1 {",
    "needs": {
-    "field": "attention_backend"
-   },
-   "stage": "S17",
-   "issue": "inference-sim/blis-sglang#53"
-  },
-  {
-   "id": "config/speculative.go:handleEagleFamily:>->>=#2:if topk > 1 && *r.cfg.PageSize > 1 {",
-   "needs": {
-    "field": "attention_backend"
+    "value": [
+     "attention_backend",
+     "trtllm_mha"
+    ]
    },
    "stage": "S17",
    "issue": "inference-sim/blis-sglang#53"

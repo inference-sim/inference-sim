@@ -37,6 +37,24 @@ var acceptedFields = map[string][]any{
 	"speculative_num_steps":           nil,
 	"speculative_eagle_topk":          nil,
 	"speculative_num_draft_tokens":    nil,
+	// The InferenceX h200 recipes of DeepSeek-R1 and GLM-5 (oracle cases dsr1-h200-tp8-recipe-*,
+	// glm5-h200-tp8-recipe, dsv3-h200-tp8-fa3-explicit, dsv3-h200-tp1-fusion-flag). Each is either
+	// read by the scheduler or the lowering (fields/status.json cites the traces and tests) or proven
+	// inert to every decision there.
+	"max_prefill_tokens":                 nil,
+	"cuda_graph_max_bs_decode":           nil,
+	"attention_backend":                  {nil, "flashinfer", "fa3"},
+	"stream_interval":                    nil,
+	"decode_log_interval":                nil,
+	"enable_flashinfer_allreduce_fusion": nil,
+	"host":                               nil,
+	"port":                               nil,
+	"trust_remote_code":                  nil,
+	"served_model_name":                  nil,
+	"tool_call_parser":                   nil,
+	"reasoning_parser":                   nil,
+	"context_length":                     nil,
+	"pp_size":                            {1},
 }
 
 // refusedFieldIssue names, for a field another open issue covers, that issue instead of the

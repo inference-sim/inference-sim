@@ -53,10 +53,20 @@ func (r *resolver) handleHicacheRatioDefault() {
 
 // handleDeprecatedArgs is handle_deprecated_args (serving_hook.py:256-432). Only its
 // unconditional declarations reach an accepted input: the deprecated FlashInfer fusion flag is
-// cleared, and grpc_worker_threads takes SGLANG_GRPC_WORKER_THREADS, whose default is 4
+// cleared (after it states the auto backend), a deprecated tool-call parser name is replaced, and grpc_worker_threads takes SGLANG_GRPC_WORKER_THREADS, whose default is 4
 // (environ.py:1715).
 func (r *resolver) handleDeprecatedArgs() {
 	const src = "_handle_deprecated_args"
+	// serving_hook.py:272-281: a deprecated tool-call parser name is replaced by its successor.
+	if r.cfg.ToolCallParser != nil {
+		if succ, ok := map[string]string{"qwen25": "qwen", "glm45": "glm"}[*r.cfg.ToolCallParser]; ok {
+			r.declare(src, "tool_call_parser", succ)
+		}
+	}
+	// serving_hook.py:284-297: the deprecated flag states the "auto" backend.
+	if r.cfg.EnableFlashinferAllreduceFusion && r.cfg.FlashinferAllreduceFusionBackend == nil {
+		r.declare(src, "flashinfer_allreduce_fusion_backend", "auto")
+	}
 	r.declare(src, "enable_flashinfer_allreduce_fusion", false)
 	r.declare(src, "grpc_worker_threads", 4)
 }
