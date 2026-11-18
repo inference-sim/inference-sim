@@ -260,13 +260,17 @@ def kv_cache_config(cfg: dict, vllm_config):
     extra_retained = max(0, vllm_config.num_prefill_lookahead_tokens - 1)
     specs = []
     for i, g in enumerate(cfg.get("kv_groups") or [{"kind": "full"}]):
+        # A group that holds a draft layer: its layer's spec is_draft, and the group is_eagle_group, as
+        # kv_cache_planning tags it when use_eagle_block_drop() holds (vllm/v1/core/kv_cache_planning.py:
+        # 1652-1655@4ba787ec). The tag is configuration; every decision on it is vLLM's own.
+        draft = {"is_draft": True} if g.get("eagle") else {}
         if g["kind"] == "full":
-            layer = FullAttentionSpec(**common)
+            layer = FullAttentionSpec(**common, **draft)
         elif g["kind"] == "sliding_window":
-            layer = SlidingWindowSpec(sliding_window=g["sliding_window"], extra_retained_tokens=extra_retained, **common)
+            layer = SlidingWindowSpec(sliding_window=g["sliding_window"], extra_retained_tokens=extra_retained, **common, **draft)
         else:
             raise ValueError(f"unknown KV cache group kind {g['kind']!r}")
-        specs.append(KVCacheGroupSpec([f"layer{i}"], layer))
+        specs.append(KVCacheGroupSpec([f"layer{i}"], layer, is_eagle_group=bool(g.get("eagle"))))
     return KVCacheConfig(num_blocks=cfg["num_blocks"], kv_cache_tensors=[], kv_cache_groups=specs)
 
 
