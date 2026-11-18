@@ -41000,7 +41000,7 @@
   }
  ],
  "provenance": {
-  "cases_sha256": "c03d481244d6ef1acf446bbe8f409bc53719d37cd8411d1de17bd40cf9c01252",
+  "cases_sha256": "826a8338ba193cb7fabd8605a24d64e86485a95e8125758ac874e38188649edd",
   "models": {
    "deepseek-v3": "e815299b0bcbac849fa540c768ef21845365c9eb",
    "deepseek-v4-flash": "60d8d70770c6776ff598c94bb586a859a38244f1",
