@@ -58,6 +58,11 @@ func TestBlackwellModelFactsMatchTheOracle(t *testing.T) {
 			t.Fatal(err)
 		}
 		got.HiddenSize, want.HiddenSize = nil, nil
+		// The oracle records an empty list for a checkpoint that lists no mixed-precision algorithms;
+		// the lowering leaves it unset. Both state that there are none.
+		if len(got.MixedPrecisionMoEQuantAlgos) == 0 && len(want.MixedPrecisionMoEQuantAlgos) == 0 {
+			got.MixedPrecisionMoEQuantAlgos, want.MixedPrecisionMoEQuantAlgos = nil, nil
+		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: facts %+v, SGLang derives %+v", tc.graph, got, want)
 		}
