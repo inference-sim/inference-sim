@@ -89,6 +89,7 @@ func emitRunResult(p postRun) {
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
+	warnP2PHandoffsWithoutWrite(pdMetrics, docs.Deployment)
 	policy, err := resultPolicy(policyConfigPath)
 	if err != nil {
 		logrus.Fatalf("%v", err)

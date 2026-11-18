@@ -189,8 +189,10 @@ type EngineDriver struct {
 	OnTierPriced func(id engine.TransferID, demand kernel.TransferDemand, at int64)
 	// OnPeerWritePriced, when set, receives an engine's WRITE to a peer at the instant it starts,
 	// with its demand: the host shares link capacity with it and reports it landed
-	// (PeerWriteLanded). Unset, a WRITE takes its demand alone (TierTicks).
-	OnPeerWritePriced func(id engine.TransferID, demand kernel.TransferDemand, at int64)
+	// (PeerWriteLanded). request is the request the WRITE serves (engine.Transfer.Request): for a
+	// disaggregated handoff over the p2p tier, the kv_request_id the orchestrator allocated. Unset,
+	// a WRITE takes its demand alone (TierTicks).
+	OnPeerWritePriced func(id engine.TransferID, request string, demand kernel.TransferDemand, at int64)
 	// peerRouter carries the engine's peer messages (engine.Peered); peerWrites are the WRITEs in
 	// flight through OnPeerWritePriced.
 	peerRouter PeerRouter
