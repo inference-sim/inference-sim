@@ -30,7 +30,10 @@
 // engine block would describe neither.
 package deployment
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
 
 // Deployment is the tunable configuration applied to a Scenario: the pools that lay
 // the model out, the offload hierarchy, and prefill-to-decode transfer.
@@ -232,6 +235,49 @@ func (d *Deployment) StatesPDTransfer() bool {
 		}
 	}
 	return false
+}
+
+// OffloadAt is an offload block with the field path it is stated at ("offload", or
+// "pools[i].offload"), for a check that reports where a setting came from.
+type OffloadAt struct {
+	At      string
+	Offload *Offload
+}
+
+// PDTransferAt is a pd_transfer block with the field path it is stated at.
+type PDTransferAt struct {
+	At         string
+	PDTransfer *PDTransfer
+}
+
+// Offloads lists every offload block the document states, the deployment's first and then each
+// pool's own, leaving out a pool's empty block (it states no offload).
+func (d *Deployment) Offloads() []OffloadAt {
+	var out []OffloadAt
+	if d.Offload != nil {
+		out = append(out, OffloadAt{"offload", d.Offload})
+	}
+	for i, p := range d.Pools {
+		if p.Offload != nil && !p.Offload.StatesNone() {
+			out = append(out, OffloadAt{fmt.Sprintf("pools[%d].offload", i), p.Offload})
+		}
+	}
+	return out
+}
+
+// PDTransfers lists every pd_transfer block the document states, the deployment's first and then
+// each pool's own.
+func (d *Deployment) PDTransfers() []PDTransferAt {
+	var out []PDTransferAt
+	if d.PDTransfer != nil {
+		out = append(out, PDTransferAt{"pd_transfer", d.PDTransfer})
+	}
+	for i, p := range d.Pools {
+		if p.PDTransfer != nil {
+			out = append(out, PDTransferAt{fmt.Sprintf("pools[%d].pd_transfer", i), p.PDTransfer})
+		}
+	}
+	return out
 }
 
 // StatesNone reports whether the block states no offload at all: no tier and no other

@@ -123,3 +123,20 @@ func TestPoolOffload_PoolTierMustBeInTheClusterInventory(t *testing.T) {
 		t.Errorf("got %v", p.Error())
 	}
 }
+
+// Offloads and PDTransfers list each block with the path it is stated at, a pool's empty offload
+// block (no offload) left out.
+func TestPoolOffload_ListsEveryStatedBlockWithItsPath(t *testing.T) {
+	d := kvDeployment(t, cpuTier, "    offload: {tiers: []}\n    pd_transfer: {connector: NixlConnector}\n",
+		"offload: {tiers: [{tier: cpu_dram, bytes: 1}]}\npd_transfer: {connector: MultiConnector}\n")
+	var got []string
+	for _, o := range d.Offloads() {
+		got = append(got, o.At)
+	}
+	for _, t2 := range d.PDTransfers() {
+		got = append(got, t2.At)
+	}
+	if want := "offload pools[0].offload pd_transfer pools[1].pd_transfer"; strings.Join(got, " ") != want {
+		t.Errorf("blocks %v, want %s", got, want)
+	}
+}
