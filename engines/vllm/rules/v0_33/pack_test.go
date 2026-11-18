@@ -287,6 +287,21 @@ func TestOffloadSpecKnown(t *testing.T) {
 	}
 }
 
+// A pool's own offload block is checked like the deployment's, and the problem names the pool's path.
+func TestOffloadSpecKnownChecksAPoolsOwnBlock(t *testing.T) {
+	s := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1}, engineconfig.Engine{}))
+	s.Pools[0].Offload = &deployment.Offload{Spec: "MagicOffloadingSpec",
+		Tiers: []deployment.Tier{{Device: "cpu_dram", Bytes: 1 << 40}}}
+	p := run(t, s, moe224Graph())
+	found := false
+	for _, it := range p.All() {
+		found = found || it.Rule == "offload-spec-known" && strings.Contains(it.Message, "pools[0].offload.spec")
+	}
+	if !found {
+		t.Errorf("no offload-spec-known problem at pools[0].offload.spec: %v", p.All())
+	}
+}
+
 func TestDBOThresholdsStatedWhenEnabled(t *testing.T) {
 	s := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1},
 		engineconfig.Engine{DBO: &engineconfig.DBO{Enabled: true}}))

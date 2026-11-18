@@ -41,11 +41,22 @@ type Placement struct {
 // for that pool rather than by pool 0's copied to both.
 type Pools struct {
 	Prefill, Decode *kernelmodel.Model
-	// Connector is the scenario's pd_transfer.connector.
-	Connector string
-	// P2P is whether the handoff is vLLM's p2p tier's: pd_transfer OffloadingConnector and a p2p
-	// tier in the offload's connector options (openPools).
+	// Connector is the prefill pool's KV connector (its own pd_transfer.connector, else the
+	// deployment's) and DecodeConnector the decode pool's. They differ when a prefill pool runs NIXL
+	// beside a CPU tier (MultiConnector) and the decode pool runs NIXL alone.
+	Connector, DecodeConnector string
+	// An empty DecodeConnector is Connector: one connector both pools run (decodeConnector).
+	// P2P is whether the handoff is vLLM's p2p tier's: both pools' connector OffloadingConnector and a
+	// p2p tier in the prefill offload's connector options (openPools).
 	P2P bool
+}
+
+// decodeConnector is the decode pool's connector: DecodeConnector, else the one both pools run.
+func (p *Pools) decodeConnector() string {
+	if p.DecodeConnector != "" {
+		return p.DecodeConnector
+	}
+	return p.Connector
 }
 
 // EndpointPlacements uses the same role-specific kernel placements that price KV handoffs.
@@ -177,13 +188,25 @@ func openPools(scenario string, repos kernelmodel.Repos, kernelOpen bool, top To
 	if err != nil {
 		return nil, fmt.Errorf("scenario %q: %v", scenario, err)
 	}
-	p.Connector = shape.PDConnector
+	// Each pool's own connector, else the deployment's: the prefill and decode engines are separate
+	// servers with separate --kv-transfer-config (vllm/engine/arg_utils.py:789, 1881 at v0.33.0).
+	roleIndex, err := kernelmodel.RolePools(scenario, repos)
+	if err != nil {
+		return nil, fmt.Errorf("scenario %q: %v", scenario, err)
+	}
+	pre, dec := roleIndex[deployment.RolePrefill], roleIndex[deployment.RoleDecode]
+	p.Connector, p.DecodeConnector = shape.PoolPDConnectors[pre], shape.PoolPDConnectors[dec]
 	// vLLM's p2p tier hands a request off with the OffloadingConnector alone: the decode engine
 	// loads the prompt from the prefill engine's CPU tier through its own p2p tier, which the
 	// v0.33.0 engines run (docs/features/kv_offloading_usage.md "P2P (Including P/D)" at vLLM
 	// v0.33.0; #204). NIXL's rules (the connector, MultiConnector's order, the prefill backoff) are
 	// not that handoff's; the rules every P/D run keeps follow.
-	p.P2P = p.Connector == p2pHandoffConnector && StatesP2PTier(shape.Offload)
+	p.P2P = p.Connector == p2pHandoffConnector && StatesP2PTier(shape.PoolOffloads[pre])
+	if p.P2P && p.DecodeConnector != p2pHandoffConnector {
+		return nil, fmt.Errorf("scenario %q: the prefill pool hands KV off over vLLM's p2p tier (pd_transfer.connector %s), "+
+			"which the decode pool must run too, and its pd_transfer.connector is %q; state %s on both pools",
+			scenario, p2pHandoffConnector, p.DecodeConnector, p2pHandoffConnector)
+	}
 	if !p.P2P {
 		if err := requireNIXLRules(scenario, p, warnings); err != nil {
 			return nil, err
@@ -248,10 +271,12 @@ var nixlConnectors = map[string]bool{
 
 // requireNIXLRules refuses a NIXL handoff BLIS does not model and adds MultiConnector's warning.
 func requireNIXLRules(scenario string, p *Pools, warnings *[]string) error {
-	if err := RequireNIXLHandoff(scenario, p.Connector); err != nil {
-		return err
+	for _, c := range []struct{ role, connector string }{{"prefill", p.Connector}, {"decode", p.decodeConnector()}} {
+		if err := RequireNIXLHandoff(scenario, c.connector); err != nil {
+			return fmt.Errorf("the %s pool: %w", c.role, err)
+		}
 	}
-	if p.Connector == "MultiConnector" {
+	if p.Connector == "MultiConnector" || p.decodeConnector() == "MultiConnector" {
 		// The schema states no MultiConnector children or their order, and the order decides
 		// which connector loads a request's KV: the first, in config order, that reports
 		// tokens (multi_connector.py:134-141, 429-448). BLIS assumes llm-d's composition,
@@ -708,31 +733,46 @@ type PoolOffload struct {
 }
 
 // PriceOffload prices the run's KV offload once per pool, each by that pool's own kernel: the
-// same tiers and capacities (cfg, the run's one offload description), sized and priced from
+// same tiers and capacities (cfg, one offload description both pools run), sized and priced from
 // each pool's layout. ok is false when the run offloads nothing.
 func (p *Pools) PriceOffload(scenario string, cfg engine.KVOffloadConfig, in OffloadPricing, top Topology, fatal Fatal) (prefill, decode PoolOffload, ok bool, err error) {
-	if !cfg.IsEnabled() && in.KVCPUBlocks <= 0 {
+	return p.PriceOffloadPools(scenario, cfg, cfg, in, top, fatal)
+}
+
+// PriceOffloadPools is PriceOffload for pools that run different offload: the prefill pool's own
+// description and the decode pool's (an inert one for a pool with no offload). Each pool's tier is
+// sized and priced by its own kernel, and a pool that runs none holds none. ok is false when
+// neither pool offloads.
+func (p *Pools) PriceOffloadPools(scenario string, prefillCfg, decodeCfg engine.KVOffloadConfig, in OffloadPricing, top Topology, fatal Fatal) (prefill, decode PoolOffload, ok bool, err error) {
+	if !prefillCfg.IsEnabled() && !decodeCfg.IsEnabled() && in.KVCPUBlocks <= 0 {
 		return PoolOffload{}, PoolOffload{}, false, nil
 	}
 	// A disaggregated engine with an offload tier runs both connectors, which only a
 	// MultiConnector composes: with kv_offloading_size set, vLLM overwrites kv_connector with
 	// the OffloadingConnector and kv_role with kv_both (vllm/config/vllm.py:1124-1158 at
 	// v0.31.0), so a plain NIXL connector and a tier cannot run together. A p2p handoff runs the
-	// OffloadingConnector alone, its tiers the handoff's (openPools).
-	if p.Connector != "MultiConnector" && !p.P2P {
-		return PoolOffload{}, PoolOffload{}, false, fmt.Errorf("scenario %q offloads KV under P/D with pd_transfer.connector %q; vLLM runs a NIXL "+
-			"handoff and an offload tier together only through a MultiConnector (stating "+
-			"kv_offloading_size replaces kv_connector with OffloadingConnector, vllm/config/vllm.py:1124-1158), "+
-			"so state pd_transfer.connector: MultiConnector", scenario, p.Connector)
+	// OffloadingConnector alone, its tiers the handoff's (openPools). The rule is each pool's own:
+	// a pool with no tier runs whichever NIXL connector it states.
+	for _, c := range []struct {
+		role, connector string
+		cfg             engine.KVOffloadConfig
+	}{{"prefill", p.Connector, prefillCfg}, {"decode", p.decodeConnector(), decodeCfg}} {
+		if (c.cfg.IsEnabled() || in.KVCPUBlocks > 0) && c.connector != "MultiConnector" && !p.P2P {
+			return PoolOffload{}, PoolOffload{}, false, fmt.Errorf("scenario %q offloads KV in the %s pool with pd_transfer.connector %q; vLLM runs a NIXL "+
+				"handoff and an offload tier together only through a MultiConnector (stating "+
+				"kv_offloading_size replaces kv_connector with OffloadingConnector, vllm/config/vllm.py:1124-1158), "+
+				"so state pd_transfer.connector: MultiConnector on the %s pool", scenario, c.role, c.connector, c.role)
+		}
 	}
 	out := [2]PoolOffload{}
 	for i, c := range []struct {
 		role string
 		m    *kernelmodel.Model
-	}{{"prefill", p.Prefill}, {"decode", p.Decode}} {
-		pool := cfg
+		cfg  engine.KVOffloadConfig
+	}{{"prefill", p.Prefill, prefillCfg}, {"decode", p.Decode, decodeCfg}} {
+		pool := c.cfg
 		// Each pool gets its own tier slice: priceOffload installs a per-pool ServiceTime.
-		pool.Tiers = append([]engine.KVOffloadTier(nil), cfg.Tiers...)
+		pool.Tiers = append([]engine.KVOffloadTier(nil), c.cfg.Tiers...)
 		// A pool's block is its own layout's slice of the KV, so pools of different widths
 		// hold different bytes per block, and the tiers' block capacity and job sizes follow.
 		if pool.IsEnabled() {
