@@ -16,6 +16,7 @@ blis-substrate:
   "ledger: TestNoCommittedRoles": [ledger]
   "ledger: TestLintWorkflows": [ledger]
   "tools/modlint: TestEachRuleHasAKnownBadInput": [contracts and validators]
+  "tools/prcheck: TestAJobThatInstallsGoFromGoModIsRefused": [contracts and validators]
   "contracts: TestKernelImportsOnlySpec": [contracts and validators]
   "contracts: TestDocFieldTablesMatchTypes": [contracts and validators]
   "contracts: TestLoadRejectsUnknownFields": [contracts and validators]
