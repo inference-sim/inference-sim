@@ -41,7 +41,19 @@ serves it over multi-node NVLink (vLLM v0.33.0 custom_all_reduce.py, `mnnvl_only
 committed NCCL 2.23 triples price a kernel vLLM does not run (VAL-8; inference-sim/
 blis-substrate#116). No GB200 sweep measures the custom kernel at those widths. gb300's vLLM
 0.27.0 sweep does, on the same NVL72 NVLink-5 fabric, so gb200 takes gb300's 8- and 16-rank
-triples as `transferred`, superseding the NCCL entries. The transfer is checked first, where
+triples as `transferred`, superseding the NCCL entries.
+
+COLL1 (accuracy preregistration, M3.1): a second candidate for the cross-tray widths was scored
+before it was priced. GB200's own sweep of SGLang's custom all-reduce (comm/sglang/0.5.14 file;
+2 and 4 ranks carry version 0.5.14, 8 and 16 ranks 0.5.17) scores GB200's vLLM 0.31.0 rows at 2
+and 4 ranks at 1.047x (geometric mean), against 1.471x for gb300's vLLM 0.27.0 triples that are
+transferred here: the 0.27.0 kernel is 1.9x slower than 0.31.0's at 2 and 4 ranks on either part,
+which the gate above (gb300's 0.31.0 triples) does not test. The pre-registered rule took the
+lower error. Its guard did not hold: priced from that sweep (floor 27.98 us against 13.16 us), the
+Muse Spark GB200 TP8 probe's ITL p50 moves from 10.53 ms to 12.39 ms against a measured 5.82 ms (internal deployment measurements),
+1.85 ms further from the measurement against a 1.0 ms allowance. The gb300 triples therefore stay,
+labelled transferred, and the disagreement is recorded on each entry. It is not resolved: a vLLM
+sweep of the custom all-reduce on GB200 at 8 ranks decides it (inference-sim/blis-substrate#116). The transfer is checked first, where
 both parts are measured: gb300's 0.31.0 triple scores gb200's 0.31.0 messages at 2 and 4 ranks,
 and it must come within TRANSFER_GATE of gb200's own fit there, or nothing is written.
 """
@@ -212,6 +224,16 @@ def main(argv):
                 cb.upsert(blocks, e, after=lambda b: False)
         tchip, schip = TRANSFER["to"], TRANSFER["from"]
         shown = "; ".join(f"{w} ranks {tr:.3f}x against {own:.3f}x" for w, own, tr in checks)
+        sib = {g.gpus: g for g in fcv.read(data / to_sku / "comm" / "sglang" / "0.5.14")
+               if g.backend == "sglang_graph"}
+        disagree = {w: (f"DISAGREEMENT, unresolved: {tchip}'s own sweep of SGLang's custom "
+                        f"all-reduce (comm/sglang/0.5.14 file, version column 0.5.17) measures "
+                        f"{sib[w].floor_us:.2f} us at this width and scores {tchip}'s vLLM {NEW} "
+                        f"rows at 2 and 4 ranks better than the triple used here (1.047x against "
+                        f"1.471x), but priced from it the Muse Spark GB200 TP8 probe's ITL p50 "
+                        f"moves from 10.53 ms to 12.39 ms against a measured 5.82 ms (internal deployment measurements), past the "
+                        f"1.0 ms allowance registered in COLL1, so it was not adopted.")
+                    for w in TRANSFER["widths"]}
         for w in TRANSFER["widths"]:
             g = src_wide[w]
             cite = (f"NVIDIA AISimulate systems/data/{src_sku}/comm/vllm/{TRANSFER['version']}/"
@@ -224,7 +246,7 @@ def main(argv):
                   f"does not call (inference-sim/blis-substrate#116). Checked where both parts "
                   f"are measured, vLLM {NEW} at 2 and 4 ranks, {schip}'s triple scoring "
                   f"{tchip}'s messages: {shown} (gate {TRANSFER_GATE}x). "
-                  f"scripts/relane_allreduce_vllm.py.")
+                  f"scripts/relane_allreduce_vllm.py. {disagree[w]}")
             rule = (f"the same NVL72 NVLink-5 fabric and vLLM custom all-reduce kernel; "
                     f"{schip}'s triple at this width is used unchanged, checked on {tchip}'s "
                     f"own rows at 2 and 4 ranks within {TRANSFER_GATE}x")

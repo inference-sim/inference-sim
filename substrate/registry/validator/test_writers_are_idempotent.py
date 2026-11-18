@@ -71,6 +71,9 @@ WRITERS = [
     # The h100/h200 fp16 all-reduce on vLLM 0.31.0's custom kernel. Needs aisimulate
     # 7980e95 (the 0.31.0 sweep); exits 2, failing, on a tree without it.
     ("relane_allreduce_vllm.py", "the h100/h200 vLLM 0.31.0 all-reduce triples"),
+    # The NCCL lane beside it, read when the engine resolves NCCL for the all-reduce; it needs the
+    # same 6fdf6fb6 tree (the NCCL sweeps and the 2.30.7 comparison).
+    ("emit_allreduce_nccl_lane.py", "the NCCL lane of the fp16 tensor-parallel all-reduce"),
     # Entry-level: the descriptor entries and A100's MoE median, the families it owns.
     ("emit_primitives.py", "the descriptor entries and the A100 MoE median"),
     # Owns six DeepSeek-V4.1 entries per part (h200, h100) across two sets: two fitted,
