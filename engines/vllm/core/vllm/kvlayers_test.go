@@ -231,3 +231,39 @@ func TestAStagePoolIsTheGlobalGroupsProjected(t *testing.T) {
 		}
 	}
 }
+
+// Layers of unequal pages are unified against the engine's block size when the engine is configured (config.go resolves the
+// KV groups): Gemma 4 31B's sixty layers, five sliding windows then one full attention layer ten times, are five groups of
+// ten sliding windows at the engine's block size and one group of ten full layers at twice it. Before, the block size was not
+// passed and the engine refused: "KV layers of unequal page sizes ... which are not modelled".
+func TestUnequalPagesAreUnifiedAgainstTheEnginesBlockSize(t *testing.T) {
+	var layers string
+	for i := 0; i < 10; i++ {
+		layers += "- {count: 5, spec: sliding_window, sliding_window: 1024, num_kv_heads: 16, head_size: 256}\n" +
+			"- {count: 1, spec: full, num_kv_heads: 4, head_size: 512}\n"
+	}
+	cfg, err := decodeConfig(block(t, "num_gpu_blocks: 100000\nkv_layers:\n"+layers))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := resolve(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := s.sched.KVGroups
+	if len(groups) != 6 {
+		t.Fatalf("%d groups, want 6: %v", len(groups), groups)
+	}
+	for _, g := range groups {
+		switch g.Kind {
+		case kv.FullAttention:
+			if g.BlockSize != 2*s.sched.BlockSize {
+				t.Errorf("the full-attention group's block size is %d, want twice the engine's %d", g.BlockSize, s.sched.BlockSize)
+			}
+		case kv.SlidingWindow:
+			if g.BlockSize != 0 {
+				t.Errorf("a sliding group states block size %d, want the engine's", g.BlockSize)
+			}
+		}
+	}
+}
