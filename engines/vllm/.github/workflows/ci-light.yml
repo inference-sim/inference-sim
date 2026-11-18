@@ -142,5 +142,7 @@ jobs:
           if [ -z "$BASE" ]; then BASE="$(python3 -I oracle/check_goldens.py --stack-base "$HEAD")"; fi
           echo "golden check: $BASE..$HEAD"
           python3 -I oracle/check_goldens.py "$BASE" "$HEAD"
+      - name: every offload scenario has its recorded trace committed, and every trace its scenario
+        run: python3 -I oracle/check_fid5_names.py
       - name: the oracle's guards catch what they guard
         run: python3 -I oracle/test_checks.py
