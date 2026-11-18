@@ -621,6 +621,18 @@ type Node struct {
 	// MLA-specific latent dimensions; zero for other kinds.
 	KVLoRARank    int `yaml:"kv_lora_rank,omitempty"`
 	QKRopeHeadDim int `yaml:"qk_rope_head_dim,omitempty"`
+	// PrefillQKHeadDim and PrefillVHeadDim are the widths of the multi-head form an mla layer
+	// runs its prefill in: the query and key width (qk_nope_head_dim + qk_rope_head_dim, 192 for
+	// DeepSeek-V3 and Kimi-K2.5) and the value width (v_head_dim, 128). d_h is the cache width
+	// (kv_lora_rank + qk_rope_head_dim), the width of the absorbed form decode runs in; vLLM
+	// prefills a latent layer by expanding the latents through kv_b_proj and attending at these
+	// widths (MLACommonImpl.forward_mha, vllm/model_executor/layers/attention/mla_attention.py,
+	// at v0.33.0). A consumer that prices prefill attention by the cache width charges
+	// d_h / ((qk + v) / 2) times the work (3.6 for DeepSeek-V3). Both are set, or neither: absent
+	// means the consumer has no prefill widths and prices prefill at d_h, as before. Only an mla
+	// node states them; sparse_mla runs another kernel.
+	PrefillQKHeadDim int `yaml:"prefill_qk_head_dim,omitempty"`
+	PrefillVHeadDim  int `yaml:"prefill_v_head_dim,omitempty"`
 	// SWA window, in tokens; zero for other kinds.
 	Window int `yaml:"window,omitempty"`
 	// Sparse top-k index count (sparse_mla, sparse_gqa); zero for other kinds.

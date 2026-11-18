@@ -465,3 +465,108 @@ func (k *Kernel) noteShardedProjections() {
 		}
 	}
 }
+
+// prefillHeadWidth is the head width a layer's prefill attention work is charged at. An mla layer that
+// states the widths of its multi-head prefill form is charged at their mean, (qk + v) / 2: the work of
+// a causal pair is 2 x qk (scores) plus 2 x v (the weighted sum), which is 4 x that mean, the work the
+// part-wide prefill pair was fitted on for a layer of equal q, k and v widths. Every other layer, and
+// an mla layer that states none, is charged at AttnHeadDim, as before. For a latent layer that is the
+// cache width (kv_lora_rank + rope, 576 for DeepSeek-V3 and Kimi-K2.5), the width of the absorbed form
+// decode runs in; vLLM prefills a dense latent layer in the multi-head form (MLACommonImpl.forward_mha,
+// vllm/model_executor/layers/attention/mla_attention.py at v0.33.0), q and k 192 wide, v 128, a mean
+// of 160. Sparse MLA keeps the cache width: it runs another kernel and has its own measured forms.
+func prefillHeadWidth(l *price.PlannedLayer) float64 {
+	if l.AttnKind == model.AttentionMLA && l.AttnPrefillQKDim > 0 && l.AttnPrefillVDim > 0 {
+		return float64(l.AttnPrefillQKDim+l.AttnPrefillVDim) / 2
+	}
+	return float64(l.AttnHeadDim)
+}
+
+// mlaContextTokens is the cached tokens a dense latent layer re-expands this step. In the multi-head
+// prefill form, a request resuming on a cached prefix (prefix caching, or a long prompt in chunks) does
+// not attend over the cached latents directly: _compute_prefill_context gathers them from the cache in
+// chunks and runs kv_b_proj over them into per-head keys and values, every step, for every cached token
+// (vllm/model_executor/layers/attention/mla_attention.py:_compute_prefill_context at v0.33.0). The new
+// tokens' own kv_b_proj is the graph's node and is priced with the layer's other GEMMs; this is the
+// cached tokens', which the absorbed form avoids. Zero for any layer that does not state prefill
+// widths, and under context parallelism, whose gather path (_context_parallel_compute_prefill_context)
+// is not priced.
+func (k *Kernel) mlaContextTokens(l *price.PlannedLayer, s *stepShape) float64 {
+	if l.AttnKind != model.AttentionMLA || l.AttnPrefillQKDim <= 0 || l.AttnPrefillVDim <= 0 ||
+		l.AttnKVLoRARank <= 0 || k.layout.DCP > 1 || k.layout.PCP > 1 {
+		return 0
+	}
+	var tokens float64
+	for _, c := range s.prefillChunks {
+		tokens += float64(c.prefix)
+	}
+	return tokens
+}
+
+// mlaKVBProj is the index of the layer's kv_b_proj among its dense GEMMs: the projection from the
+// latent rank to every head's non-rope key and value, found by its shape (SUB-20), or -1.
+func mlaKVBProj(l *price.PlannedLayer) int {
+	n := l.AttnQHeads * (l.AttnPrefillQKDim - l.AttnQKRope + l.AttnPrefillVDim)
+	for gi := range l.DenseGEMMs {
+		if g := &l.DenseGEMMs[gi]; g.K == l.AttnKVLoRARank && g.N == n {
+			return gi
+		}
+	}
+	return -1
+}
+
+// mlaContextExpandSeconds is the time of kv_b_proj over the cached tokens, at that GEMM's own shape
+// and efficiency (the rows are the cached tokens, not the step's), divided over tensor parallelism as
+// the GEMM is.
+func (k *Kernel) mlaContextExpandSeconds(l *price.PlannedLayer, fits []gemmFit, rows float64) float64 {
+	gi := mlaKVBProj(l)
+	if gi < 0 {
+		return 0
+	}
+	g := &l.DenseGEMMs[gi]
+	var fit gemmFit
+	if fits != nil {
+		fit = fits[gi]
+	} else {
+		fit = k.fit(g.Format, false)
+	}
+	n, kk, div := float64(g.N), float64(g.K), k.tp
+	switch {
+	case g.Replicated:
+		div = 1
+	case g.ShardN:
+		n /= k.tp
+	default:
+		kk /= k.tp
+	}
+	eff := price.Efficiency(rows, fit.epsMax, fit.mHalf)
+	if fit.shapeAware {
+		eff = price.ShapeEfficiency(rows, n, kk, fit.epsMax, fit.mHalf, fit.nHalf, fit.kHalf)
+	}
+	if eff <= 0 {
+		return 0
+	}
+	peak := fit.peak
+	if fit.smallPeak > 0 && rows <= fit.smallRows {
+		peak = fit.smallPeak
+	}
+	return rows * g.FLOPsPerToken / div / (peak * eff)
+}
+
+// mlaContextBytes is the HBM traffic of expanding the cached tokens, per layer: the gather reads each
+// cached token's latent entry and writes it to the workspace (bf16), kv_b_proj's output (the non-rope
+// keys and the values of every local head) is written, and the key is rebuilt by concatenating the
+// rope part (the non-rope keys read, the full key written). Bytes at 2 per element, as the
+// workspace and the expansion are bf16.
+func (k *Kernel) mlaContextBytes(l *price.PlannedLayer, entryBytes float64, s *stepShape) float64 {
+	ctx := k.mlaContextTokens(l, s)
+	if ctx <= 0 {
+		return 0
+	}
+	heads := k.attentionHeads(l.AttnQHeads, l.AttnReplicated, l.AttnKind)
+	nope := float64(l.AttnPrefillQKDim - l.AttnQKRope)
+	v := float64(l.AttnPrefillVDim)
+	entry := float64(l.AttnKVLoRARank + l.AttnQKRope)
+	perToken := entryBytes + entry*2 + heads*(nope+v)*2 + heads*nope*2 + heads*float64(l.AttnPrefillQKDim)*2
+	return ctx * perToken
+}

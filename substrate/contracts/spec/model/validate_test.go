@@ -566,3 +566,42 @@ func TestSpeculatorSharesTargetHead(t *testing.T) {
 		}
 	}
 }
+
+// An mla attention node may state the widths of its multi-head prefill form, both together and positive,
+// with the query and key width above the rope part the cache also carries; nothing else may state them.
+func TestPrefillWidthsPlacementAndShape(t *testing.T) {
+	mla := func(g *Graph, qk, v, rope int) {
+		n := &g.LayerKinds[0].Nodes[2]
+		n.AttentionKind, n.NumKVHeads, n.HeadDim, n.KVLoRARank, n.QKRopeHeadDim = AttentionMLA, 1, 576, 512, rope
+		n.PrefillQKHeadDim, n.PrefillVHeadDim = qk, v
+	}
+	g := validGraph()
+	mla(g, 192, 128, 64)
+	if p := g.Validate(); !p.OK() {
+		t.Fatalf("an mla node stating 192 and 128 was rejected:\n%s", p.Error())
+	}
+	g = validGraph()
+	mla(g, 0, 0, 64)
+	if p := g.Validate(); !p.OK() {
+		t.Fatalf("an mla node stating no prefill widths was rejected (every graph before the field):\n%s", p.Error())
+	}
+	for name, mutate := range map[string]func(*Graph){
+		"only the qk width": func(g *Graph) { mla(g, 192, 0, 64) },
+		"only the v width":  func(g *Graph) { mla(g, 0, 128, 64) },
+		"a negative width":  func(g *Graph) { mla(g, -192, 128, 64) },
+		"qk not above rope": func(g *Graph) { mla(g, 64, 128, 64) },
+		"on a GQA node":     func(g *Graph) { n := &g.LayerKinds[0].Nodes[2]; n.PrefillQKHeadDim, n.PrefillVHeadDim = 192, 128 },
+		"on a sparse_mla node": func(g *Graph) {
+			mla(g, 192, 128, 64)
+			g.LayerKinds[0].Nodes[2].AttentionKind = AttentionSparseMLA
+			g.LayerKinds[0].Nodes[2].IndexTopK = 2048
+		},
+		"on a GEMM": func(g *Graph) { g.LayerKinds[0].Nodes[1].PrefillQKHeadDim = 192 },
+	} {
+		g := validGraph()
+		mutate(g)
+		if p := g.Validate(); p.OK() || !strings.Contains(p.Error(), "prefill_") {
+			t.Errorf("%s: want a prefill_* problem, got %v", name, p)
+		}
+	}
+}

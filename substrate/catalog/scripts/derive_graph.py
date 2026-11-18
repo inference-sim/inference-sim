@@ -1580,9 +1580,15 @@ def attention(cfg: dict[str, Any], model: str, *, kind: str | None = None,
         node["qk_rope_head_dim"] = rope
         if kind == "sparse_mla":
             node["index_topk"] = int(pick(cfg, "index_topk"))
-        # nope is the query-side width; it does not enter the cache, so it is not a
-        # node parameter. Recorded here so a reader knows it was considered.
-        del nope
+        # nope is the query-side width; it does not enter the cache. It does set the width of the
+        # multi-head form vLLM prefills a dense latent layer in (MLACommonImpl.forward_mha,
+        # vllm/model_executor/layers/attention/mla_attention.py at v0.33.0): q and k are nope + rope
+        # wide, v is v_head_dim wide, against the cache width d_h that decode's absorbed form runs
+        # at. An mla node states both so a cost model prices prefill attention at them; sparse_mla
+        # runs another kernel and states neither.
+        if kind == "mla" and nope > 0:
+            node["prefill_qk_head_dim"] = nope + rope
+            node["prefill_v_head_dim"] = int(pick(cfg, "v_head_dim") or nope)
     else:
         node["n_kv"] = nkv
         node["d_h"] = head_dim(cfg, model)
