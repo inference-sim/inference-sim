@@ -517,3 +517,93 @@ func TestFinishDuringChunkedPrefillStopsTheChunks(t *testing.T) {
 		})
 	}
 }
+
+// Two requests share one prefill pass; the simulator ends one of them while the pass is in
+// flight. The other is untouched: it emits its first token and goes on to finish.
+func TestFinishOfOneRequestOfAPassLeavesTheOtherAlone(t *testing.T) {
+	tr, _ := load(t, "retract1")
+	for _, reason := range []engine.FinishReason{engine.FinishAbort, engine.FinishTimeout} {
+		t.Run(fmt.Sprint(reason), func(t *testing.T) {
+			e := newEngine(t, tr.Config)
+			for _, rq := range []struct {
+				id string
+				p  []int32
+			}{{"x", []int32{1, 2, 3, 4}}, {"y", []int32{7, 8, 9, 10}}} {
+				// A budget keeps the scheduler's estimate of what each may grow to small enough for both.
+				if err := e.Add(engine.Request{ID: rq.id, Prompt: rq.p, Output: outputOf(3, 9), MaxOutputTokens: 3}, 0); err != nil {
+					t.Fatal(err)
+				}
+			}
+			b, err := e.Schedule(1)
+			if err != nil || len(b.Reqs) != 2 {
+				t.Fatalf("the two requests are not in one pass: %v %+v", err, b)
+			}
+			if err := e.Finish("x", reason, 2); err != nil {
+				t.Fatal(err)
+			}
+			res, err := e.Complete(b.ID, engine.Outcome{}, 3)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := res.Emitted["x"]; ok || res.Emitted["y"] != 1 || !reflect.DeepEqual(res.FirstTokens, []string{"y"}) {
+				t.Fatalf("emitted %v, first tokens %v: want only y's first token", res.Emitted, res.FirstTokens)
+			}
+			var fin []string
+			for i := 0; i < 10 && len(fin) == 0; i++ {
+				nb, err := e.Schedule(engine.Time(4 + 2*i))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if nb.Empty() {
+					continue
+				}
+				r, err := e.Complete(nb.ID, engine.Outcome{}, engine.Time(5+2*i))
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, f := range r.Finished {
+					fin = append(fin, f.ID)
+					if f.OutputTokens != 3 {
+						t.Fatalf("y finished with %d tokens, want 3", f.OutputTokens)
+					}
+				}
+			}
+			if !reflect.DeepEqual(fin, []string{"y"}) {
+				t.Fatalf("finished %v, want only y", fin)
+			}
+		})
+	}
+}
+
+// A request ended mid-pass is freed at once and publishes nothing to the prefix cache: a request
+// with the same prompt that follows reads no prefix. (SGLang marks the request to finish and frees
+// it with a checkpoint after one more pass, scheduler.py:5775-5792@297e54fd; the engine contract
+// ends the request at Finish, so the engine frees it then, without one.)
+func TestAnEndedRequestLeavesNoPrefixBehind(t *testing.T) {
+	tr, _ := load(t, "retract1")
+	e := newEngine(t, tr.Config)
+	p := []int32{1, 2, 3, 4, 5, 6, 7, 8}
+	if err := e.Add(engine.Request{ID: "x", Prompt: p, Output: outputOf(3, 9)}, 0); err != nil {
+		t.Fatal(err)
+	}
+	b, err := e.Schedule(1)
+	if err != nil || b.Empty() {
+		t.Fatal(err)
+	}
+	if err := e.Finish("x", engine.FinishAbort, 2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Complete(b.ID, engine.Outcome{}, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Add(engine.Request{ID: "z", Prompt: p, Output: outputOf(3, 9)}, 4); err != nil {
+		t.Fatal(err)
+	}
+	b, err = e.Schedule(5)
+	if err != nil || len(b.Reqs) != 1 || b.Reqs[0].ID != "z" {
+		t.Fatalf("z is not scheduled: %v %+v", err, b)
+	}
+	if got := b.Reqs[0].Computed; got != 0 {
+		t.Fatalf("z found %d tokens of an ended request's prompt cached, want 0", got)
+	}
+}

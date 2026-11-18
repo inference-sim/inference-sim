@@ -74,3 +74,18 @@ func TestFinishOfARunningRequestWhileAnotherPrefillIsInFlight(t *testing.T) {
 		}
 	}
 }
+
+// Ending an unknown request, before any pass was ever launched, changes nothing and does not fail.
+func TestFinishOfAnUnknownRequestBeforeAnyPassIsANoOp(t *testing.T) {
+	cfg := baseConfig(t)
+	s, err := build(cfg, 13)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Finish("nobody")
+	s.handleGenerateRequest(Arrival{RID: "a", Prompt: []int64{1, 2, 3, 4}, MaxNewTokens: 1})
+	s.Finish("nobody")
+	if l, err := s.Launch(); err != nil || l == nil || l.Forward.RIDs[0] != "a" {
+		t.Fatalf("a was disturbed: %v %+v", err, l)
+	}
+}
