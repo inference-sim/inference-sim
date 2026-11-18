@@ -2793,7 +2793,7 @@
         "in_flight_requests_max": 102,
         "in_flight_requests_mean": 54.272605949170845,
         "kv_allocation_failures": 0,
-        "kv_capacity_tokens_per_replica": 4302128,
+        "kv_capacity_tokens_per_replica": 2859717,
         "kv_thrashing_rate": 0,
         "measured_cancelled_requests": 0,
         "measured_context_overflow_requests": 0,

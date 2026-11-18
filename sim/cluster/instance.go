@@ -203,6 +203,20 @@ func (i *InstanceSimulator) TotalKvCapacityTokens() int64 {
 	return s.KVBlocksTotal * int64(s.KVBlockSize)
 }
 
+// ReportedKVCapacityTokens is the KV cache size the instance's engine reports in vLLM's own
+// definition (reportedKVTokens), for the Result's kv_capacity_tokens_per_replica. An engine that
+// reports none gives TotalKvCapacityTokens, the pool's blocks x block size. The scheduler, the
+// autoscaler and the saturation analyzer keep reading TotalKvCapacityTokens, which is the pool.
+func (i *InstanceSimulator) ReportedKVCapacityTokens() int64 {
+	if i.drv == nil {
+		return 0
+	}
+	if t, ok := reportedKVTokens(i.drv.Engine()); ok {
+		return t
+	}
+	return i.TotalKvCapacityTokens()
+}
+
 // KvTokensInUse returns current KV cache occupancy in tokens.
 // Returns 0 when the KV cache is not yet initialized.
 func (i *InstanceSimulator) KvTokensInUse() int64 {
