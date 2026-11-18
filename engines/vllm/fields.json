@@ -1458,7 +1458,7 @@
       },
       "estimation": {
         "rule": "leave_unset",
-        "preserves": "the kernels the run used: TORCH_CUDA_ARCH_LIST lists the compute capabilities torch.utils.cpp_extension compiles a JIT extension for, and unset it compiles for the visible GPUs (_get_cuda_arch_flags, torch/utils/cpp_extension.py:2577-2590 at pytorch v2.11.0), so on a part of capability 10.0 a stated 10.0 builds for the architecture the device has. The kernels' rates come from the registry, which a compile flag does not change",
+        "preserves": "the kernels the run used: TORCH_CUDA_ARCH_LIST lists the compute capabilities torch.utils.cpp_extension compiles a JIT extension for, and unset it compiles for the visible GPUs (_get_cuda_arch_flags, torch/utils/cpp_extension.py:2577-2590 at pytorch v2.11.0), so on a part of capability 10.0 a stated 10.0, and on a part of capability 9.0 (H100, H200) a stated 9.0, builds for the architecture the device has. The kernels' rates come from the registry, which a compile flag does not change",
         "valid_when": [
           {
             "value_in": [
@@ -1466,6 +1466,14 @@
             ],
             "compute_capability": {
               "eq": "10.0"
+            }
+          },
+          {
+            "value_in": [
+              "9.0"
+            ],
+            "compute_capability": {
+              "eq": "9.0"
             }
           }
         ]

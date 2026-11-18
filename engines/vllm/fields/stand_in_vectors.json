@@ -832,6 +832,41 @@
   "exact": false
  },
  {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "9.0",
+  "compute_capability": "9.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": true
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "9.0",
+  "compute_capability": "8.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "9.0",
+  "compute_capability": "12.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "8.0",
+  "compute_capability": "9.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "",
+  "compute_capability": "9.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
   "field": "NCCL_WATCHDOG_TIMEOUT",
   "value": "1800",
   "owner": "cited-source",

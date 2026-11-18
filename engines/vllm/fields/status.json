@@ -24,7 +24,7 @@
   "env:NCCL_P2P_LEVEL": "vLLM's serving process does not read NCCL_P2P_LEVEL; NCCL does (ncclGetUserP2pLevel, src/graph/paths.cc:309-313 at NVIDIA/nccl v2.32.6-1 ad2d192c). The level only removes P2P between GPU pairs whose path type is above it, so on Blackwell parts (compute capability 10.x: HGX B200/B300 and the GB200/GB300 NVL72 trays, NVSwitch between all GPUs of a node and between nodes of a rack with multi-node NVLink) a stated NVL is the default. The field's valid_when holds NVL on compute capability 10.x only: on a PCIe or NVLink-bridge part it would forbid P2P the default allows. The NCCL version inside the images is not recorded",
   "env:NCCL_WATCHDOG_TIMEOUT": "NCCL_WATCHDOG_TIMEOUT has no reader in NVIDIA/nccl v2.32.6-1 (ad2d192c), PyTorch v2.11.0 (torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp and ProcessGroupNCCL.hpp) or vLLM v0.33.0 (4ba787ec), searched by name on 2026-11-18. The libraries inside the images are not recorded, and a reader this search did not reach would make the stand-in differ in a failure-detection timeout only, which a run that completed did not exercise. The field's valid_when holds the one value the corpus states, 1800",
   "env:TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC": "PyTorch reads TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC (torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:1709 and ProcessGroupNCCL.hpp:96-105 at v2.11.0); vLLM's serving process does not name it. The field's valid_when holds the one value the corpus states, 1800",
-  "env:TORCH_CUDA_ARCH_LIST": "vLLM v0.33.0 names TORCH_CUDA_ARCH_LIST only in collect_env (excluded: a separate command) and in its ep_kernels README; PyTorch reads it (torch/utils/cpp_extension.py:2579 at v2.11.0). Unset, the arch list is the visible devices' capabilities (:2582-2590), so a stated list equal to the device's capability is the same build. The field's valid_when holds 10.0 on a part of compute capability 10.0 (B200, GB200); another list or part is not shown to match",
+  "env:TORCH_CUDA_ARCH_LIST": "vLLM v0.33.0 names TORCH_CUDA_ARCH_LIST only in collect_env (excluded: a separate command) and in its ep_kernels README; PyTorch reads it (torch/utils/cpp_extension.py:2579 at v2.11.0). Unset, the arch list is the visible devices' capabilities (:2582-2590), so a stated list equal to the device's capability is the same build. The field's valid_when holds 10.0 on a part of compute capability 10.0 (B200, GB200) and 9.0 on a part of compute capability 9.0 (H100, H200); another list or part is not shown to match",
   "env:UCX_MAX_RMA_RAILS": "vLLM's serving process does not read UCX_MAX_RMA_RAILS; UCX does (src/ucp/core/ucp_context.c:233-235 at openucx/ucx v1.19.0 e4636149: default \"1\", the maximal number of devices an RMA operation may use in parallel). NIXL's UCX backend moves KV with RMA operations (ai-dynamo/nixl 684ca383 src/plugins/ucx/ucx_utils.cpp:292 and :317 (ucp_get_nbx and ucp_put_nbx carry a transfer; ucp_am_send_nbx at :259 carries the notification)). The UCX version inside the nixl wheel is not recorded. The field's valid_when holds 1",
   "env:UCX_MAX_RNDV_RAILS": "vLLM's serving process does not read UCX_MAX_RNDV_RAILS; UCX does (src/ucp/core/ucp_context.c:226-228 at openucx/ucx v1.19.0 e4636149: default \"2\", the devices a rendezvous operation may use in parallel). The KV bytes travel as RMA (ucp_get_nbx at ucx_utils.cpp:292 and ucp_put_nbx at :317, ai-dynamo/nixl 684ca383 src/plugins/ucx/ucx_utils.cpp:292 and :317 (ucp_get_nbx and ucp_put_nbx carry a transfer; ucp_am_send_nbx at :259 carries the notification)), so the value does not reach them; a UCX build in which an RMA operation of that size ran as a rendezvous would differ. The field's valid_when holds 1",
   "env:UCX_RNDV_SCHEME": "vLLM's serving process does not read UCX_RNDV_SCHEME; UCX does (src/ucp/core/ucp_context.c:246-252 at openucx/ucx v1.19.0 e4636149). The KV bytes travel as RMA (ai-dynamo/nixl 684ca383 src/plugins/ucx/ucx_utils.cpp:292 and :317 (ucp_get_nbx and ucp_put_nbx carry a transfer; ucp_am_send_nbx at :259 carries the notification)), so the rendezvous scheme does not reach them; the same caveat as UCX_MAX_RNDV_RAILS applies. The field's valid_when holds put_zcopy",
@@ -6559,7 +6559,7 @@
   "env:TORCH_CUDA_ARCH_LIST": {
    "estimation": {
     "rule": "leave_unset",
-    "preserves": "the kernels the run used: TORCH_CUDA_ARCH_LIST lists the compute capabilities torch.utils.cpp_extension compiles a JIT extension for, and unset it compiles for the visible GPUs (_get_cuda_arch_flags, torch/utils/cpp_extension.py:2577-2590 at pytorch v2.11.0), so on a part of capability 10.0 a stated 10.0 builds for the architecture the device has. The kernels' rates come from the registry, which a compile flag does not change",
+    "preserves": "the kernels the run used: TORCH_CUDA_ARCH_LIST lists the compute capabilities torch.utils.cpp_extension compiles a JIT extension for, and unset it compiles for the visible GPUs (_get_cuda_arch_flags, torch/utils/cpp_extension.py:2577-2590 at pytorch v2.11.0), so on a part of capability 10.0 a stated 10.0, and on a part of capability 9.0 (H100, H200) a stated 9.0, builds for the architecture the device has. The kernels' rates come from the registry, which a compile flag does not change",
     "valid_when": [
      {
       "value_in": [
@@ -6567,6 +6567,14 @@
       ],
       "compute_capability": {
        "eq": "10.0"
+      }
+     },
+     {
+      "value_in": [
+       "9.0"
+      ],
+      "compute_capability": {
+       "eq": "9.0"
       }
      }
     ]
