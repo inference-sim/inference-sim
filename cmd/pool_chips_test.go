@@ -132,7 +132,7 @@ func TestRunCmd_PoolChipRefusals(t *testing.T) {
 	}
 }
 
-// inference-sim#2221: a scenario whose cluster.pools state a chip other than cluster.hardware is
+// A scenario whose cluster.pools state a chip other than cluster.hardware is
 // refused when the run has no node-pool bundle. Before, it exited 0 with every instance sized and
 // priced as the cluster's chip, so an "older: h100" pool was billed and stepped as H200. With the
 // bundle it runs, and a scenario whose pools all carry the cluster's chip still runs without one.

@@ -114,7 +114,7 @@ func mappingValue(m *yaml.Node, key string) string {
 
 // poolChipsWithoutBundle is the refusal for a scenario whose cluster.pools state a chip other than
 // the cluster's (clusterChip) when the run has no node-pool bundle to place instances in them
-// (inference-sim#2221). Without a bundle every instance is sized and priced as clusterChip, so the
+// . Without a bundle every instance is sized and priced as clusterChip, so the
 // scenario's pool chips would be ignored silently. It is empty when every pool carries the
 // cluster's chip, which the fallback prices correctly.
 func poolChipsWithoutBundle(c scenario.Cluster, clusterChip string) string {

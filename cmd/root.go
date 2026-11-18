@@ -898,7 +898,7 @@ var runCmd = &cobra.Command{
 			}
 			requireWeightSource(bundleInstanceLifecycle.WeightSource, kernelOpened, poolChips)
 		} else {
-			// No bundle places instances in the scenario's pools: refuse pool chips it would ignore (#2221).
+			// No bundle places instances in the scenario's pools: refuse pool chips it would ignore.
 			openPoolChips(nil)
 		}
 		// CLI flag overrides bundle value when explicitly set.
