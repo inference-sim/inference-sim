@@ -191,8 +191,7 @@ func (r *resolver) handleGPUMemorySettings() {
 
 	if r.cfg.MemFractionStatic == nil {
 		// post_capture_kv_sizing_planned is false: SGLANG_ENABLE_POST_CAPTURE_KV_SIZING is off
-		// (environ.py:640). A multimodal model with a vision config is refused (accepted.go), so the
-		// VLM adjustment returns the fraction unchanged.
+		// (environ.py:640). A multimodal model's fraction is scaled by its vision tower (qwen35.go).
 		var activation int
 		switch {
 		case r.cfg.DisaggregationMode == "decode":
@@ -220,7 +219,11 @@ func (r *resolver) handleGPUMemorySettings() {
 			reserved = math.Max(reserved, 10*1024)
 		}
 		reserved += r.reserveForDeepEPA2AMB()
-		r.declare(src, "mem_fraction_static", pyRound3((gpuMem-reserved)/gpuMem))
+		frac := pyRound3((gpuMem - reserved) / gpuMem)
+		if r.isVLM() {
+			frac = r.adjustMemFractionForVLM(frac)
+		}
+		r.declare(src, "mem_fraction_static", frac)
 	}
 	// Symmetric memory (enable_symm_mem) is not accepted.
 }
