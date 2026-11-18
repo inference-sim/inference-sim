@@ -876,9 +876,18 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 	// outcome accepted (at most the real drafts it verified; a -1 padding draft is always
 	// rejected, while under async scheduling every placeholder is the worker's real draft), the
 	// last assigned token as EOS.
-	tokens := map[string][]int64{}
+	tokens := make(map[string][]int64, len(pb.b.Samples))
 	firsts := []string{}
-	emitted := map[string]int{}
+	emitted := make(map[string]int, len(pb.b.Samples))
+	// sampledReqs lists each request that sampled, with the length of its scheduler-side output
+	// before this step's update, in the batch's order; arena holds every request's sampled tokens
+	// in one array (a request's slice is capped at its own end), instead of one array per request.
+	type sampledReq struct {
+		rid    string
+		before int
+	}
+	sampledReqs := make([]sampledReq, 0, len(pb.b.Samples))
+	arena := make([]int64, 0, len(pb.b.Samples))
 	verified, trimmed := e.verified[b.ID]
 	delete(e.verified, b.ID)
 	for _, rid := range pb.b.Samples {
@@ -909,20 +918,24 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 			n += min(max(outcome.Accepted[rid], 0), real)
 		}
 		out := st.req.Output
+		start := len(arena)
 		for j := 0; j < n && st.sampled < len(out); j++ {
 			if st.sampled == len(out)-1 {
-				tokens[rid] = append(tokens[rid], eosToken)
+				arena = append(arena, eosToken)
 			} else {
-				tokens[rid] = append(tokens[rid], int64(out[st.sampled]))
+				arena = append(arena, int64(out[st.sampled]))
 			}
 			st.sampled++
 		}
+		if len(arena) > start {
+			if _, again := tokens[rid]; again {
+				panic("vllm: a request sampled twice in one batch: " + rid)
+			}
+			tokens[rid] = arena[start:len(arena):len(arena)]
+			sampledReqs = append(sampledReqs, sampledReq{rid, len(e.s.Request(rid).Output)})
+		}
 	}
 	e.gpu.tokens = tokens
-	before := map[string]int{}
-	for rid := range tokens {
-		before[rid] = len(e.s.Request(rid).Output)
-	}
 	// Each verifying request's drafts for the spec_decode counters: the drafts it was scheduled
 	// (placeholders included, as make_spec_decoding_stats counts len(scheduled_spec_token_ids)),
 	// and those the target accepted, the tokens sampled beyond the one the step always samples
@@ -935,13 +948,15 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 	}
 	fins := take()
 	e.gpu.tokens = nil
-	res := engine.Result{Emitted: map[string]int{}}
-	for _, rid := range sortedTokens(tokens) {
+	res := engine.Result{Emitted: make(map[string]int, len(sampledReqs))}
+	sort.Slice(sampledReqs, func(i, j int) bool { return sampledReqs[i].rid < sampledReqs[j].rid })
+	for _, sr := range sampledReqs {
+		rid := sr.rid
 		r := e.s.Request(rid)
 		if r == nil {
 			continue // stopped: counted from its finish record below
 		}
-		if got := len(r.Output) - before[rid]; got > 0 {
+		if got := len(r.Output) - sr.before; got > 0 {
 			st := e.reqs[rid]
 			if st.emitted == 0 {
 				firsts = append(firsts, rid)
@@ -1255,15 +1270,6 @@ func extraKeys(keys []kv.ExtraKey) []any {
 			out = append(out, t)
 		}
 	}
-	return out
-}
-
-func sortedTokens(m map[string][]int64) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
 	return out
 }
 
