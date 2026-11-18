@@ -494,7 +494,7 @@ jobs:
       # its `go` build/test tool from both the implementation map and the advertised schema, and
       # the worktree is removed in an always-run cleanup. Go is still installed here, but only to
       # build archon.
-      - uses: inference-sim/blis-substrate/.github/actions/go-toolchain@87daa470f568a60cbdfbecc9408ec7e3fc64db6e # blis-substrate commit this build pins (stack.json)
+      - uses: inference-sim/blis-substrate/.github/actions/go-toolchain@fa28d5116739dc582efdb7694acf15a294cdc62b # blis-substrate commit this build pins (stack.json)
         if: steps.paused.outputs.paused == 'false'
 
       # THE required checks, produced by the repository's real CI on the delivery branch.
