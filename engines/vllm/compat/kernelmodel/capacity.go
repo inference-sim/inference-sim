@@ -39,7 +39,6 @@ package kernelmodel
 import (
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
@@ -218,10 +217,6 @@ func (m *Model) kvMemory(reservedBytes int64) (KVMemory, error) {
 	fixedBytes := m.k.FixedBytes()
 	fixed := fixedBytes.Total()
 	graphCapture := fixedBytes.CUDAGraph
-	graphsEstimated, err := profilerEstimatesGraphs(e.Env)
-	if err != nil {
-		return KVMemory{}, err
-	}
 
 	// A per-rank occupancy at or above the device's own memory leaves no KV at all, and no budget
 	// can be divided out of it. Two things produce one, and the message says which it can tell:
@@ -268,6 +263,12 @@ func (m *Model) kvMemory(reservedBytes int64) (KVMemory, error) {
 		}
 		return KVMemory{DeviceBytes: deviceBytes, BudgetBytes: fixed + *stated, FixedBytes: fixed,
 			AllocatableBytes: *stated}, nil
+	}
+	// Read only on the path vLLM reads it: a stated kv_cache_memory_bytes returned above, as the worker
+	// returns before it profiles (gpu_worker.py:655-686@4ba787ec), so its value is never looked at.
+	graphsEstimated, err := profilerEstimatesGraphs(e.Env)
+	if err != nil {
+		return KVMemory{}, err
 	}
 	profiled := fixed
 	if !graphsEstimated {
@@ -383,16 +384,44 @@ const envProfilerEstimatesGraphs = "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS"
 // peak activation; when it is 0 the estimate is dropped (cudagraph_memory_estimate_applied = 0, and
 // available_kv_cache_memory_bytes subtracts it, vllm/v1/worker/gpu_worker.py:720-724 and :753-757@4ba787ec)
 // and the graphs, captured after the cache is sized, come out of the memory the utilization leaves free, so the KV pool is larger by the capture cost.
-// A value that is not an integer stops vLLM at its first read of the variable, so it is refused.
+// A value Python's int() rejects stops vLLM at its first read of the variable, so it is refused. The
+// forms int() accepts that a run can state are an optional sign and ASCII digits with single underscores
+// between digits, around optional white space ("1", " 0 ", "+1", "1_0"); a form int() accepts that is
+// outside those (non-ASCII digits) is refused by name rather than read.
 func profilerEstimatesGraphs(env map[string]string) (bool, error) {
 	v, ok := env[envProfilerEstimatesGraphs]
 	if !ok {
 		return true, nil
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(v))
-	if err != nil {
-		return false, fmt.Errorf("kernelmodel: %s=%q is not an integer, which vLLM reads with int() "+
-			"(vllm/envs.py:2219-2221@4ba787ec)", envProfilerEstimatesGraphs, v)
+	nonzero, ok := pythonIntNonzero(v)
+	if !ok {
+		return false, fmt.Errorf("kernelmodel: %s=%q is not a form this engine reads as vLLM's int() does "+
+			"(an optional sign and ASCII digits, single underscores between digits; vllm/envs.py:2219-2221@4ba787ec)",
+			envProfilerEstimatesGraphs, v)
 	}
-	return n != 0, nil
+	return nonzero, nil
+}
+
+// pythonIntNonzero reports whether Python's int(v) is nonzero, and whether v is a form it reads: optional
+// white space, an optional sign, then ASCII digits with single underscores only between digits.
+func pythonIntNonzero(v string) (nonzero, ok bool) {
+	t := strings.TrimSpace(v)
+	if strings.HasPrefix(t, "+") || strings.HasPrefix(t, "-") {
+		t = t[1:]
+	}
+	if t == "" || t[0] == '_' || t[len(t)-1] == '_' || strings.Contains(t, "__") {
+		return false, false
+	}
+	for _, r := range t {
+		switch {
+		case r == '_':
+		case r >= '0' && r <= '9':
+			if r != '0' {
+				nonzero = true
+			}
+		default:
+			return false, false
+		}
+	}
+	return nonzero, true
 }
