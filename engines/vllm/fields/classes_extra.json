@@ -432,5 +432,17 @@
     "why": "TestTheStatedReplayGraphSizesPadTheTrimmedBatch states the lists [64] and [4096] (a list is one value of the field, and the evidence's classes are the single class that holds every value) and prices the replay batch padded to the smallest stated size that holds it, run eager when none does; TestAPiecewiseStepTrimsByTheSizeOfTheGraphItIsPaddedTo prices the default sizes. The replay graph's launch saving against eager is not priced"
    }
   ]
+ },
+ "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/profiler_graphs_test.go",
+    "values": [
+     false,
+     true
+    ],
+    "why": "the test states 0 (read as false) and 1 (read as true) beside the unstated default and asserts the KV pool grows by exactly the capture cost under 0 and is unchanged under 1; a value that is not an integer is refused as vLLM's int() would"
+   }
+  ]
  }
 }

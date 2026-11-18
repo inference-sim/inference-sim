@@ -873,7 +873,7 @@ func refuseUnreadSettings(e engineconfig.Engine) error {
 }
 
 // readEnv are the engine environment variables this engine reads (resolveV2Runner).
-var readEnv = append([]string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER", "UCX_CUDA_IPC_ENABLE_MNNVL"}, p2pEnvNames...)
+var readEnv = append([]string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER", "UCX_CUDA_IPC_ENABLE_MNNVL", "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS"}, p2pEnvNames...)
 
 // inertEnv are the environment variables the engine accepts without reading: fields.json proves each
 // inert (oracle/inertness/<name>.json), so stating one changes nothing the engine decides. Python

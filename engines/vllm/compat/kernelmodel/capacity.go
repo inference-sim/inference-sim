@@ -39,6 +39,8 @@ package kernelmodel
 import (
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 )
@@ -213,7 +215,13 @@ func (m *Model) kvMemory(reservedBytes int64) (KVMemory, error) {
 	deviceBytes := int64(m.id.memoryGiB * float64(gibToBytes))
 	// vLLM requests ceil(total memory x utilization) bytes (request_memory, vllm/v1/worker/utils.py:724-726@5df63a72).
 	budget := int64(math.Ceil(float64(deviceBytes) * util))
-	fixed := m.k.FixedBytes().Total()
+	fixedBytes := m.k.FixedBytes()
+	fixed := fixedBytes.Total()
+	graphCapture := fixedBytes.CUDAGraph
+	graphsEstimated, err := profilerEstimatesGraphs(e.Env)
+	if err != nil {
+		return KVMemory{}, err
+	}
 
 	// A per-rank occupancy at or above the device's own memory leaves no KV at all, and no budget
 	// can be divided out of it. Two things produce one, and the message says which it can tell:
@@ -261,7 +269,11 @@ func (m *Model) kvMemory(reservedBytes int64) (KVMemory, error) {
 		return KVMemory{DeviceBytes: deviceBytes, BudgetBytes: fixed + *stated, FixedBytes: fixed,
 			AllocatableBytes: *stated}, nil
 	}
-	allocatable := budget - fixed - reservedBytes/int64(m.k.Resolved().TensorParallel())
+	profiled := fixed
+	if !graphsEstimated {
+		profiled -= graphCapture
+	}
+	allocatable := budget - profiled - reservedBytes/int64(m.k.Resolved().TensorParallel())
 	if allocatable <= 0 {
 		// vLLM's start-up refusal when nothing is left for the cache
 		// (_check_enough_kv_cache_memory, vllm/v1/core/kv_cache_utils.py:904-913 at v0.31.0).
@@ -359,4 +371,28 @@ func (m *Model) StageBudgets() ([]StageBudget, error) {
 		out[i] = StageBudget{AllocatableBytes: allocatable, PageBytes: st.LayerPageBytes}
 	}
 	return out, nil
+}
+
+// envProfilerEstimatesGraphs is the variable that decides whether vLLM's memory profiler counts the
+// CUDA graphs it will capture against the KV budget.
+const envProfilerEstimatesGraphs = "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS"
+
+// profilerEstimatesGraphs reads VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS as vLLM v0.33.0 does,
+// bool(int(value)) with a default of 1 (vllm/envs.py:2219-2221@4ba787ec). When it is 1 the profiler
+// estimates the graph memory and the worker takes it out of the KV budget with the weights and the
+// peak activation; when it is 0 the estimate is dropped (cudagraph_memory_estimate_applied = 0, and
+// available_kv_cache_memory_bytes subtracts it, vllm/v1/worker/gpu_worker.py:720-724 and :753-757@4ba787ec)
+// and the graphs, captured after the cache is sized, come out of the memory the utilization leaves free, so the KV pool is larger by the capture cost.
+// A value that is not an integer stops vLLM at its first read of the variable, so it is refused.
+func profilerEstimatesGraphs(env map[string]string) (bool, error) {
+	v, ok := env[envProfilerEstimatesGraphs]
+	if !ok {
+		return true, nil
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil {
+		return false, fmt.Errorf("kernelmodel: %s=%q is not an integer, which vLLM reads with int() "+
+			"(vllm/envs.py:2219-2221@4ba787ec)", envProfilerEstimatesGraphs, v)
+	}
+	return n != 0, nil
 }

@@ -160,6 +160,25 @@
       }
     },
     {
+      "name": "DYN_REQUEST_PLANE_CODEC",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "the engine's pricing: BLIS hosts no Dynamo request plane (the router is a stand-in), so the codec that encodes each request message between a Dynamo frontend and its workers has no component here to act on, and msgpack is the codec Dynamo selects when the variable is unset or empty (from_config_value, lib/runtime/src/pipeline/network.rs:132-152 at ai-dynamo/dynamo 807aaaa0). A stated json differs only in the encoding cost of each message, which is part of the frontend overhead neither value is priced for",
+        "valid_when": [
+          {
+            "value_in": [
+              "msgpack"
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "EP_DISABLE_GIN",
       "source": "env",
       "status": "not_modelled",
@@ -875,6 +894,29 @@
       }
     },
     {
+      "name": "NCCL_P2P_LEVEL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "NCCL's own choice on a part whose every GPU pair is joined by NVLink through NVSwitch: the path type between such GPUs is NVL, and NCCL allows P2P for a pair whose path type is no greater than the level (ncclTopoCheckP2p, src/graph/paths.cc:383-395 at NVIDIA/nccl v2.32.6-1 ad2d192c). The default level is PATH_PXB (paths.cc:383) and a stated NVL lowers it to PATH_NVL, so the two differ only for a pair whose path is NVB or farther, which a Blackwell HGX B200 or NVL72 node does not have. The latency kernel prices every collective from the NCCL sweep at NCCL's defaults",
+        "valid_when": [
+          {
+            "value_in": [
+              "NVL"
+            ],
+            "compute_capability": {
+              "gte": "10.0",
+              "lt": "11.0"
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "NCCL_P2P_NET_DISABLE",
       "source": "env",
       "status": "not_modelled",
@@ -916,6 +958,25 @@
       },
       "estimation": {
         "rule": "none"
+      }
+    },
+    {
+      "name": "NCCL_WATCHDOG_TIMEOUT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "nothing: no source searched reads NCCL_WATCHDOG_TIMEOUT, so a stated value and an unset one run alike. The variable is not one of NCCL's (no occurrence in NVIDIA/nccl v2.32.6-1 ad2d192c), PyTorch's ProcessGroupNCCL (v2.11.0 names TORCH_NCCL_* variables, not this) or vLLM's (v0.33.0 4ba787ec names it nowhere)",
+        "valid_when": [
+          {
+            "value_in": [
+              "1800"
+            ]
+          }
+        ]
       }
     },
     {
@@ -1341,10 +1402,18 @@
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
+        "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "vLLM's own setting: vllm/env_override.py sets TILELANG_CLEANUP_TEMP_FILES to 1 itself when the environment does not state it (os.environ.setdefault), so a run that states 1 runs as an unset one does",
+        "valid_when": [
+          {
+            "value_in": [
+              "1"
+            ]
+          }
+        ]
       }
     },
     {
@@ -1378,6 +1447,47 @@
       },
       "estimation": {
         "rule": "none"
+      }
+    },
+    {
+      "name": "TORCH_CUDA_ARCH_LIST",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "the kernels the run used: TORCH_CUDA_ARCH_LIST lists the compute capabilities torch.utils.cpp_extension compiles a JIT extension for, and unset it compiles for the visible GPUs (_get_cuda_arch_flags, torch/utils/cpp_extension.py:2577-2590 at pytorch v2.11.0), so on a part of capability 10.0 a stated 10.0 builds for the architecture the device has. The kernels' rates come from the registry, which a compile flag does not change",
+        "valid_when": [
+          {
+            "value_in": [
+              "10.0"
+            ],
+            "compute_capability": {
+              "eq": "10.0"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "a run that did not hang: PyTorch's NCCL heartbeat monitor aborts the process when the watchdog thread has not beaten for the timeout (default 8 minutes, getCvarInt(TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC, 60 * 8), ProcessGroupNCCL.cpp:1709 at pytorch v2.11.0), and a stated 1800 differs from the default only in how long a stuck process is waited for before it is killed, which a run that completed never reached",
+        "valid_when": [
+          {
+            "value_in": [
+              "1800"
+            ]
+          }
+        ]
       }
     },
     {
@@ -1467,6 +1577,44 @@
       }
     },
     {
+      "name": "UCX_MAX_RMA_RAILS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "UCX's own default: MAX_RMA_RAILS defaults to 1 (ucp_context_config_table, src/ucp/core/ucp_context.c:233 at openucx/ucx v1.19.0), so a stated 1 is the unset value",
+        "valid_when": [
+          {
+            "value_in": [
+              "1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "UCX_MAX_RNDV_RAILS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "the rate a KV transfer runs at: NIXL's UCX backend moves KV with ucp_get_nbx and ucp_put_nbx, RMA operations whose lanes MAX_RMA_RAILS bounds, not a rendezvous, and MAX_RNDV_RAILS (default 2) bounds the devices a rendezvous uses (src/ucp/core/ucp_context.c:226-228 at openucx/ucx v1.19.0 e4636149); the notification NIXL sends is an active message of a few bytes, below any rendezvous threshold",
+        "valid_when": [
+          {
+            "value_in": [
+              "1"
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "UCX_MEMTYPE_CACHE",
       "source": "env",
       "status": "not_modelled",
@@ -1474,7 +1622,34 @@
         "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "the transport and the rate: the memory type cache stores which address ranges are GPU memory so a lookup need not ask the driver (src/ucs/memory/memtype_cache.c, ucs_memtype_cache_lookup at :324; the option is src/ucs/config/global_opts.c:167-169 at openucx/ucx v1.19.0 e4636149, default try), and turning it off makes UCX ask the driver for each address; it does not choose a transport or change a rate",
+        "valid_when": [
+          {
+            "value_in": [
+              "n"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "UCX_MEMTYPE_REG_WHOLE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "nothing: UCX has no option of this name, so a stated value is read by no code and only draws a warning that the variable is unused (ucs_config_parser warns 'unused environment variable', src/ucs/config/parser.c:2359 at openucx/ucx v1.19.0 e4636149)",
+        "valid_when": [
+          {
+            "value_in": [
+              "n"
+            ]
+          }
+        ]
       }
     },
     {
@@ -1491,6 +1666,25 @@
           {
             "value_in": [
               "1024"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "UCX_RNDV_SCHEME",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "the rate a KV transfer runs at: RNDV_SCHEME chooses how a rendezvous moves its payload (default auto; get_zcopy, put_zcopy, the pipelined schemes and rkey_ptr, src/ucp/core/ucp_context.c:246-252 at openucx/ucx v1.19.0 e4636149), and NIXL's UCX backend moves KV with RMA operations, not a rendezvous",
+        "valid_when": [
+          {
+            "value_in": [
+              "put_zcopy"
             ]
           }
         ]
@@ -2974,10 +3168,18 @@
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
+        "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "the scheduling and the step time: the variable is the period of the statistics log line (vllm/v1/engine/llm_engine.py:467 and vllm/entrypoints/launchers/utils/server_utils.py:83@4ba787ec); a shorter period logs more often from the front end and changes no scheduling decision",
+        "valid_when": [
+          {
+            "value_in": [
+              "1"
+            ]
+          }
+        ]
       }
     },
     {
@@ -3313,9 +3515,19 @@
     {
       "name": "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS",
       "source": "env",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
+        "traces": [
+          "compat/kernelmodel/profiler_graphs_test.go",
+          "core/vllm/readenv_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -4387,10 +4599,18 @@
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
+        "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "the scheduling and the step time: the variable adds the development routes to the API server (vllm/entrypoints/launchers/api_server/routers.py:46@4ba787ec) and makes the log_error_stack default true (vllm/entrypoints/common/cli_args.py:209@4ba787ec); neither is read by the engine core, and a request that does not error never reaches the stack logging",
+        "valid_when": [
+          {
+            "value_in": [
+              "1"
+            ]
+          }
+        ]
       }
     },
     {
