@@ -960,7 +960,7 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	run := kvOffloadConfig{Enabled: true, CPUBytesToUse: 1 << 32, PerBlockBytes: 1,
 		Tiers: []kvOffloadTier{{DeviceClass: "nvme_gen4", DirectIO: true}}}
 	var pre, dec poolOverrides
-	pools.applyOffload(run, &pre, &dec)
+	pools.applyOffload(run, run, &pre, &dec)
 
 	if run.Tiers[0].ServiceTime != nil || run.PerBlockBytes != 1 {
 		t.Error("applyOffload mutated the run's offload description")

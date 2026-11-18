@@ -380,6 +380,9 @@ Example:
 		// deployment: the scenario's offload block is its tiers.
 		kvOffloadCfg := reconcileReplayKVOffload(traceData.Header.KVOffload,
 			!replayRecordsDeployment(traceData.Header, agx != nil))
+		// The decode pool of a P/D replay reconciles its own scenario offload against the same record.
+		decodeOffloadCfg := reconcileReplayDecodeKVOffload(traceData.Header.KVOffload,
+			!replayRecordsDeployment(traceData.Header, agx != nil))
 
 		// Resolve the latency model (single code path shared with runCmd).
 		lr := resolveLatencyConfig(cmd)
@@ -466,7 +469,7 @@ Example:
 		if kernelPD != nil {
 			prefillOverrides, decodeOverrides = kernelPD.overrides()
 			// Each pool sizes and prices the offload by its own kernel, as in runCmd (INV-13).
-			kernelPD.applyOffload(kvOffloadCfg, &prefillOverrides, &decodeOverrides)
+			kernelPD.applyOffload(kvOffloadCfg, decodeOffloadCfg, &prefillOverrides, &decodeOverrides)
 		}
 
 		logrus.Infof("Starting replay with %d KV blocks, horizon=%dticks", totalKVBlocks, replayHorizon)

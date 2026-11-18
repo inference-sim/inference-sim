@@ -1,0 +1,49 @@
+# DeepSeek-V4.1-Flash disaggregated 1P1D on two 8-GPU H200 nodes over InfiniBand 400G: each pool is one
+# node at TP1 x DP8 with expert parallelism. The prefill pool runs NIXL beside a 1 TiB CPU tier (llm-d's
+# MultiConnector, the deployment's connector); the decode pool states its own connector, NIXL alone, and
+# no tier. Each engine is a server with its own --kv-transfer-config, so the connector and the tier are
+# per pool (a pool's offload and pd_transfer; the deployment-level blocks are the default).
+kind: Scenario
+name: deepseek-v4.1-flash-h200-1p1d-dp8-prefill-cpu1t
+engine: {kind: vllm, version: "0.33.0"}
+
+model: deepseek-v4.1-flash
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric, cost-model-offload-tiers]
+
+cluster:
+  hardware: h200
+  fabric: ib-400g
+  nodes: 2
+  gpus_per_node: 8
+---
+kind: Deployment
+name: deepseek-v4.1-flash-h200-1p1d-dp8-prefill-cpu1t
+
+pools:
+  - role: prefill
+    nodes: 1
+    parallel: {tp: 1, pp: 1, dp: 8, enable_expert_parallel: true}
+    offload:
+      connector: OffloadingConnector
+      spec: TieringOffloadingSpec
+      eviction_policy: lru
+      tiers:
+        - {tier: cpu_dram, bytes: 1099511627776}
+    engine: &engine
+      block_size: 64
+      kv_cache_dtype: fp8
+      max_num_seqs: 256
+      max_num_batched_tokens: 8192
+      max_model_len: 131072
+      gpu_memory_utilization: 0.8
+  - role: decode
+    nodes: 1
+    parallel: {tp: 1, pp: 1, dp: 8, enable_expert_parallel: true}
+    pd_transfer: {connector: NixlConnector}
+    engine: *engine
+
+pd_transfer:
+  connector: MultiConnector
+
+router:
+  endpoint_picker_config: ../router/pd-always.yaml
