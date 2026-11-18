@@ -192,3 +192,24 @@ func TestADeclinedCustomRequestPricesNCCLAndKeepsItsOverride(t *testing.T) {
 		t.Errorf("the declined request must stay in Resolved().Overrides; got %+v", ov)
 	}
 }
+
+// The custom lane prices every size of message; the engine runs a larger one on NCCL, so the
+// substitution is recorded for a custom pool that has a tensor-parallel all-reduce, and for no other.
+func TestACustomPoolRecordsThatItPricesEveryMessageSizeFromTheCustomLane(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, custom := lanePrice(t, d, stateAllReduce(plan.AllReduceCustom, true))
+	if !assumed(custom, "all_reduce_message_limit") {
+		t.Error("a custom pool at TP4 must record all_reduce_message_limit")
+	}
+	_, nccl := lanePrice(t, d, stateAllReduce(plan.AllReduceNCCL, false))
+	if assumed(nccl, "all_reduce_message_limit") {
+		t.Error("an NCCL pool has no message limit to record")
+	}
+	in := planCase(t, d, "llama-3.1-70b-instruct", "h100", 1, "tp: 1, pp: 1, dp: 1", stateAllReduce(plan.AllReduceCustom, true))
+	if single, err := New(in); err != nil || assumed(single, "all_reduce_message_limit") {
+		t.Errorf("a TP1 pool runs no all-reduce: err %v", err)
+	}
+}

@@ -1466,6 +1466,14 @@ func (k *Kernel) liftCollectiveFloors(c *resolve.Coefficients) error {
 		k.collectiveRates[key] = t.rate
 		k.collectiveTransitions[key] = t.transition
 	}
+	if k.allReduce == plan.AllReduceCustom && k.layout.TP > 1 {
+		// The engine picks the kernel per call: the custom kernel takes an input only under its
+		// size limit (8 MiB by default) and a larger message runs on NCCL. One lane prices a pool.
+		k.assume("all_reduce_message_limit", "the custom lane for every message size",
+			"the engine runs a message above the custom kernel's size limit on NCCL; the pool's "+
+				"tensor-parallel all-reduce is priced from the custom lane at every size "+
+				"(inference-sim/blis-substrate#392)")
+	}
 	return nil
 }
 
