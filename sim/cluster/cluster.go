@@ -2172,10 +2172,14 @@ func (c *ClusterSimulator) projectPDMetrics() {
 			// the user did receive the token). The primary branch additionally needs the
 			// recorded decode scheduling delay; without it, fall back to the prefill-only
 			// TTFT (defensive — decode data partially unavailable).
-			if len(parent.DecodeSubReq.ITL) == 0 {
-				// A one-token output: the decode engine stamped the first token's time from the
-				// request's arrival (the decode sub-request arrives with the parent), which is
-				// the user-visible TTFT as it stands; no first-step gap exists to rebuild it from.
+			if len(parent.DecodeSubReq.ITL) == 0 || parent.DecodeSubReq.FirstTokenTime != 0 {
+				// The decode engine stamped the client's first token (an arrival-relative time, since the decode
+				// sub-request arrives with the parent, and the frame the preempted branch of the E2E above reads),
+				// so that is the TTFT. A one-token output has no first-step gap to rebuild it from. The sum below
+				// approximates it by the decode scheduling delay plus the first ITL entry, which is the gap after
+				// the first token: a decode sub-request preempted after its first token resumes much later, and
+				// re-admission re-stamps the scheduling delay, so the sum could pass the request's own E2E (a
+				// Result the validator refuses).
 				m.RequestTTFTs[pid] = float64(parent.DecodeSubReq.FirstTokenTime)
 			} else if hasPrefillTTFT && hasDecodeDelay {
 				firstDecodeStep := float64(parent.DecodeSubReq.ITL[0])
