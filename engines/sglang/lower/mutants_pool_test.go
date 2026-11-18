@@ -120,15 +120,6 @@ func TestTheGraphDecidesWhetherTheExpertsAndTheRecurrentLayersAreLowered(t *test
 		t.Fatalf("a MoE graph must state its experts kernel: %v %+v", err, l)
 	}
 	dense := graph(t, "deepseek-r1-0528")
-	strip := func(nodes []model.Node) []model.Node {
-		var out []model.Node
-		for _, n := range nodes {
-			if n.Op != model.OpGroupedGEMM {
-				out = append(out, n)
-			}
-		}
-		return out
-	}
 	for i := range dense.LayerKinds {
 		// Dropping nodes would break the edge indices, so replace them by an op the lowering ignores.
 		for j, n := range dense.LayerKinds[i].Nodes {
@@ -137,7 +128,6 @@ func TestTheGraphDecidesWhetherTheExpertsAndTheRecurrentLayersAreLowered(t *test
 			}
 		}
 	}
-	_ = strip
 	l, err = Lower(&a, dense, h200(t))
 	if err != nil {
 		t.Fatal(err)
