@@ -317,3 +317,203 @@ func TestTheContextLengthRejectsOrTruncatesAsTheServerDoes(t *testing.T) {
 		t.Fatalf("the truncated request produced %d tokens, want 10 (context 50 less its 40 input tokens)", emitted)
 	}
 }
+
+// A request the simulator ends (a client abort, or a deadline) while a pass that holds it is in
+// flight leaves the engine at that instant: completing the pass returns it no token, no first
+// token and no finish, and the pool it held is free again. The orderings around the in-flight one
+// (ended before it is scheduled, ended after its pass completed) behave as they always did.
+func TestFinishWhileAPassIsInFlightRetiresTheRequestWithoutOutput(t *testing.T) {
+	tr, _ := load(t, "retract1")
+	for _, reason := range []engine.FinishReason{engine.FinishAbort, engine.FinishTimeout} {
+		for _, overlap := range []bool{false, true} {
+			for _, afterFirst := range []bool{false, true} {
+				name := fmt.Sprintf("%v/overlap=%v/afterFirstPass=%v", reason, overlap, afterFirst)
+				t.Run(name, func(t *testing.T) {
+					cfg := tr.Config
+					cfg.EnableOverlap = overlap
+					e := newEngine(t, cfg)
+					idle := e.Snapshot().KVBlocksUsed
+					for _, id := range []string{"x", "y"} {
+						if err := e.Add(engine.Request{ID: id, Prompt: []int32{1, 2, 3, 4}, Output: outputOf(6, 9)}, 0); err != nil {
+							t.Fatal(err)
+						}
+					}
+					now := engine.Time(1)
+					if afterFirst {
+						b, err := e.Schedule(now)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if _, err := e.Complete(b.ID, engine.Outcome{}, now+1); err != nil {
+							t.Fatal(err)
+						}
+						now += 2
+					}
+					b, err := e.Schedule(now)
+					if err != nil || b.Empty() {
+						t.Fatalf("no pass in flight: %v %+v", err, b)
+					}
+					if err := e.Finish("x", reason, now+1); err != nil {
+						t.Fatal(err)
+					}
+					res, err := e.Complete(b.ID, engine.Outcome{}, now+2)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if n, ok := res.Emitted["x"]; ok {
+						t.Fatalf("an ended request emitted %d tokens", n)
+					}
+					for _, id := range res.FirstTokens {
+						if id == "x" {
+							t.Fatal("an ended request got a first token")
+						}
+					}
+					for _, f := range res.Finished {
+						if f.ID == "x" {
+							t.Fatalf("an ended request reported finished again: %+v", f)
+						}
+					}
+					// The other request goes on to its end; the pool returns to idle.
+					yDone := false
+					for i := 0; i < 40 && !yDone; i++ {
+						now += 3
+						nb, err := e.Schedule(now)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if nb.Empty() {
+							continue
+						}
+						r, err := e.Complete(nb.ID, engine.Outcome{}, now+1)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if _, ok := r.Emitted["x"]; ok {
+							t.Fatal("an ended request emitted in a later pass")
+						}
+						for _, f := range r.Finished {
+							yDone = yDone || f.ID == "y"
+						}
+					}
+					if !yDone {
+						t.Fatal("the other request never finished")
+					}
+					if got := e.Snapshot().KVBlocksUsed; got > idle {
+						t.Fatalf("%d blocks in use at the end, %d at the start", got, idle)
+					}
+				})
+			}
+		}
+	}
+}
+
+// The same holds for a decode pass in flight: the request already ran its prompt and sits in the
+// running batch when it is ended.
+func TestFinishWhileADecodePassIsInFlightRetiresTheRequest(t *testing.T) {
+	tr, _ := load(t, "retract1")
+	e := newEngine(t, tr.Config)
+	if err := e.Add(engine.Request{ID: "x", Prompt: []int32{1, 2, 3, 4}, Output: outputOf(6, 9)}, 0); err != nil {
+		t.Fatal(err)
+	}
+	for i, now := 0, engine.Time(1); i < 2; i, now = i+1, now+2 {
+		b, err := e.Schedule(now)
+		if err != nil || b.Empty() {
+			t.Fatalf("pass %d: %v %+v", i, err, b)
+		}
+		if i == 0 {
+			if _, err := e.Complete(b.ID, engine.Outcome{}, now+1); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		if err := e.Finish("x", engine.FinishAbort, now+1); err != nil {
+			t.Fatal(err)
+		}
+		res, err := e.Complete(b.ID, engine.Outcome{}, now+2)
+		if err != nil || len(res.Emitted) != 0 || len(res.Finished) != 0 {
+			t.Fatalf("the ended request showed output: %v %+v", err, res)
+		}
+	}
+	if got := e.Snapshot().KVBlocksUsed; got != 0 {
+		t.Fatalf("%d blocks in use after the only request ended", got)
+	}
+}
+
+// Ended before its first pass is scheduled, or after its last pass completed, a request leaves
+// quietly: it is never scheduled, or already reported finished.
+func TestFinishOutsideAPassIsQuiet(t *testing.T) {
+	tr, _ := load(t, "retract1")
+	e := newEngine(t, tr.Config)
+	if err := e.Add(engine.Request{ID: "x", Prompt: []int32{1, 2, 3, 4}, Output: outputOf(2, 9)}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Finish("x", engine.FinishAbort, 1); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := e.Schedule(2); err != nil || !b.Empty() {
+		t.Fatalf("an ended waiting request was scheduled: %v %+v", err, b)
+	}
+	if err := e.Add(engine.Request{ID: "z", Prompt: []int32{1, 2, 3, 4}, Output: outputOf(1, 9)}, 3); err != nil {
+		t.Fatal(err)
+	}
+	b, err := e.Schedule(4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := e.Complete(b.ID, engine.Outcome{}, 5)
+	if err != nil || len(res.Finished) != 1 || res.Finished[0].ID != "z" {
+		t.Fatalf("z did not finish in its pass: %v %+v", err, res)
+	}
+	if err := e.Finish("z", engine.FinishAbort, 6); err != nil {
+		t.Fatal(err)
+	}
+	if s := e.Snapshot(); s.Running+s.Waiting+s.InFlight != 0 {
+		t.Fatalf("engine not idle: %+v", s)
+	}
+}
+
+// A request ended while its prompt is cut into chunks (the server's chunked prefill) gets no next
+// chunk, whether the end lands while a chunk is in flight or between two chunks.
+func TestFinishDuringChunkedPrefillStopsTheChunks(t *testing.T) {
+	tr, _ := load(t, "retract1")
+	prompt := make([]int32, 100)
+	for i := range prompt {
+		prompt[i] = int32(10 + i)
+	}
+	for _, completeFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("completeFirstChunk=%v", completeFirst), func(t *testing.T) {
+			e := newEngine(t, tr.Config)
+			if err := e.Add(engine.Request{ID: "x", Prompt: prompt, Output: outputOf(2, 9)}, 0); err != nil {
+				t.Fatal(err)
+			}
+			b, err := e.Schedule(1)
+			if err != nil || len(b.Reqs) != 1 || b.Reqs[0].Tokens >= len(prompt) {
+				t.Fatalf("first pass is not a chunk: %v %+v", err, b)
+			}
+			if completeFirst {
+				if _, err := e.Complete(b.ID, engine.Outcome{}, 2); err != nil {
+					t.Fatal(err)
+				}
+				if b, err = e.Schedule(3); err != nil || b.Empty() {
+					t.Fatalf("no second chunk: %v %+v", err, b)
+				}
+			}
+			if err := e.Finish("x", engine.FinishTimeout, 4); err != nil {
+				t.Fatal(err)
+			}
+			res, err := e.Complete(b.ID, engine.Outcome{}, 5)
+			if err != nil || len(res.Emitted) != 0 || len(res.FirstTokens) != 0 || len(res.Finished) != 0 {
+				t.Fatalf("the ended request showed output: %v %+v", err, res)
+			}
+			for i := 0; i < 3; i++ {
+				nb, err := e.Schedule(engine.Time(6 + i))
+				if err != nil || !nb.Empty() {
+					t.Fatalf("a chunk of an ended request was scheduled: %v %+v", err, nb)
+				}
+			}
+			if got := e.Snapshot().KVBlocksUsed; got != 0 {
+				t.Fatalf("%d blocks in use after the only request ended", got)
+			}
+		})
+	}
+}

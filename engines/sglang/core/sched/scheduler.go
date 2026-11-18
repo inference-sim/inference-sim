@@ -697,9 +697,10 @@ func (s *Scheduler) processPrefill(b *Batch) {
 func (s *Scheduler) processDecode(b *Batch) {
 	s.alloc.FreeGroupBegin()
 	for _, r := range b.Reqs {
-		if s.cfg.EnableOverlap && (r.Finished() || r.IsRetracted) {
+		if r.Finished() || r.IsRetracted {
 			// A row that finished (or was retracted) while this pass ran reappears for one tick;
-			// release_kv_cache already freed its over-allocated tokens (:1022-1027).
+			// release_kv_cache already freed its over-allocated tokens (:1022-1027). Without
+			// overlap only an external end (Finish) can make a row of the pass finished.
 			continue
 		}
 		r.C.OutputIDs = append(r.C.OutputIDs, s.tokenFor(r))
