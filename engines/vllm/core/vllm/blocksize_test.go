@@ -105,6 +105,12 @@ func TestResolveBlockSize(t *testing.T) {
 		{"Llama-3.3-70B FP8 on Hopper with fp8 KV", BlockSizeInput{Model: "llama-3.3-70b-instruct-fp8", Capability: "9.0", KVCacheDType: "fp8"}, 16, ""},
 		{"Llama-3.3-70B FP4 on Blackwell", BlockSizeInput{Model: "llama-3.3-70b-instruct-fp4", Capability: "10.0", KVCacheDType: "fp8"}, 16, ""},
 		{"Gemma-4 31B on Hopper", BlockSizeInput{Model: "gemma-4-31b-it", Capability: "9.0", KVCacheDType: "auto"}, 16, ""},
+		// The FP8-dynamic checkpoint is a separate catalog model with the same attention layers (only the linear
+		// layers' quantization differs), so it resolves as the BF16 one does (#68).
+		{"Gemma-4 26B-A4B FP8-dynamic on Hopper with fp8 KV", BlockSizeInput{Model: "gemma-4-26b-a4b-it-fp8-dynamic", Capability: "9.0", KVCacheDType: "fp8"}, 16, ""},
+		{"Gemma-4 26B-A4B FP8-dynamic on Hopper with auto KV", BlockSizeInput{Model: "gemma-4-26b-a4b-it-fp8-dynamic", Capability: "9.0", KVCacheDType: "auto"}, 16, ""},
+		{"Gemma-4 26B-A4B FP8-dynamic on Blackwell", BlockSizeInput{Model: "gemma-4-26b-a4b-it-fp8-dynamic", Capability: "10.0", KVCacheDType: "fp8"}, 16, ""},
+		{"Gemma-4 26B-A4B FP8-dynamic text-only drops the multimodal prefix, which the oracle did not run", BlockSizeInput{Model: "gemma-4-26b-a4b-it-fp8-dynamic", Capability: "9.0", KVCacheDType: "auto", LanguageModelOnly: true}, 0, "language_model_only"},
 		{"Gemma-4 26B-A4B on Blackwell with fp8 KV", BlockSizeInput{Model: "gemma-4-26b-a4b-it", Capability: "10.0", KVCacheDType: "fp8"}, 16, ""},
 		// DeepSeek-V4 hands the platform its own backends: the sparse MLA and the indexer take 256, the
 		// sliding-window cache a multiple of 32, the compressor any size, so the smallest all accept is 256.

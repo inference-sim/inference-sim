@@ -107,6 +107,20 @@ LAYERS = {
         dict(head_size=256, num_heads=16, num_kv_heads=8, has_sink=False, has_sliding_window=True),
         dict(head_size=512, num_heads=16, num_kv_heads=2, has_sink=False, has_sliding_window=False),
     ],
+    # gemma-4-26b-a4b-it-fp8-dynamic (RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic) is the same architecture. Its
+    # config.json (catalog/models/gemma-4-26b-a4b-it-fp8-dynamic, read from the catalog) differs from the
+    # BF16 model's in two keys only: transformers_version, and a quantization_config (compressed-tensors,
+    # FP8 weights, dynamic FP8 per-token activations, targets Linear, kv_cache_scheme null). Every attention
+    # field above is equal. The layer builds its attention from per_layer_config (gemma4.py:365-517) and
+    # never reads the quantization config, and get_attn_backend takes no weight-quantization argument
+    # (v1/attention/selector.py:105-120): the linear layers' quantization changes the weights, not the
+    # backend or block size. The KV dtype is not changed by it: Attention takes the quantization config's
+    # kv_cache_scheme only when it is not None (layers/attention/attention.py:287-289), and it is null here,
+    # so the table's KV dtype names are run as for every model.
+    "gemma-4-26b-a4b-it-fp8-dynamic": [
+        dict(head_size=256, num_heads=16, num_kv_heads=8, has_sink=False, has_sliding_window=True),
+        dict(head_size=512, num_heads=16, num_kv_heads=2, has_sink=False, has_sliding_window=False),
+    ],
 }
 
 # Model-level facts the selection reads from the model config (config/model.py:1649-1654, from
@@ -117,7 +131,7 @@ LAYERS = {
 # modality's limit 0 without enable_mm_embeds). The table is for the default, multimodal on;
 # core/vllm.ResolveBlockSize refuses a pool that states either. rswa_window is None unless the
 # config states it (:1653, ModelArchConfigConvertorBase.rswa_window): no catalog model does.
-MM_PREFIX_LM = {"gemma-4-31b-it": True, "gemma-4-26b-a4b-it": True}
+MM_PREFIX_LM = {"gemma-4-31b-it": True, "gemma-4-26b-a4b-it": True, "gemma-4-26b-a4b-it-fp8-dynamic": True}
 
 # DeepSeek-V4 (vllm/models/deepseek_v4) does not go through the selector. Its layers hand the platform
 # their own backend classes (DeepseekV4Attention.get_attn_backend, attention.py:857 returns backend_cls;
