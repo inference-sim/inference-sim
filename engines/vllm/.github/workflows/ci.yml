@@ -914,8 +914,8 @@ jobs:
         run: |
           set -o pipefail
           go test ./core/engine -run 'TestDPModesAgainstVLLM' -count=1 -v | tee dpmodes.log
-          grep -q -- '--- PASS: TestDPModesAgainstVLLM/dp4-hybrid-local2$' dpmodes.log
-          grep -q -- '--- PASS: TestDPModesAgainstVLLM/dp4-external-rank-affinity$' dpmodes.log
+          grep -q -- '--- PASS: TestDPModesAgainstVLLM/dp4-hybrid-local2 (' dpmodes.log
+          grep -q -- '--- PASS: TestDPModesAgainstVLLM/dp4-external-rank-affinity (' dpmodes.log
       - name: every tier-3 golden trace is vLLM's own output
         run: |
           python3 -I oracle/compare_goldens_t3.py core/engine/testdata/golden oracle/out/scenarios-t3
