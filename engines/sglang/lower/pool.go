@@ -131,10 +131,11 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 		out.Overrides = append(out.Overrides, plan.Override{Field: field, Requested: requested, Resolved: resolved, Reason: reason})
 	}
 	_ = override
-	hasRecurrent, moe := false, false
+	hasRecurrent, moe, sparseMLA := false, false, false
 	g.EachNode(func(_ string, n model.Node) {
 		hasRecurrent = hasRecurrent || n.Op == model.OpRecurrentUpdate
 		moe = moe || n.Op == model.OpGroupedGEMM
+		sparseMLA = sparseMLA || (n.Op == model.OpAttention && n.AttentionKind == model.AttentionSparseMLA)
 	})
 	if hasRecurrent {
 		return nil, &NotLowered{Name: "a recurrent (hybrid linear-attention) layer", Issue: "inference-sim/blis-sglang#94"}
@@ -164,6 +165,24 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 		p.Cache.Record, p.Cache.ElementBytes = "fp8", 1
 	default:
 		return nil, &NotLowered{Name: "kv_cache_dtype=" + a.KvCacheDtype, Issue: issueLower}
+	}
+	// The attention kernels of a DSA model. The plan has no attention-backend slot: the cost model
+	// prices a layer's attention by the layer's kind in the model graph (sparse_mla here), whatever
+	// backend the engine runs. The note states which kernels SGLang resolved, so a Result that
+	// prices them with that lane says so (attention_backend nsa is the deprecated alias of dsa:
+	// layers/attention/attention_registry.py:166-176@297e54fd).
+	if sparseMLA {
+		prefill, decode := "", ""
+		if a.DsaPrefillBackend != nil {
+			prefill = *a.DsaPrefillBackend
+		}
+		if a.DsaDecodeBackend != nil {
+			decode = *a.DsaDecodeBackend
+		}
+		note("dsa_attention_kernels", "prefill="+prefill+" decode="+decode,
+			"the plan has no attention-backend slot: the cost model prices a sparse_mla layer with the registry entries in scope for "+
+				"its kind and chip, and their kernel_impls (the Result's selected entries) name the kernels they measured, which are "+
+				"not SGLang's resolved DSA kernels; the price is a transfer to them, not a measurement of them")
 	}
 	// A recurrent state is absent here (refused above); the kernel requires the width stated, and
 	// the mamba_ssm_dtype default is float32 (arg_groups/fields/mamba.py@297e54fd).

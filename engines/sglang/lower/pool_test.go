@@ -289,3 +289,45 @@ func TestInertFieldsChangeNoDecision(t *testing.T) {
 		}
 	}
 }
+
+// attention_backend nsa is SGLang's deprecated alias of dsa (layers/attention/attention_registry.py
+// :166-176@297e54fd), which a GLM-5 pool defaults to: a pool that states nsa, or dsa, lowers to the
+// plan of a pool that states neither, and a Note says which DSA kernels SGLang resolved and that
+// the cost model's attention lane is a transfer to them.
+func TestPoolLowersNSAAndDSAAsTheDefaultDSABackend(t *testing.T) {
+	base, err := lowerPool(t, "glm-5", 8, "mem_fraction_static: 0.85\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, backend := range []string{"nsa", "dsa"} {
+		got, err := lowerPool(t, "glm-5", 8, "mem_fraction_static: 0.85\nattention_backend: "+backend+"\n")
+		if err != nil {
+			t.Fatalf("attention_backend %s: %v", backend, err)
+		}
+		if !reflect.DeepEqual(got.Plan, base.Plan) {
+			t.Errorf("attention_backend %s lowers to a different plan than the default DSA backend", backend)
+		}
+	}
+	var note *plan.Note
+	for i := range base.Notes {
+		if base.Notes[i].Name == "dsa_attention_kernels" {
+			note = &base.Notes[i]
+		}
+	}
+	if note == nil || note.Value != "prefill=flashmla_sparse decode=fa3" {
+		t.Fatalf("the DSA kernels SGLang resolved on an H200 with a bf16 cache are not stated: %+v", note)
+	}
+	if !strings.Contains(note.Reason, "transfer") {
+		t.Errorf("the note does not say the price is a transfer: %q", note.Reason)
+	}
+	// A dense-MLA model (no sparse_mla layer) states no DSA kernels.
+	dense, err := lowerPool(t, "deepseek-r1-0528", 8, "mem_fraction_static: 0.85\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range dense.Notes {
+		if n.Name == "dsa_attention_kernels" {
+			t.Errorf("DeepSeek-R1 has no DSA layer, yet notes %+v", n)
+		}
+	}
+}
