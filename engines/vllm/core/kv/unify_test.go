@@ -70,7 +70,7 @@ func TestUnifyPageSizesAreVLLMs(t *testing.T) {
 		t.Errorf("a page that does not divide: %v", err)
 	}
 	// An MLA-kind layer whose page divides the largest is unified by the ratio, as vLLM does for any non-Mamba layer
-	// (unify_kv_cache_spec_page_size :380-387@4ba787ec tests divisibility before the kind). Before this was refused.
+	// (unify_kv_cache_spec_page_size :392-395@4ba787ec tests divisibility before the kind). Before this was refused.
 	for _, spec := range []LayerSpec{LayerMLA, LayerIndexer, LayerSlidingWindowMLA, LayerCircularBuffer} {
 		l := Layer{Spec: spec, KVHeads: 1, HeadSize: 256, ElemBytes: 2, StateBytes: 512}
 		if spec == LayerSlidingWindowMLA {

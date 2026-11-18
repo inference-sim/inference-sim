@@ -321,7 +321,7 @@ func unifyHybrid(layers []Layer) ([]Layer, error) {
 // block_size * (max_page / page), whatever its kind (full attention, sliding windows, the MLA kinds, the circular buffer).
 // Only when the page does not divide does vLLM differ by kind, and the port refuses by name: an MLA-kind layer (the
 // compressed latent and the indexer, MLAAttentionSpec) raises NotImplementedError in vLLM, which then tries the
-// full-allocation fallback (:398-407); any other attention layer is padded (page_size_padded, :388-394), which is not
+// full-allocation fallback (:400-406); any other attention layer is padded (page_size_padded, :396-399), which is not
 // modelled (blis-vllm#295). A Mamba layer is neither unified nor counted for the largest page (vLLM pads a smaller Mamba page and takes
 // it into the maximum; the port refuses a Mamba page unequal to the attention page, checkEqualPages, as before). engine is
 // the engine's block size, which a layer that states none has; without it the pages are not comparable and the layers
@@ -354,11 +354,11 @@ func unifyPageSizes(layers []Layer, engine int) ([]Layer, error) {
 		if maxPage%p != 0 {
 			if l.Spec == LayerMLA || l.Spec == LayerIndexer {
 				return nil, fmt.Errorf("kv: an MLA-kind layer's page of %d bytes does not divide the largest page, %d: vLLM raises "+
-					"NotImplementedError (unify_kv_cache_spec_page_size :398-407@4ba787ec: padding is only for non-MLA attention layers) "+
+					"NotImplementedError (unify_kv_cache_spec_page_size :400-406@4ba787ec: padding is only for non-MLA attention layers) "+
 					"and tries the full-allocation fallback, which is not modelled", p, maxPage)
 			}
 			return nil, fmt.Errorf("kv: a layer's page of %d bytes does not divide the largest page, %d: vLLM pads it "+
-				"(page_size_padded, unify_kv_cache_spec_page_size :388-394@4ba787ec), which is not modelled (blis-vllm#295)", p, maxPage)
+				"(page_size_padded, unify_kv_cache_spec_page_size :396-399@4ba787ec), which is not modelled (blis-vllm#295)", p, maxPage)
 		}
 		if l.BlockSize == 0 {
 			l.BlockSize = engine
