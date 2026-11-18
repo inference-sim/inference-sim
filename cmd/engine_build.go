@@ -550,6 +550,49 @@ func (p *kernelPools) applyOffload(cfg kvOffloadConfig, prefill, decode *poolOve
 	prefill.KVOffload, decode.KVOffload = &pre.Config, &dec.Config
 }
 
+// takePDTopologyFromPools sets the run's instance counts from the scenario's pools when the command
+// line states no topology: a disaggregated scenario names a prefill pool and a decode pool, and the
+// instances a pool holds are its layout's groups the pool's nodes fit (the same count the run would
+// be refused above), so the scenario alone states how many of each the deployment ran
+// (inference-sim#2126). Any topology flag, --num-instances included, keeps the command line's word:
+// the counts are then the flags' and the existing checks apply to them. It reports whether it set
+// the counts, which the caller records as the run's P/D topology.
+func takePDTopologyFromPools(cmd *cobra.Command, a build.Adopted) (bool, error) {
+	if !a.Disaggregated || kernelScenario == "" || cmd.Flags().Changed("num-instances") ||
+		prefillInstances != 0 || decodeInstances != 0 || prefillDecodeInstances != 0 || encodeInstances != 0 {
+		return false, nil
+	}
+	repos := kernelmodel.Repos{Scenarios: kernelScenarioDir, Data: mustRunData()}
+	count := func(role deployment.Role) (int, error) {
+		m, err := kernelmodel.OpenRole(kernelScenario, repos, role)
+		if err != nil {
+			return 0, fmt.Errorf("the scenario's %s pool: %w", role, err)
+		}
+		// A group is one instance for the v0.33.0 engine; the compatibility engine runs one
+		// instance per rank (build.RequireGroupCapacity, build.RequireCapacity).
+		n := m.RankCapacity()
+		if a.CoreEngine {
+			n = m.GroupCapacity()
+		}
+		if n < 1 {
+			return 0, fmt.Errorf("the scenario's %s pool holds no instance at its layout (%v); give it the nodes its layout needs",
+				role, m.GroupLayoutError())
+		}
+		return n, nil
+	}
+	p, err := count(deployment.RolePrefill)
+	if err != nil {
+		return false, err
+	}
+	d, err := count(deployment.RoleDecode)
+	if err != nil {
+		return false, err
+	}
+	prefillInstances, decodeInstances, numInstances = p, d, p+d
+	logrus.Warnf("P/D topology taken from the scenario's pools: %d prefill and %d decode instance(s)", p, d)
+	return true, nil
+}
+
 // adoptInputs are the scenario and roots the command line names, handed over unread, with the
 // routing overrides applied just before the first pool opens (as before the move).
 func adoptInputs(cmd *cobra.Command) build.AdoptInputs {
