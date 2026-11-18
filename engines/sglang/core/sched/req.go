@@ -24,6 +24,9 @@ type Req struct {
 	// MaxNewTokens is sampling_params.max_new_tokens after init_req_max_new_tokens clipped it.
 	MaxNewTokens int
 	IgnoreEOS    bool
+	// Script is the tokens the model will sample for this request, in order, when the caller knows
+	// them (the engine's Request.Output); empty means the scheduler's one sampled token.
+	Script []int64
 	// Priority and RoutingKey are the request's own (schedule_batch.py:1033@297e54fd). Priority is
 	// meaningful only once _set_or_validate_priority has run; HasPriority says the client set it.
 	Priority    int
@@ -146,6 +149,11 @@ type Arrival struct {
 	Prompt       []int64
 	MaxNewTokens int
 	IgnoreEOS    bool
+	// Script is the request's assigned output (see Req.Script); MaxNewTokens must not exceed its
+	// length.
+	Script []int64
+	// CacheSalt isolates the request's prefix-cache entries (empty: none).
+	CacheSalt string
 	// Priority is nil when the client sent none. RoutingKey is empty when it sent none.
 	Priority   *int
 	RoutingKey string

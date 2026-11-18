@@ -37,6 +37,36 @@ var acceptedFields = map[string][]any{
 	"speculative_num_steps":           nil,
 	"speculative_eagle_topk":          nil,
 	"speculative_num_draft_tokens":    nil,
+	// The InferenceX h200 recipes of DeepSeek-R1 and GLM-5 (oracle cases dsr1-h200-tp8-recipe-*,
+	// glm5-h200-tp8-recipe, dsv3-h200-tp8-fa3-explicit, dsv3-h200-tp1-fusion-flag). Each is either
+	// read by the scheduler or the lowering (fields/status.json cites the traces and tests) or proven
+	// inert to every decision there.
+	"max_prefill_tokens":                 nil,
+	"tokenizer_worker_num":               nil,
+	"kv_cache_dtype":                     {"auto", "bf16", "bfloat16", "fp8_e4m3", "fp8_e5m2"},
+	"quantization":                       {nil, "fp8", "modelopt_fp4"},
+	"tokenizer_path":                     nil,
+	"model_loader_extra_config":          nil,
+	"dsa_prefill_backend":                {nil, "flashmla_sparse", "flashmla_kv", "trtllm", "fa3"},
+	"dsa_decode_backend":                 {nil, "flashmla_sparse", "flashmla_kv", "trtllm", "fa3"},
+	"cuda_graph_max_bs_decode":           nil,
+	"attention_backend":                  {nil, "flashinfer", "fa3", "dsa", "nsa"},
+	"stream_interval":                    nil,
+	"decode_log_interval":                nil,
+	"enable_flashinfer_allreduce_fusion": nil,
+	"host":                               nil,
+	"port":                               nil,
+	"trust_remote_code":                  nil,
+	"served_model_name":                  nil,
+	"tool_call_parser":                   nil,
+	"reasoning_parser":                   nil,
+	"context_length":                     nil,
+	"pp_size":                            {1},
+	// The hybrid (Mamba) pool settings of the Qwen3.5 family (qwen35.go): the strategy of the Mamba
+	// radix cache, the dtype of its SSM states, and the vision tower's attention backend.
+	"mamba_radix_cache_strategy": {"auto", "no_buffer", "extra_buffer", "extra_buffer_lazy"},
+	"mamba_ssm_dtype":            {nil, "float32", "bfloat16", "float16"},
+	"mm_attention_backend":       {nil, "sdpa", "fa3", "fa4", "triton_attn", "flashinfer_cudnn"},
 }
 
 // refusedFieldIssue names, for a field another open issue covers, that issue instead of the
@@ -50,14 +80,15 @@ var refusedFieldIssue = map[string]string{
 }
 
 // acceptedModels are the architectures (after SGLang's config translation) and the chips each
-// is modelled on, by compute capability major. The DeepSeek family on SM100 is left out: its MoE
-// quantization pass (_deepseek_moe_quant_resolution, overrides.py:763-843@297e54fd) can read the
-// checkpoint's weights, which Resolve does not have.
+// is modelled on, by compute capability major. The DeepSeek family on SM100 reads the checkpoint's
+// first expert tensor (_deepseek_moe_quant_resolution, overrides.py:763-843@297e54fd); that is the
+// model fact HasFP8WeightsInCheckpoint.
 var acceptedModels = map[string][]int{
-	"Qwen2ForCausalLM":      {9, 10},
-	"GlmMoeDsaForCausalLM":  {9},
-	"DeepseekV3ForCausalLM": {9},
-	"DeepseekV4ForCausalLM": {9, 10},
+	"Qwen2ForCausalLM":                   {9, 10},
+	"GlmMoeDsaForCausalLM":               {9, 10},
+	"DeepseekV3ForCausalLM":              {9, 10},
+	"DeepseekV4ForCausalLM":              {9, 10},
+	"Qwen3_5MoeForConditionalGeneration": {9, 10},
 }
 
 // checkAccepted refuses an input outside the space Resolve models.
@@ -68,6 +99,13 @@ func checkAccepted(args *ServerArgs, in Input) error {
 	def := Defaults()
 	for _, name := range FieldNames() {
 		if !differs(args, &def, name) {
+			continue
+		}
+		// An empty custom_weight_loader is the value SGLang's resolution gives an unset one
+		// (model_path_hook.py handle_load_format: `if custom_weight_loader is None: = []`), and a server's
+		// own record of its resolved arguments states it; it loads no custom weight loader, so it is the
+		// default, not a setting.
+		if name == "custom_weight_loader" && len(args.CustomWeightLoader) == 0 {
 			continue
 		}
 		v := args.value(name)
@@ -110,7 +148,8 @@ func checkAccepted(args *ServerArgs, in Input) error {
 			Reason: "Resolve does not model this architecture's resolution", Issue: issueRest}
 	}
 	cc := in.Chip.Capability
-	if (cc != [2]int{9, 0} && cc != [2]int{10, 0}) || !containsInt(chips, cc[0]) {
+	// SM90 (H100, H200), SM100 (B200) and SM103 (B300): SGLang's resolution reads the major only.
+	if (cc != [2]int{9, 0} && cc != [2]int{10, 0} && cc != [2]int{10, 3}) || !containsInt(chips, cc[0]) {
 		return &NotModelled{Name: "chip", Value: fmt.Sprintf("sm%d%d", cc[0], cc[1]),
 			Reason: "Resolve does not model " + in.Model.Architecture + " on this chip", Issue: issueRest}
 	}
@@ -118,7 +157,7 @@ func checkAccepted(args *ServerArgs, in Input) error {
 		return &NotModelled{Name: "chip", Value: in.Chip.MemoryMiB,
 			Reason: "the chip's memory must be stated", Issue: issueRest}
 	}
-	if in.Model.IsMultimodal && in.Model.HasVisionConfig {
+	if in.Model.IsMultimodal && in.Model.HasVisionConfig && in.Model.VisionHiddenSize == nil {
 		return &NotModelled{Name: "architecture", Value: in.Model.Architecture,
 			Reason: "Resolve does not model the vision-encoder memory adjustment", Issue: issueRest}
 	}
@@ -141,6 +180,13 @@ func containsInt(l []int, v int) bool {
 		}
 	}
 	return false
+}
+
+// AcceptsValue reports whether Resolve accepts the field set to the value: the field is accepted and
+// its value list, if it has one, holds the value.
+func AcceptsValue(name string, v any) bool {
+	allowed, ok := acceptedFields[name]
+	return ok && (allowed == nil || contains(allowed, v))
 }
 
 // AcceptedFields lists the fields Resolve accepts away from their defaults, sorted.

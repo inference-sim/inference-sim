@@ -42,6 +42,8 @@ func (r *resolver) handleModelSpecificAdjustments() {
 	case r.isDeepseekV4():
 		r.deepseekV4Overrides()
 		r.applyDeepseekV4Defaults()
+	case qwen35Hybrid[r.model.Architecture] || qwen3MoeFamily[r.model.Architecture]:
+		r.qwen35Overrides()
 	}
 	if deepseekFamily[r.model.Architecture] && r.model.IsDeepseekDSA {
 		// SGLANG_DSA_PREFILL_DENSE_ATTN_KV_LEN_THRESHOLD is an environment default, not a field.
@@ -51,6 +53,9 @@ func (r *resolver) handleModelSpecificAdjustments() {
 	if r.isDeepseekV4() {
 		r.validateDeepseekV41Features()
 	}
+	if deepseekFamily[r.model.Architecture] {
+		r.deepseekMoeQuantResolution()
+	}
 	r.flashinferAllreduceFusionAutoEnable()
 }
 
@@ -59,7 +64,12 @@ func (r *resolver) handleModelSpecificAdjustments() {
 func (r *resolver) deepseekFamilyOverrides() {
 	const src = "_deepseek_family_overrides"
 	if !r.model.IsDeepseekDSA {
-		// DeepSeek V3/R1/V3.1: trtllm_mla is SM100's; prefill context parallelism is not accepted.
+		// DeepSeek V3/R1/V3.1: trtllm_mla is SM100's (model_overrides/deepseek_v2.py:181-186);
+		// prefill context parallelism is not accepted.
+		if r.chip.isSM100() && r.cfg.AttentionBackend == nil && r.cfg.PrefillAttentionBackend == nil &&
+			r.cfg.DecodeAttentionBackend == nil {
+			r.declare(src, "attention_backend", "trtllm_mla")
+		}
 		return
 	}
 	if r.cfg.AttentionBackend == nil && r.cfg.PrefillAttentionBackend == nil && r.cfg.DecodeAttentionBackend == nil {

@@ -169,3 +169,96 @@ func TestResolveRefusesWhatItDoesNotModelByName(t *testing.T) {
 		t.Errorf("P/D over mooncake: got %v, want NotModelled naming disaggregation_transfer_backend and #18", err)
 	}
 }
+
+// A server's record of its resolved arguments states custom_weight_loader as an empty list; SGLang's
+// resolution gives an unset field the same value, so it is not a setting and resolves like the unset
+// one. A real loader is still refused.
+func TestAnEmptyCustomWeightLoaderIsTheUnsetOne(t *testing.T) {
+	c := readAnswers(t).Cases[0]
+	in := func(extra map[string]any) Input {
+		args := map[string]any{"model_path": "<model>"}
+		for k, v := range extra {
+			args[k] = v
+		}
+		return Input{Args: args, Chip: c.Chip, Model: c.ModelFacts}
+	}
+	want, err := Resolve(in(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Resolve(in(map[string]any{"custom_weight_loader": []any{}}))
+	if err != nil {
+		t.Fatalf("an empty custom_weight_loader was refused: %v", err)
+	}
+	if len(got.Args.CustomWeightLoader) != len(want.Args.CustomWeightLoader) || len(got.Args.CustomWeightLoader) != 0 {
+		t.Errorf("resolved %v, the unset field resolves %v", got.Args.CustomWeightLoader, want.Args.CustomWeightLoader)
+	}
+	if _, err := Resolve(in(map[string]any{"custom_weight_loader": []any{"x.y"}})); err == nil {
+		t.Error("a real custom weight loader was accepted")
+	}
+}
+
+// attention_backend nsa is the deprecated alias of dsa in SGLang v0.5.23 (attention_registry.py
+// :166-176): a DSA model that states it resolves as one that states dsa, or neither, apart from
+// the field itself, whichever step decided the rest.
+func TestResolveTakesNSAAsTheDSABackend(t *testing.T) {
+	for _, c := range readAnswers(t).Cases {
+		if c.Name != "glm5-h200-tp8-recipe" {
+			continue
+		}
+		resolve := func(backend any) *Resolved {
+			args := map[string]any{"model_path": "<model>"}
+			for k, v := range c.Args {
+				args[k] = v
+			}
+			if backend != nil {
+				args["attention_backend"] = backend
+			}
+			got, err := Resolve(Input{Args: args, Chip: c.Chip, Model: c.ModelFacts})
+			if err != nil {
+				t.Fatalf("attention_backend %v: %v", backend, err)
+			}
+			return got
+		}
+		def := resolve(nil)
+		for _, backend := range []string{"nsa", "dsa"} {
+			got := resolve(backend)
+			if got.Args.DsaPrefillBackend == nil || def.Args.DsaPrefillBackend == nil ||
+				*got.Args.DsaPrefillBackend != *def.Args.DsaPrefillBackend ||
+				*got.Args.DsaDecodeBackend != *def.Args.DsaDecodeBackend ||
+				got.Args.KvCacheDtype != def.Args.KvCacheDtype ||
+				*got.Args.PageSize != *def.Args.PageSize {
+				t.Errorf("attention_backend %s resolves the DSA kernels, cache dtype or page differently from the default", backend)
+			}
+			if got.Args.AttentionBackend == nil || *got.Args.AttentionBackend != backend {
+				t.Errorf("attention_backend %s is kept as stated, got %v", backend, got.Args.AttentionBackend)
+			}
+		}
+		return
+	}
+	t.Fatal("the glm5-h200-tp8-recipe case is not in the answers")
+}
+
+// A case name stands for one case: the answers are keyed by it, so a repeated name would be recorded
+// once and counted twice.
+func TestNoCaseNameOfTheOracleIsRepeated(t *testing.T) {
+	b, err := os.ReadFile("../oracle/serverargs/cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Cases []struct {
+			Name string `json:"name"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(b, &f); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, c := range f.Cases {
+		if seen[c.Name] {
+			t.Errorf("the case %s is listed twice", c.Name)
+		}
+		seen[c.Name] = true
+	}
+}

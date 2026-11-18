@@ -1,5 +1,5 @@
-github.com/inference-sim/blis-substrate v0.15.0 h1:45vDDFdfHNZTbZHpziBgl4ygQeURUXkEkmyMYiLLZ4E=
-github.com/inference-sim/blis-substrate v0.15.0/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
+github.com/inference-sim/blis-substrate v0.15.1-0.20261118162118-b6748ca9d757 h1:iVGnVthT+wFSEUIw9s3f4j8rMi/vprNiqJF6738DXTk=
+github.com/inference-sim/blis-substrate v0.15.1-0.20261118162118-b6748ca9d757/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=

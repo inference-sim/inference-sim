@@ -4452,12 +4452,12 @@
     {
       "name": "SGLANG_ENABLE_JIT_DEEPGEMM",
       "source": "env",
-      "status": "not_modelled",
+      "status": "inert_unproven",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#9"
+        "note": "The variable defaults to true (environ.py:1348@297e54fd) and only chooses whether DeepGEMM's JIT kernels serve the fp8 GEMMs that have them (deep_gemm_wrapper/configurer.py:35-55: off returns False before the device and import checks, so the Triton and cuBLAS paths run). A run that exports it at true states the default, so its pool resolves, lowers and schedules as one that does not state it. The engine reads the variable from the pool's engine block env map (sglangengine.TestTheEngineReadsItsEnvironmentFromTheEnvMap): true is accepted and changes no decision; false is refused by name, because it would run other kernels than the ones the registry's coefficients were measured on. Named substitution: no DeepGEMM kernel is priced separately from the registry's fp8 GEMM entries, so a point that states true is priced as every point is."
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -12416,12 +12416,55 @@
     {
       "name": "attention_backend",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#49"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "triton",
+          "torch_native",
+          "flex_attention",
+          "dsa",
+          "nsa",
+          "qsa",
+          "dsv4",
+          "compressed",
+          "fa3",
+          "fa4",
+          "flashinfer",
+          "llada2_cfg_flashinfer",
+          "flashmla",
+          "trtllm_mla",
+          "cutedsl_mla",
+          "tokenspeed_mla",
+          "trtllm_mha",
+          "hpc_ops",
+          "minicpm_flashattn",
+          "minicpm_flashinfer",
+          "aiter",
+          "wave",
+          "intel_amx",
+          "ascend",
+          "intel_xpu"
+        ],
+        "covered": [
+          "dsa",
+          "dsv4",
+          "fa3",
+          "flashinfer",
+          "nsa",
+          "triton",
+          "trtllm_mha",
+          "trtllm_mla"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -12570,12 +12613,38 @@
     {
       "name": "chunked_prefill_size",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#4"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": -1,
+            "closed": "above"
+          },
+          {
+            "value": 0,
+            "closed": "above"
+          },
+          {
+            "value": 1,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          0,
+          1,
+          2,
+          3
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -12636,12 +12705,21 @@
     {
       "name": "context_length",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#49"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -12735,12 +12813,21 @@
     {
       "name": "cuda_graph_max_bs_decode",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#49"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -12889,12 +12976,20 @@
     {
       "name": "decode_log_interval",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#9"
+        "traces": [
+          "core/metrics/testdata/golden-metrics/k-chunked-retract.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -13241,12 +13336,23 @@
     {
       "name": "disable_radix_cache",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#3"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "oracle/scenarios-sched/chunked-retract.json",
+          "oracle/scenarios-sched/nocache-fcfs.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -13472,9 +13578,29 @@
     {
       "name": "dp_size",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#8"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1,
+          2
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -13488,7 +13614,28 @@
         "issue": "inference-sim/blis-sglang#49"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "none",
+        "approximates": {
+          "mode": {
+            "dsa_decode_backend": null
+          },
+          "evidence": "the registry's attention coefficients are fitted per part on the model graph's sparse-MLA lane and are not keyed by the DSA backend; no allowed table measures flashmla_sparse, flashmla_kv, trtllm or fa3 sparse attention separately for this model on this part",
+          "differs": "the decode backend the engine runs is a different kernel (flashmla_sparse, flashmla_kv, trtllm or fa3, layers/attention/dsa/ at SGLang v0.5.23) with its own latency; the cost model prices the part-wide attention pair whichever is stated, so the step time of a DSA model carries the difference between that pair and the stated kernel",
+          "when": [
+            {
+              "value_in": [
+                "flashmla_sparse",
+                "flashmla_kv",
+                "trtllm",
+                "fa3"
+              ],
+              "compute_capability": {
+                "gte": "9.0",
+                "lt": "11.0"
+              }
+            }
+          ]
+        }
       }
     },
     {
@@ -13510,7 +13657,28 @@
         "issue": "inference-sim/blis-sglang#49"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "none",
+        "approximates": {
+          "mode": {
+            "dsa_prefill_backend": null
+          },
+          "evidence": "the registry's attention coefficients are fitted per part on the model graph's sparse-MLA lane and are not keyed by the DSA backend; no allowed table measures flashmla_sparse, flashmla_kv, trtllm or fa3 sparse attention separately for this model on this part",
+          "differs": "the prefill backend the engine runs is a different kernel (flashmla_sparse, flashmla_kv, trtllm or fa3, layers/attention/dsa/ at SGLang v0.5.23) with its own latency; the cost model prices the part-wide attention pair whichever is stated, so the step time of a DSA model carries the difference between that pair and the stated kernel",
+          "when": [
+            {
+              "value_in": [
+                "flashmla_sparse",
+                "flashmla_kv",
+                "trtllm",
+                "fa3"
+              ],
+              "compute_capability": {
+                "gte": "9.0",
+                "lt": "11.0"
+              }
+            }
+          ]
+        }
       }
     },
     {
@@ -13912,12 +14080,22 @@
     {
       "name": "enable_flashinfer_allreduce_fusion",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#49"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -15419,12 +15597,12 @@
     {
       "name": "host",
       "source": "config",
-      "status": "not_modelled",
+      "status": "inert_unproven",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#9"
+        "note": "No proof file: the field is a free string, which the substrate's value classes cannot list for a proof (a proven-inert enumeration lists every value). Reviewed reading at SGLang v0.5.23 297e54fd: it binds the HTTP/gRPC server and is the PD bootstrap address (disaggregation/common/conn.py:345); the scheduler loop and the model runner's step do not read it. lower.TestInertFieldsChangeNoDecision shows resolution and the lowered plan unchanged at 0.0.0.0 and 127.0.0.1."
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -15584,12 +15762,35 @@
     {
       "name": "kv_cache_dtype",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#49"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "auto",
+          "fp8_e5m2",
+          "fp8_e4m3",
+          "mxfp8",
+          "bf16",
+          "bfloat16",
+          "nvfp4",
+          "fp4_mx_block16"
+        ],
+        "covered": [
+          "auto",
+          "bf16",
+          "bfloat16",
+          "fp8_e4m3",
+          "fp8_e5m2"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -16068,12 +16269,22 @@
     {
       "name": "max_prefill_tokens",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#4"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "core/sched/testdata/golden-sched/max-prefill-tokens-250.trace.json",
+          "core/sched/testdata/golden-sched/max-prefill-tokens.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -16090,12 +16301,37 @@
     {
       "name": "max_running_requests",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#4"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 400,
+            "closed": "above"
+          },
+          {
+            "value": 513,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          0,
+          1,
+          2
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -16123,12 +16359,20 @@
     {
       "name": "mem_fraction_static",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#4"
+        "traces": [
+          "config/testdata/serverargs.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -16277,20 +16521,28 @@
     {
       "name": "model_loader_extra_config",
       "source": "config",
-      "status": "not_modelled",
+      "status": "inert_unproven",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#49"
+        "note": "No proof file: the field is a free JSON string, which the substrate's value classes cannot list for a proof. Reviewed reading at SGLang v0.5.23 297e54fd: it is passed to the weight loader (model_executor/model_runner_components/load_model_utils.py:225, weight_cache/ipc_loader.py:590) as loader options such as multithreaded loading; it changes how long the weights take to load, not what a step schedules or costs. Weight load time is not modelled."
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
       "name": "model_path",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#49"
+        "traces": [
+          "config/testdata/serverargs.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "covered": [
+          "<model>"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -16640,9 +16892,15 @@
     {
       "name": "port",
       "source": "config",
-      "status": "not_modelled",
+      "status": "proven_inert",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#9"
+        "proof": "oracle/inertness/port.json"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -16673,12 +16931,31 @@
     {
       "name": "pp_size",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#8"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -16871,12 +17148,56 @@
     {
       "name": "quantization",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#49"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "awq",
+          "fp8",
+          "mxfp8",
+          "gptq",
+          "gptq_marlin",
+          "awq_marlin",
+          "bitsandbytes",
+          "gguf",
+          "modelopt",
+          "modelopt_fp8",
+          "modelopt_fp4",
+          "nvfp4_online",
+          "modelopt_mixed",
+          "petit_nvfp4",
+          "w8a8_int8",
+          "w8a8_fp8",
+          "moe_wna16",
+          "w4afp8",
+          "mxfp4",
+          "auto-round",
+          "auto-round-int8",
+          "compressed-tensors",
+          "modelslim",
+          "mxfp_w4a8",
+          "quark",
+          "quark_int4fp8_moe",
+          "quark_mxfp4",
+          "mlx_q4",
+          "mlx_q8",
+          "unquant",
+          "humming"
+        ],
+        "covered": [
+          "fp8",
+          "modelopt_fp4",
+          "modelopt_mixed"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -16948,12 +17269,12 @@
     {
       "name": "reasoning_parser",
       "source": "config",
-      "status": "not_modelled",
+      "status": "inert_unproven",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#9"
+        "note": "No proof file: the field is a free string, which the substrate's value classes cannot list for a proof. Reviewed reading at SGLang v0.5.23 297e54fd: the scheduler builds a ReasoningParser from it (managers/scheduler.py:940-960) to find the think-end tokens, which count a request's reasoning tokens for usage reporting (managers/schedule_batch.py:2240-2283) and gate grammar-constrained output (constrained/base_grammar_backend.py:448-465; grammar requests are refused by name, blis-sglang#81); no batch is formed or priced differently. lower.TestInertFieldsChangeNoDecision shows resolution and the lowered plan unchanged at glm45 and qwen3."
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -17179,12 +17500,12 @@
     {
       "name": "served_model_name",
       "source": "config",
-      "status": "not_modelled",
+      "status": "inert_unproven",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#9"
+        "note": "No proof file: the field is a free string, which the substrate's value classes cannot list for a proof. Reviewed reading at SGLang v0.5.23 297e54fd: the model-name label of metrics and of the OpenAI-compatible model list (disaggregation/decode_kvcache_offload_manager.py:110,129; entrypoints); no scheduling or pricing decision reads it. lower.TestInertFieldsChangeNoDecision shows resolution and the lowered plan unchanged at glm-5-fp8."
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -17817,9 +18138,15 @@
     {
       "name": "stream_interval",
       "source": "config",
-      "status": "not_modelled",
+      "status": "proven_inert",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#9"
+        "proof": "oracle/inertness/stream_interval.json"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -17927,34 +18254,34 @@
     {
       "name": "tokenizer_path",
       "source": "config",
-      "status": "not_modelled",
+      "status": "inert_unproven",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#9"
+        "note": "No proof file: the field is a free string, which the substrate's value classes cannot list for a proof. Reviewed reading at SGLang v0.5.23 297e54fd: the path only names the tokenizer the tokenizer manager and the detokenizer load (arg_groups/fields/serving.py:32; the rust server reads it at scheduler.py rust_server_tokenizer_path); the scheduler's batch, admission and prefix decisions read token ids, never the path, and the cost model prices ids. Cold-start tokenizer load time is not modelled."
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
       "name": "tokenizer_worker_num",
       "source": "config",
-      "status": "not_modelled",
+      "status": "inert_unproven",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#9"
+        "note": "No proof file: the field is an integer cut at 1 by SGLang's own tests (arg_groups/serving_hook.py:89 and :423, parallel_hook.py:624), so a proof lists a probe below 1, which no accepted pool can state. The field sets how many tokenizer processes the HTTP front end runs. At more than one, requests reach the scheduler through a MultiTokenizerRouter and each worker owns a share of the multimodal feature pool (managers/tokenizer_manager.py:681-690, detokenizer_manager.py:132 and :560, scheduler_components/ipc_channels.py:57, load_snapshot.py:88-100, utils/cuda_vmm_transport_utils.py:1016): that changes which process tokenizes and routes a request, and no batch, admission or price. ServerArgs resolution reads it only to refuse combinations (arg_groups/serving_hook.py:89 and :423, parallel_hook.py:624: the HTTP worker reuseport option, native gRPC, elastic EP), none of which the accepted fields can state, and to log the multimodal pool split (serving_hook.py:908 and :926), which an accepted text-only pool does not reach. lower.TestInertFieldsChangeNoDecision (the probes 4 and 8) resolves and lowers the DeepSeek-R1 and GLM-5 pools of the h200 recipes with the field at each probe value and finds every other resolved ServerArgs field and the lowered plan equal to the unset pool's; the oracle case dsr1-h200-tp8-tokenizer-workers records SGLang's own resolution with the field at 8. Named substitution: the capacity of the tokenizer front end (several processes tokenizing in parallel, so a request waits less to be tokenized under load) is not modelled; a point that states tokenizer_worker_num above 1 is priced as if tokenization takes no time before a request reaches the scheduler, as for every point."
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
       "name": "tool_call_parser",
       "source": "config",
-      "status": "not_modelled",
+      "status": "inert_unproven",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#9"
+        "note": "No proof file: the field is a free string, which the substrate's value classes cannot list for a proof. Reviewed reading at SGLang v0.5.23 297e54fd: the OpenAI-serving layer and, for gpt-oss, the detokenizer's output cleanup (managers/detokenizer_manager.py:159-161); the deprecated names qwen25 and glm45 are replaced by their successors in resolution (serving_hook.py:272-281), which config models and the oracle checks (cases dsv3-h200-tp8-deprecated-tool-parser, glm5-h200-tp8-deprecated-glm-parser). lower.TestInertFieldsChangeNoDecision shows the lowered plan unchanged at glm47 and qwen."
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -17982,9 +18309,47 @@
     {
       "name": "tp_size",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#8"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 2,
+            "closed": "above"
+          },
+          {
+            "value": 3,
+            "closed": "above"
+          },
+          {
+            "value": 4,
+            "closed": "above"
+          },
+          {
+            "value": 5,
+            "closed": "above"
+          },
+          {
+            "value": 9,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1,
+          2,
+          4,
+          5
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -18048,12 +18413,12 @@
     {
       "name": "trust_remote_code",
       "source": "config",
-      "status": "not_modelled",
+      "status": "inert_unproven",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#49"
+        "note": "No proof file: the dashboard scorer reads a proven-inert boolean as needing a value list the substrate forbids for one, so the field stays unproven. Reviewed reading at SGLang v0.5.23 297e54fd: it is passed to the loaders of the model configuration, tokenizer and processor (managers/tp_worker.py, managers/tokenizer_manager.py, arg_groups/*_hook.py); the catalog fixes the architecture, so loading vendor code selects no kernel and changes no schedule. lower.TestInertFieldsChangeNoDecision shows resolution and the lowered plan unchanged at true and false."
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {

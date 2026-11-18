@@ -7,8 +7,10 @@
  "config": {
   "abort_on_priority_when_disabled": false,
   "allocator": "TokenToKVPoolAllocator",
+  "allow_auto_truncate": false,
   "chunked_prefill_size": 48,
   "clip_max_new_tokens": 4096,
+  "context_len": 32768,
   "disable_consecutive_prefill_overlap": false,
   "disaggregation_mode": "null",
   "enable_overlap": false,
@@ -46,6 +48,7 @@
   "random_seed": 0,
   "req_pool_size": 3,
   "retract_decode_steps": 20,
+  "retraction_policy": "length",
   "schedule_low_priority_values_first": true,
   "tree_cache": "UnifiedRadixCache",
   "vocab_size": 151936
@@ -150,7 +153,7 @@
   "max_total_num_tokens": 160
  },
  "provenance": {
-  "blis_sglang_commit": "9531e8d4266a63187092d17b18e8d02611188c3b",
+  "blis_sglang_commit": "75dabbe5dd1729bd7ce649500c34e9f14736b272",
   "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
   "mock_version": "gpu-mock/9+f7e50518d4b2",
   "model": "Qwen/Qwen2.5-0.5B-Instruct",
@@ -160,7 +163,7 @@
    "oracle/harness.py": "a3b5bfbc5670969a78dff5d50e24a5e17bbb8d50ed70e1d77825013608c10ac5",
    "oracle/mocks.json": "9782b21a0b9428d105a51cde9983b1554f456ef4e7f7ac11c73992f202104173",
    "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
-   "oracle/run_sched.py": "1ecb02ee786a4eaa1c6359c71685e591b8ce7fe4a45fe40a995e3383be33929b",
+   "oracle/run_sched.py": "a1c05703893d48e784fae54d729a958a174435435b23e6e1e42d24f71ae517bf",
    "oracle/run_scheduler.py": "7d624d8c7cf66f9daf849d6029f7e5af71bc9ed06fca712f0c1b5b7aa9a96ceb",
    "oracle/scenarios-sched/queue-limit-priority-heavy.json": "25e6cbc03f9047862d5499a333a538966873837823390cfc1e0d1fb11ed5ffd8",
    "oracle/stubs.py": "e30a3a770e3a4f91008449145089328ba8fbb83b35bda7082e1c77e323eb1692",

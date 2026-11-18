@@ -66,6 +66,17 @@ type ModelFacts struct {
 	HiddenSize                        *int    `json:"hidden_size"`
 	IsFP4Experts                      bool    `json:"is_fp4_experts"`
 	HasNVFP4MoEMeta                   bool    `json:"has_nvfp4_moe_meta"`
+	// HasFP8WeightsInCheckpoint is has_fp8_weights_in_checkpoint(model_path): whether the first
+	// expert tensor of the checkpoint's safetensors header is float8_e4m3fn (utils/common.py).
+	HasFP8WeightsInCheckpoint bool `json:"has_fp8_weights_in_checkpoint"`
+	// VisionNumHiddenLayers and VisionHiddenSize are getattr(vision_config, "num_hidden_layers", 24)
+	// and getattr(vision_config, "hidden_size", 1024) of a model with a vision config, which
+	// adjust_mem_fraction_for_vlm reads (memory_hook.py:440-441).
+	VisionNumHiddenLayers *int `json:"vision_num_hidden_layers"`
+	VisionHiddenSize      *int `json:"vision_hidden_size"`
+	// MixedPrecisionMoEQuantAlgos is _mixed_precision_moe_quant_algos(hf_config): the quant_algo
+	// of the checkpoint's expert layers, upper case (model_overrides/qwen3_moe.py:17-26).
+	MixedPrecisionMoEQuantAlgos []string `json:"mixed_precision_moe_quant_algos"`
 }
 
 func (m ModelFacts) useMLA() bool { return m.AttentionArch == "MLA" }
@@ -314,8 +325,7 @@ func (r *resolver) run() {
 	r.samplingBackendDefault()
 	// handle_deterministic_inference, handle_nvfp4_prefill_kv_dequant_dtype: no change here.
 	r.handleAttentionBackendCompatibility()
-	// disable_prefill_cuda_graph_for_deepseek_trtllm_mla: trtllm_mla is the DeepSeek-V3 default on
-	// SM100 alone, which is not accepted.
+	r.disablePrefillCudaGraphForDeepseekTrtllmMla()
 	// handle_mamba_backend, handle_int8_mamba_checkpoint, handle_linear_attn_backend,
 	// handle_kv4_compatibility, handle_mxfp8_kv_cache_compatibility: no change here.
 	r.pageSizeDefault()
@@ -325,6 +335,7 @@ func (r *resolver) run() {
 	r.handleDataParallelism()
 	r.handleLoadBalanceMethod()
 	// handle_context_parallelism, handle_kv_cache_sharding, handle_moe_kernel_config: no change here.
+	r.handleMoeKernelConfig()
 	r.handleA2AMoE()
 	// handle_shared_experts_tp, handle_eplb_and_dispatch: no change here.
 	r.handleExpertDistributionMetrics()
