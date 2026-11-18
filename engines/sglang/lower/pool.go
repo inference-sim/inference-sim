@@ -258,6 +258,12 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 			return nil, err
 		}
 		p.MoE.Experts, p.MoE.Routing = experts, routing
+		if a.MoeRunnerBackend == "flashinfer_trtllm" {
+			note("moe_runner_backend", "flashinfer_trtllm",
+				"the plan names no experts kernel: the substrate prices FlashInfer's TRT-LLM grouped GEMM on block-FP8 experts by its "+
+					"assumed ramp (graded assumed: the engine release lists no sm_100a build to name a code hash); expert selection "+
+					"runs inside the monolithic kernel")
+		}
 	}
 
 	// Allreduce: SGLang's CustomAllreduce handles a width in {2, 4, 6, 8} unless disabled
@@ -326,6 +332,14 @@ func expertsKernel(a *config.ServerArgs, g *model.Graph) (plan.KernelImpl, plan.
 			return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=" + a.MoeRunnerBackend + " on " + string(g.Global.WeightDType) + " experts", Issue: issueLower}
 		}
 		return plan.ExpertsTriton, plan.RoutingSeparate, nil
+	case "flashinfer_trtllm":
+		// FlashInfer's TRT-LLM monolithic MoE (layers/moe/moe_runner/flashinfer_trtllm.py): router logits
+		// in, expert selection inside the kernel. The substrate prices it where the plan names no experts
+		// kernel, from the weight format's grouped-GEMM ramp; only the block-fp8 form is priced.
+		if g.Global.WeightDType != model.DTypeFP8 {
+			return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=flashinfer_trtllm on " + string(g.Global.WeightDType) + " experts", Issue: issueLower}
+		}
+		return plan.KernelImpl{}, plan.RoutingFused, nil
 	}
 	return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=" + a.MoeRunnerBackend, Issue: issueLower}
 }
