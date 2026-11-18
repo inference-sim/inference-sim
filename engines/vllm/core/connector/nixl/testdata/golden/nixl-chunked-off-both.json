@@ -22,7 +22,7 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "fb284370e3de75ad4e824eee6f23c378fbbf14e4",
+  "blis_vllm_commit": "08f5efeae8586d967a220d7866062c448b9bf4c0",
   "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
   "mock_version": "gpu-mock/9+2ee0b3b47a9c",
   "mocks": [
@@ -66,7 +66,7 @@
    "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
    "oracle/run_connector.py": "48217f5b3012d7d0c2888b85d67f92f9568f3b0667acd369a997ef043b308af7",
    "oracle/run_enginecore.py": "35315709f7f99ceaa0dc0d01ec57997b92524b1825cb990ed27ba8417500461c",
-   "oracle/run_scheduler.py": "8aeea68a1dce3a32b9b8458ce710812c7851769e67bc3cc28414750054916b3a",
+   "oracle/run_scheduler.py": "48ef014382a90ec1a4b3f3c09fd5e9aeae2325868af45926a7ab17bc3f1211d7",
    "oracle/scenarios/connector/nixl-chunked-off-both.json": "0195bb408e45a2eb94f33fe2015daedbf2738d0b3e7623e4e13112b0d4d9a54b"
   },
   "platform": "linux-x86_64",
