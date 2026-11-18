@@ -2874,12 +2874,15 @@
    }
   },
   "config:kv_cache_dtype": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "traces": [
+     "config/testdata/serverargs.json",
+     "lower/testdata/sglang_lower.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:kv_canary": {
@@ -3932,12 +3935,15 @@
    }
   },
   "config:quantization": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "traces": [
+     "config/testdata/serverargs.json",
+     "lower/testdata/sglang_lower.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:quantization_param_path": {
