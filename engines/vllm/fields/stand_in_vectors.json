@@ -728,5 +728,227 @@
   "compute_capability": "9.0",
   "owner": "mxfp4-oracle-v0.33.0",
   "exact": false
+ },
+ {
+  "field": "DYN_REQUEST_PLANE_CODEC",
+  "value": "msgpack",
+  "owner": "dynamo-request-plane-codec",
+  "exact": true
+ },
+ {
+  "field": "DYN_REQUEST_PLANE_CODEC",
+  "value": "json",
+  "owner": "dynamo-request-plane-codec",
+  "exact": false
+ },
+ {
+  "field": "DYN_REQUEST_PLANE_CODEC",
+  "value": "",
+  "owner": "dynamo-request-plane-codec",
+  "exact": false
+ },
+ {
+  "field": "NCCL_P2P_LEVEL",
+  "value": "NVL",
+  "compute_capability": "10.0",
+  "owner": "nccl-paths-p2p-level",
+  "exact": true
+ },
+ {
+  "field": "NCCL_P2P_LEVEL",
+  "value": "NVL",
+  "compute_capability": "10.3",
+  "owner": "nccl-paths-p2p-level",
+  "exact": true
+ },
+ {
+  "field": "NCCL_P2P_LEVEL",
+  "value": "NVL",
+  "compute_capability": "9.0",
+  "owner": "nccl-paths-p2p-level",
+  "exact": false
+ },
+ {
+  "field": "NCCL_P2P_LEVEL",
+  "value": "NVL",
+  "compute_capability": "12.0",
+  "owner": "nccl-paths-p2p-level",
+  "exact": false
+ },
+ {
+  "field": "NCCL_P2P_LEVEL",
+  "value": "PXB",
+  "compute_capability": "10.0",
+  "owner": "nccl-paths-p2p-level",
+  "exact": false
+ },
+ {
+  "field": "NCCL_P2P_LEVEL",
+  "value": "SYS",
+  "compute_capability": "10.0",
+  "owner": "nccl-paths-p2p-level",
+  "exact": false
+ },
+ {
+  "field": "NCCL_P2P_LEVEL",
+  "value": "",
+  "compute_capability": "10.0",
+  "owner": "nccl-paths-p2p-level",
+  "exact": false
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "10.0",
+  "compute_capability": "10.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": true
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "10.0",
+  "compute_capability": "10.3",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "10.0",
+  "compute_capability": "9.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "9.0",
+  "compute_capability": "10.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "",
+  "compute_capability": "10.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
+  "field": "NCCL_WATCHDOG_TIMEOUT",
+  "value": "1800",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "NCCL_WATCHDOG_TIMEOUT",
+  "value": "60",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC",
+  "value": "1800",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC",
+  "value": "60",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "UCX_MAX_RMA_RAILS",
+  "value": "1",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "UCX_MAX_RMA_RAILS",
+  "value": "4",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "UCX_MAX_RNDV_RAILS",
+  "value": "1",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "UCX_MAX_RNDV_RAILS",
+  "value": "4",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "UCX_RNDV_SCHEME",
+  "value": "put_zcopy",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "UCX_RNDV_SCHEME",
+  "value": "get_zcopy",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "UCX_MEMTYPE_CACHE",
+  "value": "n",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "UCX_MEMTYPE_CACHE",
+  "value": "y",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "UCX_MEMTYPE_REG_WHOLE",
+  "value": "n",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "UCX_MEMTYPE_REG_WHOLE",
+  "value": "y",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "TILELANG_CLEANUP_TEMP_FILES",
+  "value": "1",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "TILELANG_CLEANUP_TEMP_FILES",
+  "value": "0",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "VLLM_SERVER_DEV_MODE",
+  "value": "1",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "VLLM_SERVER_DEV_MODE",
+  "value": "0",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "VLLM_LOG_STATS_INTERVAL",
+  "value": "1",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "VLLM_LOG_STATS_INTERVAL",
+  "value": "0",
+  "owner": "cited-source",
+  "exact": false
  }
 ]

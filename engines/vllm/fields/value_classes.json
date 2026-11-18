@@ -273,6 +273,76 @@
     "name": "UCX_CUDA_IPC_ENABLE_MNNVL"
    }
   },
+  "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "kind": "boolean",
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "vllm/v1/worker/gpu_worker.py:722",
+       "vllm/v1/worker/gpu_worker.py:781"
+      ],
+      "covered_by": [
+       "compat/kernelmodel/profiler_graphs_test.go"
+      ]
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "vllm/v1/worker/gpu_worker.py:722",
+       "vllm/v1/worker/gpu_worker.py:781"
+      ],
+      "covered_by": [
+       "compat/kernelmodel/profiler_graphs_test.go"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/v1/worker/gpu_worker.py:722",
+      "expr": "envs.VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu_worker.py:781",
+      "expr": "envs.VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": false,
+      "trace": "compat/kernelmodel/profiler_graphs_test.go",
+      "reviewed": true
+     },
+     {
+      "value": true,
+      "trace": "compat/kernelmodel/profiler_graphs_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS"
+   }
+  },
   "VLLM_USE_RUST_FRONTEND": {
    "value_classes": {
     "type": "boolean",
