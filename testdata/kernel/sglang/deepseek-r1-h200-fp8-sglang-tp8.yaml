@@ -1,0 +1,36 @@
+# DeepSeek-R1 (fp8) on an h200 under SGLang v0.5.23, tp 8: the InferenceX 1k1k recipe's stated
+# settings (benchmarks/single_node/dsr1_fp8_h200.sh), in SGLang's own field names.
+kind: Scenario
+name: deepseek-r1-h200-fp8-sglang-tp8
+engine:
+  kind: sglang
+  version: "0.5.23"
+
+model: deepseek-r1-0528
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h200
+  nodes: 1
+  gpus_per_node: 8
+---
+kind: Deployment
+name: deepseek-r1-h200-fp8-sglang-tp8
+
+pools:
+  - role: colocated
+    nodes: 1
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 1
+      enable_expert_parallel: false
+    engine:
+      disable_radix_cache: true
+      max_running_requests: 512
+      chunked_prefill_size: 32768
+      mem_fraction_static: 0.82
+      attention_backend: flashinfer
+      stream_interval: 10
+      cuda_graph_max_bs_decode: 512
+      context_length: 163840

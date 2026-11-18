@@ -6,7 +6,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -277,16 +276,22 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	// A fresh adoption starts with no scenario facts recorded (tests adopt more than once).
 	scenarioScheduler, scenarioOverrides = "", nil
 	scenarioRouter, scenarioStatesRouter = routerInputs{}, false
-	in := adoptInputs(cmd)
 	// The engine is selected, and a release this build does not run refused (LIF-6), before the
 	// deployment is read: no other check runs on a scenario this build cannot run.
 	if kernelScenario != "" && kernelScenarioDir != "" {
-		ref, err := selectEngine(filepath.Join(kernelScenarioDir, kernelScenario))
+		ref, err := selectEngine(engineScenarioPath())
 		if err != nil {
 			logrus.Fatalf("%v", err)
 		}
 		scenarioEngine = ref
+		if ref.Kind == engineKindSGLang {
+			sglangKernels.reset()
+			if err := adoptSGLangTwin(); err != nil {
+				logrus.Fatalf("%v", err)
+			}
+		}
 	}
+	in := adoptInputs(cmd)
 	a, err := adoptScenario(in)
 	if err != nil {
 		logrus.Fatalf("%v", err)
@@ -328,6 +333,11 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	// The engine the kernel priced, so the simulated scheduler admits against the same caps,
 	// pages and pool (the build site, adoptFirstPoolEngine).
 	adoptFirstPoolEngine(m, settings)
+	if scenarioEngine.Kind == engineKindSGLang {
+		// The prefix-cache record is the host adapter's reading of vLLM's model runner and cache
+		// layout; SGLang's radix cache is the engine's own and reports through its metrics.
+		prefixCacheRecords = nil
+	}
 }
 
 // resolveLatencyConfig builds the latency model for a run or a replay: the blis-latency-kernel

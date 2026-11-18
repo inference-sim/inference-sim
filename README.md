@@ -25,19 +25,35 @@ this page.
 `stack.json` records what this release pins, and the build selects exactly those versions.
 
 - **Pins** blis-substrate (contracts, the cost model, the catalog and the coefficient registry,
-  embedded in its module), blis-vllm (the vLLM engine) and the llm-d router fork
+  embedded in its module), blis-vllm (the vLLM engine), blis-sglang (the SGLang engine) and the llm-d router fork
   `inference-sim/llm-d-router`, which replaces `github.com/llm-d/llm-d-router` at a `-blis.N`
-  tag. The dependencies run one way: blis-substrate, then blis-vllm, then inference-sim.
+  tag. The dependencies run one way: blis-substrate, then blis-vllm and blis-sglang, then inference-sim.
 - **Pinned by** blis-config-search and accuracy-dashboard, which pin the inference-sim release
   tag. No other repository pins it.
 - **Implements and consumes** blis-substrate's contracts: the Scenario and Deployment documents
   it reads, the `engine.Engine` interface it drives, the router `embed` contract it hosts, and
   the Result document it writes. Non-test code imports blis-vllm at one build site,
-  `cmd/engine_build.go`.
+  `cmd/engine_build.go`, and blis-sglang at another, `cmd/sglang_engine.go`.
 
 The reference is printed from the data and the code, not written: `blis schema`, `blis fields`,
 `blis metrics`, `blis invariants`, `blis catalog` and `blis router-configs`, with `--help` on
 every command, the JSON Schemas and the Go doc comments.
+
+## Engines
+
+A scenario names its engine: `engine: {kind: vllm, version: "0.33.0"}` or
+`engine: {kind: sglang, version: "0.5.23"}`; `stack.json` lists the releases this build runs. An SGLang
+pool's `engine:` block states SGLang's own `ServerArgs` field names (`mem_fraction_static`,
+`chunked_prefill_size`, ...) and a name that is not one is refused naming it; `blis fields` prints each
+engine's field list. Two SGLang scenarios run in CI, `testdata/kernel/sglang/glm-5-h200-fp8-sglang-tp8.yaml`
+and `deepseek-r1-h200-fp8-sglang-tp8.yaml`. A scenario states `context_length` (the catalog graph carries
+none), the memory CUDA holds before a model loads is known for the H200 only, and speculative decoding,
+DP attention, pipeline parallelism, HiCache and P/D disaggregation are each refused naming their issue.
+
+One named substitution stands on every SGLang point: the host-side facts (model, hardware, parallelism,
+KV store, host overheads) are read through blis-vllm's adapter from a copy of the scenario in vLLM form,
+so the Result lists `host_side_facts` and `host_overheads` in its kernel substitutions; SGLang's own
+scheduler, KV pool and step pricing decide every step (`adoptSGLangTwin`, `cmd/sglang_engine.go`).
 
 ## Build, test and run
 

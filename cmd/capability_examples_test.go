@@ -168,7 +168,7 @@ func TestCapabilityExample_EngineIsSelectedByKindAndVersion(t *testing.T) {
 	const engine = `engine: {kind: vllm, version: "0.33.0"}`
 	for _, tc := range []struct{ name, edit, want string }{
 		{"older vLLM", `engine: {kind: vllm, version: "0.32.0"}`, "this build runs vllm 0.33.0"},
-		{"unregistered kind", `engine: {kind: sglang, version: "0.5.23"}`, "this build runs the kinds vllm"},
+		{"unregistered kind", `engine: {kind: tensorrt-llm, version: "0.5.23"}`, "this build runs the kinds sglang, vllm"},
 		{"retired field", engine + "\nengine_version: \"0.33.0\"", "engine_version"},
 	} {
 		stderr := capExampleFails(t, exampleVariant(t, "session-load-only.yaml", engine, tc.edit), args...)
