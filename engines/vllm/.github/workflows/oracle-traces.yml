@@ -5,7 +5,7 @@ name: oracle-traces
 # (workflow_dispatch) when a golden's provenance must be refreshed from CI's own environment:
 # oracle/refresh_provenance.py then copies each fresh trace's provenance block into its golden,
 # after checking that every decision is identical, which check_goldens.py accepts without a
-# reviewer's trailer (docs/testing.md, "Golden traces").
+# reviewer's trailer (oracle/README.md, "Golden traces").
 on:
   workflow_dispatch:
 

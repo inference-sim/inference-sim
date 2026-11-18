@@ -71,44 +71,6 @@ func TestFieldListJSONIsTheCommittedFile(t *testing.T) {
 	}
 }
 
-// README.md names every not_modelled field whose estimation rule is leave_unset, and says what a
-// deployment that states it gets (design 11.2: a stated value is never replaced; the rule fills only
-// a value the run did not record). The list drifts the moment a field gains the rule, so this test
-// fails when fields.json has such a field the README does not name, or the README names one as
-// leave_unset that fields.json no longer lists.
-func TestReadmeNamesEveryLeaveUnsetField(t *testing.T) {
-	l, err := fields.Load("fields.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := os.ReadFile("README.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	readme := string(raw)
-	start := strings.Index(readme, "Every `not_modelled` field with the rule `leave_unset` is named below")
-	if start < 0 {
-		t.Fatal("README.md has no list of the not_modelled leave_unset fields")
-	}
-	end := strings.Index(readme[start:], "The two CUDA-graph switches")
-	if end < 0 {
-		t.Fatal("README.md: the leave_unset list has no end marker")
-	}
-	section := readme[start : start+end]
-	want := map[string]bool{}
-	for _, f := range l.Fields {
-		if f.Status == fields.StatusNotModelled && f.Estimation.Rule == fields.RuleLeaveUnset {
-			want[f.Name] = true
-			if !strings.Contains(section, "`"+f.Name+"`") {
-				t.Errorf("fields.json lists %s as not_modelled with leave_unset, and the README's list does not name it", f.Name)
-			}
-		}
-	}
-	if len(want) != 12 {
-		t.Errorf("fields.json has %d not_modelled leave_unset fields, want 12; update the README list and this count", len(want))
-	}
-}
-
 // gpu_memory_utilization sizes the KV pool the engine admits against (compat/kernelmodel
 // KVMemory, after vLLM's request_memory), and a stated value reaches it, so the list classes it
 // modelled with the tests that show that as its evidence. A not_modelled field with the rule

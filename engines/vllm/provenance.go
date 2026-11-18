@@ -5,7 +5,7 @@
 // engine-neutral contract in github.com/inference-sim/blis-substrate/contracts/engine.
 //
 // One build of this module models one vLLM release, Upstream. Its behaviour is checked
-// against that release's own code in CI (see docs/testing.md): the same inputs, fed to the
+// against that release's own code in CI (see oracle/README.md): the same inputs, fed to the
 // real vLLM classes in Python and to this module in Go, must make the same decisions step by
 // step.
 //

@@ -1,7 +1,7 @@
 name: mutation
 
 # The mutation sweeps: each supported row's one-line mutants must be caught by the tests ci.yml
-# runs (docs/testing.md). They take longer than the core checks, so they run on demand, never on
+# runs (oracle/README.md). They take longer than the core checks, so they run on demand, never on
 # a push or a pull request. Each sweep reads the fuzz corpora the oracle-tier2 job reads, from
 # the same cache (.github/actions/oracle-fuzz), or regenerates them on a miss.
 on:

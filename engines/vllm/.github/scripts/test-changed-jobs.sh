@@ -24,7 +24,7 @@ CENSUS="kernelmodel-census-0 kernelmodel-census-1 kernelmodel-census-2 kernelmod
 ENGINE="vllmengine-0 vllmengine-1"
 EVERY_LEG="core compat $ENGINE $CENSUS"
 
-case_ "a documents-only change"                 "-" "-" -- docs/testing.md docs/feature-matrix.md README.md AGENTS.md
+case_ "a documents-only change"                 "-" "-" -- docs/feature-matrix.md docs/feature-matrix.md README.md AGENTS.md
 case_ "a licence file"                          "-" "-" -- LICENSE NOTICE .gitignore
 case_ "the pull-request template"               "-" "-" -- .github/pull_request_template.md
 case_ "another workflow (blis, mutation)"       "-" "-" -- .github/workflows/blis.yml .github/workflows/mutation.yml .github/workflows/oracle-traces.yml .github/workflows/private-names.yml
@@ -46,7 +46,6 @@ case_ "a kernelmodel Go file"                   "go kerneltests lint race race_g
 case_ "a kernelmodel test"                      "go lint race rest" "$CENSUS" -- compat/kernelmodel/blocksize_census_test.go
 case_ "a kernel-test fixture"                   "inpackage kerneltests race rest" "$EVERY_LEG" -- kerneltests/testdata/direct/x.yaml
 case_ "a kernel test in the kernel package"     "go inpackage" "-" -- kerneltests/_inpackage/caches_test.go
-case_ "the kernel tests' documents"             "kerneltests" "-" -- kerneltests/docs/index.md
 case_ "a vllmengine Go file"                    "go lint race race_guard rest" "$ENGINE" -- vllmengine/engine.go
 case_ "go.mod"                                  "bench go inpackage kerneltests lint metrics oracle packs_v0_29 packs_v0_31 packs_v0_32 packs_v0_33 race rest" "$EVERY_LEG" -- go.mod
 case_ "the lint configuration (a harness copy)"  "lint rest" "-" -- .golangci.yml
@@ -59,7 +58,7 @@ case_ "the selection script"                    "$ALL" "$EVERY_LEG" -- .github/s
 case_ "the Go setup action"                     "$ALL" "$EVERY_LEG" -- .github/actions/go-setup/action.yml
 case_ "the oracle environment action"           "oracle" "-" -- .github/actions/oracle-env/action.yml
 case_ "a script only people run"                "-" "-" -- .github/scripts/measure_weights.py
-case_ "a docs change beside a workflow it does not run" "-" "-" -- docs/testing.md .github/workflows/blis.yml
+case_ "a docs change beside a workflow it does not run" "-" "-" -- docs/feature-matrix.md .github/workflows/blis.yml
 
 got="$(printf '%s' "$input" | python3 -I "$here/changed_jobs.py" --batch)"
 i=0
@@ -104,7 +103,7 @@ PY
 		cp -R "$here/../scripts/." .github/scripts/ && cp -R "$here/../shards/." .github/shards/ && cp "$here/../workflows/ci.yml" .github/workflows/ci.yml
 		git add -A; git commit -q --allow-empty -m "base"
 		base="$(git rev-parse HEAD)"
-		for case in "docs/testing.md:-" "core/sched/testdata/golden/dashboard-deepseek-v4-pro-layers.json:goldens metrics oracle race rest"; do
+		for case in "docs/feature-matrix.md:-" "core/sched/testdata/golden/dashboard-deepseek-v4-pro-layers.json:goldens metrics oracle race rest"; do
 			f="${case%%:*}"; want="${case#*:}"
 			git checkout -q -B "pr" "$base"; echo "edit" >> "$f"; git add -A; git commit -q -m "pr"
 			git checkout -q -B "merge" "$base"; git merge --no-ff -q pr -m "merge"

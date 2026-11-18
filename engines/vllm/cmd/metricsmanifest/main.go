@@ -1,7 +1,7 @@
 // Original to blis-vllm.
 
 // Command metricsmanifest lists every vllm:* metric family a vLLM release defines, from the
-// release's own source, and writes it as docs/metrics-manifest.json with each family's class:
+// release's own source, and writes it as oracle/metrics/manifest.json with each family's class:
 // exact (blis-vllm computes it from the decisions it makes), derived (it needs inputs the
 // simulator supplies, such as time or transfer outcomes, and is reported given them) or
 // unavailable (it needs real hardware, a process or a feature outside the simulation).
@@ -115,7 +115,7 @@ type nameConst struct {
 func main() {
 	src := flag.String("vllm", "", "a vLLM checkout at the release to describe")
 	classesPath := flag.String("classes", "cmd/metricsmanifest/classes.json", "the classification")
-	out := flag.String("out", "docs/metrics-manifest.json", "where to write the manifest")
+	out := flag.String("out", "oracle/metrics/manifest.json", "where to write the manifest")
 	check := flag.Bool("check", false, "fail if the manifest on disk is not current")
 	flag.Parse()
 	if *src == "" {

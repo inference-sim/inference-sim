@@ -5,7 +5,7 @@
 // IterationStats) and the PrefillStats bookkeeping of vllm/v1/core/sched/scheduler.py.
 
 // Package metrics is vLLM's Prometheus stat logger for the vllm:* families whose values the
-// scheduler alone decides (class "exact" in docs/metrics-manifest.json): request counts, KV
+// scheduler alone decides (class "exact" in oracle/metrics/manifest.json): request counts, KV
 // usage, prefix-cache queries and hits, preemptions, prompt and generation tokens, finished
 // requests by reason, and tokens per step. It reads what one engine step decided and keeps
 // each series as vLLM's PrometheusStatLogger.record does (loggers.py:1138-1330@4ba787ec).

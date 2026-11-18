@@ -1475,7 +1475,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -1498,7 +1498,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -1510,7 +1510,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -1522,7 +1522,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -1534,7 +1534,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -1546,7 +1546,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -1558,7 +1558,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -1678,7 +1678,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -1690,7 +1690,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -1729,7 +1729,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2074,7 +2074,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/lora-max-loras-skip.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2279,7 +2279,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2300,7 +2300,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2312,7 +2312,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2324,7 +2324,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2336,7 +2336,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2348,7 +2348,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2360,7 +2360,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2372,7 +2372,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2384,7 +2384,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2396,7 +2396,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2408,7 +2408,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2420,7 +2420,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2432,7 +2432,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2444,7 +2444,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2456,7 +2456,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2468,7 +2468,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2480,7 +2480,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2492,7 +2492,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2504,7 +2504,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2516,7 +2516,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2528,7 +2528,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2540,7 +2540,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2552,7 +2552,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2653,7 +2653,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/spec-draft-model.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2665,7 +2665,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/spec-draft-model.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2677,7 +2677,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/spec-draft-model.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2689,7 +2689,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/spec-draft-model.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {
@@ -2701,7 +2701,7 @@
    "status": "modelled",
    "evidence": [
     "core/metrics/testdata/golden/abort-running-and-waiting.metrics.json",
-    "docs/metrics-manifest.json"
+    "oracle/metrics/manifest.json"
    ]
   },
   {

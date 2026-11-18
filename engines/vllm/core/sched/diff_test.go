@@ -626,7 +626,7 @@ func TestDifferentialAgainstVLLM(t *testing.T) {
 			readJSON(t, path, &sc)
 			golden := filepath.Join("testdata", "golden", name+".json")
 			if _, err := os.Stat(golden); err != nil {
-				t.Fatalf("no golden trace %s: generate it with oracle/run_scheduler.py (see docs/testing.md)", golden)
+				t.Fatalf("no golden trace %s: generate it with oracle/run_scheduler.py (see oracle/README.md)", golden)
 			}
 			var want trace
 			readJSON(t, golden, &want)
@@ -691,7 +691,7 @@ func checkProvenance(t *testing.T, scenarioPath string, tr trace) {
 		{"mock_version", p.MockVersion, mockVersion(t)},
 	} {
 		if c.got != c.want {
-			t.Fatalf("golden trace for %s records %s %q, want %q: regenerate it with oracle/run_scheduler.py (docs/testing.md)",
+			t.Fatalf("golden trace for %s records %s %q, want %q: regenerate it with oracle/run_scheduler.py (oracle/README.md)",
 				filepath.Base(scenarioPath), c.field, c.got, c.want)
 		}
 	}
