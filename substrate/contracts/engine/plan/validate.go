@@ -298,6 +298,33 @@ func (t Transfer) Validate() error {
 			bad = append(bad, fmt.Sprintf("endpoint %+v", e))
 		}
 	}
+	if len(t.NodeList()) > 0 {
+		if t.NodeList()[0].From != t.From || t.NodeList()[0].To != t.To {
+			bad = append(bad, fmt.Sprintf("From %+v and To %+v are not the first node move %+v", t.From, t.To, t.NodeList()[0]))
+		}
+		for i, n := range t.NodeList() {
+			for _, e := range []Endpoint{n.From, n.To} {
+				if e.Node < 0 || e.Rack < 0 {
+					bad = append(bad, fmt.Sprintf("node move %d endpoint %+v", i, e))
+				}
+			}
+			if t.Kind != TransferPeer && n.From != n.To {
+				bad = append(bad, fmt.Sprintf("node move %d of an offload move leaves node %d and lands on node %d", i, n.From.Node, n.To.Node))
+			}
+		}
+	}
+	seen := map[int]bool{}
+	for _, g := range t.GroupList() {
+		switch {
+		case g.Group < 0:
+			bad = append(bad, fmt.Sprintf("group %d", g.Group))
+		case seen[g.Group]:
+			bad = append(bad, fmt.Sprintf("group %d moves twice", g.Group))
+		case g.Tokens < 0 || g.Tokens > t.Tokens:
+			bad = append(bad, fmt.Sprintf("group %d moves %d tokens of a move of %d", g.Group, g.Tokens, t.Tokens))
+		}
+		seen[g.Group] = true
+	}
 	if len(bad) == 0 {
 		return nil
 	}
@@ -313,13 +340,22 @@ func (p PoolPlan) CheckTransfer(t Transfer) error {
 	if err := t.Validate(); err != nil {
 		return err
 	}
+	for _, g := range t.GroupList() {
+		if g.Group >= len(p.KV) {
+			return fmt.Errorf("transfer: group %d of a plan with %d KV group(s)", g.Group, len(p.KV))
+		}
+	}
 	if t.Kind == TransferPeer {
 		return nil
 	}
 	for _, tier := range p.Tiers {
 		if tier.Device == t.Tier {
 			nodes := max(1, p.Layout.Nodes)
-			for _, e := range []Endpoint{t.From, t.To} {
+			ends := []Endpoint{t.From, t.To}
+			for _, n := range t.NodeList() {
+				ends = append(ends, n.From, n.To)
+			}
+			for _, e := range ends {
 				if e.Node >= nodes {
 					return fmt.Errorf("transfer: endpoint node %d of a pool with %d node(s)", e.Node, nodes)
 				}
@@ -328,4 +364,25 @@ func (p PoolPlan) CheckTransfer(t Transfer) error {
 		}
 	}
 	return fmt.Errorf("transfer: tier %q is not a device of this pool's plan", t.Tier)
+}
+
+// GroupMoveBytes is the bytes of a move that states Groups: each group's tokens rounded up to
+// whole pages of that group, times the group's bytes per page, summed. A group the move does not
+// name moves nothing. It returns false when the move states no Groups, whose bytes the cost model
+// finds from Tokens. The plan must hold the groups (CheckTransfer).
+func (p PoolPlan) GroupMoveBytes(t Transfer) (units.Bytes, bool) {
+	if len(t.GroupList()) == 0 {
+		return 0, false
+	}
+	var total units.Bytes
+	for _, g := range t.GroupList() {
+		if g.Group < 0 || g.Group >= len(p.KV) || g.Tokens <= 0 {
+			continue
+		}
+		kg := p.KV[g.Group]
+		per := max(units.Tokens(1), kg.TokensPerPage)
+		pages := (g.Tokens + per - 1) / per
+		total += units.Bytes(int64(pages) * int64(kg.BytesPerPage))
+	}
+	return total, true
 }

@@ -79,7 +79,7 @@ func TestTheBoundForAPointSurvivesTheRecordAndItsCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile("../docs/contracts/examples/point-record.json")
+	raw, err := os.ReadFile("../contracts/testdata/examples/point-record.json")
 	if err != nil {
 		t.Fatal(err)
 	}

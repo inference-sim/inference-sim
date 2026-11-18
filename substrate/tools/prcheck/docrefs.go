@@ -17,8 +17,7 @@ import (
 //     declared in that package (checked by the caller, which has the parser);
 //   - a table row may not appear twice in one table (blis-schemas #96).
 //
-// A path under a directory the docs build generates (generatedDocs) is not checked, and
-// neither is a link holding a template placeholder ("[[").
+// A link holding a template placeholder ("[[") is not checked.
 //
 // Statements that a feature is supported are generated from surface.json or stack.json
 // in the repositories that publish them; they are outside this repository's check.
@@ -92,9 +91,6 @@ func DocFindings(doc string, src []byte, tree Tree, roots map[string]bool) []str
 // checkRef checks one reference. A code span is checked only when its first segment is a
 // top-level directory of the repository (roots), so `config.json` in prose is not taken
 // for a path; a link is resolved against the document's directory.
-// generatedDocs are the directories the docs build writes, which are not in the tree:
-// docs/hooks/catalog_pages.py writes one page per model under catalog/reference/models.
-var generatedDocs = []string{"docs/catalog/reference/models/", "catalog/reference/models/"}
 
 func checkRef(ref, dir string, tree Tree, roots map[string]bool) string {
 	if strings.Contains(ref, "[[") {
@@ -116,11 +112,6 @@ func checkRef(ref, dir string, tree Tree, roots map[string]bool) string {
 		}
 	} else {
 		path = clean(dir + path)
-	}
-	for _, g := range generatedDocs {
-		if strings.HasPrefix(path+"/", g) {
-			return ""
-		}
 	}
 	n, ok := tree.Lines(strings.TrimSuffix(path, "/"))
 	if !ok {

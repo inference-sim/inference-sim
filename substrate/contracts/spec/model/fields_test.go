@@ -106,6 +106,21 @@ func TestV41GraphPasses(t *testing.T) {
 	}
 }
 
+// A table the engine holds for another node's fused kernel is stated by its size alone: a resident-only Gather
+// takes no rows_per_token or out_bytes_per_token, and a lookup that does not say so still needs both.
+func TestAResidentOnlyTableStatesItsSizeAlone(t *testing.T) {
+	g := v41Graph()
+	table := Node{Op: OpGather, Role: "rope_cos_sin_cache", Rows: 1048576, RowBytes: 256, ResidentOnly: true}
+	g.LayerKinds[1].Nodes = append(g.LayerKinds[1].Nodes, table)
+	if p := g.Validate(); !p.OK() || len(p.All()) != 0 {
+		t.Fatalf("a resident-only table drew findings:\n%s", p.Error())
+	}
+	g.LayerKinds[1].Nodes[len(g.LayerKinds[1].Nodes)-1].ResidentOnly = false
+	if p := g.Validate(); p.OK() || !strings.Contains(p.Error(), "rows_per_token") {
+		t.Fatalf("a lookup with no rows_per_token must be refused:\n%s", p.Error())
+	}
+}
+
 func TestV41FieldRejects(t *testing.T) {
 	source := func(g *Graph) []Node { return g.LayerKinds[0].Nodes }
 	cases := []struct {
@@ -175,6 +190,8 @@ func TestV41FieldRejects(t *testing.T) {
 		{"unknown control", "not a recognized residency control", func(g *Graph) { source(g)[2].ResidencyControl = "magic" }},
 		{"unknown shard", "not a recognized shard", func(g *Graph) { source(g)[2].Shard = "cols" }},
 		{"heads with one row", "rows_per_token of at least 2", func(g *Graph) { g.Embedding[0].Shard = ShardHeads }},
+		{"resident-only table that states a lookup", "read by no lookup", func(g *Graph) { source(g)[2].ResidentOnly = true }},
+		{"resident-only on a GEMM", "only a Gather node is a table", func(g *Graph) { source(g)[0].ResidentOnly = true }},
 		{"table field on a GEMM", "only a Gather has a table", func(g *Graph) { source(g)[0].Residency = ResidencyHost }},
 		{"rows on a GEMM", "layer_kinds[0].nodes[0].rows: not priced by this op", func(g *Graph) { source(g)[0].Rows = 5 }},
 		{"n on a gather", "layer_kinds[0].nodes[2].n: not priced by this op", func(g *Graph) { source(g)[2].N = 5 }},
@@ -209,6 +226,9 @@ func TestV41FieldRejects(t *testing.T) {
 		{"scale on an attention node", "only a GEMM or GroupedGEMM", func(g *Graph) {
 			source(g)[1].WeightScale = &WeightScale{Elements: 32, Bytes: 1}
 		}},
+		// Biases.
+		{"bias on an attention node", "only a GEMM or GroupedGEMM", func(g *Graph) { source(g)[1].BiasDType = DTypeBF16 }},
+		{"bias of an unknown dtype", "bias_dtype: \"nope\" is not a recognized dtype", func(g *Graph) { source(g)[0].BiasDType = "nope" }},
 		{"zero scale group", "global.weight_scale.elements: must be positive", func(g *Graph) { g.Global.WeightScale.Elements = 0 }},
 		// Aliases.
 		{"alias on an attention node", "only a GEMM or Gather", func(g *Graph) { source(g)[1].Aliases = "head.lm_head" }},

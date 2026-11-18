@@ -30,7 +30,6 @@ go run ./validate/cmd/validate-catalog catalog
 go run ./validate/cmd/validate-registry registry
 (cd catalog && python3 scripts/derive_graph.py --check && python3 -m pytest tests -q)
 (cd registry && python3 -m pytest validator -q)
-DOCS_RELEASE=main mkdocs build --strict
 go run ./tools/invariants render -check
 go run ./tools/prcheck workflows
 go run ./tools/prcheck versions
@@ -39,17 +38,17 @@ go run ./tools/prcheck docrefs
 
 - Every behaviour change has a test that fails without it (X13).
 - A new or changed data field ships with its validator, a failing example for each way it can
-  be wrong, and regenerated reference documentation: `go run ./tools/docgen` (SUB-2).
+  be wrong, and regenerated JSON Schemas: `go run ./tools/schemagen` (SUB-2).
 - Never commit third-party data; a derived value cites its source by URL and commit or hash
   (X12). Never write a private name in a file, commit or pull request (X12).
 
 ## A change here must also update
 
-- The documentation that describes what the change removes, renames or alters. A path, symbol,
-  issue reference or supported-feature statement in a page is generated or checked (X26).
+- The README and the doc comments that describe what the change removes, renames or alters. A path,
+  symbol, issue reference or supported-feature statement in a page is checked (X26).
 - The generated copies, with `go run ./tools/invariants render`, when an invariant registry record
   changes; and the record itself, when a check is added or a status moves (design §13.1).
-- The reference pages, with `go run ./tools/docgen`, when a schema or data field changes.
+- The JSON Schemas, with `go run ./tools/schemagen`, when a schema or data field changes.
 - The issue the change closes, named on a `Closes` line; an issue cited as a gap stays open until
   the change that removes its last citation (X28).
 
@@ -74,9 +73,8 @@ it passes. A flaky test is reported, not quarantined or retried.
 ## Where to look next
 
 The design is the target this repository implements; each rule above names its invariant
-identifier, which the invariant registry (`contracts/invariants`) and the appendix at
-`docs/contracts/invariants` define. Contributor guides are under `docs/contributing` and
-`docs/contracts/contributing`.
+identifier, which the invariant registry (`contracts/invariants`) defines. The design is at
+<https://inference-sim.github.io/blis-design/>.
 
 <!-- BEGIN GENERATED: invariants (go run ./tools/invariants render; do not edit) -->
 ## Invariants checked in blis-substrate
@@ -104,7 +102,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **X7** (partial; target ci by M4) Contracts live in blis-substrate/contracts.
   - `new`, pull_request: A lower repository refers to accuracy-dashboard only through the harness pin file
   - `new`, pull_request: The module graph across all repositories follows Figure 1
-  - `ci`, pull_request: Every generated file matches its generator's output (`tools/docgen: TestGeneratedDocsAreCurrent`)
+  - `ci`, pull_request: Every generated file matches its generator's output (`tools/schemagen: TestPublishedSchemasMatchTheTypes`)
 - **X8** (new; target ci by M3) Every number records the exact versions and data it came from, and can be regenerated from them.
   - `new`, pull_request: No ledger unit is cited under two roles by any fit, gate or dashboard point
   - `new`, pull_request: Every data source is pinned to an exact revision
@@ -325,6 +323,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: Selected-version lint (go list -m all), which for the router reads the replace target that go list -m -json reports, not the placeholder version on the require line (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: A CI step that fails if go version differs from it (`tools/modlint: TestEachRuleHasAKnownBadInput`)
+  - `ci`, pull_request: prcheck workflows refuses a step that uses actions/setup-go outside the go-toolchain action, so a job in any repository that calls the shared checks installs contracts/toolchain's version (`tools/prcheck: TestAJobThatInstallsGoFromGoModIsRefused`)
 - **LIF-3** (new; target ci by M1) Only the release bot cuts releases, and only from a commit where every ci invariant passed.
   - `new`, practice: Repository settings that let only the release bot and people with write access create tags
   - `new`, pull_request: The bot's own check of every ci invariant (`tools/release: CheckInvariants`)

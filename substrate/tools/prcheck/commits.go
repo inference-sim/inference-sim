@@ -14,6 +14,7 @@ type Commit struct {
 	Message   string
 	Author    string // "Name <email>"
 	Committer string
+	Signature string // git's %G? letter: G good, N none, B bad, U good but untrusted, E cannot check
 }
 
 // The release bot's identity. Its commits carry no sign-off (X20).

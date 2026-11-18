@@ -416,6 +416,8 @@ func construct(in Inputs) (*Kernel, error) {
 		k.recurrentCacheMode = price.RecurrentCacheAlign
 	case plan.RecurrentEveryPage:
 		k.recurrentCacheMode = price.RecurrentCacheAll
+	case plan.RecurrentTracked:
+		k.recurrentCacheMode = price.RecurrentCacheTracked
 	default:
 		k.recurrentCacheMode = price.RecurrentCacheMode(k.low.Cache.Recurrent)
 	}
@@ -1819,6 +1821,9 @@ func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped, router
 	if !ok {
 		spec = formatFit(f, grouped, k.chip, hopper, router)
 	}
+	if blackwellBlockFP8Experts(f, grouped, k.family, k.low.MoE.Experts) {
+		spec = fitSpec{suffix: "fp8_grouped_trtllm", fallback: spec.suffix, peak: k.chip.FP8Peak * 1e12}
+	}
 	if spec.fallback != "" && !c.Has("gemm_eps_max_"+spec.suffix) {
 		k.assume("gemm_eps_max_"+spec.suffix, spec.fallback,
 			"no efficiency ramp for the "+spec.suffix+" kernel on "+k.chip.Name+", so it is "+
@@ -1858,6 +1863,19 @@ func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped, router
 	fit.smallRows, fit.smallPeak = spec.smallRows, spec.smallPeak
 	k.fits[key] = fit
 	return nil
+}
+
+// blackwellBlockFP8Experts reports whether block-FP8 routed experts run FlashInfer's TRT-LLM grouped kernel,
+// which vLLM's FP8 MoE oracle selects on SM100 for block-scaled weights when nothing says otherwise: a
+// grouped block-FP8 GEMM on a data-center Blackwell part (compute capability 10), in a plan that states no
+// experts kernel. The kernel has its own ramp and floor (gemm_*_fp8_grouped_trtllm,
+// scripts/fit_blackwell_fp8_grouped_ramp.py), which every such part carries; the registry's absence of it
+// would be recorded by the fallback to the format's own ramp. A plan that states another experts kernel
+// (Triton, FlashInfer CUTLASS) is priced as before, and so is a part whose compute capability the catalog
+// does not state.
+func blackwellBlockFP8Experts(f price.Format, grouped bool, family int, stated plan.KernelImpl) bool {
+	return grouped && family == 10 && f.DType == model.DTypeFP8 && !f.MX() &&
+		f.ScaleElements == fp8BlockScaleElements && stated == (plan.KernelImpl{})
 }
 
 // groupedExperts is the registry's word for the grouped-expert kernel the plan states the engine
@@ -2343,6 +2361,7 @@ func (k *Kernel) residentBytes(l price.PlannedLayer) float64 {
 		b += l.ExpertWeightBytesPerExpert * k.geom(&l).perRank / k.expertTensorShards *
 			k.expertPadding(&l)
 	}
+	b += (l.ExpertBiasShardedBytesPerExpert/k.expertTensorShards + l.ExpertBiasReplicatedBytesPerExpert) * k.geom(&l).perRank
 	if l.SharedTokenSharded && sp {
 		b += l.SharedExpertWeightBytes
 	} else {

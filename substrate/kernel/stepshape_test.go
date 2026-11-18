@@ -157,17 +157,25 @@ func specKernel(t *testing.T) *Kernel {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The engine states which requests the drafter's later passes run for; a plan that speculates
+	// and leaves it out is refused (draft_passes_unstated).
+	var last error
 	for _, c := range perturbationScenarios(t, d, "muse-spark-open-dspark") {
-		in := withPlan(c.in, func(l *plan.Lowered) { l.Plan.Drafts.Chain, l.Plan.Drafts.OwnWorkspace = 7, true })
+		in := withPlan(c.in, func(l *plan.Lowered) {
+			l.Plan.Drafts.Chain, l.Plan.Drafts.OwnWorkspace = 7, true
+		})
+		in.DraftPassRequests = plan.PassRequestsAll
 		k, err := New(in)
 		if err != nil {
+			last = err
 			continue
 		}
 		if k.speculating && k.plan.Draft != nil {
 			return k
 		}
 	}
-	t.Skip("no catalog scenario builds a speculating kernel here")
+	// A refusal of the test's own fixture is a failure, not a reason to skip (X16).
+	t.Fatalf("no catalog scenario builds a speculating kernel; the last refusal: %v", last)
 	return nil
 }
 
