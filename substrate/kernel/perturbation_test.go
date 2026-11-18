@@ -284,8 +284,12 @@ type layoutCase struct {
 // family is a coefficient name without the rank width and chip that name a collective's entry:
 // the quantity the registry measures, which is what a perturbation asks about.
 func family(name string) string {
-	return regexp.MustCompile(`_(\d+rank)`).ReplaceAllString(name, "_<R>rank")
+	return rankWidth.ReplaceAllString(name, "_<R>rank")
 }
+
+// rankWidth is the rank width inside a collective's coefficient name, compiled once: family runs
+// for every entry every scenario's lookups return.
+var rankWidth = regexp.MustCompile(`_(\d+rank)`)
 
 // perturbed returns the scenario's coefficient sets with every entry of the given name scaled
 // by 0.8, leaving the others untouched. A smaller value keeps efficiencies and fractions valid.
@@ -348,13 +352,17 @@ func TestEveryCoefficientFamilyChangesSomePriceOrIsListed(t *testing.T) {
 					continue
 				}
 				want := pricesOf(base)
+				// A name is perturbed once per scenario: lookups return the same entry for many
+				// layers, and scaling the same entry again prices the same scenario again.
+				tried := map[string]bool{}
 				for _, sel := range base.selected {
 					name := sel.Entry.Name
 					fam := family(name)
 					readSet.Store(fam, true)
-					if _, done := pricedSet.Load(fam); done || sel.Entry.Value == 0 {
+					if _, done := pricedSet.Load(fam); done || sel.Entry.Value == 0 || tried[name] {
 						continue
 					}
+					tried[name] = true
 					in := s.in
 					in.Coefficients = perturbed(s.in.Coefficients, name)
 					k, err := New(in)
@@ -452,28 +460,57 @@ func TestChangingALabelChangesNoPriceOrIsListed(t *testing.T) {
 		t.Fatal(err)
 	}
 	cases := perturbationScenarios(t, d)
+	// One scenario per model, each priced twice (as built and with every role renamed), on every
+	// CPU; the movers are joined in the order the models were first seen, then sorted.
 	seen := map[string]bool{}
-	var movers []string
+	var first []perturbationCase
 	for _, c := range cases {
 		model := strings.SplitN(c.label, "/", 2)[0]
-		if seen[model] {
-			continue
+		if !seen[model] {
+			seen[model] = true
+			first = append(first, c)
 		}
-		seen[model] = true
-		base, err := New(c.in)
-		if err != nil {
-			t.Fatalf("%s: %v", c.label, err)
+	}
+	moved := make([]bool, len(first))
+	failed := make([]string, len(first))
+	var wg sync.WaitGroup
+	next := make(chan int)
+	for w := 0; w < runtime.GOMAXPROCS(0); w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range next {
+				c := first[i]
+				base, err := New(c.in)
+				if err != nil {
+					failed[i] = fmt.Sprintf("%s: %v", c.label, err)
+					continue
+				}
+				want := pricesOf(base)
+				g := relabelled(t, *c.in.Model)
+				in := c.in
+				in.Model = &g
+				k, err := New(in)
+				if err != nil {
+					failed[i] = fmt.Sprintf("%s with every role renamed: %v", c.label, err)
+					continue
+				}
+				moved[i] = pricesOf(k) != want
+			}
+		}()
+	}
+	for i := range first {
+		next <- i
+	}
+	close(next)
+	wg.Wait()
+	var movers []string
+	for i, c := range first {
+		if failed[i] != "" {
+			t.Fatal(failed[i])
 		}
-		want := pricesOf(base)
-		g := relabelled(t, *c.in.Model)
-		in := c.in
-		in.Model = &g
-		k, err := New(in)
-		if err != nil {
-			t.Fatalf("%s with every role renamed: %v", c.label, err)
-		}
-		if pricesOf(k) != want {
-			movers = append(movers, model)
+		if moved[i] {
+			movers = append(movers, strings.SplitN(c.label, "/", 2)[0])
 		}
 	}
 	sort.Strings(movers)
