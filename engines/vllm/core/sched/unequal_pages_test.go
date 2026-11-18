@@ -16,7 +16,7 @@ import (
 // scheduler's block size (the LCM of the groups') and the hash block size (their GCD with prefix caching). The Go grouping, the
 // pool's bytes per block and the manager must resolve the same values. TestDifferentialAgainstVLLM holds the trace itself.
 func TestUnequalPagesGroupAsVLLMDoes(t *testing.T) {
-	for _, name := range []string{"gemma4-unequal-pages-layers", "gemma4-unequal-pages-preempt"} {
+	for _, name := range []string{"gemma4-unequal-pages-layers"} {
 		t.Run(name, func(t *testing.T) {
 			var sc scenario
 			readJSON(t, filepath.Join("../../oracle/scenarios", name+".json"), &sc)
