@@ -302,17 +302,6 @@ func New(cfg Config) (*Scheduler, error) {
 	if cfg.Workers == 0 {
 		cfg.Workers = 1
 	}
-	for g, e := range cfg.EagleGroups {
-		if e {
-			// A drafter group's volatile trailing chunk and its one-chunk peek (scheduler.py:226-287,
-			// 473-481, 790-898; single_type_kv_cache_manager.py:943-953@5df63a72) are ported but not
-			// diff-tested: vLLM flags such a group only for MTP and DeepSeek V4's drafters
-			// (_uses_trailing_mtp_layers, vllm/v1/core/kv_cache_utils.py:1997-2013), which the oracle
-			// does not build beside the connector.
-			return nil, fmt.Errorf("offloading: KV cache group %d holds a drafter's layers (an MTP or DeepSeek V4 drafter), "+
-				"beside which the connector is not diff-tested (%s)", g, Issue)
-		}
-	}
 	cpu := newCPUManager(cfg.NumChunks)
 	var mgr Manager = cpuTier{cpu}
 	if cfg.Manager != nil {
