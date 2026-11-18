@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
@@ -71,35 +72,67 @@ type perturbationCase struct {
 // combination the cost model builds.
 func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturbationCase {
 	t.Helper()
+	// Each (model, chip) pair is built on its own, so the pairs are built on every CPU; the
+	// results are joined in the order of the pairs, the order the sequential loop produced.
+	pairs := perturbationPairs(d, only)
+	built := make([][]perturbationCase, len(pairs))
+	forEachPerturbationPair(t, d, pairs, runtime.GOMAXPROCS(0), func(i int, cases []perturbationCase) { built[i] = cases })
+	var out []perturbationCase
+	for i := range pairs {
+		out = append(out, built[i]...)
+	}
+	return out
+}
+
+// perturbationTexts are the offload block and the coefficient-set list every perturbation scenario states.
+func perturbationTexts(d *load.Data) (offload, sets string) {
 	// Every deployment offloads to every catalog tier, so each tier's three coefficients are
 	// read by a lookup and perturbed with the rest (pricesOf prices a transfer to each).
-	offload := "offload:\n  tiers:\n"
+	offload = "offload:\n  tiers:\n"
 	for _, dev := range d.StorageDevices() {
 		offload += fmt.Sprintf("    - {tier: %s, bytes: 1073741824}\n", dev.Name)
 	}
-	sets := "[cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric, cost-model-offload-tiers]"
-	type pair struct{ model, chip string }
-	var pairs []pair
+	sets = "[cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric, cost-model-offload-tiers]"
+	return offload, sets
+}
+
+// perturbationPair is a catalog model and a catalog chip.
+type perturbationPair struct{ model, chip string }
+
+// perturbationPairs lists the (model, chip) pairs the perturbation scenarios are built from.
+func perturbationPairs(d *load.Data, only []string) []perturbationPair {
+	var pairs []perturbationPair
 	for _, m := range d.Models() {
 		if len(only) > 0 && !slices.Contains(only, m) {
 			continue
 		}
 		for _, c := range d.Chips() {
-			pairs = append(pairs, pair{m, c})
+			pairs = append(pairs, perturbationPair{m, c})
 		}
 	}
-	// Each (model, chip) pair is built on its own, so the pairs are built on every CPU; the
-	// results are joined in the order of the pairs, the order the sequential loop produced.
-	built := make([][]perturbationCase, len(pairs))
+	return pairs
+}
+
+// forEachPerturbationPair builds the scenarios of each pair on the given number of workers and
+// hands them to use, which runs on the worker that built them: a caller that prices them there
+// holds a pair's scenarios at a time per worker, not every scenario of the catalog at once. A pair
+// that cannot be built fails the test (the first in the list of pairs reported).
+func forEachPerturbationPair(t *testing.T, d *load.Data, pairs []perturbationPair, workers int, use func(i int, cases []perturbationCase)) {
+	t.Helper()
+	offload, sets := perturbationTexts(d)
 	errs := make([]error, len(pairs))
 	var wg sync.WaitGroup
 	next := make(chan int)
-	for w := 0; w < runtime.GOMAXPROCS(0); w++ {
+	for w := 0; w < workers; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for i := range next {
-				built[i], errs[i] = perturbationScenariosFor(t, d, pairs[i].model, pairs[i].chip, offload, sets)
+				var cases []perturbationCase
+				cases, errs[i] = perturbationScenariosFor(t, d, pairs[i].model, pairs[i].chip, offload, sets)
+				if errs[i] == nil {
+					use(i, cases)
+				}
 			}
 		}()
 	}
@@ -108,14 +141,11 @@ func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturb
 	}
 	close(next)
 	wg.Wait()
-	var out []perturbationCase
-	for i := range pairs {
-		if errs[i] != nil {
-			t.Fatal(errs[i])
+	for _, err := range errs {
+		if err != nil {
+			t.Fatal(err)
 		}
-		out = append(out, built[i]...)
 	}
-	return out
 }
 
 // perturbationScenariosFor builds the scenarios of one model on one chip.
@@ -327,61 +357,54 @@ func TestEveryCoefficientFamilyChangesSomePriceOrIsListed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scenarios := perturbationScenarios(t, d)
-	if len(scenarios) < 400 {
-		t.Fatalf("only %d scenarios build; the perturbation is not reaching the kernel", len(scenarios))
-	}
 	// A family is priced when any scenario's prices move and read when any scenario reads it, so
-	// the answer does not depend on the order the scenarios are priced in. They are priced on every
-	// CPU, sharing the two sets; a family already seen to move a price is not tried again, as in the
-	// sequential loop. A scenario that cannot be priced fails the test, the first in the list
-	// reported.
+	// the answer does not depend on the order the scenarios are priced in. Each worker builds the
+	// scenarios of one (model, chip) pair and prices them before it builds the next, sharing the
+	// two sets, so only a pair's scenarios per worker are held at once; a family already seen to
+	// move a price is not tried again, as in the sequential loop. A scenario that cannot be priced
+	// fails the test, the first pair in the list reported. At most two workers: each holds the
+	// kernels it builds and the collector's headroom over them, about 3 GB, and the runner that
+	// executes this test has 16 GB (the test was killed there with every CPU working).
 	var pricedSet, readSet sync.Map
-	errAt := make([]error, len(scenarios))
-	var wg sync.WaitGroup
-	next := make(chan int)
-	for w := 0; w < runtime.GOMAXPROCS(0); w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := range next {
-				s := scenarios[i]
-				base, err := New(s.in)
-				if err != nil {
-					errAt[i] = fmt.Errorf("%s: %v", s.label, err)
+	var built atomic.Int64
+	pairs := perturbationPairs(d, nil)
+	errAt := make([]error, len(pairs))
+	forEachPerturbationPair(t, d, pairs, min(runtime.GOMAXPROCS(0), 2), func(pi int, cases []perturbationCase) {
+		built.Add(int64(len(cases)))
+		for _, s := range cases {
+			base, err := New(s.in)
+			if err != nil {
+				errAt[pi] = fmt.Errorf("%s: %v", s.label, err)
+				return
+			}
+			want := pricesOf(base)
+			// A name is perturbed once per scenario: lookups return the same entry for many
+			// layers, and scaling the same entry again prices the same scenario again.
+			tried := map[string]bool{}
+			for _, sel := range base.selected {
+				name := sel.Entry.Name
+				fam := family(name)
+				readSet.Store(fam, true)
+				if _, done := pricedSet.Load(fam); done || sel.Entry.Value == 0 || tried[name] {
 					continue
 				}
-				want := pricesOf(base)
-				// A name is perturbed once per scenario: lookups return the same entry for many
-				// layers, and scaling the same entry again prices the same scenario again.
-				tried := map[string]bool{}
-				for _, sel := range base.selected {
-					name := sel.Entry.Name
-					fam := family(name)
-					readSet.Store(fam, true)
-					if _, done := pricedSet.Load(fam); done || sel.Entry.Value == 0 || tried[name] {
-						continue
-					}
-					tried[name] = true
-					in := s.in
-					in.Coefficients = perturbed(s.in.Coefficients, name)
-					k, err := New(in)
-					if err != nil {
-						errAt[i] = fmt.Errorf("%s: scaling %s by 0.8 makes the kernel refuse: %v", s.label, name, err)
-						break
-					}
-					if pricesOf(k) != want {
-						pricedSet.Store(fam, true)
-					}
+				tried[name] = true
+				in := s.in
+				in.Coefficients = perturbed(s.in.Coefficients, name)
+				k, err := New(in)
+				if err != nil {
+					errAt[pi] = fmt.Errorf("%s: scaling %s by 0.8 makes the kernel refuse: %v", s.label, name, err)
+					return
+				}
+				if pricesOf(k) != want {
+					pricedSet.Store(fam, true)
 				}
 			}
-		}()
+		}
+	})
+	if built.Load() < 400 {
+		t.Fatalf("only %d scenarios build; the perturbation is not reaching the kernel", built.Load())
 	}
-	for i := range scenarios {
-		next <- i
-	}
-	close(next)
-	wg.Wait()
 	for _, err := range errAt {
 		if err != nil {
 			t.Fatal(err)
@@ -441,7 +464,7 @@ func TestEveryCoefficientFamilyChangesSomePriceOrIsListed(t *testing.T) {
 	if want := stripComments(string(raw)); want != got {
 		t.Errorf("the families that change no price differ from testdata/unpriced_families.txt.\nwant:\n%s\ngot:\n%s", want, got)
 	}
-	t.Logf("%d scenarios, %d families, %d unpriced", len(scenarios), len(all), len(unpriced))
+	t.Logf("%d scenarios, %d families, %d unpriced", built.Load(), len(all), len(unpriced))
 }
 
 // SUB-20's second check: changing a node's label changes no price. Every node of every
@@ -459,18 +482,53 @@ func TestChangingALabelChangesNoPriceOrIsListed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cases := perturbationScenarios(t, d)
-	// One scenario per model, each priced twice (as built and with every role renamed), on every
-	// CPU; the movers are joined in the order the models were first seen, then sorted.
-	seen := map[string]bool{}
-	var first []perturbationCase
-	for _, c := range cases {
-		model := strings.SplitN(c.label, "/", 2)[0]
-		if !seen[model] {
-			seen[model] = true
-			first = append(first, c)
+	// One scenario per model: the first the catalog's chips give it, in the order of d.Chips(). Only that
+	// scenario is kept; building every scenario of the catalog to pick these held about 9 GB.
+	offload, sets := perturbationTexts(d)
+	models := d.Models()
+	first := make([]perturbationCase, len(models))
+	has := make([]bool, len(models))
+	var buildErr = make([]error, len(models))
+	{
+		var bw sync.WaitGroup
+		nb := make(chan int)
+		for w := 0; w < min(runtime.GOMAXPROCS(0), 2); w++ {
+			bw.Add(1)
+			go func() {
+				defer bw.Done()
+				for i := range nb {
+					for _, c := range d.Chips() {
+						cases, err := perturbationScenariosFor(t, d, models[i], c, offload, sets)
+						if err != nil {
+							buildErr[i] = err
+							break
+						}
+						if len(cases) > 0 {
+							first[i], has[i] = cases[0], true
+							break
+						}
+					}
+				}
+			}()
+		}
+		for i := range models {
+			nb <- i
+		}
+		close(nb)
+		bw.Wait()
+	}
+	var keep []perturbationCase
+	for i := range models {
+		if buildErr[i] != nil {
+			t.Fatal(buildErr[i])
+		}
+		if has[i] {
+			keep = append(keep, first[i])
 		}
 	}
+	first = keep
+	// Each is priced twice (as built and with every role renamed), on two workers; the movers
+	// are joined in the order of the models, then sorted.
 	moved := make([]bool, len(first))
 	failed := make([]string, len(first))
 	var wg sync.WaitGroup
