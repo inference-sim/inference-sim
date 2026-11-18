@@ -5,7 +5,9 @@
 issue: inference-sim/blis-substrate#14
 added: 2026-11-05
 expires: 2026-12-05
-modules: [blis-substrate, blis-vllm, llm-d-router]
+modules: [blis-substrate, blis-vllm, blis-sglang, llm-d-router]
 reason: >-
-  the M1 draft pull requests pin the BLIS modules by commit until the modules are tagged,
-  bottom up, after review and merge
+  from M3.1 the lower repositories (blis-substrate, blis-vllm, blis-sglang and the router fork) are
+  pinned by commit and tagging them is optional (blis-design: only inference-sim is tagged); the
+  M1 draft pull requests also pinned the BLIS modules by commit until they were tagged, bottom up,
+  after review and merge
