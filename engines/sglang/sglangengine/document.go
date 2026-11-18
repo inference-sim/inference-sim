@@ -66,6 +66,28 @@ func newFromDocument(h Host, s engine.Spec) (engine.Engine, error) {
 			return nil, fmt.Errorf("sglangengine: the engine block: %w", err)
 		}
 	}
+	// The engine block's env map is the process environment the scheduler's settings read: it is
+	// not a ServerArgs field, so it comes out of the arguments before they are resolved.
+	env := sglang.DefaultEnv()
+	if pool.Env != nil {
+		env = *pool.Env
+	}
+	if raw, ok := args["env"]; ok {
+		m, isMap := raw.(map[string]any)
+		if !isMap {
+			return nil, fmt.Errorf("sglangengine: the engine block's env must be a map of variable names to values, got %T", raw)
+		}
+		if env, err = sglang.EnvFrom(env, m); err != nil {
+			return nil, fmt.Errorf("sglangengine: %w", err)
+		}
+		rest := make(map[string]any, len(args))
+		for k, v := range args {
+			if k != "env" {
+				rest[k] = v
+			}
+		}
+		args = rest
+	}
 	res, err := config.Resolve(config.Input{Args: args, Chip: pool.Chip, Model: pool.Model})
 	if err != nil {
 		return nil, err
@@ -86,10 +108,6 @@ func newFromDocument(h Host, s engine.Spec) (engine.Engine, error) {
 		return nil, err
 	}
 	rt.EOSTokenIDs, rt.VocabSize = pool.EOSTokenIDs, pool.VocabSize
-	env := sglang.DefaultEnv()
-	if pool.Env != nil {
-		env = *pool.Env
-	}
 	cfg, err := sglang.SchedConfig(sa, rt, env)
 	if err != nil {
 		return nil, err

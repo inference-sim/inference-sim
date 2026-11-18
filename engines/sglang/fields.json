@@ -4452,12 +4452,12 @@
     {
       "name": "SGLANG_ENABLE_JIT_DEEPGEMM",
       "source": "env",
-      "status": "not_modelled",
+      "status": "inert_unproven",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#9"
+        "note": "The variable defaults to true (environ.py:1348@297e54fd) and only chooses whether DeepGEMM's JIT kernels serve the fp8 GEMMs that have them (deep_gemm_wrapper/configurer.py:35-55: off returns False before the device and import checks, so the Triton and cuBLAS paths run). A run that exports it at true states the default, so its pool resolves, lowers and schedules as one that does not state it. The engine reads the variable from the pool's engine block env map (sglangengine.TestTheEngineReadsItsEnvironmentFromTheEnvMap): true is accepted and changes no decision; false is refused by name, because it would run other kernels than the ones the registry's coefficients were measured on. Named substitution: no DeepGEMM kernel is priced separately from the registry's fp8 GEMM entries, so a point that states true is priced as every point is."
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
