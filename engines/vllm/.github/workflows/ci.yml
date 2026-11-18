@@ -289,7 +289,7 @@ jobs:
           path: ~/.cache/go-build
           key: ${{ steps.go.outputs.build-key }}
 
-  # The speed benchmarks of the v0.32.0 engine: a decode step at 512 and at 32,768 tokens of
+  # The speed benchmarks of the v0.33.0 engine: a decode step at 512 and at 32,768 tokens of
   # context (core/sched), and the engine interface over long decodes (core/vllm). Wall time on a
   # shared runner is too noisy for a hard threshold, so the numbers are recorded in an artifact;
   # the check that fails a build is TestDecodeStepAllocationDoesNotGrowWithContext, which runs
@@ -543,7 +543,7 @@ jobs:
           path: ~/.cache/go-build
           key: ${{ steps.go.outputs.build-key }}
 
-  # Tier 5: every vllm:* family vLLM v0.32.0 defines, read from its source and classified
+  # Tier 5: every vllm:* family vLLM v0.33.0 defines, read from its source and classified
   # exact / derived / unavailable (oracle/metrics/manifest.json). A family the release adds or
   # drops, or a manifest that is not current, fails here; so does a field list, a kernel table
   # (kernel_impls.json) or a surface.json (X9) that is not current. Runs when fields/, fields.json,
@@ -614,7 +614,7 @@ jobs:
           go run ./cmd/metricsmanifest -vllm vllm-source -check 2>&1 | tee manifest-out/manifest-check.txt
       # X9: surface.json lists every connector, tier, spec, policy, KV-cache spec type, speculative
       # method, scheduler policy, event type, path-loaded component, framework part and metric family
-      # vLLM v0.32.0 registers, each with a status; it is regenerated from the pinned source here and
+      # vLLM v0.33.0 registers, each with a status; it is regenerated from the pinned source here and
       # must equal the committed list. It reads the manifest checked just above.
       - name: surface.json is current for the pinned release, and every item has a status
         if: needs.changes.outputs.metrics == 'true'
@@ -623,7 +623,7 @@ jobs:
         if: needs.changes.outputs.metrics == 'true'
         run: python3 -I tools/surface/test_gen_surface.py
       # The connector registry's entries are connectors the release registers.
-      - name: every registry entry is a connector vLLM v0.32.0 registers
+      - name: every registry entry is a connector vLLM v0.33.0 registers
         if: needs.changes.outputs.metrics == 'true'
         env:
           VLLM_SOURCE: ${{ github.workspace }}/vllm-source
