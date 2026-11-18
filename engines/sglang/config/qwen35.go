@@ -80,7 +80,7 @@ func (r *resolver) qwen35HybridOverrides() {
 	}
 	backend := "triton"
 	if r.defaultAttentionBackend() == "trtllm_mha" &&
-		!(!r.mambaExtraBuffer() && !r.cfg.DisableRadixCache && r.cfg.SpeculativeAlgorithm == nil) {
+		(r.mambaExtraBuffer() || r.cfg.DisableRadixCache || r.cfg.SpeculativeAlgorithm != nil) {
 		backend = "trtllm_mha"
 	}
 	page := 1
