@@ -23,6 +23,7 @@ var chipMemoryMiB = map[string]float64{
 	"H100": 81559,
 	"H200": 143771,
 	"B200": 183359,
+	"B300": 275040,
 }
 
 // ChipOf is the chip as SGLang's resolution reads it: the compute capability from the catalog chip
@@ -103,6 +104,15 @@ func ModelFactsOf(g *model.Graph) (config.ModelFacts, error) {
 			f.AttentionArch = "MLA"
 		}
 	})
+	// _deepseek_moe_quant_resolution reads the first expert tensor of a DeepseekV3ForCausalLM
+	// checkpoint's safetensors header when the checkpoint declares no quantization. The lowering has
+	// no header: this fact is read from the graph's weight dtype (an fp8 graph stands for a
+	// float8_e4m3fn header). A graph whose dtype is bf16 for a checkpoint whose header is fp8 would
+	// differ from SGLang here. The catalog graph is derived from the checkpoint's config.json, not
+	// its safetensors header, so this holds only as far as the weight dtype follows the header;
+	// TestBlackwellModelFactsMatchTheOracle holds the four catalog graphs of DeepSeek-R1 and GLM-5
+	// to the oracle's reading of the header.
+	f.HasFP8WeightsInCheckpoint = arch == "DeepseekV3ForCausalLM" && g.Global.WeightDType == model.DTypeFP8
 	switch g.Global.WeightDType {
 	case model.DTypeBF16:
 	case model.DTypeFP8:

@@ -44,7 +44,7 @@ var acceptedFields = map[string][]any{
 	"max_prefill_tokens":                 nil,
 	"tokenizer_worker_num":               nil,
 	"kv_cache_dtype":                     {"auto", "bf16", "bfloat16", "fp8_e4m3", "fp8_e5m2"},
-	"quantization":                       {nil, "fp8"},
+	"quantization":                       {nil, "fp8", "modelopt_fp4"},
 	"tokenizer_path":                     nil,
 	"model_loader_extra_config":          nil,
 	"dsa_prefill_backend":                {nil, "flashmla_sparse", "flashmla_kv", "trtllm", "fa3"},
@@ -80,13 +80,13 @@ var refusedFieldIssue = map[string]string{
 }
 
 // acceptedModels are the architectures (after SGLang's config translation) and the chips each
-// is modelled on, by compute capability major. The DeepSeek family on SM100 is left out: its MoE
-// quantization pass (_deepseek_moe_quant_resolution, overrides.py:763-843@297e54fd) can read the
-// checkpoint's weights, which Resolve does not have.
+// is modelled on, by compute capability major. The DeepSeek family on SM100 reads the checkpoint's
+// first expert tensor (_deepseek_moe_quant_resolution, overrides.py:763-843@297e54fd); that is the
+// model fact HasFP8WeightsInCheckpoint.
 var acceptedModels = map[string][]int{
 	"Qwen2ForCausalLM":                   {9, 10},
-	"GlmMoeDsaForCausalLM":               {9},
-	"DeepseekV3ForCausalLM":              {9},
+	"GlmMoeDsaForCausalLM":               {9, 10},
+	"DeepseekV3ForCausalLM":              {9, 10},
 	"DeepseekV4ForCausalLM":              {9, 10},
 	"Qwen3_5MoeForConditionalGeneration": {9, 10},
 }
@@ -148,7 +148,8 @@ func checkAccepted(args *ServerArgs, in Input) error {
 			Reason: "Resolve does not model this architecture's resolution", Issue: issueRest}
 	}
 	cc := in.Chip.Capability
-	if (cc != [2]int{9, 0} && cc != [2]int{10, 0}) || !containsInt(chips, cc[0]) {
+	// SM90 (H100, H200), SM100 (B200) and SM103 (B300): SGLang's resolution reads the major only.
+	if (cc != [2]int{9, 0} && cc != [2]int{10, 0} && cc != [2]int{10, 3}) || !containsInt(chips, cc[0]) {
 		return &NotModelled{Name: "chip", Value: fmt.Sprintf("sm%d%d", cc[0], cc[1]),
 			Reason: "Resolve does not model " + in.Model.Architecture + " on this chip", Issue: issueRest}
 	}

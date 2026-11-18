@@ -12459,7 +12459,8 @@
           "flashinfer",
           "nsa",
           "triton",
-          "trtllm_mha"
+          "trtllm_mha",
+          "trtllm_mla"
         ]
       },
       "estimation": {
