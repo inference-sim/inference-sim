@@ -67,10 +67,17 @@ func (f *fullComponent) releaseLock(n *node) {
 // redistributeOnNodeSplit is redistribute_on_node_split (:147-170) on the device.
 func (f *fullComponent) redistributeOnNodeSplit(parent, child *node) {
 	parent.lockRef = child.lockRef
+	// A host lock's segment extends through the new prefix: its boundary moves to the prefix.
+	parent.hostLockRef = child.hostLockRef
+	parent.hostUUID, child.hostUUID = child.hostUUID, nil
+	k := parent.key.Len()
 	if child.value != nil {
-		k := parent.key.Len()
 		parent.value = append([]int64{}, child.value[:k]...)
 		child.value = append([]int64{}, child.value[k:]...)
+	}
+	if child.hostValue != nil {
+		parent.hostValue = append([]int64{}, child.hostValue[:k]...)
+		child.hostValue = append([]int64{}, child.hostValue[k:]...)
 	}
 }
 

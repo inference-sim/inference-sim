@@ -95,6 +95,9 @@ type MatchResult struct {
 	// FullDeviceMatchLen is the reusable prefix of FULL's device scan when a shorter prefix was
 	// reported, or nil.
 	FullDeviceMatchLen *int `json:"full_device_match_len"`
+	// Actions is the walk's cache actions (a split of a node whose backup is in flight), which
+	// the cache applies before the finalizers (unified_radix_cache.py:619-626@297e54fd).
+	Actions []CacheAction `json:"-"`
 }
 
 // InsertParams is InsertParams (base_prefix_cache.py:75-115@297e54fd) on the FULL path.
@@ -135,6 +138,9 @@ type EvictResult struct {
 type LockReceipt struct {
 	Delta *int   `json:"delta"`
 	Node  NodeID `json:"node_id"`
+	// HostUUID is FULL's entry of component_host_lock_uuids: the boundary of the host segment a
+	// host lock took (components/full.py:282-299@297e54fd), or nil when the lock took none.
+	HostUUID *int64 `json:"-"`
 }
 
 // TreeLock is TreeLock (base_prefix_cache.py:242-250@297e54fd): one holder's lock on a node.
@@ -228,11 +234,20 @@ type PrefixCache interface {
 type Tracker map[ComponentType]int
 
 // EvictionStep is BaseEvictionResult and its subclasses (unified_tree_core_interface.py:22-86
-// @297e54fd): the device slots a tree step freed, for the cache to free at the allocator, and
-// the step's evicted counts.
+// @297e54fd): the device and host slots a tree step freed, for the cache to free at the
+// allocator and the host pool, and the step's evicted counts.
 type EvictionStep struct {
 	DeviceFrees map[ComponentType][][]int64
+	HostFrees   map[ComponentType][][]int64
 	Tracker     Tracker
+	Actions     []CacheAction
+	// BackupKV is the backup a write-back eviction of an unbacked leaf must run before the leaf
+	// is demoted (EvictDeviceLeafResult.backup_kv), or nil.
+	BackupKV []NodeID
+	// UnbackedTokens is the device tokens the step freed that had no host copy.
+	UnbackedTokens int
+	// IsDropped is DropSubtreeNoHostResult.is_dropped.
+	IsDropped bool
 	// Node is the leaf an evict_device_next_node step selects, or nil; MadeProgress also covers
 	// an internal step that returned no leaf.
 	Node         *NodeID
@@ -240,11 +255,54 @@ type EvictionStep struct {
 }
 
 // InsertStep is InsertStepResult (unified_tree_core_interface.py:125-130@297e54fd): one step
-// of a resumable insert. FreeDeviceKV is the slots the cache frees before it resumes; Result is
-// set on the last step.
+// of a resumable insert. Actions is what the cache applies before it resumes; Result is set on
+// the last step.
 type InsertStep struct {
-	FreeDeviceKV [][]int64
-	Result       *InsertResult
+	Actions []CacheAction
+	Result  *InsertResult
+}
+
+// FreeDeviceKV is the slots of the step's FreeDeviceKV actions, in order.
+func (s InsertStep) FreeDeviceKV() [][]int64 {
+	var out [][]int64
+	for _, a := range s.Actions {
+		if a.Kind == FreeDeviceKVAction {
+			out = append(out, a.Indices...)
+		}
+	}
+	return out
+}
+
+// CacheActionKind names a CacheAction or ComponentAction class (unified_cache/cache_action.py
+// @297e54fd) on the FULL path.
+type CacheActionKind string
+
+const (
+	// FreeDeviceKVAction frees device slots as page-exact segments.
+	FreeDeviceKVAction CacheActionKind = "FreeDeviceKV"
+	// BackupKVAction backs nodes up to host, ancestors first: a barrier an insert suspends at.
+	BackupKVAction CacheActionKind = "BackupKV"
+	// UpdatePendingBackupOnNodeSplitAction tells the cache a node whose backup is in flight was
+	// split, so the ack covers both halves.
+	UpdatePendingBackupOnNodeSplitAction CacheActionKind = "UpdatePendingBackupOnNodeSplit"
+)
+
+// CacheAction is one action a tree step hands the cache.
+type CacheAction struct {
+	Kind CacheActionKind
+	// Indices is FreeDeviceKV's slots; NodeIDs is BackupKV's nodes.
+	Indices [][]int64
+	NodeIDs []NodeID
+	// AckID, OldNode, NewNode and NewChild are UpdatePendingBackupOnNodeSplit's.
+	AckID                      *NodeID
+	OldNode, NewNode, NewChild NodeID
+}
+
+// LoadBackSpec is the FULL transfer build_load_back_spec returns (unified_tree_core.py:2578-2611
+// @297e54fd): the host slots of the evicted path, root first, and the nodes they fill.
+type LoadBackSpec struct {
+	Host  []int64
+	Nodes []NodeID
 }
 
 // TreeCore is UnifiedTreeCoreInterface (unified_tree_core_interface.py:167-811@297e54fd): the
@@ -260,7 +318,7 @@ type TreeCore interface {
 	BeginInsert(p InsertParams) InsertStep
 	ResumeInsert() InsertStep
 	HasOngoingInsert() bool
-	EndInsert() [][]int64
+	EndInsert() []CacheAction
 	IncLockRef(n NodeID) LockReceipt
 	DecLockRef(n NodeID, r LockReceipt)
 	EvictDeviceStart(c ComponentType, requestCnt int)
@@ -271,6 +329,24 @@ type TreeCore interface {
 	ProtectedSize() int
 	FullEvictableSize() int
 	FullProtectedSize() int
+
+	// The host tier (unified_tree_core.py:2389-2850@297e54fd).
+	SetHicacheEnabled()
+	IsFullDeviceEvicted(n NodeID) bool
+	IncHostLockRef(n NodeID) LockReceipt
+	DecHostLockRef(n NodeID, r LockReceipt)
+	BuildBackupSpec(n NodeID) []int64
+	CommitBackup(n NodeID, host []int64)
+	// RotationPhaseOf is nil: logical-page KV sharding is not modelled.
+	RotationPhaseOf(n NodeID) *int
+	MarkWriteThroughPending(nodes []NodeID, ack NodeID) []NodeID
+	FinishWriteThrough(nodes []NodeID, ack NodeID)
+	BuildLoadBackSpec(n NodeID) LoadBackSpec
+	CommitLoadBack(n NodeID, device []int64, spec LoadBackSpec) []CacheAction
+	FinishLoadBack(anchor NodeID)
+	Demote(n NodeID) EvictionStep
+	DropSubtreeNoHost(n NodeID) EvictionStep
+	DriveHostEviction(c ComponentType, numTokens int) EvictionStep
 }
 
 // Component is TreeComponent (components/base.py:173-891@297e54fd): one kind of KV state the
