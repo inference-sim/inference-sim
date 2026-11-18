@@ -161,6 +161,50 @@ func TestATierWithNoTermsIsRefusedWhereTheDeploymentUsesIt(t *testing.T) {
 	}
 }
 
+// A pool's own offload decides which tiers its kernel must price: a tier with no terms is refused
+// where the pool states it, and not where the pool states no offload, even when the deployment's
+// default names the tier.
+func TestAPoolsOwnOffloadDecidesWhichTiersItsKernelPrices(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := tierCases(t, d, true)[0]
+	in := c.in
+	var sets []*coefficient.Set
+	drop := coefficient.OffloadTierWriteRate("s3")
+	for _, s := range c.in.Coefficients {
+		cp := *s
+		cp.Coefficients = nil
+		for _, e := range s.Coefficients {
+			if e.Name != drop {
+				cp.Coefficients = append(cp.Coefficients, e)
+			}
+		}
+		sets = append(sets, &cp)
+	}
+	in.Coefficients = sets
+	s3 := &deployment.Offload{Tiers: []deployment.Tier{{Device: "s3", Bytes: 1 << 30}}}
+
+	own := *c.in.Deployment
+	own.Offload = nil
+	own.Pools = append([]deployment.Pool(nil), own.Pools...)
+	own.Pools[in.PoolIndex].Offload = s3
+	in.Deployment = &own
+	if _, err := New(in); err == nil || !strings.Contains(err.Error(), "s3") {
+		t.Errorf("a pool offloading to a tier with no write rate was built: %v", err)
+	}
+
+	optOut := own
+	optOut.Offload = s3
+	optOut.Pools = append([]deployment.Pool(nil), own.Pools...)
+	optOut.Pools[in.PoolIndex].Offload = &deployment.Offload{Tiers: []deployment.Tier{}}
+	in.Deployment = &optOut
+	if _, err := New(in); err != nil {
+		t.Errorf("a pool that states no offload was refused for the deployment default's tier: %v", err)
+	}
+}
+
 // The value TierTime prices is the registry's: scaling the entry scales the price. This fails
 // if the kernel kept reading the catalog's figure, which no longer exists, or a constant.
 func TestTierTimeFollowsTheRegistryEntry(t *testing.T) {

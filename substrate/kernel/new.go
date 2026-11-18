@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -317,8 +318,9 @@ func construct(in Inputs) (*Kernel, error) {
 				"nominal line rate")
 	}
 	k.tp = float64(max(layout.TP, 1))
-	k.kvConnector = (in.Deployment.Offload != nil && in.Deployment.Offload.Connector != "") ||
-		(in.Deployment.PDTransfer != nil && in.Deployment.PDTransfer.Connector != "")
+	// The pool's own connector and offload, else the deployment's (Deployment.PoolOffload).
+	off, pd := in.Deployment.PoolOffload(in.PoolIndex), in.Deployment.PoolPDTransfer(in.PoolIndex)
+	k.kvConnector = (off != nil && off.Connector != "") || (pd != nil && pd.Connector != "")
 
 	// The served weight format, as the engine resolved it: the checkpoint's own, or the one its
 	// quantization setting serves it in. A bf16 checkpoint served fp8 reads half the weight
@@ -640,6 +642,15 @@ func latentAttention(kind model.AttentionKind) bool {
 // Node returns another copy); the parallel block is flat; the labels are copied.
 func clonePool(p deployment.Pool) deployment.Pool {
 	p.Labels = maps.Clone(p.Labels)
+	if p.Offload != nil {
+		o := *p.Offload
+		o.Tiers = slices.Clone(o.Tiers)
+		p.Offload = &o
+	}
+	if p.PDTransfer != nil {
+		t := *p.PDTransfer
+		p.PDTransfer = &t
+	}
 	return p
 }
 
