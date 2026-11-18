@@ -6887,8 +6887,8 @@
       "at": "python/sglang/srt/arg_groups/model_overrides/llama4.py:39",
       "op": "In",
       "values": [
-       "modelopt_fp8",
-       "fp8"
+       "fp8",
+       "modelopt_fp8"
       ],
       "expr": "cfg.quantization in {'fp8', 'modelopt_fp8'}"
      },

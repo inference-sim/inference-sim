@@ -191,20 +191,42 @@ func TestTheDeclarationsCoverExactlyTheConfigurationFields(t *testing.T) {
 
 // An approximation's mode is the setting the dashboard writes into the deployment in place of the
 // recorded one, so every value in it is either null (the engine's own resolution is what is priced) or
-// a value the engine accepts; a descriptive string would reach the engine block and be refused.
+// a value the engine accepts; a descriptive string would reach the engine block and be refused. The
+// dashboard reads the generated fields.json, so the approximations of fields/status.json (the source)
+// must all be in it: a generator that drops one leaves the points that state the field refused.
 func TestEveryApproximatedModeValueIsNullOrAccepted(t *testing.T) {
+	var src struct {
+		Fields map[string]struct {
+			Estimation struct {
+				Approximates json.RawMessage `json:"approximates"`
+			} `json:"estimation"`
+		} `json:"fields"`
+	}
+	b, err := os.ReadFile("fields/status.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &src); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{}
+	for key, f := range src.Fields {
+		if len(f.Estimation.Approximates) > 0 && string(f.Estimation.Approximates) != "null" {
+			want[strings.TrimPrefix(key, "config:")] = true
+		}
+	}
 	l, err := fields.Load("fields.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	checked := 0
+	got := map[string]bool{}
 	for _, f := range l.Fields {
 		a := f.Estimation.Approximates
 		if a == nil {
 			continue
 		}
+		got[f.Name] = true
 		for name, v := range a.Mode {
-			checked++
 			if v == nil {
 				continue
 			}
@@ -217,7 +239,12 @@ func TestEveryApproximatedModeValueIsNullOrAccepted(t *testing.T) {
 			}
 		}
 	}
-	if checked == 0 {
-		t.Skip("no field carries an approximation")
+	for name := range want {
+		if !got[name] {
+			t.Errorf("%s has an approximation in fields/status.json that fields.json lacks: the generator dropped it", name)
+		}
+	}
+	if len(want) == 0 {
+		t.Error("no field of fields/status.json carries an approximation; this test would check nothing")
 	}
 }
