@@ -322,15 +322,20 @@ func (i *InstanceSimulator) LatencyTotals() LatencyTotals {
 	if m == nil || m.CompletedRequests == 0 {
 		return LatencyTotals{}
 	}
-	ids := make([]string, 0, len(m.RequestITLs))
-	for id := range m.RequestITLs {
+	// TTFT is summed over every completed request, ITL over those that have a sample: a request
+	// with fewer than two output tokens has a TTFT and no ITL (#1894), as LatencyStats counts them.
+	ids := make([]string, 0, len(m.RequestE2Es))
+	for id := range m.RequestE2Es {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
 	t := LatencyTotals{Completed: m.CompletedRequests, InTokens: int64(m.TotalInputTokens), OutTokens: int64(m.TotalOutputTokens)}
 	for _, id := range ids {
-		t.ITLSumUs += m.RequestITLs[id]
 		t.TTFTSumUs += m.RequestTTFTs[id]
+		if itl, ok := m.RequestITLs[id]; ok {
+			t.ITLSumUs += itl
+			t.ITLCount++
+		}
 	}
 	return t
 }
