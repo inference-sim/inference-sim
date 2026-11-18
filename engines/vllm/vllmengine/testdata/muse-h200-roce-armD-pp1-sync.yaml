@@ -1,16 +1,16 @@
 kind: Scenario
-name: muse-h100-roce-armD-pp1-sync
+name: muse-h200-roce-armD-pp1-sync
 engine_version: "0.33.0"
 model: muse-spark-open-816b-a42b-nvfp4
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric, cost-model-offload-tiers]
 cluster:
-  hardware: h100
+  hardware: h200
   fabric: roce-200g
   nodes: 1
   gpus_per_node: 8
 ---
 kind: Deployment
-name: muse-h100-roce-armD-pp1-sync
+name: muse-h200-roce-armD-pp1-sync
 pools:
   - role: colocated
     nodes: 1
@@ -27,11 +27,12 @@ pools:
       moe_backend: marlin
       language_model_only: true
 # Arm D on one node at PP1 x TP8, synchronous scheduling and no drafter: the one-batch twin of
-# muse-h100-roce-armD.yaml. One H100 node's KV memory beside the weights
-# (0.16 GiB a GPU, text decoder alone) holds at most an 11,664-token sequence, and vLLM refuses a longer max_model_len
-# at start-up, so the twin serves 8,192 tokens. It states language_model_only: true: the catalog now prices
-# Muse's vision tower, resident by default, and its 0.3 GiB a GPU does not fit in those 0.16 GiB, so the
-# default would leave no KV on one H100 node. These tests check the offload mapping, which the tower does not touch. The OffloadingConnector's CPU tier, LRU: the
+# muse-h100-roce-armD.yaml, on one H200 node. At PP1 x TP8 with expert parallelism the engine holds 81.0 GiB of
+# weights a GPU (Muse Spark's per-layer RoPE tables are resident, blis-substrate#378), which no 80 GB H100
+# holds, so the twin runs on the H200 (141 GB) and the tests keep the geometry they check: eight workers, a
+# worker's 65,536-byte block. It serves 8,192 tokens and states language_model_only: true: the catalog prices
+# Muse's vision tower, resident by default, and these tests check the offload mapping, which the tower does not
+# touch. The OffloadingConnector's CPU tier, LRU: the
 # node's 512 GiB of host DRAM (the engine's cpu_bytes_to_use).
 offload:
   connector: OffloadingConnector
