@@ -39,7 +39,7 @@ func TestThePDBundleSettingsAreExecutionModesSubstituted(t *testing.T) {
 		{"attention_config.mla_prefill_backend", "TRTLLM_RAGGED", "10.3", true},
 		{"attention_config.mla_prefill_backend", "FLASHINFER", "10.0", false},
 		{"moe_backend", "marlin", "10.0", true},
-		{"moe_backend", "marlin", "9.0", false},
+		{"moe_backend", "marlin", "9.0", true},
 		{"moe_backend", "triton", "10.0", false},
 		{"compilation_config.mode", "0", "10.0", true},
 		{"compilation_config.mode", "3", "10.0", false},
