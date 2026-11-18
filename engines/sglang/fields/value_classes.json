@@ -357,6 +357,30 @@
     ],
     "stated": [
      {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": "dsv4",
       "trace": "config/testdata/serverargs.json"
      },
@@ -631,6 +655,14 @@
      {
       "value": "fa3",
       "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": "flashinfer",
@@ -1110,6 +1142,30 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 8192,
       "trace": "config/testdata/serverargs.json"
      },
@@ -1528,6 +1584,22 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 32768,
       "trace": "config/testdata/serverargs.json"
      },
@@ -1819,6 +1891,30 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": null,
       "trace": "config/testdata/serverargs.json"
      },
@@ -2077,6 +2173,14 @@
      {
       "value": null,
       "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 512,
+      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": 512,
@@ -2291,6 +2395,30 @@
      }
     ],
     "stated": [
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
      {
       "value": false,
       "trace": "config/testdata/serverargs.json"
@@ -2829,6 +2957,30 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 8,
       "trace": "config/testdata/serverargs.json"
      },
@@ -3026,6 +3178,14 @@
      },
      {
       "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 1,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 1,
       "trace": "lower/testdata/sglang_lower.json"
      },
      {
@@ -3170,6 +3330,30 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": false,
       "trace": "config/testdata/serverargs.json"
      },
@@ -3436,6 +3620,14 @@
      {
       "value": false,
       "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": true,
+      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": true,
@@ -3796,6 +3988,22 @@
      }
     ],
     "stated": [
+     {
+      "value": "bfloat16",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "bfloat16",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
      {
       "value": "fp8_e5m2",
       "trace": "config/testdata/serverargs.json"
@@ -4257,6 +4465,30 @@
      }
     ],
     "stated": [
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
      {
       "value": 16384,
       "trace": "config/testdata/serverargs.json"
@@ -4758,6 +4990,30 @@
     ],
     "stated": [
      {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 256,
       "trace": "config/testdata/serverargs.json"
      },
@@ -5142,6 +5398,38 @@
     ],
     "stated": [
      {
+      "value": 0.85,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.85,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.85,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.85,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.82,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.82,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.82,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.82,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 0.897,
       "trace": "config/testdata/serverargs.json"
      },
@@ -5471,6 +5759,22 @@
      }
     ],
     "stated": [
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
      {
       "value": "<model>",
       "trace": "config/testdata/serverargs.json"
@@ -6340,6 +6644,22 @@
      },
      {
       "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
       "trace": "lower/testdata/sglang_lower.json"
      }
     ],
@@ -6838,6 +7158,22 @@
      }
     ],
     "stated": [
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
      {
       "value": null,
       "trace": "config/testdata/serverargs.json"
@@ -7617,6 +7953,38 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 1,
       "trace": "config/testdata/serverargs.json"
      },
@@ -7951,6 +8319,22 @@
      {
       "value": 1,
       "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": 8,
