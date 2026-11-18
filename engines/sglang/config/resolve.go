@@ -66,6 +66,14 @@ type ModelFacts struct {
 	HiddenSize                        *int    `json:"hidden_size"`
 	IsFP4Experts                      bool    `json:"is_fp4_experts"`
 	HasNVFP4MoEMeta                   bool    `json:"has_nvfp4_moe_meta"`
+	// VisionNumHiddenLayers and VisionHiddenSize are getattr(vision_config, "num_hidden_layers", 24)
+	// and getattr(vision_config, "hidden_size", 1024) of a model with a vision config, which
+	// adjust_mem_fraction_for_vlm reads (memory_hook.py:440-441).
+	VisionNumHiddenLayers *int `json:"vision_num_hidden_layers"`
+	VisionHiddenSize      *int `json:"vision_hidden_size"`
+	// MixedPrecisionMoEQuantAlgos is _mixed_precision_moe_quant_algos(hf_config): the quant_algo
+	// of the checkpoint's expert layers, upper case (model_overrides/qwen3_moe.py:17-26).
+	MixedPrecisionMoEQuantAlgos []string `json:"mixed_precision_moe_quant_algos"`
 }
 
 func (m ModelFacts) useMLA() bool { return m.AttentionArch == "MLA" }
@@ -325,6 +333,7 @@ func (r *resolver) run() {
 	r.handleDataParallelism()
 	r.handleLoadBalanceMethod()
 	// handle_context_parallelism, handle_kv_cache_sharding, handle_moe_kernel_config: no change here.
+	r.handleMoeKernelConfig()
 	r.handleA2AMoE()
 	// handle_shared_experts_tp, handle_eplb_and_dispatch: no change here.
 	r.handleExpertDistributionMetrics()

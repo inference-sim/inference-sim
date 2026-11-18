@@ -131,6 +131,9 @@ def model_facts(sa) -> dict:
     hf = mc.hf_config
     quant = getattr(hf, "quantization_config", None) or {}
     dsa = is_deepseek_dsa(hf)
+    from sglang.srt.arg_groups.model_overrides.qwen3_moe import _mixed_precision_moe_quant_algos
+
+    vision = getattr(hf, "vision_config", None)
     return {
         "architecture": hf.architectures[0],
         "model_type": getattr(hf, "model_type", None),
@@ -152,6 +155,11 @@ def model_facts(sa) -> dict:
         "hidden_size": getattr(hf, "hidden_size", None),
         "is_fp4_experts": bool(getattr(mc, "is_fp4_experts", False)),
         "has_nvfp4_moe_meta": getattr(mc, "nvfp4_moe_meta", None) is not None,
+        # adjust_mem_fraction_for_vlm reads these two (arg_groups/memory_hook.py:440-441).
+        "vision_num_hidden_layers": getattr(vision, "num_hidden_layers", 24) if vision is not None else None,
+        "vision_hidden_size": getattr(vision, "hidden_size", 1024) if vision is not None else None,
+        # _qwen3_moe_family_overrides reads the quant_algo of the expert layers.
+        "mixed_precision_moe_quant_algos": sorted(_mixed_precision_moe_quant_algos(hf)),
     }
 
 

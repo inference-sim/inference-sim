@@ -193,3 +193,35 @@ func TestEachUnmodelledSettingIsRefusedOnItsOwn(t *testing.T) {
 		}
 	}
 }
+
+// The pool's env map is the process environment the scheduler's settings read, not a ServerArgs field:
+// a variable the engine reads is set from it, SGLANG_ENABLE_JIT_DEEPGEMM at its default (true, the
+// value the recipes export) changes nothing, and any value the engine cannot honour is refused by name.
+func TestTheEngineReadsItsEnvironmentFromTheEnvMap(t *testing.T) {
+	h := newHost()
+	build := func(env string) error {
+		_, err := FactoryFor(h).New(specOf(t, "model_path: m\nmax_running_requests: 8\nenv: {"+env+"}\n"))
+		return err
+	}
+	for _, ok := range []string{"SGLANG_ENABLE_JIT_DEEPGEMM: '1'", "SGLANG_ENABLE_JIT_DEEPGEMM: true",
+		"SGLANG_RADIX_FORCE_MISS: '0'", "SGLANG_RETRACT_DECODE_STEPS: '10', SGLANG_CLIP_MAX_NEW_TOKENS_ESTIMATION: '2048'"} {
+		if err := build(ok); err != nil {
+			t.Errorf("env {%s}: %v", ok, err)
+		}
+	}
+	for env, want := range map[string]string{
+		"SGLANG_ENABLE_JIT_DEEPGEMM: '0'":  "SGLANG_ENABLE_JIT_DEEPGEMM",
+		"SGLANG_RADIX_FORCE_MISS: '1'":     "SGLANG_RADIX_FORCE_MISS",
+		"NCCL_NVLS_ENABLE: '1'":            "NCCL_NVLS_ENABLE",
+		"SGLANG_RETRACT_DECODE_STEPS: 'x'": "SGLANG_RETRACT_DECODE_STEPS",
+		// read by the engine's scheduler settings, whose own refusal names it
+		"SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP: 'true'": "SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP",
+	} {
+		if err := build(env); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("env {%s}: got %v, want a refusal naming %s", env, err, want)
+		}
+	}
+	if _, err := FactoryFor(h).New(specOf(t, "model_path: m\nenv: [SGLANG_RADIX_FORCE_MISS]\n")); err == nil || !strings.Contains(err.Error(), "map") {
+		t.Errorf("an env that is not a map: got %v", err)
+	}
+}

@@ -374,63 +374,6 @@
    "issue": "inference-sim/blis-sglang#49"
   },
   {
-   "id": "config/models.go:dsaKVCacheDtypeDefault:&&->||#1:if sinks && kv != \"auto\" && kv != \"bf16\" && kv != \"bfloat16\" {",
-   "needs": {
-    "field": "kv_cache_dtype"
-   },
-   "stage": "S20-S22 (lane C)",
-   "issue": "inference-sim/blis-sglang#37, inference-sim/blis-sglang#38 and inference-sim/blis-sglang#40"
-  },
-  {
-   "id": "config/models.go:dsaKVCacheDtypeDefault:!=->==#1:if sinks && kv != \"auto\" && kv != \"bf16\" && kv != \"bfloat16\" {",
-   "needs": {
-    "field": "kv_cache_dtype"
-   },
-   "stage": "S20-S22 (lane C)",
-   "issue": "inference-sim/blis-sglang#37, inference-sim/blis-sglang#38 and inference-sim/blis-sglang#40"
-  },
-  {
-   "id": "config/models.go:dsaKVCacheDtypeDefault:!=->==#2:if sinks && kv != \"auto\" && kv != \"bf16\" && kv != \"bfloat16\" {",
-   "needs": {
-    "field": "kv_cache_dtype"
-   },
-   "stage": "S20-S22 (lane C)",
-   "issue": "inference-sim/blis-sglang#37, inference-sim/blis-sglang#38 and inference-sim/blis-sglang#40"
-  },
-  {
-   "id": "config/models.go:dsaKVCacheDtypeDefault:!=->==#3:if sinks && kv != \"auto\" && kv != \"bf16\" && kv != \"bfloat16\" {",
-   "needs": {
-    "field": "kv_cache_dtype"
-   },
-   "stage": "S20-S22 (lane C)",
-   "issue": "inference-sim/blis-sglang#37, inference-sim/blis-sglang#38 and inference-sim/blis-sglang#40"
-  },
-  {
-   "id": "config/models.go:dsaKVCacheDtypeDefault:>=->>#1:if r.chip.Capability[0] >= 10 && !sinks {",
-   "needs": {
-    "chip": "sm100",
-    "architecture": "GlmMoeDsaForCausalLM"
-   },
-   "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
-  },
-  {
-   "id": "config/models.go:dsaKVCacheDtypeDefault:==->!=#1:if kv == \"bf16\" {",
-   "needs": {
-    "field": "kv_cache_dtype"
-   },
-   "stage": "S20-S22 (lane C)",
-   "issue": "inference-sim/blis-sglang#37, inference-sim/blis-sglang#38 and inference-sim/blis-sglang#40"
-  },
-  {
-   "id": "config/models.go:dsaKVCacheDtypeDefault:!=->==#2:if kv != \"bfloat16\" && kv != \"fp8_e4m3\" {",
-   "needs": {
-    "field": "kv_cache_dtype"
-   },
-   "stage": "S20-S22 (lane C)",
-   "issue": "inference-sim/blis-sglang#37, inference-sim/blis-sglang#38 and inference-sim/blis-sglang#40"
-  },
-  {
    "id": "config/models.go:dsaSplitBackendResolution:==->!=#1:case r.model.Architecture == \"GlmMoeDsaForCausalLM\" && major == 12 && kv == \"fp8_e4m3\":",
    "needs": {
     "chip": "sm120",
@@ -474,14 +417,6 @@
    },
    "stage": "T1 rest",
    "issue": "inference-sim/blis-sglang#49"
-  },
-  {
-   "id": "config/models.go:applyDeepseekV4Defaults:!=->==#2:if kv != \"fp8_e4m3\" && kv != \"bfloat16\" {",
-   "needs": {
-    "field": "kv_cache_dtype"
-   },
-   "stage": "S20-S22 (lane C)",
-   "issue": "inference-sim/blis-sglang#37, inference-sim/blis-sglang#38 and inference-sim/blis-sglang#40"
   },
   {
    "id": "config/models.go:validateDeepseekV41Features:!=->==#2:graphIncompatible := pre != backendDisabled && pre != backendBreakable",

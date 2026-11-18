@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+
 	"github.com/inference-sim/blis-sglang/config"
 )
 
@@ -156,6 +158,35 @@ func TestLoweringRefusesWhatItCannotKnowByName(t *testing.T) {
 		var nl *NotLowered
 		if !errors.As(err, &nl) || nl.Name != name || nl.Issue != issueLower {
 			t.Errorf("%s: got %v, want a refusal naming it and citing %s", name, err, issueLower)
+		}
+	}
+}
+
+// A DSA pool states, as an override of the plan, the attention backends the engine runs and the pair the
+// cost model prices instead (X19): a result can name the substitution for a stated fa3 or trtllm. A model
+// with no DSA attention states none.
+func TestADSAPoolStatesItsAttentionBackendsAsASubstitution(t *testing.T) {
+	l, err := lowerPool(t, "glm-5", 8, "mem_fraction_static: 0.85\ndsa_prefill_backend: fa3\ndsa_decode_backend: trtllm\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]plan.Override{}
+	for _, o := range l.Overrides {
+		got[o.Field] = o
+	}
+	for field, stated := range map[string]string{"dsa_prefill_backend": "fa3", "dsa_decode_backend": "trtllm"} {
+		o, ok := got[field]
+		if !ok || o.Requested != stated || o.Resolved != dsaPricedAs || o.Reason == "" {
+			t.Errorf("%s: override %+v, want requested %q, resolved %q and a reason", field, o, stated, dsaPricedAs)
+		}
+	}
+	d, err := lowerPool(t, "deepseek-r1-0528", 8, "mem_fraction_static: 0.82\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range d.Overrides {
+		if o.Field == "dsa_prefill_backend" || o.Field == "dsa_decode_backend" {
+			t.Errorf("a model with no DSA attention states %+v", o)
 		}
 	}
 }

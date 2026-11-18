@@ -130,15 +130,11 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 	override := func(field, requested, resolved, reason string) {
 		out.Overrides = append(out.Overrides, plan.Override{Field: field, Requested: requested, Resolved: resolved, Reason: reason})
 	}
-	_ = override
 	hasRecurrent, moe := false, false
 	g.EachNode(func(_ string, n model.Node) {
 		hasRecurrent = hasRecurrent || n.Op == model.OpRecurrentUpdate
 		moe = moe || n.Op == model.OpGroupedGEMM
 	})
-	if hasRecurrent {
-		return nil, &NotLowered{Name: "a recurrent (hybrid linear-attention) layer", Issue: "inference-sim/blis-sglang#94"}
-	}
 	if a.EnableTwoBatchOverlap || a.EnableSingleBatchOverlap {
 		return nil, &NotLowered{Name: "two-batch / single-batch overlap", Issue: issueLower}
 	}
@@ -165,9 +161,24 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 	default:
 		return nil, &NotLowered{Name: "kv_cache_dtype=" + a.KvCacheDtype, Issue: issueLower}
 	}
-	// A recurrent state is absent here (refused above); the kernel requires the width stated, and
-	// the mamba_ssm_dtype default is float32 (arg_groups/fields/mamba.py@297e54fd).
+	// The kernel requires the recurrent state's width stated even for a model with no recurrent
+	// layer (SUB-6); a model with one states it from mamba_ssm_dtype (qwen35.go).
 	p.Cache.StateElementBytes = 4
+	if hasRecurrent {
+		if err := lowerRecurrent(a, g, &p.Cache, note); err != nil {
+			return nil, err
+		}
+	}
+
+	// The DSA attention backends: the plan carries no attention backend, and the substrate prices DSA
+	// attention from the model graph's sparse-MLA lane (the part-wide attention pair), whatever kernel
+	// the backend names. The pool states the substitution, so a result can name it (X19).
+	if a.DsaPrefillBackend != nil {
+		override("dsa_prefill_backend", *a.DsaPrefillBackend, dsaPricedAs, dsaReason)
+	}
+	if a.DsaDecodeBackend != nil {
+		override("dsa_decode_backend", *a.DsaDecodeBackend, dsaPricedAs, dsaReason)
+	}
 
 	// Batch limits and the page.
 	if a.PageSize == nil || a.MemFractionStatic == nil {
@@ -258,6 +269,12 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 			return nil, err
 		}
 		p.MoE.Experts, p.MoE.Routing = experts, routing
+		if a.MoeRunnerBackend == "flashinfer_trtllm" {
+			note("moe_runner_backend", "flashinfer_trtllm",
+				"the plan names no experts kernel: the substrate prices FlashInfer's TRT-LLM grouped GEMM on block-FP8 experts by its "+
+					"assumed ramp (graded assumed: the engine release lists no sm_100a build to name a code hash); expert selection "+
+					"runs inside the kernel only for a DeepSeek-V3-method router")
+		}
 	}
 
 	// Allreduce: SGLang's CustomAllreduce handles a width in {2, 4, 6, 8} unless disabled
@@ -289,6 +306,16 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 	}
 	return out, nil
 }
+
+// dsaPricedAs and dsaReason are the substitution a DSA pool states for its attention backends.
+const (
+	dsaPricedAs = "the part-wide sparse-MLA attention pair"
+	dsaReason   = "flashmla_sparse, flashmla_kv, trtllm and fa3 are different kernels; the plan has no attention-backend " +
+		"slot and the substrate prices DSA attention from the graph's sparse-MLA lane with the registry's part-wide attention " +
+		"pair, so the backend the engine runs is not what is priced; that price is a transfer from the vLLM-measured kernel, " +
+		"not a measurement of SGLang's (attention_backend nsa is the deprecated alias of dsa: " +
+		"layers/attention/attention_registry.py:166-176@297e54fd)"
+)
 
 // allreduceFusionMaxTokens is FUSE_ALLREDUCE_MAX_BATCH_SIZE (layer_boundary/residual/add_norm.py:141@297e54fd).
 const allreduceFusionMaxTokens = 2048
@@ -326,6 +353,32 @@ func expertsKernel(a *config.ServerArgs, g *model.Graph) (plan.KernelImpl, plan.
 			return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=" + a.MoeRunnerBackend + " on " + string(g.Global.WeightDType) + " experts", Issue: issueLower}
 		}
 		return plan.ExpertsTriton, plan.RoutingSeparate, nil
+	case "flashinfer_trtllm":
+		// FlashInfer's TRT-LLM monolithic MoE (layers/moe/moe_runner/flashinfer_trtllm.py): router logits
+		// in, expert selection inside the kernel. The substrate prices it where the plan names no experts
+		// kernel, from the weight format's grouped-GEMM ramp; only the block-fp8 form is priced.
+		if g.Global.WeightDType != model.DTypeFP8 {
+			return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=flashinfer_trtllm on " + string(g.Global.WeightDType) + " experts", Issue: issueLower}
+		}
+		// SGLang selects the experts inside the kernel only when it can bypass its own top-k
+		// (_can_bypass_trtllm_routing, layers/moe/topk.py:613-650, 794-803@297e54fd). That depends on the
+		// router's method, grouped top-k, correction bias, scoring function, renormalisation and shared
+		// slots, which the model graph does not carry; they are the architecture's own, so the answer is
+		// stated per architecture from the model code, and an architecture not listed is refused by name
+		// rather than guessed:
+		//   - DeepseekV3ForCausalLM, GlmMoeDsaForCausalLM: the DeepSeek-V3 method (grouped top-k with a
+		//     correction bias, renormalised): the kernel takes the logits, selection is fused.
+		//   - DeepseekV4ForCausalLM: sqrt-softplus scoring (config.sqrtsoftplus_log1p), which the bypass
+		//     test refuses: SGLang runs its own top-k, a launch of its own.
+		switch g.Global.Architecture {
+		case "DeepseekV3ForCausalLM", "GlmMoeDsaForCausalLM":
+			return plan.KernelImpl{}, plan.RoutingFused, nil
+		case "DeepseekV4ForCausalLM":
+			return plan.KernelImpl{}, plan.RoutingSeparate, nil
+		}
+		return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=flashinfer_trtllm on " + g.Global.Architecture +
+			" (whether SGLang bypasses its own top-k depends on the router's method, scoring and renormalisation, which the graph does not carry; " +
+			"a plain Renormalize softmax router, such as Qwen3 MoE's, bypasses it only when norm_topk_prob holds)", Issue: issueLower}
 	}
 	return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=" + a.MoeRunnerBackend, Issue: issueLower}
 }

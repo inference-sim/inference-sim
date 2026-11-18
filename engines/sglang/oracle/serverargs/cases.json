@@ -90,6 +90,26 @@
    "repo": "deepseek-ai/DeepSeek-V4-Flash",
    "revision": "60d8d70770c6776ff598c94bb586a859a38244f1",
    "licence": "mit"
+  },
+  "qwen3.5-397b-a17b": {
+   "repo": "Qwen/Qwen3.5-397B-A17B",
+   "revision": "8472618112abcbd45acbcdc58436aff4233c23f7",
+   "licence": "apache-2.0"
+  },
+  "qwen3.5-397b-a17b-fp8": {
+   "repo": "Qwen/Qwen3.5-397B-A17B-FP8",
+   "revision": "ea5b4f81096f3901c91dea97f81324302495781d",
+   "licence": "apache-2.0"
+  },
+  "qwen3.5-397b-a17b-nvfp4": {
+   "repo": "nvidia/Qwen3.5-397B-A17B-NVFP4",
+   "revision": "12b28061efd8145b11226e4fab2528ee4f39ef09",
+   "licence": "apache-2.0"
+  },
+  "qwen3.5-397b-a17b-nvfp4-v2": {
+   "repo": "nvidia/Qwen3.5-397B-A17B-NVFP4-V2",
+   "revision": "8f590eae8f10bf55d9a46f79ea0280bde435c9f8",
+   "licence": "apache-2.0"
   }
  },
  "cases": [
@@ -731,6 +751,635 @@
     "speculative_num_draft_tokens": 6,
     "tp_size": 8,
     "page_size": 1
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-custom-loader-empty",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "custom_weight_loader": []
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-kv-fp8",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-kv-fp8",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-quant-fp8",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "quantization": "fp8"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-kv-bf16",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "kv_cache_dtype": "bf16"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-kv-bfloat16",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "kv_cache_dtype": "bfloat16"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-kv-fp8-e5m2",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "kv_cache_dtype": "fp8_e5m2"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-kv-bfloat16",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "kv_cache_dtype": "bfloat16"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-kv-fp8",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-kv-fp8-e5m2",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "kv_cache_dtype": "fp8_e5m2"
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-tokenizer-path",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "tokenizer_path": "/models/deepseek-r1/tokenizer"
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-loader-extra-config",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "model_loader_extra_config": "{\"enable_multithread_load\": true, \"num_threads\": 8}"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-dsa-flashmla-sparse",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "dsa_prefill_backend": "flashmla_sparse",
+    "dsa_decode_backend": "flashmla_sparse"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-dsa-fa3-trtllm",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "dsa_prefill_backend": "fa3",
+    "dsa_decode_backend": "trtllm"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-nsa-alias",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "attention_backend": "nsa"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-dsa-explicit",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "attention_backend": "dsa"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-nsa-recipe",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "attention_backend": "nsa",
+    "chunked_prefill_size": 8192,
+    "mem_fraction_static": 0.85,
+    "enable_flashinfer_allreduce_fusion": true,
+    "context_length": 202752,
+    "trust_remote_code": true,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h100-tp4",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H100",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-bf16-h100-tp8",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp4",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-bf16-b200-tp4",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-bf16-b200-tp8",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-fp8-h100-tp4",
+   "model": "qwen3.5-397b-a17b-fp8",
+   "chip": "H100",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-fp8-h100-tp8",
+   "model": "qwen3.5-397b-a17b-fp8",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-fp8-h200-tp4",
+   "model": "qwen3.5-397b-a17b-fp8",
+   "chip": "H200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-fp8-h200-tp8",
+   "model": "qwen3.5-397b-a17b-fp8",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-fp8-b200-tp4",
+   "model": "qwen3.5-397b-a17b-fp8",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-fp8-b200-tp8",
+   "model": "qwen3.5-397b-a17b-fp8",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-nvfp4-h100-tp4",
+   "model": "qwen3.5-397b-a17b-nvfp4",
+   "chip": "H100",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-nvfp4-h100-tp8",
+   "model": "qwen3.5-397b-a17b-nvfp4",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-nvfp4-h200-tp4",
+   "model": "qwen3.5-397b-a17b-nvfp4",
+   "chip": "H200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-nvfp4-h200-tp8",
+   "model": "qwen3.5-397b-a17b-nvfp4",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-nvfp4-b200-tp4",
+   "model": "qwen3.5-397b-a17b-nvfp4",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-nvfp4-b200-tp8",
+   "model": "qwen3.5-397b-a17b-nvfp4",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-nvfp4v2-h100-tp4",
+   "model": "qwen3.5-397b-a17b-nvfp4-v2",
+   "chip": "H100",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-nvfp4v2-h100-tp8",
+   "model": "qwen3.5-397b-a17b-nvfp4-v2",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-nvfp4v2-h200-tp4",
+   "model": "qwen3.5-397b-a17b-nvfp4-v2",
+   "chip": "H200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-nvfp4v2-h200-tp8",
+   "model": "qwen3.5-397b-a17b-nvfp4-v2",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-nvfp4v2-b200-tp4",
+   "model": "qwen3.5-397b-a17b-nvfp4-v2",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-nvfp4v2-b200-tp8",
+   "model": "qwen3.5-397b-a17b-nvfp4-v2",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-bf16-b200-tp8-noradix",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "disable_radix_cache": true
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-no-buffer",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mamba_radix_cache_strategy": "no_buffer"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-extra-buffer-lazy",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mamba_radix_cache_strategy": "extra_buffer_lazy"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-ssm-float32",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mamba_ssm_dtype": "float32"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-ssm-bfloat16",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mamba_ssm_dtype": "bfloat16"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-ssm-float16",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mamba_ssm_dtype": "float16"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-mm-sdpa",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mm_attention_backend": "sdpa"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-mm-fa3",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mm_attention_backend": "fa3"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-mm-flashinfer_cudnn",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mm_attention_backend": "flashinfer_cudnn"
+   }
+  },
+  {
+   "name": "qwen35-bf16-b200-tp8-mm-fa3",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "mm_attention_backend": "fa3"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-mem-fraction",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mem_fraction_static": 0.85,
+    "max_running_requests": 64
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-page16",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "page_size": 16
+   }
+  },
+  {
+   "name": "qwen35-bf16-b200-tp8-page64",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "page_size": 64
+   }
+  },
+  {
+   "name": "qwen35-bf16-b200-tp8-attention-fa3",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "attention_backend": "fa3"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-dp-attention",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 8,
+    "enable_dp_attention": true
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-ep8",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "ep_size": 8
+   }
+  },
+  {
+   "name": "qwen35-fp8-b200-tp8-ep8",
+   "model": "qwen3.5-397b-a17b-fp8",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "ep_size": 8
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp1",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 1
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-context-length",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "context_length": 262144,
+    "chunked_prefill_size": 16384
    }
   }
  ]
