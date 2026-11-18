@@ -150,8 +150,11 @@ func (s *Scheduler) Pool() (total, used int) {
 // Config returns the configuration the scheduler runs with.
 func (s *Scheduler) Config() Config { return s.cfg }
 
-// Finish ends a request the engine did not decide (a client abort): the request leaves the queue
-// or the running batch and frees what it holds. Finishing an unknown or finished request is a no-op.
+// Finish ends a request the engine did not decide (a client abort or a deadline): the request
+// leaves the queue, the running batch, or the pass in flight, and frees what it holds. A pass that
+// is already launched still names it; completing that pass retires the row without a token, a
+// first token or a finish (processPrefill and processDecode skip a finished row). Finishing an
+// unknown or finished request is a no-op.
 func (s *Scheduler) Finish(id string) {
 	for i, r := range s.waiting {
 		if r.RID() == id {
@@ -159,11 +162,24 @@ func (s *Scheduler) Finish(id string) {
 			return
 		}
 	}
+	end := func(r *Req) {
+		if r.RID() != id || r.Finished() {
+			return
+		}
+		r.FinishedReason = "abort"
+		r.C.Finished = true
+		if s.chunkedReq == r {
+			// A chunked request that ended has no next chunk to stash.
+			s.chunkedReq = nil
+		}
+		s.releaseKVCache(r, false)
+	}
 	for _, r := range s.running.Reqs {
-		if r.RID() == id && !r.Finished() {
-			r.FinishedReason = "abort"
-			r.C.Finished = true
-			s.releaseKVCache(r, false)
+		end(r)
+	}
+	if s.last != nil {
+		for _, r := range s.last.Reqs {
+			end(r)
 		}
 	}
 }
