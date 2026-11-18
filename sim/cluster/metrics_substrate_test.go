@@ -120,7 +120,7 @@ func TestClusterMetrics_AllITLs_Sum_Consistency(t *testing.T) {
 
 	// BC-MS-4c: sum(AllITLs) == sum(E2E - TTFT)
 	var sumAllITLs float64
-	for _, v := range agg.AllITLs {
+	for _, v := range agg.AllITLs.Flatten() {
 		sumAllITLs += float64(v)
 	}
 	var sumE2EMinusTTFT float64
@@ -200,7 +200,7 @@ func TestClusterMetrics_ZeroOutput_NoPollution(t *testing.T) {
 
 	// BC-MS-4c must hold with zero-output requests in the mix
 	var sumAllITLs float64
-	for _, v := range agg.AllITLs {
+	for _, v := range agg.AllITLs.Flatten() {
 		sumAllITLs += float64(v)
 	}
 	var sumE2EMinusTTFT float64

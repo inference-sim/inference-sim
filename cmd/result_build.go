@@ -244,7 +244,7 @@ func standardMetrics(sum sim.MeasuredSummary, m *sim.Metrics, gpus, decodeGPUs i
 		// preemptions is a whole-run total over the engines' steps (contracts/metrics): its
 		// samples are the steps the engines took, which the per-step interval series counts.
 		// A run of no steps states none.
-		if steps := len(m.AllITLs); steps > 0 {
+		if steps := m.AllITLs.Len(); steps > 0 {
 			put("preemptions", float64(m.PreemptionCount), steps)
 		}
 		// itl: the client-observed gaps between output tokens (Request.ClientTokenGaps), over

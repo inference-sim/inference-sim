@@ -61,10 +61,10 @@ func (m *Metrics) RecordCompletion(c Completion) {
 	m.RequestStepCounters = append(m.RequestStepCounters, c.Steps)
 	m.RequestCompletionTimes[req.ID] = float64(c.E2E + req.ArrivalTime)
 	m.recordCompletionOrder(req.ID, c.Clock, c.OutputTokens, c.Overhead)
-	m.AllITLs = append(m.AllITLs, req.ITL...)
+	m.AllITLs.Add(req.ITL)
 	gaps := req.ClientTokenGaps()
-	m.ClientGaps = append(m.ClientGaps, gaps...)
-	m.ClientChunkGaps = append(m.ClientChunkGaps, req.ClientITL...)
+	m.ClientGaps.Add(gaps)
+	m.ClientChunkGaps.Add(req.ClientITL)
 	m.StepOwners = append(m.StepOwners,
 		StepOwner{CompletionUs: c.E2E + req.ArrivalTime, Steps: len(req.ITL), ClientGaps: len(gaps),
 			ClientChunkGaps: len(req.ClientITL), Phase: req.Phase})
