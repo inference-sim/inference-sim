@@ -225,7 +225,7 @@ func TestAnEnvVarOfAnEarlierReleaseIsTranslatedToThisReleasesFlags(t *testing.T)
 		if e.Rule != fields.RuleSubstitute || !reflect.DeepEqual(e.Setting, c.setting) {
 			t.Errorf("%s: rule %q setting %v, want a substitution by %v", c.name, e.Rule, e.Setting, c.setting)
 		}
-		for _, frag := range []string{"env_var_not_in_release", c.name, "v0.22.0", "03878d1c2", "vllm-project/vllm#44992", "--moe-backend"} {
+		for _, frag := range []string{"env_var_not_in_release", c.name, "v0.22.0", "v0.24.0", "03878d1c2", "vllm-project/vllm#44992", "--moe-backend"} {
 			if !strings.Contains(e.Reason, frag) {
 				t.Errorf("%s: the substitution's reason does not name %q: %s", c.name, frag, e.Reason)
 			}

@@ -34,7 +34,7 @@ NVLS = [("1", True), ("2", True), ("0", False), ("", False)]
 # NCCL_MNNVL_ENABLE (NCCL user guide): 2 is the default (use multi-node NVLink where the system has it, else the network);
 # 1 differs only in failing communicator initialization when MNNVL is unsupported, which a completed run did not do.
 MNNVL = [("1", True), ("2", True), ("0", False), ("", False)]
-# The env vars an earlier release read (removed in v0.23, 03878d1c2): the rows are v0.33.0's own selection for the flags
+# The env vars an earlier release read (removed in v0.24.0, 03878d1c2): the rows are v0.33.0's own selection for the flags
 # that replaced them, fused_moe/oracle/mxfp4.py at 4ba787ec (map_mxfp4_backend :352-392, _filter_by_activation :614-631,
 # _get_requested_backends :634-647) and the device each kernel supports (TrtLlmMxfp4Experts: capability family 10,
 # experts/trtllm_mxfp4_moe.py:121-123; MarlinExperts: capability 7.5 and up, experts/marlin_moe.py:592-594).
