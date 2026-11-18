@@ -59,6 +59,17 @@ type ParentRequest struct {
 	PrefillInstanceID InstanceID
 	DecodeInstanceID  InstanceID
 
+	// P2P is whether the handoff goes through vLLM's p2p KV tier (p2pHandoff): the decode engine
+	// loads the prompt from the prefill engine's WRITE, and the handoff's pull is not a transfer of
+	// the cluster's. The WRITEs that served it are counted in P2PWrites; the first started at
+	// P2PWriteStart and the last landed at P2PWriteLand, and P2PWriteAloneTicks is what they would
+	// take alone on the fabric, summed. A p2p handoff with no WRITE moved no KV: the decode engine
+	// held the prompt already, or its peer connect was rejected and it recomputed (inference-sim#2214).
+	P2P                         bool
+	P2PWrites                   int
+	P2PWriteStart, P2PWriteLand int64
+	P2PWriteAloneTicks          int64
+
 	// EncodeInstanceIDs are the encoders the router chose for a multimodal request, in the
 	// router's order (x-llm-d-encoder-hosts-ports), empty when it was not encoded.
 	EncodeInstanceIDs []InstanceID

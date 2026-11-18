@@ -126,6 +126,9 @@ type measuredLatencies struct {
 	// stepP50 and stepP95 complete the step-interval series' percentiles for the Result
 	// document (the file keeps the mean, p90 and p99 it always wrote).
 	stepP50, stepP95 float64
+	// requestITLP95 completes the per-request ITL percentiles MeasuredMetrics keeps (mean, p50,
+	// p90, p99) for the per-instance measured_window block.
+	requestITLP95 float64
 	// itlCount and perUserCount are the samples behind request_itl_* and
 	// output_tok_per_user_mean, so a reader can tell a zero from no sample.
 	itlCount, perUserCount int
@@ -163,6 +166,9 @@ type MeasuredSummary struct {
 	// StepIntervalP50Ms and StepIntervalP95Ms complete MeasuredMetrics' step-interval
 	// percentiles.
 	StepIntervalP50Ms, StepIntervalP95Ms float64
+	// RequestITLP95Ms completes MeasuredMetrics' per-request ITL (time per output token)
+	// percentiles.
+	RequestITLP95Ms float64
 	// RequestITLCount is the number of requests behind request_itl_* (output of two or more
 	// tokens), and PerUserCount those behind output_tok_per_user_mean (a positive ITL).
 	RequestITLCount, PerUserCount int
@@ -210,6 +216,26 @@ func (m *Metrics) SummaryOver(include func(RequestMetrics) bool, startUs, endUs 
 	return summaryOf(out, lat)
 }
 
+// ClientITL is the client-observed inter-token latency over a set of requests: its mean,
+// percentiles and the number of gaps behind them, in ms.
+type ClientITL struct {
+	MeanMs, P50Ms, P90Ms, P95Ms, P99Ms float64
+	Count                              int
+}
+
+// ClientITLOver returns the client-observed inter-token latency (the registry's itl) of the
+// measured requests of m that completed by endUs (every one when endUs is not positive), as buildMeasured states it for the
+// whole: the gaps m's own engine streamed, so for an engine instance of a disaggregated pool the
+// gaps of the requests it decoded. A request of one token has no gap and contributes none.
+func (m *Metrics) ClientITLOver(endUs int64) ClientITL {
+	inWindow := func(completionUs int64) bool { return endUs <= 0 || completionUs <= endUs }
+	gaps := measuredOwned(m.ClientGaps, m.StepOwners, func(o StepOwner) int { return o.ClientGaps }, inWindow)
+	return ClientITL{
+		MeanMs: CalculateMean(gaps), P50Ms: CalculatePercentile(gaps, 50), P90Ms: CalculatePercentile(gaps, 90),
+		P95Ms: CalculatePercentile(gaps, 95), P99Ms: CalculatePercentile(gaps, 99), Count: len(gaps),
+	}
+}
+
 func summaryOf(out MeasuredMetrics, lat measuredLatencies) MeasuredSummary {
 	return MeasuredSummary{
 		MeasuredMetrics: out,
@@ -217,6 +243,7 @@ func summaryOf(out MeasuredMetrics, lat measuredLatencies) MeasuredSummary {
 		E2EMeanMs: lat.e2eMean, E2EP90Ms: lat.e2eP90, E2EP95Ms: lat.e2eP95, E2EP99Ms: lat.e2eP99,
 		CacheHitRate:      lat.cacheHitRate,
 		StepIntervalP50Ms: lat.stepP50, StepIntervalP95Ms: lat.stepP95,
+		RequestITLP95Ms: lat.requestITLP95,
 		RequestITLCount: lat.itlCount, PerUserCount: lat.perUserCount, StepIntervalCount: lat.stepCount,
 		ClientITLMeanMs: lat.clientITLMean, ClientITLP50Ms: lat.clientITLP50, ClientITLP90Ms: lat.clientITLP90,
 		ClientITLP95Ms: lat.clientITLP95, ClientITLP99Ms: lat.clientITLP99, ClientITLCount: lat.clientITLCount,
@@ -338,6 +365,7 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 	out.RequestITLMeanMs = CalculateMean(itls)
 	out.RequestITLP50Ms = CalculatePercentile(itls, 50)
 	out.RequestITLP90Ms = CalculatePercentile(itls, 90)
+	lat.requestITLP95 = CalculatePercentile(itls, 95)
 	out.RequestITLP99Ms = CalculatePercentile(itls, 99)
 	out.InteractivityP50 = reciprocalPerSecond(out.RequestITLP50Ms)
 	out.InteractivityP90 = reciprocalPerSecond(out.RequestITLP90Ms)
