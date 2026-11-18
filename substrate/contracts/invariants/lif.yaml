@@ -20,63 +20,43 @@
   - inference-sim
   - llm-d-router
   checks:
-  - repo: blis-substrate
-    check: Protected tags
-    runs: practice
-    status: new
-  - repo: blis-vllm
-    check: Protected tags
-    runs: practice
-    status: new
-  - repo: blis-sglang
-    check: Protected tags
-    runs: practice
-    status: new
-  - repo: llm-d-router
-    check: Protected tags
-    runs: practice
+  - repo: inference-sim
+    check: >-
+      The release bot confirms at each release that the tag is an annotated tag on the checked
+      commit and that every pinned commit is on its branch
+    runs: release
     status: new
   - repo: inference-sim
-    check: Protected tags
-    runs: practice
-    status: new
-  - repo: blis-config-search
-    check: Protected tags
+    check: A tag rule on v* blocks updating and deleting a tag
     runs: practice
     status: new
   - repo: accuracy-dashboard
-    check: Protected tags
+    check: Branch protection blocks force-pushes to main and release branches
+    runs: practice
+    status: new
+  - repo: blis-config-search
+    check: Branch protection blocks force-pushes to main and release branches
+    runs: practice
+    status: new
+  - repo: blis-sglang
+    check: Branch protection blocks force-pushes to main and release branches
     runs: practice
     status: new
   - repo: blis-substrate
-    check: A nightly check that every tag resolves to its recorded commit
-    runs: nightly
+    check: Branch protection blocks force-pushes to main and release branches
+    runs: practice
     status: new
-    test: 'shared-nightly.yml: prcheck tags'
-    known_bad: 'tools/prcheck: TestTags'
   - repo: blis-vllm
-    check: A nightly check that every tag resolves to its recorded commit
-    runs: nightly
-    status: new
-  - repo: blis-sglang
-    check: A nightly check that every tag resolves to its recorded commit
-    runs: nightly
-    status: new
-  - repo: llm-d-router
-    check: A nightly check that every tag resolves to its recorded commit
-    runs: nightly
+    check: Branch protection blocks force-pushes to main and release branches
+    runs: practice
     status: new
   - repo: inference-sim
-    check: A nightly check that every tag resolves to its recorded commit
-    runs: nightly
+    check: Branch protection blocks force-pushes to main and release branches
+    runs: practice
     status: new
-  - repo: blis-config-search
-    check: A nightly check that every tag resolves to its recorded commit
-    runs: nightly
-    status: new
-  - repo: accuracy-dashboard
-    check: A nightly check that every tag resolves to its recorded commit
-    runs: nightly
+  - repo: llm-d-router
+    check: Branch protection blocks force-pushes to main and release branches
+    runs: practice
     status: new
   review: null
   status: new

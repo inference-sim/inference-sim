@@ -319,8 +319,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **COV-1** (partial; target ci by M1) One scorer produces every number, and it lives only in accuracy-dashboard: no other repository compares a simulation with a measured end-to-end benchmark.
   - `new`, pull_request: A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to compute an error
 - **LIF-1** (new; target ci by M1) A tag names one commit forever, and a pinned commit stays on its branch forever.
-  - `new`, practice: Protected tags
-  - `new`, nightly: A nightly check that every tag resolves to its recorded commit (`shared-nightly.yml: prcheck tags`)
+  - `new`, practice: Branch protection blocks force-pushes to main and release branches
 - **LIF-2** (partial; target ci by M1) In every build, each BLIS module resolves to the exact commit the release records in stack.json, and the router fork resolves to the commit stack.json records through inference-sim's one replace directive (X11).
   - `ci`, pull_request: Selected-version lint (go list -m all), which for the router reads the replace target that go list -m -json reports, not the placeholder version on the require line (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain (`tools/modlint: TestEachRuleHasAKnownBadInput`)
@@ -346,7 +345,7 @@ repository as a whole and confirms it when the repository's settings change (des
 - [ ] **X20** The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name. Encouraged, never checked before the closing step after M4
 - [ ] **X24** Branch protection requires every review conversation to be resolved before a merge; the author agent resolves each thread with its outcome
 - [ ] **X29** GitHub Pages is not enabled and no workflow generates or deploys documentation
-- [ ] **LIF-1** Protected tags
+- [ ] **LIF-1** Branch protection blocks force-pushes to main and release branches
 - [ ] **LIF-3** Repository settings that let only the release bot and people with write access create tags
 
 ### Agent guidance

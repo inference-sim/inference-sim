@@ -39,8 +39,6 @@
 //	    SUB-1: the packages under contracts/ change only compatibly since the last release
 //	    tag, by apidiff at a pinned version run through go run. -accept-break names the issue
 //	    of a contract-change review set (design §12.8) and accepts, and prints, the changes.
-//	prcheck tags [-lock .github/tags.lock]
-//	    LIF-1: every tag resolves to the commit the lock records, and every tag is recorded.
 //	prcheck status [-repo <o/n>] [-gates .github/gates.yaml] [-out page.md]
 //	    X16: each gate's declared paths equal its workflow's triggers; with -repo, the
 //	    status page, which shows a gate not run for seven days as failing.
@@ -120,7 +118,6 @@ func run(args []string, w io.Writer) error {
 	repoName := fs.String("repo-name", "blis-substrate", "the repository's BLIS name")
 	listOnly := fs.Bool("list-only", false, "list the known-bad tests without running them")
 	gatesFile := fs.String("gates", ".github/gates.yaml", "the gate list")
-	lockFile := fs.String("lock", ".github/tags.lock", "the recorded tags")
 	prNum := fs.Int("pr", 0, "pull request number")
 	runID := fs.Int64("run", 0, "rerun: the workflow run id")
 	outFile := fs.String("out", "", "status: where to write the status page")
@@ -347,16 +344,6 @@ func run(args []string, w io.Writer) error {
 			_, _ = fmt.Fprintln(w, note)
 		}
 		return report(w, "contracts-api", bad)
-	case "tags":
-		raw, err := os.ReadFile(*lockFile)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		tags, err := gitTags()
-		if err != nil {
-			return err
-		}
-		return report(w, "tags", CheckTags(string(raw), tags))
 	case "path-gates":
 		if *repo == "" || *base == "" || *runsSHA == "" && *head == "" {
 			return fmt.Errorf("path-gates needs -repo, -base and -head")

@@ -3,6 +3,7 @@ package coefficient
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -109,5 +110,50 @@ func TestFormUnitsHaveNoDeadRowAndNoConflict(t *testing.T) {
 		if n == 0 && !notYetCarried[FormUnits[i].Pattern] {
 			t.Errorf("the family %q matches no committed entry; remove the row or fix its pattern", FormUnits[i].Pattern)
 		}
+	}
+}
+
+// RequiredUnit keeps its answer per name; the kept answer is the one the table gives, for a name a
+// family covers, for a name none covers, and when asked again.
+func TestRequiredUnitKeptAnswerIsTheTablesAnswer(t *testing.T) {
+	uncached := func(name string) (FormUnit, bool) {
+		for i, re := range formUnitRes {
+			if re.MatchString(name) {
+				return FormUnits[i], true
+			}
+		}
+		return FormUnit{}, false
+	}
+	names := []string{
+		"collective_peak_rate_all_reduce_fp16_8rank_h100", "attention_decode_rate_mla", "gemm_eps_max_bf16",
+		"host_output_token", "cudagraph_capture_bytes_full", "no_such_family_at_all", "",
+	}
+	for round := 0; round < 2; round++ { // the second round reads the kept answers
+		for _, n := range names {
+			wf, wok := uncached(n)
+			if gf, gok := RequiredUnit(n); gok != wok || gf != wf {
+				t.Errorf("round %d, %q: got (%+v, %t), want (%+v, %t)", round, n, gf, gok, wf, wok)
+			}
+		}
+	}
+	if _, ok := RequiredUnit("no_such_family_at_all"); ok {
+		t.Error("a name no family covers is covered")
+	}
+}
+
+// BenchmarkValidateSet times the validation every kernel build runs over each coefficient set.
+func BenchmarkValidateSet(b *testing.B) {
+	s := &Set{Kind: "CoefficientSet", Name: "s"}
+	for i := 0; i < 200; i++ {
+		s.Coefficients = append(s.Coefficients, Entry{
+			Name: "collective_peak_rate_all_reduce_fp16_" + strconv.Itoa(i+2) + "rank_h100", Value: 1,
+			Units: vocab.UnitBytesPerMicrosecond, Method: vocab.MethodAssumed,
+			Scope:     Scope{Hardware: []string{"h100"}},
+			Sources:   []Source{{Kind: "vendor_doc", Cite: "x", Role: "primary"}, {Kind: "vendor_doc", Cite: "y", Role: "primary"}},
+			Rationale: "r"})
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = s.Validate()
 	}
 }

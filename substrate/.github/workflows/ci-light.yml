@@ -38,8 +38,10 @@ jobs:
     name: "light - format, vet, build and changed packages${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
-    # The kernel package alone takes more than 20 minutes of tests on a hosted runner (#373, run 44190453806).
+    # The kernel package is not tested here: its tests run in the light-kernel legs below, as in ci.yml.
     timeout-minutes: 45
+    outputs:
+      kernel: ${{ steps.changed.outputs.kernel }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,6 +58,7 @@ jobs:
       # The packages that hold a Go file this layer changes, against the layer's own base (never
       # main): a layer is judged by its own diff.
       - name: Tests of the packages this layer changes
+        id: changed
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -66,11 +69,60 @@ jobs:
           for d in $(git diff --name-only --diff-filter=d "$mb" HEAD -- '*.go' | xargs -r -n1 dirname | sort -u); do
             if p="$(go list -e -f '{{if or .GoFiles .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' "./$d" 2>/dev/null)" && [ -n "$p" ]; then pkgs="$pkgs ./$d"; fi
           done
-          if [ -z "$pkgs" ]; then echo "no Go package changed"; exit 0; fi
-          echo "testing:$pkgs"
-          # One package at a time (-p 1): the kernel package's tests fill the runner, and run beside other
-          # packages they were killed (exit 143, #373 run 44200385367).
-          go test -count=1 -timeout 30m -p 1 $pkgs
+          # The kernel package is tested by the light-kernel legs (tools/shard), not here: its tests
+          # fill a hosted runner (killed with exit 143 in #373, runs 44200385367 and 44219380847).
+          kernel=false
+          rest=""
+          for p in $pkgs; do
+            if [ "$p" = "./kernel" ]; then kernel=true; else rest="$rest $p"; fi
+          done
+          echo "kernel=$kernel" >> "$GITHUB_OUTPUT"
+          if [ -z "$rest" ]; then echo "no other Go package changed"; exit 0; fi
+          echo "testing:$rest"
+          go test -count=1 -timeout 30m -p 1 $rest
+
+  # The kernel package's tests in the legs ci.yml runs them in (tools/shard, weights in
+  # tools/shard/weights-kernel.txt), for a layer that changes the package. Every test runs in exactly
+  # one leg, and `verify` fails unless the leg's share finished, so nothing is skipped.
+  light-kernel:
+    name: "light - cost model tests (leg ${{ matrix.leg }})${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    needs: light-go
+    if: ${{ needs.light-go.outputs.kernel == 'true' && (github.event.action != 'edited' || github.event.changes.base) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # The number of legs is strategy.job-total; add a number here to add a leg.
+        leg: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/go-toolchain
+        with:
+          build-cache: kernel-${{ matrix.leg }}
+      - name: Tests of this leg
+        env:
+          LEG: ${{ matrix.leg }}
+          LEGS: ${{ strategy.job-total }}
+        run: |
+          set -euo pipefail
+          shard="$RUNNER_TEMP/shard"
+          go build -o "$shard" ./tools/shard
+          go test -list '.*' ./kernel/ | grep -E '^(Test|Example|Fuzz)' > "$RUNNER_TEMP/all.txt"
+          "$shard" cover -of "$LEGS" -min-items 100 -weights tools/shard/weights-kernel.txt < "$RUNNER_TEMP/all.txt"
+          "$shard" select -of "$LEGS" -index "$LEG" -weights tools/shard/weights-kernel.txt < "$RUNNER_TEMP/all.txt" > "$RUNNER_TEMP/mine.txt"
+          echo "leg $LEG of $LEGS runs $(wc -l < "$RUNNER_TEMP/mine.txt") of $(wc -l < "$RUNNER_TEMP/all.txt") tests"
+          results="$RUNNER_TEMP/kernel-test.json"
+          status=0
+          go test -count=1 -timeout 30m -json -run "^($(paste -sd'|' "$RUNNER_TEMP/mine.txt"))\$" ./kernel/ > "$results" || status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::group::failing tests"
+            jq -r 'select(.Action=="fail" and .Test) | "FAIL \(.Test)"' "$results"
+            echo "::endgroup::"
+            jq -r 'select(.Action=="output") | .Output' "$results" | tail -n 300
+            exit 1
+          fi
+          "$shard" verify -results "$results" -mode test < "$RUNNER_TEMP/mine.txt"
 
   light-lint:
     name: "light - golangci-lint${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
