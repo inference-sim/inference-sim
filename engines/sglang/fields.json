@@ -12457,6 +12457,8 @@
           "dsv4",
           "fa3",
           "flashinfer",
+          "nsa",
+          "triton",
           "trtllm_mha"
         ]
       },
@@ -17188,7 +17190,9 @@
           "humming"
         ],
         "covered": [
-          "fp8"
+          "fp8",
+          "modelopt_fp4",
+          "modelopt_mixed"
         ]
       },
       "estimation": {

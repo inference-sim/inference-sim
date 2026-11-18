@@ -14,6 +14,8 @@
      "dsv4",
      "fa3",
      "flashinfer",
+     "nsa",
+     "triton",
      "trtllm_mha"
     ],
     "values": [
@@ -357,6 +359,202 @@
     ],
     "stated": [
      {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "triton",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "triton",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "triton",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "trtllm_mha",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "triton",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "triton",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "triton",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "triton",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "triton",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "triton",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "triton",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "triton",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "nsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "nsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "nsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "nsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": "dsa",
       "trace": "config/testdata/serverargs.json"
      },
@@ -414,6 +612,18 @@
      },
      {
       "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
       "trace": "config/testdata/serverargs.json"
      },
      {
@@ -655,6 +865,26 @@
      {
       "value": "fa3",
       "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": "nsa",
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": "nsa",
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": "flashinfer",
@@ -702,7 +932,9 @@
        "python/sglang/srt/arg_groups/overrides.py:1698",
        "python/sglang/srt/arg_groups/overrides.py:1776"
       ],
-      "covered_by": []
+      "covered_by": [
+       "config/testdata/serverargs.json"
+      ]
      },
      {
       "values": [
@@ -1134,6 +1366,194 @@
     ],
     "stated": [
      {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1024,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 8192,
       "trace": "config/testdata/serverargs.json"
      },
@@ -1191,6 +1611,18 @@
      },
      {
       "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
       "trace": "config/testdata/serverargs.json"
      },
      {
@@ -1548,6 +1980,202 @@
     "sites": [],
     "stated": [
      {
+      "value": 262144,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 262144,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 202752,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 202752,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": null,
       "trace": "config/testdata/serverargs.json"
      },
@@ -1822,6 +2450,14 @@
      {
       "value": null,
       "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 262144,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 202752,
+      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": 32768,
@@ -1891,6 +2527,186 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 512,
       "trace": "config/testdata/serverargs.json"
      },
@@ -1940,6 +2756,18 @@
      },
      {
       "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
       "trace": "config/testdata/serverargs.json"
      },
      {
@@ -2173,6 +3001,10 @@
      {
       "value": null,
       "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": 512,
@@ -2404,6 +3236,190 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": true,
       "trace": "config/testdata/serverargs.json"
      },
@@ -2453,6 +3469,18 @@
      },
      {
       "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
       "trace": "config/testdata/serverargs.json"
      },
      {
@@ -2857,6 +3885,202 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 1,
       "trace": "config/testdata/serverargs.json"
      },
@@ -3178,6 +4402,14 @@
      },
      {
       "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 1,
       "trace": "lower/testdata/sglang_lower.json"
      },
      {
@@ -3330,6 +4562,190 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": true,
       "trace": "config/testdata/serverargs.json"
      },
@@ -3430,10 +4846,6 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
       "value": false,
       "trace": "config/testdata/serverargs.json"
      },
@@ -3454,7 +4866,7 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
-      "value": false,
+      "value": true,
       "trace": "config/testdata/serverargs.json"
      },
      {
@@ -3620,6 +5032,22 @@
      {
       "value": false,
       "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": true,
@@ -3989,6 +5417,186 @@
     ],
     "stated": [
      {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "bfloat16",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "bfloat16",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "bfloat16",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": "bfloat16",
       "trace": "config/testdata/serverargs.json"
      },
@@ -4062,6 +5670,14 @@
      },
      {
       "value": "fp8_e4m3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
       "trace": "config/testdata/serverargs.json"
      },
      {
@@ -4474,6 +6090,186 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 32768,
       "trace": "config/testdata/serverargs.json"
      },
@@ -4523,6 +6319,18 @@
      },
      {
       "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
       "trace": "config/testdata/serverargs.json"
      },
      {
@@ -4998,6 +6806,190 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 64,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 64,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 512,
       "trace": "config/testdata/serverargs.json"
      },
@@ -5047,6 +7039,18 @@
      },
      {
       "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 48,
       "trace": "config/testdata/serverargs.json"
      },
      {
@@ -5398,6 +7402,194 @@
     ],
     "stated": [
      {
+      "value": 0.746285859375,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.835063359375,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.785126015625,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.825815703125,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.707445703125,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.785126015625,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.785126015625,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.825815703125,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.85,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.85,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.785126015625,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.825815703125,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.825815703125,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.825815703125,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.825815703125,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.825815703125,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.825815703125,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.825815703125,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.785126015625,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.785126015625,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.7879003124999999,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.825815703125,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.8295147656249999,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.7509096875,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.7573830468749999,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.785126015625,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.7879003124999999,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.825815703125,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.8295147656249999,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.7509096875,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.7573830468749999,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.785126015625,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.7879003124999999,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.825815703125,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.8295147656249999,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.7509096875,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.7573830468749999,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.785126015625,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.7879003124999999,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.825815703125,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.8295147656249999,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.7509096875,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.7573830468749999,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.85,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.85,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.886,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.886,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 0.85,
       "trace": "config/testdata/serverargs.json"
      },
@@ -5479,6 +7671,18 @@
      },
      {
       "value": 0.82,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.82,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.82,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.886,
       "trace": "config/testdata/serverargs.json"
      },
      {
@@ -5759,6 +7963,194 @@
      }
     ],
     "stated": [
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
      {
       "value": "<model>",
       "trace": "config/testdata/serverargs.json"
@@ -6660,6 +9052,194 @@
      },
      {
       "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
       "trace": "lower/testdata/sglang_lower.json"
      }
     ],
@@ -6792,7 +9372,9 @@
    "value_classes": {
     "type": "enumerated",
     "covered": [
-     "fp8"
+     "fp8",
+     "modelopt_fp4",
+     "modelopt_mixed"
     ],
     "values": [
      "awq",
@@ -7167,6 +9749,186 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": "fp8",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "modelopt_mixed",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "modelopt_mixed",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "modelopt_fp4",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "modelopt_fp4",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fp8",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fp8",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": null,
       "trace": "config/testdata/serverargs.json"
      },
@@ -7196,6 +9958,14 @@
      },
      {
       "value": "fp8",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
       "trace": "config/testdata/serverargs.json"
      },
      {
@@ -7498,7 +10268,9 @@
        "python/sglang/srt/arg_groups/overrides.py:857",
        "python/sglang/srt/arg_groups/overrides.py:1515"
       ],
-      "covered_by": []
+      "covered_by": [
+       "config/testdata/serverargs.json"
+      ]
      },
      {
       "values": [
@@ -7528,7 +10300,9 @@
        "python/sglang/srt/arg_groups/moe_hook.py:138",
        "python/sglang/srt/arg_groups/overrides.py:817"
       ],
-      "covered_by": []
+      "covered_by": [
+       "config/testdata/serverargs.json"
+      ]
      },
      {
       "values": [
@@ -7833,6 +10607,386 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 8,
       "trace": "config/testdata/serverargs.json"
      },
@@ -8319,6 +11473,194 @@
      {
       "value": 1,
       "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 1,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": 8,
