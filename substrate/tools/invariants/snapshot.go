@@ -117,3 +117,31 @@ func parsePlan(doc string) ([]planRow, error) {
 	}
 	return out, nil
 }
+
+var (
+	g5Section = regexp.MustCompile(`(?s)<h3 id="s11-4">.*?</h3>(.*?)<h3 `)
+	g5Item    = regexp.MustCompile(`<li><code>([a-z]+(?:_[a-z]+)+)</code>:`)
+)
+
+// parseG5Reasons returns the reasons of design section 11.4, "Reasons a point is not scored (G5)",
+// in the order the section lists them: each list item that begins with a code-formatted
+// identifier and a colon.
+func parseG5Reasons(doc string) ([]string, error) {
+	m := g5Section.FindStringSubmatch(doc)
+	if m == nil {
+		return nil, fmt.Errorf("the design has no section 11.4 (h3 s11-4) followed by another heading")
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, it := range g5Item.FindAllStringSubmatch(m[1], -1) {
+		if seen[it[1]] {
+			return nil, fmt.Errorf("section 11.4 lists %s twice", it[1])
+		}
+		seen[it[1]] = true
+		out = append(out, it[1])
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("section 11.4 lists no reason")
+	}
+	return out, nil
+}
