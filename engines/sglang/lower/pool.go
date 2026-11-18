@@ -310,7 +310,9 @@ const (
 	dsaPricedAs = "the part-wide sparse-MLA attention pair"
 	dsaReason   = "flashmla_sparse, flashmla_kv, trtllm and fa3 are different kernels; the plan has no attention-backend " +
 		"slot and the substrate prices DSA attention from the graph's sparse-MLA lane with the registry's part-wide attention " +
-		"pair, so the backend the engine runs is not what is priced"
+		"pair, so the backend the engine runs is not what is priced; that price is a transfer from the vLLM-measured kernel, " +
+		"not a measurement of SGLang's (attention_backend nsa is the deprecated alias of dsa: " +
+		"layers/attention/attention_registry.py:166-176@297e54fd)"
 )
 
 // allreduceFusionMaxTokens is FUSE_ALLREDUCE_MAX_BATCH_SIZE (layer_boundary/residual/add_norm.py:141@297e54fd).

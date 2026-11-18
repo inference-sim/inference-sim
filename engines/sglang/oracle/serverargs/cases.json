@@ -962,6 +962,40 @@
     "dsa_prefill_backend": "fa3",
     "dsa_decode_backend": "trtllm"
    }
+  },
+  {
+   "name": "glm5-h200-tp8-nsa-alias",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "attention_backend": "nsa"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-dsa-explicit",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "attention_backend": "dsa"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-nsa-recipe",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "attention_backend": "nsa",
+    "chunked_prefill_size": 8192,
+    "mem_fraction_static": 0.85,
+    "enable_flashinfer_allreduce_fusion": true,
+    "context_length": 202752,
+    "trust_remote_code": true,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45"
+   }
   }
  ]
 }

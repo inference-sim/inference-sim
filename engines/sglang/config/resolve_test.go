@@ -197,3 +197,44 @@ func TestAnEmptyCustomWeightLoaderIsTheUnsetOne(t *testing.T) {
 		t.Error("a real custom weight loader was accepted")
 	}
 }
+
+// attention_backend nsa is the deprecated alias of dsa in SGLang v0.5.23 (attention_registry.py
+// :166-176): a DSA model that states it resolves as one that states dsa, or neither, apart from
+// the field itself, whichever step decided the rest.
+func TestResolveTakesNSAAsTheDSABackend(t *testing.T) {
+	for _, c := range readAnswers(t).Cases {
+		if c.Name != "glm5-h200-tp8-recipe" {
+			continue
+		}
+		resolve := func(backend any) *Resolved {
+			args := map[string]any{"model_path": "<model>"}
+			for k, v := range c.Args {
+				args[k] = v
+			}
+			if backend != nil {
+				args["attention_backend"] = backend
+			}
+			got, err := Resolve(Input{Args: args, Chip: c.Chip, Model: c.ModelFacts})
+			if err != nil {
+				t.Fatalf("attention_backend %v: %v", backend, err)
+			}
+			return got
+		}
+		def := resolve(nil)
+		for _, backend := range []string{"nsa", "dsa"} {
+			got := resolve(backend)
+			if got.Args.DsaPrefillBackend == nil || def.Args.DsaPrefillBackend == nil ||
+				*got.Args.DsaPrefillBackend != *def.Args.DsaPrefillBackend ||
+				*got.Args.DsaDecodeBackend != *def.Args.DsaDecodeBackend ||
+				got.Args.KvCacheDtype != def.Args.KvCacheDtype ||
+				*got.Args.PageSize != *def.Args.PageSize {
+				t.Errorf("attention_backend %s resolves the DSA kernels, cache dtype or page differently from the default", backend)
+			}
+			if got.Args.AttentionBackend == nil || *got.Args.AttentionBackend != backend {
+				t.Errorf("attention_backend %s is kept as stated, got %v", backend, got.Args.AttentionBackend)
+			}
+		}
+		return
+	}
+	t.Fatal("the glm5-h200-tp8-recipe case is not in the answers")
+}

@@ -290,3 +290,48 @@ func TestInertFieldsChangeNoDecision(t *testing.T) {
 		}
 	}
 }
+
+// attention_backend nsa is SGLang's deprecated alias of dsa (layers/attention/attention_registry.py
+// :166-176@297e54fd), which a GLM-5 pool defaults to: a pool that states nsa, or dsa, lowers to the
+// plan of a pool that states neither, and a Note says which DSA kernels SGLang resolved and that
+// the cost model's attention lane is a transfer to them.
+func TestPoolLowersNSAAndDSAAsTheDefaultDSABackend(t *testing.T) {
+	base, err := lowerPool(t, "glm-5", 8, "mem_fraction_static: 0.85\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, backend := range []string{"nsa", "dsa"} {
+		got, err := lowerPool(t, "glm-5", 8, "mem_fraction_static: 0.85\nattention_backend: "+backend+"\n")
+		if err != nil {
+			t.Fatalf("attention_backend %s: %v", backend, err)
+		}
+		if !reflect.DeepEqual(got.Plan, base.Plan) {
+			t.Errorf("attention_backend %s lowers to a different plan than the default DSA backend", backend)
+		}
+	}
+	// The plan states the backends SGLang resolved as an override: stated once, with the fact that the
+	// price is a transfer from the vLLM-measured kernel, not a measurement of SGLang's.
+	got := map[string]plan.Override{}
+	for _, o := range base.Overrides {
+		got[o.Field] = o
+	}
+	for field, want := range map[string]string{"dsa_prefill_backend": "flashmla_sparse", "dsa_decode_backend": "fa3"} {
+		o, ok := got[field]
+		if !ok || o.Requested != want {
+			t.Fatalf("%s: override %+v, want the resolved backend %s on an H200 with a bf16 cache", field, o, want)
+		}
+		if !strings.Contains(o.Reason, "transfer") {
+			t.Errorf("%s: the reason does not say the price is a transfer: %q", field, o.Reason)
+		}
+	}
+	// A dense-MLA model (no sparse_mla layer) states no DSA kernels.
+	dense, err := lowerPool(t, "deepseek-r1-0528", 8, "mem_fraction_static: 0.85\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range dense.Overrides {
+		if o.Field == "dsa_prefill_backend" || o.Field == "dsa_decode_backend" {
+			t.Errorf("DeepSeek-R1 has no DSA layer, yet overrides %+v", o)
+		}
+	}
+}
