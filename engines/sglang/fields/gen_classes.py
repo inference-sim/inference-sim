@@ -137,6 +137,10 @@ def const_value(node):
     if ok and (v is None or isinstance(v, (bool, int, float, str))):
         return True, v
     if ok and isinstance(v, (list, tuple, set, frozenset)) and all(isinstance(x, (bool, int, float, str)) or x is None for x in v):
+        if isinstance(v, (set, frozenset)):
+            # A set literal has no order of its own, and str hashes are seeded per process: sort it, so the
+            # file written is the same file on every run.
+            return True, sorted(v, key=lambda x: (type(x).__name__, repr(x)))
         return True, list(v)
     return False, None
 
