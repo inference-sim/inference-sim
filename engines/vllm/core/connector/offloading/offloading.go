@@ -7,7 +7,7 @@
 // reachable_block_mask the store path calls).
 
 // Package offloading is the scheduler side of vLLM's OffloadingConnector
-// (vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:53@5df63a72) over the CPU
+// (vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:53@4ba787ec) over the CPU
 // tier: OffloadingConnectorScheduler (offloading/scheduler.py:563-2101) with
 // CPUOffloadingManager and its LRU policy (vllm/v1/kv_offload/cpu/manager.py:47,
 // cpu/policies/lru.py:16). It decides which prompt chunks a request finds offloaded (a hit
@@ -79,7 +79,8 @@ type Config struct {
 	// pending on every worker until each reports it (TransferJobStatus.pending_count, :76-78).
 	Workers int
 	// EagleGroups flags each group that holds a drafter's layers with the drafter's block drop on
-	// (is_eagle_group, scheduler.py:226-287@5df63a72): its trailing chunk is volatile while
+	// (is_eagle_group, offloading/scheduler.py:115, :208-239, :265@4ba787ec, with use_eagle_block_drop at
+	// config/speculative.py:2122-2149): its trailing chunk is volatile while
 	// decoding and a hit on it peeks one chunk past the boundary. nil is none.
 	EagleGroups []bool
 	// Manager builds the OffloadingManager over the CPU tier: TieringOffloadingSpec's
