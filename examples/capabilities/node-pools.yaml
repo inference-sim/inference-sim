@@ -2,7 +2,8 @@
 # the pools and the chip each carries; the policy bundle (node-pools-bundle.yaml) gives each pool
 # its node count, GPU memory and price. An instance is sized and priced by the chip of the pool it
 # is placed in: the H200 pool's engines hold more KV and step faster than the H100 pool's, and the
-# bundle bills each at its own pool's cost_per_hour.
+# bundle bills each at its own pool's cost_per_hour. A run without the bundle is refused: it would
+# size and price every instance as the cluster's chip and ignore the older pool's.
 #
 #   blis run --scenarios examples/capabilities --scenario node-pools.yaml --num-instances 4 \
 #     --policy-config examples/capabilities/node-pools-bundle.yaml --rate 4 --num-requests 40

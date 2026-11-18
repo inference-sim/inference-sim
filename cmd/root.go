@@ -902,6 +902,9 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("policy bundle instance_lifecycle.drain_policy %q is not one of IMMEDIATE, WAIT, REDIRECT", p)
 			}
 			requireWeightSource(bundleInstanceLifecycle.WeightSource, kernelOpened, poolChips)
+		} else {
+			// No bundle places instances in the scenario's pools: refuse pool chips it would ignore.
+			openPoolChips(nil)
 		}
 		// CLI flag overrides bundle value when explicitly set.
 		if cmd.Flags().Changed("model-autoscaler-interval-us") {

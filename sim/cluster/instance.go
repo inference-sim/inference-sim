@@ -563,7 +563,7 @@ func (i *InstanceSimulator) setTierPriced(f func(id engine.TransferID, demand ke
 }
 
 // setPeerWritePriced installs the cluster's handling of a WRITE to a peer: it joins the link arbiter.
-func (i *InstanceSimulator) setPeerWritePriced(f func(id engine.TransferID, demand kernel.TransferDemand, at int64)) {
+func (i *InstanceSimulator) setPeerWritePriced(f func(id engine.TransferID, request string, demand kernel.TransferDemand, at int64)) {
 	if i.drv != nil {
 		i.drv.OnPeerWritePriced = f
 	}
