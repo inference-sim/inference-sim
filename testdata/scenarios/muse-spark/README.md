@@ -37,7 +37,7 @@ The H100 files also carry the measured arms by name:
 
 H100 and H200 serve the NVFP4 experts with Marlin (`moe_backend: marlin`). That is the only Hopper backend Muse's MoE has.
 
-DSpark acceptance is pinned in each file at an acceptance length of 2.84. That figure comes from internal deployment measurements of 1.84 accepted tokens per draft with a fixed 7-token verify.
+DSpark acceptance is not pinned in the files: each states the traffic's category (coding) and thinking mode (on) in its `workload` binding, and the registry resolves the profile for Muse-Spark and its DSpark drafter at K=7. That profile is internal deployment measurements on GB200 with vLLM, an acceptance length of 2.72. It is borrowed, not exact: the files state neither the draft sampler nor the verifier, which the profile records (probabilistic, block), so a run's result names `same_drafter_other_settings` with `draft_sampler` and `verifier` as what differed, and a run on H100 or H200 also records that the profile was measured on GB200. `blis run` reads only the category and thinking mode from the binding; its `concurrency` is the schema's required lane count, not a load.
 
 ## P/D
 
