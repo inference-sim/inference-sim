@@ -147,13 +147,14 @@ func ExampleKernel_Evidence() {
 	// --8<-- [end:evidence]
 
 	// Output:
-	// 115 of 161 values rest on evidence; 40 were assumed
-	//   assumed       40
-	//   measured     101
+	// 124 of 171 values rest on evidence; 41 were assumed
+	//   assumed       41
+	//   measured     110
 	//   not_charged    1
 	//   transferred    5
 	//   vendor_spec   14
 	// the kernel assumed max_cudagraph_capture_size
+	// the kernel assumed all_reduce_message_limit
 	// the kernel assumed nontorch_in_budget_bytes_8rank
 	// the kernel assumed engine_version
 }
