@@ -720,6 +720,27 @@
    }
   },
   {
+   "name": "dsr1-h200-tp8-tokenizer-workers",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "tokenizer_worker_num": 8
+   }
+  },
+  {
    "name": "qwen35-bf16-h100-tp4",
    "model": "qwen3.5-397b-a17b",
    "chip": "H100",

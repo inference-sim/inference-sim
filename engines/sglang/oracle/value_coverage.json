@@ -64,10 +64,6 @@
    "kind": "gap",
    "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
   },
-  "config.max_prefill_tokens": {
-   "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
-  },
   "config.need_sort": {
    "kind": "gap",
    "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
@@ -147,6 +143,14 @@
   "harness_problems": {
    "kind": "fixed",
    "reason": "A run with a harness problem writes no trace, so a golden always records none."
+  },
+  "hosts": {
+   "kind": "gap",
+   "reason": "Every HiCache host-pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "hosts[].raises": {
+   "kind": "gap",
+   "reason": "Every HiCache host-pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
   },
   "receive.max_recv_per_poll": {
    "kind": "fixed",

@@ -246,13 +246,14 @@ func errString(err error) string {
 // detokenizer is sent, output_streamer.py:455-470@297e54fd).
 func TestInertFieldsChangeNoDecision(t *testing.T) {
 	probes := map[string][]string{
-		"host":              {"0.0.0.0", "127.0.0.1"},
-		"port":              {"8888", "30000"},
-		"trust_remote_code": {"true", "false"},
-		"served_model_name": {"glm-5-fp8", "m"},
-		"tool_call_parser":  {"glm47", "qwen"},
-		"reasoning_parser":  {"glm45", "qwen3"},
-		"stream_interval":   {"10", "1", "64"},
+		"host":                 {"0.0.0.0", "127.0.0.1"},
+		"port":                 {"8888", "30000"},
+		"trust_remote_code":    {"true", "false"},
+		"served_model_name":    {"glm-5-fp8", "m"},
+		"tool_call_parser":     {"glm47", "qwen"},
+		"reasoning_parser":     {"glm45", "qwen3"},
+		"stream_interval":      {"10", "1", "64"},
+		"tokenizer_worker_num": {"4", "8"},
 	}
 	for _, g := range []string{"deepseek-r1-0528", "glm-5"} {
 		base := "mem_fraction_static: 0.82\n"

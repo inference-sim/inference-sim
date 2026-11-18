@@ -42,6 +42,7 @@ var acceptedFields = map[string][]any{
 	// read by the scheduler or the lowering (fields/status.json cites the traces and tests) or proven
 	// inert to every decision there.
 	"max_prefill_tokens":                 nil,
+	"tokenizer_worker_num":               nil,
 	"cuda_graph_max_bs_decode":           nil,
 	"attention_backend":                  {nil, "flashinfer", "fa3"},
 	"stream_interval":                    nil,
