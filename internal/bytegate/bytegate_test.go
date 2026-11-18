@@ -359,6 +359,116 @@ func runBlis(t *testing.T, bin, procs string, args ...string) []byte {
 	return stdout.Bytes()
 }
 
+// stepShiftOverlay is a registry overlay that makes the h100 steps about half a percent slower:
+// the committed hbm_derate (0.8) divided by 1.0066. It is the same size of change as the
+// substrate refits that moved this gate's routing case before (inference-sim#2157, #2219).
+const stepShiftOverlay = `kind: CoefficientSet
+name: cost-model-primitives
+coefficients:
+  - hbm_derate:
+      value: 0.79474
+      units: dimensionless
+      method: vendor_spec
+      fitted: false
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: discussion, cite: "a half-percent step-time shift for the routing case's robustness test", role: supporting}
+      rationale: "A test perturbation of the committed value, not a coefficient."
+`
+
+type routingOutcome struct {
+	split    map[string]int
+	tpotMean float64
+	stepMean float64
+}
+
+func routingOutcomeOf(t *testing.T, out []byte) routingOutcome {
+	t.Helper()
+	var r struct {
+		Metrics map[string]struct {
+			Value float64 `json:"value"`
+		} `json:"metrics"`
+		Rows []struct {
+			Instance string `json:"instance"`
+		} `json:"request_rows"`
+	}
+	if err := json.Unmarshal(out, &r); err != nil {
+		t.Fatal(err)
+	}
+	o := routingOutcome{split: map[string]int{}, tpotMean: r.Metrics["tpot_mean_ms"].Value,
+		stepMean: r.Metrics["step_interval_mean_ms"].Value}
+	for _, row := range r.Rows {
+		o.split[row.Instance]++
+	}
+	return o
+}
+
+// TestByteGateRoutingCaseSurvivesAStepTimeShift: the moe-prefix case routes a shared prefix
+// through the default router, whose choice is an argmax of weighted scores over scraped state, so
+// for most seeds its split is a knife edge: a step-time shift of a fraction of a percent moves
+// whole runs between 42/38 and 80/0 (inference-sim#2157, #2219). A golden recorded at such a seed
+// breaks on any substrate refit that moves a step, and it proves nothing about routing when one
+// instance takes every request. The case must serve both instances, and a half-percent slower
+// step must move neither the busiest instance's count by more than five requests nor the mean
+// TPOT by more than five percent.
+func TestByteGateRoutingCaseSurvivesAStepTimeShift(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and runs the blis binary")
+	}
+	root := repoRoot(t)
+	gate := filepath.Join(root, "testdata", "bytegate")
+	cases, err := readCases(filepath.Join(gate, "cases.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var args []string
+	for _, c := range cases {
+		if c.name == traceCase {
+			args = c.args
+		}
+	}
+	if args == nil {
+		t.Fatalf("cases.txt has no case %q", traceCase)
+	}
+	bin := buildBlis(t, root)
+	data := []string{"--scenarios", filepath.Join(gate, "scenarios"),
+		"--catalog", substratedata.MustCatalog(), "--registry", substratedata.MustRegistry()}
+	overlay := filepath.Join(t.TempDir(), "overlay")
+	if err := os.MkdirAll(filepath.Join(overlay, "coefficients"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(overlay, "coefficients", "cost-model-primitives.yaml"), []byte(stepShiftOverlay), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base := routingOutcomeOf(t, runBlis(t, bin, "1", append(append([]string{}, args...), data...)...))
+	slow := routingOutcomeOf(t, runBlis(t, bin, "1", append(append(append([]string{}, args...), data...), "--registry-overlay", overlay)...))
+
+	if shift := slow.stepMean/base.stepMean - 1; shift < 0.002 || shift > 0.02 {
+		t.Fatalf("the overlay moved the mean step interval by %.3f%%, want between 0.2%% and 2%%: the perturbation does not do what this test needs", 100*shift)
+	}
+	busiest := func(o routingOutcome) (most, least int) {
+		most, least = 0, 1<<30
+		for _, n := range o.split {
+			most, least = max(most, n), min(least, n)
+		}
+		if len(o.split) < 2 {
+			least = 0
+		}
+		return most, least
+	}
+	bMost, bLeast := busiest(base)
+	sMost, sLeast := busiest(slow)
+	if bLeast < 16 || sLeast < 16 {
+		t.Errorf("the case must serve both instances (at least 20%% of the 80 requests each): base split %v, slower-step split %v", base.split, slow.split)
+	}
+	if d := bMost - sMost; d > 5 || d < -5 {
+		t.Errorf("a half-percent slower step moved the busiest instance from %d to %d requests (base %v, slower %v); the case is a knife edge, choose another seed (inference-sim#2219)", bMost, sMost, base.split, slow.split)
+	}
+	if r := slow.tpotMean/base.tpotMean - 1; r > 0.05 || r < -0.05 {
+		t.Errorf("a half-percent slower step moved the mean TPOT by %.1f%% (%.3f to %.3f ms); the case is a knife edge", 100*r, base.tpotMean, slow.tpotMean)
+	}
+}
+
 func indexOf(s []string, v string) int {
 	for i, x := range s {
 		if x == v {

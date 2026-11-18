@@ -13,6 +13,10 @@ moe-closed-loop: run --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml --num-instan
 # moe-prefix scrapes the endpoints' metrics out of phase (--epp-scrape-jitter): its arrivals are 50 ms apart, the router's default
 # scrape period is 50 ms, and with every endpoint scraped in phase at t=0 each decision reads metrics a full period stale at the
 # same phase, so a 0.5% step-time shift moves a completion across a scrape boundary and flips the whole routing (inference-sim#2157).
-moe-prefix: run --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml --num-instances 2 --rate 20 --num-requests 80 --prefix-tokens 2048 --seed 13 --epp-scrape-jitter 50000
+# Its seed was chosen by a scan (inference-sim#2219). The router's choice on a shared prefix is an argmax of weighted scores over
+# scraped state, so for most seeds the split is a knife edge or a pile-up: seed 13 sends all 80 requests to one instance. Seed 21
+# splits 42/38 and stays within 5 requests of that, with a mean TPOT within 5%, under step-time shifts of up to 1.5% either way.
+# TestByteGateRoutingCaseSurvivesAStepTimeShift holds the case to this.
+moe-prefix: run --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml --num-instances 2 --rate 20 --num-requests 80 --prefix-tokens 2048 --seed 21 --epp-scrape-jitter 50000
 spec-ep: run --scenario muse-h200-ib-tep8-dspark.yaml --rate 4 --num-requests 30 --seed 2
 pd: run --scenario glm-5-h200-3p1d-ib.yaml --num-instances 4 --prefill-instances 3 --decode-instances 1 --rate 4 --num-requests 30 --seed 2
