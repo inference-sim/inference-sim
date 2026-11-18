@@ -15,7 +15,8 @@ name: ci-light
 # base, never main), golangci-lint on what it touches, the generated-file checks of the field list
 # (fields/gen_fields.py --check, fields/gen_classes.py --check), and the golden-provenance check
 # (oracle/check_goldens.py with the guards' own tests), which stays on every layer because a layer
-# adds goldens and the platform, the lock and the commit a golden names are judged per layer.
+# adds goldens and the platform, the lock and the commit a golden names are judged per layer, and the
+# block-size oracle's check when the layer changes that oracle, its table or the Go that reads it.
 #
 # What a layer does not get, and the main-based pull request does: the full test suite and the race
 # detector, the in-package kernel tests, the rules packs compared with the vLLM releases they transcribe,
@@ -124,6 +125,44 @@ jobs:
         run: python3 -I fields/gen_fields.py vllm-source fields/status.json --value-classes fields/value_classes.json --check fields.json
       - name: value_classes.json is what the generator derives from fields.json
         run: python3 -I fields/gen_classes.py vllm-source fields.json --check fields/value_classes.json
+
+  # The block-size table is vLLM's own selection (oracle/blocksize/oracle.py check), which ci.yml runs in
+  # oracle-scenarios and a layer does not get. A layer that changes the oracle, the table or the Go that reads it
+  # runs it here; the selection is changed_jobs.py's `blocksize` output (tested in test-changed-jobs.sh).
+  light-blocksize:
+    name: "light - the block-size table is vLLM's own selection${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/go-setup
+      - id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != pull_request ]; then
+            echo "$EVENT: the check runs"
+            echo "blocksize=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git rev-parse --verify -q HEAD^2 > /dev/null; then from=HEAD^1; else from="$(git merge-base "$BASE" HEAD)"; fi
+          git diff --name-only --no-renames "$from" HEAD | tee "$RUNNER_TEMP/changed.txt"
+          python3 -I .github/scripts/changed_jobs.py < "$RUNNER_TEMP/changed.txt" | grep '^blocksize=' | tee -a "$GITHUB_OUTPUT"
+      - if: steps.select.outputs.blocksize == 'true'
+        id: env
+        uses: ./.github/actions/oracle-env
+      - name: the block-size table is vLLM's own selection
+        if: steps.select.outputs.blocksize == 'true'
+        run: |
+          catalog="$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)/catalog/models"
+          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/blocksize/oracle.py vllm-source check core/vllm/blocksize_table.json oracle/blocksize/TABLE.tsv
+      - name: the block-size oracle's config.json fetch is verified
+        if: steps.select.outputs.blocksize == 'true'
+        run: python3 -I oracle/blocksize/test_modelconfig.py
 
   light-goldens:
     name: "light - golden provenance and reviewers${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"

@@ -83,6 +83,15 @@ ORACLE_PATHS = [
     r"^rules/v0_32/testdata/",
     r"^rules/v0_33/testdata/",
 ]
+# The block-size oracle (oracle/blocksize) checked against the committed table. ci.yml runs it in oracle-scenarios; a
+# stacked layer's ci-light runs it when one of these changes (the light-blocksize job reads this output).
+BLOCKSIZE_PATHS = [
+    r"^oracle/blocksize/",
+    r"^core/vllm/blocksize(_table\.json|\.go)$",
+    r"^\.github/actions/oracle-env/",
+    r"^oracle/requirements",
+    r"^\.github/workflows/ci-light\.yml$",
+]
 METRICS_GO = ["./cmd/metricsmanifest", "./registry"]
 # The surface list (tools/surface/gen_surface.py) reads its status file, the committed list, and the
 # repository paths a modelled item names as its evidence: the oracle scenarios and the golden traces.
@@ -239,7 +248,7 @@ def is_lint_go(f):
 
 def decide(files, everything=False, legs_file=LEGS_FILE):
     out = {}
-    jobs = ["go", "bench", "lint", "rest", "kerneltests", "inpackage", "race", "race_guard", "metrics", "goldens", "oracle"] + ["packs_" + k for k in PACKS]
+    jobs = ["go", "bench", "lint", "rest", "kerneltests", "inpackage", "race", "race_guard", "metrics", "goldens", "oracle", "blocksize"] + ["packs_" + k for k in PACKS]
     if everything:
         for j in jobs:
             out[j] = True
@@ -286,6 +295,8 @@ def decide(files, everything=False, legs_file=LEGS_FILE):
 
     od, orf = closure(ORACLE_GO)
     out["oracle"] = any_match(files, modfiles + ORACLE_PATHS) or in_closure(files, od, orf)
+
+    out["blocksize"] = any_match(files, modfiles + BLOCKSIZE_PATHS)
 
     for k, pkg in PACKS.items():
         pd, prf = closure([pkg])

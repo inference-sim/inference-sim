@@ -698,7 +698,7 @@ jobs:
           if [ -n "$bad" ]; then echo "failed or cancelled: $bad"; exit 1; fi
           echo "every oracle job that was selected passed"
 
-  # Tier 2: vLLM v0.32.0's real Scheduler driven through every scenario, on CPU, and the other scenario-driven
+  # Tier 2: vLLM v0.33.0's (4ba787ec) real Scheduler driven through every scenario, on CPU, and the other scenario-driven
   # oracles. Every committed golden is re-derived from vLLM here on every run. The seeded fuzz corpora are the
   # jobs below this one; the mutation sweeps are mutation.yml's.
   oracle-scenarios:

@@ -1,5 +1,5 @@
 # Original to blis-vllm.
-"""Block-size oracle: what vLLM v0.32.0 resolves block_size to when a deployment states none.
+"""Block-size oracle: what vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5) resolves block_size to when a deployment states none.
 
 For each combination of model, GPU compute capability and KV dtype, this builds the inputs each
 attention layer hands vLLM's selector (the values come from the model's code, cited in LAYERS),
