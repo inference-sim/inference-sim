@@ -971,6 +971,22 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 			wantEntry: true, wantTTFT: 4000 + 300, // = 4300
 		},
 		{
+			// ENGINE-STAMPED FIRST TOKEN: the decode engine stamped the client's first token (FirstTokenTime, arrival-relative),
+			// so TTFT is that, not decodeDelay + ITL[0]. Here the request was preempted after its first token: ITL[0] is the
+			// long resume gap and the scheduling delay was re-stamped at re-admission, so the sum (8300 + 30000) would pass the
+			// request's E2E.
+			name: "engine-stamped first token: TTFT is FirstTokenTime",
+			parent: &ParentRequest{
+				ID: "pa", PrefillSubReqID: "pa_prefill", DecodeSubReqID: "pa_decode",
+				OriginalRequest: origReq,
+				ArrivalTime:     0, CompletionTime: 50000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: &sim.Request{FirstTokenTime: 5300, ITL: []int64{30000}},
+			},
+			setDecodeDelay: true, decodeDelay: 8300,
+			wantEntry: true, wantTTFT: 5300,
+		},
+		{
 			// FALLBACK: decode scheduling delay never recorded ⇒ prefill-only.
 			// (Pre-#1510 this case was labeled "TransferCompleteTime=0"; that field is
 			// no longer consulted — the true trigger is the missing decode delay.)
