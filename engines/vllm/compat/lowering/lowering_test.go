@@ -28,6 +28,10 @@ import (
 
 var data = mustData()
 
+// rulesVersion is the engine release whose rules a case lowers under; a case that needs another
+// sets it and restores it.
+var rulesVersion = "0.32.0"
+
 func mustData() *load.Data {
 	d, err := load.Embedded()
 	if err != nil {
@@ -88,7 +92,7 @@ func tryLowerOn(t *testing.T, at where, chip *hardware.Chip, s vllmsettings.Sett
 		g = graph[0]
 	}
 	return Lower(Input{Scenario: sc, Deployment: dep, Model: g, Draft: draftOf(graph), Chip: chip,
-		Rules: vllmrules.Lookup("0.32.0"), Settings: s})
+		Rules: vllmrules.Lookup(rulesVersion), Settings: s})
 }
 
 // noted reports the value of the note the lowering recorded for a setting, and whether it did.

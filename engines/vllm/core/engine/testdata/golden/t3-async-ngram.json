@@ -1,0 +1,562 @@
+{
+ "batches": [
+  {
+   "batch": 0,
+   "preempted": [],
+   "samples": [
+    "a"
+   ],
+   "scheduled": {
+    "a": 12
+   }
+  },
+  {
+   "batch": 1,
+   "preempted": [],
+   "samples": [
+    "a",
+    "b"
+   ],
+   "scheduled": {
+    "a": 3,
+    "b": 9
+   },
+   "spec_scheduled": {
+    "a": 2
+   }
+  },
+  {
+   "batch": 2,
+   "preempted": [],
+   "samples": [
+    "a",
+    "b"
+   ],
+   "scheduled": {
+    "a": 3,
+    "b": 3
+   },
+   "spec_scheduled": {
+    "a": 2,
+    "b": 2
+   }
+  },
+  {
+   "batch": 3,
+   "preempted": [],
+   "samples": [
+    "a",
+    "b"
+   ],
+   "scheduled": {
+    "a": 3,
+    "b": 3
+   },
+   "spec_scheduled": {
+    "a": 2,
+    "b": 2
+   }
+  },
+  {
+   "batch": 4,
+   "preempted": [],
+   "samples": [
+    "a",
+    "b"
+   ],
+   "scheduled": {
+    "a": 3,
+    "b": 3
+   },
+   "spec_scheduled": {
+    "a": 2,
+    "b": 2
+   }
+  },
+  {
+   "batch": 5,
+   "preempted": [],
+   "samples": [
+    "a",
+    "b"
+   ],
+   "scheduled": {
+    "a": 3,
+    "b": 3
+   },
+   "spec_scheduled": {
+    "a": 2,
+    "b": 2
+   }
+  },
+  {
+   "batch": 6,
+   "preempted": [],
+   "samples": [
+    "b"
+   ],
+   "scheduled": {
+    "b": 3
+   },
+   "spec_scheduled": {
+    "b": 2
+   }
+  },
+  {
+   "batch": 7,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  }
+ ],
+ "finished": {
+  "a": {
+   "output_tokens": 9,
+   "reason": "stop",
+   "step": 5
+  },
+  "b": {
+   "output_tokens": 7,
+   "reason": "stop",
+   "step": 6
+  }
+ },
+ "provenance": {
+  "blis_vllm_commit": "bd1b75b265a04d397b88014a0fb28f4513b6797f",
+  "engine": {
+   "async_scheduling": true,
+   "max_concurrent_batches": 2,
+   "pipeline_parallel_size": 1,
+   "scheduler_class": "AsyncScheduler",
+   "use_v2_model_runner": true
+  },
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/9+2ee0b3b47a9c",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "tests.v1.core.utils.CacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)",
+   "nixl._api.nixl_agent (OBJ and UCX backends)",
+   "zmq (pyzmq, as tiering/p2p/control/zmq.py uses it)",
+   "time.monotonic",
+   "vLLM environment variables of a tiering sequence"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "oracle_inputs": {
+   "oracle/mocks.json": "9521f9f69e212f249e79b33614003c43dea5642e45499afa48b893737fc49f9b",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_enginecore.py": "35315709f7f99ceaa0dc0d01ec57997b92524b1825cb990ed27ba8417500461c",
+   "oracle/run_scheduler.py": "8aeea68a1dce3a32b9b8458ce710812c7851769e67bc3cc28414750054916b3a",
+   "oracle/scenarios-t3/t3-async-ngram.json": "fddd45b5cd9fcf7de7fc08ea9439cafd051f9d526cbc320adb5fa9515aa8dc85"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+  "scenario_sha256": "fddd45b5cd9fcf7de7fc08ea9439cafd051f9d526cbc320adb5fa9515aa8dc85",
+  "seed": null,
+  "tier": 3,
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
+ },
+ "steps": [
+  {
+   "blocks": {
+    "a": [
+     [
+      "94bec7194aabdd11e41cdcf072cd0d2bc786ee8dc5719fde58a276414b0ebcc600000000",
+      1
+     ],
+     [
+      "53f753e95545fac79bb32c8cf29ca454a3cdc89af1c70e27d3a87657489109eb00000000",
+      1
+     ],
+     [
+      "f085277cba6faf65eab82631bfa206048eea45877c1c7380f60fd2348a660e7100000000",
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 12
+   },
+   "finished": [],
+   "free_blocks": 76,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "a": 1
+   },
+   "processed": false,
+   "queue_len": 1,
+   "running": [
+    "a"
+   ],
+   "scheduled_batch": 0,
+   "step": 0
+  },
+  {
+   "blocks": {
+    "a": [
+     [
+      "94bec7194aabdd11e41cdcf072cd0d2bc786ee8dc5719fde58a276414b0ebcc600000000",
+      1
+     ],
+     [
+      "53f753e95545fac79bb32c8cf29ca454a3cdc89af1c70e27d3a87657489109eb00000000",
+      1
+     ],
+     [
+      "f085277cba6faf65eab82631bfa206048eea45877c1c7380f60fd2348a660e7100000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "b": [
+     [
+      "679c0ef50b9bbf04e2e58f58d7241b6fa26aa4ac32199bfe0957a548931d44e100000000",
+      1
+     ],
+     [
+      "9b0bca2da82a469c36aba8b11623d2d0586588787a05663e464b5f2b65bc0cdc00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 15,
+    "b": 9
+   },
+   "finished": [],
+   "free_blocks": 72,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "a": 3,
+    "b": 1
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "a",
+    "b"
+   ],
+   "scheduled_batch": 1,
+   "step": 1
+  },
+  {
+   "blocks": {
+    "a": [
+     [
+      "94bec7194aabdd11e41cdcf072cd0d2bc786ee8dc5719fde58a276414b0ebcc600000000",
+      1
+     ],
+     [
+      "53f753e95545fac79bb32c8cf29ca454a3cdc89af1c70e27d3a87657489109eb00000000",
+      1
+     ],
+     [
+      "f085277cba6faf65eab82631bfa206048eea45877c1c7380f60fd2348a660e7100000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "b": [
+     [
+      "679c0ef50b9bbf04e2e58f58d7241b6fa26aa4ac32199bfe0957a548931d44e100000000",
+      1
+     ],
+     [
+      "9b0bca2da82a469c36aba8b11623d2d0586588787a05663e464b5f2b65bc0cdc00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 16,
+    "b": 12
+   },
+   "finished": [],
+   "free_blocks": 71,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "a": 3,
+    "b": 3
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "a",
+    "b"
+   ],
+   "scheduled_batch": 2,
+   "step": 2
+  },
+  {
+   "blocks": {
+    "a": [
+     [
+      "94bec7194aabdd11e41cdcf072cd0d2bc786ee8dc5719fde58a276414b0ebcc600000000",
+      1
+     ],
+     [
+      "53f753e95545fac79bb32c8cf29ca454a3cdc89af1c70e27d3a87657489109eb00000000",
+      1
+     ],
+     [
+      "f085277cba6faf65eab82631bfa206048eea45877c1c7380f60fd2348a660e7100000000",
+      1
+     ],
+     [
+      "89cf153a2ab3c4cf130b903c85eb28cc0f50fed97bf69c93d4e476030d2d7d4a00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "b": [
+     [
+      "679c0ef50b9bbf04e2e58f58d7241b6fa26aa4ac32199bfe0957a548931d44e100000000",
+      1
+     ],
+     [
+      "9b0bca2da82a469c36aba8b11623d2d0586588787a05663e464b5f2b65bc0cdc00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 19,
+    "b": 13
+   },
+   "finished": [],
+   "free_blocks": 70,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "a": 3,
+    "b": 3
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "a",
+    "b"
+   ],
+   "scheduled_batch": 3,
+   "step": 3
+  },
+  {
+   "blocks": {
+    "a": [
+     [
+      "94bec7194aabdd11e41cdcf072cd0d2bc786ee8dc5719fde58a276414b0ebcc600000000",
+      1
+     ],
+     [
+      "53f753e95545fac79bb32c8cf29ca454a3cdc89af1c70e27d3a87657489109eb00000000",
+      1
+     ],
+     [
+      "f085277cba6faf65eab82631bfa206048eea45877c1c7380f60fd2348a660e7100000000",
+      1
+     ],
+     [
+      "89cf153a2ab3c4cf130b903c85eb28cc0f50fed97bf69c93d4e476030d2d7d4a00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "b": [
+     [
+      "679c0ef50b9bbf04e2e58f58d7241b6fa26aa4ac32199bfe0957a548931d44e100000000",
+      1
+     ],
+     [
+      "9b0bca2da82a469c36aba8b11623d2d0586588787a05663e464b5f2b65bc0cdc00000000",
+      1
+     ],
+     [
+      "3d470a86830e2902aaf8c1d6c8c8da6e173662d4fdace9b165b1497d52e5f45100000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 21,
+    "b": 15
+   },
+   "finished": [],
+   "free_blocks": 69,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "a": 3,
+    "b": 3
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "a",
+    "b"
+   ],
+   "scheduled_batch": 4,
+   "step": 4
+  },
+  {
+   "blocks": {
+    "b": [
+     [
+      "679c0ef50b9bbf04e2e58f58d7241b6fa26aa4ac32199bfe0957a548931d44e100000000",
+      1
+     ],
+     [
+      "9b0bca2da82a469c36aba8b11623d2d0586588787a05663e464b5f2b65bc0cdc00000000",
+      1
+     ],
+     [
+      "3d470a86830e2902aaf8c1d6c8c8da6e173662d4fdace9b165b1497d52e5f45100000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "b": 17
+   },
+   "finished": [
+    "a"
+   ],
+   "free_blocks": 74,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "b": 3
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "b"
+   ],
+   "scheduled_batch": 5,
+   "step": 5
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [
+    "b"
+   ],
+   "free_blocks": 79,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 1,
+   "running": [],
+   "scheduled_batch": 6,
+   "step": 6
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [],
+   "free_blocks": 79,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 1,
+   "running": [],
+   "scheduled_batch": 7,
+   "step": 7
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [],
+   "free_blocks": 79,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 0,
+   "running": [],
+   "scheduled_batch": null,
+   "step": 8
+  }
+ ]
+}

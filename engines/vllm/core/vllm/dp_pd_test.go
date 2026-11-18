@@ -414,32 +414,137 @@ func TestADecodeRankWaitingForItsPullDoesNotStopTheOtherRank(t *testing.T) {
 	}
 }
 
-// A prefill group whose ranks span nodes is refused: a handoff names no endpoint, so every pull would be priced from
-// the group's first node. A group on one node builds, and so does a decode group across nodes, whose ranks each state
-// their own node as the end of their pulls.
-func TestAPrefillGroupAcrossNodesIsRefusedAndADecodeGroupIsNot(t *testing.T) {
-	for _, c := range []struct {
-		name, extra string
-		refused     bool
-	}{
-		{"kv_producer across nodes", producer + dpPool(2, 1, 2), true},
-		{"kv_both across nodes", "kv_transfer: {connector: NixlConnector, kv_role: kv_both}\n" + dpPool(2, 1, 2), true},
-		{"kv_producer on one node", producer + dpPool(8, 8, 2), false},
-		{"kv_consumer across nodes", consumer + dpPool(2, 1, 2), false},
-	} {
-		_, err := build(t, c.extra)()
-		if c.refused != (err != nil) {
-			t.Errorf("%s: err = %v, want refused %t", c.name, err, c.refused)
+// A prefill group whose ranks span nodes builds, and states for each handoff the node of the rank that holds the
+// KV (engine.Handoff.At), so the decode side's pull reads from the right node. Before the field the group was
+// refused: a handoff named no endpoint, so every pull would have been priced from the group's first node. A group
+// on one node states nothing, and the host reads its first node as before.
+func TestAPrefillGroupAcrossNodesStatesTheNodeThatHoldsEachRequest(t *testing.T) {
+	pe := newHostEngine(t, producer+dpPool(2, 1, 2), 0)
+	h := &host{t: t, engs: []*hostEngine{pe}}
+	g := pe.e.(*DPGroup)
+	const n = 6
+	for i := 0; i < n; i++ {
+		r := req(strings.Repeat("p", i+1), 80, 6)
+		r.RemoteDecode, r.MaxOutputTokens = true, 1
+		if err := g.Add(r, 0); err != nil {
+			t.Fatal(err)
 		}
-		if c.refused && err != nil && !strings.Contains(err.Error(), "substrate#48") {
-			t.Errorf("%s: %q does not name the contract limit", c.name, err)
+	}
+	h.run(func() bool { return len(pe.handoffs) == n })
+	if len(pe.handoffs) != n {
+		t.Fatalf("%d handoffs, want %d", len(pe.handoffs), n)
+	}
+	nodes := map[int]bool{}
+	for _, ho := range pe.handoffs {
+		if ho.At == nil {
+			t.Fatalf("handoff of %s states no endpoint on a group that spans nodes", ho.ID)
 		}
+		// The group gives each rank's block IDs a range of its own, so the first block says the rank.
+		per := int64(g.ranks[0].e.s.KV.Pool.NumBlocks())
+		if want := int(ho.Blocks[0] / per); ho.At.Node != want {
+			t.Errorf("handoff of %s is held at node %d, but rank %d computed it (one rank to a node)", ho.ID, ho.At.Node, want)
+		}
+		if err := ho.Validate(); err != nil {
+			t.Error(err)
+		}
+		nodes[ho.At.Node] = true
+	}
+	if len(nodes) != 2 {
+		t.Errorf("the handoffs name nodes %v; the balancer put requests on both ranks, so both nodes hold some", nodes)
 	}
 }
 
-func TestDataParallelOffloadStaysRefusedByName(t *testing.T) {
-	if _, err := resolve(mustConfig(t, cpuTier+"data_parallel_size: 2\n")); err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/47") {
-		t.Errorf("kv_offload at dp 2: %v, want a refusal naming blis-vllm/issues/47", err)
+// Which groups build: a producer or kv_both group across nodes now builds; so do a group on one node, which
+// states no endpoint, and a decode group across nodes, whose ranks each state their own node as the end of their pulls.
+func TestAProducerGroupOnOneNodeStatesNoEndpoint(t *testing.T) {
+	for _, extra := range []string{
+		producer + dpPool(2, 1, 2),
+		"kv_transfer: {connector: NixlConnector, kv_role: kv_both}\n" + dpPool(2, 1, 2),
+		producer + dpPool(8, 8, 2),
+		consumer + dpPool(2, 1, 2),
+	} {
+		if _, err := build(t, extra)(); err != nil {
+			t.Errorf("%q: %v", extra, err)
+		}
+	}
+	pe := newHostEngine(t, producer+dpPool(2, 8, 1), 0)
+	h := &host{t: t, engs: []*hostEngine{pe}}
+	r := req("one", 80, 6)
+	r.RemoteDecode, r.MaxOutputTokens = true, 1
+	if err := pe.e.(*DPGroup).Add(r, 0); err != nil {
+		t.Fatal(err)
+	}
+	h.run(func() bool { return len(pe.handoffs) == 1 })
+	if len(pe.handoffs) != 1 || pe.handoffs[0].At != nil {
+		t.Errorf("a group on one node stated %+v, want a handoff with no endpoint", pe.handoffs)
+	}
+}
+
+// A data-parallel group runs one offloading connector, and so one CPU tier, on each rank (vLLM gives every
+// EngineCore its own connector, vllm/v1/engine/core.py:1417-1421@4ba787ec). A request finishes on the rank the
+// balancer chose and that rank stores its blocks to its own tier: the jobs of the two ranks carry IDs no two ranks
+// share, the host ends each with TransferDone and the group routes it to the rank that started it, and every
+// request completes. Before this the group was refused for carrying no offload jobs (blis-vllm#47).
+func TestADataParallelGroupOffloadsEachRanksBlocksToItsOwnTier(t *testing.T) {
+	he := newHostEngine(t, cpuTier+dpPool(2, 8, 1), 0)
+	h := &host{t: t, engs: []*hostEngine{he}}
+	g := he.e.(*DPGroup)
+	const n = 6
+	for i := 0; i < n; i++ {
+		if err := g.Add(req(strings.Repeat("o", i+1), 80, 4), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.run(func() bool { return len(he.finished) == n && len(he.due) == 0 && len(he.inflight) == 0 })
+	if len(he.finished) != n {
+		t.Fatalf("%d of %d requests finished", len(he.finished), n)
+	}
+	byRank := map[int]int{}
+	ids := map[engine.TransferID]bool{}
+	for _, x := range he.started {
+		if x.Kind != engine.TransferStore {
+			continue
+		}
+		if ids[x.ID] {
+			t.Errorf("transfer ID %d is two jobs", x.ID)
+		}
+		ids[x.ID] = true
+		byRank[int((x.ID-1)%2)]++
+	}
+	if byRank[0] == 0 || byRank[1] == 0 {
+		t.Errorf("stores by rank %v: each rank must store its blocks to its own tier", byRank)
+	}
+	if err := g.TransferDone(1<<40, true, h.now); !errors.Is(err, engine.ErrUnknownTransfer) {
+		t.Errorf("TransferDone of an ID no rank issued = %v, want ErrUnknownTransfer", err)
+	}
+}
+
+// A MultiConnector (NIXL beside the offloading connector) runs on each rank of a group as well: the NIXL
+// handoffs and the offload jobs of a rank share one numbering, so no two jobs of the group, of either connector,
+// share an ID.
+func TestADataParallelGroupRunsAMultiConnectorOnEachRank(t *testing.T) {
+	he := newHostEngine(t, multiBlock(nixlFirst)+dpPool(2, 8, 1), 0)
+	h := &host{t: t, engs: []*hostEngine{he}}
+	g := he.e.(*DPGroup)
+	const n = 6
+	for i := 0; i < n; i++ {
+		if err := g.Add(req(strings.Repeat("m", i+1), 80, 4), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.run(func() bool { return len(he.finished) == n && len(he.due) == 0 && len(he.inflight) == 0 })
+	if len(he.finished) != n {
+		t.Fatalf("%d of %d requests finished", len(he.finished), n)
+	}
+	ids := map[engine.TransferID]bool{}
+	for _, x := range he.started {
+		if ids[x.ID] {
+			t.Errorf("transfer ID %d is two jobs", x.ID)
+		}
+		ids[x.ID] = true
+	}
+	if len(ids) == 0 {
+		t.Error("the offloading child started no job on any rank")
 	}
 }
 
@@ -539,5 +644,70 @@ func TestADataParallelPodWithDeepSeekV41LayersPassesTheContract(t *testing.T) {
 				t.Errorf("no pull started")
 			}
 		})
+	}
+}
+
+// A MultiConnector producer group (NIXL beside the offloading connector) across nodes states the node that
+// holds each request too: the handoff the NIXL child keeps goes through the same group as a plain NIXL
+// producer's.
+func TestAMultiConnectorProducerGroupAcrossNodesStatesTheNodeThatHoldsEachRequest(t *testing.T) {
+	pe := newHostEngine(t, multiBlock(nixlFirst)+dpPool(2, 1, 2), 0)
+	h := &host{t: t, engs: []*hostEngine{pe}}
+	g := pe.e.(*DPGroup)
+	const n = 6
+	for i := 0; i < n; i++ {
+		r := req(strings.Repeat("m", i+1), 80, 6)
+		r.RemoteDecode, r.MaxOutputTokens = true, 1
+		if err := g.Add(r, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.run(func() bool { return len(pe.handoffs) == n })
+	if len(pe.handoffs) != n {
+		t.Fatalf("%d handoffs, want %d", len(pe.handoffs), n)
+	}
+	for _, ho := range pe.handoffs {
+		if ho.At == nil {
+			t.Fatalf("handoff of %s states no endpoint on a MultiConnector group that spans nodes", ho.ID)
+		}
+	}
+}
+
+// The real GLM 5.3 shape: tensor-parallel width 8 times data-parallel width 4 on four nodes of eight GPUs, one rank
+// to a node. Each request's KV sits on its owning rank's node, so every handoff states that node, and all four
+// nodes are named by the requests the balancer spreads over the ranks.
+func TestAFourNodeTP8DP4ProducerGroupStatesEachRequestsOwningNode(t *testing.T) {
+	extra := producer + "data_parallel_size: 4\nplacement: {hardware: h100, fabric: ib-400g, tensor: 8, data: 4, nodes: 4, ranks_per_node: 8, node_racks: [0, 0, 0, 0]}\n"
+	pe := newHostEngine(t, extra, 0)
+	h := &host{t: t, engs: []*hostEngine{pe}}
+	g := pe.e.(*DPGroup)
+	if !g.spansNodes() {
+		t.Fatal("a TP8 x DP4 group on four nodes does not span nodes")
+	}
+	const n = 12
+	for i := 0; i < n; i++ {
+		r := req(strings.Repeat("g", i+1), 80, 6)
+		r.RemoteDecode, r.MaxOutputTokens = true, 1
+		if err := g.Add(r, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.run(func() bool { return len(pe.handoffs) == n })
+	if len(pe.handoffs) != n {
+		t.Fatalf("%d handoffs, want %d", len(pe.handoffs), n)
+	}
+	per := int64(g.ranks[0].e.s.KV.Pool.NumBlocks())
+	nodes := map[int]bool{}
+	for _, ho := range pe.handoffs {
+		if ho.At == nil {
+			t.Fatalf("handoff of %s states no endpoint on a four-node producer group", ho.ID)
+		}
+		if rank := int(ho.Blocks[0] / per); ho.At.Node != rank {
+			t.Errorf("handoff of %s is held at node %d, but rank %d computed it (one rank to a node)", ho.ID, ho.At.Node, rank)
+		}
+		nodes[ho.At.Node] = true
+	}
+	if len(nodes) != 4 {
+		t.Errorf("the handoffs name nodes %v; requests spread over four ranks hold KV on all four nodes", nodes)
 	}
 }

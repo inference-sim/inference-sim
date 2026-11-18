@@ -130,7 +130,6 @@ var refused = map[string]string{
 	"eplb_config.step_interval":             "enable_eplb: true\neplb_config: {step_interval: 100}\n",
 	"prefix_match_unit":                     "prefix_match_unit: 8\n",
 	"prefix_cache_retention_interval":       "prefix_cache_retention_interval: 256\n",
-	"max_cpu_loras":                         "max_loras: 2\nmax_cpu_loras: 4\n",
 	"mamba_cache_mode":                      "mamba_cache_mode: align\n",
 }
 
@@ -151,7 +150,6 @@ var atDefault = map[string]string{
 	"eplb_config.window_size":         "enable_eplb: true\neplb_config: {window_size: 1000}\n",
 	"eplb_config.step_interval":       "enable_eplb: true\neplb_config: {step_interval: 3000}\n",
 	"prefix_cache_retention_interval": "prefix_cache_retention_interval: 0\n",
-	"max_cpu_loras":                   "max_loras: 2\nmax_cpu_loras: 2\n",
 	"mamba_cache_mode":                "mamba_cache_mode: none\n",
 }
 
@@ -173,7 +171,7 @@ var noDefaultValue = map[string]string{
 // The test checks each really reaches the kernel's settings (vllmsettings.Of), so an entry cannot
 // outlive the kernel reading the key.
 var pricedByTheKernel = map[string]string{
-	"all2all_backend":                   "all2all_backend: allgather_reducescatter\n#75",
+	"all2all_backend":                   "all2all_backend: allgather_reducescatter\n#264",
 	"disable_custom_all_reduce":         "disable_custom_all_reduce: true\n#78",
 	"disable_cascade_attn":              "disable_cascade_attn: false\n#78",
 	"enforce_eager":                     "enforce_eager: true\n#59",

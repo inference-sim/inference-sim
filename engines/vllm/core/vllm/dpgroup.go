@@ -17,6 +17,7 @@ import (
 	"github.com/inference-sim/blis-substrate/load"
 
 	core "github.com/inference-sim/blis-vllm/core/engine"
+	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
@@ -147,6 +148,11 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 			// engine_id and side-channel port, nixl/base_scheduler.py:76-80@4ba787ec), so each states
 			// its own transfers. The group tells them apart by ID alone (TransferDone).
 			e.pd.stride, e.pd.lane = n, i
+		}
+		if e.off != nil {
+			// Likewise the offloading connector: each rank runs its own, with its own CPU tier
+			// (the engine block's bytes are one engine's), and numbers its jobs the same way.
+			e.off.stride, e.off.lane = n, i
 		}
 		g.ranks = append(g.ranks, &rankState{e: e})
 		g.dp.Ranks = append(g.dp.Ranks, e.core)
@@ -474,6 +480,13 @@ func (g *DPGroup) Complete(id engine.BatchID, outcome engine.Outcome, end engine
 			for k := range h.Blocks {
 				h.Blocks[k] += off
 			}
+			// A request's KV sits on the node of the rank that computed it, so a group whose ranks
+			// span nodes states that node for the peer's pull. A group on one node states nothing:
+			// the host reads the pool's first node, as before.
+			if g.spansNodes() {
+				at := e.at
+				h.At = &at
+			}
 			res.Handoffs = append(res.Handoffs, h)
 		}
 	}
@@ -548,6 +561,10 @@ func (g *DPGroup) NextWake(now engine.Time) (engine.Time, bool) {
 	return now + idlePollUs, true
 }
 
+// KVCacheCapacity is each rank's KV cache size, the figure every engine core of the group logs at
+// start-up (Engine.KVCacheCapacity): the ranks are replicas of one pool, so it is one rank's.
+func (g *DPGroup) KVCacheCapacity() kv.Capacity { return g.ranks[0].e.KVCacheCapacity() }
+
 // InFlightLimit implements engine.Engine: each rank's max_concurrent_batches, as many lockstep
 // iterations' batches as a rank's batch queue holds.
 func (g *DPGroup) InFlightLimit() int { return g.queueSize }
@@ -604,6 +621,11 @@ func (g *DPGroup) Assumptions() []string { return g.ranks[0].e.Assumptions() }
 func (g *DPGroup) Plan() plan.PoolPlan { return g.ranks[0].e.Plan() }
 
 var _ engine.Planned = (*DPGroup)(nil)
+
+// spansNodes reports whether the group's ranks sit on more than one node.
+func (g *DPGroup) spansNodes() bool {
+	return g.pool != nil && g.pool.GroupNodes(len(g.ranks), rankWidth(*g.pool)) > 1
+}
 
 // rankWidth is the workers of one data-parallel rank, tensor x pipeline.
 func rankWidth(p placement.Placement) int { return max(p.Tensor, 1) * max(p.Pipeline, 1) }

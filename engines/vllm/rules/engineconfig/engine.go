@@ -192,10 +192,13 @@ type Engine struct {
 	// deployment states it here, in the engine block, as it states the other settings the engine
 	// reads. Zero means unset, the engine default of 16. Not negative.
 	DPSyncInterval int `yaml:"dp_sync_interval,omitempty"`
-	// PrefillScheduleInterval admits new prefills only once every N engine steps, aligned
-	// across data-parallel ranks (vllm/config/scheduler.py:203@5df63a72; applied by
-	// _should_throttle_prefills, vllm/v1/engine/core.py:2318-2325@5df63a72). Zero means unset,
-	// which is the engine default of 1: no throttling.
+	// PrefillScheduleInterval admits new prefills only once every N engine steps: aligned
+	// across the ranks of a data-parallel group (vllm/config/scheduler.py:203@5df63a72; applied by
+	// _should_throttle_prefills, vllm/v1/engine/core.py:2318-2325@5df63a72), and on an engine
+	// without data parallelism held by the Scheduler until N executed steps have passed since the
+	// last step that carried prefill, unless the last release step could not drain the waiting
+	// queue (vllm/v1/core/sched/scheduler.py:395-425, 770-790, 1612-1629@4ba787ec). Zero means
+	// unset, which is the engine default of 1: no throttling. Not negative.
 	PrefillScheduleInterval int `yaml:"prefill_schedule_interval,omitempty"`
 	// StreamInterval is how many tokens the API server buffers before streaming them to the
 	// client (vllm/config/scheduler.py:213@5df63a72, read by the output processor,

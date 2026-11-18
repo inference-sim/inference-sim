@@ -72,6 +72,9 @@ type offloadConfig struct {
 	// it sizes the CPU tier in chunks (cpu/spec.py:103-121).
 	BytesPerBlock int64 `yaml:"bytes_per_block"`
 	PageSize      int64 `yaml:"page_size,omitempty"`
+	// MLA is model_config.use_mla: the model's attention is compressed (MLA), which the connector's
+	// layout gates read (offloadLayout).
+	MLA bool `yaml:"mla,omitempty"`
 	// Workers is the engine's world size, the connector's num_workers (offloading/scheduler.py:335):
 	// every job is pending on each worker. 1 unstated.
 	Workers int `yaml:"workers,omitempty"`
@@ -116,6 +119,9 @@ type offload struct {
 	at plan.Endpoint
 	// next is the last transfer ID started, shared with the P/D side of an engine that has one.
 	next *engine.TransferID
+	// stride and lane make the IDs of a data-parallel group's ranks distinct, as pd's do: rank r of n
+	// states IDs r+1, r+1+n, ... A zero stride is an engine alone, whose IDs are 1, 2, 3 ...
+	stride, lane int
 	// multi is the MultiConnector the offloading connector is a child of, at index child; nil
 	// when it runs alone. Its metadata and worker metadata are the child's slice of the list's.
 	multi *multi.Connector
@@ -153,7 +159,7 @@ type offload struct {
 // model. Each KV cache group is offloaded at its block size, a sliding window with the
 // extra_retained_tokens the drafter's prefill lookahead sets (get_kv_cache_configs,
 // vllm/v1/core/kv_cache_utils.py:2582-2589@5df63a72).
-func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method string, prefixCaching bool, at plan.Endpoint, install installer) (*offload, error) {
+func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method string, prefixCaching bool, layout offloadLayoutFacts, at plan.Endpoint, install installer) (*offload, error) {
 	if c.Connector != "OffloadingConnector" {
 		return nil, fmt.Errorf("vllm: kv_offload.connector %q is not modelled through the engine (modelled: "+
 			"OffloadingConnector; registry/connectors.yaml)", c.Connector)
@@ -255,7 +261,7 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 	for i, g := range kvGroups {
 		eagle[i] = spec.EagleBlockDrop && s.KV.GroupSpec(g).Eagle
 	}
-	tiers, err := buildTiers(c, bpc, bs, offloading.ChunkBytes(c.BytesPerBlock, copies, bpc, page), chunks, tierNamespace(s, bpc, world))
+	tiers, err := buildTiers(c, bpc, bs, offloading.ChunkBytes(c.BytesPerBlock, copies, bpc, page), chunks, tierNamespace(s, bpc, world, layout, c.MLA))
 	if err != nil {
 		return nil, err
 	}
@@ -289,8 +295,7 @@ func (o *offload) started(batch int, cb any) []engine.Transfer {
 	}
 	var out []engine.Transfer
 	add := func(j offloading.Job, kind engine.TransferKind) {
-		*o.next++
-		id := *o.next
+		id := o.newID()
 		o.jobs[id], o.ids[j.ID] = j.ID, id
 		sizes := make([]int, o.numGroups)
 		for i, n := range j.GroupSizes {
@@ -326,6 +331,12 @@ func (o *offload) started(batch int, cb any) []engine.Transfer {
 	}
 	o.lastFlush = append(o.lastFlush[:0], m.Flush...)
 	return out
+}
+
+// newID is the next transfer's ID (stride, lane).
+func (o *offload) newID() engine.TransferID {
+	*o.next++
+	return (*o.next-1)*engine.TransferID(max(o.stride, 1)) + engine.TransferID(o.lane) + 1
 }
 
 // groupSizes is a transfer in flight's GPU blocks in each KV cache group, nil for one this

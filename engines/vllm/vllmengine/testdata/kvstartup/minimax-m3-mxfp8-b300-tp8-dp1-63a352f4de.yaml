@@ -1,0 +1,30 @@
+# A scenario of the dashboard's scenario writer for one fit unit's recorded run (counts only are kept of the units).
+kind: Scenario
+name: minimax-m3-mxfp8-b300-tp8-dp1-63a352f4de
+engine: {kind: vllm, version: 0.33.0}
+model: minimax-m3-mxfp8
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+cluster: {hardware: b300, gpus_per_node: 8, nodes: 1}
+---
+kind: Deployment
+name: minimax-m3-mxfp8-b300-tp8-dp1-63a352f4de
+pools:
+- role: colocated
+  nodes: 1
+  parallel: {dp: 1, enable_expert_parallel: true, pp: 1, tp: 8}
+  engine:
+    block_size: 128
+    cudagraph_capture_sizes: [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512, 528, 544, 560, 576, 592, 608, 624, 640, 656, 672, 688, 704, 720, 736, 752, 768, 784, 800, 816, 832, 848, 864, 880, 896, 912, 928, 944, 960, 976, 992, 1008, 1024, 1040, 1056, 1072, 1088, 1104, 1120, 1136, 1152, 1168, 1184, 1200, 1216, 1232, 1248, 1264, 1280, 1296, 1312, 1328, 1344, 1360, 1376, 1392, 1408, 1424, 1440, 1456, 1472, 1488, 1504, 1520, 1536, 1552, 1568, 1584, 1600, 1616, 1632, 1648, 1664, 1680, 1696, 1712, 1728, 1744, 1760, 1776, 1792, 1808, 1824, 1840, 1856, 1872, 1888, 1904, 1920, 1936, 1952, 1968, 1984, 2000, 2016, 2032, 2048]
+    enable_chunked_prefill: true
+    enable_prefix_caching: false
+    gpu_memory_utilization: 0.9
+    language_model_only: true
+    max_cudagraph_capture_size: 2048
+    max_model_len: 2304
+    max_num_batched_tokens: 2048
+    quantization: mxfp8
+    stream_interval: 20
+    compilation_config: {cudagraph_mode: FULL_AND_PIECEWISE}
+    attention_config: {indexer_kv_dtype: fp8}
+    kv_cache_dtype: fp8
+router: {endpoint_picker_config: vllm-dp-lb.epp.yaml}

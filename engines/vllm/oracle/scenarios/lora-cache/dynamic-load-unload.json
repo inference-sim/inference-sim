@@ -1,0 +1,19 @@
+{
+  "name": "lora-cache-dynamic-load-unload",
+  "config": {"max_loras": 2, "max_cpu_loras": 3},
+  "steps": [
+    {"load": "a"},
+    {"load": "b"},
+    {"load": "a"},
+    {"load": "c"},
+    {"adapters": ["a", "c"]},
+    {"load": "d"},
+    {"unload": "b"},
+    {"unload": "x"},
+    {"unload": "a"},
+    {"adapters": ["d"]},
+    {"load": "e"},
+    {"load": "f"},
+    {"adapters": ["a", "e"]}
+  ]
+}
