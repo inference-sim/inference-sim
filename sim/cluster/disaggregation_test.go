@@ -2095,3 +2095,22 @@ func TestDisaggregation_TokenTotalsAreTheTokensEmittedOnTheParentEntry(t *testin
 		t.Errorf("per-tenant tokens served = %d, want %d, the sum of the emitted counts", got, total)
 	}
 }
+
+// BenchmarkDisaggregationRun times a whole disaggregated run of many requests. Each instance event
+// runs the two completion detectors, which used to visit every pending sub-request of the cluster
+// and now visit the pending sub-requests of the instance that ran.
+func BenchmarkDisaggregationRun(b *testing.B) {
+	for _, n := range []int{200, 2000} {
+		b.Run(fmt.Sprintf("requests=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				cs := newTestCluster(newTestDisaggDeploymentConfig(8, 4, 4), NewSliceRequestSource(newTestRequests(n)), nil)
+				b.StartTimer()
+				if err := cs.Run(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}

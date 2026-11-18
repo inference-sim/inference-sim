@@ -42,7 +42,7 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 	}
 
 	// Register as pending prefill completion for detection in event loop
-	cs.pendingPrefillCompletions[e.request.ID] = e.parentReq.ID
+	cs.setPendingPrefill(e.request.ID, e.parentReq.ID)
 
 	inst := cs.instanceByID(InstanceID(target))
 	if inst == nil {
@@ -496,7 +496,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	// Register decode sub-request so detectDecodeCompletions can stamp
 	// ParentRequest.CompletionTime and read DecodeSubReq.State/ProgressIndex
 	// for timeout detection and context accumulation.
-	cs.pendingDecodeCompletions[decodeSubReq.ID] = e.parentReq.ID
+	cs.setPendingDecode(decodeSubReq.ID, e.parentReq.ID)
 	cs.advanceRequest(e.parentReq.OriginalRequest, sim.LifecycleDecodeQueued)
 	if decodeSubReq.KVTransferParams != "" {
 		// A p2p handoff's decode is an ordinary request to its engine (p2pDecodeParams).

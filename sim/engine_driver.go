@@ -1015,9 +1015,13 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 		d.kvEventSink(end, events)
 	}
 	tokenAt := end + d.cfg.OutputTokenProcessingTime
-	firsts := map[string]bool{}
-	for _, id := range res.FirstTokens {
-		firsts[id] = true
+	// The ids of the step's first tokens; most steps have none, and a nil map reads as empty.
+	var firsts map[string]bool
+	if len(res.FirstTokens) > 0 {
+		firsts = make(map[string]bool, len(res.FirstTokens))
+		for _, id := range res.FirstTokens {
+			firsts[id] = true
+		}
 	}
 	ids := make([]string, 0, len(res.Emitted))
 	for id := range res.Emitted {
@@ -1029,7 +1033,8 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 		if r == nil {
 			continue
 		}
-		n := res.Emitted[id]
+		emittedNow := res.Emitted[id]
+		n := emittedNow
 		grouped := d.cfg.StreamInterval > 1
 		firstStep := false
 		if n > 0 {
@@ -1076,17 +1081,17 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 		}
 		if !grouped && firstStep {
 			// The first chunk is the step's tokens, the first output and whatever else it emitted.
-			r.req.ClientFirstTokens = res.Emitted[id]
+			r.req.ClientFirstTokens = emittedNow
 		}
 		if grouped {
 			stepGap := int64(0)
 			if n > 0 {
 				stepGap = r.req.ITL[len(r.req.ITL)-1]
 			}
-			d.deliver(r, res.Emitted[id], end, firstStep, stepGap)
+			d.deliver(r, emittedNow, end, firstStep, stepGap)
 		}
-		r.emitted += res.Emitted[id]
-		if res.Emitted[id] > 0 {
+		r.emitted += emittedNow
+		if emittedNow > 0 {
 			if rm, ok := d.Metrics.Requests[id]; ok {
 				rm.emittedTokens = r.emitted
 				d.Metrics.Requests[id] = rm
