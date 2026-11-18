@@ -161,7 +161,8 @@ func TestAStatedMoEBackendIsApproximatedWhereTheEnginePricesIt(t *testing.T) {
 		{"deep_gemm_mega_moe", "10.0", true},
 		{"triton", "10.0", false},
 		{"flashinfer_cutedsl", "9.0", false},
-		{"marlin", "9.0", false},
+		{"marlin", "9.0", true},
+		{"marlin", "8.0", false},
 		{"triton", "", false},
 	} {
 		_, got := fields.Approximate(e, fields.Facts{Value: c.value, ComputeCapability: c.cc})
@@ -172,10 +173,15 @@ func TestAStatedMoEBackendIsApproximatedWhereTheEnginePricesIt(t *testing.T) {
 			t.Errorf("moe_backend %q is exact, but it has no stand-in", c.value)
 		}
 	}
-	// The SM90 clause is valid for block-FP8 experts only and the clause grammar cannot test the
-	// weight scheme, so the approximation must say so where a reader of a scored point sees it.
-	a, _ := fields.Approximate(e, fields.Facts{Value: "triton", ComputeCapability: "9.0"})
-	if !strings.Contains(a.Differs, "block-FP8 experts only") {
-		t.Errorf("the approximation covering moe_backend on SM90 does not say it is valid for block-FP8 only: %q", a.Differs)
+	// The SM90 clause is valid for block-FP8 experts (Triton, FlashInfer CUTLASS) and MXFP4 experts
+	// (Marlin) only, and the clause grammar cannot test the weight scheme, so the approximation must
+	// say so, and name the ramp a stated Marlin is priced on, where a reader of a scored point sees it.
+	for _, backend := range []string{"triton", "marlin"} {
+		a, _ := fields.Approximate(e, fields.Facts{Value: backend, ComputeCapability: "9.0"})
+		for _, want := range []string{"block-FP8 experts (Triton, FlashInfer CUTLASS) and for MXFP4 experts (Marlin) only", "w4a16_mxfp4_grouped"} {
+			if !strings.Contains(a.Differs, want) {
+				t.Errorf("the approximation covering moe_backend %q on SM90 does not say %q: %q", backend, want, a.Differs)
+			}
+		}
 	}
 }
