@@ -2,7 +2,7 @@
 """Write the data-parallel scenarios that run vLLM's scheduler with enable_chunked_prefill false.
 
 Each is an existing data-parallel scenario with chunked prefill off. vLLM then requires
-max_num_batched_tokens >= max_model_len (vllm/config/scheduler.py), so the model length and the budget are both 40, and the scheduler admits a prompt only whole (scheduler.py waiting loop: a prompt that does not fit
+max_num_batched_tokens >= max_model_len (vllm/config/scheduler.py), so the model length and the budget are both the longest prompt and output together, and the scheduler admits a prompt only whole (scheduler.py waiting loop: a prompt that does not fit
 the step's budget is not admitted in parts). The NIXL scenarios cover the roles a disaggregated deployment
 runs under data parallelism: a kv_producer pool without prefix caching, a kv_consumer pool, the same with
 async scheduling, and a consumer whose failed pull recomputes.
@@ -14,7 +14,6 @@ import json
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LENGTH = 40
 
 # (directory, source scenario, new name, config edits, description suffix)
 CASES = [
@@ -25,8 +24,8 @@ CASES = [
     ("scenarios-dp-nixl", "dp2-nixl-decode-async", "dp2-nixl-decode-async-chunked-off", {},
      "Chunked prefill off, with async scheduling, as a disaggregated decode pool runs."),
     ("scenarios-dp-nixl", "dp2-nixl-recv-failed", "dp2-nixl-recv-failed-chunked-off", {},
-     "Chunked prefill off: the failed pull recomputes the prompt whole."),
-    ("scenarios-dp", "dp4-lb", "dp4-lb-chunked-off", {}, "Chunked prefill off."),
+     "Chunked prefill off: the failed pulls recompute their prompts whole (d0 and d2 both fail, on one rank)."),
+    ("scenarios-dp", "dp4-lb", "dp4-lb-chunked-off", {}, "Chunked prefill off, every request sent at step 0."),
     ("scenarios-dp", "dp2-kv-pressure", "dp2-kv-pressure-chunked-off", {},
      "Chunked prefill off under KV pressure: a preempted request is readmitted whole."),
 ]
@@ -42,14 +41,21 @@ def main() -> None:
         out["description"] = (sc.get("description", "").rstrip() + " " + note).strip()
         cfg = out["config"]
         cfg["enable_chunked_prefill"] = False
-        # The model length is cut to 40 (the longest prompt and output together are 33), so the budget that must
-        # reach it is small enough that two prompts on one rank do not fit one step: with chunked prefill on the
-        # second would take the rest of the budget, with it off it waits. A scenario where every prompt fits would
-        # match vLLM's trace with the setting ignored.
-        longest = max(len(r["prompt"]) + len(r.get("output", [])) for r in out["requests"])
-        assert longest <= LENGTH, (name, longest)
-        cfg["max_model_len"] = LENGTH
-        cfg["max_num_batched_tokens"] = LENGTH
+        # The model length is cut to the longest prompt and output together, and the budget that must reach it is
+        # that small: two prompts on one rank in one step then do not fit, so the second takes the rest of the
+        # budget with chunked prefill on and waits with it off. A scenario where every prompt fits would match
+        # vLLM's trace with the setting ignored. The NIXL scenarios send every request at step 0 for the same reason.
+        length = max(len(r["prompt"]) + len(r.get("output", [])) for r in out["requests"])
+        cfg["max_model_len"] = length
+        cfg["max_num_batched_tokens"] = length
+        if directory == "scenarios-dp-nixl" or name == "dp4-lb-chunked-off":
+            for r in out["requests"]:
+                r["arrival_step"] = 0
+        if name == "dp2-nixl-recv-failed-chunked-off":
+            for r in out["requests"]:
+                if r["id"] == "d2":
+                    r["recv_failed"] = True
+                    r["prompt"] = r["prompt"] + [r["prompt"][0] + i for i in range(1, 7)]    # 12 tokens, like d0
         cfg.update(edits)
         with open(os.path.join(HERE, directory, name + ".json"), "w") as f:
             json.dump(out, f)
