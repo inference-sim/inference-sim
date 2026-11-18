@@ -339,6 +339,10 @@ func requirePullPricing(p *kernelPools, contention bool) {
 func setEngineFrontend(eng engine.Engine, version string) error {
 	fe, ok := eng.(coreengine.Frontender)
 	if !ok {
+		// SGLang has no such settings; the flags at their defaults state nothing to refuse.
+		if scenarioEngine.Kind == engineKindSGLang && rendererNumWorkers == 1 && apiServerCount == 0 {
+			return nil
+		}
 		return fmt.Errorf("engine %s does not take API-server settings", version)
 	}
 	// An unstated count is vLLM's default for the balancing mode (serve.py:113-129): the ranks
@@ -853,6 +857,9 @@ func streamIntervalOf(m latencyModel) (int, error) {
 // setting the cost model resolves beside the host's, labelled with the pool (result.PoolLabels
 // of the run's deployment) and sorted by setting, then pool.
 func engineResolutions(models []*engineModel, dep deployment.Deployment) ([]result.Resolution, error) {
+	if scenarioEngine.Kind == engineKindSGLang {
+		return sglangResolutions(dep), nil
+	}
 	if len(models) == 0 {
 		return nil, nil
 	}
@@ -1029,7 +1036,11 @@ func registerContractEngines() { coreengine.Register() }
 // EngineReleases are the upstream engine releases this binary runs, one per kind, as each
 // engine module records its own (for vLLM, blisvllm.Upstream). stack.json lists them (LIF-6).
 func EngineReleases() []stack.Upstream {
-	return []stack.Upstream{{Kind: blisvllm.Kind, Version: blisvllm.Upstream.Version, Commit: blisvllm.Upstream.Commit}}
+	sk, sv, sc := sglangEngineRelease()
+	return []stack.Upstream{
+		{Kind: sk, Version: sv, Commit: sc},
+		{Kind: blisvllm.Kind, Version: blisvllm.Upstream.Version, Commit: blisvllm.Upstream.Commit},
+	}
 }
 
 // contractRoots are the roots the engine factory reads beside the run's Data: the scenario
@@ -1046,6 +1057,9 @@ func contractRoots(scenarioPath string) map[string]string {
 // the data is opened once, not once for each build. A variable so a test can count the builds
 // and the Data each was handed.
 var newContractEngine = func(spec engine.Spec, data *load.Data) (engine.Engine, error) {
+	if spec.Kind == engineKindSGLang {
+		return newSGLangEngine(spec, data)
+	}
 	return coreengine.New(coreengine.Input{Spec: spec, Data: data})
 }
 

@@ -39,6 +39,7 @@ const (
 	modulePathSubstrate = "github.com/inference-sim/blis-substrate"
 	modulePathRouter    = "github.com/llm-d/llm-d-router"
 	modulePathEngine    = "github.com/inference-sim/blis-vllm"
+	modulePathSGLang    = "github.com/inference-sim/blis-sglang"
 )
 
 // resultRevisions are the versions of the BLIS modules the run was built from.
@@ -59,7 +60,14 @@ func revisionsFrom(info *debug.BuildInfo) result.Revisions {
 			case modulePathRouter:
 				r.Router = depVersion(dep)
 			case modulePathEngine:
-				r.EngineModule = depVersion(dep)
+				if scenarioEngine.Kind != engineKindSGLang {
+					r.EngineModule = depVersion(dep)
+				}
+			case modulePathSGLang:
+				// An SGLang run's engine module is blis-sglang's, not blis-vllm's.
+				if scenarioEngine.Kind == engineKindSGLang {
+					r.EngineModule = depVersion(dep)
+				}
 			}
 		}
 	}
@@ -101,7 +109,7 @@ func resultData(d *load.Data) result.Data {
 // resultScenarioDocs reads the scenario and deployment the run used, through blis-schemas' own
 // strict bundle loader (the same decoding the kernel applies).
 func resultScenarioDocs() (resultDocs, error) {
-	path := filepath.Join(kernelScenarioDir, kernelScenario)
+	path := engineScenarioPath() // the SGLang scenario itself, not its host-side twin
 	sc, dep, err := blisschemas.LoadBundle(path)
 	if err != nil {
 		return resultDocs{}, fmt.Errorf("re-reading the scenario for the Result document: %w", err)

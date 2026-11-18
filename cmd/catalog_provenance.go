@@ -10,6 +10,9 @@ import (
 // colocated pool, or the prefill and decode pools of a disaggregated run; empty when no
 // kernel was opened.
 func kernelProvenance(colocated *engineModel, pd *kernelPools) map[string]sim.KernelPoolProvenance {
+	if scenarioEngine.Kind == engineKindSGLang {
+		return sglangProvenanceByRole()
+	}
 	out := map[string]sim.KernelPoolProvenance{}
 	if pd != nil {
 		out[string(pd.prefill.Role())] = provenanceOf(pd.prefill.Provenance())

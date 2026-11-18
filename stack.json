@@ -3,6 +3,11 @@
   "toolchain": "go1.27.2",
   "modules": [
     {
+      "path": "github.com/inference-sim/blis-sglang",
+      "version": "v0.5.23-blis.1.0.20261118091738-99cc1af2d31a",
+      "commit": "99cc1af2d31abda0617f95efa21bbe841b05b209"
+    },
+    {
       "path": "github.com/inference-sim/blis-substrate",
       "version": "v0.15.1-0.20261118081908-fa28d5116739",
       "commit": "fa28d5116739dc582efdb7694acf15a294cdc62b"
@@ -20,6 +25,11 @@
     }
   ],
   "engines": [
+    {
+      "kind": "sglang",
+      "version": "0.5.23",
+      "commit": "297e54fd105e974cdf401e5b4d20253a22c16f90"
+    },
     {
       "kind": "vllm",
       "version": "0.33.0",

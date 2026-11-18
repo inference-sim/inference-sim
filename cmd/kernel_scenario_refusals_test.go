@@ -254,8 +254,8 @@ func TestRunCmd_RefusesAnEngineReleaseItDoesNotRun(t *testing.T) {
 			[]string{"names engine vllm 0.32.0", "this build runs vllm 0.33.0", "newest inference-sim release that runs it is v0.17.0"}},
 		{"vllm 0.34.0, run by no release", `engine: {kind: vllm, version: "0.34.0"}`,
 			[]string{"names engine vllm 0.34.0", "this build runs vllm 0.33.0", "no inference-sim release runs it"}},
-		{"a kind this build does not register", `engine: {kind: sglang, version: "0.5.23"}`,
-			[]string{`names engine kind \"sglang\"`, "this build runs the kinds vllm"}},
+		{"a kind this build does not register", `engine: {kind: tensorrt-llm, version: "0.18.0"}`,
+			[]string{`names engine kind \"tensorrt-llm\"`, "this build runs the kinds sglang, vllm"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
