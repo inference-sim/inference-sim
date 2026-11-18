@@ -98,6 +98,28 @@ func DraftModelOf(dep *deployment.Deployment, pool int) (string, error) {
 	return e.Speculative.DraftModel, nil
 }
 
+// PlanImplementations are the kernel implementations the kernel is told run, by primitive: the ones
+// the caller reports, and for each primitive the caller reports none for, those the plan's lowered
+// layers state (plan.PoolPlan.ImplementationsByPrimitive, which the kernel documents as what a caller
+// that holds the plan passes). A plan that states no layer adds nothing, so a pool whose lowering names
+// no kernel is built as before. The map given is not changed.
+func PlanImplementations(given map[plan.Primitive][]plan.KernelImpl, p plan.PoolPlan) map[plan.Primitive][]plan.KernelImpl {
+	stated := p.ImplementationsByPrimitive()
+	if len(stated) == 0 {
+		return given
+	}
+	out := make(map[plan.Primitive][]plan.KernelImpl, len(given)+len(stated))
+	for prim, impls := range given {
+		out[prim] = impls
+	}
+	for prim, impls := range stated {
+		if _, ok := out[prim]; !ok {
+			out[prim] = impls
+		}
+	}
+	return out
+}
+
 // LowerPool is the lowering of a pool's engine block as the block states it, without the
 // resolution of block size, memory budget, batch and cache settings that a Model applies first
 // (resolveEngine): what a caller of the kernel's own Open passes as Repos.Lower.
@@ -444,6 +466,9 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 		return nil, err
 	}
 	in.Lowered = low
+	// The kernels the plan states for the layers it names are the implementations the cost model binds
+	// the coefficients of those primitives to (VAL-8).
+	in.Implementations = PlanImplementations(in.Implementations, low.Plan)
 	// How a drafter's passes run is the engine's to state (SUB-6): vLLM's speculator for eagle,
 	// eagle3 and mtp, and DFlash and DSpark; any other method is left unstated and the kernel refuses it.
 	in.DraftFirstPassRows, in.DraftPassRequests = vllmsettings.DraftPasses(engine)

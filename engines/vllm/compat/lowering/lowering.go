@@ -624,6 +624,9 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 					"FlashInfer 0.6.18 or later is installed, the backend's own gate "+
 					"(has_flashinfer_sm90_nope_mla; flashinfer_mla_sparse_sm90.py:194-199); "+
 					"without it vLLM runs "+backendFlashAttnMLASparse+" (blis-vllm#278)")
+			if p.Layers, err = sparseMLAKernels(g, &c, pl.PP, be, note); err != nil {
+				return nil, err
+			}
 		}
 		// The layout a backend allocates is stated for the DSA family; a NoPE sparse-MLA model
 		// (GLM-5.3-Flash) is given the backend vLLM selects and the refusals it makes, and keeps the
@@ -794,6 +797,59 @@ func expertsKernel(g *model.Graph, c *lowerContext, stated string) (plan.KernelI
 	}
 	major, minor := capability(c.chip)
 	return blisvllm.Implementation(plan.PrimMoEGroupedGEMM, blisvllm.MoESelection("fp8", member), library, variant, major, minor)
+}
+
+// sparseMLAKernels states, for each layer whose primary attention is a sparse MLA run by
+// FLASHINFER_MLA_SPARSE_SM90, the kernel that backend runs for the prefill and for the decode: its
+// FlashInferMLASparseSM90Impl builds a BatchMLAPagedAttentionWrapper with backend="fa3"
+// (v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py:257-288@4ba787ec) and is supported on
+// compute capability 9.x (:189-190). The registry keys the GLM-5.3 sparse-MLA family to that build
+// (VAL-8), so without the statement the cost model reads no entry of it. The stage of a layer is
+// the pipeline partition's, which the lowering does not compute: at pipeline width above 1 nothing is
+// stated (the family is then not read, as before), and the lowering says so. No other sparse-MLA
+// backend has a registry family keyed to its kernel, so none is stated.
+func sparseMLAKernels(g *model.Graph, c *lowerContext, pp int, backend string, note func(name, value, reason string)) ([]plan.LoweredLayer, error) {
+	major, minor := capability(c.chip)
+	if backend != backendFlashInferSM90 || major != 9 {
+		return nil, nil
+	}
+	if pp > 1 {
+		note("sparse_mla_kernel", "unstated",
+			"the pipeline stage of each layer is not computed here, so at pipeline-parallel width above 1 the "+
+				"sparse-MLA kernel is not stated and no coefficient keyed to it is read")
+		return nil, nil
+	}
+	byID := map[string]model.LayerKind{}
+	for _, lk := range g.LayerKinds {
+		byID[lk.ID] = lk
+	}
+	var out []plan.LoweredLayer
+	for i, id := range g.Stack.Expand() {
+		sparse := false
+		for _, n := range byID[id].Nodes {
+			if n.Op == model.OpAttention && n.ReadsEngineKV() {
+				sparse = n.AttentionKind == model.AttentionSparseMLA
+				break
+			}
+		}
+		if !sparse {
+			continue
+		}
+		for _, prim := range []plan.Primitive{plan.PrimAttentionPrefill, plan.PrimAttentionDecode} {
+			k, err := blisvllm.Implementation(prim, blisvllm.AttentionSelection(backend), "flashinfer",
+				"BatchMLAPagedAttentionWrapper[fa3]", major, minor)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, plan.LoweredLayer{Layer: i, Primitive: prim, KernelImpl: k})
+		}
+	}
+	if len(out) > 0 {
+		note("sparse_mla_kernel", out[0].KernelImpl.Library+" "+out[0].KernelImpl.Variant,
+			"the kernel FlashInferMLASparseSM90Impl runs for the prefill and the decode of each sparse-MLA layer; the "+
+				"registry's GLM-5.3 family is keyed to its build")
+	}
+	return out, nil
 }
 
 // capability is the chip's compute capability, major and minor; 0, 0 when it states none.

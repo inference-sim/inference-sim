@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
@@ -356,5 +357,41 @@ func TestTheLoweringSelectsTheSparseMLABackendFromTheHeadSize(t *testing.T) {
 		if v, ok := noted(l, "sparse_mla_backend"); ok {
 			t.Errorf("%s on H200: sparse_mla_backend note %q, want none (FlashAttention sparse is first at head size 576)", m, v)
 		}
+	}
+}
+
+// The kernel a sparse-MLA layer runs on FLASHINFER_MLA_SPARSE_SM90 is stated for its prefill and its
+// decode (FlashInferMLASparseSM90Impl builds a BatchMLAPagedAttentionWrapper with backend="fa3",
+// compute capability 9.x), so the cost model reads the registry family keyed to that build. A model
+// whose backend is another one, a part on another family, and a pipelined pool state none.
+func TestTheLoweringStatesTheSparseMLAKernelItsSM90BackendRuns(t *testing.T) {
+	tp8 := "tp: 8, pp: 1, dp: 1, enable_expert_parallel: true"
+	flash := lowered(t, where{"glm-5.3-flash", "h200", tp8}, vllmsettings.Settings{})
+	byPrim := map[plan.Primitive]int{}
+	for _, l := range flash.Plan.Layers {
+		byPrim[l.Primitive]++
+		k := l.KernelImpl
+		if k.Library != "flashinfer" || k.Variant != "BatchMLAPagedAttentionWrapper[fa3]" || k.CodeHash == "" {
+			t.Errorf("layer %d %s: kernel %+v, want FlashInfer's BatchMLAPagedAttentionWrapper[fa3] with its code hash", l.Layer, l.Primitive, k)
+		}
+		if l.Scorer || l.Stage != 0 {
+			t.Errorf("layer %d %s: scorer %t, stage %d; the primary on stage 0 is stated", l.Layer, l.Primitive, l.Scorer, l.Stage)
+		}
+	}
+	if byPrim[plan.PrimAttentionPrefill] == 0 || byPrim[plan.PrimAttentionPrefill] != byPrim[plan.PrimAttentionDecode] {
+		t.Errorf("GLM-5.3-Flash on H200 states %v, want the same layers for the prefill and the decode", byPrim)
+	}
+	for _, tc := range []struct{ name, model, chip, pool string }{
+		{"a model whose first backend is FlashAttention sparse", "glm-5", "h200", tp8},
+		{"a pipelined pool", "glm-5.3-flash", "h200", "tp: 4, pp: 2, dp: 1, enable_expert_parallel: true"},
+	} {
+		l := lowered(t, where{tc.model, tc.chip, tc.pool}, vllmsettings.Settings{})
+		if len(l.Plan.Layers) != 0 {
+			t.Errorf("%s states %d lowered layers, want none", tc.name, len(l.Plan.Layers))
+		}
+	}
+	pipelined := lowered(t, where{"glm-5.3-flash", "h200", "tp: 4, pp: 2, dp: 1, enable_expert_parallel: true"}, vllmsettings.Settings{})
+	if v, ok := noted(pipelined, "sparse_mla_kernel"); !ok || v != "unstated" {
+		t.Errorf("a pipelined pool notes sparse_mla_kernel %q (%t), want it unstated by name", v, ok)
 	}
 }

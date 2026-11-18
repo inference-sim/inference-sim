@@ -193,6 +193,7 @@ func newKernel(in Inputs) (*Kernel, error) {
 			Settings: eng}); err != nil {
 			return nil, err
 		}
+		in.Implementations = kernelmodel.PlanImplementations(in.Implementations, in.Lowered.Plan)
 		// A test that edits the drafter states the passes itself; otherwise they are the engine block's.
 		if rows, reqs := draftPasses(in.Deployment, in.PoolIndex); in.DraftFirstPassRows == "" && in.DraftPassRequests == "" {
 			in.DraftFirstPassRows, in.DraftPassRequests = rows, reqs
