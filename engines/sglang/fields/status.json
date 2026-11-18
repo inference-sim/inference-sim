@@ -3274,6 +3274,7 @@
    "evidence": {
     "traces": [
      "config/testdata/serverargs.json",
+     "core/sched/testdata/golden-sched/max-prefill-tokens-250.trace.json",
      "core/sched/testdata/golden-sched/max-prefill-tokens.trace.json"
     ]
    },
