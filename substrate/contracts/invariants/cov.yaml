@@ -301,10 +301,11 @@
 - id: COV-11
   section: §11.8
   statement: >-
-    The headline accuracy covers every graded point, G1 to G4. Beside it, the dashboard publishes
+    The headline accuracy covers every graded point, G1 to G4, except a point simulated through the
+    router table (§11.4), whose accuracy has a figure of its own. Beside it, the dashboard publishes
     the share of points in each grade and each grade's own accuracy. Every published figure shows
-    its point count, and a figure over fewer points than the minimum stated in the dashboard's summary
-    schema is shown as "too few points".
+    its point count, and a figure over fewer points than the minimum stated in the dashboard's
+    summary schema is shown as "too few points".
   scope:
   - accuracy-dashboard
   checks:
