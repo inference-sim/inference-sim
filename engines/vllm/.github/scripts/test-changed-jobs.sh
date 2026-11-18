@@ -59,6 +59,7 @@ case_ "the Go setup action"                     "$ALL" "$EVERY_LEG" -- .github/a
 case_ "the oracle environment action"           "blocksize oracle" "-" -- .github/actions/oracle-env/action.yml
 case_ "the block-size oracle"                   "blocksize goldens oracle" "-" -- oracle/blocksize/oracle.py
 case_ "the block-size table"                    "bench blocksize go inpackage kerneltests oracle race rest" "core $ENGINE $CENSUS" -- core/vllm/blocksize_table.json
+case_ "the oracle's lock file (the block-size oracle runs on its environment)" "blocksize goldens oracle" "-" -- oracle/requirements.lock
 case_ "ci-light (the block-size check's workflow)" "blocksize" "-" -- .github/workflows/ci-light.yml
 case_ "another oracle script (not the block-size oracle)" "goldens oracle" "-" -- oracle/gen_fuzz.py
 case_ "a script only people run"                "-" "-" -- .github/scripts/measure_weights.py
