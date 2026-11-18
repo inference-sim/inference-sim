@@ -94,8 +94,8 @@ func must[T any](v T, err error) T {
 // documents they name.
 func ExampleValidate() {
 	// --8<-- [start:validate]
-	s := must(contracts.LoadScenario("../docs/contracts/examples/scenario.yaml"))
-	d := must(contracts.LoadDeployment("../docs/contracts/examples/deployment.yaml"))
+	s := must(contracts.LoadScenario("testdata/examples/scenario.yaml"))
+	d := must(contracts.LoadDeployment("testdata/examples/deployment.yaml"))
 	g := must(contracts.LoadModelGraph("../catalog/models/llama-3.1-8b-instruct/graph.yaml"))
 	c := must(contracts.LoadChip("../catalog/hardware/h100.yaml"))
 
@@ -116,8 +116,8 @@ func ExampleValidate() {
 // ExampleValidate_problems shows what a failing bundle reports: every problem at once,
 // each at the path of the field that is wrong.
 func ExampleValidate_problems() {
-	s := must(contracts.LoadScenario("../docs/contracts/examples/scenario.yaml"))
-	d := must(contracts.LoadDeployment("../docs/contracts/examples/deployment.yaml"))
+	s := must(contracts.LoadScenario("testdata/examples/scenario.yaml"))
+	d := must(contracts.LoadDeployment("testdata/examples/deployment.yaml"))
 	// --8<-- [start:problems]
 	pool := &d.Pools[0]
 	pool.Parallel.TP = 8  // 8 x 4 data-parallel ranks needs 32 GPUs
@@ -139,8 +139,8 @@ func ExampleValidate_problems() {
 // ExampleValidate_rules shows a rule problem: the documents are well formed, but the engine
 // version they name would refuse them.
 func ExampleValidate_rules() {
-	s := must(contracts.LoadScenario("../docs/contracts/examples/scenario.yaml"))
-	d := must(contracts.LoadDeployment("../docs/contracts/examples/deployment.yaml"))
+	s := must(contracts.LoadScenario("testdata/examples/scenario.yaml"))
+	d := must(contracts.LoadDeployment("testdata/examples/deployment.yaml"))
 	// --8<-- [start:rules]
 	setEngineKey(&d.Pools[0], "cache_dtype", "fp8_e4m3fn") // not a name the release accepts
 
@@ -169,7 +169,7 @@ func ExampleValidateAgainstCatalog() {
 	}
 
 	// --8<-- [start:resolve]
-	s := must(contracts.LoadScenario("../docs/contracts/examples/scenario.yaml"))
+	s := must(contracts.LoadScenario("testdata/examples/scenario.yaml"))
 	s.Cluster.Hardware = "nvidia-h100" // the catalog calls it h100
 
 	rep := contracts.ValidateAgainstCatalog(

@@ -623,7 +623,7 @@
     check: Every generated file matches its generator's output
     runs: pull_request
     status: ci
-    test: 'tools/docgen: TestGeneratedDocsAreCurrent'
+    test: 'tools/schemagen: TestPublishedSchemasMatchTheTypes'
   - repo: blis-vllm
     check: Every generated file matches its generator's output
     runs: pull_request
@@ -867,8 +867,12 @@
 - id: X10
   section: §4.1
   statement: >-
-    Repositories are released bottom-up. A change spanning repositories is one review set. Each repository's
-    part is tagged before the repository above it pins that tag.
+    Repositories are merged bottom-up, and inference-sim is the only repository whose release is
+    required. A tag in any other repository is optional: no pin names one and nothing waits for one.
+    A change spanning repositories is one review set. Each repository's part is on its main branch,
+    or on a release branch (§14.4), before an inference-sim release pins it. A repository that
+    inference-sim pins merges pull requests with a merge commit or a fast-forward, never a squash or
+    a rebase, so a pull request's head commit, once merged, stays on the branch.
   scope:
   - blis-substrate
   checks:
@@ -886,15 +890,22 @@
 - id: X11
   section: §4.1
   statement: >-
-    Pins are exact release tags. The only committed replace directive is the one in inference-sim's
-    go.mod that substitutes the router fork for upstream llm-d. It exists because the fork keeps upstream's
-    module path (github.com/llm-d/llm-d-router), so Go cannot fetch the fork by its own path; a replace
-    is Go's only way to substitute it. It names the fork's exact -blis.N tag, never a branch or a
-    local path, so it pins as exactly as a require does, and go.sum records its hash. It may appear
-    only in inference-sim, because Go ignores replace directives in every module but the one being
-    built. No other module requires the fork; engines and other repositories use only the router contract
-    in contracts/embed. The only committed exclude directives are those in inference-sim that skip
-    a plain tag made before the rule of §14.1, and no repository commits a go.work file.
+    Pins are exact commits. A repository pins another BLIS repository by one commit: a Go module by
+    that commit's pseudo-version, anything else by its full hash. blis-config-search and
+    accuracy-dashboard pin an inference-sim release by its tag and commit, and move to each new
+    release automatically (§13.6). A pin never names a branch, a local path or @latest. The commit
+    an inference-sim release pins is on the pinned repository's main branch or on one of its release
+    branches. While a review set is open, a pull request may pin the head of a pull request below it
+    in the same set (§13.6). The only committed replace directive is the one in inference-sim's
+    go.mod that substitutes the router fork for upstream llm-d. It exists because the fork keeps
+    upstream's module path (github.com/llm-d/llm-d-router), so Go cannot fetch the fork by its own
+    path; a replace is Go's only way to substitute it. It names the pseudo-version of one commit of
+    the fork, never a branch or a local path, so it pins as exactly as a require does, and go.sum
+    records its hash. It may appear only in inference-sim, because Go ignores replace directives in
+    every module but the one being built. No other module requires the fork; engines and other
+    repositories use only the router contract in contracts/embed. The only committed exclude
+    directives are those in inference-sim that skip a plain tag made before the rule of §14.1, and
+    no repository commits a go.work file.
   scope:
   - blis-sglang
   - blis-substrate
@@ -2332,6 +2343,54 @@
   - repo: accuracy-dashboard
     check: The nightly job also reports an issue closed outside a merge
     runs: nightly
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: X29
+  section: §4.1
+  statement: >-
+    Each engine module, the substrate, the router fork and inference-sim document themselves in one
+    README.md. It states the repository’s invariant essence: what it is, what it owns and what it
+    never holds. It describes how the repository connects to the others: what it pins, what pins it,
+    and the contracts it implements or consumes. It says how to build, test and run it, and it
+    points to this design for everything else. Those repositories keep no docs/ tree, no
+    documentation generator and no site. Reference material that data already holds is printed from
+    that data by the simulator (inference-sim fields, schema, metrics, invariants, router-configs);
+    agents and people read that output, the JSON Schemas and the Go doc comments as the reference.
+    The reason for a value lives beside the value, in the registry, the catalog or the code. A rule
+    found in any other document belongs in this design. Three repositories publish a site, because
+    people read and use what they publish: blis-design (this design and the release plan),
+    accuracy-dashboard (the accuracy dashboard) and blis-config-search (its reports). The router
+    fork keeps the files it carries from upstream.
+  scope:
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-sglang
+    check: GitHub Pages is not enabled and no workflow generates or deploys documentation
+    runs: practice
+    status: new
+  - repo: blis-substrate
+    check: GitHub Pages is not enabled and no workflow generates or deploys documentation
+    runs: practice
+    status: new
+  - repo: blis-vllm
+    check: GitHub Pages is not enabled and no workflow generates or deploys documentation
+    runs: practice
+    status: new
+  - repo: inference-sim
+    check: GitHub Pages is not enabled and no workflow generates or deploys documentation
+    runs: practice
+    status: new
+  - repo: llm-d-router
+    check: GitHub Pages is not enabled and no workflow generates or deploys documentation
+    runs: practice
     status: new
   review: null
   status: new

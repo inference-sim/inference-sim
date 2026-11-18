@@ -21,7 +21,7 @@ func withoutEngine(pools []deployment.Pool) []deployment.Pool {
 
 func exampleResult(t *testing.T) *result.Result {
 	t.Helper()
-	r, err := LoadResult(filepath.Join("..", "docs", "contracts", "examples", "result.json"))
+	r, err := LoadResult(filepath.Join("testdata", "examples", "result.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestResultRoundTripsInBothFormats(t *testing.T) {
 // TestLoadResultReadsJSONEscapes: a JSON document is read by JSON's rules, so an escape
 // JSON allows and YAML does not reads as JSON defines it.
 func TestLoadResultReadsJSONEscapes(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("..", "docs", "contracts", "examples", "result.json"))
+	b, err := os.ReadFile(filepath.Join("testdata", "examples", "result.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -61,7 +61,7 @@ func TestPublishedSchemasMatchTheTypes(t *testing.T) {
 // TestExamplesConformToTheSchemas: each documented example document conforms to its
 // published schema, and a copy with one unknown key does not.
 func TestExamplesConformToTheSchemas(t *testing.T) {
-	ex := func(name string) string { return filepath.Join(root, "docs", "contracts", "examples", name) }
+	ex := func(name string) string { return filepath.Join(root, "contracts", "testdata", "examples", name) }
 	cases := []struct{ document, path string }{
 		{"result", ex("result.json")},
 		{"point-record", ex("point-record.json")},
@@ -91,7 +91,7 @@ func TestExamplesConformToTheSchemas(t *testing.T) {
 // TestSchemaRefusesASeventhFate: a vocabulary the Go code closes is closed in the schema.
 func TestSchemaRefusesASeventhFate(t *testing.T) {
 	s := loadSchema(t, "result")
-	doc := loadDoc(t, filepath.Join(root, "docs", "contracts", "examples", "result.json"))
+	doc := loadDoc(t, filepath.Join(root, "contracts", "testdata", "examples", "result.json"))
 	rows := doc.(map[string]any)["request_rows"].([]any)
 	rows[0].(map[string]any)["fate"] = "length_capped"
 	if errs := conform(s, s, doc, ""); len(errs) == 0 {

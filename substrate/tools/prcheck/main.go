@@ -6,6 +6,11 @@
 //	    X20, over the commits base..head: at most one Assisted-by line, no Co-authored-by
 //	    naming a tool, no Signed-off-by naming a tool or on a release-bot commit. It does not
 //	    check for a signature or a sign-off: those are encouraged, not required.
+//	prcheck commits -strict -maintainer "Name <email>;..." -base <rev> -head <rev>
+//	    Also, per commit, merge commits included: a good signature, an author who is a
+//	    maintainer or a Signed-off-by line of one, exactly one Assisted-by and one Signed-off-by
+//	    line. The integrator runs it on each integration head before another repository pins it
+//	    (inference-sim/blis-substrate#335).
 //	prcheck workflows [-dir .github]
 //	    X21, X22, X16: actions pinned by commit, pip --require-hashes, no ignored exit
 //	    codes, no skipped tests in a job, gate trigger paths as declared.
@@ -34,8 +39,6 @@
 //	    SUB-1: the packages under contracts/ change only compatibly since the last release
 //	    tag, by apidiff at a pinned version run through go run. -accept-break names the issue
 //	    of a contract-change review set (design §12.8) and accepts, and prints, the changes.
-//	prcheck tags [-lock .github/tags.lock]
-//	    LIF-1: every tag resolves to the commit the lock records, and every tag is recorded.
 //	prcheck status [-repo <o/n>] [-gates .github/gates.yaml] [-out page.md]
 //	    X16: each gate's declared paths equal its workflow's triggers; with -repo, the
 //	    status page, which shows a gate not run for seven days as failing.
@@ -115,7 +118,6 @@ func run(args []string, w io.Writer) error {
 	repoName := fs.String("repo-name", "blis-substrate", "the repository's BLIS name")
 	listOnly := fs.Bool("list-only", false, "list the known-bad tests without running them")
 	gatesFile := fs.String("gates", ".github/gates.yaml", "the gate list")
-	lockFile := fs.String("lock", ".github/tags.lock", "the recorded tags")
 	prNum := fs.Int("pr", 0, "pull request number")
 	runID := fs.Int64("run", 0, "rerun: the workflow run id")
 	outFile := fs.String("out", "", "status: where to write the status page")
@@ -126,6 +128,8 @@ func run(args []string, w io.Writer) error {
 	minItems := fs.Int("min", 1, "the minimum number of go test results")
 	runsSHA := fs.String("runs-sha", "", "the commit whose check runs the path gates are read from; default -head")
 	wait := fs.Duration("wait", 45*time.Minute, "how long path-gates waits for a triggered gate to complete")
+	strict := fs.Bool("strict", false, "commits: also require a good signature, a maintainer author or sign-off, and exactly one Assisted-by and Signed-off-by line")
+	maintainers := fs.String("maintainer", "", "commits -strict: the maintainers' identities, \"Name <email>\", separated by semicolons")
 	today := fs.String("today", "", "the date to judge expiry on (YYYY-MM-DD); default today, UTC")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
@@ -143,8 +147,17 @@ func run(args []string, w io.Writer) error {
 			return fmt.Errorf("no commits in %s..%s; the check processes at least one (X22)", *base, *head)
 		}
 		var bad []string
+		var maint []string
+		for _, m := range strings.Split(*maintainers, ";") {
+			if strings.TrimSpace(m) != "" {
+				maint = append(maint, m)
+			}
+		}
 		for _, c := range cs {
 			bad = append(bad, CommitPolicy(c)...)
+			if *strict {
+				bad = append(bad, StrictCommitPolicy(c, maint)...)
+			}
 		}
 		fmt.Fprintf(w, "commits: %d checked\n", len(cs))
 		return report(w, "commit-policy", bad)
@@ -331,16 +344,6 @@ func run(args []string, w io.Writer) error {
 			_, _ = fmt.Fprintln(w, note)
 		}
 		return report(w, "contracts-api", bad)
-	case "tags":
-		raw, err := os.ReadFile(*lockFile)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		tags, err := gitTags()
-		if err != nil {
-			return err
-		}
-		return report(w, "tags", CheckTags(string(raw), tags))
 	case "path-gates":
 		if *repo == "" || *base == "" || *runsSHA == "" && *head == "" {
 			return fmt.Errorf("path-gates needs -repo, -base and -head")
@@ -502,7 +505,8 @@ func gitCommits(base, head string) ([]Commit, error) {
 		}
 		author, _ := git("log", "-1", "--format=%an <%ae>", h)
 		committer, _ := git("log", "-1", "--format=%cn <%ce>", h)
-		cs = append(cs, Commit{Hash: h, Message: msg, Author: author, Committer: committer})
+		sig, _ := git("log", "-1", "--format=%G?", h)
+		cs = append(cs, Commit{Hash: h, Message: msg, Author: author, Committer: committer, Signature: sig})
 	}
 	return cs, nil
 }

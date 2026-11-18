@@ -165,13 +165,17 @@ type MemoryBreakdown struct {
 	// (vllm/v1/worker/gpu_worker.py:720-756@v0.33.0), which it subtracts with the weights and the
 	// transient peak. Not a communicator reservation held before the budget's snapshot.
 	NonTorchInBudget int64
+	// EngineBuffers are the per-rank GPU buffers and workspaces the engine states in its plan
+	// (plan.PoolPlan.Buffers, SUB-14): memory it allocates before the budget's profiling, so it
+	// comes out of the KV budget. Zero when the plan states none.
+	EngineBuffers int64
 }
 
 // Total returns the sum. Callers that only need a feasibility answer use it; the
 // fields exist for callers that need to act on the result.
 func (m MemoryBreakdown) Total() int64 {
 	return m.Weights + m.ActivationPeak + m.CUDAGraph + m.EPLBRedundant + m.CommBuffers +
-		m.NonTorchInBudget
+		m.NonTorchInBudget + m.EngineBuffers
 }
 
 // Resource is the axis a cost lands on. A communication op appears as ResourceSM

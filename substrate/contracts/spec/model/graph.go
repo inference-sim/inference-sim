@@ -568,6 +568,14 @@ type Node struct {
 	// express that split, and inferring it from the quantization method would be a guess
 	// about a width the checkpoint states.
 	WeightDType DType `yaml:"weight_dtype,omitempty"`
+	// BiasDType is the dtype of the bias the checkpoint stores beside this node's weights, a
+	// checkpoint fact like WeightDType. Empty means the node has no bias, which is every node
+	// of a graph written before the field existed. The bias is resident beside the weights: a
+	// GEMM's holds N elements, and a GroupedGEMM's holds, for each expert, N elements for each
+	// of the gate and the up projection and K for the down projection. How an engine converts
+	// or pads it (a TRTLLM MoE path holds it in float32 at a padded shape) is the engine's
+	// lowering, not the graph's.
+	BiasDType DType `yaml:"bias_dtype,omitempty"`
 	// GroupedGEMM only.
 	//
 	// Shared says whether this group is a shared expert (true: every token passes through
@@ -613,6 +621,18 @@ type Node struct {
 	// MLA-specific latent dimensions; zero for other kinds.
 	KVLoRARank    int `yaml:"kv_lora_rank,omitempty"`
 	QKRopeHeadDim int `yaml:"qk_rope_head_dim,omitempty"`
+	// PrefillQKHeadDim and PrefillVHeadDim are the widths of the multi-head form an mla layer
+	// runs its prefill in: the query and key width (qk_nope_head_dim + qk_rope_head_dim, 192 for
+	// DeepSeek-V3 and Kimi-K2.5) and the value width (v_head_dim, 128). d_h is the cache width
+	// (kv_lora_rank + qk_rope_head_dim), the width of the absorbed form decode runs in; vLLM
+	// prefills a latent layer by expanding the latents through kv_b_proj and attending at these
+	// widths (MLACommonImpl.forward_mha, vllm/model_executor/layers/attention/mla_attention.py,
+	// at v0.33.0). A consumer that prices prefill attention by the cache width charges
+	// d_h / ((qk + v) / 2) times the work (3.6 for DeepSeek-V3). Both are set, or neither: absent
+	// means the consumer has no prefill widths and prices prefill at d_h, as before. Only an mla
+	// node states them; sparse_mla runs another kernel.
+	PrefillQKHeadDim int `yaml:"prefill_qk_head_dim,omitempty"`
+	PrefillVHeadDim  int `yaml:"prefill_v_head_dim,omitempty"`
 	// SWA window, in tokens; zero for other kinds.
 	Window int `yaml:"window,omitempty"`
 	// Sparse top-k index count (sparse_mla, sparse_gqa); zero for other kinds.
@@ -673,6 +693,13 @@ type Node struct {
 	// Shard is how the table divides across tensor-parallel ranks. Empty means
 	// replicated.
 	Shard GatherShard `yaml:"shard,omitempty"`
+	// ResidentOnly says the engine holds this table on every rank but no kernel of the layer
+	// reads it as a lookup of its own: its bytes are resident (and divided by Shard), and the
+	// node adds no launch and no per-token traffic. A table another node's kernel reads
+	// inside a fusion that node already counts is one -- the RoPE cos/sin table a fused
+	// QK-norm and RoPE kernel indexes. rows_per_token and out_bytes_per_token must then be
+	// absent. Absent means a lookup that launches and moves rows_per_token rows a token.
+	ResidentOnly bool `yaml:"resident_only,omitempty"`
 
 	// Elementwise: bytes touched per token, when it is not derivable from
 	// HiddenSize alone.

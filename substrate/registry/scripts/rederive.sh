@@ -51,6 +51,10 @@ if [ -n "${INFERENCEX_GOLDEN:-}" ]; then
   python scripts/emit_acceptance_profiles.py --check
 fi
 
+# The internal-deployment acceptance set reads counters committed in the repository, so its
+# gate needs no checkout.
+python scripts/emit_internal_acceptance_profiles.py --check
+
 # The rest-of-module prices fit_glm53_attention.py subtracts are a generated file: it must be
 # what the kernel charges now, or the GLM-5.3 fit below is checked against a stale input.
 (cd .. && go test ./kernel -run '^TestGLM53AttentionRestIsCurrent$' -count=1)

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -37,6 +39,47 @@ func changesFilterScript(t *testing.T) string {
 	}
 	t.Fatal("ci.yml has no step `filter` in job `changes`")
 	return ""
+}
+
+// hermeticGo is the environment every go command the filter runs gets: the module root is the
+// repository's, no workspace and no flags of the developer's shell apply, and the toolchain is the
+// installed one, never downloaded.
+var hermeticGo = []string{"GOFLAGS=", "GOWORK=off", "GOTOOLCHAIN=local", "GO111MODULE=on"}
+
+var (
+	changedJobsOnce sync.Once
+	changedJobsBin  string
+	changedJobsErr  error
+)
+
+// changedJobsBinary builds tools/changedjobs once. The filter runs it as `go run ./tools/changedjobs .`
+// from the checkout, but the test runs the filter in a scratch repository that has no module, where
+// go would find no go.mod (or read a file the test wrote as one), so the test runs the built
+// binary on the real module root instead.
+func changedJobsBinary(t *testing.T) (bin, root string) {
+	t.Helper()
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedJobsOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "changedjobs")
+		if err != nil {
+			changedJobsErr = err
+			return
+		}
+		changedJobsBin = filepath.Join(dir, "changedjobs")
+		cmd := exec.Command("go", "build", "-o", changedJobsBin, "./tools/changedjobs")
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), hermeticGo...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			changedJobsErr = fmt.Errorf("go build ./tools/changedjobs: %v\n%s", err, out)
+		}
+	})
+	if changedJobsErr != nil {
+		t.Fatal(changedJobsErr)
+	}
+	return changedJobsBin, root
 }
 
 // runFilter commits the files into a scratch repository on top of a base commit, runs the
@@ -72,9 +115,15 @@ func runFilter(t *testing.T, script string, files []string) []string {
 	git("add", "-A")
 	git("commit", "-q", "-m", "change")
 	outFile := filepath.Join(dir, "..", filepath.Base(dir)+".out")
+	// The filter asks tools/changedjobs which jobs the files reach; see changedJobsBinary.
+	const invocation = "go run ./tools/changedjobs ."
+	if strings.Contains(script, invocation) {
+		bin, root := changedJobsBinary(t)
+		script = strings.Replace(script, invocation, "'"+bin+"' '"+root+"'", 1)
+	}
 	cmd := exec.Command("bash", "-c", script)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "BASE="+base, "GITHUB_OUTPUT="+outFile)
+	cmd.Env = append(append(os.Environ(), hermeticGo...), "BASE="+base, "GITHUB_OUTPUT="+outFile)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("filter: %v\n%s", err, out)
 	}
@@ -108,23 +157,25 @@ func gitOut(t *testing.T, dir string, args ...string) string {
 // others state what each directory's change must and must not run.
 func TestChangesFilterRunsEachJobForTheFilesItReads(t *testing.T) {
 	script := changesFilterScript(t)
-	all := []string{"apidiff", "catalog", "contracts", "docs", "golang", "kernel", "ledger", "registry"}
+	all := []string{"apidiff", "catalog", "contracts", "golang", "kernel", "ledger", "registry"}
 	cases := []struct {
 		name  string
 		files []string
 		want  []string
 	}{
-		{"tag lock only", []string{".github/tags.lock"}, nil},
 		{"a cost model source file", []string{"kernel/step.go"}, []string{"golang", "kernel"}},
-		{"a registry script", []string{"registry/scripts/fit_fabric.py"}, []string{"contracts", "docs", "registry"}},
-		{"documentation only", []string{"docs/contributing/index.md"}, []string{"docs"}},
+		{"a registry script", []string{"registry/scripts/fit_fabric.py"}, []string{"contracts", "registry"}},
+		{"documentation only", []string{"README.md"}, nil},
 		{"the CI workflow", []string{".github/workflows/ci.yml"}, all},
-		{"a contracts source file", []string{"contracts/spec/model/model.go"}, []string{"apidiff", "contracts", "golang", "kernel"}},
-		{"a coefficient set, which the cost model embeds", []string{"registry/coefficients/fabric.yaml"}, []string{"contracts", "docs", "kernel", "registry"}},
-		{"a catalog model graph, which the cost model embeds", []string{"catalog/models/m/graph.yaml"}, []string{"catalog", "contracts", "docs", "kernel"}},
+		{"a contracts source file", []string{"contracts/spec/model/model.go"}, []string{"apidiff", "catalog", "contracts", "golang", "kernel", "ledger", "registry"}},
+		{"a coefficient set, which the cost model embeds", []string{"registry/coefficients/fabric.yaml"}, []string{"contracts", "kernel", "registry"}},
+		{"a catalog model graph, which the cost model embeds", []string{"catalog/models/m/graph.yaml"}, []string{"catalog", "contracts", "kernel"}},
 		{"the shard weights", []string{"tools/shard/weights-kernel.txt"}, []string{"contracts", "kernel"}},
 		{"go.mod", []string{"go.mod"}, all},
-		{"a ledger source file", []string{"ledger/check.go"}, []string{"golang", "ledger"}},
+		{"a ledger source file", []string{"ledger/check.go"}, []string{"contracts", "golang", "ledger"}},
+		// ledger imports load: a change to the loader reaches the ledger job although ci.yml's
+		// path patterns do not name load/ for it (the hole blis-substrate#353 closed).
+		{"the loader, which the ledger imports", []string{"load/load.go"}, []string{"contracts", "golang", "kernel", "ledger"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -273,8 +273,9 @@ def test_layer_count_matches_config(d: Path):
     stated = t.get("num_hidden_layers")
     vector = t.get("layers_block_type")
     expected = stated if stated is not None else (len(vector) if vector else None)
-    if expected is None:
-        pytest.skip("the config states neither a layer count nor a layer vector")
+    # A config that states neither fails: a skip would let a model go unchecked in every CI job
+    # (X16).
+    assert expected is not None, "the config states neither a layer count nor a layer vector"
     assert derived == expected
 
 
@@ -296,8 +297,9 @@ def test_attention_shape_matches_config(d: Path):
     check and fail here."""
     g, t = graph_of(d), text_config(config_of(d))
     nodes = [n for k in g["layer_kinds"] for n in k["nodes"] if n["op"] == "Attention"]
-    if not nodes:
-        pytest.skip("no attention layer")
+    # Every catalogued model has an attention layer today. A model with none (a pure state-space
+    # model) needs its own check here rather than a skip that passes unseen (X16).
+    assert nodes, "the graph has no attention layer"
     for n in nodes:
         if n.get("role") == "block_index_scores":
             # A block-sparse layer runs a second, much narrower attention to score which
@@ -1618,6 +1620,11 @@ def test_expert_shape_matches_config(d: Path):
 # everything would pass every per-model check above.
 EXPECTED_IDENTICAL = {
 
+    frozenset({"deepseek-r1-0528-fp4-v2", "deepseek-r1-0528-nvfp4-v2"}):
+        "one set of files under two repository names. nvidia/DeepSeek-R1-0528-FP4-V2 and "
+        "nvidia/DeepSeek-R1-0528-NVFP4-v2 both resolve to revision 25a138f2, with the same "
+        "config.json and shard headers; InferenceX's recipes serve it by either name",
+
     frozenset({"minimax-m2.5", "minimax-m2.7"}):
         "one architecture across two MiniMax-M2 generations. Every cost-relevant field is "
         "identical: 62 layers, hidden 3072, 256 experts at top-8, intermediate 1536, 48 "
@@ -2737,9 +2744,10 @@ def test_nemotron_h_parses_the_character_form_of_the_layer_vector():
         "num_local_experts": 8, "num_experts_per_tok": 2, "moe_intermediate_size": 1024,
         "mamba_num_heads": 64, "ssm_state_size": 128, "conv_kernel": 4,
         "mamba_head_dim": 64, "n_groups": 8,
-        "hybrid_override_pattern": "M-*E", "dtype": "bfloat16",
+        "hybrid_override_pattern": "M-*E", "dtype": "bfloat16", "max_position_embeddings": 4096,
     }
-    kinds, stack = dg.handler_nemotron_h(cfg, cfg, "synthetic")
+    kinds, stack, extras = dg.handler_nemotron_h(cfg, cfg, "synthetic")
+    assert extras["global"]["context_window"] == 4096
     assert layer_sequence(stack) == ["mamba", "mlp", "attention", "moe"], (
         "the character form must map M/-/*/E to state-space, MLP, attention and MoE")
     assert {k["id"] for k in kinds} == {"mamba", "mlp", "attention", "moe"}
@@ -5837,6 +5845,66 @@ def test_muse_spark_layers_follow_layer_types():
             assert attn["kind"] == "swa" and attn["window"] == t["sliding_window"], i
         assert (attn["n_q"], attn["n_kv"], attn["d_h"]) == (128, 16, 64)
     assert sum(lt == "full_attention" for lt in t["layer_types"]) == 16
+
+
+def test_muse_spark_states_a_rope_table_on_exactly_the_layers_that_rotate(tmp_path):
+    """MuseSpark1xAttention builds its own fp32 cos/sin table in every layer whose
+    layer_rope_theta is positive (46 of 62 here), replicated on every rank
+    (inference-sim/blis-substrate#378). The graph states it as a Gather of max_position_embeddings
+    rows of head_dim fp32 values, resident only, on those layers and no other; a layer kind that would mix
+    rotating and non-rotating layers is refused."""
+    for model in (MUSE, MUSE_NVFP4):
+        raw = config_of(model)
+        t = text_config(raw)
+        g = graph_of(model)
+        rotating = [i for i, th in enumerate(t["layer_rope_theta"]) if th > 0]
+        assert len(rotating) == 46
+        for i in range(t["num_hidden_layers"]):
+            tables = [n for n in _kind_of(g, i)["nodes"] if n.get("role") == "rope_cos_sin_cache"]
+            if i in rotating:
+                assert len(tables) == 1 and tables[0]["op"] == "Gather", i
+                assert tables[0]["rows"] == t["max_position_embeddings"], i
+                assert tables[0]["row_bytes"] == t["head_dim"] * 4, i
+                assert "shard" not in tables[0], i  # replicated
+                # resident memory, not step work: no lookup of its own to launch or move rows
+                assert tables[0]["resident_only"] is True, i
+                assert "rows_per_token" not in tables[0] and "out_bytes_per_token" not in tables[0], i
+            else:
+                assert not tables, i
+    raw = config_of(MUSE)
+    bad = json.loads(json.dumps(raw))
+    bad["text_config"]["layer_rope_theta"][2] = 0  # a sliding layer that does not rotate
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match="RoPE table"):
+        _derive_raw(bad, tmp_path)
+    short = json.loads(json.dumps(raw))
+    short["text_config"]["layer_rope_theta"].pop()
+    with pytest.raises(derive_graph.DeriveError, match="layer_rope_theta"):
+        _derive_raw(short, tmp_path)
+
+
+def test_muse_spark_dspark_drafter_holds_a_rope_table_in_each_layer(tmp_path):
+    """The DSpark drafter's attention builds its own RotaryEmbedding in every layer, in every
+    engine build (vllm-project/vllm#65206 shares only the target's): max_position_embeddings
+    rows of head_dim values, fp32 because its config computes the outer product in fp32,
+    resident and not a step's work (inference-sim/blis-substrate#378)."""
+    raw = config_of(MUSE_DSPARK)
+    t = text_config(raw)
+    g = graph_of(MUSE_DSPARK)
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    tables = [n for n in kinds["dspark_layer"]["nodes"] if n.get("role") == "rope_cos_sin_cache"]
+    assert len(tables) == 1 and tables[0]["op"] == "Gather" and tables[0]["resident_only"] is True
+    assert tables[0]["rows"] == t["max_position_embeddings"]
+    assert tables[0]["row_bytes"] == t["head_dim"] * 4 and t["rope_use_fp32_in_outer_product"]
+    assert g["speculator"]["stack"]["repeat"] == t["num_hidden_layers"] == 5
+    bad = json.loads(json.dumps(raw))
+    badt = bad.get("text_config", bad)
+    badt["every_n_layers_nope"] = 4
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match="every_n_layers_nope"):
+        _derive_raw(bad, tmp_path)
 
 
 def test_muse_spark_experts_run_at_the_latent_width():
@@ -8965,6 +9033,68 @@ def test_dsr1_fp4_refuses_a_draft_layer_its_one_node_cannot_price(tmp_path):
         _derive_dsr1_fp4(_dsr1_fp4_headers(edit), tmp_path)
 
 
+def test_dsr1_second_repository_name_prices_the_same_weights():
+    """InferenceX's recipes serve DeepSeek-R1-0528 FP4 under two repository names, FP4-V2 and
+    NVFP4-v2, one set of files at one revision. The scorer finds a model by the repository a
+    recipe names and then by its base_model, which for the second name is the FP8 checkpoint, so
+    the second name needs an entry whose graph is the first's: same widths, the same speculator,
+    and the same file pins."""
+    a = DSR1_FP4
+    b = MODELS / "deepseek-r1-0528-nvfp4-v2"
+    ga, gb = graph_of(a), graph_of(b)
+    ga.pop("name"), gb.pop("name")
+    assert ga == gb
+    assert {w for k in gb["layer_kinds"] for n in k["nodes"] if (w := n.get("weight_dtype"))} >= {"nvfp4", "bf16"}
+    ya = yaml.safe_load((a / "model.yaml").read_text())
+    yb = yaml.safe_load((b / "model.yaml").read_text())
+    assert yb["source"]["repo"] == "nvidia/DeepSeek-R1-0528-NVFP4-v2"
+    assert (yb["source"]["revision"], yb["shard_index"], yb["headers"]) == (
+        ya["source"]["revision"], ya["shard_index"], ya["headers"])
+
+
+def test_dense_qwen35_prices_a_dense_mlp_on_gdn_and_full_attention_layers(tmp_path):
+    """Qwen3.8-27B is the dense Qwen3_5ForConditionalGeneration: three Gated DeltaNet layers to one
+    full-attention layer, each followed by a dense gate/up/down MLP of the stated intermediate size,
+    no router or experts, and an MTP draft layer. The MoE class of the same family is refused."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    g = graph_of(MODELS / "qwen3.8-27b")
+    assert g["global"]["architecture"] == "Qwen3_5ForConditionalGeneration"
+    inter = config_of(MODELS / "qwen3.8-27b")["text_config"]["intermediate_size"]
+    for kid in ("gdn_dense", "attn_dense"):
+        w = _widths(g, kid)
+        assert "router" not in w and "experts" not in w
+    nodes = {n["role"]: n for k in g["layer_kinds"] if k["id"] == "attn_dense" for n in k["nodes"] if n.get("role")}
+    assert (nodes["mlp_gate_up"]["n"], nodes["mlp_down"]["k"]) == (2 * inter, inter)
+    assert layer_sequence(g["stack"]).count("attn_dense") == 16
+    assert g["speculator"]["method"] == "qwen3_5_mtp"
+    # The draft layer's MLP is dense, so it is not the MoE draft layer "mtp_moe" that other
+    # families' graphs carry: it has its own id, and the speculator's stack names it.
+    assert g["speculator"]["stack"]["pattern"] == ["mtp_dense"]
+    assert "mtp_moe" not in {k["id"] for k in g["layer_kinds"]}
+    cfg = config_of(MODELS / "qwen3.8-27b")
+    cfg["text_config"]["num_experts"] = 8
+    f = tmp_path / "config.json"
+    f.write_text(json.dumps(cfg))
+    with pytest.raises(derive_graph.DeriveError, match="dense Qwen3.5 declares no experts"):
+        derive_graph.derive(f, "qwen3.8-27b")
+
+
+def test_qwen38_27b_text_decoder_bytes_equal_the_header_total():
+    """The graph's text-decoder weights (the stack, the head and the inferred embedding table, all
+    bf16) are 53.79 GB, the sum of the checkpoint's safetensors tensors outside the vision tower and
+    the MTP layer at Qwen/Qwen3.8-27B's pinned revision (read from the shard headers by range request;
+    the headers are not committed). The graph's parameters are derived from the config, so the two
+    agree only if the handler places every projection."""
+    g = graph_of(MODELS / "qwen3.8-27b")
+    wide = BYTES_PER_PARAM[g["global"]["weight_dtype"]]
+    head = sum(n["n"] * n["k"] * BYTES_PER_PARAM[n.get("weight_dtype") or g["global"]["weight_dtype"]]
+               for n in g["head"] if n["op"] == "GEMM")
+    emb = g["global"]["vocab_size"] * g["global"]["hidden_size"] * wide
+    total = (weight_bytes(g) + head + emb) / 1e9
+    assert abs(total - 53.79) < 0.01, total
+
+
 KIMI_K26_NVFP4 = MODELS / "kimi-k2.6-nvfp4"
 
 
@@ -10054,3 +10184,76 @@ def test_qwen4_exp_fused_expert_tensors_are_one_unquantized_module(tmp_path):
     bad = {"mtp.layers.0.mlp.experts.down_proj": {"dtype": "F8_E4M3", "shape": [16, 256, 32]}}
     with pytest.raises(deriver().DeriveError, match="fused expert tensor"):
         derive_graph.header_module_widths(bad, "x")
+
+
+NEMOTRON_H_ENTRIES = ("nemotron-3-ultra-550b-a55b-bf16", "nemotron-3-ultra-550b-a55b-nvfp4",
+                      "nemotron-3.5-lightning-30b-a3b-bf16", "nemotron-3.5-lightning-30b-a3b-nvfp4")
+
+
+@pytest.mark.parametrize("name", NEMOTRON_H_ENTRIES)
+def test_nemotron_h_states_the_context_window_its_config_gives_vllm(name):
+    """vLLM's max_model_len is max_position_embeddings when the config scales no RoPE, and a
+    Mamba hybrid needs it (mamba_cache_mode none sets mamba_block_size to it), so the graph
+    states it as its context window."""
+    d = MODELS / name
+    if not d.is_dir():
+        pytest.skip(f"{name} is not in the catalog")
+    assert graph_of(d)["global"]["context_window"] == text_config(config_of(d))["max_position_embeddings"]
+
+
+def test_nemotron_h_super_states_the_window_of_its_pinned_config():
+    """The licence keeps this config out of the tree (X12), so only the derived value is
+    committed; it is the max_position_embeddings of the config the entry pins by hash."""
+    assert graph_of(MODELS / "nemotron-3-super-120b-a12b-fp8")["global"]["context_window"] == 262144
+
+
+def test_nemotron_h_refuses_a_config_that_scales_its_rope(tmp_path):
+    """A scaled RoPE changes the length vLLM serves, so max_position_embeddings alone would
+    state the wrong window."""
+    name = NEMOTRON_H_ENTRIES[2]
+    d = MODELS / name
+    if not d.is_dir():
+        pytest.skip(f"{name} is not in the catalog")
+    raw = config_of(d)
+    raw["rope_scaling"] = {"rope_type": "yarn", "factor": 4.0}
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match="scales its RoPE"):
+        _derive_raw(raw, tmp_path, name)
+
+
+def _attention_nodes(g):
+    return [n for k in g["layer_kinds"] for n in k["nodes"] if n["op"] == "Attention"]
+
+
+def test_an_mla_node_states_the_widths_vllm_prefills_it_in():
+    """vLLM prefills a dense latent layer in the multi-head form (q and k nope + rope wide, v v_head_dim wide) and
+    decodes it in the absorbed form at the cache width d_h; the node states the first so a cost model does not
+    price prefill at the second. Checked for every committed config that states a latent layer."""
+    seen = 0
+    for d in sorted(MODELS.iterdir()):
+        cfg_path = d / "config.json"
+        if not cfg_path.is_file() or not (d / "graph.yaml").is_file():
+            continue
+        t = text_config(json.loads(cfg_path.read_text()))
+        for n in _attention_nodes(graph_of(d)):
+            if n.get("kind") == "mla":
+                seen += 1
+                nope, rope = int(t["qk_nope_head_dim"]), int(t.get("qk_rope_head_dim") or 0)
+                v = int(t.get("v_head_dim") or nope)
+                assert (n["prefill_qk_head_dim"], n["prefill_v_head_dim"]) == (nope + rope, v), d.name
+            else:
+                assert "prefill_qk_head_dim" not in n and "prefill_v_head_dim" not in n, (d.name, n.get("kind"))
+    assert seen >= 8, f"non-vacuity: only {seen} mla nodes checked"
+
+
+def test_the_mla_prefill_widths_come_from_the_config(tmp_path):
+    raw = config_of(MODELS / "kimi-k2.5")
+    g = _derive_raw(raw, tmp_path, "kimi-k2.5")
+    (n,) = {(a["prefill_qk_head_dim"], a["prefill_v_head_dim"]) for a in _attention_nodes(g) if a["kind"] == "mla"}
+    assert n == (192, 128)
+    t = text_config(raw)
+    bumped = json.loads(json.dumps(raw))
+    text_config(bumped)["v_head_dim"] = 64
+    g = _derive_raw(bumped, tmp_path, "kimi-k2.5")
+    assert {(a["prefill_qk_head_dim"], a["prefill_v_head_dim"]) for a in _attention_nodes(g) if a["kind"] == "mla"} == {(192, 64)}, t.get("v_head_dim")

@@ -14,8 +14,15 @@ For every prefill/decode shape, workload shape, concurrency, router policy and s
 a scenario into --work, runs `blis run`, and appends the figures it needs to --out. A run whose
 process fails stops the sweep with its stderr. A run that ends with requests timed out is written
 with its `completed` count below `requests`; summarise.py refuses a file that has one.
-Reads only the files beside it; writes only under --work and to --out. See
-docs/contracts/guides/router-sensitivity.md for what the sweep is for and what it does not show.
+Reads only the files beside it; writes only under --work and to --out.
+
+What the sweep is for: a router-table entry stands an llm-d policy in for a router BLIS does not host,
+and the entry's `bound` states how far BLIS's own prediction moves when the policy changes. The sweep
+holds the engine, model, hardware and workload fixed, changes only the policy, and records the ratio
+max(mean_A / mean_B, mean_B / mean_A) of each figure between two policies, over the three seeds.
+What it does not show: it is a sensitivity of BLIS's prediction to the policy, not an error against the
+hosted router (no run behind that router was compared), and it says nothing about differences between
+BLIS's tie-breaking and the router's that BLIS does not model; the entry's `difference` lists those.
 """
 import argparse, concurrent.futures as cf, csv, itertools, json, math, os, re, shutil, subprocess, sys, threading
 

@@ -190,6 +190,21 @@ func TestThisRepositoryIsClean(t *testing.T) {
 	}
 }
 
+// blis-sglang is pinned by commit from M3.1 like the other lower repositories: a pseudo-version pin
+// of it is deferred when the deferral lists it, and fails when the list leaves it out.
+func TestApplyDeferralCoversBlisSglang(t *testing.T) {
+	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
+	const listed = "issue: inference-sim/blis-substrate#14\nadded: 2026-11-05\nexpires: 2026-12-05\nmodules: [blis-substrate, blis-vllm, blis-sglang, llm-d-router]\nreason: pinned by commit\n"
+	const unlisted = "issue: inference-sim/blis-substrate#14\nadded: 2026-11-05\nexpires: 2026-12-05\nmodules: [blis-substrate, blis-vllm, llm-d-router]\nreason: pinned by commit\n"
+	pin := "github.com/inference-sim/blis-sglang resolves to v0.0.0-20261118053822-9aba670214aa, which is not a release tag (X11, LIF-2)"
+	if fail, deferred := ApplyDeferral([]byte(listed), day("2026-11-18"), []string{pin}); len(fail) != 0 || len(deferred) != 1 {
+		t.Errorf("listed: fail=%v deferred=%v, want the pin deferred", fail, deferred)
+	}
+	if fail, deferred := ApplyDeferral([]byte(unlisted), day("2026-11-18"), []string{pin}); len(fail) != 1 || len(deferred) != 0 {
+		t.Errorf("unlisted: fail=%v deferred=%v, want the pin to fail", fail, deferred)
+	}
+}
+
 // The pin-by-commit deferral: a pseudo-version pin is deferred while the file holds; every
 // other finding fails; an expired, unowned or malformed file defers nothing.
 func TestApplyDeferral(t *testing.T) {

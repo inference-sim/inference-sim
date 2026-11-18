@@ -489,31 +489,28 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 			denseShapedSeconds += rows * g.FLOPsPerToken / div / (peak * eff)
 		}
 
+		// A latent layer's prefill expands the cached latents it attends over through kv_b_proj, which the absorbed
+		// form decode runs in avoids (see mlaContextTokens).
+		if ctx := k.mlaContextTokens(l, s); ctx > 0 {
+			var gfits []gemmFit
+			if fits != nil {
+				gfits = fits[i]
+			}
+			denseShapedSeconds += k.mlaContextExpandSeconds(l, gfits, ctx)
+		}
+
 		if l.ExpertFLOPsPerTokenPerExpert > 0 {
 			// A rank computes only the tokens routed to the experts it holds.
 			//
-			// NOT divided by expertTensorShards, and that is a KNOWN over-charge rather
-			// than an oversight. Under pure tensor parallelism localExpertShare is 1 --
-			// every rank does hold every expert -- and vLLM shards the intermediate
+			// Divided by expertTensorShards on every ramp below: vLLM shards the intermediate
 			// dimension, `intermediate_size_per_partition = intermediate_size // tp_size`
-			// (vllm/model_executor/layers/fused_moe/config.py:1321-1323), so a rank's
-			// routed work is its slice's. Charging the whole expert over-prices routed
-			// compute by the tensor-parallel width on the 400 of 591 InferenceX scenarios
-			// that are pure TP. The BYTES do divide by it (routedWeightBytes, below), so the
-			// two terms disagree about the same experts.
-			//
-			// Dividing it was implemented, tested and measured: it improves per-step
-			// accuracy against NVIDIA's FPM whole-forward set, mape 27.45% to 23.03% over
-			// 9,161 held-out steps, and costs 3.57 points of TPOT mape and 12.29 of TTFT
-			// mape end to end. It is retained in this form on the evaluation evidence,
-			// because the over-charge cancels another term that is not yet identified --
-			// the sixth such cancellation this model is known to rest on. Correcting it
-			// alone makes the kernel worse, so it waits for the term it offsets.
-			//
-			// Re-measured after the activation-width, MLA-cache and shared-MoE corrections,
-			// which changed what it offsets: dividing it takes cmd/score's in-scope MAPE
-			// from 32.7% to 62.1% -- both scored arms then under-predict by more than half --
-			// and cmd/shape's from 11.32% to 11.41%. The cancellation still holds.
+			// (vllm/model_executor/layers/fused_moe/config.py:1321-1323), so a rank's routed work is
+			// its slice's. Until M3.1 this was done only on the weight-only and rank-own ramps, which
+			// were fitted on the slice; the native ramps charged the whole expert on every rank, an
+			// over-charge that cancelled terms not yet priced: the
+			// Blackwell block-FP8 grouped ramp and floor (gemm_*_fp8_grouped_trtllm) is the one that
+			// was missing on the matched points, and the division is landed with it. The bytes divide
+			// by it too (routedWeightBytes, below), so the two terms agree about the same experts.
 			//
 			// ATTENTION-DP FUNNEL. With attention data parallelism every DP rank's
 			// tokens are concatenated before expert routing, so the grouped GEMM sees
@@ -533,25 +530,11 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 			routedTokens := tokensF * k.moeDPFunnel()
 			eg := k.geom(l)
 			routedPerRank := routedTokens * float64(l.TopK) * eg.share
-			// With expert parallelism off and dp above one, the funnel's dp-fold tokens
-			// each reach a 1/dp slice of every expert beyond the tensor-parallel one (the
-			// MoE is flattened over dp x tp, see expertTensorShards), so the work per rank
-			// divides by dp again. Only the dp part is divided: the tensor-parallel part is
-			// the KNOWN over-charge above, kept as recorded, and dividing it here would
-			// change every pure tensor-parallel deployment in the corpus.
+			// With expert parallelism off, the MoE is flattened over dp x tp (see expertTensorShards),
+			// so each rank computes its 1/(dp x tp) slice of every expert for the funnel's tokens.
 			dpSlice := 1.0
 			if k.layout.ExpertWidth <= 1 {
-				dpSlice = k.expertTensorShards / k.tp
-				// EXCEPT on a weight-only Marlin ramp, where the over-charge has no
-				// measurement to cancel. That ramp was fitted at moe_tp 1 and validated at
-				// wider tp with each rank's slice of the expert width (blis-registry
-				// scripts/fit_marlin_grouped_ramp.py terms()), which is what vLLM runs; the
-				// cancellation the native ramps rest on was measured on them, not on it.
-				// A grouped ramp per MoE backend (rankOwn) was fitted the same way, on each
-				// rank's own slice at moe_tp 1 to 8 (scripts/fit_hopper_fp8_grouped_ramp.py).
-				if f := k.fit(l.RoutedFormat, true); f.weightOnly || f.rankOwn {
-					dpSlice = k.expertTensorShards
-				}
+				dpSlice = k.expertTensorShards
 			}
 			// Marlin pads a tensor-parallel slice of each expert's intermediate width to a
 			// multiple of 128 (see expertPadding), which is work and weight it runs.
@@ -701,7 +684,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 				attnSMSeconds += pf.seconds(float64(s.prefillRequests),
 					float64(s.prefillTokens), read)
 			} else if s.prefillRequests > 0 {
-				sm, fl := k.prefillAttention(layerCausalFLOPs*heads*float64(l.AttnHeadDim), s, l.AttnKind)
+				sm, fl := k.prefillAttention(layerCausalFLOPs*heads*k.prefillHeadWidth(l), s, l.AttnKind)
 				attnSMSeconds += sm
 				flops += fl
 			}
@@ -836,6 +819,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 		mhcSM, mhcBytes := k.mhcSeconds(l, s, sp)
 		elementwise = math.Max(elementwise-mhcBytes, 0)
 		elementwise += k.contextBytes(l, s)
+		elementwise += k.mlaContextBytes(l, kv[i].perToken, s)
 		gatherBytes, hostSeconds := k.gatherTraffic(l, s)
 		elementwise += gatherBytes
 

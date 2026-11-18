@@ -28,15 +28,20 @@ permissions:
 env:
   GOTOOLCHAIN: local
 
+# An edit of the title or body (not the base) has its own group and runs no job, as in ci.yml.
 concurrency:
-  group: ci-light-${{ github.ref }}
+  group: ci-light-${{ github.ref }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: true
 
 jobs:
   light-go:
-    name: light - format, vet, build and changed packages
+    name: "light - format, vet, build and changed packages${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The kernel package is not tested here: its tests run in the light-kernel legs below, as in ci.yml.
+    timeout-minutes: 45
+    outputs:
+      kernel: ${{ steps.changed.outputs.kernel }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,6 +51,15 @@ jobs:
         run: |
           unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then echo "not gofmt-formatted:"; echo "$unformatted"; exit 1; fi
+      # Whitespace of this layer's own diff (blank line at end of file, trailing space, mixed
+      # indent), against the layer's base: the check `git diff --check` makes.
+      - name: Diff whitespace
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE=HEAD~1; fi
+          git diff --check "$(git merge-base "$BASE" HEAD)" HEAD
       - run: go vet ./...
       - run: go build ./...
       - run: go run ./tools/modlint
@@ -53,6 +67,7 @@ jobs:
       # The packages that hold a Go file this layer changes, against the layer's own base (never
       # main): a layer is judged by its own diff.
       - name: Tests of the packages this layer changes
+        id: changed
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -63,12 +78,64 @@ jobs:
           for d in $(git diff --name-only --diff-filter=d "$mb" HEAD -- '*.go' | xargs -r -n1 dirname | sort -u); do
             if p="$(go list -e -f '{{if or .GoFiles .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' "./$d" 2>/dev/null)" && [ -n "$p" ]; then pkgs="$pkgs ./$d"; fi
           done
-          if [ -z "$pkgs" ]; then echo "no Go package changed"; exit 0; fi
-          echo "testing:$pkgs"
-          go test -count=1 -timeout 30m $pkgs
+          # The kernel package is tested by the light-kernel legs (tools/shard), not here: its tests
+          # fill a hosted runner (killed with exit 143 in #373, runs 44200385367 and 44219380847).
+          kernel=false
+          rest=""
+          for p in $pkgs; do
+            if [ "$p" = "./kernel" ]; then kernel=true; else rest="$rest $p"; fi
+          done
+          echo "kernel=$kernel" >> "$GITHUB_OUTPUT"
+          if [ -z "$rest" ]; then echo "no other Go package changed"; exit 0; fi
+          echo "testing:$rest"
+          go test -count=1 -timeout 30m -p 1 $rest
+
+  # The kernel package's tests in the legs ci.yml runs them in (tools/shard, weights in
+  # tools/shard/weights-kernel.txt), for a layer that changes the package. Every test runs in exactly
+  # one leg, and `verify` fails unless the leg's share finished, so nothing is skipped.
+  light-kernel:
+    name: "light - cost model tests (leg ${{ matrix.leg }})${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    needs: light-go
+    if: ${{ needs.light-go.outputs.kernel == 'true' && (github.event.action != 'edited' || github.event.changes.base) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # The number of legs is strategy.job-total; add a number here to add a leg.
+        leg: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/go-toolchain
+        with:
+          build-cache: kernel-${{ matrix.leg }}
+      - name: Tests of this leg
+        env:
+          LEG: ${{ matrix.leg }}
+          LEGS: ${{ strategy.job-total }}
+        run: |
+          set -euo pipefail
+          shard="$RUNNER_TEMP/shard"
+          go build -o "$shard" ./tools/shard
+          go test -list '.*' ./kernel/ | grep -E '^(Test|Example|Fuzz)' > "$RUNNER_TEMP/all.txt"
+          "$shard" cover -of "$LEGS" -min-items 100 -weights tools/shard/weights-kernel.txt < "$RUNNER_TEMP/all.txt"
+          "$shard" select -of "$LEGS" -index "$LEG" -weights tools/shard/weights-kernel.txt < "$RUNNER_TEMP/all.txt" > "$RUNNER_TEMP/mine.txt"
+          echo "leg $LEG of $LEGS runs $(wc -l < "$RUNNER_TEMP/mine.txt") of $(wc -l < "$RUNNER_TEMP/all.txt") tests"
+          results="$RUNNER_TEMP/kernel-test.json"
+          status=0
+          go test -count=1 -timeout 30m -json -run "^($(paste -sd'|' "$RUNNER_TEMP/mine.txt"))\$" ./kernel/ > "$results" || status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::group::failing tests"
+            jq -r 'select(.Action=="fail" and .Test) | "FAIL \(.Test)"' "$results"
+            echo "::endgroup::"
+            jq -r 'select(.Action=="output") | .Output' "$results" | tail -n 300
+            exit 1
+          fi
+          "$shard" verify -results "$results" -mode test < "$RUNNER_TEMP/mine.txt"
 
   light-lint:
-    name: light - golangci-lint
+    name: "light - golangci-lint${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -90,7 +157,8 @@ jobs:
           "$RUNNER_TEMP/bin/golangci-lint" run --new-from-rev="$rev" ./...
 
   light-generated:
-    name: light - generated files and data validate
+    name: "light - generated files and data validate${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

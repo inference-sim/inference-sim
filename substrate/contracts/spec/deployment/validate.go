@@ -33,6 +33,7 @@ func (d *Deployment) Validate() *validate.Problems {
 
 	d.validatePools(p)
 	d.validateOffload(p)
+	d.validatePoolKV(p)
 	d.validateRouter(p)
 	return p
 }
@@ -183,16 +184,25 @@ func (d *Deployment) ValidateAgainstCluster(c ClusterConstraints) *validate.Prob
 	// doc states. The check fires only when the cluster lists storage: a cluster that
 	// declares none states no inventory to constrain against, so a deployment offloading
 	// against it is left as it was before the inventory existed, rather than rejected.
-	if d.Offload != nil && len(c.Storage) > 0 {
+	if len(c.Storage) > 0 {
 		declared := make(map[string]bool, len(c.Storage))
 		for _, s := range c.Storage {
 			declared[s] = true
 		}
-		for i, t := range d.Offload.Tiers {
-			if t.Device != "" && !declared[t.Device] {
-				p.Field(fmt.Sprintf("offload.tiers[%d].tier", i),
-					"%q is not in the cluster storage inventory %v", t.Device, c.Storage)
+		check := func(at string, o *Offload) {
+			if o == nil {
+				return
 			}
+			for i, t := range o.Tiers {
+				if t.Device != "" && !declared[t.Device] {
+					p.Field(fmt.Sprintf("%s.tiers[%d].tier", at, i),
+						"%q is not in the cluster storage inventory %v", t.Device, c.Storage)
+				}
+			}
+		}
+		check("offload", d.Offload)
+		for i, pool := range d.Pools {
+			check(fmt.Sprintf("pools[%d].offload", i), pool.Offload)
 		}
 	}
 	return p
@@ -505,8 +515,24 @@ func (d *Deployment) validatePools(p *validate.Problems) {
 	if roles[RoleColocated] > 0 && (roles[RolePrefill] > 0 || roles[RoleDecode] > 0) {
 		p.Field("pools", "a colocated pool alongside disaggregated pools describes two deployments")
 	}
+	// Every prefill and decode engine runs a KV connector: its pool's own (pools[i].pd_transfer)
+	// or the deployment's. With neither stated anywhere the deployment-level block is named,
+	// as it always was.
 	if roles[RolePrefill] > 0 && d.PDTransfer == nil {
-		p.Field("pd_transfer", "required for a disaggregated deployment")
+		stated := false
+		for _, pool := range d.Pools {
+			stated = stated || pool.PDTransfer != nil
+		}
+		if !stated {
+			p.Field("pd_transfer", "required for a disaggregated deployment")
+		} else {
+			for i, pool := range d.Pools {
+				if pool.Role != RoleColocated && pool.PDTransfer == nil {
+					p.Field(fmt.Sprintf("pools[%d].pd_transfer", i),
+						"required: the deployment states no pd_transfer to inherit, and another pool states its own")
+				}
+			}
+		}
 	}
 }
 
@@ -639,16 +665,43 @@ func admissibleDCP(pcp int, block *big.Int) []*big.Int {
 }
 
 func (d *Deployment) validateOffload(p *validate.Problems) {
-	o := d.Offload
+	validateOffloadBlock(p, "offload", d.Offload)
+}
+
+// validatePoolKV checks the offload and connector a pool states for itself. An empty offload block
+// on a pool states "no offload" (Offload.StatesNone) and is valid; a block with settings but no
+// tier is not. A colocated pool hands no KV off, so it states no pd_transfer.
+func (d *Deployment) validatePoolKV(p *validate.Problems) {
+	for i, pool := range d.Pools {
+		at := fmt.Sprintf("pools[%d]", i)
+		if o := pool.Offload; o != nil && !o.StatesNone() {
+			validateOffloadBlock(p, at+".offload", o)
+		}
+		if t := pool.PDTransfer; t != nil {
+			if pool.Role == RoleColocated {
+				p.Field(at+".pd_transfer", "a colocated pool hands no KV off; state pd_transfer on a prefill or decode pool")
+			}
+			if t.Connector == "" {
+				p.Field(at+".pd_transfer.connector", "required: names the pool's KV connector")
+			}
+		}
+	}
+}
+
+func validateOffloadBlock(p *validate.Problems, at string, o *Offload) {
 	if o == nil {
 		return
 	}
 	if len(o.Tiers) == 0 {
-		p.Field("offload.tiers", "an offload block with no tiers offloads nowhere")
+		hint := ""
+		if at != "offload" {
+			hint = "; to state no offload on a pool, give an empty block (offload: {tiers: []}) with no other setting"
+		}
+		p.Field(at+".tiers", "an offload block with no tiers offloads nowhere%s", hint)
 	}
 	seen := map[string]bool{}
 	for i, t := range o.Tiers {
-		at := fmt.Sprintf("offload.tiers[%d]", i)
+		at := fmt.Sprintf("%s.tiers[%d]", at, i)
 		if t.Device == "" {
 			p.Field(at+".tier", "required: names a catalog device class")
 		} else if seen[t.Device] {
@@ -660,6 +713,6 @@ func (d *Deployment) validateOffload(p *validate.Problems) {
 		}
 	}
 	if o.PrefetchDepth < 0 {
-		p.Field("offload.prefetch_depth", "must not be negative")
+		p.Field(at+".prefetch_depth", "must not be negative")
 	}
 }

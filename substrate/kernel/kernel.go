@@ -48,6 +48,14 @@ const scorerKernel = "block_index_scores"
 
 // Kernel prices one deployment. Obtain one from New; the zero value is not usable.
 type Kernel struct {
+	// multiHeadMLAPrefill is whether this engine prefills a dense latent layer in the multi-head form
+	// (the graph's prefill widths and the cached latents' re-expansion): vLLM does, for every dense MLA
+	// backend (MLACommonImpl.forward_mha, v0.33.0). SGLang's choice depends on its backend, the cached
+	// prefix and graph capture (attention_backend_handler.py at v0.5.23: MHA one-shot or chunked-KV
+	// without a prefix or past chunked_prefix_cache_threshold, the absorbed method otherwise, and always
+	// under a captured prefill), which is not modelled, so another engine keeps the cache width.
+	multiHeadMLAPrefill bool
+
 	// Resolved configuration, frozen at construction.
 	layout resolve.Layout
 	fabric resolve.Fabric
@@ -200,7 +208,10 @@ type Kernel struct {
 	// priced one of the two at the other's width. For the ops the context-parallel axes
 	// add, the 8-rank floor is 1.35x to 1.60x the 4-rank figure across the nine parts
 	// this registry carries at both; see price.GroupAxis for the per-op spread.
-	collectiveFloors      map[collKey]time.Duration
+	collectiveFloors map[collKey]time.Duration
+	// allReduce is the kernel the engine resolved for the tensor-parallel all-reduce, which selects
+	// the coefficient lane that prices it (liftCollectiveFloors).
+	allReduce             plan.AllReduceBackend
 	collectiveRates       map[collKey]float64
 	collectiveTransitions map[collKey]float64
 
@@ -496,7 +507,7 @@ func (k *Kernel) sequenceBoundedBytes(caches float64) int64 {
 		}
 		spec := k.numSpecTokens()
 		per := price.RecurrentStateBytes(k.recurrentRankBytes(l), mode,
-			k.maxModelLen, k.blockSize, spec, 0)
+			k.maxModelLen, k.blockSize, spec, 0, k.low.Cache.TrackingSlots)
 		// The state is replicated across context-parallel ranks and sharded by tensor
 		// parallelism (recurrentRankBytes).
 		total += per * float64(l.Count)
@@ -592,7 +603,7 @@ func (k *Kernel) SequenceVariableBytes(tokens int) int64 {
 				continue
 			}
 			total += int64(price.RecurrentStateBytes(k.recurrentRankBytes(l), mode,
-				tokens, k.blockSize, spec, 0) * float64(l.Count))
+				tokens, k.blockSize, spec, 0, k.low.Cache.TrackingSlots) * float64(l.Count))
 		}
 	}
 	return total

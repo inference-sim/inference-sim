@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -124,22 +123,13 @@ type generator struct {
 	jsonInfinity bool
 	defs         map[string]any
 	enums        map[string]map[string][]string // package dir -> type name -> members
-	// tables are the reference pages' field tables: for each `<!-- fields: pkg.Type -->`
-	// marker, each key and whether its Required cell is exactly "yes". A key is required in
-	// the schema exactly when the documentation says it is; docs_test keeps each table equal
-	// to its type's keys.
-	tables map[string]map[string]bool
 }
 
 // generate returns every schema file, in a stable order.
 func generate(root string) ([]file, error) {
 	var out []file
 	for _, d := range documents {
-		tables, err := fieldTables(root)
-		if err != nil {
-			return nil, err
-		}
-		g := &generator{root: root, jsonInfinity: d.jsonInfinity, defs: map[string]any{}, enums: map[string]map[string][]string{}, tables: tables}
+		g := &generator{root: root, jsonInfinity: d.jsonInfinity, defs: map[string]any{}, enums: map[string]map[string][]string{}}
 		top, err := g.schemaOf(d.root)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", d.name, err)
@@ -238,14 +228,14 @@ func (g *generator) structSchema(t reflect.Type) (map[string]any, error) {
 	if err := g.fields(t, props); err != nil {
 		return nil, err
 	}
-	table, ok := g.tables[defName(t)]
+	keys, ok := requiredKeys[defName(t)]
 	if !ok {
-		return nil, fmt.Errorf("%s has no field table in docs/contracts/reference, so its required keys are unknown", defName(t))
+		return nil, fmt.Errorf("%s has no entry in requiredKeys (tools/schemagen/required.go), so its required keys are unknown", defName(t))
 	}
-	var required []string
-	for k, req := range table {
-		if req {
-			required = append(required, k)
+	required := append([]string(nil), keys...)
+	for _, k := range required {
+		if _, ok := props[k]; !ok {
+			return nil, fmt.Errorf("requiredKeys[%s] lists %q, which the type does not declare", defName(t), k)
 		}
 	}
 	sort.Strings(required)
@@ -317,54 +307,6 @@ func withEmpty(t reflect.Type, members []string) []string {
 		return append([]string{""}, members...)
 	}
 	return members
-}
-
-var (
-	fieldsMarker = regexp.MustCompile(`^<!-- fields: (\S+) -->$`)
-	firstCode    = regexp.MustCompile("`([^`]+)`")
-)
-
-// fieldTables reads every reference page's field tables.
-func fieldTables(root string) (map[string]map[string]bool, error) {
-	pages, err := filepath.Glob(filepath.Join(root, "docs", "contracts", "reference", "*.md"))
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(pages)
-	out := map[string]map[string]bool{}
-	for _, page := range pages {
-		b, err := os.ReadFile(page)
-		if err != nil {
-			return nil, err
-		}
-		current := ""
-		for _, line := range strings.Split(string(b), "\n") {
-			line = strings.TrimSpace(line)
-			if m := fieldsMarker.FindStringSubmatch(line); m != nil {
-				current = m[1]
-				if out[current] == nil {
-					out[current] = map[string]bool{}
-				}
-				continue
-			}
-			if current == "" {
-				continue
-			}
-			if !strings.HasPrefix(line, "|") {
-				if line != "" {
-					current = ""
-				}
-				continue
-			}
-			cells := strings.Split(strings.Trim(line, "|"), "|")
-			m := firstCode.FindStringSubmatch(cells[0])
-			if m == nil || len(cells) < 3 {
-				continue
-			}
-			out[current][m[1]] = strings.TrimSpace(cells[2]) == "yes"
-		}
-	}
-	return out, nil
 }
 
 // defName is a struct's definition name: its package and type, such as result.Frame.

@@ -445,6 +445,9 @@ func (n Node) validate(p *validate.Problems, at string) {
 	if n.Shared != nil && n.Op != OpGroupedGEMM {
 		p.Field(at+".shared", "only a GroupedGEMM node is a group of experts")
 	}
+	if n.ResidentOnly && n.Op != OpGather {
+		p.Field(at+".resident_only", "only a Gather node is a table")
+	}
 	if n.KVHeadsNotReplicated && n.Op != OpAttention {
 		p.Field(at+".kv_heads_not_replicated", "only an Attention node has KV heads")
 	}
@@ -502,6 +505,17 @@ func (n Node) validate(p *validate.Problems, at string) {
 		}
 	}
 
+	// A bias dtype is a checkpoint fact on a node that holds parameters, and a name no
+	// reader knows is an error rather than a bias priced at nothing.
+	if n.BiasDType != "" {
+		switch {
+		case !n.BiasDType.Valid():
+			p.Field(at+".bias_dtype", "%q is not a recognized dtype", n.BiasDType)
+		case n.Op != OpGEMM && n.Op != OpGroupedGEMM:
+			p.Field(at+".bias_dtype", "only a GEMM or GroupedGEMM holds parameters")
+		}
+	}
+
 	// The latent-read compression factor is meaningful only on a compressed sparse-MLA
 	// layer, so it is rejected on any other op or attention kind -- gated the same way as
 	// the other MLA-specific parameters. The field is optional (omitempty), so a zero is
@@ -524,6 +538,11 @@ func (n Node) validate(p *validate.Problems, at string) {
 	// negative value there too would double-report the one in the branch.
 	if n.IndexTopK != 0 && (n.Op != OpAttention || !n.AttentionKind.Sparse()) {
 		p.Field(at+".index_topk", "only priced by a sparse_mla or sparse_gqa attention node")
+	}
+
+	// The prefill widths belong to an mla attention node; the attention case below checks the rest.
+	if (n.PrefillQKHeadDim != 0 || n.PrefillVHeadDim != 0) && n.Op != OpAttention {
+		p.Field(at+".prefill_qk_head_dim", "only an mla attention node states prefill widths")
 	}
 
 	// conv_dilation spaces a short convolution's taps, so any other node that states it
@@ -589,6 +608,20 @@ func (n Node) validate(p *validate.Problems, at string) {
 			p.Field(at+".n_kv",
 				"%s stores one latent vector per token, so n_kv must be 1, got %d",
 				n.AttentionKind, n.NumKVHeads)
+		}
+		// The prefill widths of a latent layer's multi-head form: both or neither, positive, an mla node only, and a
+		// query and key width that holds the rope part the cache also carries.
+		if n.PrefillQKHeadDim != 0 || n.PrefillVHeadDim != 0 {
+			switch {
+			case n.AttentionKind != AttentionMLA:
+				p.Field(at+".prefill_qk_head_dim", "only an mla attention node runs a multi-head prefill form over a latent cache, got %s", n.AttentionKind)
+			case n.PrefillQKHeadDim < 1 || n.PrefillVHeadDim < 1:
+				p.Field(at+".prefill_qk_head_dim", "prefill_qk_head_dim and prefill_v_head_dim are stated together and positive, got %d and %d",
+					n.PrefillQKHeadDim, n.PrefillVHeadDim)
+			case n.PrefillQKHeadDim <= n.QKRopeHeadDim:
+				p.Field(at+".prefill_qk_head_dim", "must exceed qk_rope_head_dim %d (the non-rope part is the rest), got %d",
+					n.QKRopeHeadDim, n.PrefillQKHeadDim)
+			}
 		}
 		if n.AttentionKind == AttentionSWA && n.Window < 1 {
 			p.Field(at+".window", "sliding-window attention requires a positive window")
@@ -680,8 +713,15 @@ func (n Node) validate(p *validate.Problems, at string) {
 			p.Field(at+".rows", "must be positive for this op, got %d", n.Rows)
 		}
 		requirePositive(p, at, "row_bytes", n.RowBytes)
-		requirePositive(p, at, "rows_per_token", n.RowsPerToken)
-		requirePositive(p, at, "out_bytes_per_token", n.OutBytesPerToken)
+		if n.ResidentOnly {
+			// A table held for another node's fused kernel is read by no lookup of its own.
+			if n.RowsPerToken != 0 || n.OutBytesPerToken != 0 {
+				p.Field(at+".resident_only", "a resident-only table is read by no lookup, so it states no rows_per_token or out_bytes_per_token")
+			}
+		} else {
+			requirePositive(p, at, "rows_per_token", n.RowsPerToken)
+			requirePositive(p, at, "out_bytes_per_token", n.OutBytesPerToken)
+		}
 		if int64(n.RowsPerToken) > n.Rows && n.Rows > 0 {
 			p.Field(at+".rows_per_token", "%d exceeds the table's %d rows", n.RowsPerToken, n.Rows)
 		}

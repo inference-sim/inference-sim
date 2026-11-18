@@ -30,7 +30,6 @@ go run ./validate/cmd/validate-catalog catalog
 go run ./validate/cmd/validate-registry registry
 (cd catalog && python3 scripts/derive_graph.py --check && python3 -m pytest tests -q)
 (cd registry && python3 -m pytest validator -q)
-DOCS_RELEASE=main mkdocs build --strict
 go run ./tools/invariants render -check
 go run ./tools/prcheck workflows
 go run ./tools/prcheck versions
@@ -39,17 +38,17 @@ go run ./tools/prcheck docrefs
 
 - Every behaviour change has a test that fails without it (X13).
 - A new or changed data field ships with its validator, a failing example for each way it can
-  be wrong, and regenerated reference documentation: `go run ./tools/docgen` (SUB-2).
+  be wrong, and regenerated JSON Schemas: `go run ./tools/schemagen` (SUB-2).
 - Never commit third-party data; a derived value cites its source by URL and commit or hash
   (X12). Never write a private name in a file, commit or pull request (X12).
 
 ## A change here must also update
 
-- The documentation that describes what the change removes, renames or alters. A path, symbol,
-  issue reference or supported-feature statement in a page is generated or checked (X26).
+- The README and the doc comments that describe what the change removes, renames or alters. A path,
+  symbol, issue reference or supported-feature statement in a page is checked (X26).
 - The generated copies, with `go run ./tools/invariants render`, when an invariant registry record
   changes; and the record itself, when a check is added or a status moves (design §13.1).
-- The reference pages, with `go run ./tools/docgen`, when a schema or data field changes.
+- The JSON Schemas, with `go run ./tools/schemagen`, when a schema or data field changes.
 - The issue the change closes, named on a `Closes` line; an issue cited as a gap stays open until
   the change that removes its last citation (X28).
 
@@ -74,9 +73,8 @@ it passes. A flaky test is reported, not quarantined or retried.
 ## Where to look next
 
 The design is the target this repository implements; each rule above names its invariant
-identifier, which the invariant registry (`contracts/invariants`) and the appendix at
-`docs/contracts/invariants` define. Contributor guides are under `docs/contributing` and
-`docs/contracts/contributing`.
+identifier, which the invariant registry (`contracts/invariants`) defines. The design is at
+<https://inference-sim.github.io/blis-design/>.
 
 <!-- BEGIN GENERATED: invariants (go run ./tools/invariants render; do not edit) -->
 ## Invariants checked in blis-substrate
@@ -104,15 +102,15 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **X7** (partial; target ci by M4) Contracts live in blis-substrate/contracts.
   - `new`, pull_request: A lower repository refers to accuracy-dashboard only through the harness pin file
   - `new`, pull_request: The module graph across all repositories follows Figure 1
-  - `ci`, pull_request: Every generated file matches its generator's output (`tools/docgen: TestGeneratedDocsAreCurrent`)
+  - `ci`, pull_request: Every generated file matches its generator's output (`tools/schemagen: TestPublishedSchemasMatchTheTypes`)
 - **X8** (new; target ci by M3) Every number records the exact versions and data it came from, and can be regenerated from them.
   - `new`, pull_request: No ledger unit is cited under two roles by any fit, gate or dashboard point
   - `new`, pull_request: Every data source is pinned to an exact revision
   - `new`, pull_request: Published numbers regenerate: on redistributable fixtures on every pull request, on the full data nightly
   - `new`, pull_request: An accuracy change's success criteria are committed before any commit that reads its held-out data
-- **X10** (ci; target reached) Repositories are released bottom-up.
+- **X10** (ci; target reached) Repositories are merged bottom-up, and inference-sim is the only repository whose release is required.
   - `ci`, release: Release bot (§13.6) (`tools/release`)
-- **X11** (partial; target ci by M1) Pins are exact release tags.
+- **X11** (partial; target ci by M1) Pins are exact commits.
   - `ci`, pull_request: Selected-version lint (LIF-2), in every repository: no replace outside inference-sim (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: No other module requiring github.com/llm-d/llm-d-router (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: No committed go.work (`TestNoNestedModule`)
@@ -170,10 +168,12 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, nightly: A nightly job in every repository that resolves each cited issue and fails on a closed one (`shared-nightly.yml: prcheck issues -resolve`)
   - `new`, pull_request: A pull-request check that refuses a change closing an issue still cited elsewhere (`shared-pr-checks.yml: prcheck issues -closes`)
   - `new`, nightly: The nightly job also reports an issue closed outside a merge
+- **X29** (new; target ci by M1) Each engine module, the substrate, the router fork and inference-sim document themselves in one README.md.
+  - `new`, practice: GitHub Pages is not enabled and no workflow generates or deploys documentation
 - **SUB-1** (ci; target reached) Packages under contracts/ import only the Go standard library, the YAML parser and each other.
   - `ci`, pull_request: Import test (`contracts: TestKernelImportsOnlySpec`)
   - `ci`, pull_request: API-compatibility check of the contracts/ packages against the last substrate tag (`ci.yml job contracts: prcheck contracts-apidiff`)
-- **SUB-2** (ci; target reached) Every new or changed data field ships with its validator, a failing example for each way it can be wrong, and regenerated reference documentation.
+- **SUB-2** (ci; target reached) Every new or changed data field ships with its validator, a failing example for each way it can be wrong, and the JSON Schema the simulator prints for it (schema); no separate reference page is kept (X29).
   - `ci`, pull_request: Documentation-matches-types test (`contracts: TestDocFieldTablesMatchTypes`)
   - `ci`, pull_request: Strict loaders (`contracts: TestLoadRejectsUnknownFields`)
   - `ci`, pull_request: Examples must validate (`contracts: TestDocExamplesValidate`)
@@ -272,7 +272,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: On fixtures per pull request (`registry/validator (pytest)`)
   - `new`, nightly: On full data nightly
   - `new`, pull_request: Operator-level gates in blis-substrate
-- **VAL-7** (new; target ci by M2) A coefficient scoped to a single model marks a cost that the cost model's general forms do not yet explain.
+- **VAL-7** (new; target ci by M2) A coefficient is a measured constant of a law the kernel evaluates, not a correction for one model.
   - `new`, pull_request: Ratchet test
 - **VAL-8** (new; target ci by M2) A lookup matches a coefficient only for the exact kernel implementation that runs.
   - `new`, pull_request: The cost model's lookup, which has no fallback to a sibling implementation
@@ -318,14 +318,14 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: The catalog's drafter link holds in both directions: a target lists its drafters, each separate drafter names its target, and a graph with a speculator is listed as having one (`validate/dataset: TestCheckDraftersHoldsInBothDirections`)
 - **COV-1** (partial; target ci by M1) One scorer produces every number, and it lives only in accuracy-dashboard: no other repository compares a simulation with a measured end-to-end benchmark.
   - `new`, pull_request: A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to compute an error
-- **LIF-1** (new; target ci by M1) A tag names one commit forever.
-  - `new`, practice: Protected tags
-  - `new`, nightly: A nightly check that every tag resolves to its recorded commit (`shared-nightly.yml: prcheck tags`)
-- **LIF-2** (partial; target ci by M1) In every build, each BLIS module resolves to the exact version the release records in stack.json, and the router fork resolves to a -blis.N tag through inference-sim's one replace directive (X11).
+- **LIF-1** (new; target ci by M1) A tag names one commit forever, and a pinned commit stays on its branch forever.
+  - `new`, practice: Branch protection blocks force-pushes to main and release branches
+- **LIF-2** (partial; target ci by M1) In every build, each BLIS module resolves to the exact commit the release records in stack.json, and the router fork resolves to the commit stack.json records through inference-sim's one replace directive (X11).
   - `ci`, pull_request: Selected-version lint (go list -m all), which for the router reads the replace target that go list -m -json reports, not the placeholder version on the require line (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: A CI step that fails if go version differs from it (`tools/modlint: TestEachRuleHasAKnownBadInput`)
-- **LIF-3** (new; target ci by M1) Only the release bot cuts releases, and only from a commit where every ci invariant passed.
+  - `ci`, pull_request: prcheck workflows refuses a step that uses actions/setup-go outside the go-toolchain action, so a job in any repository that calls the shared checks installs contracts/toolchain's version (`tools/prcheck: TestAJobThatInstallsGoFromGoModIsRefused`)
+- **LIF-3** (new; target ci by M1) Only the release bot cuts releases.
   - `new`, practice: Repository settings that let only the release bot and people with write access create tags
   - `new`, pull_request: The bot's own check of every ci invariant (`tools/release: CheckInvariants`)
   - `new`, nightly: A nightly check that every tag made by a person is annotated and listed in its release notes
@@ -333,7 +333,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, release: The release bot, which writes the notes from the release's changes (`tools/release: Notes`)
 - **LIF-5** (new; target ci by M4) An engine module, or the router fork, models one upstream release.
   - `new`, release: A tag check in the release bot: format, N one above the previous tag on the same upstream release, no plain tag (`tools/release: CheckEngineTag`)
-- **LIF-7** (new; target ci by M1) A deprecated feature is removed by the first release after its deprecation that may break compatibility: a MAJOR release, or a MINOR release while the repository is at v0.
+- **LIF-7** (new; target ci by M1) A deprecated feature is removed by the first inference-sim release after its deprecation that may break compatibility: a MAJOR release, or a MINOR release while inference-sim is at v0.
   - `new`, release: The release bot, which refuses a MAJOR release, or a MINOR release at v0, that still contains a feature deprecated in an earlier release (`tools/release: CheckDeprecations`)
 
 ### Maintainer practices
@@ -344,7 +344,8 @@ repository as a whole and confirms it when the repository's settings change (des
 - [ ] **X17** The protected branch requires the repository's named checks, including formatting and lint
 - [ ] **X20** The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name. Encouraged, never checked before the closing step after M4
 - [ ] **X24** Branch protection requires every review conversation to be resolved before a merge; the author agent resolves each thread with its outcome
-- [ ] **LIF-1** Protected tags
+- [ ] **X29** GitHub Pages is not enabled and no workflow generates or deploys documentation
+- [ ] **LIF-1** Branch protection blocks force-pushes to main and release branches
 - [ ] **LIF-3** Repository settings that let only the release bot and people with write access create tags
 
 ### Agent guidance

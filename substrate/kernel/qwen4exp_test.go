@@ -124,7 +124,7 @@ func TestAMeasuredSparseGQARateReplacesTheStandIn(t *testing.T) {
 		fast.Coefficients[i] = &c
 	}
 	if !found {
-		t.Skip("no attention rate entry to copy")
+		t.Fatal("the registry has no attention_decode_rate_swa entry to copy: a skip here would pass unseen (X16)")
 	}
 	measured := withGraph(t, fast, sparseGQA(512))
 	if substituted(measured, "attention_decode_rate_sparse_gqa") {

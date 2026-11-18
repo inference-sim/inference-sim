@@ -614,6 +614,10 @@ def test_recurrent_floors_are_positive_and_bounded():
 # Scope and provenance hygiene
 # --------------------------------------------------------------------------------------
 
+# Names whose part-wide entry may be split into a default and chip-specific values (see the test below).
+PER_CHIP_LAUNCH_TERMS = ("host_launch_per_kernel",)
+
+
 def test_hardware_independent_sets_cover_every_catalog_part():
     """A set that claims to apply everywhere must name every part the catalog holds.
 
@@ -635,6 +639,7 @@ def test_hardware_independent_sets_cover_every_catalog_part():
     # same value, and any entry beyond the first is `transferred` with transferred_from naming a
     # sibling's scope. A split may not smuggle in a per-part value.
     split: dict = {}
+    per_chip: dict = {}
     for setname, name, body in ENTRIES:
         if setname not in ("cost-model-host-overheads.yaml", "cost-model-memory.yaml"):
             continue
@@ -646,6 +651,13 @@ def test_hardware_independent_sets_cover_every_catalog_part():
         # one chip by design and must not be swept into this rule by its name prefix.
         # cost-model-memory holds engine-structural memory terms with no per-part value in
         # their sources, scoped to every part for the same reason the host set is.
+        if not models and name in PER_CHIP_LAUNCH_TERMS:
+            # The launch term inside a captured graph is the gap between one node's end and the
+            # next's start, a property of the GPU as much as of the host. It may carry a chip's
+            # own value where that chip's fit units support one (accuracy/preregistrations.md
+            # K1), checked below.
+            per_chip.setdefault((setname, name), []).append(body)
+            continue
         if not models:
             missing = sorted(cat - set(scope.get("hardware", [])))
             assert not missing, (
@@ -655,6 +667,19 @@ def test_hardware_independent_sets_cover_every_catalog_part():
             )
             continue
         split.setdefault((setname, name, models), []).append(body)
+    for (setname, name), bodies in per_chip.items():
+        # A per-chip value must be a chip's own: one default entry for the parts with none, and each
+        # chip-specific entry carries the interval its fit units gave. Together they scope every part
+        # exactly once, so no part is priced at zero and none is priced by two entries.
+        counted = [h for b in bodies for h in b["scope"].get("hardware", [])]
+        assert sorted(counted) == sorted(set(counted)), f"{name}: a part is scoped by two entries: {counted}"
+        assert not sorted(cat - set(counted)), (
+            f"{setname}: {name} does not scope {sorted(cat - set(counted))}, so it is priced at zero there.")
+        defaults = [b for b in bodies if len(b["scope"].get("hardware", [])) > 1]
+        assert len(defaults) == 1, f"{name}: want one default entry for the parts without their own value"
+        for b in bodies:
+            if b is not defaults[0]:
+                assert b.get("ci95"), f"{name} for {b['scope']}: a chip's own value must carry its interval"
     for (setname, name, models), bodies in split.items():
         # The model-scoped capture form is read all or none, and where it is absent the
         # kernel charges the part-wide cudagraph_capture_bytes_<mode> (blis-latency-kernel
@@ -963,14 +988,15 @@ def test_the_h100_host_link_is_the_cpu_tier_fit_not_a_second_number():
 # VAL-7: single-model coefficients only go down
 # --------------------------------------------------------------------------------------
 
-# A coefficient scoped to one model marks a cost the cost model's general forms do not yet
-# explain. All 46 committed ones are for deepseek-v4.1-flash. Lower this number when a
-# general form absorbs some of them; never raise it to admit a new one -- add the missing
-# general form instead (design VAL-7).
-# 46 -> 73 (2026-11-17, a coordinator decision recorded for the maintainer): the 27 per-model non-KV
-# memory entries scripts/fit_memory_startup.py writes, each checked out of sample on its model's anchor
-# units, are a recorded exception until the general form of inference-sim/blis-substrate#294 replaces
-# them; that issue lowers this back.
+# Invariant VAL-7 (contracts/invariants/val.yaml): a coefficient scoped to one model marks a cost the
+# cost model's general forms do not yet explain. This number is the ratchet, the largest count the
+# registry may hold. It only goes down, except as a recorded exception: the raising pull request names
+# the general form each added entry stands in for, records the raise with the issue that lowers it,
+# and a maintainer approves it there.
+# Recorded exceptions now in force: 46 -> 73 (2026-11-17), the 27 per-model non-KV memory entries
+# scripts/fit_memory_startup.py writes, each checked out of sample on its model's anchor units. They
+# stand in for the general non-KV memory form of inference-sim/blis-substrate#294, which lowers this
+# back; the approval is recorded on inference-sim/blis-substrate#329.
 MAX_SINGLE_MODEL_ENTRIES = 73
 
 
@@ -1013,7 +1039,12 @@ FITTED = [(s, n, b) for s, n, b in ENTRIES if b.get("method") in ("measured", "c
 # kernel_impls is ratcheted in validate/registry/evidence_ratchet_test.go, which counts only entries
 # whose name binds a lowered primitive, with the function the validator uses to refuse kernel_impls
 # on any other (coefficient.PrimitiveOf).
-MAX_FITTED_WITHOUT = {"measures": 895, "fit_range": 895, "ci95": 895}
+# Raised by 81 (895 to 976, 944 to 1025 fitted entries) for the NCCL all-reduce lane
+# (scripts/emit_allreduce_nccl_lane.py, inference-sim/blis-substrate#116): 27 (part, width) triples
+# of measured NCCL sweep statistics, like the ~895 collective entries beside them. A collective has
+# no fit_range to state (the dimensions are tokens, requests and context_tokens; a collective's are
+# message bytes and ranks), and the collective writers do not write measures or ci95 yet.
+MAX_FITTED_WITHOUT = {"measures": 976, "fit_range": 976, "ci95": 976}
 
 
 @pytest.mark.parametrize("field", sorted(MAX_FITTED_WITHOUT))
@@ -1022,7 +1053,7 @@ def test_fitted_entries_without_an_evidence_record_only_go_down(field):
     assert len(missing) <= MAX_FITTED_WITHOUT[field], (
         f"{len(missing)} measured or calibrated entries state no {field}, above the "
         f"{MAX_FITTED_WITHOUT[field]} committed. A new fitted entry records {field}.")
-    assert len(FITTED) == 944, f"{len(FITTED)} fitted entries; update the ratchets with it"
+    assert len(FITTED) == 1025, f"{len(FITTED)} fitted entries; update the ratchets with it"
 
 
 def fitted_without(field, entries):

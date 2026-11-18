@@ -5,7 +5,7 @@
 # (moe_routing_imbalance_median), fit_marlin_grouped_ramp.py (gemm_*_w4a16_mxfp4_grouped),
 # fit_deepseek_v41_h200.py (the assumed gemm_*_w8a16_mxfp8 and host_gather_rate_uva), and
 # emit_primitives.py (the descriptor entries and A100's MoE median).
-# docs/reproducing-coefficients.md maps every family to its owner.
+# registry/scripts/rederive.sh lists every writer.
 # Re-run the owner and commit the diff rather than editing values here.
 #
 # Two kinds of number, both NVIDIA-sourced:
@@ -228,6 +228,39 @@ coefficients:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/moe/vllm/0.25.0/moe_perf.parquet, vllm_compressedtensorsw4a4mxfp4moe_marlin_marlinexperts_situ_as_silu, moe_dtype w4a16_mxfp4, balanced, moe_tp 1 / moe_ep 1, 27 token counts (hidden 3584, inter 3072, top-16 of 896)", role: primary}
       rationale: >
         The step token count at which the Marlin MXFP4 W4A16 grouped ramp reaches half its asymptote, fitted jointly with gemm_eps_max_w4a16_mxfp4_grouped over 27 token counts; the kernel evaluates it at the step's token count, as it does every ramp. Reproduce with scripts/fit_marlin_grouped_ramp.py.
+  - gemm_eps_max_fp8_grouped_trtllm:
+      value: 0.21
+      units: dimensionless
+      method: assumed
+      fitted: false
+      scope: {hardware: [b200]}
+      ci95: [0.195, 0.235]
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/moe/vllm/0.24.0/moe_perf.parquet, vllm_fp8moe_flashinfer_trtllm_trtllmfp8expertsmonolithic, moe_dtype fp8_block, balanced, moe_ep 1, 1-4096 tokens, 736 training rows over the even half of 13 expert geometries, 1-4096 tokens", role: primary}
+      rationale: >
+        Asymptotic fraction of the part's dense FP8 peak that vLLM's FlashInfer TRT-LLM grouped GEMM on block-FP8 experts, which AISimulate's collector measures as vLLM's block-FP8 MoE on SM100. Fitted jointly (gemm_eps_max_fp8_grouped_trtllm, gemm_m_half_fp8_grouped_trtllm, gemm_floor_fp8_grouped_trtllm) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (4500 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Held-out geometries (every second one): geometric error 1.161x (signed 1.069) against the dense fp8_block ramp's 1.531x (signed 0.714) under the same composition. The vllm/0.30.0 collection (1334 rows of the same kernel, not fitted): 1.158x against the dense ramp's 1.574x. GRADED ASSUMED, NOT MEASURED: the engine release's kernel_impls.json lists no sm_100a build for the FP8 MoE backends, so the entry cannot name a code hash (VAL-8); it is regraded measured and keyed when the build is listed. It applies to every implementation without having been shown to match; the kernel reads it only where the plan states no experts kernel. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_blackwell_fp8_grouped_ramp.py.
+  - gemm_m_half_fp8_grouped_trtllm:
+      value: 1
+      units: tokens
+      method: assumed
+      fitted: false
+      scope: {hardware: [b200]}
+      ci95: [1, 1]
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/moe/vllm/0.24.0/moe_perf.parquet, vllm_fp8moe_flashinfer_trtllm_trtllmfp8expertsmonolithic, moe_dtype fp8_block, balanced, moe_ep 1, 1-4096 tokens, 736 training rows over the even half of 13 expert geometries, 1-4096 tokens", role: primary}
+      rationale: >
+        The step token count at which the ramp reaches half its asymptote. It sits at the grid's lower edge: the rows identify no knee above one token, and the floor carries the low-token time. vLLM's FlashInfer TRT-LLM grouped GEMM on block-FP8 experts, which AISimulate's collector measures as vLLM's block-FP8 MoE on SM100. Fitted jointly (gemm_eps_max_fp8_grouped_trtllm, gemm_m_half_fp8_grouped_trtllm, gemm_floor_fp8_grouped_trtllm) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (4500 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Held-out geometries (every second one): geometric error 1.161x (signed 1.069) against the dense fp8_block ramp's 1.531x (signed 0.714) under the same composition. The vllm/0.30.0 collection (1334 rows of the same kernel, not fitted): 1.158x against the dense ramp's 1.574x. GRADED ASSUMED, NOT MEASURED: the engine release's kernel_impls.json lists no sm_100a build for the FP8 MoE backends, so the entry cannot name a code hash (VAL-8); it is regraded measured and keyed when the build is listed. It applies to every implementation without having been shown to match; the kernel reads it only where the plan states no experts kernel. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_blackwell_fp8_grouped_ramp.py.
+  - gemm_floor_fp8_grouped_trtllm:
+      value: 30
+      units: us_per_transfer
+      method: assumed
+      fitted: false
+      scope: {hardware: [b200]}
+      ci95: [27.5, 32.5]
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/moe/vllm/0.24.0/moe_perf.parquet, vllm_fp8moe_flashinfer_trtllm_trtllmfp8expertsmonolithic, moe_dtype fp8_block, balanced, moe_ep 1, 1-4096 tokens, 736 training rows over the even half of 13 expert geometries, 1-4096 tokens", role: primary}
+      rationale: >
+        The per-layer device time of the grouped experts however few tokens reach them, which the ramp's work term alone cannot carry. vLLM's FlashInfer TRT-LLM grouped GEMM on block-FP8 experts, which AISimulate's collector measures as vLLM's block-FP8 MoE on SM100. Fitted jointly (gemm_eps_max_fp8_grouped_trtllm, gemm_m_half_fp8_grouped_trtllm, gemm_floor_fp8_grouped_trtllm) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (4500 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Held-out geometries (every second one): geometric error 1.161x (signed 1.069) against the dense fp8_block ramp's 1.531x (signed 0.714) under the same composition. The vllm/0.30.0 collection (1334 rows of the same kernel, not fitted): 1.158x against the dense ramp's 1.574x. GRADED ASSUMED, NOT MEASURED: the engine release's kernel_impls.json lists no sm_100a build for the FP8 MoE backends, so the entry cannot name a code hash (VAL-8); it is regraded measured and keyed when the build is listed. It applies to every implementation without having been shown to match; the kernel reads it only where the plan states no experts kernel. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_blackwell_fp8_grouped_ramp.py.
   - moe_routing_imbalance_median:
       value: 0.969
       units: dimensionless
@@ -400,6 +433,39 @@ coefficients:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/moe/vllm/0.25.0/moe_perf.parquet, vllm_compressedtensorsw4a4mxfp4moe_marlin_marlinexperts_situ_as_silu, moe_dtype w4a16_mxfp4, balanced, moe_tp 1 / moe_ep 1, 27 token counts (hidden 3584, inter 3072, top-16 of 896)", role: primary}
       rationale: >
         The step token count at which the Marlin MXFP4 W4A16 grouped ramp reaches half its asymptote, fitted jointly with gemm_eps_max_w4a16_mxfp4_grouped over 27 token counts; the kernel evaluates it at the step's token count, as it does every ramp. Reproduce with scripts/fit_marlin_grouped_ramp.py.
+  - gemm_eps_max_fp8_grouped_trtllm:
+      value: 0.23
+      units: dimensionless
+      method: assumed
+      fitted: false
+      scope: {hardware: [b300]}
+      ci95: [0.205, 0.245]
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/moe/vllm/0.24.0/moe_perf.parquet, vllm_fp8moe_flashinfer_trtllm_trtllmfp8expertsmonolithic, moe_dtype fp8_block, balanced, moe_ep 1, 1-4096 tokens, 736 training rows over the even half of 13 expert geometries, 1-4096 tokens", role: primary}
+      rationale: >
+        Asymptotic fraction of the part's dense FP8 peak that vLLM's FlashInfer TRT-LLM grouped GEMM on block-FP8 experts, which AISimulate's collector measures as vLLM's block-FP8 MoE on SM100. Fitted jointly (gemm_eps_max_fp8_grouped_trtllm, gemm_m_half_fp8_grouped_trtllm, gemm_floor_fp8_grouped_trtllm) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (4500 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Held-out geometries (every second one): geometric error 1.162x (signed 1.073) against the dense fp8_block ramp's 1.514x (signed 0.722) under the same composition. The vllm/0.30.0 collection (1334 rows of the same kernel, not fitted): 1.157x against the dense ramp's 1.563x. The vllm/0.31.0 collection (115 rows of the same kernel, not fitted): 1.133x against the dense ramp's 1.450x. GRADED ASSUMED, NOT MEASURED: the engine release's kernel_impls.json lists no sm_100a build for the FP8 MoE backends, so the entry cannot name a code hash (VAL-8); it is regraded measured and keyed when the build is listed. It applies to every implementation without having been shown to match; the kernel reads it only where the plan states no experts kernel. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_blackwell_fp8_grouped_ramp.py.
+  - gemm_m_half_fp8_grouped_trtllm:
+      value: 1
+      units: tokens
+      method: assumed
+      fitted: false
+      scope: {hardware: [b300]}
+      ci95: [1, 1]
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/moe/vllm/0.24.0/moe_perf.parquet, vllm_fp8moe_flashinfer_trtllm_trtllmfp8expertsmonolithic, moe_dtype fp8_block, balanced, moe_ep 1, 1-4096 tokens, 736 training rows over the even half of 13 expert geometries, 1-4096 tokens", role: primary}
+      rationale: >
+        The step token count at which the ramp reaches half its asymptote. It sits at the grid's lower edge: the rows identify no knee above one token, and the floor carries the low-token time. vLLM's FlashInfer TRT-LLM grouped GEMM on block-FP8 experts, which AISimulate's collector measures as vLLM's block-FP8 MoE on SM100. Fitted jointly (gemm_eps_max_fp8_grouped_trtllm, gemm_m_half_fp8_grouped_trtllm, gemm_floor_fp8_grouped_trtllm) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (4500 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Held-out geometries (every second one): geometric error 1.162x (signed 1.073) against the dense fp8_block ramp's 1.514x (signed 0.722) under the same composition. The vllm/0.30.0 collection (1334 rows of the same kernel, not fitted): 1.157x against the dense ramp's 1.563x. The vllm/0.31.0 collection (115 rows of the same kernel, not fitted): 1.133x against the dense ramp's 1.450x. GRADED ASSUMED, NOT MEASURED: the engine release's kernel_impls.json lists no sm_100a build for the FP8 MoE backends, so the entry cannot name a code hash (VAL-8); it is regraded measured and keyed when the build is listed. It applies to every implementation without having been shown to match; the kernel reads it only where the plan states no experts kernel. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_blackwell_fp8_grouped_ramp.py.
+  - gemm_floor_fp8_grouped_trtllm:
+      value: 29
+      units: us_per_transfer
+      method: assumed
+      fitted: false
+      scope: {hardware: [b300]}
+      ci95: [26.5, 30.5]
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/moe/vllm/0.24.0/moe_perf.parquet, vllm_fp8moe_flashinfer_trtllm_trtllmfp8expertsmonolithic, moe_dtype fp8_block, balanced, moe_ep 1, 1-4096 tokens, 736 training rows over the even half of 13 expert geometries, 1-4096 tokens", role: primary}
+      rationale: >
+        The per-layer device time of the grouped experts however few tokens reach them, which the ramp's work term alone cannot carry. vLLM's FlashInfer TRT-LLM grouped GEMM on block-FP8 experts, which AISimulate's collector measures as vLLM's block-FP8 MoE on SM100. Fitted jointly (gemm_eps_max_fp8_grouped_trtllm, gemm_m_half_fp8_grouped_trtllm, gemm_floor_fp8_grouped_trtllm) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (4500 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Held-out geometries (every second one): geometric error 1.162x (signed 1.073) against the dense fp8_block ramp's 1.514x (signed 0.722) under the same composition. The vllm/0.30.0 collection (1334 rows of the same kernel, not fitted): 1.157x against the dense ramp's 1.563x. The vllm/0.31.0 collection (115 rows of the same kernel, not fitted): 1.133x against the dense ramp's 1.450x. GRADED ASSUMED, NOT MEASURED: the engine release's kernel_impls.json lists no sm_100a build for the FP8 MoE backends, so the entry cannot name a code hash (VAL-8); it is regraded measured and keyed when the build is listed. It applies to every implementation without having been shown to match; the kernel reads it only where the plan states no experts kernel. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_blackwell_fp8_grouped_ramp.py.
   - moe_routing_imbalance_median:
       value: 0.927
       units: dimensionless
@@ -552,6 +618,39 @@ coefficients:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/gemm/vllm/0.31.0/gemm_perf.parquet (NVIDIA GB200), 36,630 nvfp4 rows over 74 token counts, kernel FlashInferCuteDslNvFp4LinearKernel", role: primary}
       rationale: >
         The token count at which the ramp reaches half its asymptote, so it sets how fast a widening batch approaches peak. Fitted jointly with gemm_eps_max_nvfp4 on the same envelope; residual 0.0335.
+  - gemm_eps_max_fp8_grouped_trtllm:
+      value: 0.21
+      units: dimensionless
+      method: assumed
+      fitted: false
+      scope: {hardware: [gb200-nvl72]}
+      ci95: [0.195, 0.225]
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/moe/vllm/0.24.0/moe_perf.parquet, vllm_fp8moe_flashinfer_trtllm_trtllmfp8expertsmonolithic, moe_dtype fp8_block, balanced, moe_ep 1, 1-4096 tokens, 736 training rows over the even half of 13 expert geometries, 1-4096 tokens", role: primary}
+      rationale: >
+        Asymptotic fraction of the part's dense FP8 peak that vLLM's FlashInfer TRT-LLM grouped GEMM on block-FP8 experts, which AISimulate's collector measures as vLLM's block-FP8 MoE on SM100. Fitted jointly (gemm_eps_max_fp8_grouped_trtllm, gemm_m_half_fp8_grouped_trtllm, gemm_floor_fp8_grouped_trtllm) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (5000 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Held-out geometries (every second one): geometric error 1.160x (signed 1.071) against the dense fp8_block ramp's 1.519x (signed 0.720) under the same composition. The vllm/0.30.0 collection (1334 rows of the same kernel, not fitted): 1.145x against the dense ramp's 1.532x. The vllm/0.31.0 collection (115 rows of the same kernel, not fitted): 1.134x against the dense ramp's 1.465x. GRADED ASSUMED, NOT MEASURED: the engine release's kernel_impls.json lists no sm_100a build for the FP8 MoE backends, so the entry cannot name a code hash (VAL-8); it is regraded measured and keyed when the build is listed. It applies to every implementation without having been shown to match; the kernel reads it only where the plan states no experts kernel. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_blackwell_fp8_grouped_ramp.py.
+  - gemm_m_half_fp8_grouped_trtllm:
+      value: 1
+      units: tokens
+      method: assumed
+      fitted: false
+      scope: {hardware: [gb200-nvl72]}
+      ci95: [1, 1]
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/moe/vllm/0.24.0/moe_perf.parquet, vllm_fp8moe_flashinfer_trtllm_trtllmfp8expertsmonolithic, moe_dtype fp8_block, balanced, moe_ep 1, 1-4096 tokens, 736 training rows over the even half of 13 expert geometries, 1-4096 tokens", role: primary}
+      rationale: >
+        The step token count at which the ramp reaches half its asymptote. It sits at the grid's lower edge: the rows identify no knee above one token, and the floor carries the low-token time. vLLM's FlashInfer TRT-LLM grouped GEMM on block-FP8 experts, which AISimulate's collector measures as vLLM's block-FP8 MoE on SM100. Fitted jointly (gemm_eps_max_fp8_grouped_trtllm, gemm_m_half_fp8_grouped_trtllm, gemm_floor_fp8_grouped_trtllm) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (5000 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Held-out geometries (every second one): geometric error 1.160x (signed 1.071) against the dense fp8_block ramp's 1.519x (signed 0.720) under the same composition. The vllm/0.30.0 collection (1334 rows of the same kernel, not fitted): 1.145x against the dense ramp's 1.532x. The vllm/0.31.0 collection (115 rows of the same kernel, not fitted): 1.134x against the dense ramp's 1.465x. GRADED ASSUMED, NOT MEASURED: the engine release's kernel_impls.json lists no sm_100a build for the FP8 MoE backends, so the entry cannot name a code hash (VAL-8); it is regraded measured and keyed when the build is listed. It applies to every implementation without having been shown to match; the kernel reads it only where the plan states no experts kernel. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_blackwell_fp8_grouped_ramp.py.
+  - gemm_floor_fp8_grouped_trtllm:
+      value: 29
+      units: us_per_transfer
+      method: assumed
+      fitted: false
+      scope: {hardware: [gb200-nvl72]}
+      ci95: [27.5, 31.5]
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/moe/vllm/0.24.0/moe_perf.parquet, vllm_fp8moe_flashinfer_trtllm_trtllmfp8expertsmonolithic, moe_dtype fp8_block, balanced, moe_ep 1, 1-4096 tokens, 736 training rows over the even half of 13 expert geometries, 1-4096 tokens", role: primary}
+      rationale: >
+        The per-layer device time of the grouped experts however few tokens reach them, which the ramp's work term alone cannot carry. vLLM's FlashInfer TRT-LLM grouped GEMM on block-FP8 experts, which AISimulate's collector measures as vLLM's block-FP8 MoE on SM100. Fitted jointly (gemm_eps_max_fp8_grouped_trtllm, gemm_m_half_fp8_grouped_trtllm, gemm_floor_fp8_grouped_trtllm) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (5000 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Held-out geometries (every second one): geometric error 1.160x (signed 1.071) against the dense fp8_block ramp's 1.519x (signed 0.720) under the same composition. The vllm/0.30.0 collection (1334 rows of the same kernel, not fitted): 1.145x against the dense ramp's 1.532x. The vllm/0.31.0 collection (115 rows of the same kernel, not fitted): 1.134x against the dense ramp's 1.465x. GRADED ASSUMED, NOT MEASURED: the engine release's kernel_impls.json lists no sm_100a build for the FP8 MoE backends, so the entry cannot name a code hash (VAL-8); it is regraded measured and keyed when the build is listed. It applies to every implementation without having been shown to match; the kernel reads it only where the plan states no experts kernel. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_blackwell_fp8_grouped_ramp.py.
   - moe_routing_imbalance_median:
       value: 0.9
       units: dimensionless
@@ -1744,6 +1843,39 @@ coefficients:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/moe/vllm/0.25.0/moe_perf.parquet, vllm_compressedtensorsw4a4mxfp4moe_marlin_marlinexperts_situ_as_silu, moe_dtype w4a16_mxfp4, balanced, moe_tp 1 / moe_ep 1, 27 token counts (hidden 3584, inter 3072, top-16 of 896)", role: primary}
       rationale: >
         The step token count at which the Marlin MXFP4 W4A16 grouped ramp reaches half its asymptote, fitted jointly with gemm_eps_max_w4a16_mxfp4_grouped over 27 token counts; the kernel evaluates it at the step's token count, as it does every ramp. Reproduce with scripts/fit_marlin_grouped_ramp.py.
+  - gemm_eps_max_fp8_grouped_trtllm:
+      value: 0.21
+      units: dimensionless
+      method: assumed
+      fitted: false
+      scope: {hardware: [gb300]}
+      ci95: [0.195, 0.235]
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/moe/vllm/0.24.0/moe_perf.parquet, vllm_fp8moe_flashinfer_trtllm_trtllmfp8expertsmonolithic, moe_dtype fp8_block, balanced, moe_ep 1, 1-4096 tokens, 736 training rows over the even half of 13 expert geometries, 1-4096 tokens", role: primary}
+      rationale: >
+        Asymptotic fraction of the part's dense FP8 peak that vLLM's FlashInfer TRT-LLM grouped GEMM on block-FP8 experts, which AISimulate's collector measures as vLLM's block-FP8 MoE on SM100. Fitted jointly (gemm_eps_max_fp8_grouped_trtllm, gemm_m_half_fp8_grouped_trtllm, gemm_floor_fp8_grouped_trtllm) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (5000 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Held-out geometries (every second one): geometric error 1.159x (signed 1.084) against the dense fp8_block ramp's 1.524x (signed 0.714) under the same composition. The vllm/0.30.0 collection (1334 rows of the same kernel, not fitted): 1.143x against the dense ramp's 1.541x. The vllm/0.31.0 collection (115 rows of the same kernel, not fitted): 1.127x against the dense ramp's 1.464x. GRADED ASSUMED, NOT MEASURED: the engine release's kernel_impls.json lists no sm_100a build for the FP8 MoE backends, so the entry cannot name a code hash (VAL-8); it is regraded measured and keyed when the build is listed. It applies to every implementation without having been shown to match; the kernel reads it only where the plan states no experts kernel. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_blackwell_fp8_grouped_ramp.py.
+  - gemm_m_half_fp8_grouped_trtllm:
+      value: 1
+      units: tokens
+      method: assumed
+      fitted: false
+      scope: {hardware: [gb300]}
+      ci95: [1, 1]
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/moe/vllm/0.24.0/moe_perf.parquet, vllm_fp8moe_flashinfer_trtllm_trtllmfp8expertsmonolithic, moe_dtype fp8_block, balanced, moe_ep 1, 1-4096 tokens, 736 training rows over the even half of 13 expert geometries, 1-4096 tokens", role: primary}
+      rationale: >
+        The step token count at which the ramp reaches half its asymptote. It sits at the grid's lower edge: the rows identify no knee above one token, and the floor carries the low-token time. vLLM's FlashInfer TRT-LLM grouped GEMM on block-FP8 experts, which AISimulate's collector measures as vLLM's block-FP8 MoE on SM100. Fitted jointly (gemm_eps_max_fp8_grouped_trtllm, gemm_m_half_fp8_grouped_trtllm, gemm_floor_fp8_grouped_trtllm) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (5000 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Held-out geometries (every second one): geometric error 1.159x (signed 1.084) against the dense fp8_block ramp's 1.524x (signed 0.714) under the same composition. The vllm/0.30.0 collection (1334 rows of the same kernel, not fitted): 1.143x against the dense ramp's 1.541x. The vllm/0.31.0 collection (115 rows of the same kernel, not fitted): 1.127x against the dense ramp's 1.464x. GRADED ASSUMED, NOT MEASURED: the engine release's kernel_impls.json lists no sm_100a build for the FP8 MoE backends, so the entry cannot name a code hash (VAL-8); it is regraded measured and keyed when the build is listed. It applies to every implementation without having been shown to match; the kernel reads it only where the plan states no experts kernel. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_blackwell_fp8_grouped_ramp.py.
+  - gemm_floor_fp8_grouped_trtllm:
+      value: 30
+      units: us_per_transfer
+      method: assumed
+      fitted: false
+      scope: {hardware: [gb300]}
+      ci95: [27.5, 32.5]
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/moe/vllm/0.24.0/moe_perf.parquet, vllm_fp8moe_flashinfer_trtllm_trtllmfp8expertsmonolithic, moe_dtype fp8_block, balanced, moe_ep 1, 1-4096 tokens, 736 training rows over the even half of 13 expert geometries, 1-4096 tokens", role: primary}
+      rationale: >
+        The per-layer device time of the grouped experts however few tokens reach them, which the ramp's work term alone cannot carry. vLLM's FlashInfer TRT-LLM grouped GEMM on block-FP8 experts, which AISimulate's collector measures as vLLM's block-FP8 MoE on SM100. Fitted jointly (gemm_eps_max_fp8_grouped_trtllm, gemm_m_half_fp8_grouped_trtllm, gemm_floor_fp8_grouped_trtllm) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (5000 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Held-out geometries (every second one): geometric error 1.159x (signed 1.084) against the dense fp8_block ramp's 1.524x (signed 0.714) under the same composition. The vllm/0.30.0 collection (1334 rows of the same kernel, not fitted): 1.143x against the dense ramp's 1.541x. The vllm/0.31.0 collection (115 rows of the same kernel, not fitted): 1.127x against the dense ramp's 1.464x. GRADED ASSUMED, NOT MEASURED: the engine release's kernel_impls.json lists no sm_100a build for the FP8 MoE backends, so the entry cannot name a code hash (VAL-8); it is regraded measured and keyed when the build is listed. It applies to every implementation without having been shown to match; the kernel reads it only where the plan states no experts kernel. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_blackwell_fp8_grouped_ramp.py.
   # --- gb300 descriptors (NVIDIA AISimulate systems/gb300.yaml) ---
   - hbm_derate:
       value: 0.8

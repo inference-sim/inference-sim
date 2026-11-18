@@ -152,6 +152,13 @@ func Validate(b Bundle) Report {
 				field.Merge("deployment", pp)
 			}
 		}
+		for i, pool := range b.Deployment.Pools {
+			if o := pool.Offload; o != nil && !o.ConnectorOptions.IsZero() {
+				if pp := er.CheckConnectorOptions(fmt.Sprintf("pools[%d].offload", i), o.ConnectorOptions); pp != nil {
+					field.Merge("deployment", pp)
+				}
+			}
+		}
 	}
 	if b.Deployment != nil {
 		checkAcceptanceK(field, b, er)

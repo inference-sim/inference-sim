@@ -33,7 +33,7 @@ import (
 // contracts/conformance/doctest, made from a valid example of its document. Each loader
 // reads from a file, as a caller does.
 func TestEveryLoaderRefusesTheMalformedSet(t *testing.T) {
-	ex := func(name string) string { return filepath.Join("..", "docs", "contracts", "examples", name) }
+	ex := func(name string) string { return filepath.Join("testdata", "examples", name) }
 	cat := func(rel string) string { return filepath.Join("..", "catalog", rel) }
 	via := func(name string, load func(string) error) func([]byte) error {
 		return func(b []byte) error {
@@ -141,7 +141,7 @@ func jsonToYAML(t *testing.T, b []byte) []byte {
 // SUB-12: every declared field is read. Each value in each loader's valid example is
 // changed in turn; the loader must load something different, or refuse.
 func TestEveryLoaderReadsEveryFieldItsExampleStates(t *testing.T) {
-	ex := func(name string) string { return filepath.Join("..", "docs", "contracts", "examples", name) }
+	ex := func(name string) string { return filepath.Join("testdata", "examples", name) }
 	cat := func(rel string) string { return filepath.Join("..", "catalog", rel) }
 	dir := t.TempDir()
 	file := func(b []byte) string {
@@ -271,5 +271,59 @@ func TestAnEngineBlockWithARecursiveAliasIsRefused(t *testing.T) {
 	err := yaml.Unmarshal([]byte("engine: &a [*a]\n"), &h)
 	if err == nil || !strings.Contains(err.Error(), "recursive alias") {
 		t.Fatalf("want a refusal of the recursive alias, got %v", err)
+	}
+}
+
+// The dropped-field probe reads a pruned copy of the router entry (oneOfEachShape), so a test must
+// show that the pruned probe still fails on a loader that drops a field its example states
+// (inference-sim/blis-substrate#328). The loader below is the real one with one field of a
+// repeated, nested list element (a build's file blob) forgotten, as a custom unmarshaller might.
+func TestThePrunedDroppedFieldProbeStillCatchesADroppedField(t *testing.T) {
+	path := filepath.Join("..", "catalog", "routers", "dynamo-round-robin.yaml")
+	full, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pruned := oneOfEachShape(t, full)
+	dir := t.TempDir()
+	load := func(forget bool) func([]byte) (any, error) {
+		return func(b []byte) (any, error) {
+			p := filepath.Join(dir, "dynamo-round-robin.yaml")
+			if err := os.WriteFile(p, b, 0o644); err != nil {
+				return nil, err
+			}
+			e, err := LoadRouterEntry(p)
+			if err != nil {
+				return nil, err
+			}
+			if forget {
+				for i := range e.Builds {
+					for j := range e.Builds[i].Files {
+						e.Builds[i].Files[j].Blob = ""
+					}
+				}
+			}
+			return e, nil
+		}
+	}
+	clean, err := doctest.Dropped(pruned, load(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(clean) != 0 {
+		t.Fatalf("the real loader drops fields of the pruned example: %v", clean)
+	}
+	bad, err := doctest.Dropped(pruned, load(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, d := range bad {
+		if strings.Contains(d, "blob") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a loader that forgets each file's blob passes the pruned probe; reported %v", bad)
 	}
 }

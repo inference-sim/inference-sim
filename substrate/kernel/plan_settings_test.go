@@ -199,6 +199,9 @@ func TestEachResolvedPlanSettingMovesAPrice(t *testing.T) {
 		{"CacheFormat.LatentCellBytes", latent, nil, func(l *plan.Lowered) { l.Plan.Cache.LatentCellBytes = 656 }},
 		{"CacheFormat.StateElementBytes", hybrid, nil, func(l *plan.Lowered) { l.Plan.Cache.StateElementBytes = 2 }},
 		{"CacheFormat.Recurrent", hybrid, nil, func(l *plan.Lowered) { l.Plan.Cache.Recurrent = plan.RecurrentEveryPage }},
+		{"CacheFormat.TrackingSlots", hybrid, func(l *plan.Lowered) {
+			l.Plan.Cache.Recurrent, l.Plan.Cache.TrackingSlots = plan.RecurrentTracked, 1
+		}, func(l *plan.Lowered) { l.Plan.Cache.TrackingSlots = 2 }},
 		{"MoEPlan.Dispatch", routed, nil, func(l *plan.Lowered) {
 			l.Plan.MoE.Dispatch = plan.DispatchDeepEPLowLatency
 		}},
@@ -208,6 +211,11 @@ func TestEachResolvedPlanSettingMovesAPrice(t *testing.T) {
 		{"MoEPlan.Fused", muse, nil, func(l *plan.Lowered) { l.Plan.MoE.Fused = true }},
 		{"MoEPlan.Routing", routed, nil, func(l *plan.Lowered) { l.Plan.MoE.Routing = plan.RoutingSeparate }},
 		{"MoEPlan.RedundantExperts", routed, nil, func(l *plan.Lowered) { l.Plan.MoE.RedundantExperts = 16 }},
+		{"CollectivePlan.AllReduce", dense, func(l *plan.Lowered) {
+			l.Reported.SMAllReduce, l.Plan.Collectives.AllReduce = true, plan.AllReduceCustom
+		}, func(l *plan.Lowered) {
+			l.Reported.SMAllReduce, l.Plan.Collectives.AllReduce = false, plan.AllReduceNCCL
+		}},
 		{"CollectivePlan.SequenceParallelMoE", spMoE, nil, func(l *plan.Lowered) { l.Plan.Collectives.SequenceParallelMoE = true }},
 		{"CollectivePlan.SequenceParallelModel", v41, nil, func(l *plan.Lowered) { l.Plan.Collectives.SequenceParallelModel = true }},
 		{"DecodeContextPlan.Combine", dcp, nil, func(l *plan.Lowered) { l.Plan.DecodeContext.Combine = plan.CombineAllToAll }},

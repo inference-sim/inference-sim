@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -18,6 +19,10 @@ import (
 //   - X22: a step or job with continue-on-error, and a run script that ignores an exit
 //     code: "|| true", "|| :", "|| exit 0", "|| (exit 0)", "|| return 0", "; true", "set +e", or a run script in a shell other
 //     than bash's default -e mode without "set -e";
+//   - LIF-2: a step that uses actions/setup-go outside the go-toolchain action. It installs the
+//     Go that go.mod (or a literal) names, not the version in contracts/toolchain; a job installs
+//     Go with inference-sim/blis-substrate/.github/actions/go-toolchain, which fails when the go
+//     command reports any other version (inference-sim/blis-substrate#193);
 //   - X16: go test run with -short or a -skip flag in a job, or a skip marker written into
 //     a required job's environment (SKIP_*, *_SKIP);
 //   - X16: a gate (a workflow whose file starts with "gate", or that carries a
@@ -73,6 +78,9 @@ func LintWorkflow(name string, src []byte) ([]string, error) {
 				}
 			case !pinned.MatchString(u):
 				add(val.Line, "%s is not pinned by a full commit hash (X21)", u)
+			}
+			if strings.HasPrefix(u, "actions/setup-go@") && !strings.HasSuffix(filepath.ToSlash(name), "actions/go-toolchain/action.yml") {
+				add(val.Line, "%s installs the Go that go.mod or a literal names; install Go with inference-sim/blis-substrate/.github/actions/go-toolchain, which installs contracts/toolchain's version (LIF-2)", u)
 			}
 		case "continue-on-error":
 			if val.Value != "false" {

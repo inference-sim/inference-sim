@@ -36,17 +36,24 @@ on:
 permissions:
   contents: read
 
+# An edit to a pull request's title or body (not to its base) starts a run too, because a retarget is
+# an edit. That run does nothing: it has its own concurrency group, so it cancels no run in progress
+# and no push cancels it, and every job is skipped. Each job's name carries " (edit)" on that run, so
+# none of its check runs is named like a required check (a newer skipped `required` would otherwise
+# stand in for the run still in progress). The checks that read the text (blis.yml, private-names.yml)
+# are separate workflows and still run.
 # No build downloads a toolchain: every Go job installs exactly contracts/toolchain (LIF-2).
 env:
   GOTOOLCHAIN: local
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: true
 
 jobs:
   changes:
-    name: changed directories
+    name: "changed directories${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -55,13 +62,13 @@ jobs:
       catalog: ${{ steps.filter.outputs.catalog }}
       ledger: ${{ steps.filter.outputs.ledger }}
       registry: ${{ steps.filter.outputs.registry }}
-      docs: ${{ steps.filter.outputs.docs }}
       golang: ${{ steps.filter.outputs.golang }}
       apidiff: ${{ steps.filter.outputs.apidiff }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - uses: ./.github/actions/go-toolchain
       - id: filter
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -69,37 +76,45 @@ jobs:
           set -euo pipefail
           # On a push with no usable base, or a manual run, every job runs.
           if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            for k in contracts kernel catalog ledger registry docs golang apidiff; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
+            for k in contracts kernel catalog ledger registry golang apidiff; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
             exit 0
           fi
-          changed=$(git diff --name-only "$BASE" HEAD)
-          has() { if printf '%s\n' "$changed" | grep -Eq "$1"; then echo true; else echo false; fi; }
+          # CHANGED_FILES is set only by tools/changedjobs's test, which runs this step on a chosen list.
+          changed=${CHANGED_FILES-$(git diff --name-only "$BASE" HEAD)}
+          # A job also runs when a changed file lies in a package its commands build or test, or in a
+          # file such a package embeds: tools/changedjobs reads that reach from `go list -deps -test`,
+          # so a package that gains an importer needs no edit here (a change under load/ once skipped
+          # the ledger job, which imports it). The patterns below stay for data that no package imports.
+          reach=$(printf '%s\n' "$changed" | go run ./tools/changedjobs .)
+          has() {
+            local r=false
+            if [ -n "${2:-}" ]; then r=$(printf '%s\n' "$reach" | sed -n "s/^$2=//p"); fi
+            if [ "$r" = true ] || printf '%s\n' "$changed" | grep -Eq "$1"; then echo true; else echo false; fi
+          }
           # A change to go.mod, go.sum, a workflow, a composite action or the root package affects
           # every Go job. Other files under .github/ are data that one job reads (or none): they run
-          # only the jobs named below, so a line in .github/tags.lock does not run the cost model.
+          # only the jobs named below, so a data file there does not run the cost model.
           shared='^(go\.mod|go\.sum|[^/]+\.go|\.github/(workflows|actions)/)'
           # .github/quarantine.yaml: the skip report of the contracts job and the registry job's
           # skip check read it. .github/check-runs.yaml and .github/gates.yaml: tools/release and
-          # tools/prcheck read them (the contracts job runs their tests). .github/tags.lock is read
-          # only by the nightly tag check; .github/modlint-deferral.yaml only by the format, vet and
-          # build job, which always runs.
+          # tools/prcheck read them (the contracts job runs their tests). .github/modlint-deferral.yaml
+          # is read only by the format, vet and build job, which always runs.
           github_data='^\.github/(quarantine|check-runs|gates)\.ya?ml$'
           # Any Python file can restate a Go rule, so a Python change runs the X15 lint here. The
           # loader (load/) reads the catalog and the registry, so a data change runs it too.
-          echo "contracts=$(has "$shared|$github_data|^contracts/|^validate/|^tools/|^load/|^catalog/|^registry/|\.py$")" >> "$GITHUB_OUTPUT"
+          echo "contracts=$(has "$shared|$github_data|^contracts/|^validate/|^tools/|^load/|^catalog/|^registry/|\.py$" contracts)" >> "$GITHUB_OUTPUT"
           # The cost model's tests price every embedded catalog model and coefficient set (the
           # loader reads the files data.go embeds), so a change to those files runs it. tools/shard
           # splits its tests across the legs.
           embedded='^catalog/(devices|hardware|models|networks|routers|workloads)/|^catalog/measurements/sources\.yaml$|^registry/(acceptance|coefficients|routing)/'
-          echo "kernel=$(has "$shared|$embedded|^kernel/|^contracts/|^load/|^validate/|^tools/shard/")" >> "$GITHUB_OUTPUT"
+          echo "kernel=$(has "$shared|$embedded|^kernel/|^contracts/|^load/|^validate/|^tools/shard/" kernel)" >> "$GITHUB_OUTPUT"
           # The API-compatibility check compares contracts/ against the last release tag, and
           # reads the review-set file. It reads no other directory, so only those paths, the
           # checker itself and the shared files run it.
-          echo "apidiff=$(has "$shared|^contracts/|^tools/prcheck/|^\.github/contract-review-set$")" >> "$GITHUB_OUTPUT"
-          echo "catalog=$(has "$shared|^catalog/")"                      >> "$GITHUB_OUTPUT"
-          echo "ledger=$(has "$shared|^catalog/ledger/|^ledger/")"       >> "$GITHUB_OUTPUT"
-          echo "registry=$(has "$shared|^\.github/quarantine\.yaml$|^registry/")" >> "$GITHUB_OUTPUT"
-          echo "docs=$(has "$shared|^docs/|^mkdocs\.yml|^catalog/|^registry/|^contracts/example_test\.go")" >> "$GITHUB_OUTPUT"
+          echo "apidiff=$(has "$shared|^contracts/|^tools/prcheck/|^\.github/contract-review-set$" apidiff)" >> "$GITHUB_OUTPUT"
+          echo "catalog=$(has "$shared|^catalog/" catalog)"                      >> "$GITHUB_OUTPUT"
+          echo "ledger=$(has "$shared|^catalog/ledger/|^ledger/" ledger)"       >> "$GITHUB_OUTPUT"
+          echo "registry=$(has "$shared|^\.github/quarantine\.yaml$|^registry/" registry)" >> "$GITHUB_OUTPUT"
           # golangci-lint judges Go code only: it needs a Go file, the module files, its own
           # configuration, or a workflow or action that builds it.
           echo "golang=$(has "$shared|\.go$|^\.golangci\.yml$")" >> "$GITHUB_OUTPUT"
@@ -107,7 +122,8 @@ jobs:
   # Formatting, vet and build for the whole module, on every change. They are fast, and a
   # change in one directory can break the build of another.
   go:
-    name: format, vet and build
+    name: "format, vet and build${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -141,7 +157,7 @@ jobs:
   # binary is built with contracts/toolchain, since a prebuilt one is built with an older Go
   # and refuses a newer module.
   lint:
-    name: golangci-lint
+    name: "golangci-lint${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.golang == 'true'
     runs-on: ubuntu-latest
@@ -183,7 +199,7 @@ jobs:
   # binary and run in contracts-checks; the job named "contracts and validators" is the
   # aggregate that the check-run names (.github/check-runs.yaml) and `required` point to.
   contracts-tests:
-    name: contracts and validators tests (leg ${{ matrix.leg }})
+    name: "contracts and validators tests (leg ${{ matrix.leg }})${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
@@ -272,7 +288,7 @@ jobs:
 
   # The checks of the contracts group that need no test binary. They run beside the test legs.
   contracts-checks:
-    name: contracts and validators checks
+    name: "contracts and validators checks${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
@@ -320,7 +336,7 @@ jobs:
   # only if the legs and the side checks all passed. It runs whenever the group was selected,
   # even when a leg failed or was cancelled, so that the failure is reported under this name.
   contracts:
-    name: contracts and validators
+    name: "contracts and validators${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: [changes, contracts-tests, contracts-checks]
     if: always() && needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
@@ -339,7 +355,7 @@ jobs:
   # (TestEveryCoefficientFamilyChangesSomePriceOrIsListed) prices every scenario on every CPU of
   # the runner. The steps that are not `go test` of the package run beside the legs.
   kernel-tests:
-    name: cost model tests (leg ${{ matrix.leg }})
+    name: "cost model tests (leg ${{ matrix.leg }})${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.kernel == 'true'
     runs-on: ubuntu-latest
@@ -388,7 +404,7 @@ jobs:
 
   # The cost model's checks that are not its package tests, in one job beside the legs.
   kernel-checks:
-    name: cost model vet, sub-packages, race and script tests
+    name: "cost model vet, sub-packages, race and script tests${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.kernel == 'true'
     runs-on: ubuntu-latest
@@ -440,7 +456,7 @@ jobs:
 
   # The aggregate, as for the contracts group: the check-run name stays "cost model".
   kernel:
-    name: cost model
+    name: "cost model${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: [changes, kernel-tests, kernel-checks]
     if: always() && needs.changes.outputs.kernel == 'true'
     runs-on: ubuntu-latest
@@ -460,7 +476,7 @@ jobs:
   # known-bad input of this check (X18). The sweep covers the listed properties, not every
   # changed function; widening it is a row in that file.
   mutants:
-    name: mutation check
+    name: "mutation check${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.kernel == 'true'
     runs-on: ubuntu-latest
@@ -474,7 +490,7 @@ jobs:
   # its vendor configuration. The validator is this repository's own, so the catalog and the
   # code that reads it are checked at the same commit.
   catalog:
-    name: catalog
+    name: "catalog${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.catalog == 'true'
     runs-on: ubuntu-latest
@@ -512,7 +528,7 @@ jobs:
   # The byte-for-byte regeneration from the pinned dump needs the 34 GB dump, so it runs in
   # ledger.yml's nightly job, not here.
   ledger:
-    name: ledger
+    name: "ledger${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.ledger == 'true'
     runs-on: ubuntu-latest
@@ -544,7 +560,7 @@ jobs:
   # Every coefficient set validates through the Go types, and the registry's derivation
   # tests pass. The full re-derivation with the AISimulate sweeps present is rederive.yml.
   registry:
-    name: registry
+    name: "registry${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     if: needs.changes.outputs.registry == 'true'
     runs-on: ubuntu-latest
@@ -585,33 +601,6 @@ jobs:
             exit 1
           fi
 
-  # The docs site builds with every warning an error: a broken link, a missing snippet, a page
-  # left out of the navigation. The hooks render the catalog's and the registry's reference
-  # pages from the committed data, so a data change can break the site too.
-  docs:
-    name: docs build
-    needs: changes
-    if: needs.changes.outputs.docs == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: docs/requirements.txt
-      - run: pip install --require-hashes -r docs/requirements.txt
-      - env:
-          DOCS_RELEASE: main
-        run: python -m pytest docs/hooks -q
-      - env:
-          DOCS_SOURCE_REF: ${{ github.sha }}
-          DOCS_RELEASE: ${{ github.ref_type == 'tag' && github.ref_name || 'main' }}
-        run: mkdocs build --strict
-
   # The one check branch protection requires. A job its paths did not trigger counts as
   # passed; a job that ran and failed, or was cancelled, fails this one (X16, X17). The legs
   # and side checks are listed as well as their aggregates, so a leg that failed or was
@@ -625,9 +614,9 @@ jobs:
   # only if every workflow whose paths the change touched has a successful check run on the
   # pull request's head.
   required:
-    name: required
-    if: always()
-    needs: [changes, go, lint, contracts, contracts-tests, contracts-checks, kernel, kernel-tests, kernel-checks, mutants, catalog, ledger, registry, docs]
+    name: "required${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ always() && (github.event.action != 'edited' || github.event.changes.base) }}
+    needs: [changes, go, lint, contracts, contracts-tests, contracts-checks, kernel, kernel-tests, kernel-checks, mutants, catalog, ledger, registry]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:

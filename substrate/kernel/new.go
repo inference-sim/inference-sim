@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -295,6 +296,8 @@ func construct(in Inputs) (*Kernel, error) {
 	fab.InterNodeEfficiency = fabricEfficiency
 
 	k := &Kernel{layout: layout, fabric: fab, pool: pool, chip: *in.Chip, rules: in.Rules,
+		multiHeadMLAPrefill: in.Scenario == nil || in.Scenario.Engine == nil ||
+			in.Scenario.Engine.Kind == "" || in.Scenario.Engine.Kind == legacyRulesKind,
 		family: family, architecture: g.Global.Architecture, graph: g,
 		switching: sw, drafterName: drafter,
 		statedFirstPassRows: in.DraftFirstPassRows, statedPassRequests: in.DraftPassRequests}
@@ -315,8 +318,9 @@ func construct(in Inputs) (*Kernel, error) {
 				"nominal line rate")
 	}
 	k.tp = float64(max(layout.TP, 1))
-	k.kvConnector = (in.Deployment.Offload != nil && in.Deployment.Offload.Connector != "") ||
-		(in.Deployment.PDTransfer != nil && in.Deployment.PDTransfer.Connector != "")
+	// The pool's own connector and offload, else the deployment's (Deployment.PoolOffload).
+	off, pd := in.Deployment.PoolOffload(in.PoolIndex), in.Deployment.PoolPDTransfer(in.PoolIndex)
+	k.kvConnector = (off != nil && off.Connector != "") || (pd != nil && pd.Connector != "")
 
 	// The served weight format, as the engine resolved it: the checkpoint's own, or the one its
 	// quantization setting serves it in. A bf16 checkpoint served fp8 reads half the weight
@@ -416,6 +420,8 @@ func construct(in Inputs) (*Kernel, error) {
 		k.recurrentCacheMode = price.RecurrentCacheAlign
 	case plan.RecurrentEveryPage:
 		k.recurrentCacheMode = price.RecurrentCacheAll
+	case plan.RecurrentTracked:
+		k.recurrentCacheMode = price.RecurrentCacheTracked
 	default:
 		k.recurrentCacheMode = price.RecurrentCacheMode(k.low.Cache.Recurrent)
 	}
@@ -636,6 +642,15 @@ func latentAttention(kind model.AttentionKind) bool {
 // Node returns another copy); the parallel block is flat; the labels are copied.
 func clonePool(p deployment.Pool) deployment.Pool {
 	p.Labels = maps.Clone(p.Labels)
+	if p.Offload != nil {
+		o := *p.Offload
+		o.Tiers = slices.Clone(o.Tiers)
+		p.Offload = &o
+	}
+	if p.PDTransfer != nil {
+		t := *p.PDTransfer
+		p.PDTransfer = &t
+	}
 	return p
 }
 
@@ -1439,43 +1454,95 @@ func (k *Kernel) liftCollectiveFloors(c *resolve.Coefficients) error {
 		keys = append(keys, collKey{Op: model.OpAllGather, Group: price.GroupPCP})
 	}
 	for _, key := range keys {
-		op := key.Op
-		measured := names[op]
-		// The rank count a collective spans, snapped to a width this chip was
-		// actually measured at. The widths come from the registry rather than from a
-		// constant here, so a part swept at 2 and 4 ranks only (a Grace-Blackwell
-		// tray is four GPUs) is not asked for an 8-rank figure that does not exist.
-		ranks, err := k.groupWidth(c, key, measured, dtype, chip)
+		measured := names[key.Op]
+		lane := measured
+		if key.Op == model.OpAllReduce && key.Group == price.GroupTP {
+			lane = k.allReduceLane()
+		}
+		t, err := k.collectiveTriple(c, key, lane, dtype, chip)
+		if err != nil && lane != measured {
+			// The engine states a kernel no sweep measures at this width on this part. The
+			// default lane is a different kernel's figure, so it is recorded, not silent.
+			def, derr := k.collectiveTriple(c, key, measured, dtype, chip)
+			if derr != nil {
+				return derr
+			}
+			k.assume("all_reduce_lane", string(k.allReduce),
+				fmt.Sprintf("no %s all-reduce figure for %d ranks on %s (%v); priced from the %s lane",
+					k.allReduce, def.ranks, k.chip.Name, err, plan.AllReduceCustom))
+			t, err = def, nil
+		}
 		if err != nil {
 			return err
 		}
-		stem := fmt.Sprintf("%s_%s_%drank_%s", measured, dtype, ranks, chip)
-		floor, err := c.Value("collective_floor_" + stem)
-		if err != nil {
-			return fmt.Errorf("no measured floor for a %d-rank %s on %s: %w",
-				ranks, measured, k.chip.Name, err)
-		}
-		rate, err := c.Value("collective_peak_rate_" + stem)
-		if err != nil {
-			return fmt.Errorf("no measured rate for a %d-rank %s on %s: %w",
-				ranks, measured, k.chip.Name, err)
-		}
-		k.collectiveFloors[key] = time.Duration(floor * float64(time.Microsecond))
-		k.collectiveRates[key] = rate * 1e6 // bytes per microsecond to bytes per second
-		// The transition rate is what actually prices a forward pass's collectives; the
-		// peak above is only a ceiling. Absent, the pricing falls back to the
-		// two-parameter form, which is optimistic in the transition region — so its
-		// absence is reported rather than silently tolerated.
-		transition, err := c.Value("collective_transition_rate_" + stem)
-		if err != nil {
-			return fmt.Errorf(
-				"no measured transition rate for a %d-rank %s on %s; the two-parameter "+
-					"form understates a collective by up to 3.8x in the message range a "+
-					"forward pass produces: %w", ranks, measured, k.chip.Name, err)
-		}
-		k.collectiveTransitions[key] = transition * 1e6
+		k.collectiveFloors[key] = t.floor
+		k.collectiveRates[key] = t.rate
+		k.collectiveTransitions[key] = t.transition
+	}
+	if k.allReduce == plan.AllReduceCustom && k.layout.TP > 1 {
+		// The engine picks the kernel per call: the custom kernel takes an input only under its
+		// size limit (8 MiB by default) and a larger message runs on NCCL. One lane prices a pool.
+		k.assume("all_reduce_message_limit", "the custom lane for every message size",
+			"the engine runs a message above the custom kernel's size limit on NCCL; the pool's "+
+				"tensor-parallel all-reduce is priced from the custom lane at every size "+
+				"(inference-sim/blis-substrate#392)")
 	}
 	return nil
+}
+
+// allReduceLane is the entry-name token of the coefficient lane that prices the tensor-parallel
+// all-reduce under the kernel the engine resolved: the custom kernel's lane carries the plain
+// operation name, every other kernel a lane of its own beside it (all_reduce_nccl, ...).
+func (k *Kernel) allReduceLane() string {
+	if k.allReduce == plan.AllReduceCustom || k.allReduce == plan.AllReduceUnstated {
+		return "all_reduce"
+	}
+	return "all_reduce_" + string(k.allReduce)
+}
+
+// collectiveTriple is one collective's measured floor, peak rate and transition rate in the lane
+// named by measured, at the width its group spans on this chip.
+type collectiveTriple struct {
+	floor            time.Duration
+	rate, transition float64 // bytes per second
+	ranks            int
+}
+
+func (k *Kernel) collectiveTriple(c *resolve.Coefficients, key collKey, measured, dtype, chip string) (collectiveTriple, error) {
+	// The rank count a collective spans, snapped to a width this chip was
+	// actually measured at. The widths come from the registry rather than from a
+	// constant here, so a part swept at 2 and 4 ranks only (a Grace-Blackwell
+	// tray is four GPUs) is not asked for an 8-rank figure that does not exist.
+	ranks, err := k.groupWidth(c, key, measured, dtype, chip)
+	if err != nil {
+		return collectiveTriple{}, err
+	}
+	stem := fmt.Sprintf("%s_%s_%drank_%s", measured, dtype, ranks, chip)
+	floor, err := c.Value("collective_floor_" + stem)
+	if err != nil {
+		return collectiveTriple{}, fmt.Errorf("no measured floor for a %d-rank %s on %s: %w",
+			ranks, measured, k.chip.Name, err)
+	}
+	rate, err := c.Value("collective_peak_rate_" + stem)
+	if err != nil {
+		return collectiveTriple{}, fmt.Errorf("no measured rate for a %d-rank %s on %s: %w",
+			ranks, measured, k.chip.Name, err)
+	}
+	// The transition rate is what actually prices a forward pass's collectives; the
+	// peak above is only a ceiling. Absent, the pricing falls back to the
+	// two-parameter form, which is optimistic in the transition region -- so its
+	// absence is reported rather than silently tolerated.
+	transition, err := c.Value("collective_transition_rate_" + stem)
+	if err != nil {
+		return collectiveTriple{}, fmt.Errorf(
+			"no measured transition rate for a %d-rank %s on %s; the two-parameter "+
+				"form understates a collective by up to 3.8x in the message range a "+
+				"forward pass produces: %w", ranks, measured, k.chip.Name, err)
+	}
+	return collectiveTriple{
+		floor: time.Duration(floor * float64(time.Microsecond)),
+		rate:  rate * 1e6, transition: transition * 1e6, ranks: ranks, // bytes per microsecond to per second
+	}, nil
 }
 
 // snapDeclared snaps a width to one the registry declares for a family of per-width
@@ -1819,6 +1886,9 @@ func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped, router
 	if !ok {
 		spec = formatFit(f, grouped, k.chip, hopper, router)
 	}
+	if blackwellBlockFP8Experts(f, grouped, k.family, k.low.MoE.Experts) {
+		spec = fitSpec{suffix: "fp8_grouped_trtllm", fallback: spec.suffix, peak: k.chip.FP8Peak * 1e12}
+	}
 	if spec.fallback != "" && !c.Has("gemm_eps_max_"+spec.suffix) {
 		k.assume("gemm_eps_max_"+spec.suffix, spec.fallback,
 			"no efficiency ramp for the "+spec.suffix+" kernel on "+k.chip.Name+", so it is "+
@@ -1858,6 +1928,19 @@ func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped, router
 	fit.smallRows, fit.smallPeak = spec.smallRows, spec.smallPeak
 	k.fits[key] = fit
 	return nil
+}
+
+// blackwellBlockFP8Experts reports whether block-FP8 routed experts run FlashInfer's TRT-LLM grouped kernel,
+// which vLLM's FP8 MoE oracle selects on SM100 for block-scaled weights when nothing says otherwise: a
+// grouped block-FP8 GEMM on a data-center Blackwell part (compute capability 10), in a plan that states no
+// experts kernel. The kernel has its own ramp and floor (gemm_*_fp8_grouped_trtllm,
+// scripts/fit_blackwell_fp8_grouped_ramp.py), which every such part carries; the registry's absence of it
+// would be recorded by the fallback to the format's own ramp. A plan that states another experts kernel
+// (Triton, FlashInfer CUTLASS) is priced as before, and so is a part whose compute capability the catalog
+// does not state.
+func blackwellBlockFP8Experts(f price.Format, grouped bool, family int, stated plan.KernelImpl) bool {
+	return grouped && family == 10 && f.DType == model.DTypeFP8 && !f.MX() &&
+		f.ScaleElements == fp8BlockScaleElements && stated == (plan.KernelImpl{})
 }
 
 // groupedExperts is the registry's word for the grouped-expert kernel the plan states the engine
@@ -1989,6 +2072,7 @@ func (k *Kernel) computeFixedBytes(g *model.Graph) kernel.MemoryBreakdown {
 			CommBuffers:    k.deepEPBufferBytes(g),
 			// Every stage's rank grows it; the binding stage is the one sized.
 			NonTorchInBudget: k.nonTorchInBudget,
+			EngineBuffers:    k.statedBufferBytes(),
 		}
 	}
 	var weights float64
@@ -2013,6 +2097,7 @@ func (k *Kernel) computeFixedBytes(g *model.Graph) kernel.MemoryBreakdown {
 		// after it, so they are (deepEPBufferBytes).
 		CommBuffers:      k.deepEPBufferBytes(g),
 		NonTorchInBudget: k.nonTorchInBudget,
+		EngineBuffers:    k.statedBufferBytes(),
 	}
 }
 
@@ -2341,6 +2426,7 @@ func (k *Kernel) residentBytes(l price.PlannedLayer) float64 {
 		b += l.ExpertWeightBytesPerExpert * k.geom(&l).perRank / k.expertTensorShards *
 			k.expertPadding(&l)
 	}
+	b += (l.ExpertBiasShardedBytesPerExpert/k.expertTensorShards + l.ExpertBiasReplicatedBytesPerExpert) * k.geom(&l).perRank
 	if l.SharedTokenSharded && sp {
 		b += l.SharedExpertWeightBytes
 	} else {
@@ -2412,10 +2498,7 @@ func (k *Kernel) buildProvenance(c *resolve.Coefficients) {
 			Field: o.Field, Requested: o.Requested, Resolved: o.Resolved, Reason: o.Reason,
 		})
 	}
-	backend := "nccl"
-	if k.layout.CustomAllReduce {
-		backend = "custom"
-	}
+	backend := string(k.allReduce)
 	cascade := k.cascadeAttention
 	async := k.asyncScheduling
 	k.resolution = kernel.Resolution{

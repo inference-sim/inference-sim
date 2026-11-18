@@ -285,7 +285,7 @@ coefficients:
       units: us_per_transfer
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
+      scope: {hardware: [a100-80, a100-sxm, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       ci95: [3.1, 3.3]
       sources:
         - {kind: discussion, cite: "Residual of two published Granite-5 capacity runs against this cost model: H200 8x TP=8 at 8257-token context (measured ITL 6.02 ms) and H100 8x TP=8 at 707-token context (measured ITL 6.13 ms), both at one concurrent request", role: primary}
@@ -326,10 +326,75 @@ coefficients:
         one concurrent request. A model error elsewhere would land in this coefficient
         rather than being exposed, which is exactly what a measured label would deny.
 
-        Scoped to h100 and h200 because those are the two parts the residuals come from.
-        It is not carried to Blackwell: dispatch cost is a driver and runtime property
-        rather than a silicon one, and nothing here establishes it transfers.
+        Derived on h100 and h200, the two parts the residuals come from. B200 and B300 have
+        their own entries below, calibrated on those parts' fit-role units: this value
+        over-charged them (accuracy/preregistrations.md K1). It remains the value for every
+        other part, as a transfer nobody has checked: dispatch cost is a driver and runtime
+        property rather than a silicon one, and nothing here establishes it carries.
 
         To replace this with a measurement: profile a decode step with Nsight Systems and
         take the gap between kernel end and next kernel start, summed over the step. That
         needs a GPU, which is why this remains the model's least evidenced term.
+  - host_launch_per_kernel:
+      value: 2.6
+      units: us_per_transfer
+      method: assumed
+      fitted: false
+      scope: {hardware: [b200]}
+      ci95: [2.2, 2.95]
+      sources:
+        - {kind: discussion, cite: "InferenceX concurrency 1-4 fit-role units on b200 (119 units, Kimi-K2.5, MiniMax-M2.5 and MiniMax-M3): the per-launch value that minimises the mean absolute TPOT error of the committed kernel on those units; scripts/fit_host_launch_per_chip.py", role: primary}
+      rationale: >
+        PER-CHIP CALIBRATION OF THE LAUNCH TERM. The part-wide 3.2 us was backed out of two Hopper
+        runs and is not carried to Blackwell by anything but the scope list. On b200 the same
+        kernel charged 3.2 us on every launch of a FULL graph, which put the host term at about
+        half of a single-request decode step and the step well above the measured
+        TPOT at concurrency 1-4. This entry is the value that the b200 fit-role units at
+        concurrency 1-4 support: the prediction is linear in the per-launch value (it is
+        charged once per planned launch, n_u of them in unit u), so the fit is the grid
+        minimum of the mean |pred/measured - 1| with n_u read from two scorings of each unit
+        (value 3.2 and value 0). The interval is the 2.5-97.5 percentiles of 400 bootstrap
+        resamples of the units. METHOD assumed, as the part-wide entry's: the value is backed out of end-to-end TPOT, a
+        different quantity's measurement, and the schema reserves calibrated for a value checked
+        against held-out metrics, which the ledger's select job has not yet returned for it;
+        fitted: false for the same reason.
+        WHAT IT IS NOT. It is the combined cost of a launch and of everything per step that
+        scales with the planned launch count; the count and the constant are not separable on
+        these data (the planned count is a lower bound of the real one, and the engine-side
+        count of fused kernels is open in blis-vllm#161, #191 and PR #192). It does not carry
+        a model's scale error: the per-model best values on the same units differ by more than a
+        factor of two, so the pooled value moves some models toward their measurement and
+        others away; the pre-registration (accuracy/preregistrations.md K1) reports each.
+        Hopper keeps the part-wide value.
+
+  - host_launch_per_kernel:
+      value: 2.25
+      units: us_per_transfer
+      method: assumed
+      fitted: false
+      scope: {hardware: [b300]}
+      ci95: [1.9, 2.5]
+      sources:
+        - {kind: discussion, cite: "InferenceX concurrency 1-4 fit-role units on b300 (113 units, DeepSeek-V4-Pro, Kimi-K2.5, MiniMax-M2.5 and MiniMax-M3): the per-launch value that minimises the mean absolute TPOT error of the committed kernel on those units; scripts/fit_host_launch_per_chip.py", role: primary}
+      rationale: >
+        PER-CHIP CALIBRATION OF THE LAUNCH TERM. The part-wide 3.2 us was backed out of two Hopper
+        runs and is not carried to Blackwell by anything but the scope list. On b300 the same
+        kernel charged 3.2 us on every launch of a FULL graph, which put the host term at about
+        half of a single-request decode step and the step well above the measured
+        TPOT at concurrency 1-4. This entry is the value that the b300 fit-role units at
+        concurrency 1-4 support: the prediction is linear in the per-launch value (it is
+        charged once per planned launch, n_u of them in unit u), so the fit is the grid
+        minimum of the mean |pred/measured - 1| with n_u read from two scorings of each unit
+        (value 3.2 and value 0). The interval is the 2.5-97.5 percentiles of 400 bootstrap
+        resamples of the units. METHOD assumed, as the part-wide entry's: the value is backed out of end-to-end TPOT, a
+        different quantity's measurement, and the schema reserves calibrated for a value checked
+        against held-out metrics, which the ledger's select job has not yet returned for it;
+        fitted: false for the same reason.
+        WHAT IT IS NOT. It is the combined cost of a launch and of everything per step that
+        scales with the planned launch count; the count and the constant are not separable on
+        these data (the planned count is a lower bound of the real one, and the engine-side
+        count of fused kernels is open in blis-vllm#161, #191 and PR #192). It does not carry
+        a model's scale error: the per-model best values on the same units differ by more than a
+        factor of two, so the pooled value moves some models toward their measurement and
+        others away; the pre-registration (accuracy/preregistrations.md K1) reports each.
+        Hopper keeps the part-wide value.

@@ -152,17 +152,21 @@
   section: §9.4
   statement: >-
     A change to a measured or calibrated value passes the landing gate. The fit and held-out split
-    and the success criteria are committed first. Held-out error and distribution distance must not
-    get worse on any lane, and must improve on the target lane. For each lane the gate computes, on
-    that lane's held units, the paired bootstrap interval of the candidate's error minus the base's
-    error. A lane fails only when that whole interval lies above zero, with the Holm correction for
-    the number of lanes compared. The target lane passes only when its whole interval lies below zero.
-    Every changed measured or calibrated entry is selected by a lookup in at least one operator-level
-    or whole-run gate run. An entry no gate run selects, such as a coefficient for a chip with no
-    held data, is reported as unjudged and lands only with a person's approval. Figures come from
-    a script. A whole-run lane that gets worse does not by itself fail a change whose operator-level
-    held-out check passed: the gate records the regression as a defect in another term (VAL-11), and
-    the change needs a person's approval.
+    and the success criteria are committed first. The split is taken along a dimension the term must
+    generalise across (a chip, a model, a parallelism or a kernel shape; for a whole-run gate, the
+    deployment, so that every row of one deployment falls on one side), never by random rows, and
+    training and held-out error are reported apart; a fit quoted on its training data alone is not a
+    result. Held-out error and distribution distance must not get worse on any lane, and must
+    improve on the target lane. For each lane the gate computes, on that lane's held units, the
+    paired bootstrap interval of the candidate's error minus the base's error. A lane fails only
+    when that whole interval lies above zero, with the Holm correction for the number of lanes
+    compared. The target lane passes only when its whole interval lies below zero. Every changed
+    measured or calibrated entry is selected by a lookup in at least one operator-level or whole-run
+    gate run. An entry no gate run selects, such as a coefficient for a chip with no held data, is
+    reported as unjudged and lands only with a person's approval. Figures come from a script. A
+    whole-run lane that gets worse does not by itself fail a change whose operator-level held-out
+    check passed: the gate records the regression as a defect in another term (VAL-11), and the
+    change needs a person's approval.
   scope:
   - accuracy-dashboard
   - blis-substrate
@@ -192,8 +196,15 @@
 - id: VAL-7
   section: §9.4
   statement: >-
-    A coefficient scoped to a single model marks a cost that the cost model's general forms do not
-    yet explain. It names the missing form. The number of such coefficients only goes down.
+    A coefficient is a measured constant of a law the kernel evaluates, not a correction for one
+    model. The one exception is a coefficient scoped to a single model, which marks a cost that the
+    cost model's general forms do not yet explain. It names the missing form. The registry's ratchet
+    is the largest number of such coefficients it may hold, and a test fails when the count is above
+    it. The ratchet only goes down, with one exception. A pull request may raise it, as a recorded
+    exception, when three things hold. First, each coefficient the raise adds names the general form
+    it stands in for. Second, the pull request records the raise and names the issue that will lower
+    the ratchet again. Third, a maintainer approves the raise in that pull request. This invariant
+    states no number: the registry's ratchet holds the current one.
   scope:
   - blis-substrate
   checks:
@@ -206,14 +217,16 @@
   target:
     status: ci
     milestone: 2
-  note: 46 such coefficients, all for one model
 - id: VAL-8
   section: §9.4
   statement: >-
     A lookup matches a coefficient only for the exact kernel implementation that runs. A value taken
-    from a different implementation is a transferred entry (D5). Every coefficient registry entry is
-    selected by a lookup on the conformance scenarios, or its kernel hash appears in the
-    kernel_impls.json of an engine release that some supported inference-sim release pins.
+    from a different implementation is a transferred entry (D5). A coefficient fitted on one engine
+    release carries to another only when every function on the term's code path is unchanged between
+    them, shown by a per-function diff that ignores comments, type annotations and logging. Every
+    coefficient registry entry is selected by a lookup on the conformance scenarios, or its kernel
+    hash appears in the kernel_impls.json of an engine release that some supported inference-sim
+    release pins.
   scope:
   - blis-substrate
   checks:

@@ -1580,9 +1580,15 @@ def attention(cfg: dict[str, Any], model: str, *, kind: str | None = None,
         node["qk_rope_head_dim"] = rope
         if kind == "sparse_mla":
             node["index_topk"] = int(pick(cfg, "index_topk"))
-        # nope is the query-side width; it does not enter the cache, so it is not a
-        # node parameter. Recorded here so a reader knows it was considered.
-        del nope
+        # nope is the query-side width; it does not enter the cache. It does set the width of the
+        # multi-head form vLLM prefills a dense latent layer in (MLACommonImpl.forward_mha,
+        # vllm/model_executor/layers/attention/mla_attention.py at v0.33.0): q and k are nope + rope
+        # wide, v is v_head_dim wide, against the cache width d_h that decode's absorbed form runs
+        # at. An mla node states both so a cost model prices prefill attention at them; sparse_mla
+        # runs another kernel and states neither.
+        if kind == "mla" and nope > 0:
+            node["prefill_qk_head_dim"] = nope + rope
+            node["prefill_v_head_dim"] = int(pick(cfg, "v_head_dim") or nope)
     else:
         node["n_kv"] = nkv
         node["d_h"] = head_dim(cfg, model)
@@ -1883,6 +1889,9 @@ def collective(op: str, role: str, emit: str) -> dict[str, Any]:
 # than conventional: derive() prefers it over mirroring a target layer, so a handler that
 # defines it is stating that no target layer has the draft module's structure.
 DRAFT_KIND_ID = "mtp_moe"
+# The draft layer of a dense target (Qwen3.8-27B): its MLP is dense, so it is not the MoE draft layer
+# that DRAFT_KIND_ID names, and it has an id of its own.
+DENSE_DRAFT_KIND_ID = "mtp_dense"
 
 # The architectures whose MTP layer is DeepSeekMultiTokenPredictorLayer's, with an enorm, an hnorm
 # and an eh_proj ahead of its decoder block (see handler_moe's declare_draft).
@@ -1905,14 +1914,44 @@ HEAD_UNQUANTIZED = {
 # Architectures whose LM head is placed by the rule vLLM v0.33.0 applies to the checkpoint's
 # quantization method, whatever the exclusion list says (head_left_unquantized). Keyed by
 # architecture, as HEAD_UNQUANTIZED is, so adding a family re-derives its graphs on purpose.
-# The GLM DSA family (glm-5, glm-5.1-fp8, glm-5.2-fp8, glm-5.3) has the same error and joins
-# with the re-derivation of those graphs (inference-sim/blis-substrate#255).
+# The GLM DSA family (glm-5, glm-5.1-fp8, glm-5.2-fp8, glm-5.3) is among them. Not yet in:
+# llama-4-scout-17b-16e-instruct-fp8-dynamic, whose ignore list also names every text layer's
+# attention projections (inference-sim/blis-substrate#255, catalog lane).
 HEAD_AT_BASE_ARCHS = frozenset({
     "DeepseekV3ForCausalLM",              # deepseek-v3, deepseek-r1-0528 (fp8)
+    "GlmMoeDsaForCausalLM",               # glm-5, glm-5.1-fp8, glm-5.2-fp8, glm-5.3 (fp8)
     "KimiK25ForConditionalGeneration",    # kimi-k2.5, kimi-k2.6 (int4, lm_head ignored)
     "MiniMaxM2ForCausalLM",               # minimax-m2.5, minimax-m2.7 (fp8)
     "Qwen3_5MoeForConditionalGeneration",  # qwen3.5-397b-a17b-fp8
 })
+
+
+# Architectures whose checkpoint stores a bias beside the projections named here, by graph role,
+# and the config key that turns the attention ones on. gpt-oss-120b: a bias on the attention
+# projections (attention_bias), on the router, and on every routed expert's gate_up and down
+# projections (gpt_oss.py in vLLM; the checkpoint's gate_up_proj_bias and down_proj_bias). The
+# bias is stored at the base width; how an engine converts or pads it is the engine's lowering
+# (inference-sim/blis-substrate#281).
+NODE_BIAS_ROLES = {
+    "GptOssForCausalLM": {"qkv_proj": "attention_bias", "o_proj": "attention_bias",
+                          "router": None, "experts": None},
+}
+
+
+def apply_node_biases(graph: dict[str, Any], cfg: dict[str, Any], raw: dict[str, Any],
+                      arch: str, model: str) -> None:
+    """State bias_dtype on the GEMM and GroupedGEMM nodes whose checkpoint carries a bias."""
+    roles = NODE_BIAS_ROLES.get(arch)
+    if not roles:
+        return
+    dtype = base_dtype(cfg, raw, model)
+    for kind in graph["layer_kinds"]:
+        for node in kind["nodes"]:
+            if node.get("op") not in ("GEMM", "GroupedGEMM") or node.get("role") not in roles:
+                continue
+            key = roles[node["role"]]
+            if key is None or cfg.get(key):
+                node["bias_dtype"] = dtype
 
 
 def ct_matches(name: str, entry: str) -> bool:
@@ -5491,7 +5530,22 @@ def gdn_fp8_unconverted(cfg: dict[str, Any], raw: dict[str, Any], model: str, ro
 
 
 def handler_qwen3_5_moe(cfg, raw, model):
-    """Qwen3.5-MoE: a Gated DeltaNet linear-attention layer on most layers, full attention
+    """Qwen3.5-MoE, priced by _handler_qwen3_5 with a routed expert MLP on every layer."""
+    return _handler_qwen3_5(cfg, raw, model, dense=False)
+
+
+def handler_qwen3_5_dense(cfg, raw, model):
+    """The dense Qwen3.5 (Qwen3_5ForConditionalGeneration, Qwen3.8-27B): the same Gated DeltaNet
+    and full-attention layers as the MoE, with a dense gate/up/down MLP on every layer
+    (Qwen3_5DecoderLayer builds a Qwen3NextMLP when the config declares no experts,
+    qwen3_5.py:173-182@v0.33.0). A config that declares experts is the MoE class and is refused here."""
+    if cfg.get("num_experts") or cfg.get("num_local_experts"):
+        raise DeriveError(f"{model}: a dense Qwen3.5 declares no experts")
+    return _handler_qwen3_5(cfg, raw, model, dense=True)
+
+
+def _handler_qwen3_5(cfg, raw, model, dense):
+    """Qwen3.5: a Gated DeltaNet linear-attention layer on most layers, full attention
     on every fourth, and a routed expert MLP with a shared expert on all of them.
 
     The full-attention positions come from the declared layer_types vector rather than
@@ -5547,6 +5601,10 @@ def handler_qwen3_5_moe(cfg, raw, model):
 
     def with_moe(mixer):
         n = list(mixer)
+        if dense:
+            n += [norm("post_attn_norm"), *dense_mlp(cfg, model, hidden),
+                  collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE)]
+            return n
         n += [norm("post_attn_norm"),
               *moe_block(cfg, model, hidden, raw, family="Qwen3_5MoeForConditionalGeneration"),
               collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
@@ -5597,11 +5655,12 @@ def handler_qwen3_5_moe(cfg, raw, model):
     ]
     gdn = with_moe(gdn_mixer)
     full = with_moe(attention_block(cfg, model, hidden, raw=raw))
+    gdn_id, attn_id = ("gdn_dense", "attn_dense") if dense else ("gdn_moe", "attn_moe")
     kinds = [
-        {"id": "gdn_moe", "nodes": gdn, "edges": chain(gdn)},
-        {"id": "attn_moe", "nodes": full, "edges": chain(full)},
+        {"id": gdn_id, "nodes": gdn, "edges": chain(gdn)},
+        {"id": attn_id, "nodes": full, "edges": chain(full)},
     ]
-    sequence = ["attn_moe" if t == "full_attention" else "gdn_moe" for t in types]
+    sequence = [attn_id if t == "full_attention" else gdn_id for t in types]
     stack = compress(sequence)
     # The MTP module (Qwen3_5MultiTokenPredictor, model_executor/models/qwen3_5_mtp.py:66-160
     # @4ba787ec) runs, once a draft token, an input stage before its full-attention MoE layer:
@@ -5614,18 +5673,19 @@ def handler_qwen3_5_moe(cfg, raw, model):
     # under ModelOpt it is also placed at its own module names, since the list can leave it at
     # another width than the decoder's (Qwen3.5-NVFP4 excludes mtp.layers.0* whole).
     mtp = int(pick(cfg, "num_spec_tokens") or 0)
+    draft_id = DENSE_DRAFT_KIND_ID if dense else DRAFT_KIND_ID
     if mtp:
         lead = [norm("mtp_pre_fc_norm_embedding"), norm("mtp_pre_fc_norm_hidden"),
                 dict(gemm("mtp_fc", hidden, 2 * hidden), weight_dtype=base_dtype(cfg, raw, model),
                      tp="column"),
                 collective("AllGather", "mtp_fc_out", EMIT_TENSOR_PARALLEL)]
         draft = lead + [dict(n) for n in full]
-        kinds.append({"id": DRAFT_KIND_ID, "nodes": draft, "edges": chain(draft)})
+        kinds.append({"id": draft_id, "nodes": draft, "edges": chain(draft)})
     quant = raw.get("quantization_config") or {}
     if str(quant.get("quant_method", "")).lower() not in MODELOPT_METHODS:
         return kinds, stack
     kinds = modelopt_place_widths(kinds, stack, raw, model,
-                                  draft=(DRAFT_KIND_ID, list(range(mtp))) if mtp else None)
+                                  draft=(draft_id, list(range(mtp))) if mtp else None)
     return kinds, stack
 
 
@@ -5897,6 +5957,16 @@ def handler_nemotron_h(cfg, raw, model):
     used = list(dict.fromkeys(vector))
     kinds = [catalogue[n] for n in used]
     stack = compress(list(vector))
+    # vLLM derives max_model_len from max_position_embeddings; a config that scales its
+    # RoPE would shorten or lengthen it, and none of the committed NemotronH configs does.
+    if raw.get("rope_scaling") or raw.get("rope_parameters"):
+        raise DeriveError(f"{model}: the config scales its RoPE, so max_model_len is not "
+                          f"max_position_embeddings")
+    positions = require_key(cfg, "max_position_embeddings", model)
+    if isinstance(positions, bool) or int(positions) != positions or positions < 1:
+        raise DeriveError(f"{model}: max_position_embeddings is {positions!r}, not a positive "
+                          f"whole number")
+    window = {"global": {"context_window": int(positions)}}
     quant = raw.get("quantization_config") or {}
     method = str(quant.get("quant_method", "")).lower()
     uniform = method == "modelopt" and str(quant.get("quant_algo", "")).upper() != "MIXED_PRECISION"
@@ -5909,7 +5979,7 @@ def handler_nemotron_h(cfg, raw, model):
     if not spec:
         if uniform:
             kinds = modelopt_place_widths(kinds, stack, raw, model)
-        return kinds, stack
+        return kinds, stack, window
     mtp = nemotron_h_vector(mtp_vector, model, "the MTP layer pattern")
     unknown = sorted(set(mtp) - set(catalogue))
     if unknown:
@@ -5952,7 +6022,7 @@ def handler_nemotron_h(cfg, raw, model):
         if own["id"] not in {k["id"] for k in kinds}:
             kinds.append(own)
         pattern.append(own["id"])
-    return kinds, stack, {"speculator": {
+    return kinds, stack, {**window, "speculator": {
         "method": speculative_method(architecture_of(raw, model), model),
         "num_spec_tokens": spec,
         "stack": {"pattern": pattern, "repeat": 1},
@@ -6672,6 +6742,15 @@ def handler_muse_spark(cfg, raw, model):
       * The native finalize (_finalize_chunk, muse_moe_runner.py:433-439) materialises a
         (tokens x top_k x moe_hidden_size) fp32 intermediate; it runs only on Blackwell at
         TP > 1 above 8192 tokens or where FlashInfer's TP finalize is unavailable.
+      * Each layer with a positive layer_rope_theta builds its own RotaryEmbedding, a
+        non-persistent fp32 cos/sin buffer of max_position_embeddings rows by head_dim
+        (MuseSpark1xAttention, model.py:1081-1092, not the shared get_rope; rotary_embedding/
+        base.py:59-63, 94-103), 256 MiB at 1M positions, on every rank and not sharded. The
+        graph states it as a replicated Gather on those layers, so the weights a rank holds
+        include it (inference-sim/blis-substrate#378). The fused QK-norm/RoPE kernel that reads
+        a row per token is the qk_norm_rope node's, so the Gather is resident only: it adds
+        bytes and neither a launch nor traffic. vLLM changed this after v0.33.0 (#65206 shares
+        one table), so the graph is the v0.33.0 path.
       * The final logit soft-cap (final_logit_softcapping) runs on the sampled rows'
         vocabulary-wide logits, which no node of a head can scope to sampled rows, so it
         is not priced.
@@ -6719,6 +6798,16 @@ def handler_muse_spark(cfg, raw, model):
     base = base_dtype(cfg, raw, model)
     act = DTYPE_WIDTHS[base]
     fp32 = DTYPE_WIDTHS["fp32"]
+
+    # Which layers build a RoPE cos/sin table (layer_rope_theta > 0, model.py:970-974). A
+    # config that states none builds one on every layer from its single rope_theta; this
+    # handler reads the per-layer vector the checkpoint states, and refuses a vector of the
+    # wrong length.
+    rope_theta = cfg.get("layer_rope_theta")
+    if rope_theta is not None and len(rope_theta) != layers:
+        raise DeriveError(f"{model}: layer_rope_theta has {len(rope_theta)} entries for {layers} layers")
+    has_rope = [bool(rope_theta[i] > 0) if rope_theta is not None else True for i in range(layers)]
+    max_positions = whole(require_key(cfg, "max_position_embeddings", model), "max_position_embeddings")
 
     # Which layers' experts the checkpoint quantizes. A layer the exclusion list names
     # keeps the base width; the rest carry the method's.
@@ -6772,7 +6861,19 @@ def handler_muse_spark(cfg, raw, model):
             node["tp"] = tp
         return node
 
-    def attention_nodes(win):
+    def rope_table(rope):
+        # The layer's own cos/sin buffer, fp32, head_dim wide (cos and sin halves), one row
+        # per position, replicated: 1,048,576 x 64 x 4 B = 256 MiB. The fused QK-norm and RoPE
+        # kernel that indexes it is the qk_norm_rope node's, so the table is resident only.
+        # This is vLLM v0.33.0's NVIDIA path; vllm-project/vllm#65206 (after v0.33.0) shares
+        # one table across the layers (get_rope), a release difference this graph does not
+        # state.
+        if not rope:
+            return []
+        return [{"op": "Gather", "role": "rope_cos_sin_cache", "rows": max_positions,
+                 "row_bytes": dh * fp32, "resident_only": True}]
+
+    def attention_nodes(win, rope):
         # The target always projects Q, K, V and the output gate in one fused linear that
         # slices by head group and cannot replicate a KV head (use_o_gate is True off the
         # drafter, model.py:977; MuseSpark1xQKVOGateParallelLinear asserts
@@ -6789,6 +6890,7 @@ def handler_muse_spark(cfg, raw, model):
             # QK-norm and RoPE read and write Q and K once, fused with the cache insert,
             # whose record the attention's cache accounts for.
             traffic("qk_norm_rope", 2 * (nq + nkv) * dh * act),
+            *rope_table(rope),
             attn,
             # The per-head output norm and its sigmoid gate: read the output and the gate,
             # write the gated output.
@@ -6833,17 +6935,21 @@ def handler_muse_spark(cfg, raw, model):
                  sharded_at_decode=dict(MUSE_SHARDED_PROJECTION, min_tokens_across_nodes=32)),
         ]
 
-    kinds, sequence, seen = [], [], set()
+    kinds, sequence, seen, rope_of = [], [], set(), {}
     for i, t in enumerate(attn_types):
         win = window if t == "sliding_attention" else None
         dtype = base if i in bf16_experts else expert_fmt
         kid = ("swa" if win else "full") + "_moe" + (
             "_" + base if expert_fmt and i in bf16_experts else "")
+        if kid in rope_of and rope_of[kid] != has_rope[i]:
+            raise DeriveError(f"{model}: layers of kind {kid} differ in whether they build a "
+                              f"RoPE table (layer {i}); one layer kind cannot price both")
+        rope_of[kid] = has_rope[i]
         sequence.append(kid)
         if kid in seen:
             continue
         seen.add(kid)
-        nodes = attention_nodes(win) + moe_nodes(dtype)
+        nodes = attention_nodes(win, has_rope[i]) + moe_nodes(dtype)
         kinds.append({"id": kid, "nodes": nodes, "edges": chain(nodes)})
 
     embed = {"op": "Gather", "role": "embed_tokens", "rows": vocab,
@@ -6959,10 +7065,28 @@ def handler_muse_spark_dspark(cfg, raw, model):
     attention = {"op": "Attention", "holds_engine_kv": True, "kind": "swa", "n_q": nq, "n_kv": nkv, "d_h": dh,
                  "window": window, "kv_heads_not_replicated": True}
 
+    # Each draft layer builds its own RotaryEmbedding, in every engine build (the draft path keeps
+    # it where vllm-project/vllm#65206 shares the target's, model.py MuseSpark1xAttention): a
+    # cos/sin table of max_position_embeddings rows by head_dim values, fp32 when the config
+    # computes the outer product in fp32 and the activation width otherwise, replicated and
+    # resident (inference-sim/blis-substrate#378). A draft layer that skips RoPE
+    # (every_n_layers_nope) is not priced here.
+    rope_table = []
+    if cfg.get("use_rope", True):
+        if cfg.get("every_n_layers_nope") is not None:
+            raise DeriveError(f"{model}: every_n_layers_nope; a draft layer without RoPE is not "
+                              f"priced here")
+        rope_width = fp32 if cfg.get("rope_use_fp32_in_outer_product", False) else act
+        rope_table = [{"op": "Gather", "role": "rope_cos_sin_cache",
+                       "rows": whole(require_key(cfg, "max_position_embeddings", model),
+                                     "max_position_embeddings"),
+                       "row_bytes": dh * rope_width, "resident_only": True}]
+
     layer = [
         traffic("input_norm", _muse_boundary_bytes(hidden, act), tp="replicated"),
         gemm("qkv_gate_proj", 2 * (nq + nkv) * dh, hidden),
         traffic("qk_norm_rope", 2 * (nq + nkv) * dh * act),
+        *rope_table,
         attention,
         traffic("o_norm_gate", 3 * nq * dh * act),
         gemm("o_proj", hidden, nq * dh),
@@ -7873,6 +7997,7 @@ HANDLERS = {
     "MiniMaxM3SparseForConditionalGeneration": handler_minimax_m3,
     "NemotronHForCausalLM": handler_nemotron_h,
     "Qwen3_5MoeForConditionalGeneration": handler_qwen3_5_moe,
+    "Qwen3_5ForConditionalGeneration": handler_qwen3_5_dense,
     "Qwen4ExpForConditionalGeneration": handler_qwen4_exp,
     "KimiK3ForConditionalGeneration": handler_kimi_k3,
     # The same text decoder plus a DSA indexer on the latent layers (dsa_config); its
@@ -8212,6 +8337,7 @@ TOWER_BUILDERS = {
     "KimiK3ForConditionalGeneration": lambda *a: tower_moonvit(*a, v2=True),
     "KimiK31ForConditionalGeneration": lambda *a: tower_moonvit(*a, v2=True),
     "Qwen3_5MoeForConditionalGeneration": tower_qwen3_vl,
+    "Qwen3_5ForConditionalGeneration": tower_qwen3_vl,
     "Glm5NextForConditionalGeneration": tower_glm5_next,
     "DeepseekV41ForCausalLM": tower_deepseek_v41,
     "Gemma4ForConditionalGeneration": tower_gemma4,
@@ -8438,6 +8564,7 @@ def _derive(config_path: Path, model: str) -> dict[str, Any]:
         "layer_kinds": kinds,
         "stack": stack,
     }
+    apply_node_biases(graph, cfg, raw, arch, model)
 
     # A config that nests its text shapes beside another tower describes more than
     # this graph prices, and the graph says so rather than leaving a reader to find out
@@ -8565,7 +8692,9 @@ def _derive(config_path: Path, model: str) -> dict[str, Any]:
         # three sources, in order of how much the config actually says.
         defined = {k["id"] for k in kinds}
         mtp_vector = cfg.get("mtp_layers_block_type")
-        if DRAFT_KIND_ID in defined:
+        if DENSE_DRAFT_KIND_ID in defined:
+            pattern = [DENSE_DRAFT_KIND_ID]
+        elif DRAFT_KIND_ID in defined:
             # A handler that priced the draft module itself, because the family gives it
             # a structure no target layer shares. GLM-5.3-Flash is a case in hand
             # (handler_glm5_next): its draft layer is sparse-MLA with its own
@@ -8628,6 +8757,7 @@ SPEC_METHODS = {
     # fallback's.
     "DeepseekV4ForCausalLM": "mtp",
     "Qwen3_5MoeForConditionalGeneration": "qwen3_5_mtp",
+    "Qwen3_5ForConditionalGeneration": "qwen3_5_mtp",
     # config/speculative.py:915-932@v0.33.0 rewrites model_type qwen4_exp to qwen4_exp_mtp.
     "Qwen4ExpForConditionalGeneration": "qwen4_exp_mtp",
     # vLLM rewrites model_type glm5_next to glm5_next_mtp and reads n_predict from

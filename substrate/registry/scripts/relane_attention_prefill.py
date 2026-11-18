@@ -26,7 +26,7 @@ unchanged, which is the check that identifies this as a denominator bug: the pro
 0.3027, b300 0.3758 -> 0.3800, gb200 0.2956 -> 0.2890, h100 0.3973 -> 0.4000,
 h200 0.3916 -> 0.3968).
 
-THE REFIT IS BETTER, ON THE VALID COMPARISON. methodology.md's standing rule is that a
+THE REFIT IS BETTER, ON THE VALID COMPARISON. the design's standing rule on per-primitive fits (§9) is that a
 re-fit landing on a different number is not automatically a correction, and
 relane_gemm_envelope.py records having once made the INVALID comparison -- scoring each
 candidate against its own target, which measures nothing. Scored properly, both
@@ -41,7 +41,7 @@ five parts and its bias moves toward 1.0 in every case:
     gb200-nvl72       1.6643x / 0.789            1.6489x / 0.858
 
 Bias below 1.0 is under-prediction, so every part becomes less under-priced. That
-direction matters: methodology.md section 9.2 reports the kernel under-predicting the
+direction matters: the design's registry rules (§9) report the kernel under-predicting the
 whole forward pass by 13% to 47%.
 
 THE VALUES ARE NOT HARDCODED. Each is read from `fit_attention_prefill.py` run against

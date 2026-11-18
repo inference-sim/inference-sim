@@ -33,7 +33,7 @@ WHAT SHIPPED INSTEAD. The fix is in blis-latency-kernel and needs no fitted cons
 `selectedKVTokens` bounds a sparse layer's decode read per LAYER and per REQUEST from the
 catalog's own index_topk, window and compress_ratio. Sparse layers keep the part-wide
 measured floor and rate, now charged against the right number of bytes. See
-docs/methodology.md section 10.
+the design's registry rules (§9)
 
 TO MAKE A PER-KIND RATE FITTABLE: an attention-only table carrying compress_ratio 4 --
 the csa4_moe geometry -- so both halves of the model are measured by the same kind of

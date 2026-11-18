@@ -322,7 +322,7 @@ func TestDocReferences(t *testing.T) {
 	has(t, DocFindings("docs/a.md", []byte("[c](c.md)\n"), tree, roots), "docs/c.md does not exist")
 	has(t, DocFindings("docs/a.md", []byte("| x | y |\n|---|---|\n| 1 | 2 |\n| 1 | 2 |\n"), tree, roots), "is repeated")
 	none(t, DocFindings("docs/a.md", []byte("```\n`kernel/old.go`\n```\nprose `config.json`\n"), tree, roots))
-	none(t, DocFindings("docs/a.md", []byte("[m](catalog/reference/models/x.md) [t]([[catalog.tree]]/a.go)\n"), tree, roots))
+	none(t, DocFindings("docs/a.md", []byte("[t]([[catalog.tree]]/a.go)\n"), tree, roots))
 }
 
 // X14: an abbreviated hash is refused in any phrasing, and ordinary hex-looking text is not.
@@ -539,16 +539,6 @@ func TestCommitsAgainstALocalRepository(t *testing.T) {
 	}
 }
 
-func TestTags(t *testing.T) {
-	a, b := strings.Repeat("a", 40), strings.Repeat("b", 40)
-	lock := "# recorded tags\nv0.11.0 " + a + "\n"
-	none(t, CheckTags(lock, map[string]string{"v0.11.0": a}))
-	has(t, CheckTags(lock, map[string]string{"v0.11.0": b}), "tags are never moved")
-	has(t, CheckTags(lock, map[string]string{}), "no longer exists")
-	has(t, CheckTags(lock, map[string]string{"v0.11.0": a, "v0.11.1": b}), "is not in tags.lock")
-	has(t, CheckTags("v0.11.0 abc\n", nil), "is not \"<tag> <40-hex commit>\"")
-}
-
 // X16: the status page shows a gate not run for seven days, or never run, as failing; and a
 // gate's declared paths must equal its workflow's triggers.
 func TestStatusPage(t *testing.T) {
@@ -762,6 +752,13 @@ func TestGateRunsUseTheNewestAttempt(t *testing.T) {
 		{"an older cancelled run and a newer success passes", []gateRunRecord{rec(5, "rederive", "completed", "cancelled"), rec(9, "rederive", "completed", "success"), rec(6, "candidate", "completed", "success")}, ""},
 		{"an older success and a newer cancelled run is no pass", []gateRunRecord{rec(5, "rederive", "completed", "success"), rec(9, "rederive", "completed", "cancelled"), rec(6, "candidate", "completed", "success")}, "concluded cancelled"},
 		{"a cancelled run alone is no pass", []gateRunRecord{rec(5, "rederive", "completed", "cancelled"), rec(6, "candidate", "completed", "success")}, "concluded cancelled"},
+		// An edit of the pull request's title or body starts the workflow again; the run it starts
+		// skips the gate's job. A skipped check run says the job did not run, so it neither passes
+		// nor hides the run for this head that did.
+		{"a newer skipped run does not hide an older success", []gateRunRecord{rec(5, "rederive", "completed", "success"), rec(9, "rederive", "completed", "skipped"), rec(6, "candidate", "completed", "success")}, ""},
+		{"a newer skipped run does not hide an older failure", []gateRunRecord{rec(5, "rederive", "completed", "failure"), rec(9, "rederive", "completed", "skipped"), rec(6, "candidate", "completed", "success")}, "concluded failure"},
+		{"a newer skipped run does not hide a run in progress", []gateRunRecord{rec(5, "rederive", "in_progress", ""), rec(9, "rederive", "completed", "skipped"), rec(6, "candidate", "completed", "success")}, "has not completed"},
+		{"a skipped run alone is no run", []gateRunRecord{rec(9, "rederive", "completed", "skipped"), rec(6, "candidate", "completed", "success")}, `no check run "rederive"`},
 		{"ids compare as numbers", []gateRunRecord{rec(9, "rederive", "completed", "failure"), rec(10, "rederive", "completed", "success"), rec(6, "candidate", "completed", "success")}, ""},
 	}
 	for _, c := range cases {

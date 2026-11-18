@@ -2,5 +2,3 @@
 # configs byte for byte). This file covers what spans the repository.
 *.go   text eol=lf
 *.md   text eol=lf
-docs/contracts/generated/** text eol=lf
-docs/kernel/generated/** text eol=lf
