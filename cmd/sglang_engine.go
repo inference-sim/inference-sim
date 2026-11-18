@@ -282,6 +282,18 @@ func sglangTwinSubstitutions() []sim.Substitution {
 	}
 }
 
+// planSubstitutions are the overrides the engine's lowering stated, as machine-readable substitutions on the
+// point: a setting the engine resolved that the cost model prices as something else (blis-sglang's
+// Lowered.Overrides, which the kernel reports in its resolution). A grade reads this list, not the
+// assumptions' text, as it does for blis-vllm's pool substitutions.
+func planSubstitutions(overrides []kernel.Override) []sim.Substitution {
+	out := make([]sim.Substitution, 0, len(overrides))
+	for _, o := range overrides {
+		out = append(out, sim.Substitution{Setting: o.Field, Stated: o.Requested, Priced: o.Resolved, Reason: o.Reason})
+	}
+	return out
+}
+
 // sglangProvenance is a pool's kernel evidence as the Result records it, from the pool's SGLang
 // kernel (the same reading blis-vllm's adapter makes of its own).
 func sglangProvenance(k *latencykernel.Kernel) sim.KernelPoolProvenance {
@@ -291,7 +303,7 @@ func sglangProvenance(k *latencykernel.Kernel) sim.KernelPoolProvenance {
 		Assumptions:         []kernel.CoefficientOrigin{},
 		SkippedRules:        []string{},
 		SkippedRuleFindings: []sim.RuleFinding{},
-		Substitutions:       sglangTwinSubstitutions(),
+		Substitutions:       append(sglangTwinSubstitutions(), planSubstitutions(k.Resolved().Overrides)...),
 	}
 	origins := k.Provenance()
 	for _, o := range origins {

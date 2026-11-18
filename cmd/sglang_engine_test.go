@@ -335,3 +335,46 @@ func TestSGLangEnginePricesDecodeAsDecode(t *testing.T) {
 	}
 	t.Logf("decode batch: engine %d us, kernel decode %d us, kernel prefill path %d us", got, want, asPrefill)
 }
+
+// The DSA attention backends the lowering resolved (flashmla_sparse for prefill and fa3 for decode on an H200
+// with a bf16 cache) are priced as the substrate's part-wide sparse-MLA attention pair, not as those kernels.
+// The Result names each as a machine-readable substitution on the point, where a grade reads it, with the
+// backend as the stated value; a DeepSeek-R1 pool, which has no DSA layer, states none.
+func TestSGLangResultNamesTheDSAAttentionBackendsAsSubstitutions(t *testing.T) {
+	subs := func(scenario string) map[string]map[string]any {
+		dir, err := filepath.Abs(filepath.Join("..", "testdata", "kernel", "sglang"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", scenario, "--rate", "4", "--num-requests", "4", "--seed", "1")
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", scenario, err, lastLines(stderr, 5))
+		}
+		doc := sglangResult(t, out)
+		reports, _ := doc["reports"].(map[string]any)
+		kern, _ := reports["kernel"].(map[string]any)
+		pool, _ := kern["colocated"].(map[string]any)
+		list, _ := pool["substitutions"].([]any)
+		by := map[string]map[string]any{}
+		for _, s := range list {
+			m := s.(map[string]any)
+			by[fmt.Sprint(m["setting"])] = m
+		}
+		return by
+	}
+	glm := subs("glm-5-h200-fp8-sglang-tp8.yaml")
+	dec, pre := glm["dsa_decode_backend"], glm["dsa_prefill_backend"]
+	if dec == nil || dec["stated"] != "fa3" || !strings.Contains(fmt.Sprint(dec["priced"]), "sparse-MLA attention pair") {
+		t.Errorf("the decode backend fa3 is not a substitution on the Result: %v", dec)
+	}
+	if pre == nil || pre["stated"] != "flashmla_sparse" {
+		t.Errorf("the prefill backend flashmla_sparse is not a substitution on the Result: %v", pre)
+	}
+	if glm["host_side_facts"] == nil {
+		t.Error("the twin's substitution was lost")
+	}
+	r1 := subs("deepseek-r1-h200-fp8-sglang-tp8.yaml")
+	if r1["dsa_decode_backend"] != nil || r1["dsa_prefill_backend"] != nil {
+		t.Errorf("a pool with no DSA layer states DSA backends: %v", r1)
+	}
+}
