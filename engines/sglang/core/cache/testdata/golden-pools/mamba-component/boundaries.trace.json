@@ -1,0 +1,559 @@
+{
+ "calls": [
+  {
+   "args": {
+    "reqs": {
+     "reqs": [
+      "r1",
+      "r2",
+      "r3"
+     ]
+    }
+   },
+   "evictions": [],
+   "m": "alloc",
+   "objs": {},
+   "on": "h",
+   "reqs": {},
+   "ret": [
+    4,
+    5,
+    6
+   ],
+   "state": {
+    "mamba_free": [
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18
+    ],
+    "ping_pong_map": [
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      2,
+      3
+     ],
+     [
+      5,
+      6
+     ],
+     [
+      8,
+      9
+     ]
+    ],
+    "req_free": [
+     1,
+     2,
+     3
+    ],
+    "req_to_mamba": [
+     0,
+     0,
+     0,
+     0,
+     1,
+     4,
+     7
+    ]
+   },
+   "tree_mamba_slots": []
+  },
+  {
+   "args": {
+    "insert_params": {
+     "insert_params": "p1"
+    },
+    "is_finished": true,
+    "req": {
+     "req": "r1"
+    },
+    "token_ids_len": 100
+   },
+   "evictions": [],
+   "m": "prepare_for_caching_req",
+   "objs": {
+    "p1": {
+     "mamba_keep_idx": 1,
+     "mamba_value": [
+      3
+     ]
+    },
+    "p2": {
+     "mamba_keep_idx": null,
+     "mamba_value": null
+    },
+    "p3": {
+     "mamba_keep_idx": null,
+     "mamba_value": null
+    }
+   },
+   "on": "component",
+   "reqs": {
+    "r1": {
+     "kv_allocated_len": 0,
+     "mamba_cow_src_index": null,
+     "mamba_last_track_idx": 1,
+     "mamba_last_track_seqlen": 100,
+     "mamba_needs_clear": true,
+     "mamba_next_track_idx": 0,
+     "mamba_ping_pong_empty": [
+      false,
+      false
+     ],
+     "mamba_ping_pong_track_buffer": [
+      2,
+      3
+     ],
+     "mamba_pool_idx": 1,
+     "mamba_prev_track_seqlen": 50,
+     "req_pool_idx": 4
+    }
+   },
+   "ret": 100,
+   "state": {
+    "mamba_free": [
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18
+    ],
+    "ping_pong_map": [
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      2,
+      3
+     ],
+     [
+      5,
+      6
+     ],
+     [
+      8,
+      9
+     ]
+    ],
+    "req_free": [
+     1,
+     2,
+     3
+    ],
+    "req_to_mamba": [
+     0,
+     0,
+     0,
+     0,
+     1,
+     4,
+     7
+    ]
+   },
+   "tree_mamba_slots": []
+  },
+  {
+   "args": {
+    "insert_params": {
+     "insert_params": "p2"
+    },
+    "is_finished": true,
+    "req": {
+     "req": "r2"
+    },
+    "token_ids_len": 200
+   },
+   "evictions": [],
+   "m": "prepare_for_caching_req",
+   "objs": {
+    "p1": {
+     "mamba_keep_idx": 1,
+     "mamba_value": [
+      3
+     ]
+    },
+    "p2": {
+     "mamba_keep_idx": 0,
+     "mamba_value": [
+      5
+     ]
+    },
+    "p3": {
+     "mamba_keep_idx": null,
+     "mamba_value": null
+    }
+   },
+   "on": "component",
+   "reqs": {
+    "r2": {
+     "kv_allocated_len": 0,
+     "mamba_cow_src_index": null,
+     "mamba_last_track_idx": 1,
+     "mamba_last_track_seqlen": 256,
+     "mamba_needs_clear": true,
+     "mamba_next_track_idx": 0,
+     "mamba_ping_pong_empty": [
+      false,
+      false
+     ],
+     "mamba_ping_pong_track_buffer": [
+      5,
+      6
+     ],
+     "mamba_pool_idx": 4,
+     "mamba_prev_track_seqlen": 200,
+     "req_pool_idx": 5
+    }
+   },
+   "ret": 200,
+   "state": {
+    "mamba_free": [
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18
+    ],
+    "ping_pong_map": [
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      2,
+      3
+     ],
+     [
+      5,
+      6
+     ],
+     [
+      8,
+      9
+     ]
+    ],
+    "req_free": [
+     1,
+     2,
+     3
+    ],
+    "req_to_mamba": [
+     0,
+     0,
+     0,
+     0,
+     1,
+     4,
+     7
+    ]
+   },
+   "tree_mamba_slots": []
+  },
+  {
+   "args": {
+    "insert_params": {
+     "insert_params": "p3"
+    },
+    "is_finished": false,
+    "req": {
+     "req": "r3"
+    },
+    "token_ids_len": 100
+   },
+   "evictions": [],
+   "m": "prepare_for_caching_req",
+   "objs": {
+    "p1": {
+     "mamba_keep_idx": 1,
+     "mamba_value": [
+      3
+     ]
+    },
+    "p2": {
+     "mamba_keep_idx": 0,
+     "mamba_value": [
+      5
+     ]
+    },
+    "p3": {
+     "mamba_keep_idx": null,
+     "mamba_value": [
+      9
+     ]
+    }
+   },
+   "on": "component",
+   "reqs": {
+    "r3": {
+     "kv_allocated_len": 0,
+     "mamba_cow_src_index": null,
+     "mamba_last_track_idx": 1,
+     "mamba_last_track_seqlen": 64,
+     "mamba_needs_clear": true,
+     "mamba_next_track_idx": 0,
+     "mamba_ping_pong_empty": [
+      false,
+      false
+     ],
+     "mamba_ping_pong_track_buffer": [
+      8,
+      10
+     ],
+     "mamba_pool_idx": 7,
+     "mamba_prev_track_seqlen": null,
+     "req_pool_idx": 6
+    }
+   },
+   "ret": 64,
+   "state": {
+    "mamba_free": [
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18
+    ],
+    "ping_pong_map": [
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      2,
+      3
+     ],
+     [
+      5,
+      6
+     ],
+     [
+      8,
+      10
+     ]
+    ],
+    "req_free": [
+     1,
+     2,
+     3
+    ],
+    "req_to_mamba": [
+     0,
+     0,
+     0,
+     0,
+     1,
+     4,
+     7
+    ]
+   },
+   "tree_mamba_slots": []
+  },
+  {
+   "args": {
+    "insert_params": {
+     "insert_params": "p3"
+    },
+    "is_finished": false,
+    "req": {
+     "req": "r3"
+    }
+   },
+   "evictions": [],
+   "m": "cleanup_after_caching_req",
+   "objs": {
+    "p1": {
+     "mamba_keep_idx": 1,
+     "mamba_value": [
+      3
+     ]
+    },
+    "p2": {
+     "mamba_keep_idx": 0,
+     "mamba_value": [
+      5
+     ]
+    },
+    "p3": {
+     "mamba_keep_idx": null,
+     "mamba_value": [
+      9
+     ]
+    }
+   },
+   "on": "component",
+   "reqs": {
+    "r3": {
+     "kv_allocated_len": 0,
+     "mamba_cow_src_index": null,
+     "mamba_last_track_idx": 1,
+     "mamba_last_track_seqlen": null,
+     "mamba_needs_clear": true,
+     "mamba_next_track_idx": 0,
+     "mamba_ping_pong_empty": [
+      false,
+      false
+     ],
+     "mamba_ping_pong_track_buffer": [
+      8,
+      10
+     ],
+     "mamba_pool_idx": 7,
+     "mamba_prev_track_seqlen": null,
+     "req_pool_idx": 6
+    }
+   },
+   "ret": null,
+   "state": {
+    "mamba_free": [
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     9
+    ],
+    "ping_pong_map": [
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      2,
+      3
+     ],
+     [
+      5,
+      6
+     ],
+     [
+      8,
+      10
+     ]
+    ],
+    "req_free": [
+     1,
+     2,
+     3
+    ],
+    "req_to_mamba": [
+     0,
+     0,
+     0,
+     0,
+     1,
+     4,
+     7
+    ]
+   },
+   "tree_mamba_slots": []
+  }
+ ],
+ "kind": "direct",
+ "provenance": {
+  "blis_sglang_commit": "2204f5266684b53a9f822f8f0f936f88b390a077+dirty",
+  "lockfile_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "mock_version": "gpu-mock/9+f7e50518d4b2",
+  "model": "qwen2.5-0.5b",
+  "model_revision": "r",
+  "oracle_inputs": {
+   "oracle/harness.json": "dad4a88c3b69c528ce64aea735f7de22c97eaf086b72a3876fc72fa853d4b268",
+   "oracle/mocks.json": "9782b21a0b9428d105a51cde9983b1554f456ef4e7f7ac11c73992f202104173",
+   "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+   "oracle/run_mamba_component.py": "1c52f4a581544a1effaf16fbf18fa367b1f3fccf6c1d849e105c0109b94b4f72",
+   "oracle/run_mamba_pools.py": "8deea3b0828e40e543df1342344a5f00ca043e26166a19699f4958d9eb24da01",
+   "oracle/scenarios-mamba-component/boundaries.json": "65c3efe53fb06ab8540325da3f64755afd2510b5c9ee245e0ca04640b9d19625",
+   "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
+  },
+  "platform": "darwin-arm64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "scenario_sha256": "65c3efe53fb06ab8540325da3f64755afd2510b5c9ee245e0ca04640b9d19625",
+  "seed": 0,
+  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "tier": 2
+ }
+}

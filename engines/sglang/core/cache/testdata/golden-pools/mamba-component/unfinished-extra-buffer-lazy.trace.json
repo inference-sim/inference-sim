@@ -1,0 +1,150 @@
+{
+ "calls": [
+  {
+   "args": {
+    "reqs": {
+     "reqs": [
+      "r1"
+     ]
+    }
+   },
+   "evictions": [],
+   "m": "alloc",
+   "objs": {},
+   "on": "h",
+   "reqs": {},
+   "ret": [
+    2
+   ],
+   "state": {
+    "mamba_free": [],
+    "ping_pong_map": [
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      3,
+      -1
+     ]
+    ],
+    "req_free": [
+     1
+    ],
+    "req_to_mamba": [
+     0,
+     0,
+     2
+    ]
+   },
+   "tree_mamba_slots": [
+    1
+   ]
+  },
+  {
+   "args": {
+    "insert_params": {
+     "insert_params": "p1"
+    },
+    "is_finished": false,
+    "req": {
+     "req": "r1"
+    },
+    "token_ids_len": 100
+   },
+   "evictions": [
+    {
+     "m": "evict_for_alloc",
+     "mamba_num": 1,
+     "num_tokens": 0
+    }
+   ],
+   "m": "prepare_for_caching_req",
+   "objs": {
+    "p1": {
+     "mamba_keep_idx": null,
+     "mamba_value": [
+      3
+     ]
+    }
+   },
+   "on": "component",
+   "reqs": {
+    "r1": {
+     "kv_allocated_len": 0,
+     "mamba_cow_src_index": null,
+     "mamba_last_track_idx": 0,
+     "mamba_last_track_seqlen": 64,
+     "mamba_needs_clear": true,
+     "mamba_next_track_idx": 0,
+     "mamba_ping_pong_empty": [
+      false,
+      true
+     ],
+     "mamba_ping_pong_track_buffer": [
+      1,
+      -1
+     ],
+     "mamba_pool_idx": 2,
+     "mamba_prev_track_seqlen": null,
+     "req_pool_idx": 2
+    }
+   },
+   "ret": 64,
+   "state": {
+    "mamba_free": [],
+    "ping_pong_map": [
+     [
+      0,
+      0
+     ],
+     [
+      0,
+      0
+     ],
+     [
+      1,
+      -1
+     ]
+    ],
+    "req_free": [
+     1
+    ],
+    "req_to_mamba": [
+     0,
+     0,
+     2
+    ]
+   },
+   "tree_mamba_slots": []
+  }
+ ],
+ "kind": "direct",
+ "provenance": {
+  "blis_sglang_commit": "2204f5266684b53a9f822f8f0f936f88b390a077+dirty",
+  "lockfile_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "mock_version": "gpu-mock/9+f7e50518d4b2",
+  "model": "qwen2.5-0.5b",
+  "model_revision": "r",
+  "oracle_inputs": {
+   "oracle/harness.json": "dad4a88c3b69c528ce64aea735f7de22c97eaf086b72a3876fc72fa853d4b268",
+   "oracle/mocks.json": "9782b21a0b9428d105a51cde9983b1554f456ef4e7f7ac11c73992f202104173",
+   "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+   "oracle/run_mamba_component.py": "1c52f4a581544a1effaf16fbf18fa367b1f3fccf6c1d849e105c0109b94b4f72",
+   "oracle/run_mamba_pools.py": "8deea3b0828e40e543df1342344a5f00ca043e26166a19699f4958d9eb24da01",
+   "oracle/scenarios-mamba-component/unfinished-extra-buffer-lazy.json": "be144c479a01d1940f589bbce8195e175c95cca289da73b1645b0d0f9eb9101b",
+   "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
+  },
+  "platform": "darwin-arm64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "scenario_sha256": "be144c479a01d1940f589bbce8195e175c95cca289da73b1645b0d0f9eb9101b",
+  "seed": 0,
+  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "tier": 2
+ }
+}

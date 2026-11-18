@@ -1,0 +1,383 @@
+{
+ "calls": [
+  {
+   "args": {
+    "reqs": {
+     "reqs": [
+      "r1",
+      "r2"
+     ]
+    }
+   },
+   "evictions": [],
+   "m": "alloc",
+   "objs": {},
+   "on": "h",
+   "reqs": {},
+   "ret": [
+    5,
+    6
+   ],
+   "state": {
+    "mamba_free": [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ],
+    "req_free": [
+     1,
+     2,
+     3,
+     4
+    ],
+    "req_to_mamba": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     3
+    ]
+   },
+   "tree_mamba_slots": [
+    1
+   ]
+  },
+  {
+   "args": {
+    "insert_params": {
+     "insert_params": "p1"
+    },
+    "is_finished": true,
+    "req": {
+     "req": "r1"
+    },
+    "token_ids_len": 50
+   },
+   "evictions": [],
+   "m": "prepare_for_caching_req",
+   "objs": {
+    "p1": {
+     "mamba_keep_idx": null,
+     "mamba_value": [
+      2
+     ]
+    },
+    "p2": {
+     "mamba_keep_idx": null,
+     "mamba_value": null
+    }
+   },
+   "on": "component",
+   "reqs": {
+    "r1": {
+     "kv_allocated_len": 0,
+     "mamba_cow_src_index": null,
+     "mamba_last_track_idx": null,
+     "mamba_last_track_seqlen": null,
+     "mamba_needs_clear": true,
+     "mamba_next_track_idx": null,
+     "mamba_ping_pong_empty": null,
+     "mamba_ping_pong_track_buffer": null,
+     "mamba_pool_idx": 2,
+     "mamba_prev_track_seqlen": null,
+     "req_pool_idx": 5
+    }
+   },
+   "ret": 50,
+   "state": {
+    "mamba_free": [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ],
+    "req_free": [
+     1,
+     2,
+     3,
+     4
+    ],
+    "req_to_mamba": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     3
+    ]
+   },
+   "tree_mamba_slots": [
+    1
+   ]
+  },
+  {
+   "args": {
+    "insert_params": {
+     "insert_params": "p1"
+    },
+    "insert_result": {
+     "insert_result": "q1"
+    },
+    "is_finished": true,
+    "req": {
+     "req": "r1"
+    }
+   },
+   "evictions": [],
+   "m": "cleanup_after_caching_req",
+   "objs": {
+    "p1": {
+     "mamba_keep_idx": null,
+     "mamba_value": [
+      2
+     ]
+    },
+    "p2": {
+     "mamba_keep_idx": null,
+     "mamba_value": null
+    },
+    "q1": {
+     "mamba_exist": false
+    }
+   },
+   "on": "component",
+   "reqs": {
+    "r1": {
+     "kv_allocated_len": 0,
+     "mamba_cow_src_index": null,
+     "mamba_last_track_idx": null,
+     "mamba_last_track_seqlen": null,
+     "mamba_needs_clear": true,
+     "mamba_next_track_idx": null,
+     "mamba_ping_pong_empty": null,
+     "mamba_ping_pong_track_buffer": null,
+     "mamba_pool_idx": 2,
+     "mamba_prev_track_seqlen": null,
+     "req_pool_idx": 5
+    }
+   },
+   "ret": null,
+   "state": {
+    "mamba_free": [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ],
+    "req_free": [
+     1,
+     2,
+     3,
+     4
+    ],
+    "req_to_mamba": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     3
+    ]
+   },
+   "tree_mamba_slots": [
+    1
+   ]
+  },
+  {
+   "args": {
+    "insert_params": {
+     "insert_params": "p2"
+    },
+    "is_finished": false,
+    "req": {
+     "req": "r2"
+    },
+    "token_ids_len": 70
+   },
+   "evictions": [],
+   "m": "prepare_for_caching_req",
+   "objs": {
+    "p1": {
+     "mamba_keep_idx": null,
+     "mamba_value": [
+      2
+     ]
+    },
+    "p2": {
+     "mamba_keep_idx": null,
+     "mamba_value": [
+      4
+     ]
+    },
+    "q1": {
+     "mamba_exist": false
+    }
+   },
+   "on": "component",
+   "reqs": {
+    "r2": {
+     "kv_allocated_len": 0,
+     "mamba_cow_src_index": null,
+     "mamba_last_track_idx": null,
+     "mamba_last_track_seqlen": null,
+     "mamba_needs_clear": true,
+     "mamba_next_track_idx": null,
+     "mamba_ping_pong_empty": null,
+     "mamba_ping_pong_track_buffer": null,
+     "mamba_pool_idx": 3,
+     "mamba_prev_track_seqlen": null,
+     "req_pool_idx": 6
+    }
+   },
+   "ret": 70,
+   "state": {
+    "mamba_free": [
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ],
+    "req_free": [
+     1,
+     2,
+     3,
+     4
+    ],
+    "req_to_mamba": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     3
+    ]
+   },
+   "tree_mamba_slots": [
+    1
+   ]
+  },
+  {
+   "args": {
+    "insert_params": {
+     "insert_params": "p2"
+    },
+    "insert_result": {
+     "insert_result": "q2"
+    },
+    "is_finished": false,
+    "req": {
+     "req": "r2"
+    }
+   },
+   "evictions": [],
+   "m": "cleanup_after_caching_req",
+   "objs": {
+    "p1": {
+     "mamba_keep_idx": null,
+     "mamba_value": [
+      2
+     ]
+    },
+    "p2": {
+     "mamba_keep_idx": null,
+     "mamba_value": [
+      4
+     ]
+    },
+    "q1": {
+     "mamba_exist": false
+    },
+    "q2": {
+     "mamba_exist": true
+    }
+   },
+   "on": "component",
+   "reqs": {
+    "r2": {
+     "kv_allocated_len": 0,
+     "mamba_cow_src_index": null,
+     "mamba_last_track_idx": null,
+     "mamba_last_track_seqlen": null,
+     "mamba_needs_clear": true,
+     "mamba_next_track_idx": null,
+     "mamba_ping_pong_empty": null,
+     "mamba_ping_pong_track_buffer": null,
+     "mamba_pool_idx": 3,
+     "mamba_prev_track_seqlen": null,
+     "req_pool_idx": 6
+    }
+   },
+   "ret": null,
+   "state": {
+    "mamba_free": [
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     4
+    ],
+    "req_free": [
+     1,
+     2,
+     3,
+     4
+    ],
+    "req_to_mamba": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     3
+    ]
+   },
+   "tree_mamba_slots": [
+    1
+   ]
+  }
+ ],
+ "kind": "direct",
+ "provenance": {
+  "blis_sglang_commit": "2204f5266684b53a9f822f8f0f936f88b390a077+dirty",
+  "lockfile_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "mock_version": "gpu-mock/9+f7e50518d4b2",
+  "model": "qwen2.5-0.5b",
+  "model_revision": "r",
+  "oracle_inputs": {
+   "oracle/harness.json": "dad4a88c3b69c528ce64aea735f7de22c97eaf086b72a3876fc72fa853d4b268",
+   "oracle/mocks.json": "9782b21a0b9428d105a51cde9983b1554f456ef4e7f7ac11c73992f202104173",
+   "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+   "oracle/run_mamba_component.py": "ca5160fa787af867c0c542f43804a5c830340a7c73a185e535d767131414b1c6",
+   "oracle/run_mamba_pools.py": "8deea3b0828e40e543df1342344a5f00ca043e26166a19699f4958d9eb24da01",
+   "oracle/scenarios-mamba-component/no-buffer.json": "9bdef32458e352736188e7e3cbf53fd3461ee12cd74b821cb1b0228d16dd8c4a",
+   "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
+  },
+  "platform": "darwin-arm64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "scenario_sha256": "9bdef32458e352736188e7e3cbf53fd3461ee12cd74b821cb1b0228d16dd8c4a",
+  "seed": 0,
+  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "tier": 2
+ }
+}
