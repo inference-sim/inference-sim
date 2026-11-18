@@ -118,6 +118,17 @@ func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturb
 	return out
 }
 
+// customLaneModel picks about one model in eight, by its name, to also price the custom all-reduce
+// lane: the lane's entries are named by part and width, so a few models per part read them all, and a
+// variant of every scenario would double the memory and time of this test on a hosted runner.
+func customLaneModel(m string) bool {
+	h := 0
+	for _, r := range m {
+		h = h*31 + int(r)
+	}
+	return h%8 == 0
+}
+
 // perturbationScenariosFor builds the scenarios of one model on one chip.
 func perturbationScenariosFor(t *testing.T, d *load.Data, m, c, offload, sets string) ([]perturbationCase, error) {
 	var out []perturbationCase
@@ -155,7 +166,7 @@ func perturbationScenariosFor(t *testing.T, d *load.Data, m, c, offload, sets st
 			out = append(out, perturbationCase{label, in})
 			// The lowered plans these scenarios state no all-reduce kernel, which prices the NCCL
 			// lane; the same scenario with the engine's custom kernel prices the other lane.
-			if tp > 1 && dp == 1 && !ep && lay.dcp == 0 && lay.pcp == 0 {
+			if tp > 1 && dp == 1 && !ep && lay.dcp == 0 && lay.pcp == 0 && customLaneModel(m) {
 				cu := *in.Lowered
 				cu.Reported.SMAllReduce, cu.Plan.Collectives.AllReduce = true, plan.AllReduceCustom
 				cuIn := in
