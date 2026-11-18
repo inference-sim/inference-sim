@@ -698,6 +698,19 @@
     "tp_size": 8,
     "pp_size": 1
    }
+  },
+  {
+   "name": "dsv3-h200-tp8-mtp-topk2-page1",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "speculative_algorithm": "EAGLE",
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 2,
+    "speculative_num_draft_tokens": 6,
+    "tp_size": 8,
+    "page_size": 1
+   }
   }
  ]
 }
