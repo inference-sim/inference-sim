@@ -53,6 +53,9 @@ func (r *resolver) handleModelSpecificAdjustments() {
 	if r.isDeepseekV4() {
 		r.validateDeepseekV41Features()
 	}
+	if deepseekFamily[r.model.Architecture] {
+		r.deepseekMoeQuantResolution()
+	}
 	r.flashinferAllreduceFusionAutoEnable()
 }
 
@@ -61,7 +64,12 @@ func (r *resolver) handleModelSpecificAdjustments() {
 func (r *resolver) deepseekFamilyOverrides() {
 	const src = "_deepseek_family_overrides"
 	if !r.model.IsDeepseekDSA {
-		// DeepSeek V3/R1/V3.1: trtllm_mla is SM100's; prefill context parallelism is not accepted.
+		// DeepSeek V3/R1/V3.1: trtllm_mla is SM100's (deepseek_v2.py:140-148); prefill context
+		// parallelism is not accepted.
+		if r.chip.isSM100() && r.cfg.AttentionBackend == nil && r.cfg.PrefillAttentionBackend == nil &&
+			r.cfg.DecodeAttentionBackend == nil {
+			r.declare(src, "attention_backend", "trtllm_mla")
+		}
 		return
 	}
 	if r.cfg.AttentionBackend == nil && r.cfg.PrefillAttentionBackend == nil && r.cfg.DecodeAttentionBackend == nil {

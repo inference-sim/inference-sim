@@ -410,15 +410,6 @@
    "issue": "inference-sim/blis-sglang#49"
   },
   {
-   "id": "config/models.go:dsaSplitBackendResolution:>=->>#1:if major >= 10 {",
-   "needs": {
-    "chip": "sm100",
-    "architecture": "GlmMoeDsaForCausalLM"
-   },
-   "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
-  },
-  {
    "id": "config/models.go:validateDeepseekV41Features:!=->==#2:graphIncompatible := pre != backendDisabled && pre != backendBreakable",
    "needs": {
     "field": "cuda_graph_config"

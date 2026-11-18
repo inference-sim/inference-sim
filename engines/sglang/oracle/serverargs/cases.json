@@ -83,7 +83,8 @@
   "deepseek-v3": {
    "repo": "deepseek-ai/DeepSeek-V3",
    "revision": "e815299b0bcbac849fa540c768ef21845365c9eb",
-   "licence": "deepseek (model card)"
+   "licence": "deepseek (model card)",
+   "checkpoint_files": true
   },
   "glm-5.3": {
    "repo": "zai-org/GLM-5.3",

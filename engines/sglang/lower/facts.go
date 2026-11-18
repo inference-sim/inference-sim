@@ -23,6 +23,7 @@ var chipMemoryMiB = map[string]float64{
 	"H100": 81559,
 	"H200": 143771,
 	"B200": 183359,
+	"B300": 275040,
 }
 
 // ChipOf is the chip as SGLang's resolution reads it: the compute capability from the catalog chip
@@ -103,6 +104,10 @@ func ModelFactsOf(g *model.Graph) (config.ModelFacts, error) {
 			f.AttentionArch = "MLA"
 		}
 	})
+	// _deepseek_moe_quant_resolution reads the first expert tensor of a DeepseekV3ForCausalLM
+	// checkpoint that declares no quantization: float8_e4m3fn is a checkpoint whose graph serves
+	// fp8 weights.
+	f.HasFP8WeightsInCheckpoint = arch == "DeepseekV3ForCausalLM" && g.Global.WeightDType == model.DTypeFP8
 	switch g.Global.WeightDType {
 	case model.DTypeBF16:
 	case model.DTypeFP8:

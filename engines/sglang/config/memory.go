@@ -38,6 +38,26 @@ func (r *resolver) applyCudaGraphCompatibility() {
 	}
 }
 
+// disablePrefillCudaGraphForDeepseekTrtllmMla is disable_prefill_cuda_graph_for_deepseek_trtllm_mla
+// (cuda_graph_hook.py:279-312): a captured prefill graph makes trtllm_mla fall back to FlashAttention
+// for prefill, so DeepseekV3ForCausalLM on that backend captures none unless the user chose the
+// prefill backend.
+func (r *resolver) disablePrefillCudaGraphForDeepseekTrtllmMla() {
+	if r.cgLocked[[2]string{"prefill", "backend"}] || r.cfg.CudaGraphConfig.Prefill.Backend == backendDisabled ||
+		r.model.Architecture != "DeepseekV3ForCausalLM" {
+		return
+	}
+	prefill := r.cfg.AttentionBackend
+	if r.cfg.PrefillAttentionBackend != nil && *r.cfg.PrefillAttentionBackend != "" {
+		prefill = r.cfg.PrefillAttentionBackend
+	}
+	if prefill == nil || *prefill != "trtllm_mla" {
+		return
+	}
+	r.declare("_disable_prefill_cuda_graph_for_deepseek_trtllm_mla", "cuda_graph_config",
+		r.cfg.CudaGraphConfig.withPhase("prefill", func(p *PhaseConfig) { p.Backend = backendDisabled }))
+}
+
 // disableBreakableIfIncompatible is disable_breakable_cudagraph_if_incompatible
 // (cuda_graph_hook.py:170-255). Prefill context parallelism is not accepted, so
 // supports_prefill_cp_bcg is false.
