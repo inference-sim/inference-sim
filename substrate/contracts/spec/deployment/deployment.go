@@ -114,6 +114,18 @@ type Pool struct {
 	// selector, the llm-d.ai/role label of a disaggregated deployment). llm-d.ai/role is derived
 	// from Role (RoleLabelValue); given here, it must have that value.
 	Labels map[string]string `yaml:"labels,omitempty"`
+
+	// Offload is the pool's own KV tier hierarchy below HBM, and PDTransfer its own KV
+	// connector. Each engine is a server with its own --kv-transfer-config
+	// (EngineArgs.kv_transfer_config, vllm/engine/arg_utils.py:789, 1881 at v0.33.0), and
+	// --kv-offloading-size replaces that server's connector with the OffloadingConnector
+	// (vllm/config/vllm.py:1151-1185). A prefill pool can therefore run NIXL beside a CPU tier
+	// while the decode pool runs NIXL alone. A pool that states neither takes the deployment's
+	// (Deployment.PoolOffload, Deployment.PoolPDTransfer), so a deployment-wide block is the
+	// default every pool inherits. A pool states "no offload" with an offload block that has no
+	// tiers and no other setting (Offload.StatesNone), which also overrides a default.
+	Offload    *Offload    `yaml:"offload,omitempty"`
+	PDTransfer *PDTransfer `yaml:"pd_transfer,omitempty"`
 }
 
 // Parallelism is the layout. EP is absent: see the package comment.
@@ -172,6 +184,63 @@ func (p Parallelism) ExpertParallelWidth() int {
 		width *= w
 	}
 	return width
+}
+
+// PoolOffload is the offload pool i runs: the pool's own block when it states one, else the
+// deployment's. It is nil for a pool with none, a pool that states no offload (an empty block,
+// Offload.StatesNone) included, whatever the deployment's default says. i out of range is nil.
+func (d *Deployment) PoolOffload(i int) *Offload {
+	if i < 0 || i >= len(d.Pools) {
+		return nil
+	}
+	if o := d.Pools[i].Offload; o != nil {
+		if o.StatesNone() {
+			return nil
+		}
+		return o
+	}
+	return d.Offload
+}
+
+// PoolPDTransfer is the KV connector pool i runs: the pool's own when it states one, else the
+// deployment's; nil for a pool with none. i out of range is nil.
+func (d *Deployment) PoolPDTransfer(i int) *PDTransfer {
+	if i < 0 || i >= len(d.Pools) {
+		return nil
+	}
+	if t := d.Pools[i].PDTransfer; t != nil {
+		return t
+	}
+	return d.PDTransfer
+}
+
+// StatesOffload reports whether any pool runs an offload tier (PoolOffload).
+func (d *Deployment) StatesOffload() bool {
+	for i := range d.Pools {
+		if d.PoolOffload(i) != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// StatesPDTransfer reports whether any pool runs a KV connector (PoolPDTransfer).
+func (d *Deployment) StatesPDTransfer() bool {
+	for i := range d.Pools {
+		if d.PoolPDTransfer(i) != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// StatesNone reports whether the block states no offload at all: no tier and no other
+// setting. On a pool it opts the pool out of the deployment's offload; at the deployment level
+// it is refused (validateOffload). A block with settings but no tier is neither: it is
+// refused, because it names an offload connector over nothing.
+func (o *Offload) StatesNone() bool {
+	return o != nil && len(o.Tiers) == 0 && o.EvictionPolicy == "" && o.PrefetchDepth == 0 &&
+		o.Connector == "" && o.Spec == "" && o.ConnectorOptions.IsZero()
 }
 
 // Offload is the KV tier hierarchy below HBM.

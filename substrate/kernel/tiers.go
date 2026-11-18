@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
 )
 
@@ -27,8 +28,12 @@ import (
 // of a step price (buildTrust): a tier's terms price a transfer, not a step.
 func (k *Kernel) liftTiers(c *resolve.Coefficients, in Inputs) error {
 	used := map[string]bool{}
-	if in.Deployment != nil && in.Deployment.Offload != nil {
-		for _, t := range in.Deployment.Offload.Tiers {
+	if in.Deployment != nil {
+		var tiers []deployment.Tier
+		if o := in.Deployment.PoolOffload(in.PoolIndex); o != nil {
+			tiers = o.Tiers
+		}
+		for _, t := range tiers {
 			if t.Device != "" {
 				used[t.Device] = true
 			}

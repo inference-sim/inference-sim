@@ -282,8 +282,14 @@
         "nodes": {
           "type": "integer"
         },
+        "offload": {
+          "$ref": "#/$defs/deployment.Offload"
+        },
         "parallel": {
           "$ref": "#/$defs/deployment.Parallelism"
+        },
+        "pd_transfer": {
+          "$ref": "#/$defs/deployment.PDTransfer"
         },
         "role": {
           "enum": [
