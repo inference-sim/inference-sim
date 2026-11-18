@@ -114,6 +114,23 @@ class ClassesTest(unittest.TestCase):
             probs = gen_classes.check_document({"fields": {"page_size": {"basis": basis}}}, fj)
             self.assertEqual(probs, ["page_size: class 1 cites nowhere.py:1, which is not a comparison of the field"])
 
+class SetLiteralOrder(unittest.TestCase):
+    """A set literal's values come out in one order whatever the process's hash seed (a set of strings
+    iterates in an order that depends on it)."""
+
+    def test_the_values_of_a_set_literal_are_sorted_under_any_seed(self):
+        import ast
+        import subprocess
+
+        code = ("import ast, sys; sys.path.insert(0, %r); import gen_classes; "
+                "print(gen_classes.const_value(ast.parse(\"{'fp8', 'modelopt_fp8', 'bf16', 'awq'}\", mode='eval').body))"
+                % os.path.dirname(os.path.abspath(__file__)))
+        outs = set()
+        for seed in ("0", "1", "2", "3", "4", "5"):
+            outs.add(subprocess.run([sys.executable, "-c", code], env=dict(os.environ, PYTHONHASHSEED=seed),
+                                    capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(outs, {"(True, ['awq', 'bf16', 'fp8', 'modelopt_fp8'])\n"})
+
 
 if __name__ == "__main__":
     unittest.main()
