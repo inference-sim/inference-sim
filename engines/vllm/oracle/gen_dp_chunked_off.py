@@ -2,8 +2,7 @@
 """Write the data-parallel scenarios that run vLLM's scheduler with enable_chunked_prefill false.
 
 Each is an existing data-parallel scenario with chunked prefill off. vLLM then requires
-max_num_batched_tokens >= max_model_len (vllm/config/scheduler.py), so the budget is raised to the model
-length, and the scheduler admits a prompt only whole (scheduler.py waiting loop: a prompt that does not fit
+max_num_batched_tokens >= max_model_len (vllm/config/scheduler.py), so the model length and the budget are both 40, and the scheduler admits a prompt only whole (scheduler.py waiting loop: a prompt that does not fit
 the step's budget is not admitted in parts). The NIXL scenarios cover the roles a disaggregated deployment
 runs under data parallelism: a kv_producer pool without prefix caching, a kv_consumer pool, the same with
 async scheduling, and a consumer whose failed pull recomputes.
@@ -15,6 +14,7 @@ import json
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+LENGTH = 40
 
 # (directory, source scenario, new name, config edits, description suffix)
 CASES = [
@@ -42,7 +42,14 @@ def main() -> None:
         out["description"] = (sc.get("description", "").rstrip() + " " + note).strip()
         cfg = out["config"]
         cfg["enable_chunked_prefill"] = False
-        cfg["max_num_batched_tokens"] = max(cfg["max_num_batched_tokens"], cfg["max_model_len"])
+        # The model length is cut to 40 (the longest prompt and output together are 33), so the budget that must
+        # reach it is small enough that two prompts on one rank do not fit one step: with chunked prefill on the
+        # second would take the rest of the budget, with it off it waits. A scenario where every prompt fits would
+        # match vLLM's trace with the setting ignored.
+        longest = max(len(r["prompt"]) + len(r.get("output", [])) for r in out["requests"])
+        assert longest <= LENGTH, (name, longest)
+        cfg["max_model_len"] = LENGTH
+        cfg["max_num_batched_tokens"] = LENGTH
         cfg.update(edits)
         with open(os.path.join(HERE, directory, name + ".json"), "w") as f:
             json.dump(out, f)
