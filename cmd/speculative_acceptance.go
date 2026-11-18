@@ -97,8 +97,36 @@ func acceptanceRecordOf(r acceptance.Resolution, c speculativeConfig) *sim.Accep
 	return rec
 }
 
+// borrowedAcceptance reports whether the acceptance is a registry profile borrowed from a run
+// whose configuration differs from this one (the resolver's steps other than the exact key). A
+// stated value, and an exact profile, are not borrowed.
+func borrowedAcceptance(r *sim.AcceptanceRecord) bool {
+	return r.Entry.Step != "" && r.Entry.Step != string(acceptance.StepExact)
+}
+
+// borrowedAcceptanceWarning is the one stderr line a run with a borrowed acceptance prints: the
+// step that found the value, what differed, how the value was brought to the run's K, and the
+// profile it was read from. The same terms are in the Result (acceptance.entry.step, differed,
+// k_rule), so the line and the record agree.
+func borrowedAcceptanceWarning(r *sim.AcceptanceRecord, k int) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "speculative acceptance: borrowed, not measured for this configuration: AL %.4f at K=%d is the %s step", r.Length, k, r.Entry.Step)
+	if len(r.Entry.Differed) > 0 {
+		fmt.Fprintf(&b, ", differing in %s", strings.Join(r.Entry.Differed, ", "))
+	}
+	if r.Entry.KRule != "" {
+		fmt.Fprintf(&b, ", brought to K by the %s rule", r.Entry.KRule)
+	}
+	src := r.Entry.Profiles
+	if len(src) == 0 && r.Entry.Key != "" {
+		src = []string{r.Entry.Set + " " + r.Entry.Key}
+	}
+	fmt.Fprintf(&b, "; read from profile %s", strings.Join(src, ", "))
+	return b.String()
+}
+
 // logAcceptance reports the resolution on stderr, and warns where it substitutes: a fallback
-// category, or a profile measured on other hardware.
+// category, a borrowed profile, or a profile measured on other hardware.
 func logAcceptance(r *sim.AcceptanceRecord, k int) {
 	from := r.SourceLayer
 	if r.Entry.Key != "" {
@@ -112,6 +140,9 @@ func logAcceptance(r *sim.AcceptanceRecord, k int) {
 	if r.Entry.FallbackFrom != "" {
 		logrus.Warnf("speculative acceptance: category %q has no profile; using the requested fallback, recorded in the results file",
 			r.Entry.FallbackFrom)
+	}
+	if borrowedAcceptance(r) {
+		logrus.Warn(borrowedAcceptanceWarning(r, k))
 	}
 	if r.Entry.MeasuredOn != "" {
 		logrus.Warnf("speculative acceptance: the profile was measured on %s, not %s", r.Entry.MeasuredOn, gpu)
