@@ -39,6 +39,7 @@
    "kv_cache_dtype": "auto",
    "model": "deepseek-v3",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable that agrees with fa3_available=1 and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -71,6 +72,7 @@
    "kv_cache_dtype": "fp8",
    "model": "deepseek-v3",
    "note": "depends on flashmla_built",
+   "path": "selector",
    "status": "refused"
   },
   {
@@ -103,6 +105,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "deepseek-v3",
    "note": "depends on flashmla_built",
+   "path": "selector",
    "status": "refused"
   },
   {
@@ -136,6 +139,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "deepseek-v3",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable that agrees with fa3_available=1 and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -169,6 +173,7 @@
    "kv_cache_dtype": "float16",
    "model": "deepseek-v3",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable that agrees with fa3_available=1 and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -200,6 +205,7 @@
    "kv_cache_dtype": "auto",
    "model": "deepseek-v3",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -231,6 +237,7 @@
    "kv_cache_dtype": "fp8",
    "model": "deepseek-v3",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -262,6 +269,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "deepseek-v3",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -293,6 +301,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "deepseek-v3",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -324,6 +333,7 @@
    "kv_cache_dtype": "float16",
    "model": "deepseek-v3",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -355,6 +365,7 @@
    "kv_cache_dtype": "auto",
    "model": "deepseek-v3",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -386,6 +397,7 @@
    "kv_cache_dtype": "fp8",
    "model": "deepseek-v3",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -417,6 +429,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "deepseek-v3",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -448,6 +461,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "deepseek-v3",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -479,6 +493,977 @@
    "kv_cache_dtype": "float16",
    "model": "deepseek-v3",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASH_ATTN",
+    "FLASH_ATTN/FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "auto",
+   "model": "gemma-4-26b-a4b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASH_ATTN",
+    "FLASH_ATTN/FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8",
+   "model": "gemma-4-26b-a4b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASH_ATTN",
+    "FLASH_ATTN/FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "gemma-4-26b-a4b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASH_ATTN",
+    "FLASH_ATTN/FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "bfloat16",
+   "model": "gemma-4-26b-a4b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASH_ATTN",
+    "FLASH_ATTN/FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "float16",
+   "model": "gemma-4-26b-a4b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "auto",
+   "model": "gemma-4-26b-a4b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8",
+   "model": "gemma-4-26b-a4b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "gemma-4-26b-a4b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "bfloat16",
+   "model": "gemma-4-26b-a4b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "float16",
+   "model": "gemma-4-26b-a4b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "auto",
+   "model": "gemma-4-26b-a4b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8",
+   "model": "gemma-4-26b-a4b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "gemma-4-26b-a4b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "bfloat16",
+   "model": "gemma-4-26b-a4b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "float16",
+   "model": "gemma-4-26b-a4b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASH_ATTN",
+    "FLASH_ATTN/FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "auto",
+   "model": "gemma-4-31b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASH_ATTN",
+    "FLASH_ATTN/FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8",
+   "model": "gemma-4-31b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASH_ATTN",
+    "FLASH_ATTN/FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "gemma-4-31b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASH_ATTN",
+    "FLASH_ATTN/FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "bfloat16",
+   "model": "gemma-4-31b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASH_ATTN",
+    "FLASH_ATTN/FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "float16",
+   "model": "gemma-4-31b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "auto",
+   "model": "gemma-4-31b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8",
+   "model": "gemma-4-31b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "gemma-4-31b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "bfloat16",
+   "model": "gemma-4-31b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "float16",
+   "model": "gemma-4-31b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "auto",
+   "model": "gemma-4-31b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8",
+   "model": "gemma-4-31b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "gemma-4-31b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "bfloat16",
+   "model": "gemma-4-31b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "float16",
+   "model": "gemma-4-31b-it",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -510,6 +1495,7 @@
    "kv_cache_dtype": "auto",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -541,6 +1527,7 @@
    "kv_cache_dtype": "fp8",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -572,6 +1559,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -603,6 +1591,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -634,6 +1623,7 @@
    "kv_cache_dtype": "float16",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -667,6 +1657,7 @@
    "kv_cache_dtype": "auto",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -700,6 +1691,7 @@
    "kv_cache_dtype": "fp8",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -733,6 +1725,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -766,6 +1759,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -799,6 +1793,7 @@
    "kv_cache_dtype": "float16",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -832,6 +1827,7 @@
    "kv_cache_dtype": "auto",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -865,6 +1861,7 @@
    "kv_cache_dtype": "fp8",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -898,6 +1895,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -931,6 +1929,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -964,6 +1963,7 @@
    "kv_cache_dtype": "float16",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -997,6 +1997,7 @@
    "kv_cache_dtype": "auto",
    "model": "kimi-k2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable that agrees with fa3_available=1 and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1029,6 +2030,7 @@
    "kv_cache_dtype": "fp8",
    "model": "kimi-k2.5",
    "note": "depends on flashmla_built",
+   "path": "selector",
    "status": "refused"
   },
   {
@@ -1061,6 +2063,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "kimi-k2.5",
    "note": "depends on flashmla_built",
+   "path": "selector",
    "status": "refused"
   },
   {
@@ -1094,6 +2097,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "kimi-k2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable that agrees with fa3_available=1 and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1127,6 +2131,7 @@
    "kv_cache_dtype": "float16",
    "model": "kimi-k2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable that agrees with fa3_available=1 and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1158,6 +2163,7 @@
    "kv_cache_dtype": "auto",
    "model": "kimi-k2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1189,6 +2195,7 @@
    "kv_cache_dtype": "fp8",
    "model": "kimi-k2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1220,6 +2227,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "kimi-k2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1251,6 +2259,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "kimi-k2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1282,6 +2291,7 @@
    "kv_cache_dtype": "float16",
    "model": "kimi-k2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1313,6 +2323,7 @@
    "kv_cache_dtype": "auto",
    "model": "kimi-k2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1344,6 +2355,7 @@
    "kv_cache_dtype": "fp8",
    "model": "kimi-k2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1375,6 +2387,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "kimi-k2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1406,6 +2419,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "kimi-k2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1437,6 +2451,7 @@
    "kv_cache_dtype": "float16",
    "model": "kimi-k2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1468,6 +2483,7 @@
    "kv_cache_dtype": "auto",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1499,6 +2515,7 @@
    "kv_cache_dtype": "fp8",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1530,6 +2547,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1561,6 +2579,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1592,6 +2611,7 @@
    "kv_cache_dtype": "float16",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1623,6 +2643,7 @@
    "kv_cache_dtype": "auto",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1654,6 +2675,7 @@
    "kv_cache_dtype": "fp8",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1685,6 +2707,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1716,6 +2739,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1747,6 +2771,7 @@
    "kv_cache_dtype": "float16",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1778,6 +2803,7 @@
    "kv_cache_dtype": "auto",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1809,6 +2835,7 @@
    "kv_cache_dtype": "fp8",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1840,6 +2867,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1871,6 +2899,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1902,6 +2931,7 @@
    "kv_cache_dtype": "float16",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1933,6 +2963,7 @@
    "kv_cache_dtype": "auto",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1964,6 +2995,7 @@
    "kv_cache_dtype": "fp8",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -1995,6 +3027,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2026,6 +3059,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2057,6 +3091,7 @@
    "kv_cache_dtype": "float16",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2088,6 +3123,7 @@
    "kv_cache_dtype": "auto",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2119,6 +3155,7 @@
    "kv_cache_dtype": "fp8",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2150,6 +3187,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2181,6 +3219,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2212,6 +3251,7 @@
    "kv_cache_dtype": "float16",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2243,6 +3283,7 @@
    "kv_cache_dtype": "auto",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2274,6 +3315,7 @@
    "kv_cache_dtype": "fp8",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2305,6 +3347,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2336,6 +3379,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2367,6 +3411,7 @@
    "kv_cache_dtype": "float16",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2398,6 +3443,7 @@
    "kv_cache_dtype": "auto",
    "model": "minimax-m2.5-nvfp4",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2429,6 +3475,7 @@
    "kv_cache_dtype": "fp8",
    "model": "minimax-m2.5-nvfp4",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2460,6 +3507,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "minimax-m2.5-nvfp4",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2491,6 +3539,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "minimax-m2.5-nvfp4",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2522,6 +3571,7 @@
    "kv_cache_dtype": "float16",
    "model": "minimax-m2.5-nvfp4",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2553,6 +3603,7 @@
    "kv_cache_dtype": "auto",
    "model": "minimax-m2.5-nvfp4",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2584,6 +3635,7 @@
    "kv_cache_dtype": "fp8",
    "model": "minimax-m2.5-nvfp4",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2615,6 +3667,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "minimax-m2.5-nvfp4",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2646,6 +3699,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "minimax-m2.5-nvfp4",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2677,6 +3731,7 @@
    "kv_cache_dtype": "float16",
    "model": "minimax-m2.5-nvfp4",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2708,6 +3763,7 @@
    "kv_cache_dtype": "auto",
    "model": "minimax-m2.5-nvfp4",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2739,6 +3795,7 @@
    "kv_cache_dtype": "fp8",
    "model": "minimax-m2.5-nvfp4",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2770,6 +3827,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "minimax-m2.5-nvfp4",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2801,6 +3859,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "minimax-m2.5-nvfp4",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2832,6 +3891,7 @@
    "kv_cache_dtype": "float16",
    "model": "minimax-m2.5-nvfp4",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2863,6 +3923,7 @@
    "kv_cache_dtype": "auto",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2894,6 +3955,7 @@
    "kv_cache_dtype": "fp8",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2925,6 +3987,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2956,6 +4019,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -2987,6 +4051,7 @@
    "kv_cache_dtype": "float16",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -3018,6 +4083,7 @@
    "kv_cache_dtype": "auto",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -3049,6 +4115,7 @@
    "kv_cache_dtype": "fp8",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -3080,6 +4147,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -3111,6 +4179,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -3142,6 +4211,7 @@
    "kv_cache_dtype": "float16",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -3173,6 +4243,7 @@
    "kv_cache_dtype": "auto",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -3204,6 +4275,7 @@
    "kv_cache_dtype": "fp8",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -3235,6 +4307,7 @@
    "kv_cache_dtype": "fp8_e4m3",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -3266,6 +4339,7 @@
    "kv_cache_dtype": "bfloat16",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
    "status": "resolved"
   },
   {
@@ -3297,6 +4371,1582 @@
    "kv_cache_dtype": "float16",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "path": "selector",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "auto",
+   "model": "deepseek-v4-pro",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8",
+   "model": "deepseek-v4-pro",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "deepseek-v4-pro",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "bfloat16",
+   "model": "deepseek-v4-pro",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "float16",
+   "model": "deepseek-v4-pro",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "auto",
+   "model": "deepseek-v4-pro",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8",
+   "model": "deepseek-v4-pro",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "deepseek-v4-pro",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "bfloat16",
+   "model": "deepseek-v4-pro",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "float16",
+   "model": "deepseek-v4-pro",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "auto",
+   "model": "deepseek-v4-pro",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8",
+   "model": "deepseek-v4-pro",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "deepseek-v4-pro",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "bfloat16",
+   "model": "deepseek-v4-pro",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "float16",
+   "model": "deepseek-v4-pro",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "auto",
+   "model": "deepseek-v4-pro-0813",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8",
+   "model": "deepseek-v4-pro-0813",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "deepseek-v4-pro-0813",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "bfloat16",
+   "model": "deepseek-v4-pro-0813",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "float16",
+   "model": "deepseek-v4-pro-0813",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "auto",
+   "model": "deepseek-v4-pro-0813",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8",
+   "model": "deepseek-v4-pro-0813",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "deepseek-v4-pro-0813",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "bfloat16",
+   "model": "deepseek-v4-pro-0813",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "float16",
+   "model": "deepseek-v4-pro-0813",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "auto",
+   "model": "deepseek-v4-pro-0813",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8",
+   "model": "deepseek-v4-pro-0813",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "deepseek-v4-pro-0813",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "bfloat16",
+   "model": "deepseek-v4-pro-0813",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "float16",
+   "model": "deepseek-v4-pro-0813",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "auto",
+   "model": "deepseek-v4-pro-nvfp4",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8",
+   "model": "deepseek-v4-pro-nvfp4",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "deepseek-v4-pro-nvfp4",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "bfloat16",
+   "model": "deepseek-v4-pro-nvfp4",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "float16",
+   "model": "deepseek-v4-pro-nvfp4",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "auto",
+   "model": "deepseek-v4-pro-nvfp4",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8",
+   "model": "deepseek-v4-pro-nvfp4",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "deepseek-v4-pro-nvfp4",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "bfloat16",
+   "model": "deepseek-v4-pro-nvfp4",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "float16",
+   "model": "deepseek-v4-pro-nvfp4",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "auto",
+   "model": "deepseek-v4-pro-nvfp4",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8",
+   "model": "deepseek-v4-pro-nvfp4",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "deepseek-v4-pro-nvfp4",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "bfloat16",
+   "model": "deepseek-v4-pro-nvfp4",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
+   "status": "resolved"
+  },
+  {
+   "assumed_facts": {},
+   "backends": [
+    "CompressorBackend",
+    "DeepseekSparseSWABackend",
+    "DeepseekV4FlashMLABackend",
+    "DeepseekV4IndexerBackend"
+   ],
+   "block_size": 256,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 256,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 256
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "float16",
+   "model": "deepseek-v4-pro-nvfp4",
+   "note": "the smallest size the DeepSeek-V4 layers' backends all accept (DeepseekV4FlashMLABackend, DeepseekSparseSWABackend, CompressorBackend, DeepseekV4IndexerBackend); it does not depend on the facts or the KV dtype, and holds at every tensor-parallel width",
+   "path": "layer_backends",
    "status": "resolved"
   }
  ],
@@ -3306,8 +5956,16 @@
   "flashmla_built": "vLLM's wheel was built with FlashMLA (v1/attention/ops/flashmla.py:_is_flashmla_available, :37-52)",
   "trtllm_usable": "FlashInfer's TRTLLM-gen kernels are usable (utils/flashinfer.py:can_use_trtllm_attention)"
  },
+ "model_flags": {
+  "gemma-4-26b-a4b-it": {
+   "is_mm_prefix_lm": true
+  },
+  "gemma-4-31b-it": {
+   "is_mm_prefix_lm": true
+  }
+ },
  "not_resolved": {
-  "deepseek-v4-pro": "DeepSeek-V4 layers use their own sparse MLA backends and block sizes (vllm/models/deepseek_v4), not the selector alone",
+  "deepseek-v4.1-flash": "DeepSeek-V4.1 layers use their own sparse MLA and indexer backends (vllm/models/deepseek_v41), which the oracle does not run",
   "glm-5": "its sparse MLA layers need the indexer backends' sizes (use_sparse); not modelled here",
   "minimax-m3": "its sparse-attention layers pick MiniMaxM3SparseBackend directly (vllm/models/minimax_m3/nvidia/model.py:559), outside the selector",
   "qwen3.5-397b-a17b": "a hybrid model: its block size is aligned to the recurrent page (platforms/interface.py:783-790, _align_hybrid_block_size)"

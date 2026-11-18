@@ -99,6 +99,18 @@ func TestResolveBlockSize(t *testing.T) {
 		{"Kimi-K2.5 on Hopper with auto KV, by the FA3 assumption", BlockSizeInput{Model: "kimi-k2.5", Capability: "9.0", KVCacheDType: "auto"}, 16, "fa3_available"},
 		{"Kimi-K2.5 on Hopper with bfloat16 KV", BlockSizeInput{Model: "kimi-k2.5", Capability: "9.0", KVCacheDType: "bfloat16"}, 16, "fa3_available"},
 		{"Kimi-K2.5 on Blackwell needs no assumption", BlockSizeInput{Model: "kimi-k2.5", Capability: "10.0", KVCacheDType: "auto"}, 32, ""},
+		// Gemma-4 mixes sliding layers (head 256) and full layers (head 512): FlashAttention or FlashInfer
+		// takes both at 16, on Hopper and Blackwell (#68).
+		{"Gemma-4 31B on Hopper", BlockSizeInput{Model: "gemma-4-31b-it", Capability: "9.0", KVCacheDType: "auto"}, 16, ""},
+		{"Gemma-4 26B-A4B on Blackwell with fp8 KV", BlockSizeInput{Model: "gemma-4-26b-a4b-it", Capability: "10.0", KVCacheDType: "fp8"}, 16, ""},
+		// DeepSeek-V4 hands the platform its own backends: the sparse MLA and the indexer take 256, the
+		// sliding-window cache a multiple of 32, the compressor any size, so the smallest all accept is 256.
+		{"DeepSeek-V4 on Blackwell", BlockSizeInput{Model: "deepseek-v4-pro", Capability: "10.0", KVCacheDType: "auto"}, 256, ""},
+		{"DeepSeek-V4 on Hopper with fp8 KV", BlockSizeInput{Model: "deepseek-v4-pro", Capability: "9.0", KVCacheDType: "fp8"}, 256, ""},
+		{"DeepSeek-V4 NVFP4 on B300", BlockSizeInput{Model: "deepseek-v4-pro-nvfp4", Capability: "10.3", KVCacheDType: "auto"}, 256, ""},
+		{"DeepSeek-V4.1 has its own backends", BlockSizeInput{Model: "deepseek-v4.1-flash", Capability: "10.0", KVCacheDType: "auto"}, 0, "deepseek_v41"},
+		{"Gemma-4 text-only drops the multimodal prefix, which the oracle did not run", BlockSizeInput{Model: "gemma-4-31b-it", Capability: "9.0", KVCacheDType: "auto", LanguageModelOnly: true}, 0, "language_model_only"},
+		{"language_model_only changes nothing for a text-only model", BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: "auto", LanguageModelOnly: true}, 16, ""},
 		{"a model the oracle does not resolve", BlockSizeInput{Model: "minimax-m3", Capability: "10.0", KVCacheDType: "fp8"}, 0, "MiniMaxM3SparseBackend"},
 		{"a hybrid model", BlockSizeInput{Model: "qwen3.5-397b-a17b", Capability: "10.0", KVCacheDType: "fp8"}, 0, "hybrid"},
 		{"a model the oracle has never seen", with(func(i *BlockSizeInput) { i.Model = "no-such-model" }), 0, "not a combination the oracle resolves"},
@@ -116,7 +128,7 @@ func TestResolveBlockSize(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			got, err := ResolveBlockSize(c.in)
 			if c.why == "" || c.size > 0 {
-				if err != nil || got.Size != c.size || !strings.Contains(got.Source, "vllm/platforms/interface.py:757-781@5df63a72") {
+				if err != nil || got.Size != c.size || !strings.Contains(got.Source, "vllm/platforms/interface.py:750-794@4ba787ec") {
 					t.Fatalf("got %+v, %v; want size %d with a cited source", got, err, c.size)
 				}
 				// A size that rests on an assumed fact says so, with its evidence; one that does not, does not.

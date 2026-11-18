@@ -81,7 +81,45 @@ LAYERS = {
     # use_sparse=False, num_heads=num_heads). DeepseekV3: 128 heads, kimi-k2.5: 64 (config.json).
     "deepseek-v3": [dict(head_size=576, num_heads=128, num_kv_heads=1, use_mla=True)],
     "kimi-k2.5": [dict(head_size=576, num_heads=64, num_kv_heads=1, use_mla=True)],
+    # vllm/model_executor/models/gemma4.py:365-517, 575-590: each layer is built with its own
+    # per_layer_config head_dim and num_key_value_heads, and the sliding layers pass the window
+    # (per_layer_sliding_window, :509). config.json (catalog/models/gemma-4-*): the sliding layers
+    # (layer_types sliding_attention) have head_dim 256 and num_key_value_heads, and the full layers
+    # global_head_dim 512 and num_global_key_value_heads; num_kv_shared_layers is 0 and no layer
+    # has a sink. The two layer kinds can select different backends (a backend may not take a head
+    # size of 512), and both join the block pool, so both are run.
+    "gemma-4-31b-it": [
+        dict(head_size=256, num_heads=32, num_kv_heads=16, has_sink=False, has_sliding_window=True),
+        dict(head_size=512, num_heads=32, num_kv_heads=4, has_sink=False, has_sliding_window=False),
+    ],
+    "gemma-4-26b-a4b-it": [
+        dict(head_size=256, num_heads=16, num_kv_heads=8, has_sink=False, has_sliding_window=True),
+        dict(head_size=512, num_heads=16, num_kv_heads=2, has_sink=False, has_sliding_window=False),
+    ],
 }
+
+# Model-level facts the selection reads from the model config (config/model.py:1649-1654, from
+# transformers_utils/model_arch_config_convertor.py): is_mm_prefix_lm is true for a Gemma-4 model
+# whose text config has use_bidirectional_attention "vision" (Gemma4ModelArchConfigConvertor,
+# :781-788) unless the deployment is configuration-disabled for multimodal inputs
+# (ModelConfig._supports_multimodal_for_mm_prefix, :999-1021: language_model_only, or every
+# modality's limit 0 without enable_mm_embeds). The table is for the default, multimodal on;
+# core/vllm.ResolveBlockSize refuses a pool that states either. rswa_window is None unless the
+# config states it (:1653, ModelArchConfigConvertorBase.rswa_window): no catalog model does.
+MM_PREFIX_LM = {"gemma-4-31b-it": True, "gemma-4-26b-a4b-it": True}
+
+# DeepSeek-V4 (vllm/models/deepseek_v4) does not go through the selector. Its layers hand the platform
+# their own backend classes (DeepseekV4Attention.get_attn_backend, attention.py:857 returns backend_cls;
+# the SWA cache layer's swa_backend_cls, :355; the compressor, compressor.py:196; the indexer cache,
+# :928), and update_block_size_for_backend takes the smallest size they all accept
+# (Platform._preferred_block_size_for_backends, interface.py:699-745). The sizes the classes declare
+# are read from the classes' source (the package cannot be imported on a CPU: it pulls in compiled
+# ops), and the selection itself is vLLM's own code on vLLM's AttentionBackend. The FlashInfer sparse
+# class declares the same sizes as the FlashMLA one beside it (nvidia/flashinfer_sparse.py:119-121
+# versus sparse_mla.py:59-61); the oracle fails if they differ. The sparse MLA
+# class takes compute capability major 9 or 10 (sparse_mla.py:93-95); the size is independent of the
+# KV dtype and of the facts a CPU cannot discover, which enter the selector and not this path.
+DSV4_MODELS = ["deepseek-v4-pro", "deepseek-v4-pro-0813", "deepseek-v4-pro-nvfp4"]
 
 # Models not resolved, with the reason. A fixture of one of these keeps its block_size refused.
 NOT_RESOLVED = {
@@ -92,8 +130,10 @@ NOT_RESOLVED = {
     # dense layers' selection only, so it cannot say which layers are sparse.
     "minimax-m3": "its sparse-attention layers pick MiniMaxM3SparseBackend directly "
                   "(vllm/models/minimax_m3/nvidia/model.py:559), outside the selector",
-    "deepseek-v4-pro": "DeepSeek-V4 layers use their own sparse MLA backends and block sizes "
-                       "(vllm/models/deepseek_v4), not the selector alone",
+    # DeepSeek-V4.1 (vllm/models/deepseek_v41) has its own backends (a 64- or 128-row indexer by
+    # capability family, deepseek_v41/sparse_mla.py:115, :301); only DeepSeek-V4 is run (DSV4_MODELS).
+    "deepseek-v4.1-flash": "DeepSeek-V4.1 layers use their own sparse MLA and indexer backends "
+                           "(vllm/models/deepseek_v41), which the oracle does not run",
     "glm-5": "its sparse MLA layers need the indexer backends' sizes (use_sparse); not modelled here",
     "qwen3.5-397b-a17b": "a hybrid model: its block size is aligned to the recurrent page "
                          "(platforms/interface.py:783-790, _align_hybrid_block_size)",
@@ -205,8 +245,10 @@ def resolve_once(v, model, cap, kv_dtype, facts, tp=1):
         get_num_kv_heads=lambda pc: layers[0]["num_kv_heads"],
         get_head_size=lambda: layers[0]["head_size"],
         hf_text_config=hf_text_config(model),
-        is_mm_prefix_lm=False, is_diffusion=False, is_hybrid=False,
+        is_mm_prefix_lm=MM_PREFIX_LM.get(model, False), rswa_window=None, is_diffusion=False, is_hybrid=False,
     )
+    # The KV dtype backends test in their validity checks (fa_utils.py:_fa4_hd256_fallback_reason).
+    vc.cache_config.cache_dtype = kv_dtype
     # Phase 1 runs only when block_size is not user-specified (interface.py:757-781).
     backends = []
     names = []
@@ -287,12 +329,95 @@ def run(vllm_dir):
                         break
             note = "depends on " + ", ".join(sorted(set(differs)) or fact_names)
         rows.append(dict(model=model, gpu=gpu, capability=f"{cap[0]}.{cap[1]}", kv_cache_dtype=kv, status=status,
-                         block_size=size, backends=backends,
+                         path="selector", block_size=size, backends=backends,
                          assumed_facts=assumed_facts,
                          by_facts={",".join(f"{n}={int(x)}" for n, x in zip(fact_names, k)): (r[0][0] if r[0] else None)
                                    for k, r in results.items()},
                          note=note))
+    rows.extend(dsv4_rows(v, fact_names, caps, vllm_dir))
     return v, fact_names, rows
+
+
+def declared_sizes(path, cls):
+    """The kernel block sizes a backend class declares, read from its source: its own
+    get_supported_kernel_block_sizes, else the nearest base class in the same file that has one.
+    The modules cannot be imported on a CPU (the package pulls in compiled ops), so the declared
+    list is read as a literal: ints, and MultipleOf(n)."""
+    import ast
+    from vllm.v1.attention.backend import MultipleOf
+    tree = ast.parse(open(path).read())
+    classes = {n.name: n for n in tree.body if isinstance(n, ast.ClassDef)}
+    name = cls
+    while name in classes:
+        for f in classes[name].body:
+            if isinstance(f, ast.FunctionDef) and f.name == "get_supported_kernel_block_sizes":
+                ret = f.body[-1].value
+                if not isinstance(ret, ast.List):
+                    raise SystemExit("%s.get_supported_kernel_block_sizes is not a list literal (%s)" % (cls, ast.dump(ret)))
+                out = []
+                for e in ret.elts:
+                    if isinstance(e, ast.Constant):
+                        out.append(e.value)
+                    elif isinstance(e, ast.Call) and getattr(e.func, "id", "") == "MultipleOf":
+                        out.append(MultipleOf(ast.literal_eval(e.args[0])))
+                    else:
+                        raise SystemExit("%s declares a size the oracle does not read: %s" % (cls, ast.dump(e)))
+                return out
+        bases = classes[name].bases
+        name = bases[0].id if bases and isinstance(bases[0], ast.Name) else None
+    raise SystemExit("no get_supported_kernel_block_sizes for %s in %s" % (cls, path))
+
+
+def dsv4_backend_classes(vllm_dir):
+    """The backend classes a DeepSeek-V4 model's layers hand the platform: vLLM's own AttentionBackend
+    (its supports_block_size and get_preferred_block_size) with the sizes each declares in its source.
+    The FlashInfer sparse class declares the same sizes as the FlashMLA one beside it; both are read."""
+    from vllm.v1.attention.backend import AttentionBackend
+    root = os.path.join(vllm_dir, "vllm")
+    files = {
+        "DeepseekV4FlashMLABackend": os.path.join(root, "models/deepseek_v4/sparse_mla.py"),
+        "DeepseekV4FlashInferMLASparseBackend": os.path.join(root, "models/deepseek_v4/nvidia/flashinfer_sparse.py"),
+        "DeepseekSparseSWABackend": os.path.join(root, "v1/attention/backends/mla/sparse_swa.py"),
+        "CompressorBackend": os.path.join(root, "models/deepseek_v4/compressor.py"),
+        "DeepseekV4IndexerBackend": os.path.join(root, "v1/attention/backends/mla/indexer.py"),
+    }
+    sizes = {c: declared_sizes(f, c) for c, f in files.items()}
+    if sizes["DeepseekV4FlashInferMLASparseBackend"] != sizes["DeepseekV4FlashMLABackend"]:
+        raise SystemExit("the FlashInfer sparse backend declares %r, not the FlashMLA backend's %r: the DeepSeek-V4 rows "
+                         "no longer stand for both" % (sizes["DeepseekV4FlashInferMLASparseBackend"], sizes["DeepseekV4FlashMLABackend"]))
+    out = []
+    for c in ("DeepseekV4FlashMLABackend", "DeepseekSparseSWABackend", "CompressorBackend", "DeepseekV4IndexerBackend"):
+        def make(c=c):
+            decl = sizes[c]
+            return type(c, (AttentionBackend,), dict(
+                get_name=staticmethod(lambda c=c: c),
+                get_supported_kernel_block_sizes=staticmethod(lambda kv_cache_spec=None, decl=decl: list(decl))))
+        out.append(make())
+    return out
+
+
+def dsv4_rows(v, fact_names, caps, vllm_dir):
+    from vllm.config import VllmConfig
+    backends = dsv4_backend_classes(vllm_dir)
+    rows = []
+    for model, cap, kv in itertools.product(sorted(DSV4_MODELS), caps, KV_DTYPES):
+        gpu = "/".join(sorted(g for g, c in COMPUTE_CAPABILITY.items() if c == cap))
+        by = {",".join(f"{n}=0" if not x else f"{n}=1" for n, x in zip(fact_names, vals)): None
+              for vals in itertools.product([False, True], repeat=len(fact_names))}
+        if cap[0] not in (9, 10):
+            rows.append(dict(model=model, gpu=gpu, capability=f"{cap[0]}.{cap[1]}", kv_cache_dtype=kv, status="refused",
+                             path="layer_backends", block_size=None, backends=[], assumed_facts={}, by_facts=by,
+                             note="DeepSeek-V4's sparse MLA backend takes compute capability major 9 or 10 only (sparse_mla.py:93-95)"))
+            continue
+        vc = VllmConfig()
+        with v.set_current_vllm_config(vc):
+            size = v.Sim._preferred_block_size_for_backends(backends, 16, vc)
+        rows.append(dict(model=model, gpu=gpu, capability=f"{cap[0]}.{cap[1]}", kv_cache_dtype=kv, status="resolved",
+                         path="layer_backends", block_size=size, backends=sorted(b.get_name() for b in backends),
+                         assumed_facts={}, by_facts={k: size for k in by},
+                         note="the smallest size the DeepSeek-V4 layers' backends all accept (%s); it does not depend on the "
+                              "facts or the KV dtype, and holds at every tensor-parallel width" % ", ".join(b.__name__ for b in backends)))
+    return rows
 
 
 def render_table(v, fact_names, rows):
@@ -339,7 +464,9 @@ def as_json(v, fact_names, rows):
         "assumptions": {f"{cap[0]}.{cap[1]}": {f: {"value": want, "evidence": ev} for f, (want, ev) in facts.items()}
                         for cap, facts in ASSUMED_FACTS.items()},
         "not_resolved": NOT_RESOLVED,
-        "combinations": [{k: r[k] for k in ("model", "gpu", "capability", "kv_cache_dtype", "status", "block_size", "backends", "assumed_facts", "by_facts", "note")} for r in rows],
+        # Model-level facts the rows were run with (MM_PREFIX_LM): a pool that changes one is refused.
+        "model_flags": {m: {"is_mm_prefix_lm": True} for m in sorted(MM_PREFIX_LM) if MM_PREFIX_LM[m]},
+        "combinations": [{k: r[k] for k in ("model", "gpu", "capability", "kv_cache_dtype", "status", "path", "block_size", "backends", "assumed_facts", "by_facts", "note")} for r in rows],
     }, indent=1, sort_keys=True) + "\n"
 
 

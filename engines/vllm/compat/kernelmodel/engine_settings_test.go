@@ -189,6 +189,10 @@ func TestEngineResolvesAnUnstatedBlockSizeAt032(t *testing.T) {
 		// MLA on Hopper with an unstated KV dtype is FlashAttention MLA's 16 if the wheel ships FA3, which the
 		// oracle assumes (oracle/blocksize ASSUMED_FACTS); the source says so.
 		{"direct/kimi-k2.5-h200-int4-vllm-tp8-cfg1.yaml", 16, ""},
+		// DeepSeek-V4's layers hand the platform their own backends (sparse MLA, indexer 256; the sliding-window
+		// cache a multiple of 32; the compressor any size): the smallest all accept is 256, the size the corpus's
+		// own record of this deployment states.
+		{"deepseek-v4-pro-b300-fp4-vllm-tp4.yaml", 256, ""},
 	} {
 		t.Run(c.fixture, func(t *testing.T) {
 			m, err := openWithoutBlockSize(t, c.fixture)
@@ -205,7 +209,7 @@ func TestEngineResolvesAnUnstatedBlockSizeAt032(t *testing.T) {
 			if err != nil || e.BlockSize != c.size {
 				t.Fatalf("Engine: block_size %d (%v), want %d", e.BlockSize, err, c.size)
 			}
-			if src := m.EngineSources()["block_size"]; !strings.Contains(src, "vllm/platforms/interface.py:757-781@5df63a72") {
+			if src := m.EngineSources()["block_size"]; !strings.Contains(src, "vllm/platforms/interface.py:750-794@4ba787ec") {
 				t.Errorf("block_size source %q, want the rule with its citation", src)
 			} else if assumed := strings.Contains(src, "assuming fa3_available: "); assumed != strings.HasPrefix(c.fixture, "direct/kimi") {
 				t.Errorf("block_size source %q: names the FA3 assumption: %t", src, assumed)
@@ -775,4 +779,56 @@ func TestUsesMLAReadsTheGraphsAttention(t *testing.T) {
 	if m.UsesMLA() {
 		t.Error("llama, whose attention is grouped-query, is read as using MLA")
 	}
+}
+
+// An unstated block_size for Gemma-4, a model whose sliding layers (head 256) and full layers (head 512)
+// are two attention layers for the selector, is vLLM's 16 on Hopper and on Blackwell, and the kernel
+// prices that size (#68). The deployment is the Llama one on the same chip with the model changed, so
+// the test reads only the block size and what feeds it. language_model_only true switches off the
+// multimodal prefix the table was run with, so the engine refuses it rather than guess.
+func TestEngineResolvesAnUnstatedBlockSizeForGemma4(t *testing.T) {
+	open := func(t *testing.T, fixture, model, extra string) (*Model, error) {
+		t.Helper()
+		raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", fixture))
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := regexp.MustCompile(`(?m)^\s*block_size:\s*\d+\s*\n`).ReplaceAllString(string(raw), extra)
+		body = strings.ReplaceAll(body, "model: llama-3.1-70b-instruct", "model: "+model)
+		r := repos()
+		r.Scenarios = t.TempDir()
+		if err := os.WriteFile(filepath.Join(r.Scenarios, "v.yaml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return Open("v.yaml", r)
+	}
+	for _, fixture := range []string{"llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml", "llama-3.1-70b-instruct-b200-fp8-vllm-tp2.yaml"} {
+		for _, model := range []string{"gemma-4-31b-it", "gemma-4-26b-a4b-it"} {
+			t.Run(model+"/"+fixture, func(t *testing.T) {
+				m, err := open(t, fixture, model, "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				e, err := m.Engine()
+				if err != nil || e.BlockSize != 16 {
+					t.Fatalf("Engine: block_size %d (%v), want 16", e.BlockSize, err)
+				}
+				if src := m.EngineSources()["block_size"]; !strings.Contains(src, "interface.py:750-794@4ba787ec") || !strings.Contains(src, model) {
+					t.Errorf("block_size source %q, want the rule with its citation and %s", src, model)
+				}
+				if got := m.Lowered().Plan.PageTokens; got != 16 {
+					t.Errorf("the kernel prices block_size %d, Engine reports 16", got)
+				}
+			})
+		}
+	}
+	t.Run("language_model_only is refused", func(t *testing.T) {
+		m, err := open(t, "llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml", "gemma-4-31b-it", "      language_model_only: true\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.Engine(); err == nil || !strings.Contains(err.Error(), "language_model_only") || !strings.Contains(err.Error(), "blis-vllm/issues/68") {
+			t.Errorf("Engine: %v, want a refusal naming language_model_only and #68", err)
+		}
+	})
 }
