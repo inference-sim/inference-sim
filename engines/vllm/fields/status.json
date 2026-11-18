@@ -18,8 +18,8 @@
   "env:UCX_TLS": "NIXL's UCX backend is the default (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:525-526@5df63a72) and UCX_TLS restricts the transports it may use (UCX FAQ). The engine prices a handoff between nodes over the NIC at the cluster fabric's rate unless UCX_CUDA_IPC_ENABLE_MNNVL=y is stated (compat/kernelmodel, rackHandoff), which is the path a list of RDMA transports without cuda_ipc takes, so unset stands in exactly for such a list; the field's valid_when says for which lists the stand-in is exact",
   "env:NCCL_CUMEM_ENABLE": "vLLM's serving process does not read NCCL_CUMEM_ENABLE (it names it only in vllm/distributed/weight_transfer/sharded_rdt_trainer.py:1156@4ba787ec); NCCL does. NCCL autodetects cuMem since 2.19 and the variable only overrides that, so a stated 1 on a run that completed is NCCL's default and the unset stand-in is exact for it; a stated 0 disables cuMem (and with it NVLS and MNNVL), changes the buffers NCCL registers, and is not exact. The field's valid_when says for which values; fields/stand_in_vectors.json holds it (owner nccl-user-guide)",
   "env:NCCL_NVLS_ENABLE": "vLLM's serving process does not read NCCL_NVLS_ENABLE (it names it only in vllm/model_executor/determinism/batch_invariant.py:1409@4ba787ec, where it sets 0); NCCL does. The default is 2 and 1 differs from it only in making a failed NVLS allocation fatal (NCCL user guide), so a stated 1 or 2 on a run that completed runs as the unset stand-in does; 0 disables NVLink SHARP, which changes the collectives' algorithm, and is not exact. The field's valid_when says for which values; fields/stand_in_vectors.json holds it (owner nccl-user-guide)",
-  "env:VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8": "vLLM v0.33.0 does not read VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8; v0.22.0 did (vllm/model_executor/layers/fused_moe/oracle/mxfp4.py at v0.22.0, lines 501-509: a set value forces FLASHINFER_TRTLLM_MXFP4_MXFP8 with a dynamic MXFP8 activation). It was deprecated in 9b54e50e2 (vllm-project/vllm#43148, 2026-05-21) and removed in 03878d1c2 (vllm-project/vllm#44992, 2026-06-11, 'Deprecations for v0.23 and v0.24'). At vLLM 4ba787ec the same selection is --moe-backend flashinfer_trtllm with quantization_config.moe.activation mxfp8: map_mxfp4_backend gives the BF16 and MXFP8 variants and _filter_by_activation keeps the MXFP8 one (fused_moe/oracle/mxfp4.py:361-364, :614-631); its kernel needs compute capability family 10 (experts/trtllm_mxfp4_moe.py:121-123).",
-  "env:VLLM_MXFP4_USE_MARLIN": "vLLM v0.33.0 does not read VLLM_MXFP4_USE_MARLIN; v0.22.0 did (vllm/model_executor/layers/fused_moe/oracle/mxfp4.py at v0.22.0, line 526 for the MoE, and kernels/linear/__init__.py:736 for the MXFP4 linear kernel: a set value forces Marlin). It was deprecated in 9b54e50e2 (vllm-project/vllm#43148, 2026-05-21) and removed in 03878d1c2 (vllm-project/vllm#44992, 2026-06-11, 'Deprecations for v0.23 and v0.24'). At vLLM 4ba787ec the MoE selection is --moe-backend marlin (fused_moe/oracle/mxfp4.py:378, :675-710; MarlinExperts needs compute capability 7.5 or more, experts/marlin_moe.py:592-594) and the linear one is --linear-backend marlin; a model with no MXFP4 linear layer (gpt-oss-120b keeps its attention in bf16) is unaffected by the linear half."
+  "env:VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8": "vLLM v0.33.0 does not read VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8; v0.22.0 did (vllm/model_executor/layers/fused_moe/oracle/mxfp4.py at v0.22.0, lines 501-509: a set value forces FLASHINFER_TRTLLM_MXFP4_MXFP8 with a dynamic MXFP8 activation). It was deprecated in 9b54e50e2 (vllm-project/vllm#43148, 2026-05-21) and removed in v0.24.0 by 03878d1c2 (vllm-project/vllm#44992, 2026-06-11, 'Deprecations for v0.23 and v0.24'; v0.23.0 still lists it as deprecated). At vLLM 4ba787ec the same selection is --moe-backend flashinfer_trtllm with quantization_config.moe.activation mxfp8: map_mxfp4_backend gives the BF16 and MXFP8 variants and _filter_by_activation keeps the MXFP8 one (fused_moe/oracle/mxfp4.py:361-364, :614-631); its kernel needs compute capability family 10 (experts/trtllm_mxfp4_moe.py:121-123).",
+  "env:VLLM_MXFP4_USE_MARLIN": "vLLM v0.33.0 does not read VLLM_MXFP4_USE_MARLIN; v0.22.0 did (vllm/model_executor/layers/fused_moe/oracle/mxfp4.py at v0.22.0, line 526 for the MoE, and kernels/linear/__init__.py:736 for the MXFP4 linear kernel: a set value forces Marlin). It was deprecated in 9b54e50e2 (vllm-project/vllm#43148, 2026-05-21) and removed in v0.24.0 by 03878d1c2 (vllm-project/vllm#44992, 2026-06-11, 'Deprecations for v0.23 and v0.24'; v0.23.0 still lists it as deprecated). At vLLM 4ba787ec the MoE selection is --moe-backend marlin (fused_moe/oracle/mxfp4.py:378, :675-710; MarlinExperts needs compute capability 7.5 or more, experts/marlin_moe.py:592-594) and the linear one is --linear-backend marlin; a model with no MXFP4 linear layer (gpt-oss-120b keeps its attention in bf16) is unaffected by the linear half."
  },
  "extra_env": [
   "MC_ENABLE_DEST_DEVICE_AFFINITY",
@@ -8260,12 +8260,13 @@
     "setting": {
      "moe_backend": "marlin"
     },
-    "reason": "env_var_not_in_release: VLLM_MXFP4_USE_MARLIN was read by vLLM v0.22.0 (and earlier) and removed in v0.23 (03878d1c2, vllm-project/vllm#44992); the v0.33.0 flag that makes the same MoE selection is --moe-backend marlin (and --linear-backend marlin for an MXFP4 linear layer)",
+    "reason": "env_var_not_in_release: VLLM_MXFP4_USE_MARLIN was read by vLLM v0.22.0 (and earlier) and removed in v0.24.0 (03878d1c2, vllm-project/vllm#44992; deprecated since v0.22.0 by 9b54e50e2, vllm-project/vllm#43148); the v0.33.0 flag that makes the same MoE selection is --moe-backend marlin (and --linear-backend marlin for an MXFP4 linear layer)",
     "preserves": "the MoE kernel the run used: Marlin (v0.22.0 oracle/mxfp4.py:526-534 returns MARLIN; v0.33.0 oracle/mxfp4.py:378, :675-710 selects MARLIN from --moe-backend marlin; MarlinExperts needs compute capability 7.5 or more). The v0.22.0 variable also forced the MXFP4 linear kernel to Marlin (kernels/linear/__init__.py:736); that half changes nothing for a model whose linear layers are not MXFP4, which is the only case stood in for here (gpt-oss-120b keeps attention in bf16), and the field list cannot test the weight scheme, so the point's estimation text says it",
     "valid_when": [
      {
       "value_in": [
-       "1"
+       "1",
+       "true"
       ],
       "compute_capability": {
        "gte": "7.5"
@@ -9257,12 +9258,13 @@
      "moe_backend": "flashinfer_trtllm",
      "quantization_config.moe.activation": "mxfp8"
     },
-    "reason": "env_var_not_in_release: VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8 was read by vLLM v0.22.0 (and earlier) and removed in v0.23 (03878d1c2, vllm-project/vllm#44992); the v0.33.0 flags that make the same selection are --moe-backend flashinfer_trtllm and quantization_config.moe.activation mxfp8",
+    "reason": "env_var_not_in_release: VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8 was read by vLLM v0.22.0 (and earlier) and removed in v0.24.0 (03878d1c2, vllm-project/vllm#44992; deprecated since v0.22.0 by 9b54e50e2, vllm-project/vllm#43148); the v0.33.0 flags that make the same selection are --moe-backend flashinfer_trtllm and quantization_config.moe.activation mxfp8",
     "preserves": "the MoE kernel the run used: FlashInfer TRT-LLM-gen MXFP4 weights with dynamic MXFP8 activations (v0.22.0 oracle/mxfp4.py:501-509 returns FLASHINFER_TRTLLM_MXFP4_MXFP8 with kMxfp8Dynamic; v0.33.0 oracle/mxfp4.py:361-364, :614-631 selects the same backend from the flags). The variable did nothing else in v0.22.0. A value other than 1, or a part below compute capability 10.0 or at 11.0 and above, has no such kernel in v0.33.0 (TrtLlmMxfp4Experts needs capability family 10), so it is not stood in for and the point is refused by this name",
     "valid_when": [
      {
       "value_in": [
-       "1"
+       "1",
+       "true"
       ],
       "compute_capability": {
        "gte": "10.0",

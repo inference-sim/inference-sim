@@ -172,12 +172,12 @@ func TestAnEnvVarOfAnEarlierReleaseIsTranslatedToThisReleasesFlags(t *testing.T)
 			[]struct {
 				value, cc string
 				exact     bool
-			}{{"1", "10.0", true}, {"1", "10.3", true}, {"1", "9.0", false}, {"1", "12.0", false}, {"0", "10.0", false}, {"", "10.0", false}}},
+			}{{"true", "10.0", true}, {"false", "10.0", false}, {"1", "10.0", true}, {"1", "10.3", true}, {"1", "9.0", false}, {"1", "12.0", false}, {"0", "10.0", false}, {"", "10.0", false}}},
 		{"VLLM_MXFP4_USE_MARLIN", map[string]any{"moe_backend": "marlin"},
 			[]struct {
 				value, cc string
 				exact     bool
-			}{{"1", "9.0", true}, {"1", "10.0", true}, {"1", "7.5", true}, {"1", "7.0", false}, {"0", "9.0", false}}},
+			}{{"true", "9.0", true}, {"false", "9.0", false}, {"1", "9.0", true}, {"1", "10.0", true}, {"1", "7.5", true}, {"1", "7.0", false}, {"0", "9.0", false}}},
 	} {
 		f, ok := byName[c.name]
 		if !ok {
@@ -187,7 +187,7 @@ func TestAnEnvVarOfAnEarlierReleaseIsTranslatedToThisReleasesFlags(t *testing.T)
 		if e.Rule != fields.RuleSubstitute || !reflect.DeepEqual(e.Setting, c.setting) {
 			t.Errorf("%s: rule %q setting %v, want a substitution by %v", c.name, e.Rule, e.Setting, c.setting)
 		}
-		for _, frag := range []string{"env_var_not_in_release", c.name, "v0.22.0", "03878d1c2", "vllm-project/vllm#44992", "--moe-backend"} {
+		for _, frag := range []string{"env_var_not_in_release", c.name, "v0.22.0", "v0.24.0", "03878d1c2", "vllm-project/vllm#44992", "--moe-backend"} {
 			if !strings.Contains(e.Reason, frag) {
 				t.Errorf("%s: the substitution's reason does not name %q: %s", c.name, frag, e.Reason)
 			}

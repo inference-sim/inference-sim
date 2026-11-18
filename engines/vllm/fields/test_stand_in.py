@@ -34,12 +34,14 @@ NVLS = [("1", True), ("2", True), ("0", False), ("", False)]
 # NCCL_MNNVL_ENABLE (NCCL user guide): 2 is the default (use multi-node NVLink where the system has it, else the network);
 # 1 differs only in failing communicator initialization when MNNVL is unsupported, which a completed run did not do.
 MNNVL = [("1", True), ("2", True), ("0", False), ("", False)]
-# The env vars an earlier release read (removed in v0.23, 03878d1c2): the rows are v0.33.0's own selection for the flags
+# The env vars an earlier release read (removed in v0.24.0, 03878d1c2): the rows are v0.33.0's own selection for the flags
 # that replaced them, fused_moe/oracle/mxfp4.py at 4ba787ec (map_mxfp4_backend :352-392, _filter_by_activation :614-631,
 # _get_requested_backends :634-647) and the device each kernel supports (TrtLlmMxfp4Experts: capability family 10,
 # experts/trtllm_mxfp4_moe.py:121-123; MarlinExperts: capability 7.5 and up, experts/marlin_moe.py:592-594).
-MXFP8 = [("1", "10.0", True), ("1", "10.3", True), ("1", "9.0", False), ("1", "12.0", False), ("0", "10.0", False), ("", "10.0", False)]
-MARLIN_MOE = [("1", "9.0", True), ("1", "7.5", True), ("1", "10.0", True), ("1", "7.0", False), ("0", "9.0", False), ("", "9.0", False)]
+# "true" is how the dashboard renders a stated 1: both variables are read as bool(int(value)) (envs.py at 03878d1c2^), so a run
+# that completed stated an integer, and a recorded boolean is its 1.
+MXFP8 = [("true", "10.0", True), ("false", "10.0", False), ("1", "10.0", True), ("1", "10.3", True), ("1", "9.0", False), ("1", "12.0", False), ("0", "10.0", False), ("", "10.0", False)]
+MARLIN_MOE = [("true", "9.0", True), ("false", "9.0", False), ("1", "9.0", True), ("1", "7.5", True), ("1", "10.0", True), ("1", "7.0", False), ("0", "9.0", False), ("", "9.0", False)]
 TLS = [("cuda_copy,rc", True), ("cuda_copy,cuda_ipc,rc", True), ("all", True), ("cuda_copy,cuda_ipc,tcp", False),
        ("tcp", False), ("^rc", False), ("sm,self", False)]
 
