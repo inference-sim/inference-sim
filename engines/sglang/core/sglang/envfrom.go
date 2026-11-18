@@ -17,6 +17,13 @@ const envIssue = "inference-sim/blis-sglang#9"
 // EnvFrom is the environment a pool states in its engine block's env map: the process environment
 // SGLang's scheduler settings read, from base, with each variable the map names set as SGLang's
 // environ.py parses it (EnvBool: true, 1, yes, y and their negatives; EnvInt; EnvFloat, environ.py:143-205).
+//
+// A value SGLang cannot parse is not the same case there and here: EnvField.get warns and falls back to
+// the variable's default (environ.py:70-89), so a run that exported "x" for an integer ran with the default;
+// EnvFrom refuses it by name instead (deliberate: a scenario that states a value the engine would silently
+// replace is not the run it describes; the refusals are tested). Python's float() takes decimal text, inf and
+// nan but not C99 hexadecimal floats, which Go's ParseFloat reads, so text with x or X is refused as invalid.
+//
 // A variable the engine reads no value of is refused by name: it is accepted only at the value that is
 // its default (SGLANG_ENABLE_JIT_DEEPGEMM true, environ.py:1348, which only chooses DeepGEMM's kernels;
 // SGLANG_RADIX_FORCE_MISS false, environ.py:722) or not at all.
@@ -96,6 +103,9 @@ func envInt(name, text string) (int, error) {
 }
 
 func envFloat(name, text string) (float64, error) {
+	if strings.ContainsAny(text, "xX") {
+		return 0, fmt.Errorf("environment variable %s: %q is not a valid float value (environ.py:200-205@297e54fd)", name, text)
+	}
 	f, err := strconv.ParseFloat(text, 64)
 	if err != nil {
 		return 0, fmt.Errorf("environment variable %s: %q is not a valid float value (environ.py:200-205@297e54fd)", name, text)

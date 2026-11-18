@@ -41,6 +41,8 @@ func TestEnvFromRefusesWhatItCannotHonourByName(t *testing.T) {
 		"SGLANG_RADIX_FORCE_MISS":                    {"true", "#3"},
 		"SGLANG_SOMETHING_ELSE":                      {"1", "#9"},
 		"SGLANG_RETRACT_DECODE_STEPS":                {"1.5", "integer"},
+		"SGLANG_INIT_NEW_TOKEN_RATIO":                {"0x1p-1", "float"},
+		"SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR":          {"0X.8", "float"},
 		"SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP": {"maybe", "boolean"},
 	} {
 		_, err := EnvFrom(DefaultEnv(), map[string]any{name: tc.v})
