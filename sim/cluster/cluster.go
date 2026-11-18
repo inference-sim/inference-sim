@@ -1995,7 +1995,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		//
 		// A request whose whole output is one token has no inter-token gap, so its ITL is empty
 		// although it was served: the engine stamped its first-token time (TTFTSet) instead, and
-		// that, not a gap, is what says a token reached the client (#2123).
+		// that, not a gap, is what says a token reached the client.
 		servedFirstToken := parent.DecodeSubReq != nil && (len(parent.DecodeSubReq.ITL) > 0 || parent.DecodeSubReq.TTFTSet)
 		served := completed && servedFirstToken
 

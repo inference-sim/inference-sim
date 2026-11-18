@@ -8,7 +8,7 @@ import (
 )
 
 // A disaggregated request that asks for one output token completes with that token and its
-// latencies, as a colocated one does (#2123): the single token leaves no inter-token gap, and the
+// latencies, as a colocated one does: the single token leaves no inter-token gap, and the
 // absence of a gap used to read as "no token served", so the parent lost its token count, its
 // TTFT/E2E/scheduling delay and every sample of the throughput figures.
 func TestRunCmd_KernelBackend_PDOneTokenCompletionKeepsTokenAndLatencies(t *testing.T) {
