@@ -129,6 +129,8 @@ github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/inference-sim/blis-sglang v0.5.23-blis.1.0.20261118091738-99cc1af2d31a h1:zwuxN17v/xtP8lzuI/Qlc0OtMDG3uMbMhla3Tba2TaM=
 github.com/inference-sim/blis-sglang v0.5.23-blis.1.0.20261118091738-99cc1af2d31a/go.mod h1:AbJVov+SczmSe9Req2tdl9rAEZJk7Us4QGTbutg9ckI=
+github.com/inference-sim/blis-sglang v0.5.23-blis.1.0.20261118113303-a721ab16b5ee h1:SM7B9gvkjOigYhrcL36w1gZPAgaQ9icx5R0WNeNxCLY=
+github.com/inference-sim/blis-sglang v0.5.23-blis.1.0.20261118113303-a721ab16b5ee/go.mod h1:AbJVov+SczmSe9Req2tdl9rAEZJk7Us4QGTbutg9ckI=
 github.com/inference-sim/blis-substrate v0.15.1-0.20261118081908-fa28d5116739 h1:LWUi1uJKlqO+kiG8wdpyAyuU19nQt/bigVZRYWwSj1w=
 github.com/inference-sim/blis-substrate v0.15.1-0.20261118081908-fa28d5116739/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
 github.com/inference-sim/blis-vllm v0.33.0-blis.1.0.20261118083634-b764039ea50a h1:m9vmS8YB/6Yqx+Mv1CjG+m4gZ/WqlpXI/uH+fLPnvAw=
