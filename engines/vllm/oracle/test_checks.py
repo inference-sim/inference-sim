@@ -292,5 +292,49 @@ class RecordedTracesDoNotDependOnSetOrder(unittest.TestCase):
             self.assertGreater(len(set(self.order(tmp, False))), 1)
 
 
+class CheckFid5Names(unittest.TestCase):
+    """oracle/check_fid5_names.py: an offload scenario is committed with its recorded trace, in ci-light,
+    not first found missing by oracle-scenarios after the merge (the eleven OFFLOAD-MTP traces)."""
+
+    SCRIPT = os.path.join(HERE, "check_fid5_names.py")
+
+    def tree(self, tmp, scenarios, traces):
+        for d, names in (("oracle/scenarios/offloading", scenarios), ("oracle/scenarios/multiconnector", []),
+                         ("oracle/scenarios-fid5", []), ("core/connector/offloading/testdata/golden-fid5", traces)):
+            os.makedirs(os.path.join(tmp, d))
+            for n in names:
+                with open(os.path.join(tmp, d, n), "w") as f:
+                    f.write("{}")
+
+    def check(self, tmp):
+        return run([sys.executable, "-I", self.SCRIPT, tmp], tmp)
+
+    def test_the_committed_traces_are_the_scenarios_traces(self):
+        r = run([sys.executable, "-I", self.SCRIPT, ROOT], ROOT)
+        self.assertEqual((r.returncode, r.stdout), (0, ""), r.stdout)
+
+    def test_a_scenario_with_no_committed_trace_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.tree(tmp, ["offloading-a.json", "offloading-b.json"], ["recorded-offloading-a.fid5.json"])
+            r = self.check(tmp)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("recorded-offloading-b.fid5.json has no committed trace", r.stdout)
+            self.assertNotIn("recorded-offloading-a", r.stdout)
+
+    def test_a_trace_no_scenario_produces_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.tree(tmp, ["offloading-a.json"], ["recorded-offloading-a.fid5.json", "recorded-offloading-gone.fid5.json"])
+            r = self.check(tmp)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("recorded-offloading-gone.fid5.json has no scenario", r.stdout)
+
+    def test_pending_goldens_are_not_checked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.tree(tmp, ["offloading-a.json"], [])
+            with open(os.path.join(tmp, "core/connector/offloading/testdata/golden-fid5.pending.json"), "w") as f:
+                f.write("{}")
+            self.assertEqual(self.check(tmp).returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
