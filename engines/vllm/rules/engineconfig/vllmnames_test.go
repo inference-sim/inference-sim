@@ -20,6 +20,7 @@ import (
 var notVLLMNames = map[string]string{
 	"env":               "a container of environment variables, named as vLLM reads them",
 	"allreduce_backend": "the resolved choice; EngineArgs has no such field",
+	"enable_scale_out":  "a front-end argument of vllm serve (BaseFrontendArgs, entrypoints/common/cli_args.py:216@4ba787ec), not an EngineArgs field",
 }
 
 // testdata/vllm_names.json is oracle/run_engineargs.py --key-names run at the pinned vLLM over

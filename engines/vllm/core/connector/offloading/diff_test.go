@@ -58,6 +58,8 @@ type scenario struct {
 		KVGroups []struct {
 			Kind          string `json:"kind"`
 			SlidingWindow int    `json:"sliding_window"`
+			// Eagle marks the group as holding a drafter's layer (KVCacheGroupSpec.is_eagle_group).
+			Eagle bool `json:"eagle"`
 		} `json:"kv_groups"`
 		Transfer struct {
 			LoadDelay  *int `json:"load_delay"`
@@ -172,7 +174,7 @@ func configure(t *testing.T, sc scenario) setup {
 	}
 	var spec sched.Spec
 	if sp := c.Speculative; sp != nil {
-		spec = sched.ResolveSpec(sched.SpecOptions{Method: sp.Method, NumTokens: sp.NumTokens})
+		spec = sched.ResolveSpec(sched.SpecOptions{Method: sp.Method, NumTokens: sp.NumTokens, NextnPredictLayers: draftNextnLayers(t, sp.Draft)})
 	}
 	var layers []kv.Group
 	var groups []Group
@@ -180,10 +182,10 @@ func configure(t *testing.T, sc scenario) setup {
 	for _, g := range c.KVGroups {
 		switch g.Kind {
 		case "full":
-			layers = append(layers, kv.Group{Kind: kv.FullAttention})
+			layers = append(layers, kv.Group{Kind: kv.FullAttention, Eagle: g.Eagle})
 			groups = append(groups, Group{BlockSize: c.BlockSize})
 		case "sliding_window":
-			layers = append(layers, kv.Group{Kind: kv.SlidingWindow, Window: g.SlidingWindow})
+			layers = append(layers, kv.Group{Kind: kv.SlidingWindow, Window: g.SlidingWindow, Eagle: g.Eagle})
 			groups = append(groups, Group{BlockSize: c.BlockSize, Window: g.SlidingWindow, ExtraRetained: extra})
 		default:
 			t.Fatalf("unknown KV cache group kind %q", g.Kind)
@@ -961,9 +963,11 @@ func TestCapabilitiesAndTheDrafterGroupRefusal(t *testing.T) {
 			t.Errorf("SetConnector refused the OffloadingConnector beside %+v: %v", cfg, err)
 		}
 	}
+	// A drafter's own group (EAGLE-3, MTP) is built: the volatile trailing chunk is diff-tested against vLLM
+	// v0.33.0 on the offloading-eagle3-* scenarios (TestOffloadingAgainstVLLM).
 	if _, err := New(Config{Groups: []Group{{BlockSize: 4}, {BlockSize: 4, Window: 8}}, TokensPerHash: 4, NumChunks: 4,
-		EagleGroups: []bool{false, true}}); err == nil || !strings.Contains(err.Error(), Issue) {
-		t.Errorf("a drafter's own group: %v, want refused with %s", err, Issue)
+		EagleGroups: []bool{false, true}}); err != nil {
+		t.Errorf("a drafter's own group: %v, want built", err)
 	}
 	if _, err := New(Config{Groups: []Group{{BlockSize: 4}, {BlockSize: 8}}, TokensPerHash: 4, NumChunks: 4}); err == nil ||
 		!strings.Contains(err.Error(), GroupIssue) {
@@ -988,4 +992,18 @@ func TestAnEagle3ScenarioWithPrefixCachingRunsBesideTheConnector(t *testing.T) {
 	if tr := run(t, sc); len(tr.Steps) == 0 {
 		t.Fatal("the scenario ran no step")
 	}
+}
+
+// draftNextnLayers is an MTP drafter's num_nextn_predict_layers, read from its configuration-only
+// checkpoint under oracle/drafts (0 for a scenario with no such drafter).
+func draftNextnLayers(t *testing.T, draft string) int {
+	t.Helper()
+	if draft == "" {
+		return 0
+	}
+	var cfg struct {
+		Layers int `json:"num_nextn_predict_layers"`
+	}
+	readJSON(t, filepath.Join("..", "..", "..", "oracle", "drafts", draft, "config.json"), &cfg)
+	return cfg.Layers
 }

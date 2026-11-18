@@ -591,11 +591,13 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 	// allocates, which can differ from the stated dtype; a layout no backend serves is refused
 	// (sparseMLABackend).
 	layout := eng.CacheDType
-	if dsa {
-		heads := 0
+	if dsa || nopeSparseMLA(g, v4) {
+		heads, headSize := 0, 0
 		for _, a := range stackPrimaryAttentions(g) {
 			if a.AttentionKind == model.AttentionSparseMLA && a.NumQHeads > 0 {
 				heads = max(heads, a.NumQHeads)
+				// The head size vLLM's MLA layer hands the selector (mla_attention.py:479-480).
+				headSize = max(headSize, a.KVLoRARank+a.QKRopeHeadDim)
 			}
 		}
 		preHopper, err := c.preHopper()
@@ -605,6 +607,7 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 		be, dsaLayout, err := sparseMLABackend(sparseMLABackendRequest{
 			cache:        eng.CacheDType,
 			headsPerRank: heads / max(lay.TP, 1),
+			headSize:     headSize,
 			sm100:        c.chip.NVFP4Peak > 0,
 			preHopper:    preHopper,
 			tp:           lay.TP,
@@ -617,15 +620,22 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 		}
 		if be == backendFlashInferSM90 {
 			note("sparse_mla_backend", be,
-				"chosen as vLLM v0.31.0 would choose it, which needs FlashInfer 0.6.18 or "+
-					"later installed (flashinfer_mla_sparse_sm90.py:194-199)")
+				"chosen as vLLM would choose it (head size "+strconv.Itoa(headSize)+"), which assumes "+
+					"FlashInfer 0.6.18 or later is installed, the backend's own gate "+
+					"(has_flashinfer_sm90_nope_mla; flashinfer_mla_sparse_sm90.py:194-199); "+
+					"without it vLLM runs "+backendFlashAttnMLASparse+" (blis-vllm#278)")
 		}
-		if st := eng.CacheDType; dsaLayout != st && st != "" {
-			override("cache_dtype", st, dsaLayout, be+" serves this cache as "+dsaLayout+
-				" (_canonicalize_sparse_mla_kv_cache_dtype, "+
-				"vllm/model_executor/layers/attention/mla_attention.py:358-375)")
+		// The layout a backend allocates is stated for the DSA family; a NoPE sparse-MLA model
+		// (GLM-5.3-Flash) is given the backend vLLM selects and the refusals it makes, and keeps the
+		// stated cache and the graph's own cell (its block size and cell are not DSA's).
+		if dsa {
+			if st := eng.CacheDType; dsaLayout != st && st != "" {
+				override("cache_dtype", st, dsaLayout, be+" serves this cache as "+dsaLayout+
+					" (_canonicalize_sparse_mla_kv_cache_dtype, "+
+					"vllm/model_executor/layers/attention/mla_attention.py:358-375)")
+			}
+			layout = dsaLayout
 		}
-		layout = dsaLayout
 	}
 	p.Cache.LatentCellBytes = dsMLAStateBytes[layout]
 

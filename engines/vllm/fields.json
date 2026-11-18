@@ -3553,6 +3553,33 @@
       }
     },
     {
+      "name": "VLLM_MXFP4_USE_MARLIN",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#276"
+      },
+      "estimation": {
+        "rule": "substitute",
+        "setting": {
+          "moe_backend": "marlin"
+        },
+        "reason": "env_var_not_in_release: VLLM_MXFP4_USE_MARLIN was read by vLLM v0.22.0 (and earlier) and removed in v0.24.0 (03878d1c2, vllm-project/vllm#44992; deprecated since v0.22.0 by 9b54e50e2, vllm-project/vllm#43148); the v0.33.0 flag that makes the same MoE selection is --moe-backend marlin (and --linear-backend marlin for an MXFP4 linear layer)",
+        "preserves": "the MoE kernel the run used: Marlin (v0.22.0 oracle/mxfp4.py:526-534 returns MARLIN; v0.33.0 oracle/mxfp4.py:378, :675-710 selects MARLIN from --moe-backend marlin; MarlinExperts needs compute capability 7.5 or more). The v0.22.0 variable also forced the MXFP4 linear kernel to Marlin (kernels/linear/__init__.py:736); that half changes nothing for a model whose linear layers are not MXFP4, which is the only case stood in for here (gpt-oss-120b keeps attention in bf16), and the field list cannot test the weight scheme, so the point's estimation text says it",
+        "valid_when": [
+          {
+            "value_in": [
+              "1",
+              "true"
+            ],
+            "compute_capability": {
+              "gte": "7.5"
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "VLLM_MXFP8_EMULATION_DEQUANT_AT_LOAD",
       "source": "env",
       "status": "not_modelled",
@@ -4738,6 +4765,35 @@
       },
       "estimation": {
         "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#276"
+      },
+      "estimation": {
+        "rule": "substitute",
+        "setting": {
+          "moe_backend": "flashinfer_trtllm",
+          "quantization_config.moe.activation": "mxfp8"
+        },
+        "reason": "env_var_not_in_release: VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8 was read by vLLM v0.22.0 (and earlier) and removed in v0.24.0 (03878d1c2, vllm-project/vllm#44992; deprecated since v0.22.0 by 9b54e50e2, vllm-project/vllm#43148); the v0.33.0 flags that make the same selection are --moe-backend flashinfer_trtllm and quantization_config.moe.activation mxfp8",
+        "preserves": "the MoE kernel the run used: FlashInfer TRT-LLM-gen MXFP4 weights with dynamic MXFP8 activations (v0.22.0 oracle/mxfp4.py:501-509 returns FLASHINFER_TRTLLM_MXFP4_MXFP8 with kMxfp8Dynamic; v0.33.0 oracle/mxfp4.py:361-364, :614-631 selects the same backend from the flags). The variable did nothing else in v0.22.0. A value other than 1, or a part below compute capability 10.0 or at 11.0 and above, has no such kernel in v0.33.0 (TrtLlmMxfp4Experts needs capability family 10), so it is not stood in for and the point is refused by this name",
+        "valid_when": [
+          {
+            "value_in": [
+              "1",
+              "true"
+            ],
+            "compute_capability": {
+              "gte": "10.0",
+              "lt": "11.0"
+            }
+          }
+        ]
       }
     },
     {

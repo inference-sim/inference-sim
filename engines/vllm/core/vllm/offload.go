@@ -248,15 +248,9 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 		return nil, fmt.Errorf("vllm: kv_offload.cpu_bytes %d holds no chunk of %d block(s) of %d bytes for %d "+
 			"worker copies (cpu/spec.py:107-121@5df63a72)", c.CPUBytes, bpc, c.BytesPerBlock, copies)
 	}
-	if method == "mtp" {
-		// vLLM flags the group holding an MTP drafter's trailing layers as the drafter's
-		// (_uses_trailing_mtp_layers, _annotate_eagle_groups, vllm/v1/core/kv_cache_utils.py:
-		// 1997-2013, 2029-2085@5df63a72), and the connector then treats its trailing chunk as
-		// volatile (offloading/scheduler.py:226-287, 473-481), which is not diff-tested.
-		return nil, fmt.Errorf("vllm: kv_offload beside an MTP drafter is not modelled: vLLM marks the drafter's KV "+
-			"cache group, whose offload path is not diff-tested (%s)", offloading.Issue)
-	}
-	// The drafter's groups core/kv flags (DeepSeek V4's), which the connector refuses (offloading.New).
+	// The groups that hold a drafter's layers (an MTP, EAGLE or EAGLE-3 drafter's, when its block drop is on): the
+	// connector treats the trailing chunk of such a group as volatile (offloading/scheduler.py:208-232@4ba787ec),
+	// diff-tested against vLLM on the offloading-eagle3-* and offloading-mtp* scenarios.
 	eagle := make([]bool, len(kvGroups))
 	for i, g := range kvGroups {
 		eagle[i] = spec.EagleBlockDrop && s.KV.GroupSpec(g).Eagle
