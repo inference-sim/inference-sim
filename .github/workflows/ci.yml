@@ -118,7 +118,7 @@ jobs:
 
       - name: Setup Go
         if: needs.changes.outputs.build == 'true'
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@fa28d5116739dc582efdb7694acf15a294cdc62b # blis-substrate commit this build pins (stack.json)
+        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
 
       - name: Restore the Go build cache
         if: needs.changes.outputs.build == 'true'
@@ -225,7 +225,7 @@ jobs:
 
       - name: Setup Go
         if: steps.gate.outputs.run == 'true'
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@fa28d5116739dc582efdb7694acf15a294cdc62b # blis-substrate commit this build pins (stack.json)
+        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
 
       - name: Restore the Go build cache
         if: steps.gate.outputs.run == 'true'
@@ -295,7 +295,7 @@ jobs:
 
       - name: Setup Go
         if: steps.gate.outputs.run == 'true'
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@fa28d5116739dc582efdb7694acf15a294cdc62b # blis-substrate commit this build pins (stack.json)
+        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
 
       - name: Restore the Go build cache
         if: steps.gate.outputs.run == 'true'
@@ -369,7 +369,7 @@ jobs:
 
       - name: Setup Go
         if: steps.gate.outputs.run == 'true'
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@fa28d5116739dc582efdb7694acf15a294cdc62b # blis-substrate commit this build pins (stack.json)
+        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
 
       - name: Restore the Go build cache
         if: steps.gate.outputs.run == 'true'
@@ -502,7 +502,7 @@ jobs:
       # version, so only the first run after a Go bump compiles it.
       - name: Setup Go
         if: needs.changes.outputs.lint == 'true'
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@fa28d5116739dc582efdb7694acf15a294cdc62b # blis-substrate commit this build pins (stack.json)
+        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
 
       - name: Restore the Go build cache
         if: needs.changes.outputs.lint == 'true'
@@ -560,7 +560,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Go
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@fa28d5116739dc582efdb7694acf15a294cdc62b # blis-substrate commit this build pins (stack.json)
+        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
 
       - name: Restore the Go build cache
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
@@ -621,7 +621,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Go
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@fa28d5116739dc582efdb7694acf15a294cdc62b # blis-substrate commit this build pins (stack.json)
+        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
 
       - name: Restore the Go build cache
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
@@ -709,7 +709,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Go
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@fa28d5116739dc582efdb7694acf15a294cdc62b # blis-substrate commit this build pins (stack.json)
+        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
 
       - name: Lint the workflows
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 -shellcheck= -pyflakes=
@@ -744,7 +744,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Go
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@fa28d5116739dc582efdb7694acf15a294cdc62b # blis-substrate commit this build pins (stack.json)
+        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
 
       - name: Restore the previous cache
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3

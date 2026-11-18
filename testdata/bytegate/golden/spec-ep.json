@@ -863,8 +863,8 @@
   "revisions": {
     "simulator": "(devel)",
     "substrate": "v0.15.1-0.20261118162118-b6748ca9d757",
-    "router": "v1.0.0-blis.5.0.20261117234546-d98de1a5df58",
-    "engine_module": "v0.33.0-blis.1.0.20261118162419-79a73499472f"
+    "router": "v1.0.0-blis.5.0.20261118163949-601ff6e9d37d",
+    "engine_module": "v0.33.0-blis.1.0.20261118171935-af87ac53acaf"
   },
   "window": {
     "start_us": 250000,

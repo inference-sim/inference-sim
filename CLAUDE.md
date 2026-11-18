@@ -26,7 +26,7 @@ Every `blis run` / `blis replay` obeys these; see README.md and `blis --help` fo
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout fa28d5116739dc582efdb7694acf15a294cdc62b
+git -C blis-substrate checkout b6748ca9d757f149ba760cf821f96feed3bbf5bf
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
