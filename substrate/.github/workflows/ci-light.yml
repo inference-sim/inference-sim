@@ -51,6 +51,15 @@ jobs:
         run: |
           unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then echo "not gofmt-formatted:"; echo "$unformatted"; exit 1; fi
+      # Whitespace of this layer's own diff (blank line at end of file, trailing space, mixed
+      # indent), against the layer's base: the check `git diff --check` makes.
+      - name: Diff whitespace
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE=HEAD~1; fi
+          git diff --check "$(git merge-base "$BASE" HEAD)" HEAD
       - run: go vet ./...
       - run: go build ./...
       - run: go run ./tools/modlint
