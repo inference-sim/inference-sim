@@ -6,7 +6,7 @@ require (
 	github.com/go-logr/logr v1.4.4
 	github.com/inference-sim/blis-sglang v0.5.23-blis.1.0.20261118113303-a721ab16b5ee
 	github.com/inference-sim/blis-substrate v0.15.1-0.20261118081908-fa28d5116739
-	github.com/inference-sim/blis-vllm v0.33.0-blis.1.0.20261118083634-b764039ea50a
+	github.com/inference-sim/blis-vllm v0.33.0-blis.1.0.20261118125334-8dbf92b0f881
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
