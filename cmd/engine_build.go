@@ -341,7 +341,17 @@ func setEngineFrontend(eng engine.Engine, version string) error {
 	if !ok {
 		return fmt.Errorf("engine %s does not take API-server settings", version)
 	}
-	if err := fe.SetFrontend(coreengine.Frontend{RendererNumWorkers: rendererNumWorkers, APIServerCount: apiServerCount}); err != nil {
+	// An unstated count is vLLM's default for the balancing mode (serve.py:113-129): the ranks
+	// behind one endpoint, which is every rank of an internal balancer, a node's under hybrid, and
+	// one under external. The engine takes an unstated count as one client, so the host states it
+	// (blis-vllm api_server_count: "a caller states the count it ran").
+	count := apiServerCount
+	if g, ok := eng.(interface{ EndpointRanks(int) (int, int) }); ok && count == 0 {
+		if _, n := g.EndpointRanks(0); n > 1 {
+			count = n
+		}
+	}
+	if err := fe.SetFrontend(coreengine.Frontend{RendererNumWorkers: rendererNumWorkers, APIServerCount: count}); err != nil {
 		return fmt.Errorf("--renderer-num-workers / --api-server-count: %w", err)
 	}
 	return nil
