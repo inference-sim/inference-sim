@@ -39,6 +39,13 @@ INPUTS = ("oracle/run_mamba_component.py", "oracle/run_mamba_pools.py", "oracle/
           "oracle/harness.json", "oracle/requirements.lock")
 
 
+class Req(P.Req):
+    """run_mamba_pools.Req with the one attribute the component reads of a request's tree lock: none
+    (a request here holds no tree lock; the extra_buffer_lazy branch that drops one is the cache's)."""
+
+    lock = None
+
+
 def decode(v, bound, reqs, objs):
     if isinstance(v, dict) and ("insert_params" in v or "insert_result" in v):
         return objs[v.get("insert_params") or v.get("insert_result")]
@@ -102,14 +109,18 @@ def drive(sglang_root: str, path: str) -> dict:
             def dec_lock_ref(self, node, receipt):
                 evictions.append({"m": "dec_lock_ref"})
 
-        comp = MambaComponent.__new__(MambaComponent)
-        comp.cache = Cache()
-        bound["component"] = comp
+        class Component(MambaComponent):
+            """MambaComponent without UnifiedRadixCache.__init__: its methods are SGLang's own, and
+            its cache is the stand-in above."""
+
+            def __init__(self, cache):  # noqa: D107 - deliberately not TreeComponent.__init__
+                self.cache = cache
+
+        bound["component"] = Component(Cache())
         for c in sq["calls"]:
             op = c.get("op")
             if op == "req":
-                reqs[c["as"]] = P.Req(c["as"], c.get("set", {}))
-                reqs[c["as"]].lock = None  # no tree lock: the extra_buffer_lazy branch that drops one is the cache's
+                reqs[c["as"]] = Req(c["as"], c.get("set", {}))
                 continue
             if op == "set":
                 reqs[c["req"]].update(c["set"])
