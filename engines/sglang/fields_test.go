@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+
+	"github.com/inference-sim/blis-sglang/config"
 )
 
 // fields.json is the field list SGL-3 asks for: every configuration field and environment
@@ -184,5 +186,38 @@ func TestTheDeclarationsCoverExactlyTheConfigurationFields(t *testing.T) {
 		if !listed[n] {
 			t.Errorf("the flag for %s is registered by hand and fields.json has no status for it", n)
 		}
+	}
+}
+
+// An approximation's mode is the setting the dashboard writes into the deployment in place of the
+// recorded one, so every value in it is either null (the engine's own resolution is what is priced) or
+// a value the engine accepts; a descriptive string would reach the engine block and be refused.
+func TestEveryApproximatedModeValueIsNullOrAccepted(t *testing.T) {
+	l, err := fields.Load("fields.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, f := range l.Fields {
+		a := f.Estimation.Approximates
+		if a == nil {
+			continue
+		}
+		for name, v := range a.Mode {
+			checked++
+			if v == nil {
+				continue
+			}
+			if !config.IsField(name) {
+				t.Errorf("%s: the mode sets %s, which is not a ServerArgs field", f.Name, name)
+				continue
+			}
+			if !config.AcceptsValue(name, v) {
+				t.Errorf("%s: the mode sets %s to %v, which the engine does not accept; a descriptive string belongs in evidence or differs, and null in mode", f.Name, name, v)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Skip("no field carries an approximation")
 	}
 }

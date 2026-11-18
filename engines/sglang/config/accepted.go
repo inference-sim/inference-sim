@@ -168,6 +168,13 @@ func containsInt(l []int, v int) bool {
 	return false
 }
 
+// AcceptsValue reports whether Resolve accepts the field set to the value: the field is accepted and
+// its value list, if it has one, holds the value.
+func AcceptsValue(name string, v any) bool {
+	allowed, ok := acceptedFields[name]
+	return ok && (allowed == nil || contains(allowed, v))
+}
+
 // AcceptedFields lists the fields Resolve accepts away from their defaults, sorted.
 func AcceptedFields() []string {
 	out := make([]string, 0, len(acceptedFields))

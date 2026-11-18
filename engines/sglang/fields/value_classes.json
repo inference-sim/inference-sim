@@ -6870,8 +6870,8 @@
       "at": "python/sglang/srt/arg_groups/model_overrides/glm4_moe.py:35",
       "op": "In",
       "values": [
-       "modelopt_fp4",
-       null
+       null,
+       "modelopt_fp4"
       ],
       "expr": "quantization in {'modelopt_fp4', None}"
      },

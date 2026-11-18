@@ -1160,7 +1160,7 @@
     "rule": "none",
     "approximates": {
      "mode": {
-      "dsa_decode_backend": "the part-wide sparse-MLA attention pair"
+      "dsa_decode_backend": null
      },
      "evidence": "the registry's attention coefficients are fitted per part on the model graph's sparse-MLA lane and are not keyed by the DSA backend; no allowed table measures flashmla_sparse, flashmla_kv, trtllm or fa3 sparse attention separately for this model on this part",
      "differs": "the decode backend the engine runs is a different kernel (flashmla_sparse, flashmla_kv, trtllm or fa3, layers/attention/dsa/ at SGLang v0.5.23) with its own latency; the cost model prices the part-wide attention pair whichever is stated, so the step time of a DSA model carries the difference between that pair and the stated kernel",
@@ -1199,7 +1199,7 @@
     "rule": "none",
     "approximates": {
      "mode": {
-      "dsa_prefill_backend": "the part-wide sparse-MLA attention pair"
+      "dsa_prefill_backend": null
      },
      "evidence": "the registry's attention coefficients are fitted per part on the model graph's sparse-MLA lane and are not keyed by the DSA backend; no allowed table measures flashmla_sparse, flashmla_kv, trtllm or fa3 sparse attention separately for this model on this part",
      "differs": "the prefill backend the engine runs is a different kernel (flashmla_sparse, flashmla_kv, trtllm or fa3, layers/attention/dsa/ at SGLang v0.5.23) with its own latency; the cost model prices the part-wide attention pair whichever is stated, so the step time of a DSA model carries the difference between that pair and the stated kernel",
