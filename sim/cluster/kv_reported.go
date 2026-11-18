@@ -13,6 +13,11 @@ import (
 // update_kv_cache_capacity). It is not blocks x block size, which for a hybrid model with several
 // KV cache groups is many times larger (inference-sim#1969).
 //
+// Under data parallelism the figure is one rank's: every engine core of a DP group logs its own
+// pool, and blis-vllm's DPGroup.KVCacheCapacity returns rank 0's. A DP8 replica therefore reports
+// the tokens one rank holds, not eight ranks' sum, and a request lives on one rank; a TP replica
+// shards each request's KV over its GPUs and so reports a pool that many times larger.
+//
 // The method is not part of the engine contract, so it is looked up on the engine value: a method
 // KVCacheCapacity() returning a struct with an integer field Tokens. The result type lives in
 // blis-vllm (core/kv.Capacity), and a lookup by shape reads it without this package importing it.
