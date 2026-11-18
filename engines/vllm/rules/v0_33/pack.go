@@ -613,14 +613,15 @@ func ruleList(p *pack.Pack) []rules.Rule {
 			Name:    "offload-spec-known",
 			Because: "the spec decides whether a fetch consumes SMs or a copy engine, which is the only way the offload path enters step time",
 			Check: func(in rules.Input, out *rules.Problems) {
-				if in.Deployment == nil || in.Deployment.Offload == nil {
+				if in.Deployment == nil {
 					return
 				}
-				s := in.Deployment.Offload.Spec
-				if s != "" && !p.OffloadSpecs[s] {
-					out.RuleErrorf("offload-spec-known",
-						"offload.spec: %q is not a registered spec in engine %s",
-						s, p.Version)
+				for _, o := range in.Deployment.Offloads() {
+					if s := o.Offload.Spec; s != "" && !p.OffloadSpecs[s] {
+						out.RuleErrorf("offload-spec-known",
+							"%s.spec: %q is not a registered spec in engine %s",
+							o.At, s, p.Version)
+					}
 				}
 			},
 		},
@@ -653,11 +654,11 @@ func ruleList(p *pack.Pack) []rules.Rule {
 						"%s: %q is not a connector registered in engine %s; if it is an out-of-tree connector this is expected, otherwise check the spelling. Registered connectors are %v",
 						field, value, p.Version, sortedKeys(p.Connectors))
 				}
-				if in.Deployment.Offload != nil {
-					check("offload.connector", in.Deployment.Offload.Connector)
+				for _, o := range in.Deployment.Offloads() {
+					check(o.At+".connector", o.Offload.Connector)
 				}
-				if in.Deployment.PDTransfer != nil {
-					check("pd_transfer.connector", in.Deployment.PDTransfer.Connector)
+				for _, t := range in.Deployment.PDTransfers() {
+					check(t.At+".connector", t.PDTransfer.Connector)
 				}
 			},
 		},
@@ -665,16 +666,18 @@ func ruleList(p *pack.Pack) []rules.Rule {
 			Name:    "eviction-policy-known",
 			Because: "a supplied name the engine does not recognize does not silently fall back — CachePolicyFactory.get_cache_policy_cls raises ValueError at launch unless cache_policy_module_path names an out-of-tree policy; this rule catches that typo earlier, as a warning, while still permitting a real out-of-tree name the set cannot enumerate",
 			Check: func(in rules.Input, out *rules.Problems) {
-				if in.Deployment == nil || in.Deployment.Offload == nil {
+				if in.Deployment == nil {
 					return
 				}
-				ep := in.Deployment.Offload.EvictionPolicy
-				if ep == "" || p.EvictionPolicies[ep] {
-					return
+				for _, o := range in.Deployment.Offloads() {
+					ep := o.Offload.EvictionPolicy
+					if ep == "" || p.EvictionPolicies[ep] {
+						continue
+					}
+					out.RuleWarnf("eviction-policy-known",
+						"%s.eviction_policy: %q is not an in-tree policy of engine %s; if it is an out-of-tree policy this is expected, otherwise check the spelling. In-tree policies are %v",
+						o.At, ep, p.Version, sortedKeys(p.EvictionPolicies))
 				}
-				out.RuleWarnf("eviction-policy-known",
-					"offload.eviction_policy: %q is not an in-tree policy of engine %s; if it is an out-of-tree policy this is expected, otherwise check the spelling. In-tree policies are %v",
-					ep, p.Version, sortedKeys(p.EvictionPolicies))
 			},
 		},
 		{
@@ -752,8 +755,15 @@ func ruleList(p *pack.Pack) []rules.Rule {
 				if in.Model == nil || !qwen4ExpArchitectures[in.Model.Global.Architecture] {
 					return
 				}
-				connector := in.Deployment != nil && (in.Deployment.PDTransfer != nil || in.Deployment.Offload != nil)
+				// The pool's own connector or offload, else the deployment's.
+				connectorAt := map[string]bool{}
+				if in.Deployment != nil {
+					for i := range in.Deployment.Pools {
+						connectorAt[poolPath(i)] = in.Deployment.PoolPDTransfer(i) != nil || in.Deployment.PoolOffload(i) != nil
+					}
+				}
 				forEachPool(in, func(at string, pool engineconfig.Pool) {
+					connector := connectorAt[at]
 					refuse := func(what string) {
 						out.RuleErrorf("qwen4-exp-qsa-backend", "%s: %s; engine %s refuses it for %s (inference-sim/blis-vllm#202)",
 							at, what, Version, in.Model.Global.Architecture)
@@ -1299,7 +1309,14 @@ func totalExperts(in rules.Input) int {
 // NixlConnector: one is named directly, or a MultiConnector is, whose children the
 // deployment does not record.
 func mayUseNixl(d *deployment.Deployment) bool {
-	for _, c := range []string{connectorOf(d.Offload), pdConnectorOf(d.PDTransfer)} {
+	var names []string
+	for _, o := range d.Offloads() {
+		names = append(names, connectorOf(o.Offload))
+	}
+	for _, t := range d.PDTransfers() {
+		names = append(names, pdConnectorOf(t.PDTransfer))
+	}
+	for _, c := range names {
 		if c == "NixlConnector" || c == "MultiConnector" {
 			return true
 		}

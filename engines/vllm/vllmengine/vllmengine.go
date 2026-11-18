@@ -221,9 +221,21 @@ func open(s engine.Spec, given *load.Data) (pool, error) {
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
 	}
-	off, err := offloadOf(m, shape.Offload)
+	// The pool's own offload and connector, else the deployment's (Shape.PoolOffloads): a prefill pool
+	// can run NIXL beside a CPU tier while the decode pool runs NIXL alone.
+	poolOffload, poolConnector := shape.Offload, shape.PDConnector
+	if i := s.Pool; i >= 0 && i < len(shape.PoolOffloads) {
+		poolOffload, poolConnector = shape.PoolOffloads[i], shape.PoolPDConnectors[i]
+	}
+	off, err := offloadOf(m, poolOffload)
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
+	}
+	if _, kt := mapGet(&node, "kv_transfer"); !kt && poolConnector == multiConnector && off == nil && m.Role() != deployment.RoleColocated {
+		return pool{}, fmt.Errorf("vllmengine: %s: the %s pool (pools[%d]) runs pd_transfer.connector %s but offloads nothing, and a "+
+			"MultiConnector over NIXL alone is not modelled; give the pool an offload block, or state pd_transfer: {connector: "+
+			"NixlConnector} on this pool (a pool's own pd_transfer overrides the deployment's)",
+			filepath.Base(path), m.Role(), s.Pool, multiConnector)
 	}
 	// The settings as the release resolves them (Model.Engine), which the kernel prices and the
 	// engine block is completed with, so the scheduler and the cost model run one engine.
@@ -232,7 +244,7 @@ func open(s engine.Spec, given *load.Data) (pool, error) {
 		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
 	}
 	return pool{model: m, resolved: resolved, blocks: blocks, kvBytes: kvBytes, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1),
-		role: m.Role(), connector: shape.PDConnector, offload: off}, nil
+		role: m.Role(), connector: poolConnector, offload: off}, nil
 }
 
 // offloadIssue tracks the offload connectors and options the engine does not model (the tier-4

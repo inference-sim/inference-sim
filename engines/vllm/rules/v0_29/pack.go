@@ -291,8 +291,8 @@ func ruleList(p *pack.Pack) []rules.Rule {
 				//     and an unknown model may be hybrid, so the stated size is final only
 				//     for a known model with no recurrent layer;
 				//   - an unstated block size is chosen by the platform.
-				if in.Deployment == nil || in.Deployment.PDTransfer != nil ||
-					in.Deployment.Offload != nil || in.Model == nil || modelHasRecurrent(in) {
+				if in.Deployment == nil || len(in.Deployment.PDTransfers()) > 0 ||
+					len(in.Deployment.Offloads()) > 0 || in.Model == nil || modelHasRecurrent(in) {
 					return
 				}
 				forEachPool(in, func(at string, pool engineconfig.Pool) {
@@ -440,14 +440,15 @@ func ruleList(p *pack.Pack) []rules.Rule {
 			Name:    "offload-spec-known",
 			Because: "the spec decides whether a fetch consumes SMs or a copy engine, which is the only way the offload path enters step time",
 			Check: func(in rules.Input, out *rules.Problems) {
-				if in.Deployment == nil || in.Deployment.Offload == nil {
+				if in.Deployment == nil {
 					return
 				}
-				s := in.Deployment.Offload.Spec
-				if s != "" && !p.OffloadSpecs[s] {
-					out.RuleErrorf("offload-spec-known",
-						"offload.spec: %q is not a registered spec in engine %s",
-						s, p.Version)
+				for _, o := range in.Deployment.Offloads() {
+					if s := o.Offload.Spec; s != "" && !p.OffloadSpecs[s] {
+						out.RuleErrorf("offload-spec-known",
+							"%s.spec: %q is not a registered spec in engine %s",
+							o.At, s, p.Version)
+					}
 				}
 			},
 		},
@@ -480,11 +481,11 @@ func ruleList(p *pack.Pack) []rules.Rule {
 						"%s: %q is not a connector registered in engine %s; if it is an out-of-tree connector this is expected, otherwise check the spelling. Registered connectors are %v",
 						field, value, p.Version, sortedKeys(p.Connectors))
 				}
-				if in.Deployment.Offload != nil {
-					check("offload.connector", in.Deployment.Offload.Connector)
+				for _, o := range in.Deployment.Offloads() {
+					check(o.At+".connector", o.Offload.Connector)
 				}
-				if in.Deployment.PDTransfer != nil {
-					check("pd_transfer.connector", in.Deployment.PDTransfer.Connector)
+				for _, t := range in.Deployment.PDTransfers() {
+					check(t.At+".connector", t.PDTransfer.Connector)
 				}
 			},
 		},
@@ -492,16 +493,18 @@ func ruleList(p *pack.Pack) []rules.Rule {
 			Name:    "eviction-policy-known",
 			Because: "a supplied name the engine does not recognize does not silently fall back — CachePolicyFactory.get_cache_policy_cls raises ValueError at launch unless cache_policy_module_path names an out-of-tree policy; this rule catches that typo earlier, as a warning, while still permitting a real out-of-tree name the set cannot enumerate",
 			Check: func(in rules.Input, out *rules.Problems) {
-				if in.Deployment == nil || in.Deployment.Offload == nil {
+				if in.Deployment == nil {
 					return
 				}
-				ep := in.Deployment.Offload.EvictionPolicy
-				if ep == "" || p.EvictionPolicies[ep] {
-					return
+				for _, o := range in.Deployment.Offloads() {
+					ep := o.Offload.EvictionPolicy
+					if ep == "" || p.EvictionPolicies[ep] {
+						continue
+					}
+					out.RuleWarnf("eviction-policy-known",
+						"%s.eviction_policy: %q is not an in-tree policy of engine %s; if it is an out-of-tree policy this is expected, otherwise check the spelling. In-tree policies are %v",
+						o.At, ep, p.Version, sortedKeys(p.EvictionPolicies))
 				}
-				out.RuleWarnf("eviction-policy-known",
-					"offload.eviction_policy: %q is not an in-tree policy of engine %s; if it is an out-of-tree policy this is expected, otherwise check the spelling. In-tree policies are %v",
-					ep, p.Version, sortedKeys(p.EvictionPolicies))
 			},
 		},
 		{

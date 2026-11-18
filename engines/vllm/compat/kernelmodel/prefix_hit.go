@@ -44,13 +44,13 @@ type prefixLayout struct {
 	pcp                    int
 }
 
-func prefixLayoutOf(g *model.Graph, dep *deployment.Deployment, pool deployment.Pool, engine engineconfig.Engine) prefixLayout {
+func prefixLayoutOf(g *model.Graph, dep *deployment.Deployment, poolIndex int, pool deployment.Pool, engine engineconfig.Engine) prefixLayout {
 	l := prefixLayout{pcp: max(pool.Parallel.PCP, 1)}
 	sp := engine.Speculative
 	drafting := sp != nil && sp.NumSpecTokens > 0
-	// kv_transfer_config: the deployment's offload connector, or its P/D connector on a pool of
-	// either role (vllmengine sets both from the deployment).
-	connector := dep != nil && (dep.Offload != nil || (dep.PDTransfer != nil && pool.Role != deployment.RoleColocated))
+	// kv_transfer_config: the pool's offload connector, or its P/D connector on a pool of either
+	// role (vllmengine sets both from the pool's own blocks, else the deployment's).
+	connector := dep != nil && (dep.PoolOffload(poolIndex) != nil || (dep.PoolPDTransfer(poolIndex) != nil && pool.Role != deployment.RoleColocated))
 	l.eagle = drafting && slices.Contains(eagleDropMethods, sp.Method) && connector
 	kinds := map[string]model.LayerKind{}
 	for _, k := range g.LayerKinds {

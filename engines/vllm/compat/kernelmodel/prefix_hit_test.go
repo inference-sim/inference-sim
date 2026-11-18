@@ -173,7 +173,7 @@ func TestPrefixHit_MTPDropsTheLastBlockOnlyBesideAKVConnector(t *testing.T) {
 			pool := in.Deployment.Pools[0]
 			e := mustDecode(t, pool)
 			m := &Model{k: fixedDeployment{pool: pool}, engine: e,
-				id: identity{prefix: prefixLayoutOf(in.Model, in.Deployment, pool, e)}}
+				id: identity{prefix: prefixLayoutOf(in.Model, in.Deployment, in.PoolIndex, pool, e)}}
 			got := m.PrefixHit(nil)
 			if want := (sim.KVPrefixHit{FullEagle: tt.drop}); got.Hit != want {
 				t.Errorf("got %+v (%s), want %+v", got.Hit, got.Note, want)
