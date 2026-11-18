@@ -217,8 +217,15 @@ func TestPyFloorDivSigns(t *testing.T) {
 			t.Errorf("%v // %v = %v, want %v (Python)", tc.a, tc.b, got, tc.want)
 		}
 	}
-	if got := pyFloorDiv(-0.0, 5); !math.Signbit(got) && got != 0 {
-		t.Errorf("-0 // 5 = %v", got)
+	// A zero quotient keeps the sign of a/b, as Python's does: -0.0 // 5.0 is -0.0, 0.0 // -5.0 is -0.0.
+	negZero := math.Copysign(0, -1)
+	for _, tc := range []struct {
+		a, b    float64
+		wantNeg bool
+	}{{negZero, 5, true}, {0, 5, false}, {0, -5, true}, {negZero, -5, false}} {
+		if got := pyFloorDiv(tc.a, tc.b); got != 0 || math.Signbit(got) != tc.wantNeg {
+			t.Errorf("%v // %v = %v (negative zero %v), want a zero with negative sign %v", tc.a, tc.b, got, math.Signbit(got), tc.wantNeg)
+		}
 	}
 }
 
