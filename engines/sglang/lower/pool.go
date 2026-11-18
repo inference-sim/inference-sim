@@ -136,9 +136,6 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 		hasRecurrent = hasRecurrent || n.Op == model.OpRecurrentUpdate
 		moe = moe || n.Op == model.OpGroupedGEMM
 	})
-	if hasRecurrent {
-		return nil, &NotLowered{Name: "a recurrent (hybrid linear-attention) layer", Issue: "inference-sim/blis-sglang#94"}
-	}
 	if a.EnableTwoBatchOverlap || a.EnableSingleBatchOverlap {
 		return nil, &NotLowered{Name: "two-batch / single-batch overlap", Issue: issueLower}
 	}
@@ -165,9 +162,14 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 	default:
 		return nil, &NotLowered{Name: "kv_cache_dtype=" + a.KvCacheDtype, Issue: issueLower}
 	}
-	// A recurrent state is absent here (refused above); the kernel requires the width stated, and
-	// the mamba_ssm_dtype default is float32 (arg_groups/fields/mamba.py@297e54fd).
+	// The kernel requires the recurrent state's width stated even for a model with no recurrent
+	// layer (SUB-6); a model with one states it from mamba_ssm_dtype (qwen35.go).
 	p.Cache.StateElementBytes = 4
+	if hasRecurrent {
+		if err := lowerRecurrent(a, g, &p.Cache, note); err != nil {
+			return nil, err
+		}
+	}
 
 	// Batch limits and the page.
 	if a.PageSize == nil || a.MemFractionStatic == nil {
