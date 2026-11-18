@@ -362,6 +362,29 @@ func isDSA(g *model.Graph) bool {
 	return false
 }
 
+// nopeSparseMLA reports whether a graph's attention is a NoPE sparse MLA (kv_lora_rank 512 and no
+// rope dimension, GLM-5.3-Flash) that is not the DeepSeek-V4 family: its layers read the engine's
+// cache with a 512-wide sparse-MLA head, which vLLM hands the selector as head size 512
+// (kv_lora_rank + qk_rope_head_dim), and which therefore selects FlashInfer's SM90 backend first.
+func nopeSparseMLA(g *model.Graph, v4 bool) bool {
+	if g == nil || v4 {
+		return false
+	}
+	byID := map[string]model.LayerKind{}
+	for _, lk := range g.LayerKinds {
+		byID[lk.ID] = lk
+	}
+	for _, id := range g.Stack.Expand() {
+		for _, n := range byID[id].Nodes {
+			if n.ReadsEngineKV() && n.AttentionKind == model.AttentionSparseMLA &&
+				n.KVLoRARank == 512 && n.QKRopeHeadDim == 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // deepseekV4Family reports whether a graph is DeepSeek-V4 or V4.1, whose attention runs on
 // that family's own FlashMLA backends (vllm/models/deepseek_v4, deepseek_v41) rather than
 // the DSA ones. By the architecture the graph names, and nothing else: a 512-wide sparse-MLA
@@ -402,6 +425,10 @@ const (
 type sparseMLABackendRequest struct {
 	cache        string // the stated cache dtype; "" is "auto"
 	headsPerRank int    // query heads per tensor-parallel rank
+	// headSize is the MLA layer's head_size as vLLM hands it to the selector, kv_lora_rank +
+	// qk_rope_head_dim (mla_attention.py:479 at v0.31.0, :480 at v0.33.0); 0 states none, and
+	// the SM90 order is then the default one.
+	headSize     int
 	sm100        bool
 	preHopper    bool // a part below compute capability 9.0 (see Kernel.preHopper)
 	tp, dcp, pcp int
@@ -417,7 +444,10 @@ type sparseMLABackendRequest struct {
 //
 //   - SM100: FlashInfer then FlashMLA-sparse for a quantized cache, and for a 16-bit one
 //     when a rank holds at most 16 heads; FlashMLA-sparse first otherwise.
-//   - SM90: FlashAttention's sparse MLA, FlashMLA-sparse, FlashInfer's SM90 sparse MLA.
+//   - SM90: FlashAttention's sparse MLA, FlashMLA-sparse, FlashInfer's SM90 sparse MLA; with a
+//     head size of 512 (a NoPE latent, GLM-5.3-Flash: kv_lora_rank 512, qk_rope_head_dim 0)
+//     FlashInfer's SM90 backend is tried first (_get_backend_priorities, cuda.py:137-145 at
+//     v0.31.0 and :139-147 at v0.33.0: `if head_size == 512: sparse_tail.insert(0, ...)`).
 //
 // and a candidate is skipped where it does not list the cache dtype, or the layout uses a
 // context parallelism it does not support:
@@ -489,6 +519,8 @@ func sparseMLABackend(r sparseMLABackendRequest) (backend, layout string, err er
 	}
 	var order []string
 	switch {
+	case !r.sm100 && r.headSize == 512:
+		order = []string{backendFlashInferSM90, backendFlashAttnMLASparse, backendFlashMLASparse}
 	case !r.sm100:
 		order = []string{backendFlashAttnMLASparse, backendFlashMLASparse, backendFlashInferSM90}
 	case quantized || r.headsPerRank <= 16:

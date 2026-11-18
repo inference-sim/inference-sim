@@ -5,6 +5,7 @@ package blisvllm
 import (
 	"bytes"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -177,5 +178,75 @@ func TestAStatedMoEBackendIsApproximatedWhereTheEnginePricesIt(t *testing.T) {
 	a, _ := fields.Approximate(e, fields.Facts{Value: "triton", ComputeCapability: "9.0"})
 	if !strings.Contains(a.Differs, "block-FP8 experts only") {
 		t.Errorf("the approximation covering moe_backend on SM90 does not say it is valid for block-FP8 only: %q", a.Differs)
+	}
+}
+
+// A run recorded on an earlier release states an environment variable that v0.33.0 no longer reads.
+// One upstream per release: the field list translates the variable to the v0.33.0 flags that make the
+// same selection, as a named substitution (env_var_not_in_release) that cites the vLLM commit that
+// removed it, and does not stand in where v0.33.0 has no such kernel, so the point is refused by that
+// name. gpt-oss-120b on v0.22.0 states VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8 on B200 and
+// VLLM_MXFP4_USE_MARLIN on H200. The translated setting then meets moe_backend's own rule: FlashInfer
+// TRT-LLM on capability 10.0 is approximated, Marlin on 9.0 is not, so the H200 points pass the
+// variable and stop at moe_backend.
+func TestAnEnvVarOfAnEarlierReleaseIsTranslatedToThisReleasesFlags(t *testing.T) {
+	l, err := fields.Load("fields.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]fields.Field{}
+	for _, f := range l.Fields {
+		byName[f.Name] = f
+	}
+	for _, c := range []struct {
+		name    string
+		setting map[string]any
+		cases   []struct {
+			value, cc string
+			exact     bool
+		}
+	}{
+		{"VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8", map[string]any{"moe_backend": "flashinfer_trtllm", "quantization_config.moe.activation": "mxfp8"},
+			[]struct {
+				value, cc string
+				exact     bool
+			}{{"1", "10.0", true}, {"1", "10.3", true}, {"1", "9.0", false}, {"1", "12.0", false}, {"0", "10.0", false}, {"", "10.0", false}}},
+		{"VLLM_MXFP4_USE_MARLIN", map[string]any{"moe_backend": "marlin"},
+			[]struct {
+				value, cc string
+				exact     bool
+			}{{"1", "9.0", true}, {"1", "10.0", true}, {"1", "7.5", true}, {"1", "7.0", false}, {"0", "9.0", false}}},
+	} {
+		f, ok := byName[c.name]
+		if !ok {
+			t.Fatalf("%s is not in the field list", c.name)
+		}
+		e := f.Estimation
+		if e.Rule != fields.RuleSubstitute || !reflect.DeepEqual(e.Setting, c.setting) {
+			t.Errorf("%s: rule %q setting %v, want a substitution by %v", c.name, e.Rule, e.Setting, c.setting)
+		}
+		for _, frag := range []string{"env_var_not_in_release", c.name, "v0.22.0", "03878d1c2", "vllm-project/vllm#44992", "--moe-backend"} {
+			if !strings.Contains(e.Reason, frag) {
+				t.Errorf("%s: the substitution's reason does not name %q: %s", c.name, frag, e.Reason)
+			}
+		}
+		for _, k := range c.cases {
+			if got := fields.Exact(e, fields.Facts{Value: k.value, ComputeCapability: k.cc}); got != k.exact {
+				t.Errorf("%s=%q on compute capability %q: stood in for = %v, want %v", c.name, k.value, k.cc, got, k.exact)
+			}
+		}
+	}
+	// The translated setting meets moe_backend's own rule.
+	var mb fields.Estimation
+	for _, f := range l.Fields {
+		if f.Name == "moe_backend" {
+			mb = f.Estimation
+		}
+	}
+	if _, ok := fields.Approximate(mb, fields.Facts{Value: "flashinfer_trtllm", ComputeCapability: "10.0"}); !ok {
+		t.Error("the B200 translation (flashinfer_trtllm on 10.0) is not approximated by moe_backend's rule")
+	}
+	if _, ok := fields.Approximate(mb, fields.Facts{Value: "marlin", ComputeCapability: "9.0"}); ok {
+		t.Error("marlin on 9.0 is approximated by moe_backend's rule; the H200 translation was counted as refused there")
 	}
 }
