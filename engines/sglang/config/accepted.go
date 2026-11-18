@@ -44,7 +44,7 @@ var acceptedFields = map[string][]any{
 	"max_prefill_tokens":                 nil,
 	"tokenizer_worker_num":               nil,
 	"kv_cache_dtype":                     {"auto", "bf16", "bfloat16", "fp8_e4m3", "fp8_e5m2"},
-	"quantization":                       {nil, "fp8"},
+	"quantization":                       {nil, "fp8", "modelopt_fp4"},
 	"tokenizer_path":                     nil,
 	"model_loader_extra_config":          nil,
 	"dsa_prefill_backend":                {nil, "flashmla_sparse", "flashmla_kv", "trtllm", "fa3"},

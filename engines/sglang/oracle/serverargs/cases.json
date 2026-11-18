@@ -1745,6 +1745,189 @@
     "speculative_eagle_topk": 1,
     "speculative_num_draft_tokens": 4
    }
+  },
+  {
+   "name": "dsr1-h200-tp8-kv-fp8",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-kv-fp8",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-quant-fp8",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "quantization": "fp8"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-kv-bf16",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "kv_cache_dtype": "bf16"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-kv-bfloat16",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "kv_cache_dtype": "bfloat16"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-kv-fp8-e5m2",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "kv_cache_dtype": "fp8_e5m2"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-kv-bfloat16",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "kv_cache_dtype": "bfloat16"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-kv-fp8",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-kv-fp8-e5m2",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "kv_cache_dtype": "fp8_e5m2"
+   }
+  },
+  {
+   "name": "glm5-nvfp4-b200-tp8-modelopt-fp4",
+   "model": "glm-5-nvfp4",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "quantization": "modelopt_fp4",
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "glm5-nvfp4-b300-tp8-modelopt-fp4",
+   "model": "glm-5-nvfp4",
+   "chip": "B300",
+   "args": {
+    "tp_size": 8,
+    "quantization": "modelopt_fp4",
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "dsr1-nvfp4v2-b200-tp8-modelopt-fp4",
+   "model": "deepseek-r1-0528-nvfp4-v2",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "quantization": "modelopt_fp4",
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "dsr1-nvfp4v2-b300-tp8-modelopt-fp4",
+   "model": "deepseek-r1-0528-nvfp4-v2",
+   "chip": "B300",
+   "args": {
+    "tp_size": 8,
+    "quantization": "modelopt_fp4",
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "dsr1-fp8-b200-tp8-modelopt-fp4",
+   "model": "deepseek-r1-0528",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "quantization": "modelopt_fp4",
+    "kv_cache_dtype": "fp8_e4m3"
+   }
   }
  ]
 }
