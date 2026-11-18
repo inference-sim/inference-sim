@@ -79,6 +79,9 @@ func TestModelFactsMatchTheOracle(t *testing.T) {
 		// The oracle models a checkpoint (deepseek-v3, glm-5.3); the catalog graph is a sibling
 		// checkpoint of the same architecture. The architecture's own facts must agree.
 		got.HiddenSize, want.HiddenSize = nil, nil
+		// An empty list of expert quant_algos is the same fact as none (the oracle records [], JSON
+		// of an older answer file omits it).
+		got.MixedPrecisionMoEQuantAlgos, want.MixedPrecisionMoEQuantAlgos = nil, nil
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: facts %+v, SGLang derives %+v", tc.graph, got, want)
 		}

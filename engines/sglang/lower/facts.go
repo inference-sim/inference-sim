@@ -93,8 +93,6 @@ func ModelFactsOf(g *model.Graph) (config.ModelFacts, error) {
 		Architecture: arch, ModelType: t.modelType, TextModelType: cmp.Or(t.textModelType, t.modelType),
 		AttentionArch: "MHA", IsDeepseekDSA: t.dsa, DSAIndexKpool: t.dsaIndexKpool,
 		HasAsymmetricKV: t.asymmetricKV, HiddenSize: &hidden,
-		// The oracle records the quant_algo of the expert layers as a list, empty when there are none.
-		MixedPrecisionMoEQuantAlgos: []string{},
 	}
 	if t.multimodal {
 		f.IsMultimodal, f.MultimodalBreakableGraphSupported, f.HasVisionConfig = true, true, true
