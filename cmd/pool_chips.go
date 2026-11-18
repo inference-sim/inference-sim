@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -111,19 +112,46 @@ func mappingValue(m *yaml.Node, key string) string {
 	return ""
 }
 
+// poolChipsWithoutBundle is the refusal for a scenario whose cluster.pools state a chip other than
+// the cluster's (clusterChip) when the run has no node-pool bundle to place instances in them
+// (inference-sim#2221). Without a bundle every instance is sized and priced as clusterChip, so the
+// scenario's pool chips would be ignored silently. It is empty when every pool carries the
+// cluster's chip, which the fallback prices correctly.
+func poolChipsWithoutBundle(c scenario.Cluster, clusterChip string) string {
+	var other []string
+	for _, p := range c.Pools {
+		if chip, _ := c.PoolHardware(p.Name); !strings.EqualFold(chip, clusterChip) {
+			other = append(other, fmt.Sprintf("%s=%s", p.Name, chip))
+		}
+	}
+	if len(other) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("states pool chips (cluster.pools: %s) that differ from cluster.hardware %q, but the run has no "+
+		"node-pool bundle: without one every instance is sized and priced as %s. Give --policy-config a bundle with "+
+		"node_pools naming each pool (examples/capabilities/node-pools-bundle.yaml), or state one chip for the whole cluster",
+		strings.Join(other, ", "), clusterChip, clusterChip)
+}
+
 // openPoolChips checks each bundle node pool against the scenario's cluster and opens a variant
 // for every distinct pool chip other than the scenario's own (nil when every pool carries it). A
 // pool the scenario does not list, a pool whose gpu_type is not the scenario's chip for it, a
 // chip the catalog or the coefficients cannot price, and a pool stating memory or a node size
 // other than its chip's are fatal, each naming the pool and the chip.
 func openPoolChips(pools []sim.NodePoolBundleConfig) map[string]*poolChip {
-	if len(pools) == 0 {
+	if kernelScenario == "" {
 		return nil
 	}
 	path := filepath.Join(kernelScenarioDir, kernelScenario)
 	sc, _, err := contracts.LoadBundle(path)
 	if err != nil {
 		logrus.Fatalf("%v", err)
+	}
+	if len(pools) == 0 {
+		if msg := poolChipsWithoutBundle(sc.Cluster, gpu); msg != "" {
+			logrus.Fatalf("scenario %q %s", kernelScenario, msg)
+		}
+		return nil
 	}
 	variants := map[string]*poolChip{}
 	for _, np := range pools {

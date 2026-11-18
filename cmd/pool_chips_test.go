@@ -131,3 +131,37 @@ func TestRunCmd_PoolChipRefusals(t *testing.T) {
 		})
 	}
 }
+
+// inference-sim#2221: a scenario whose cluster.pools state a chip other than cluster.hardware is
+// refused when the run has no node-pool bundle. Before, it exited 0 with every instance sized and
+// priced as the cluster's chip, so an "older: h100" pool was billed and stepped as H200. With the
+// bundle it runs, and a scenario whose pools all carry the cluster's chip still runs without one.
+func TestRunCmd_PoolChipsWithoutABundleAreRefused(t *testing.T) {
+	run := func(t *testing.T, dir string, extra ...string) (string, error) {
+		t.Helper()
+		_, stderr, err := runKernelCLI(t, append([]string{"run", "--scenarios", dir, "--scenario", "variant.yaml",
+			"--num-instances", "4", "--num-requests", "8", "--rate", "2"}, extra...)...)
+		return stderr, err
+	}
+	mixed := writeColocatedVariant(t, twoChipEdits("h200")...)
+	stderr, err := run(t, mixed)
+	if err == nil {
+		t.Fatal("a scenario stating an h100 pool inside an h200 cluster ran with no node-pool bundle")
+	}
+	for _, want := range []string{"older=h100", "no node-pool bundle", "--policy-config"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("the refusal lacks %q:\n%s", want, lastLines(stderr, 3))
+		}
+	}
+	bundle := writePoolsBundle(t, [4]string{"fast", "h200", "139.80072021", "32"}, [4]string{"older", "h100", "79.1895752", "20"})
+	if stderr, err := run(t, mixed, "--policy-config", bundle); err != nil {
+		t.Fatalf("the same scenario with its bundle must run: %v\n%s", err, lastLines(stderr, 3))
+	}
+	// Pools that all carry the cluster's chip lose nothing to the fallback.
+	same := writeColocatedVariant(t, fixtureCluster,
+		"  nodes: 2\n  fabric: ib-400g\n  gpus_per_node: 8\n  pools:\n    - name: a\n      hardware: h200\n    - name: b\n      hardware: h200\n",
+		"    nodes: 1\n    parallel", "    nodes: 2\n    parallel")
+	if stderr, err := run(t, same); err != nil {
+		t.Fatalf("pools of the cluster's own chip need no bundle: %v\n%s", err, lastLines(stderr, 3))
+	}
+}
