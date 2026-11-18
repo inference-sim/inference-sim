@@ -1152,15 +1152,33 @@
    }
   },
   "config:dsa_decode_backend": {
-   "status": "modelled",
+   "status": "not_modelled",
    "evidence": {
-    "traces": [
-     "config/testdata/serverargs.json",
-     "lower/testdata/sglang_lower.json"
-    ]
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
-    "rule": "leave_unset"
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "dsa_decode_backend": "the part-wide sparse-MLA attention pair"
+     },
+     "evidence": "the registry's attention coefficients are fitted per part on the model graph's sparse-MLA lane and are not keyed by the DSA backend; no allowed table measures flashmla_sparse, flashmla_kv, trtllm or fa3 sparse attention separately for this model on this part",
+     "differs": "the decode backend the engine runs is a different kernel (flashmla_sparse, flashmla_kv, trtllm or fa3, layers/attention/dsa/ at SGLang v0.5.23) with its own latency; the cost model prices the part-wide attention pair whichever is stated, so the step time of a DSA model carries the difference between that pair and the stated kernel",
+     "when": [
+      {
+       "value_in": [
+        "flashmla_sparse",
+        "flashmla_kv",
+        "trtllm",
+        "fa3"
+       ],
+       "compute_capability": {
+        "gte": "9.0",
+        "lt": "11.0"
+       }
+      }
+     ]
+    }
    }
   },
   "config:dsa_paged_mqa_logits_backend": {
@@ -1173,15 +1191,33 @@
    }
   },
   "config:dsa_prefill_backend": {
-   "status": "modelled",
+   "status": "not_modelled",
    "evidence": {
-    "traces": [
-     "config/testdata/serverargs.json",
-     "lower/testdata/sglang_lower.json"
-    ]
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
-    "rule": "leave_unset"
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "dsa_prefill_backend": "the part-wide sparse-MLA attention pair"
+     },
+     "evidence": "the registry's attention coefficients are fitted per part on the model graph's sparse-MLA lane and are not keyed by the DSA backend; no allowed table measures flashmla_sparse, flashmla_kv, trtllm or fa3 sparse attention separately for this model on this part",
+     "differs": "the prefill backend the engine runs is a different kernel (flashmla_sparse, flashmla_kv, trtllm or fa3, layers/attention/dsa/ at SGLang v0.5.23) with its own latency; the cost model prices the part-wide attention pair whichever is stated, so the step time of a DSA model carries the difference between that pair and the stated kernel",
+     "when": [
+      {
+       "value_in": [
+        "flashmla_sparse",
+        "flashmla_kv",
+        "trtllm",
+        "fa3"
+       ],
+       "compute_capability": {
+        "gte": "9.0",
+        "lt": "11.0"
+       }
+      }
+     ]
+    }
    }
   },
   "config:dsa_topk_backend": {

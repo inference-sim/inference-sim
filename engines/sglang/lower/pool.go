@@ -130,7 +130,6 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 	override := func(field, requested, resolved, reason string) {
 		out.Overrides = append(out.Overrides, plan.Override{Field: field, Requested: requested, Resolved: resolved, Reason: reason})
 	}
-	_ = override
 	hasRecurrent, moe := false, false
 	g.EachNode(func(_ string, n model.Node) {
 		hasRecurrent = hasRecurrent || n.Op == model.OpRecurrentUpdate
@@ -170,17 +169,13 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 	p.Cache.StateElementBytes = 4
 
 	// The DSA attention backends: the plan carries no attention backend, and the substrate prices DSA
-	// attention from the model graph's sparse-MLA lane, so the choice is not priced; it is a note.
-	if a.DsaPrefillBackend != nil || a.DsaDecodeBackend != nil {
-		pb, db := "", ""
-		if a.DsaPrefillBackend != nil {
-			pb = *a.DsaPrefillBackend
-		}
-		if a.DsaDecodeBackend != nil {
-			db = *a.DsaDecodeBackend
-		}
-		note("dsa_backends", "prefill="+pb+" decode="+db,
-			"the plan carries no attention backend: the substrate prices DSA attention from the graph's sparse-MLA lane, so the backend choice is not priced")
+	// attention from the model graph's sparse-MLA lane (the part-wide attention pair), whatever kernel
+	// the backend names. The pool states the substitution, so a result can name it (X19).
+	if a.DsaPrefillBackend != nil {
+		override("dsa_prefill_backend", *a.DsaPrefillBackend, dsaPricedAs, dsaReason)
+	}
+	if a.DsaDecodeBackend != nil {
+		override("dsa_decode_backend", *a.DsaDecodeBackend, dsaPricedAs, dsaReason)
 	}
 
 	// Batch limits and the page.
@@ -303,6 +298,14 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 	}
 	return out, nil
 }
+
+// dsaPricedAs and dsaReason are the substitution a DSA pool states for its attention backends.
+const (
+	dsaPricedAs = "the part-wide sparse-MLA attention pair"
+	dsaReason   = "flashmla_sparse, flashmla_kv, trtllm and fa3 are different kernels; the plan has no attention-backend " +
+		"slot and the substrate prices DSA attention from the graph's sparse-MLA lane with the registry's part-wide attention " +
+		"pair, so the backend the engine runs is not what is priced"
+)
 
 // allreduceFusionMaxTokens is FUSE_ALLREDUCE_MAX_BATCH_SIZE (layer_boundary/residual/add_norm.py:141@297e54fd).
 const allreduceFusionMaxTokens = 2048

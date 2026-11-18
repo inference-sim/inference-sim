@@ -13606,37 +13606,12 @@
     {
       "name": "dsa_decode_backend",
       "source": "config",
-      "status": "modelled",
+      "status": "not_modelled",
       "evidence": {
-        "traces": [
-          "config/testdata/serverargs.json",
-          "lower/testdata/sglang_lower.json"
-        ]
-      },
-      "value_classes": {
-        "type": "enumerated",
-        "values": [
-          "flashmla_sparse",
-          "flashmla_sparse_q8",
-          "flashmla_kv",
-          "flashmla_auto",
-          "flashinfer_sparse_mla",
-          "fa3",
-          "tilelang",
-          "triton",
-          "aiter",
-          "trtllm",
-          "intel_xpu"
-        ],
-        "covered": [
-          "fa3",
-          "flashmla_kv",
-          "flashmla_sparse",
-          "trtllm"
-        ]
+        "issue": "inference-sim/blis-sglang#49"
       },
       "estimation": {
-        "rule": "leave_unset"
+        "rule": "none"
       }
     },
     {
@@ -13653,37 +13628,12 @@
     {
       "name": "dsa_prefill_backend",
       "source": "config",
-      "status": "modelled",
+      "status": "not_modelled",
       "evidence": {
-        "traces": [
-          "config/testdata/serverargs.json",
-          "lower/testdata/sglang_lower.json"
-        ]
-      },
-      "value_classes": {
-        "type": "enumerated",
-        "values": [
-          "flashmla_sparse",
-          "flashmla_sparse_q8",
-          "flashmla_kv",
-          "flashmla_auto",
-          "flashinfer_sparse_mla",
-          "triton_sparse_mla",
-          "fa3",
-          "tilelang",
-          "triton",
-          "aiter",
-          "trtllm",
-          "intel_xpu"
-        ],
-        "covered": [
-          "fa3",
-          "flashmla_kv",
-          "flashmla_sparse"
-        ]
+        "issue": "inference-sim/blis-sglang#49"
       },
       "estimation": {
-        "rule": "leave_unset"
+        "rule": "none"
       }
     },
     {
