@@ -76,6 +76,17 @@ LAYERS = {
     "llama-3.1-70b-instruct": [
         dict(head_size=128, num_heads=64, num_kv_heads=8, has_sink=False, has_sliding_window=False),
     ],
+    # Llama-3.3-70B-Instruct (FP8 and FP4 checkpoints of nvidia/Llama-3.3-70B-Instruct-*) is the same class,
+    # LlamaForCausalLM, with the same attention shape as Llama-3.1-70B: 64 heads, 8 KV heads, hidden 8192 so
+    # head_dim 128, no sliding window or layer_types (their config.json, fetched at the catalog's pinned revision
+    # and checked against the catalog's SHA-256, modelconfig.py). The quantization changes the weights and the
+    # linear layers, not the attention layer the selector sees; the KV dtype names are run as for every model.
+    "llama-3.3-70b-instruct-fp8": [
+        dict(head_size=128, num_heads=64, num_kv_heads=8, has_sink=False, has_sliding_window=False),
+    ],
+    "llama-3.3-70b-instruct-fp4": [
+        dict(head_size=128, num_heads=64, num_kv_heads=8, has_sink=False, has_sliding_window=False),
+    ],
     # vllm/model_executor/layers/attention/mla_attention.py:479, 513-520:
     # head_size = kv_lora_rank + qk_rope_head_dim; get_attn_backend(..., use_mla=True,
     # use_sparse=False, num_heads=num_heads). DeepseekV3: 128 heads, kimi-k2.5: 64 (config.json).

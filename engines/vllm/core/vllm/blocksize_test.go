@@ -101,6 +101,9 @@ func TestResolveBlockSize(t *testing.T) {
 		{"Kimi-K2.5 on Blackwell needs no assumption", BlockSizeInput{Model: "kimi-k2.5", Capability: "10.0", KVCacheDType: "auto"}, 32, ""},
 		// Gemma-4 mixes sliding layers (head 256) and full layers (head 512): FlashAttention or FlashInfer
 		// takes both at 16, on Hopper and Blackwell (#68).
+		// Llama-3.3-70B (FP8 and FP4 checkpoints) is Llama-3.1's attention shape: 16 on Hopper and Blackwell.
+		{"Llama-3.3-70B FP8 on Hopper with fp8 KV", BlockSizeInput{Model: "llama-3.3-70b-instruct-fp8", Capability: "9.0", KVCacheDType: "fp8"}, 16, ""},
+		{"Llama-3.3-70B FP4 on Blackwell", BlockSizeInput{Model: "llama-3.3-70b-instruct-fp4", Capability: "10.0", KVCacheDType: "fp8"}, 16, ""},
 		{"Gemma-4 31B on Hopper", BlockSizeInput{Model: "gemma-4-31b-it", Capability: "9.0", KVCacheDType: "auto"}, 16, ""},
 		{"Gemma-4 26B-A4B on Blackwell with fp8 KV", BlockSizeInput{Model: "gemma-4-26b-a4b-it", Capability: "10.0", KVCacheDType: "fp8"}, 16, ""},
 		// DeepSeek-V4 hands the platform its own backends: the sparse MLA and the indexer take 256, the
