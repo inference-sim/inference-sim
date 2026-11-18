@@ -357,6 +357,30 @@
     ],
     "stated": [
      {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": "dsv4",
       "trace": "config/testdata/serverargs.json"
      },
@@ -631,6 +655,14 @@
      {
       "value": "fa3",
       "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": "flashinfer",
@@ -1110,6 +1142,30 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 8192,
       "trace": "config/testdata/serverargs.json"
      },
@@ -1528,6 +1584,22 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 32768,
       "trace": "config/testdata/serverargs.json"
      },
@@ -1819,6 +1891,30 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": null,
       "trace": "config/testdata/serverargs.json"
      },
@@ -2077,6 +2173,14 @@
      {
       "value": null,
       "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 512,
+      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": 512,
@@ -2291,6 +2395,30 @@
      }
     ],
     "stated": [
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
      {
       "value": false,
       "trace": "config/testdata/serverargs.json"
@@ -2829,6 +2957,30 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 8,
       "trace": "config/testdata/serverargs.json"
      },
@@ -3026,6 +3178,14 @@
      },
      {
       "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 1,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 1,
       "trace": "lower/testdata/sglang_lower.json"
      },
      {
@@ -3143,6 +3303,741 @@
     ]
    }
   },
+  "dsa_decode_backend": {
+   "value_classes": {
+    "type": "enumerated",
+    "covered": [
+     "fa3",
+     "flashmla_kv",
+     "flashmla_sparse",
+     "trtllm"
+    ],
+    "values": [
+     "flashmla_sparse",
+     "flashmla_sparse_q8",
+     "flashmla_kv",
+     "flashmla_auto",
+     "flashinfer_sparse_mla",
+     "fa3",
+     "tilelang",
+     "triton",
+     "aiter",
+     "trtllm",
+     "intel_xpu"
+    ]
+   },
+   "basis": {
+    "name": "dsa_decode_backend",
+    "kind": "enumerated",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:47",
+      "op": "NotEq",
+      "values": [
+       "trtllm"
+      ],
+      "expr": "cfg.dsa_decode_backend != 'trtllm'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:517",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "view.dsa_decode_backend is not None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:619",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "view.dsa_decode_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:634",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "view.dsa_decode_backend is not None"
+     }
+    ],
+    "stated": [
+     {
+      "value": "trtllm",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "trtllm",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_kv",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "trtllm",
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "lower/testdata/sglang_lower.json"
+     }
+    ],
+    "classes": [
+     {
+      "values": [
+       "trtllm"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:47"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "lower/testdata/sglang_lower.json"
+      ]
+     },
+     {
+      "unset": true,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/overrides.py:517",
+       "python/sglang/srt/arg_groups/overrides.py:619",
+       "python/sglang/srt/arg_groups/overrides.py:634"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json"
+      ]
+     }
+    ]
+   }
+  },
+  "dsa_prefill_backend": {
+   "value_classes": {
+    "type": "enumerated",
+    "covered": [
+     "fa3",
+     "flashmla_kv",
+     "flashmla_sparse"
+    ],
+    "values": [
+     "flashmla_sparse",
+     "flashmla_sparse_q8",
+     "flashmla_kv",
+     "flashmla_auto",
+     "flashinfer_sparse_mla",
+     "triton_sparse_mla",
+     "fa3",
+     "tilelang",
+     "triton",
+     "aiter",
+     "trtllm",
+     "intel_xpu"
+    ]
+   },
+   "basis": {
+    "name": "dsa_prefill_backend",
+    "kind": "enumerated",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:46",
+      "op": "NotEq",
+      "values": [
+       "trtllm"
+      ],
+      "expr": "cfg.dsa_prefill_backend != 'trtllm'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:517",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "view.dsa_prefill_backend is not None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:617",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "view.dsa_prefill_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:633",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "view.dsa_prefill_backend is not None"
+     }
+    ],
+    "stated": [
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_kv",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": "flashmla_sparse",
+      "trace": "lower/testdata/sglang_lower.json"
+     }
+    ],
+    "classes": [
+     {
+      "values": [
+       "trtllm"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:46"
+      ],
+      "covered_by": []
+     },
+     {
+      "unset": true,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/overrides.py:517",
+       "python/sglang/srt/arg_groups/overrides.py:617",
+       "python/sglang/srt/arg_groups/overrides.py:633"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json"
+      ]
+     }
+    ]
+   }
+  },
   "enable_flashinfer_allreduce_fusion": {
    "value_classes": {
     "type": "boolean",
@@ -3170,6 +4065,30 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": false,
       "trace": "config/testdata/serverargs.json"
      },
@@ -3436,6 +4355,14 @@
      {
       "value": false,
       "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": true,
+      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": true,
@@ -3796,6 +4723,22 @@
      }
     ],
     "stated": [
+     {
+      "value": "bfloat16",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "bfloat16",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "auto",
+      "trace": "config/testdata/serverargs.json"
+     },
      {
       "value": "fp8_e5m2",
       "trace": "config/testdata/serverargs.json"
@@ -4257,6 +5200,30 @@
      }
     ],
     "stated": [
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
      {
       "value": 16384,
       "trace": "config/testdata/serverargs.json"
@@ -4758,6 +5725,30 @@
     ],
     "stated": [
      {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 256,
       "trace": "config/testdata/serverargs.json"
      },
@@ -5142,6 +6133,38 @@
     ],
     "stated": [
      {
+      "value": 0.85,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.85,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.85,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.85,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.82,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.82,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.82,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.82,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 0.897,
       "trace": "config/testdata/serverargs.json"
      },
@@ -5471,6 +6494,22 @@
      }
     ],
     "stated": [
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
      {
       "value": "<model>",
       "trace": "config/testdata/serverargs.json"
@@ -6340,6 +7379,22 @@
      },
      {
       "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
       "trace": "lower/testdata/sglang_lower.json"
      }
     ],
@@ -6550,8 +7605,8 @@
       "at": "python/sglang/srt/arg_groups/model_overrides/glm4_moe.py:35",
       "op": "In",
       "values": [
-       null,
-       "modelopt_fp4"
+       "modelopt_fp4",
+       null
       ],
       "expr": "quantization in {'modelopt_fp4', None}"
      },
@@ -6838,6 +7893,22 @@
      }
     ],
     "stated": [
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
      {
       "value": null,
       "trace": "config/testdata/serverargs.json"
@@ -7617,6 +8688,38 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 1,
       "trace": "config/testdata/serverargs.json"
      },
@@ -7951,6 +9054,22 @@
      {
       "value": 1,
       "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": 8,
