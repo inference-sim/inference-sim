@@ -93,7 +93,7 @@ jobs:
           }
           # A change to go.mod, go.sum, a workflow, a composite action or the root package affects
           # every Go job. Other files under .github/ are data that one job reads (or none): they run
-          # only the jobs named below, so a line in .github/tags.lock does not run the cost model.
+          # only the jobs named below, so a data file there does not run the cost model.
           shared='^(go\.mod|go\.sum|[^/]+\.go|\.github/(workflows|actions)/)'
           # .github/quarantine.yaml: the skip report of the contracts job and the registry job's
           # skip check read it. .github/check-runs.yaml and .github/gates.yaml: tools/release and
