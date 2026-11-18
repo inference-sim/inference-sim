@@ -25,11 +25,12 @@
 - id: VLM-2
   section: §5
   statement: >-
-    Every Go file states where it came from: derived from a vLLM path at a release and commit; derived
-    from a path in a package the oracle's lock pins, naming that package and version, for an adapter a
-    connector imports from it (§6.5); moved from another repository; or original. At a tag
-    v<release>-blis.N, every ported file names that vLLM release, and no file names another. An adapter
-    file derived from a package names both the vLLM release and the package version.
+    Every Go file states where it came from: derived from a vLLM path at a release and commit;
+    derived from a path in a package the oracle's lock pins, naming that package and version, for an
+    adapter a connector imports from it (§6.5); moved from another repository; or original. At every
+    commit of a branch that models a release, every ported file names that vLLM release, and no file
+    names another. An adapter file derived from a package names both the vLLM release and the
+    package version.
   scope:
   - blis-vllm
   checks:

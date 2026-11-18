@@ -137,3 +137,27 @@
   target:
     status: ci
     milestone: 3
+- id: CFG-6
+  section: §5
+  statement: >-
+    Everything the pinned simulator can run is a knob a specification can sweep: each setting the
+    engine’s field list marks as modelled, and each scenario field the simulator reads, such as
+    pools and their hardware, parallel layout, KV tiers and connectors, speculation, router plugins
+    and workload. A knob that a search cannot vary is listed with its reason, such as a value fixed
+    by the deployment being searched. The list of knobs is generated from the simulator at the
+    pinned release, never written by hand (CFG-3).
+  scope:
+  - blis-config-search
+  checks:
+  - repo: blis-config-search
+    check: >-
+      A generated knob table, built from inference-sim fields and the scenario schema of the pinned
+      release, and a test that fails when a modelled setting or a scenario field has neither a sweep key
+      nor a listed reason, with a scenario field added to the schema as its known-bad input
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3

@@ -41,7 +41,8 @@
   section: §5
   statement: >-
     Every new or changed data field ships with its validator, a failing example for each way it can
-    be wrong, and regenerated reference documentation.
+    be wrong, and the JSON Schema the simulator prints for it (schema); no separate reference page
+    is kept (X29).
   scope:
   - blis-substrate
   checks:
@@ -68,19 +69,21 @@
 - id: SUB-3
   section: §5
   statement: >-
-    The catalog holds declared facts only: figures read from a published source, each with a citation a
-    reader can follow. Each model's graph is generated from its vendor config.json and the safetensors
-    headers of its checkpoint, and never edited by hand. No runtime code reads config.json. No model
-    value is hard-coded in the cost model or an engine, and no setting asks the user to copy a value
-    from a checkpoint. A scenario's cluster names catalog entries for its chip, fabric and storage
-    devices, and states what the user provisions: the node count, which nodes sit under each switch and
-    how oversubscribed each group's uplink is, and the GPUs per node, GPUs per rack and host memory per
-    node where the chip's entry leaves them open. Where the entry states them, as GB200 NVL72's does,
-    the scenario may omit them or restate them unchanged, and any other value is refused. On a chip
-    whose entry has no rack tier, the scenario may not state a rack size. On a chip that has one, the
-    cluster's fabric is the network between racks. A different packaging of the same chip is a catalog
-    entry of its own. One function in contracts/spec resolves a cluster's packaging from the scenario
-    and the catalog, and every reader calls it (X15).
+    The catalog holds declared facts only: figures read from a published source, each with a
+    citation a reader can follow. Each model's graph is generated from its vendor config.json and
+    the safetensors headers of its checkpoint, and never edited by hand. A graph node exists only if
+    it launches GPU work; a config field that changes no operation has no node. No runtime code
+    reads config.json. No model value is hard-coded in the cost model or an engine, and no setting
+    asks the user to copy a value from a checkpoint. A scenario's cluster names catalog entries for
+    its chip, fabric and storage devices, and states what the user provisions: the node count, which
+    nodes sit under each switch and how oversubscribed each group's uplink is, and the GPUs per
+    node, GPUs per rack and host memory per node where the chip's entry leaves them open. Where the
+    entry states them, as GB200 NVL72's does, the scenario may omit them or restate them unchanged,
+    and any other value is refused. On a chip whose entry has no rack tier, the scenario may not
+    state a rack size. On a chip that has one, the cluster's fabric is the network between racks. A
+    different packaging of the same chip is a catalog entry of its own. One function in
+    contracts/spec resolves a cluster's packaging from the scenario and the catalog, and every
+    reader calls it (X15).
   scope:
   - blis-sglang
   - blis-substrate
@@ -331,9 +334,13 @@
 - id: SUB-12
   section: §5
   statement: >-
-    Every loader of a BLIS document refuses unknown keys, duplicate keys, numbers that do not convert
-    exactly, non-finite numbers and recursive aliases. Every declared field is either used or refused,
-    never dropped.
+    Every loader of a BLIS document refuses unknown keys, duplicate keys, numbers that do not
+    convert exactly, non-finite numbers and recursive aliases. Every declared field is either used
+    or refused, never dropped. Validation has two layers. The field layer holds the checks whose
+    answer is the same under every engine release, and a field problem always means the document is
+    wrong. The rule layer asks whether a named engine release would run the document as written, and
+    runs only when the field layer reports no error; a rule problem may mean that the document is
+    right and the rule needs extending.
   scope:
   - blis-substrate
   - blis-vllm

@@ -50,8 +50,9 @@
 - id: SIM-3
   section: §5
   statement: >-
-    Every release publishes stack.json: the exact tag of every BLIS module and every upstream release
-    it was built and tested with, the Go toolchain version, and the llm-d guides commit.
+    Every release publishes stack.json: the exact commit of every BLIS module, with its
+    pseudo-version, and every upstream release it was built and tested with, the Go toolchain
+    version, and the llm-d guides commit.
   scope:
   - inference-sim
   checks:
