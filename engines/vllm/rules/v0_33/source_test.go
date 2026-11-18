@@ -938,7 +938,8 @@ func TestSequenceParallelSplitsMatchSource(t *testing.T) {
 	}
 }
 
-// pplx and naive run as allgather_reducescatter.
+// pplx and naive run as allgather_reducescatter (the validator renames them), and flashinfer_all2allv as
+// flashinfer_nvlink_two_sided (the communicator treats it as that backend).
 func TestAll2AllBackendRenamesMatchSource(t *testing.T) {
 	root := vllmSource(t)
 	src := readSource(t, root, "vllm", "config", "parallel.py")
@@ -961,7 +962,17 @@ func TestAll2AllBackendRenamesMatchSource(t *testing.T) {
 		"a2a = parallel_config.all2all_backend\n    if moe_backend in FLASHINFER_MOE_EP_BACKENDS:") {
 		t.Error("the passthrough binding no longer reads parallel_config.all2all_backend")
 	}
-	want := map[string]string{"pplx": "allgather_reducescatter", "naive": "allgather_reducescatter"}
+	// flashinfer_all2allv is not renamed by the validator: the CUDA communicator builds the same
+	// manager for it as for flashinfer_nvlink_two_sided, with a deprecation warning, and
+	// parallel.py lists it as "a temporary alias" (cuda_communicator.py:252-263, parallel.py:56).
+	comm := readSource(t, root, "vllm", "distributed", "device_communicators", "cuda_communicator.py")
+	if !strings.Contains(comm, `self.all2all_backend == "flashinfer_all2allv"
+                or self.all2all_backend == "flashinfer_nvlink_two_sided"`) ||
+		!strings.Contains(src, `"flashinfer_all2allv",  # temporary alias for flashinfer_nvlink_two_sided`) {
+		t.Error("flashinfer_all2allv is no longer an alias of flashinfer_nvlink_two_sided")
+	}
+	want := map[string]string{"pplx": "allgather_reducescatter", "naive": "allgather_reducescatter",
+		"flashinfer_all2allv": "flashinfer_nvlink_two_sided"}
 	if !reflect.DeepEqual(Pack().All2AllBackendRenames, want) {
 		t.Errorf("All2AllBackendRenames: pack has %v, the engine %v", Pack().All2AllBackendRenames, want)
 	}

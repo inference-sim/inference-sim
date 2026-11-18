@@ -207,13 +207,30 @@ func TestOffloadRefusals(t *testing.T) {
 		{"chunk not a multiple", "kv_offload: {connector: OffloadingConnector, cpu_bytes: 819200, bytes_per_block: 4096, block_size: 24}\n"},
 		{"smaller than a chunk", "kv_offload: {connector: OffloadingConnector, cpu_bytes: 100, bytes_per_block: 4096}\n"},
 		{"with nixl", cpuTier + producer},
-		{"an MTP drafter's group", cpuTier + "speculative_config: {method: mtp, num_speculative_tokens: 1}\nmtp_nextn_predict_layers: 1\nkv_layers:\n" +
-			"- {count: 1, spec: full, num_kv_heads: 1, head_size: 64}\n" +
-			"- {count: 1, spec: sliding_window, sliding_window: 32, num_kv_heads: 1, head_size: 64}\n"},
 	} {
 		if _, err := build(t, c.extra)(); err == nil {
 			t.Errorf("%s: built, want refused", c.name)
 		}
+	}
+}
+
+// The offloading connector runs beside an MTP drafter: vLLM marks the group that holds the drafter's layer, and
+// the connector treats its trailing chunk as volatile (offloading/scheduler.py:208-232@4ba787ec). Before it was
+// refused for want of a diff test; the offloading-mtp* scenarios replay against vLLM's own scheduler
+// (core/connector/offloading, TestOffloadingAgainstVLLM). A request runs and its prompt is stored.
+func TestOffloadRunsBesideAnMTPDrafter(t *testing.T) {
+	e := mustEngine(t, cpuTier+"speculative_config: {method: mtp, num_speculative_tokens: 1}\nmtp_nextn_predict_layers: 1\nkv_layers:\n"+
+		"- {count: 1, spec: full, num_kv_heads: 1, head_size: 64}\n"+
+		"- {count: 1, spec: sliding_window, sliding_window: 32, num_kv_heads: 1, head_size: 64}\n")
+	if err := e.Add(req("a", 64, 2), 0); err != nil {
+		t.Fatal(err)
+	}
+	b, err := e.Schedule(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.TransfersStarted) == 0 {
+		t.Errorf("the prompt of a request beside an MTP drafter was not stored: %+v", b)
 	}
 }
 

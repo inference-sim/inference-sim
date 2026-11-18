@@ -89,7 +89,7 @@
   "speculative_config": true,
   "stream_interval": true,
   "swa_bounded_replay": true,
-  "enable_scale_out": true,
+  "enable_scale_out": false,
   "watermark": true
  }
 }
