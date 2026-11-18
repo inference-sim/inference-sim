@@ -24,10 +24,24 @@
 # declared, the subsystem is a no-op and output is byte-identical to a pre-feature
 # build (INV-6). adapter_capacity is intentionally absent (nil => inert); the adapter
 # registry is declared per-run via a config file, not here.
+#
+# Each coefficient below is labelled by how it was obtained (design §9.1), using the
+# registry's method names. Every one is ASSUMED: none was measured, fitted or taken from
+# a source. The values copy the schema example in
+# specs/007-lora-control-plane/contracts/config-schema.md, which cites nothing for them,
+# so do not cite them as a calibration. Supply real values per run with --lora-config.
 lora:
+  # assumed. microseconds: fixed cost of one cold adapter load.
   load_base_latency_us: 1500.0
+  # assumed. bytes per microsecond (2.0e6 = 2 TB/s). That is an HBM-class rate, but a
+  # cold load is a host->device copy. With footprint_bytes_per_rank equal to it, the
+  # byte term is exactly `rank` µs, so a load costs 1500 + rank µs.
   load_bandwidth_bytes_us: 2.0e6
+  # assumed. bytes of HBM per rank unit of an adapter.
   footprint_bytes_per_rank: 2.0e6
+  # assumed. dimensionless, per rank tier: a step costs 1 + (k6/k7)·A times the base
+  # step, where A is the number of distinct adapters in the batch and the tier is the
+  # one nearest the batch's largest adapter rank.
   step_overhead_tiers:
     8: {k6: 0.02, k7: 1.0}
     16: {k6: 0.035, k7: 1.0}
