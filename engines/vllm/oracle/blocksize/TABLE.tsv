@@ -31,7 +31,7 @@
 # Tensor parallelism: every combination is run at tp in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] and resolves only if the size
 # is the same at all of them. The table is valid for tp up to 16; a wider pool is refused (core/vllm.MaxBlockSizeTP).
 # Not resolved, whatever the GPU and dtype:
-#   deepseek-v4-pro: DeepSeek-V4 layers use their own sparse MLA backends and block sizes (vllm/models/deepseek_v4), not the selector alone
+#   deepseek-v4.1-flash: DeepSeek-V4.1 layers use their own sparse MLA and indexer backends (vllm/models/deepseek_v41), which the oracle does not run
 #   glm-5: its sparse MLA layers need the indexer backends' sizes (use_sparse); not modelled here
 #   minimax-m3: its sparse-attention layers pick MiniMaxM3SparseBackend directly (vllm/models/minimax_m3/nvidia/model.py:559), outside the selector
 #   qwen3.5-397b-a17b: a hybrid model: its block size is aligned to the recurrent page (platforms/interface.py:783-790, _align_hybrid_block_size)
@@ -52,6 +52,36 @@ deepseek-v3	b300/gb300	10.3	fp8	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	
 deepseek-v3	b300/gb300	10.3	fp8_e4m3	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
 deepseek-v3	b300/gb300	10.3	bfloat16	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
 deepseek-v3	b300/gb300	10.3	float16	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
+gemma-4-26b-a4b-it	h100/h200	9.0	auto	FLASH_ATTN/FLASH_ATTN/FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-26b-a4b-it	h100/h200	9.0	fp8	FLASH_ATTN/FLASH_ATTN/FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-26b-a4b-it	h100/h200	9.0	fp8_e4m3	FLASH_ATTN/FLASH_ATTN/FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-26b-a4b-it	h100/h200	9.0	bfloat16	FLASH_ATTN/FLASH_ATTN/FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-26b-a4b-it	h100/h200	9.0	float16	FLASH_ATTN/FLASH_ATTN/FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-26b-a4b-it	b200/gb200-nvl72	10.0	auto	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-26b-a4b-it	b200/gb200-nvl72	10.0	fp8	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-26b-a4b-it	b200/gb200-nvl72	10.0	fp8_e4m3	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-26b-a4b-it	b200/gb200-nvl72	10.0	bfloat16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-26b-a4b-it	b200/gb200-nvl72	10.0	float16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-26b-a4b-it	b300/gb300	10.3	auto	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-26b-a4b-it	b300/gb300	10.3	fp8	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-26b-a4b-it	b300/gb300	10.3	fp8_e4m3	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-26b-a4b-it	b300/gb300	10.3	bfloat16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-26b-a4b-it	b300/gb300	10.3	float16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-31b-it	h100/h200	9.0	auto	FLASH_ATTN/FLASH_ATTN/FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-31b-it	h100/h200	9.0	fp8	FLASH_ATTN/FLASH_ATTN/FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-31b-it	h100/h200	9.0	fp8_e4m3	FLASH_ATTN/FLASH_ATTN/FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-31b-it	h100/h200	9.0	bfloat16	FLASH_ATTN/FLASH_ATTN/FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-31b-it	h100/h200	9.0	float16	FLASH_ATTN/FLASH_ATTN/FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-31b-it	b200/gb200-nvl72	10.0	auto	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-31b-it	b200/gb200-nvl72	10.0	fp8	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-31b-it	b200/gb200-nvl72	10.0	fp8_e4m3	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-31b-it	b200/gb200-nvl72	10.0	bfloat16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-31b-it	b200/gb200-nvl72	10.0	float16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-31b-it	b300/gb300	10.3	auto	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-31b-it	b300/gb300	10.3	fp8	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-31b-it	b300/gb300	10.3	fp8_e4m3	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-31b-it	b300/gb300	10.3	bfloat16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gemma-4-31b-it	b300/gb300	10.3	float16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 gpt-oss-120b	h100/h200	9.0	auto	FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 gpt-oss-120b	h100/h200	9.0	fp8	FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 gpt-oss-120b	h100/h200	9.0	fp8_e4m3	FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
@@ -142,6 +172,51 @@ minimax-m2.7	b300/gb300	10.3	fp8	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	
 minimax-m2.7	b300/gb300	10.3	fp8_e4m3	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 minimax-m2.7	b300/gb300	10.3	bfloat16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 minimax-m2.7	b300/gb300	10.3	float16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+deepseek-v4-pro	h100/h200	9.0	auto	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro	h100/h200	9.0	fp8	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro	h100/h200	9.0	fp8_e4m3	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro	h100/h200	9.0	bfloat16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro	h100/h200	9.0	float16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro	b200/gb200-nvl72	10.0	auto	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro	b200/gb200-nvl72	10.0	fp8	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro	b200/gb200-nvl72	10.0	fp8_e4m3	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro	b200/gb200-nvl72	10.0	bfloat16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro	b200/gb200-nvl72	10.0	float16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro	b300/gb300	10.3	auto	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro	b300/gb300	10.3	fp8	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro	b300/gb300	10.3	fp8_e4m3	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro	b300/gb300	10.3	bfloat16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro	b300/gb300	10.3	float16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-0813	h100/h200	9.0	auto	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-0813	h100/h200	9.0	fp8	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-0813	h100/h200	9.0	fp8_e4m3	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-0813	h100/h200	9.0	bfloat16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-0813	h100/h200	9.0	float16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-0813	b200/gb200-nvl72	10.0	auto	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-0813	b200/gb200-nvl72	10.0	fp8	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-0813	b200/gb200-nvl72	10.0	fp8_e4m3	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-0813	b200/gb200-nvl72	10.0	bfloat16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-0813	b200/gb200-nvl72	10.0	float16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-0813	b300/gb300	10.3	auto	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-0813	b300/gb300	10.3	fp8	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-0813	b300/gb300	10.3	fp8_e4m3	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-0813	b300/gb300	10.3	bfloat16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-0813	b300/gb300	10.3	float16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-nvfp4	h100/h200	9.0	auto	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-nvfp4	h100/h200	9.0	fp8	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-nvfp4	h100/h200	9.0	fp8_e4m3	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-nvfp4	h100/h200	9.0	bfloat16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-nvfp4	h100/h200	9.0	float16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-nvfp4	b200/gb200-nvl72	10.0	auto	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-nvfp4	b200/gb200-nvl72	10.0	fp8	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-nvfp4	b200/gb200-nvl72	10.0	fp8_e4m3	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-nvfp4	b200/gb200-nvl72	10.0	bfloat16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-nvfp4	b200/gb200-nvl72	10.0	float16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-nvfp4	b300/gb300	10.3	auto	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-nvfp4	b300/gb300	10.3	fp8	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-nvfp4	b300/gb300	10.3	fp8_e4m3	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-nvfp4	b300/gb300	10.3	bfloat16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
+deepseek-v4-pro-nvfp4	b300/gb300	10.3	float16	CompressorBackend/DeepseekSparseSWABackend/DeepseekV4FlashMLABackend/DeepseekV4IndexerBackend	resolved	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256	256
 # refused: deepseek-v3 h100/h200 fp8: depends on flashmla_built
 # refused: deepseek-v3 h100/h200 fp8_e4m3: depends on flashmla_built
 # refused: kimi-k2.5 h100/h200 fp8: depends on flashmla_built

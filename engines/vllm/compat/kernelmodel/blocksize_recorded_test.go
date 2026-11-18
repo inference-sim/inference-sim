@@ -171,7 +171,7 @@ func TestResolutionAgainstTheRecordedRuns(t *testing.T) {
 	}{
 		{"engine_line", tally{14, 0, 0}},
 		{"silent", tally{31, 0, 0}},
-		{"args", tally{0, 56, 7}},
+		{"args", tally{5, 51, 7}},
 	} {
 		if got := *byClass[e.class]; got != e.want {
 			t.Errorf("%s: %s; want %s", e.class, got, e.want)
