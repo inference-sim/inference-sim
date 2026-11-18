@@ -74,10 +74,9 @@ func fabricAssumed(t *testing.T, stdout string) bool {
 // engineRefuses lists the shipped disaggregated scenarios the pinned engine refuses, each with
 // the reason it states. The fabric set of these is checked in the file; they are not run.
 var engineRefuses = map[string]string{
-	// (deepseek-v4.1-flash-h100-1p1d-dspark5-cpu1t.yaml was listed here until blis-vllm#242: the engine
-	// offloads only the prefix-cacheable KV cache groups, so it runs.)
-	// A prefill data-parallel group that spans nodes: the handoff names no endpoint (blis-substrate#48).
-	"minimax-m2.5-gb200-1p1d-dp2.yaml": "spans 2 nodes",
+	// Empty: deepseek-v4.1-flash-h100-1p1d-dspark5-cpu1t.yaml ran from blis-vllm#242 (the engine offloads
+	// only the prefix-cacheable KV cache groups), and minimax-m2.5-gb200-1p1d-dp2.yaml from blis-vllm#267
+	// (a prefill group that spans nodes states where each request's KV sits, Handoff.At).
 }
 
 func TestShippedPDScenariosStateTheFabricSet(t *testing.T) {

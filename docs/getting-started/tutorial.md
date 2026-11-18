@@ -14,7 +14,7 @@ This tutorial walks through a complete capacity planning exercise: determining h
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 04ffd2b8d9a96fa9026e31f7f3895853966f46d0
+git -C blis-substrate checkout cc87f253efe2104074fcbd8f5df7b5e2f5d9614b
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->

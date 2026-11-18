@@ -194,3 +194,45 @@ func TestGuidesLockIsOneFullCommit(t *testing.T) {
 		}
 	}
 }
+
+// Every workflow installs Go with the substrate's go-toolchain action at the commit this build pins:
+// stack.json's substrate commit, which is go.mod's selected version. The action reads
+// contracts/toolchain at that commit, so a workflow still naming an older one installs the toolchain
+// of an older substrate than the one the build links (LIF-2). A re-pin moves them together.
+func TestEveryWorkflowInstallsGoWithTheActionAtTheSubstratePin(t *testing.T) {
+	root := repoRoot(t)
+	committed, err := Read(filepath.Join(root, "stack.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, ok := committed.Module("github.com/inference-sim/blis-substrate")
+	if !ok || len(sub.Commit) != 40 {
+		t.Fatalf("stack.json names no 40-hex substrate commit: %+v", sub)
+	}
+	files, err := filepath.Glob(filepath.Join(root, ".github", "workflows", "*.yml"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no workflow files found: %v", err)
+	}
+	const action = "inference-sim/blis-substrate/.github/actions/go-toolchain@"
+	uses := 0
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(b), "\n") {
+			_, rest, found := strings.Cut(line, action)
+			if !found {
+				continue
+			}
+			uses++
+			if got := strings.Fields(rest)[0]; got != sub.Commit {
+				t.Errorf("%s:%d installs Go with the action at %s, but this build pins the substrate at %s (stack.json)",
+					filepath.Base(f), i+1, got, sub.Commit)
+			}
+		}
+	}
+	if uses == 0 {
+		t.Error("non-vacuity: no workflow installs Go with the substrate's go-toolchain action")
+	}
+}

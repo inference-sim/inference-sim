@@ -192,6 +192,15 @@ func (d *EngineDriver) HandoffBlocks(req *Request) []int64 {
 	return h.Blocks
 }
 
+// HandoffAt is where the engine says req's held KV sits (engine.Handoff.At: the node and rack of
+// the rank that computed it, in the prefill pool's numbering), nil when it states nothing.
+func (d *EngineDriver) HandoffAt(req *Request) *plan.Endpoint {
+	if h, ok := d.holds[req.ID]; ok {
+		return h.At
+	}
+	return nil
+}
+
 // ReleaseHandoff ends the hold of req's prefill KV at now: the pull completed, or the hold ran out.
 func (d *EngineDriver) ReleaseHandoff(req *Request, now int64) {
 	defer d.drainPeer(now)
