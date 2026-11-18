@@ -1,0 +1,206 @@
+{
+ "calls": [
+  {
+   "args": {
+    "reqs": {
+     "reqs": [
+      "r1"
+     ]
+    }
+   },
+   "evictions": [],
+   "m": "alloc",
+   "objs": {},
+   "on": "h",
+   "reqs": {},
+   "ret": [
+    6
+   ],
+   "state": {
+    "mamba_free": [
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18
+    ],
+    "ping_pong_map": [
+     [
+      0
+     ],
+     [
+      0
+     ],
+     [
+      0
+     ],
+     [
+      0
+     ],
+     [
+      0
+     ],
+     [
+      0
+     ],
+     [
+      2
+     ]
+    ],
+    "req_free": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "req_to_mamba": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1
+    ]
+   },
+   "tree_mamba_slots": []
+  },
+  {
+   "args": {
+    "insert_params": {
+     "insert_params": "p1"
+    },
+    "is_finished": true,
+    "req": {
+     "req": "r1"
+    },
+    "token_ids_len": 200
+   },
+   "evictions": [],
+   "m": "prepare_for_caching_req",
+   "objs": {
+    "p1": {
+     "mamba_keep_idx": null,
+     "mamba_value": null
+    }
+   },
+   "on": "component",
+   "reqs": {
+    "r1": {
+     "kv_allocated_len": 0,
+     "mamba_cow_src_index": null,
+     "mamba_last_track_idx": 0,
+     "mamba_last_track_seqlen": 256,
+     "mamba_needs_clear": true,
+     "mamba_next_track_idx": 0,
+     "mamba_ping_pong_empty": [
+      false
+     ],
+     "mamba_ping_pong_track_buffer": [
+      2
+     ],
+     "mamba_pool_idx": 1,
+     "mamba_prev_track_seqlen": 192,
+     "req_pool_idx": 6
+    }
+   },
+   "ret": 0,
+   "state": {
+    "mamba_free": [
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18
+    ],
+    "ping_pong_map": [
+     [
+      0
+     ],
+     [
+      0
+     ],
+     [
+      0
+     ],
+     [
+      0
+     ],
+     [
+      0
+     ],
+     [
+      0
+     ],
+     [
+      2
+     ]
+    ],
+    "req_free": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "req_to_mamba": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1
+    ]
+   },
+   "tree_mamba_slots": []
+  }
+ ],
+ "kind": "direct",
+ "provenance": {
+  "blis_sglang_commit": "af1835ba1112bb4b66791d3b9ab47f029428c012",
+  "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
+  "mock_version": "gpu-mock/9+f7e50518d4b2",
+  "model": "qwen2.5-0.5b",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "oracle_inputs": {
+   "oracle/harness.json": "dad4a88c3b69c528ce64aea735f7de22c97eaf086b72a3876fc72fa853d4b268",
+   "oracle/mocks.json": "9782b21a0b9428d105a51cde9983b1554f456ef4e7f7ac11c73992f202104173",
+   "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+   "oracle/run_mamba_component.py": "1c52f4a581544a1effaf16fbf18fa367b1f3fccf6c1d849e105c0109b94b4f72",
+   "oracle/run_mamba_pools.py": "8deea3b0828e40e543df1342344a5f00ca043e26166a19699f4958d9eb24da01",
+   "oracle/scenarios-mamba-component/finished-overshoot-no-overlap.json": "46cfce61c9647a1fad5e8311857157d0ee9cf0882b16f92fa9cf5b6d51ec9687",
+   "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "scenario_sha256": "46cfce61c9647a1fad5e8311857157d0ee9cf0882b16f92fa9cf5b6d51ec9687",
+  "seed": 0,
+  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "tier": 2
+ }
+}

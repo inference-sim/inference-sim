@@ -387,6 +387,11 @@ jobs:
             python -I oracle/run_mamba_pools.py direct sglang-source "$s" "shard-out/oracle-traces-mamba-pools/$(basename "$s" .json).trace.json"
           done
           python -I oracle/compare_goldens.py shard-out/oracle-traces-mamba-pools "${{ steps.pin.outputs.commit }}" oracle/scenarios-mamba-pools core/cache/testdata/golden-pools/mamba
+          mkdir -p shard-out/oracle-traces-mamba-pools/component
+          for s in oracle/scenarios-mamba-component/*.json; do
+            python -I oracle/run_mamba_component.py direct sglang-source "$s" "shard-out/oracle-traces-mamba-pools/component/$(basename "$s" .json).trace.json"
+          done
+          python -I oracle/compare_goldens.py shard-out/oracle-traces-mamba-pools/component "${{ steps.pin.outputs.commit }}" oracle/scenarios-mamba-component core/cache/testdata/golden-pools/mamba-component
       # hicache-metrics
       - name: trace the HiCache framework's interfaces
         if: matrix.group == 'hicache-metrics'
