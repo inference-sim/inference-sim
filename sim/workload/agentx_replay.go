@@ -37,6 +37,9 @@ type AgentXReplay struct {
 	windowEndUs int64 // profileUs + duration: no send at or after it
 	graceEndUs  int64 // windowEndUs + grace: in-flight requests cancelled
 	completeUs  int64 // profiling phase completion (aiperf lifecycle complete_at); -1 until known
+	// lastReturnUs is the last profiling credit return: with grace .inf, the phase's end when
+	// it never completes by itself (Finish).
+	lastReturnUs int64
 
 	byPlaceholder map[*sim.Request]*agxDispatch // pending sends, by the request pushed for them
 	byID          map[string]*agxDispatch       // sends in flight, by request ID
@@ -1245,6 +1248,7 @@ func (x *AgentXReplay) end(d *agxDispatch, outcome string, now int64) {
 		x.enforceIdleCap(true)
 		return
 	}
+	x.lastReturnUs = now
 	x.onReturn(d, outcome == sim.AgenticContextOverflow)
 	x.enforceIdleCap(true)
 	x.enforceTraceIdleCap(d.inst, true)
@@ -1613,7 +1617,16 @@ func (x *AgentXReplay) Finish(stopUs int64) {
 			x.completeUs += agxCancelDrainTimeoutUs
 		}
 		if x.graceEndUs == math.MaxInt64 {
-			x.completeUs = max(stopUs, x.windowEndUs)
+			// With no grace end, a request is in flight here only when a --horizon stopped the
+			// run, and the phase was still running at the stop. With none in flight, a tree the
+			// closed window cut off (a child whose next turn was asleep when it closed) keeps
+			// branch work pending forever: aiperf would wait on it without end, so the phase ends
+			// at its last return, not at whatever instant the simulation stopped.
+			end := x.lastReturnUs
+			if cancelled > 0 {
+				end = stopUs
+			}
+			x.completeUs = max(end, x.windowEndUs)
 		}
 		if x.cfg.HorizonCapUs > 0 && x.completeUs > x.cfg.HorizonCapUs {
 			x.completeUs = x.cfg.HorizonCapUs // a --horizon cut the run short

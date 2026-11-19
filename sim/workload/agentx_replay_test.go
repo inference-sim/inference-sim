@@ -1,6 +1,8 @@
 package workload
 
 import (
+	"math"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -479,4 +481,70 @@ func TestAgentXFlatChainOverlapSpawnAndBarrier(t *testing.T) {
 	if h.issued[1].tag.Kind != "flat" {
 		t.Errorf("worker tag %+v", h.issued[1].tag)
 	}
+}
+
+// TestAgentXInfiniteGraceEndsAtLastReturn: a tree the closed window cuts off can never
+// finish. The root's turn 0 spawns two children at 1 s. Child a1's turn 0 returns at 2 s and
+// its turn 1 is still asleep (due at 3 s) when the 2.5 s window closes, so a1 never ends and
+// the root's join never resolves; child a2 runs one 5 s turn and returns at 6 s, the last
+// return. The profiling phase never completes by itself, and the cluster's clock can run on
+// long after (stop at 100 s). With grace .inf the window ends at the last measured return,
+// not at the stop; with a finite grace it ends at the grace end.
+func TestAgentXInfiniteGraceEndsAtLastReturn(t *testing.T) {
+	c := agxCorpus(t, wekaLine(t, "C",
+		wreq(0, 1, 128, 5, 1, 2),
+		wsub(1, "a1", 5000, wreq(1, 1, 128, 5, 50, 51), wreq(4, 1, 192, 5, 50, 51, 52)),
+		wsub(1, "a2", 5000, wreq(1, 5, 128, 5, 60, 61)),
+		wreq(10, 1, 192, 5, 1, 2, 3)))
+	svc := func(r *sim.Request) int64 {
+		if strings.HasSuffix(r.Agentic.Stream, ":a2") {
+			return 5 * sec
+		}
+		return sec
+	}
+	const stop = 100 * sec
+	for _, tc := range []struct {
+		name    string
+		graceUs int64
+		wantEnd int64
+	}{
+		{"inf", math.MaxInt64, 6 * sec},
+		{"30s", 30 * sec, 2500_000 + 30*sec},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := agxCfg(1, 0, 1)
+			cfg.DurationUs, cfg.GraceUs = 2500_000, tc.graceUs
+			h, _ := driveAgentX(t, c, cfg, svc, nil)
+			if h.x.completeUs >= 0 {
+				t.Fatalf("non-vacuity: the profiling phase completed by itself at %d", h.x.completeUs)
+			}
+			lastReturn := int64(-1)
+			for _, d := range h.done {
+				lastReturn = max(lastReturn, d.doneAt)
+			}
+			if lastReturn != 6*sec {
+				t.Fatalf("non-vacuity: last return at %d, want 6 s (child a2)", lastReturn)
+			}
+			h.x.Finish(stop)
+			if _, end := h.x.Window(); end != tc.wantEnd {
+				t.Errorf("window end = %d, want %d", end, tc.wantEnd)
+			}
+		})
+	}
+	// A --horizon that stops the run while a measured request is still in flight (a2, due
+	// back at 6 s, cut at 4 s): the phase was still running at the stop, so the window ends
+	// there, not at the last return (2 s).
+	t.Run("inf, horizon cut", func(t *testing.T) {
+		const horizon = 4 * sec
+		cfg := agxCfg(1, 0, 1)
+		cfg.DurationUs, cfg.GraceUs, cfg.HorizonCapUs = 2500_000, math.MaxInt64, horizon
+		h, _ := driveAgentX(t, c, cfg, svc, nil)
+		h.x.Finish(horizon)
+		if st := h.x.Stats(); st.Cancelled != 1 {
+			t.Fatalf("non-vacuity: %d requests cancelled at the horizon, want 1 (a2)", st.Cancelled)
+		}
+		if _, end := h.x.Window(); end != horizon {
+			t.Errorf("window end = %d, want the horizon %d", end, horizon)
+		}
+	})
 }
