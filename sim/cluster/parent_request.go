@@ -7,7 +7,7 @@ import "github.com/inference-sim/inference-sim/sim"
 type ParentRequest struct {
 	gatewayDone     bool         // the gateway has been told the request ended
 	ID              string       // Original request ID
-	OriginalRequest *sim.Request // Pointer to the original request (for metadata)
+	OriginalRequest *sim.Request // The original request (for metadata); once the parent ends, a copy of it without InputTokens (releaseParentTokens)
 	PrefillSubReqID string
 	PrefillSubReq   *sim.Request // Pointer to the prefill sub-request, set when the parent is created; its DepartureTime is when the KV the handoff moves exists.
 	DecodeSubReqID  string
@@ -18,6 +18,9 @@ type ParentRequest struct {
 	// parent from here (evictParent).
 	DecodeWaiting *sim.Request
 	NumKVBlocks   int64 // the prompt's KV blocks (ceil(inputLen / blockSize))
+	// promptTokens is the original request's prompt length, kept because the parent drops its
+	// requests' tokens once it ends (releaseParentTokens).
+	promptTokens int64
 	// PulledKVBlocks are the blocks the decode side's NIXL pull moves: the prompt's blocks less
 	// those the decode instance's prefix cache already held when it reserved them
 	// (InstanceSimulator.ReserveTransferredKV). Set at transfer start; the handoff is priced
@@ -89,6 +92,7 @@ func NewParentRequest(req *sim.Request, blockSizeTokens int64) *ParentRequest {
 		PrefillSubReqID: req.ID + "_prefill",
 		DecodeSubReqID:  req.ID + "_decode",
 		NumKVBlocks:     numBlocks,
+		promptTokens:    inputLen,
 		PulledKVBlocks:  numBlocks,
 		ArrivalTime:     req.ArrivalTime,
 	}

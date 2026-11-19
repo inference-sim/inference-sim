@@ -101,6 +101,7 @@ func TestEvict_DisaggregatedAtEachStage(t *testing.T) {
 				t.Errorf("completed %d, still running %d; want every request evicted", m.CompletedRequests, m.StillRunning)
 			}
 			assertClusterINV1Conservation(t, cs, len(reqs), noRejections, tc.stage)
+			assertParentsHoldNoPromptTokens(t, cs)
 		})
 	}
 }
