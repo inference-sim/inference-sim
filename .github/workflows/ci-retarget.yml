@@ -1,0 +1,30 @@
+name: CI on retarget
+
+# A retarget (a change of a pull request's base, as when the next pull request of a squash stack moves
+# to main) is an `edited` event, and ci.yml does not run on `edited` (#2261). This workflow runs the
+# real CI for it: it dispatches ci.yml on the pull request's head branch. The dispatch run is the
+# newest CI run on the head commit and reports every required check by name, so the ruleset reads
+# a run made after the retarget, not one made against the old base. An edit of the title or body
+# does nothing here.
+#
+# A pull request from a fork cannot be dispatched on (the branch is not in this repository, and the
+# token is read-only): push a commit, or close and reopen the pull request, to run CI after its retarget.
+on:
+  pull_request:
+    branches: [main, 'feature/**', llm-d-r]
+    types: [edited]
+
+permissions:
+  actions: write
+
+jobs:
+  dispatch-ci:
+    if: ${{ github.event.changes.base && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch ci.yml on the head branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
