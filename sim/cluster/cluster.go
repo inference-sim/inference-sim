@@ -1424,7 +1424,7 @@ func (c *ClusterSimulator) PoolMembership() map[string]PoolRole {
 // After Run, an ended parent's OriginalRequest is a copy of the client's request, and it and the
 // sub-requests hold no InputTokens (releaseParentTokens); mid-run, a parent ended in the current event
 // still points at the client's request.
-// Panics if called before Run() completes. Returns an empty (non-nil) slice when disaggregation is disabled,
+// Panics if called before Run() starts; it is meant for after Run returns. Returns an empty (non-nil) slice when disaggregation is disabled,
 // allowing callers to range over the result without a nil check.
 func (c *ClusterSimulator) ParentRequests() []*ParentRequest {
 	if !c.hasRun {
