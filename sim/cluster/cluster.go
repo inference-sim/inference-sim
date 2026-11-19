@@ -1420,9 +1420,10 @@ func (c *ClusterSimulator) PoolMembership() map[string]PoolRole {
 
 // ParentRequests returns a sorted slice of defensive copies of parent request tracking records.
 // Each ParentRequest struct is copied by value so callers cannot mutate lifecycle timestamps (R8).
-// Note: DecodeSubReq is a shared *sim.Request pointer — callers must not mutate via it. An ended parent's
-// OriginalRequest is a copy of the client's request, and it and the sub-requests hold no InputTokens
-// (releaseParentTokens).
+// Note: OriginalRequest and DecodeSubReq are *sim.Request pointers — callers must not mutate via them.
+// After Run, an ended parent's OriginalRequest is a copy of the client's request, and it and the
+// sub-requests hold no InputTokens (releaseParentTokens); mid-run, a parent ended in the current event
+// still points at the client's request.
 // Panics if called before Run() completes. Returns an empty (non-nil) slice when disaggregation is disabled,
 // allowing callers to range over the result without a nil check.
 func (c *ClusterSimulator) ParentRequests() []*ParentRequest {

@@ -496,25 +496,30 @@ func TestAgentXInfiniteGraceEndsAtLastReturn(t *testing.T) {
 		wsub(1, "a1", 5000, wreq(1, 1, 128, 5, 50, 51), wreq(4, 1, 192, 5, 50, 51, 52)),
 		wsub(1, "a2", 5000, wreq(1, 5, 128, 5, 60, 61)),
 		wreq(10, 1, 192, 5, 1, 2, 3)))
-	svc := func(r *sim.Request) int64 {
-		if strings.HasSuffix(r.Agentic.Stream, ":a2") {
-			return 5 * sec
+	svcWith := func(a2Us int64) func(*sim.Request) int64 {
+		return func(r *sim.Request) int64 {
+			if strings.HasSuffix(r.Agentic.Stream, ":a2") {
+				return a2Us
+			}
+			return sec
 		}
-		return sec
 	}
+	svc := svcWith(5 * sec)
 	const stop = 100 * sec
 	for _, tc := range []struct {
-		name    string
-		graceUs int64
-		wantEnd int64
+		name           string
+		graceUs, a2Us  int64
+		wantLast, want int64
 	}{
-		{"inf", math.MaxInt64, 6 * sec},
-		{"30s", 30 * sec, 2500_000 + 30*sec},
+		{"inf", math.MaxInt64, 5 * sec, 6 * sec, 6 * sec},
+		// a2 back at 1.5 s, so the last return is a1's at 2 s, before the window's own end.
+		{"inf, last return before the window end", math.MaxInt64, sec / 2, 2 * sec, 2500_000},
+		{"30s", 30 * sec, 5 * sec, 6 * sec, 2500_000 + 30*sec},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := agxCfg(1, 0, 1)
 			cfg.DurationUs, cfg.GraceUs = 2500_000, tc.graceUs
-			h, _ := driveAgentX(t, c, cfg, svc, nil)
+			h, _ := driveAgentX(t, c, cfg, svcWith(tc.a2Us), nil)
 			if h.x.completeUs >= 0 {
 				t.Fatalf("non-vacuity: the profiling phase completed by itself at %d", h.x.completeUs)
 			}
@@ -522,12 +527,12 @@ func TestAgentXInfiniteGraceEndsAtLastReturn(t *testing.T) {
 			for _, d := range h.done {
 				lastReturn = max(lastReturn, d.doneAt)
 			}
-			if lastReturn != 6*sec {
-				t.Fatalf("non-vacuity: last return at %d, want 6 s (child a2)", lastReturn)
+			if lastReturn != tc.wantLast {
+				t.Fatalf("non-vacuity: last return at %d, want %d", lastReturn, tc.wantLast)
 			}
 			h.x.Finish(stop)
-			if _, end := h.x.Window(); end != tc.wantEnd {
-				t.Errorf("window end = %d, want %d", end, tc.wantEnd)
+			if _, end := h.x.Window(); end != tc.want {
+				t.Errorf("window end = %d, want %d", end, tc.want)
 			}
 		})
 	}

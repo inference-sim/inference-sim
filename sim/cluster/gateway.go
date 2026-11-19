@@ -265,7 +265,8 @@ func (cs *ClusterSimulator) Abort(err error) {
 // Evict implements GatewayHost. A disaggregated request is evicted at the stage it is in.
 func (cs *ClusterSimulator) Evict(req *sim.Request) bool {
 	if parent := cs.parentRequests[req.ID]; parent != nil && parent.gatewayDone {
-		// It has ended, and its record holds a copy of req (releaseParentTokens): nothing to evict.
+		// It has ended: nothing to evict. (From the next event on, its record holds a copy of req
+		// (releaseParentTokens), so the identity check below would no longer match it.)
 		return false
 	}
 	if parent := cs.parentRequests[req.ID]; parent != nil && parent.OriginalRequest == req {
