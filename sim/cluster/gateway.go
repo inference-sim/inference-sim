@@ -264,6 +264,11 @@ func (cs *ClusterSimulator) Abort(err error) {
 
 // Evict implements GatewayHost. A disaggregated request is evicted at the stage it is in.
 func (cs *ClusterSimulator) Evict(req *sim.Request) bool {
+	if parent := cs.parentRequests[req.ID]; parent != nil && parent.gatewayDone {
+		// It has ended: nothing to evict. (From the next event on, its record holds a copy of req
+		// (releaseParentTokens), so the identity check below would no longer match it.)
+		return false
+	}
 	if parent := cs.parentRequests[req.ID]; parent != nil && parent.OriginalRequest == req {
 		if !cs.evictParent(parent) {
 			return false
@@ -456,6 +461,28 @@ func (cs *ClusterSimulator) parentDone(parent *ParentRequest, at int64, outcome 
 		parent.OriginalRequest.GeneratedTokens = parent.DecodeSubReq.GeneratedTokens
 	}
 	cs.gateway.OnDone(parent.OriginalRequest, at, outcome)
+	cs.finishedParents = append(cs.finishedParents, parent)
+}
+
+// releaseParentTokens drops the prompt tokens of the parents that ended in the last event, so the
+// run-long parentRequests map does not keep served prompts alive; the end-of-run P/D metrics need
+// only the prompt's length (promptTokens). It runs between events, since the event that ended a
+// parent may still read them (the session follow-up does). The sub-requests are the cluster's own
+// (their InputTokens alias the client's) and are cleared in place; the original is the client's,
+// so the parent keeps a copy of it without them.
+func (cs *ClusterSimulator) releaseParentTokens() {
+	for _, p := range cs.finishedParents {
+		orig := *p.OriginalRequest
+		orig.InputTokens = nil
+		p.OriginalRequest = &orig
+		for _, r := range []*sim.Request{p.PrefillSubReq, p.DecodeSubReq, p.DecodeWaiting} {
+			if r != nil {
+				r.InputTokens = nil
+			}
+		}
+	}
+	clear(cs.finishedParents)
+	cs.finishedParents = cs.finishedParents[:0]
 }
 
 func (cs *ClusterSimulator) recordRouting(req *sim.Request, p Placement) {
