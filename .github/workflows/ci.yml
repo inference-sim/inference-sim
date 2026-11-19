@@ -5,7 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main, 'feature/**', llm-d-r]
-    # No edited: an edit starts no run (see the concurrency comment below). ready_for_review
+    # No edited: an edit starts no run here (see the concurrency comment below; a retarget runs
+    # through ci-retarget.yml). ready_for_review
     # starts CI for a draft made ready.
     types: [opened, synchronize, reopened, ready_for_review]
   # On-demand, so the L1 delivery loop (#1654) can run the REAL required checks against a
@@ -30,8 +31,8 @@ on:
 # be required any more. Pushes to main and dispatches have unique groups and are never cancelled.
 # An edit of a pull request's title or body starts no CI run: it changes no code, and the ruleset reads
 # the newest CI run on the head commit, so a run that skips every job blocks the merge (#2261).
-# A retarget (a change of the base) is also an edit, so it starts no run either: push a commit, or
-# close and reopen the pull request, to run CI against the new base.
+# A retarget (a change of the base) is also an edit: ci-retarget.yml dispatches this workflow on the
+# head branch for it. A fork's pull request needs a push, or a close and reopen, after its retarget.
 # blis.yml, golden-change.yml and private-names.yml read the text and still run on an edit.
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}

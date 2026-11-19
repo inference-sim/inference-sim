@@ -12,7 +12,8 @@ name: blis
 
 on:
   pull_request:
-    # edited: retargeting the next pull request of a squash stack to main starts the checks.
+    # edited: retargeting the next pull request of a squash stack to main starts the checks (ci.yml
+    # runs for a retarget through ci-retarget.yml).
     types: [opened, edited, synchronize, reopened, ready_for_review]
   schedule:
     - cron: "17 5 * * *"
