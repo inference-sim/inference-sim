@@ -95,6 +95,14 @@ func runAgentX(t agxTB, c *AgentXCorpus, cfg AgentXReplayConfig, service func(*s
 // request whose service outlasts its Deadline times out at the deadline.
 func runAgentXWith(t agxTB, c *AgentXCorpus, cfg AgentXReplayConfig, service func(*sim.Request) int64, reject func(*sim.Request) bool) *agxHarness {
 	t.Helper()
+	h, stop := driveAgentX(t, c, cfg, service, reject)
+	h.x.Finish(stop)
+	return h
+}
+
+// driveAgentX runs the replay to its last event, which it returns, without calling Finish.
+func driveAgentX(t agxTB, c *AgentXCorpus, cfg AgentXReplayConfig, service func(*sim.Request) int64, reject func(*sim.Request) bool) (*agxHarness, int64) {
+	t.Helper()
 	x, err := NewAgentXReplay(c, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -155,8 +163,7 @@ func runAgentXWith(t agxTB, c *AgentXCorpus, cfg AgentXReplayConfig, service fun
 			h.push(m.ArrivalTime, true, m)
 		}
 	}
-	x.Finish(stop)
-	return h
+	return h, stop
 }
 
 // wekaLine encodes a hand-written trace as a Weka v7 JSONL row.

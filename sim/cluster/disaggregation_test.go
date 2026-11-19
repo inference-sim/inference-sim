@@ -303,6 +303,7 @@ func TestDisaggregation_DroppedAtDecodeKV(t *testing.T) {
 
 	// INV-1 conservation must hold even when decode drops occur
 	assertClusterINV1Conservation(t, cs, 4, noRejections, "decode KV drops")
+	assertParentsHoldNoPromptTokens(t, cs)
 }
 
 // TestDisaggregation_DroppedParent_NotInLatencyMaps verifies issue #1511 end to end:
@@ -1851,7 +1852,7 @@ func TestDisaggregation_PD_SessionManager_ContextAccumulation(t *testing.T) {
 	// Accumulated context: 50 (round-0 input) + 20 (round-0 output) = 70
 	// Round 1 new input: 50 (from constant sampler)
 	// Round 1 total input: 70 (context) + 50 (new) = 120
-	round1InputLen := len(round1Parent.OriginalRequest.InputTokens)
+	round1InputLen := int(round1Parent.promptTokens) // the parent's own tokens are released when it ends
 	if round1InputLen <= round0InputLen {
 		t.Errorf("round-1 InputTokens length = %d, want > %d (context should have accumulated)",
 			round1InputLen, round0InputLen)
@@ -2128,5 +2129,48 @@ func BenchmarkDisaggregationRun(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+// A finished disaggregated request's record holds no prompt tokens, so the run-long
+// parentRequests map does not keep served prompts alive; the client's request is untouched.
+func TestDisaggregation_FinishedParentHoldsNoTokens(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(3)
+	inLens := make(map[string]int, len(requests))
+	for _, r := range requests {
+		inLens[r.ID] = len(r.InputTokens)
+	}
+
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
+	mustRun(t, cs)
+
+	if len(cs.parentRequests) != len(requests) {
+		t.Fatalf("parentRequests count = %d, want %d", len(cs.parentRequests), len(requests))
+	}
+	assertParentsHoldNoPromptTokens(t, cs)
+	for _, r := range requests {
+		if len(r.InputTokens) != inLens[r.ID] {
+			t.Errorf("client request %s: InputTokens len = %d, want %d (left untouched)", r.ID, len(r.InputTokens), inLens[r.ID])
+		}
+	}
+}
+
+// assertParentsHoldNoPromptTokens checks that every ended parent's record holds no prompt tokens
+// (releaseParentTokens), whatever its fate.
+func assertParentsHoldNoPromptTokens(t *testing.T, cs *ClusterSimulator) {
+	t.Helper()
+	for _, p := range cs.parentRequests {
+		if !p.gatewayDone {
+			t.Errorf("parent %s never reached its fate", p.ID)
+			continue
+		}
+		for name, r := range map[string]*sim.Request{
+			"original": p.OriginalRequest, "prefill": p.PrefillSubReq, "decode": p.DecodeSubReq, "waiting": p.DecodeWaiting,
+		} {
+			if r != nil && r.InputTokens != nil {
+				t.Errorf("parent %s: %s request still holds %d prompt tokens", p.ID, name, len(r.InputTokens))
+			}
+		}
 	}
 }
