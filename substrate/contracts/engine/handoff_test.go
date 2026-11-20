@@ -3,7 +3,7 @@ package engine
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 )
 
 // A handoff states where its KV sits when the pool's ranks span nodes; the endpoint cannot be

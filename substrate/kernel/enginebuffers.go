@@ -1,6 +1,6 @@
 package latencykernel
 
-import "github.com/inference-sim/blis-substrate/contracts/engine/plan"
+import "github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 
 // statedBufferBytes is the per-rank GPU memory of the buffers the engine states in its plan
 // (plan.PoolPlan.Buffers, SUB-14). The engine sizes each from its own function and states it

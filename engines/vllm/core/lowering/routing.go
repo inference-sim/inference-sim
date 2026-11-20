@@ -5,8 +5,8 @@ package lowering
 import (
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // routedExpertFormat names the format of the stack's routed experts for the backend census below:

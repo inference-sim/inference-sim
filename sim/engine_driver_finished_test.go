@@ -3,12 +3,12 @@ package sim
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // failsUnrun is a FIFO that never runs request "a": its first schedule after "a" arrives ends it
-// in Batch.Finished as an error, as blis-vllm's v0.33.0 engine ends a request whose KV load
+// in Batch.Finished as an error, as the vLLM engine's v0.33.0 engine ends a request whose KV load
 // failed under kv_load_failure_policy "fail" (update_from_output of a step that ran nothing,
 // vllm/v1/core/sched/scheduler.py:2306-2325@5df63a72).
 type failsUnrun struct {

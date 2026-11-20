@@ -7,18 +7,18 @@ import (
 	"strings"
 	"time"
 
-	validate "github.com/inference-sim/blis-substrate/contracts/check"
+	validate "github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
-// The pin-by-commit deferral. While the M1 pull requests are drafts, each pins the BLIS
-// modules by commit, because tags come after review and merge (release plan §3.1). The lint
-// reports that one finding, "resolves to <pseudo-version>, which is not a release tag", as
-// deferred while .github/modlint-deferral.yaml holds. Every other finding still fails.
+// The pin-by-commit deferral. While a pull request is a draft, the router fork may be pinned by
+// commit, because its tag comes after review and merge (release plan §3.1). The lint reports that
+// finding, the fork at a pseudo-version, as deferred while .github/modlint-deferral.yaml holds.
+// Every other finding still fails.
 //
 //	issue: inference-sim/blis-substrate#14   # the issue that owns the work
 //	added: 2026-11-05                         # the day the file was added; not in the future
 //	expires: 2026-12-05                       # at most 30 days after added (plan §3.3)
-//	modules: [blis-substrate, blis-vllm, blis-sglang]  # the BLIS modules whose commit pin is deferred
+//	modules: [llm-d-router]                   # the BLIS modules whose commit pin is deferred
 //	reason: one line
 //
 // A malformed, unowned, over-long, future-dated or expired file defers nothing and adds a
@@ -38,10 +38,9 @@ var issueName = regexp.MustCompile(`^[\w.-]+/[\w.-]+#\d+$`)
 // maxDeferral is the longest a deferral may last, counted from the day it was added.
 const maxDeferral = 30 * 24 * time.Hour
 
-// deferrableModules are the BLIS modules pinned by commit: in drafts, and, from M3.1, the lower
-// repositories (blis-design: only inference-sim is tagged; the others are pinned by commit and a tag
-// is optional).
-var deferrableModules = map[string]bool{"blis-substrate": true, "blis-vllm": true, "blis-sglang": true, "llm-d-router": true}
+// deferrableModules are the BLIS modules pinned by commit. Since M3.2 the substrate and the engines
+// are directories of this module, so the router fork is the only module left to pin.
+var deferrableModules = map[string]bool{"llm-d-router": true}
 
 // deferrable reports whether a finding is a listed BLIS module pinned by commit.
 func deferrable(finding string, modules []string) bool {
@@ -70,14 +69,6 @@ func deferrable(finding string, modules []string) bool {
 		}
 		return false
 	}
-	if !strings.Contains(finding, " resolves to ") || !strings.HasSuffix(finding, "which is not a release tag (X11, LIF-2)") {
-		return false
-	}
-	for _, m := range modules {
-		if strings.HasPrefix(finding, blisPrefix+m+" resolves to ") {
-			return true
-		}
-	}
 	return false
 }
 
@@ -103,7 +94,7 @@ func ApplyDeferral(src []byte, today time.Time, findings []string) (fail, deferr
 	}
 	for _, m := range d.Modules {
 		if !deferrableModules[m] {
-			bad = append(bad, fmt.Sprintf("modlint-deferral.yaml: modules names %q; only blis-substrate, blis-vllm, blis-sglang and llm-d-router are pinned by commit", m))
+			bad = append(bad, fmt.Sprintf("modlint-deferral.yaml: modules names %q; only llm-d-router is pinned by commit", m))
 		}
 	}
 	added, aerr := time.Parse("2006-01-02", d.Added)

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/kernelmodel"
-	"github.com/inference-sim/blis-vllm/core/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
 )
 
 // oracleRun and oracleCase are the fields of core/lower/testdata/vllm_lower.json's kv_pool cases

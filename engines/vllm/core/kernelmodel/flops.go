@@ -2,7 +2,7 @@
 
 package kernelmodel
 
-import "github.com/inference-sim/blis-substrate/contracts/kernel"
+import "github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
 // flopper is a kernel that states the model FLOPs of a step (blis-substrate kernel/flops.go).
 type flopper interface {

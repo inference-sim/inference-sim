@@ -3,7 +3,7 @@ package kernelimpls
 import (
 	"slices"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
 )
 
 // Covers reports whether the table lists every implementation of the primitive.

@@ -608,6 +608,7 @@ func TestJainFairnessIndex_Empty_ReturnsZero(t *testing.T) {
 // step series, the in-flight step function starts and ends at zero and never exceeds the
 // requests sent, and the KV capacity per replica is the instance pool's.
 func TestAggregatedMetrics_CarriesTheMeasuredWindowInputs(t *testing.T) {
+	skipRetiredEngine(t, "the engine reserves a null block, so capacity differs by one block")
 	requests := makeSharedPrefixRequests(12, 0, 64, 32, 8, 2_000)
 	phases := map[string]sim.Phase{}
 	for i, r := range requests {

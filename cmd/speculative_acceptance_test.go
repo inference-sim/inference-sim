@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	blisschemas "github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	blisschemas "github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
 
 	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/sim"
@@ -32,7 +32,7 @@ const (
 func acceptanceRepos(t *testing.T, preset string) (registry, catalog string) {
 	t.Helper()
 	root := t.TempDir()
-	// blis-substrate's loader refuses a symbolic link, so each is a real copy of the embedded
+	// the substrate's loader refuses a symbolic link, so each is a real copy of the embedded
 	// data; the registry's acceptance profile set is replaced by the fixture.
 	registry = filepath.Join(root, "registry")
 	if err := os.CopyFS(registry, os.DirFS(substratedata.MustRegistry())); err != nil {

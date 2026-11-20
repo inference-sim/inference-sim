@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 )
 
 // TestMain checks that the kernel adapter's default data (the pinned substrate's embedded

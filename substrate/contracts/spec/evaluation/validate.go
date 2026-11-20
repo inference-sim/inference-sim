@@ -3,7 +3,7 @@ package evaluation
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 // Validate performs field-level validation of a measured run.

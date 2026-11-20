@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
+	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
 )
 
 // The known-bad sweep (X18): every check in the registry names a known-bad input that must

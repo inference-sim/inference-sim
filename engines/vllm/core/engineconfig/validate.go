@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 )
 
 // Validate is the release-independent field checks of one pool's engine block: the bounds

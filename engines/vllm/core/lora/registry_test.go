@@ -5,7 +5,7 @@ package lora
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // TestRegistry_RankLookup verifies id -> rank resolution for declared adapters and a

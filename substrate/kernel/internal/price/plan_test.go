@@ -3,7 +3,7 @@ package price
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // emitAll answers every condition affirmatively, so a plan built with it contains every

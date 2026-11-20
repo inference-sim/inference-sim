@@ -5,8 +5,8 @@ package build
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-vllm/core/kernelmodel"
-	"github.com/inference-sim/blis-vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // PoolSettings is one P/D pool's engine as the cluster takes it: the per-pool settings that

@@ -7,10 +7,10 @@ import (
 	"os"
 	"regexp"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
-	"github.com/inference-sim/blis-substrate/ledger"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/ledger"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // generations is the architecture generation of each catalog chip: the die family, which is

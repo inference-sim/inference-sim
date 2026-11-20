@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -162,10 +162,6 @@ func TestFastForwardIdle_DeadTimeoutsDoNotBlockIt(t *testing.T) {
 	for name, setup := range map[string]func(*cluster.DeploymentConfig, *Options){
 		"colocated": func(*cluster.DeploymentConfig, *Options) {},
 		"sessions":  func(*cluster.DeploymentConfig, *Options) { sessions = true },
-		"dp-lockstep": func(d *cluster.DeploymentConfig, _ *Options) {
-			*d = testDeployment(4)
-			d.DPLockstepRanks = 2
-		},
 		"disaggregated": func(d *cluster.DeploymentConfig, o *Options) {
 			*d = testDeployment(4)
 			d.PrefillInstances, d.DecodeInstances = 2, 2

@@ -2,7 +2,7 @@
 
 package lower
 
-import "github.com/inference-sim/blis-sglang/config"
+import "github.com/inference-sim/inference-sim/engines/sglang/config"
 
 // issueCP is the issue that models context parallelism. It stays open while this refusal cites it
 // (X28).

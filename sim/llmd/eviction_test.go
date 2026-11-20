@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -365,6 +365,7 @@ func checkEviction(t *testing.T, s evictionSetup) map[string]*victim {
 // in-flight sheddable requests while critical ones wait on the saturated pool; running victims,
 // pinning a LoRA adapter, release their KV blocks and pin when revoked.
 func TestFlowControl_InFlightEviction(t *testing.T) {
+	skipRetiredEngine(t, "the engine does not expose per-request pins")
 	checkEviction(t, evictionSetup{config: evictionConfig, adapter: "a0", capacity: 2, kvBound: true})
 }
 
@@ -378,6 +379,7 @@ func TestFlowControl_InFlightEvictionDisaggregated(t *testing.T) {
 // a transfer evicted before its KV arrived leaves no block in the decode engine's cache, and so
 // none in the router's index.
 func TestFlowControl_InFlightEvictionDisaggregatedPrecise(t *testing.T) {
+	skipRetiredEngine(t, "the engine does not list its cached block hashes")
 	checkEviction(t, evictionSetup{config: pdPreciseEvictionConfig, pd: true})
 }
 
@@ -386,6 +388,7 @@ func TestFlowControl_InFlightEvictionDisaggregatedPrecise(t *testing.T) {
 // revoking them keeps that prefix cached, in the engine and in the router's index (which
 // checkEviction compares block for block).
 func TestFlowControl_InFlightEvictionDisaggregatedSharedPrefix(t *testing.T) {
+	skipRetiredEngine(t, "the engine does not list its cached block hashes")
 	// 120 sheddable requests 2 ms apart, 100 ms transfers, the critical burst at 200 ms: the
 	// earliest transfers have completed (their decode engines cache the prefix), later ones are
 	// still pending when they are revoked. The engines take 64 sequences so that no handoff waits

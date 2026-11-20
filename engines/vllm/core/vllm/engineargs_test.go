@@ -10,7 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-vllm/internal/upstream"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
 // engineArgsFile is oracle/engineargs-cases.json with oracle/run_engineargs.py's answers:

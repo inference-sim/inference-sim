@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-sglang/core/sched"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/sched"
 )
 
 // These tests pin two observable behaviours of the registry (M3.1, blis-sglang#107): the cache hit

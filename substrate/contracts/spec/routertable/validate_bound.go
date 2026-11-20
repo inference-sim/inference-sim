@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	validate "github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	validate "github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/metrics"
 )
 
 // validateMapping checks what an entry that maps to a policy must add to the mapping: the

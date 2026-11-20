@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	validate "github.com/inference-sim/blis-substrate/contracts/check"
+	validate "github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 // ValueClasses are the classes of a field's values that the field's evidence covers (design

@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 
-	"github.com/inference-sim/blis-vllm/compat/build"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/build"
 )
 
 // The KV offload configuration is resolved by blis-vllm's compat/build (#2021 E3), and its unit

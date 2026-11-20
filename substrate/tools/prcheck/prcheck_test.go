@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
+	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
 )
 
 func has(t *testing.T, got []string, want string) {
@@ -1050,14 +1050,18 @@ func TestLastReleaseTag(t *testing.T) {
 // The real tool lists packages under contracts/ and skips internal and main packages, and the
 // pinned apidiff is a step of the check, not a dependency (SUB-1).
 func TestContractsAPIToolIsNotADependency(t *testing.T) {
-	mod, err := os.ReadFile("../../go.mod")
+	mod, err := os.ReadFile("../../../go.mod")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(mod), "golang.org/x/exp") {
-		t.Error("go.mod requires golang.org/x/exp; apidiff runs through go run and is not a dependency (SUB-1)")
+	// The one module's graph reaches golang.org/x/exp through the router (cel-go, antlr), so it is
+	// listed as an indirect requirement; a direct one would be this repository's own use of apidiff.
+	for _, line := range strings.Split(string(mod), "\n") {
+		if strings.Contains(line, "golang.org/x/exp") && !strings.Contains(line, "// indirect") {
+			t.Errorf("go.mod requires %q directly; apidiff runs through go run and is not a dependency (SUB-1)", strings.TrimSpace(line))
+		}
 	}
-	pkgs, err := goTool{}.Packages("../..")
+	pkgs, err := goTool{}.Packages("../../..")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1069,7 +1073,7 @@ func TestContractsAPIToolIsNotADependency(t *testing.T) {
 			t.Errorf("unexpected package %s", p)
 		}
 	}
-	if !slices.Contains(pkgs, "github.com/inference-sim/blis-substrate/contracts/engine") {
+	if !slices.Contains(pkgs, "github.com/inference-sim/inference-sim/substrate/contracts/engine") {
 		t.Errorf("contracts/engine is not listed: %v", pkgs)
 	}
 	src, err := os.ReadFile("apidiff.go")

@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
-	kvtier "github.com/inference-sim/blis-vllm/core/connector/tiering"
+	kvtier "github.com/inference-sim/inference-sim/engines/vllm/core/connector/tiering"
 )
 
 // fsTier is TieringOffloadingSpec beside the base block's GPU blocks: a CPU tier of 200 one-block

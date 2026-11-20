@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 // issueRef is "<owner>/<repo>#<n>", n a positive integer.

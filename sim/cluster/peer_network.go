@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // The peer network carries the messages engines of one run send each other (engine.Peered): vLLM's

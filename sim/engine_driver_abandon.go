@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // Abandon drops every request the engine holds, waiting or running, at now, for an instance that

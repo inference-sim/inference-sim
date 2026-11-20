@@ -3,7 +3,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,13 +12,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-vllm/compat/build"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/build"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"pgregory.net/rapid"
@@ -44,7 +44,7 @@ const kernelLegEnv = "BLIS_KERNEL_LEG"
 
 // kernelRepos is the three artifact roots a kernel scenario resolves against: the cost model's
 // generated fixtures (testdata/kernel/aisimulate) and the catalog and registry of the pinned
-// blis-substrate.
+// the substrate.
 func kernelRepos(t *testing.T) (scenarios, catalog, registry string) {
 	t.Helper()
 	return testScenariosDir(t), testCatalogDir(), testRegistryDir()

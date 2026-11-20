@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/inference-sim/substrate/contracts/metrics"
 
 	"github.com/inference-sim/inference-sim/sim"
 )

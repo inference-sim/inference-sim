@@ -5,7 +5,7 @@ package sched
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 )
 
 func mambaGroup(mode string, ckptBlocks, align int) kv.Group {

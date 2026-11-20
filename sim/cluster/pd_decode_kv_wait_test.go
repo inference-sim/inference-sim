@@ -1,12 +1,12 @@
 package cluster
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 	"math"
 	"sort"
 	"testing"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 )
@@ -151,6 +151,7 @@ func TestPDDecodeKVWait_HeadOfLineBlocks(t *testing.T) {
 // prompt. A cluster that started fewer than the engine admitted would leave b for a later
 // schedule; a dropped pulled count would price a shorter pull.
 func TestPDDecodeKVWait_StartsEveryHandoffTheEngineAdmits(t *testing.T) {
+	skipRetiredEngine(t, "decode-pool admission order differs")
 	config := holdConfig(false, 1000)
 	setPDPrice(&config, func(tokens int64, _, _ plan.Endpoint) int64 { return 1 + tokens })
 	blocks := int64(40)

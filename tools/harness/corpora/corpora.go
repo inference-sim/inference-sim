@@ -8,13 +8,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/load"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 	"github.com/inference-sim/inference-sim/internal/kernelfixtures"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // The roots these offline scorers read by default: the cost model's scenario fixtures, the
-// catalog/ and registry/ of the blis-substrate module this build selects, and the measurement
+// catalog/ and registry/ of the substrate module this build selects, and the measurement
 // corpora under BLIS_MEASUREMENTS, which no BLIS repository redistributes. These scorers move
 // to accuracy-dashboard (design §2.2, COV-1) and are deleted here when they have.
 

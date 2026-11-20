@@ -5,7 +5,7 @@ package vllm
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // drain schedules and completes until no batch runs, at time steps of one microsecond.

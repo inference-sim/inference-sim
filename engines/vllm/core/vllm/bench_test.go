@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // BenchmarkEngineLongDecodes drives engine.Engine (Add, then Schedule and Complete) with 16

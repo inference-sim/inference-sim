@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 )
 
 // bruteWindowed counts attention pairs one query at a time, in the kernel's continuum

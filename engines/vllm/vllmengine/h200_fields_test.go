@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // The DeepSeek-V4.1-Flash H200 rows of InferenceX state the Rust front end, synthetic rejection sampling

@@ -12,11 +12,11 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	substrate "github.com/inference-sim/blis-substrate"
-	"github.com/inference-sim/blis-substrate/ledger"
+	substrate "github.com/inference-sim/inference-sim/substrate"
+	"github.com/inference-sim/inference-sim/substrate/ledger"
 )
 
-// `blis ledger` prints what the blis-substrate release this build pins publishes about its data
+// `blis ledger` prints what this build's substrate publishes about its data
 // ledger (design section 10.2, D7, COV-2). It reads only the catalog in use, the embedded copy
 // or the directory --catalog names, and holds no list of its own.
 //
@@ -36,10 +36,10 @@ const publishedDir = "ledger/published"
 var ledgerCmd = &cobra.Command{
 	Use:   "ledger --list fit|anchor|report",
 	Short: "Print a published role list of the pinned substrate release",
-	Long: "Print the fit, anchor or report list the blis-substrate release this build pins publishes " +
+	Long: "Print the fit, anchor or report list this build's substrate publishes " +
 		"(design section 10.2): the YAML file as the release carries it, after the substrate's own check " +
 		"(ledger.LoadPublished). COV-2 scores only the anchor list. With --catalog or BLIS_CATALOG naming " +
-		"a blis-substrate checkout's catalog, the lists are checked against ledger.yaml and the unit lists: " +
+		"a catalog, the lists are checked against ledger.yaml and the unit lists: " +
 		"the seed and partition they were drawn under, all three lists present, every unit in a source, " +
 		"no unit on two lists. The embedded copy carries neither ledger.yaml nor the unit lists, so it is " +
 		"checked for what the lists say of themselves: kind, role, unit format and order, one seed and " +
@@ -61,14 +61,14 @@ var ledgerUnitsCmd = &cobra.Command{
 	Short: "Print the ledger's unit list with each unit's identifier",
 	Long: "Print every unit of every source in catalog/ledger/sources.yaml, one line each: the " +
 		"unit_id, a tab and the source. No release embeds the unit lists, so --catalog must name a " +
-		"blis-substrate checkout's catalog directory; without one the command fails.",
+		"catalog directory; without one the command fails.",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		dir := pathFrom("catalog", catalogPath, catalogEnvVar, os.Getenv(catalogEnvVar))
 		if dir == "" {
 			return fmt.Errorf("ledger units: the unit lists are not embedded in any substrate release; " +
-				"name a blis-substrate checkout's catalog directory with --catalog")
+				"name a catalog directory with --catalog")
 		}
 		return printUnits(cmd.OutOrStdout(), filepath.Join(dir, "ledger"))
 	},
@@ -220,7 +220,7 @@ func printUnits(w io.Writer, dir string) error {
 
 func init() {
 	ledgerCmd.Flags().StringVar(&ledgerList, "list", "", "The published role list to print: fit, anchor or report")
-	ledgerCmd.PersistentFlags().StringVar(&catalogPath, "catalog", "", "A directory with the layout of blis-substrate's catalog/ that replaces the embedded catalog (or "+catalogEnvVar+"; the flag wins). Without either the command reads the catalog embedded in the blis-substrate release this build pins")
+	ledgerCmd.PersistentFlags().StringVar(&catalogPath, "catalog", "", "A directory with the layout of substrate/catalog/ that replaces the embedded catalog (or "+catalogEnvVar+"; the flag wins). Without either the command reads the catalog embedded in this build's substrate")
 	ledgerCmd.AddCommand(ledgerUnitsCmd)
 	rootCmd.AddCommand(ledgerCmd)
 }

@@ -5,7 +5,7 @@ package kernelmodel
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
 )
 
 // engineKind is the engine kind blis-vllm registers, as a scenario's engine.kind names it.

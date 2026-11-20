@@ -24,8 +24,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/inference-sim/blis-vllm/compat/build"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/build"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 )
 
 // PassedSettings is what a run's command line carried. A nil field was not passed.
@@ -201,7 +201,7 @@ type PointConfig struct {
 	EngineVersion       string
 }
 
-// runSettings is the point's settings as blis-vllm writes them onto a scenario.
+// runSettings is the point's settings as the vLLM engine writes them onto a scenario.
 func (pc PointConfig) runSettings() build.RunSettings {
 	return build.RunSettings{
 		MaxNumSeqs: pc.MaxNumSeqs, MaxNumBatchedTokens: pc.MaxNumBatchedTokens, BlockSize: pc.BlockSize,
@@ -245,7 +245,7 @@ func vllmDefaultGPUMemUtil(version string) (float64, bool) {
 // a measurement of the engine's behaviour rather than a guess. The scenario last, which in
 // practice means the non-vLLM sweeps where no log exists.
 //
-// stated is what the scenario's pool states (build.StatedRunSettings): blis-vllm reads the
+// stated is what the scenario's pool states (build.StatedRunSettings): the vLLM engine reads the
 // engine block, so this names none of its fields.
 func resolveAdmission(sw Sweep, concurrency int, stated build.RunSettings,
 	dep kernelmodel.Deployment, set *EngineSettingSet) PointConfig {

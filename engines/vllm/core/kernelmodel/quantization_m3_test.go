@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 
-	"github.com/inference-sim/blis-vllm/core/quantization"
-	"github.com/inference-sim/blis-vllm/core/vllmsettings"
-	"github.com/inference-sim/blis-vllm/internal/substratedata"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/quantization"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/substratedata"
 )
 
 // m3Oracle is a MiniMax-M3 entry of core/quantization/resolved.json: what vLLM's own ModelConfig

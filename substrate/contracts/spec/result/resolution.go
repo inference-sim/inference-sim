@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 )
 
 // settingOf names the Result's setting for a field the cost model names in a declined request.

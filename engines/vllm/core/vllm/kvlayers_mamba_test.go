@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 )
 
 // 4 attention layers (2 KV heads of 8) beside 8 Mamba layers whose 600-byte state is padded to

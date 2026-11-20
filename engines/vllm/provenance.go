@@ -2,7 +2,7 @@
 
 // Package blisvllm is a Go model of the vLLM inference engine's scheduling, KV-cache,
 // connector and metrics behaviour, for a discrete-event simulator to call through the
-// engine-neutral contract in github.com/inference-sim/blis-substrate/contracts/engine.
+// engine-neutral contract in github.com/inference-sim/inference-sim/substrate/contracts/engine.
 //
 // One build of this module models one vLLM release, Upstream. Its behaviour is checked
 // against that release's own code in CI (see oracle/README.md): the same inputs, fed to the
@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"runtime/debug"
 
-	"github.com/inference-sim/blis-substrate/contracts/harness"
+	"github.com/inference-sim/inference-sim/substrate/contracts/harness"
 
-	"github.com/inference-sim/blis-vllm/internal/upstream"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
 // Kind is the engine kind this module registers with the contracts' engine factory.
@@ -53,8 +53,8 @@ type Provenance struct {
 	Behaviour string `json:"behaviour" yaml:"behaviour"`
 }
 
-// ModulePath is this module's import path.
-const ModulePath = "github.com/inference-sim/blis-vllm"
+// ModulePath is the import path of the module this package is in: one module holds the substrate, both engines and the simulator, so a build records one revision for all.
+const ModulePath = "github.com/inference-sim/inference-sim"
 
 // moduleVersion reports this module's version from the running binary's build info.
 func moduleVersion() string {

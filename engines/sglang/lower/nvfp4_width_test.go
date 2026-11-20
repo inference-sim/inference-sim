@@ -5,7 +5,7 @@ package lower
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // stackOf is a graph whose one layer kind, in the main stack, holds the nodes.

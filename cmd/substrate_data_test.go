@@ -1,13 +1,13 @@
 package cmd
 
 import (
-	"github.com/inference-sim/blis-substrate/load"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/substrate/load"
 
 	"github.com/inference-sim/inference-sim/internal/substratedata"
 )
 
-// The tests' data: the catalog/ and registry/ directories of the blis-substrate module this
+// The tests' data: the catalog/ and registry/ directories of the substrate module this
 // build selects (internal/substratedata), which hold the embedded copy's files. A CLI test
 // passes the directories as --catalog and --registry; a library test opens a kernel from the
 // Data the loader opens on them, the one a run opens on the same paths.

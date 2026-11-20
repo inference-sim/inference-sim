@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/schema"
+	"github.com/inference-sim/inference-sim/substrate/contracts/schema"
 )
 
 // schema <document> prints the schema the pinned substrate release publishes, byte for byte,

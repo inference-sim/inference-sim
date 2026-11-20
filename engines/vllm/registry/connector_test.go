@@ -12,10 +12,10 @@ import (
 	"strings"
 	"testing"
 
-	schemas "github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/spec/connector"
+	schemas "github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/connector"
 
-	blisvllm "github.com/inference-sim/blis-vllm"
+	blisvllm "github.com/inference-sim/inference-sim/engines/vllm"
 )
 
 // The registry file validates against blis-schemas' connector-registry schema.

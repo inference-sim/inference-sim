@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 )
 
 // A pool's EnginePlacement is the chip and fabric its scenario names, the layout its deployment states and

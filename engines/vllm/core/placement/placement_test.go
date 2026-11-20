@@ -5,8 +5,8 @@ package placement
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 )
 
 func TestValidateRefusesWhatThePlanOrThePoolRefuses(t *testing.T) {

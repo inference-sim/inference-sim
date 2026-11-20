@@ -5,13 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
 
-// unindexable is an engine that says a router cannot index its KV events (blis-vllm's v0.32.0
+// unindexable is an engine that says a router cannot index its KV events (the vLLM engine's v0.32.0
 // engine for DeepSeek V4's packed full-attention group, Engine.KVEventsRefusal).
 type unindexable struct{ engine.Engine }
 
@@ -24,7 +24,7 @@ func (unindexable) KVEventsRefusal() error { return errors.New("packed group at 
 func TestPrecisePrefix_RefusesAnEngineItCannotIndex(t *testing.T) {
 	for _, precise := range []bool{true, false} {
 		dep := testDeployment(1)
-		inner := compatEngineFactory(0)
+		inner := compatEngineFactory(false)
 		dep.NewEngine = func(i int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
 			d, err := inner(i, ic)
 			if err != nil {

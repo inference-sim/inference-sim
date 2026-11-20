@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/internal/substratedata"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/substratedata"
 )
 
 // Pinned reports whether a root is the pinned blis-substrate release's own data: its

@@ -36,7 +36,7 @@ func builtEngineReleases() map[string]string {
 
 // lastReleaseRunning maps an engine release this build does not run to the newest
 // inference-sim release that runs it. v0.15.0 is the last release that runs vLLM 0.29.0 and
-// 0.31.0 (release plan §3.3, "Removing blis-vllm's 0.29 and 0.31 code").
+// 0.31.0 (release plan §3.3, "Removing the vLLM engine's 0.29 and 0.31 code").
 func lastReleaseRunning() map[engineRef]string {
 	return map[engineRef]string{
 		{Kind: engineKindVLLM, Version: "0.29.0"}: "v0.15.0",
@@ -61,7 +61,7 @@ func selectEngine(path string) (engineRef, error) {
 		return engineRef{}, fmt.Errorf("scenario %s: %w", path, err)
 	}
 	var f scenarioEngineFields
-	// The scenario is decoded strictly elsewhere (blis-substrate's scenario loader); this
+	// The scenario is decoded strictly elsewhere (the substrate's scenario loader); this
 	// reads two fields of its first document and ignores the rest.
 	if err := yaml.Unmarshal(firstDocument(data), &f); err != nil {
 		return engineRef{}, fmt.Errorf("scenario %s: %w", path, err)

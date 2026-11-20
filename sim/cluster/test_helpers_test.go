@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/env"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/env"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
@@ -115,7 +115,7 @@ func setPDPrice(d *DeploymentConfig, ticks func(tokens int64, from, to plan.Endp
 // setPullEnv is setPDPrice for a test that states the whole demand (payload, floor, links).
 func setPullEnv(d *DeploymentConfig, mk func(blockTokens int64) testutil.PullEnv) {
 	d.InstanceEndpoint = testInstanceEndpoint
-	d.NewEngine = compatEngineFactoryWith(d.DPLockstepRanks, func(b int64) env.Environment { return mk(b) })
+	d.NewEngine = compatEngineFactoryWith(isDisaggregated(*d), func(b int64) env.Environment { return mk(b) })
 }
 
 // newTestRequests creates test requests matching the old newTestWorkload(n) behavior:

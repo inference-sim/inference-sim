@@ -3,7 +3,7 @@ package vllm
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // dsv41Offload is a DeepSeek V4.1-shaped engine (dsv41Layers: a bounded-replay window, the

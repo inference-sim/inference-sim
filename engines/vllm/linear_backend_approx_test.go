@@ -5,7 +5,7 @@ package blisvllm
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
 )
 
 // vLLM v0.33.0's linear_backend=flashinfer_cutlass on SM10x runs FlashInferCutlassNvFp4LinearKernel

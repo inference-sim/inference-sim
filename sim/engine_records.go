@@ -10,8 +10,8 @@ package sim
 import (
 	"slices"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 )
 
 // completion is one finished request's report values, computed by the engine.

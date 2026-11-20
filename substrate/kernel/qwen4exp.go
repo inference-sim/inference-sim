@@ -3,8 +3,8 @@ package latencykernel
 import (
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve"
 )
 
 // pricesQwen4Exp prices the two kinds no allowed data measures: sparse GQA attention (the QSA

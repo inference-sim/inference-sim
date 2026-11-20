@@ -20,10 +20,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-	"github.com/inference-sim/blis-vllm/kerneltests/internal/harness"
+	"github.com/inference-sim/inference-sim/engines/vllm/kerneltests/internal/harness"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 )
 
 // row is one line of the table: a batch shape and the scenario that prices it.

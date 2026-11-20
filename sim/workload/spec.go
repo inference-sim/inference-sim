@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"os"
 
-	tracespec "github.com/inference-sim/blis-substrate/contracts/spec/trace"
+	tracespec "github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/inference-sim/sim/check"
@@ -50,7 +50,7 @@ type WorkloadSpec struct {
 }
 
 // PhaseSpec is one stage of a phased workload. The trace header's phase fields (name, start,
-// offset_us, concurrency) mean here what they mean there (blis-substrate trace.Phase), and the
+// offset_us, concurrency) mean here what they mean there (the substrate trace.Phase), and the
 // run writes them to the exported trace's header. A phase sends NumRequests requests drawn from
 // its own clients; the first starts the run, and each later one starts when the one before it
 // drains (every request has its fate), or at a stated clock.

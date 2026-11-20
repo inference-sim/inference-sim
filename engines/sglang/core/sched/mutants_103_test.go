@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inference-sim/blis-sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 )
 
 // These tests pin what the schedule policies of policy.go decide: the order a policy gives the

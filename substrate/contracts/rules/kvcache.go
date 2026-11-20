@@ -3,7 +3,7 @@ package rules
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // KVCacheLayer is one engine KV cache layer: one owned cache of one layer of the graph.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
 )
 
 // PYTHONUNBUFFERED is proven inert (oracle/inertness/PYTHONUNBUFFERED.json): Python reads it to write

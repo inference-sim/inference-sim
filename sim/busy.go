@@ -4,7 +4,7 @@
 // every step starts and ends, so it records them here.
 package sim
 
-import "github.com/inference-sim/blis-substrate/contracts/engine"
+import "github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
 // BusyStep is one engine step that ran a batch: when it started and ended on the simulated
 // clock, and how many of the tokens it scheduled were prefill and decode.

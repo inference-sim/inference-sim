@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // TestRun_StuckGatewayIsAnError: a run whose gateway holds requests that no event can release
@@ -59,7 +61,12 @@ func TestDisaggregation_SubRequestsKeepTheAdapter(t *testing.T) {
 	for _, r := range reqs {
 		r.Adapter = "adapter-a"
 	}
-	cs := newTestCluster(newTestDisaggDeploymentConfig(4, 2, 2), NewSliceRequestSource(reqs), nil)
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	capacity := 1
+	editEngine(&cfg, func(c *simConfig) {
+		c.LoRAConfig = cengine.LoRAConfig{AdapterCapacity: &capacity, Adapters: []cengine.AdapterSpec{{ID: "adapter-a", Rank: 8}}}
+	})
+	cs := newTestCluster(cfg, NewSliceRequestSource(reqs), nil)
 	mustRun(t, cs)
 	if len(cs.parentRequests) != 3 {
 		t.Fatalf("%d parents, want 3", len(cs.parentRequests))

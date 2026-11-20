@@ -5,9 +5,9 @@ package kernelmodel
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 )
 
 // decodeEngine is a pool's engine block as vLLM's engine configuration (engineconfig.Decode),

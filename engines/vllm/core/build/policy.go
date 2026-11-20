@@ -7,9 +7,9 @@ package build
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/routing"
 
-	"github.com/inference-sim/blis-vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 )
 
 // EnginePolicy is a vLLM scheduling_policy in the compatibility engine's terms: it decides

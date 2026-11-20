@@ -7,10 +7,10 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/connector/offloading"
-	"github.com/inference-sim/blis-vllm/core/connector/tiering"
-	"github.com/inference-sim/blis-vllm/core/kv"
-	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/offloading"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/tiering"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // The fs tier reached through the OffloadingConnector: the connector's scheduler side calls the

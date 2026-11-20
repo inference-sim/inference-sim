@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // MuseSparkArchitectures are the architectures vLLM v0.33.0 builds with MuseSpark1xModel, the

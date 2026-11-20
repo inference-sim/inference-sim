@@ -5,7 +5,7 @@ package kernelmodel
 import (
 	"testing"
 
-	sim "github.com/inference-sim/blis-vllm/core/runconfig"
+	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // dp_moe_pricing_test.go is committed, independently reproducible acceptance evidence for #1902

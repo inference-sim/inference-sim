@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
 	embed "github.com/llm-d/llm-d-router/blisembed"
 

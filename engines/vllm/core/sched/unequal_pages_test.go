@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 )
 
 // TestUnequalPagesGroupAsVLLMDoes holds core/kv's handling of attention layers of unequal pages to vLLM v0.33.0's: the

@@ -1,8 +1,8 @@
 package cluster
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 	"reflect"
 	"testing"
 
@@ -112,6 +112,7 @@ func TestPDDecodeLoad_DecodeCPUTierNeverServesAHandoff(t *testing.T) {
 // instance, overlapping, both pull every block; once the first has landed, a third pulls only
 // the last block.
 func TestPDDecodeLoad_InFlightBlocksAreNotAPrefixHit(t *testing.T) {
+	skipRetiredEngine(t, "handoff timing differs")
 	cfg := newTestDisaggDeploymentConfig(3, 2, 1)
 	setPDPrice(&cfg, func(int64, plan.Endpoint, plan.Endpoint) int64 { return 1_000_000 })
 	a := holdTestRequest("a", 1, 0, 160, 4)

@@ -6,8 +6,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/kv"
-	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // The connector protocol of vLLM v0.33.0 (offloading/scheduler.py@4ba787ec) as a manager other

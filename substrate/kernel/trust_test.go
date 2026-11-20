@@ -1,14 +1,14 @@
 package latencykernel
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/conformance/kerneltest"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/kerneltest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/load"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
-	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve"
 )
 
 func res(name string, m vocab.Method, value float64, ci *coefficient.Interval, fit ...coefficient.Bound) resolve.Resolved {

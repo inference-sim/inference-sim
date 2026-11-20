@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
 )
 
 // sim11Trace is the fixture TestSIM11_TraceFieldsConsumedChangeTheResult toggles: 120 requests

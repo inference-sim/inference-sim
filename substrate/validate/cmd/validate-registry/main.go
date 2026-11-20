@@ -38,10 +38,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/validate/dataset"
-	"github.com/inference-sim/blis-substrate/validate/registry"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/validate/dataset"
+	"github.com/inference-sim/inference-sim/substrate/validate/registry"
 )
 
 func main() {

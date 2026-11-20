@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/load"
 
-	coreengine "github.com/inference-sim/blis-vllm/vllmengine"
+	coreengine "github.com/inference-sim/inference-sim/engines/vllm/vllmengine"
 )
 
 // A run opens its catalog and registry once and builds every engine over that Data
@@ -65,7 +65,7 @@ func TestEngineDataLeg(t *testing.T) {
 
 // What this proves and what it does not: it counts the host's own opener and the Data handed
 // to the host's engine-build seam, so it fails if the host opens its Data twice or hands two
-// builds different Data. It cannot see blis-vllm opening data inside a build (that opener is
+// builds different Data. It cannot see the vLLM engine opening data inside a build (that opener is
 // unexported there), so it does not by itself fail on the old roots-based path; the report
 // test below and the root-refusal test do.
 func TestRun_OpensItsDataOnceForEveryPoolsEngine(t *testing.T) {

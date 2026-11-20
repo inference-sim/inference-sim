@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // A Plan is a model graph collapsed for repeated evaluation.

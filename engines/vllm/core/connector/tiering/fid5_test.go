@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/connector/offloading"
-	"github.com/inference-sim/blis-vllm/core/connector/tiering"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/offloading"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/tiering"
 )
 
 // The FID-5 traces of TieringOffloadingSpec with no secondary tier (core/connector/offloading's

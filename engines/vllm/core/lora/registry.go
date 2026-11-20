@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/inference-sim/blis-vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // Registry is the concrete pre-declared LoRA adapter registry: an immutable

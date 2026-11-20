@@ -1,7 +1,7 @@
 package latencykernel
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // deepseekV4Family reports whether a graph is DeepSeek-V4 or V4.1, whose attention runs on

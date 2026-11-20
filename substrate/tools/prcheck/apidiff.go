@@ -34,7 +34,7 @@ var (
 // apidiffTool runs apidiff and the go list that finds the packages. dir is where the command
 // runs. The real one shells out; a test supplies its own.
 type apidiffTool interface {
-	// Packages lists the importable, non-internal, non-main packages under contracts/ in dir.
+	// Packages lists the importable, non-internal, non-main packages under substrate/contracts/ in dir.
 	Packages(dir string) ([]string, error)
 	// Export writes the export data of package pkg of the module in dir to file.
 	Export(dir, pkg, file string) error
@@ -76,7 +76,7 @@ func CheckContractsAPI(tool apidiffTool, oldDir, newDir, scratch string) ([]stri
 		return nil, err
 	}
 	if len(oldPkgs) == 0 {
-		return nil, fmt.Errorf("the last tag has no package under contracts/; the check processes at least one (X22)")
+		return nil, fmt.Errorf("the last tag has no package under substrate/contracts/; the check processes at least one (X22)")
 	}
 	have := map[string]bool{}
 	for _, p := range newPkgs {
@@ -148,7 +148,7 @@ func (goTool) run(dir string, args ...string) (string, error) {
 }
 
 func (g goTool) Packages(dir string) ([]string, error) {
-	out, err := g.run(dir, "list", "-f", "{{.ImportPath}} {{.Name}}", "./contracts/...")
+	out, err := g.run(dir, "list", "-f", "{{.ImportPath}} {{.Name}}", "./substrate/contracts/...")
 	if err != nil {
 		return nil, err
 	}

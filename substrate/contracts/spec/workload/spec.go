@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 // Spec is the workload generator's specification: the document `blis run --workload-spec`

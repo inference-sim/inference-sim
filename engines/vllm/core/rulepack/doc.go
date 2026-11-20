@@ -18,8 +18,8 @@ package rulepack
 import (
 	"sort"
 
-	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
-	"github.com/inference-sim/blis-vllm/core/rulepack/v0_33"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/v0_33"
 )
 
 // Packs returns a fresh copy of every pack, by version.

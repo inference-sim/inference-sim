@@ -101,7 +101,7 @@ func TestRunCmd_KernelBackend_ScenarioRefusals(t *testing.T) {
 		{"a node pool stating other GPU memory", "states gpu_memory_gib 80",
 			run(plain, "--policy-config", writeNodePoolBundle(t, "h200", "80"))},
 		// vLLM's own floor on the batch caps (ge=1, vllm/config/scheduler.py:48,62@5df63a72) is the
-		// engine's to apply: blis-vllm's kernel model refuses a deployment that states none
+		// engine's to apply: the vLLM engine's kernel model refuses a deployment that states none
 		// (compat/kernelmodel Model.Engine), when the build site sizes the pool, and cmd keeps no
 		// copy of the check. The fixture states neither, so each case states the zero.
 		{"max_num_seqs 0", "max_num_seqs",
@@ -282,7 +282,7 @@ func TestRunCmd_RefusesAnEngineReleaseItDoesNotRun(t *testing.T) {
 	})
 }
 
-// A 0.33.0 scenario runs blis-vllm's translated v0.33.0 engine through blis-schemas' engine.Engine
+// A 0.33.0 scenario runs the vLLM engine's translated v0.33.0 engine through blis-schemas' engine.Engine
 // contract: every request completes, and the latency kernel's 0.31.0 tuning, which prices the
 // step, is disclosed on stderr.
 func TestRunCmd_A032ScenarioRunsThroughTheEngineContract(t *testing.T) {
@@ -426,7 +426,7 @@ func TestRunCmd_A032ScenarioRendersOnTheHostFrontEnd(t *testing.T) {
 
 // A MultiConnector P/D run states its assumption about the connector's children however opening
 // the pools ends: refused for counts that do not add up, the warning still reaches stderr, ahead
-// of the refusal, as it did before the pools moved to blis-vllm.
+// of the refusal, as it did before the pools moved to the vLLM engine.
 func TestRunCmd_MultiConnectorWarningSurvivesARefusal(t *testing.T) {
 	_, stderr, err := runKernelCLI(t, "run", "--scenarios", pdScenarios,
 		"--scenario", "deepseek-v4.1-flash-h100-1p1d-dspark5-cpu1t.yaml",

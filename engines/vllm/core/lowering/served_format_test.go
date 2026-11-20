@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/vllmsettings"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
 )
 
 // A pre-quantized checkpoint is loaded with its own method, and vLLM raises when another is stated

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
 )
 
 // A field is proven inert (design 7.4, tier T1) when the scenario set gives identical traces at its default

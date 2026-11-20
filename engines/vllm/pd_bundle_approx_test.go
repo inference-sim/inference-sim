@@ -5,7 +5,7 @@ package blisvllm
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
 )
 
 // The Kimi and DeepSeek P/D recipes state backends no allowed table measures. The field list prices each

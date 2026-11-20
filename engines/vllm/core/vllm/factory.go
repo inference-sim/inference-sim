@@ -5,9 +5,9 @@ package vllm
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
-	"github.com/inference-sim/blis-vllm/internal/upstream"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
 // Kind is the engine kind this module registers with blis-schemas' factory registry.

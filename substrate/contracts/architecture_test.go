@@ -15,7 +15,7 @@ import (
 // and the separation this repository is organized around would exist only in the
 // documentation.
 func TestSpecDoesNotDependOnRules(t *testing.T) {
-	const mod = "github.com/inference-sim/blis-substrate/contracts/"
+	const mod = "github.com/inference-sim/inference-sim/substrate/contracts/"
 	for _, pkg := range []string{
 		"./spec/model", "./spec/hardware", "./spec/coefficient",
 		"./spec/scenario", "./spec/deployment", "./spec/workload",
@@ -47,7 +47,7 @@ func TestSpecDoesNotDependOnRules(t *testing.T) {
 // here: spec/ legitimately imports the problem list, and forbidding that
 // transitively would forbid spec/ itself.
 func TestKernelImportsOnlySpec(t *testing.T) {
-	const mod = "github.com/inference-sim/blis-substrate/contracts/"
+	const mod = "github.com/inference-sim/inference-sim/substrate/contracts/"
 	out, err := exec.Command("go", "list", "-f", "{{join .Imports \"\\n\"}}", "./kernel").Output()
 	if err != nil {
 		t.Fatalf("go list ./kernel: %v", err)
@@ -70,7 +70,7 @@ func TestRulesPackagesAreVersioned(t *testing.T) {
 	if err != nil {
 		t.Fatalf("go list ./rules/...: %v", err)
 	}
-	const mod = "github.com/inference-sim/blis-substrate/contracts/"
+	const mod = "github.com/inference-sim/inference-sim/substrate/contracts/"
 	for _, pkg := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		rel := strings.TrimPrefix(pkg, mod)
 		if rel == "rules" {
@@ -97,7 +97,7 @@ func TestRulesPackagesAreVersioned(t *testing.T) {
 // prices it (engine/plan.Transfer), and a plan's sizes are typed in units, which depends on
 // nothing in this module (TestPlanPackagesStayInTheirLane).
 func TestEngineIsEngineNeutral(t *testing.T) {
-	const mod = "github.com/inference-sim/blis-substrate/contracts/"
+	const mod = "github.com/inference-sim/inference-sim/substrate/contracts/"
 	allowed := map[string]bool{"spec/fields": true, "check": true, "units": true}
 	for _, pkg := range []string{"./engine", "./conformance/enginetest"} {
 		out, err := exec.Command("go", "list", "-deps", pkg).Output()
@@ -116,7 +116,7 @@ func TestEngineIsEngineNeutral(t *testing.T) {
 // X18 for the engine-neutrality rule: spec/fields does not itself reach a rules pack, a
 // scenario, a model or any other document, so allowing it does not let those in behind it.
 func TestTheFieldListImportsNoEngineKnowledge(t *testing.T) {
-	const mod = "github.com/inference-sim/blis-substrate/contracts/"
+	const mod = "github.com/inference-sim/inference-sim/substrate/contracts/"
 	out, err := exec.Command("go", "list", "-deps", "./spec/fields").Output()
 	if err != nil {
 		t.Fatal(err)
@@ -139,7 +139,7 @@ func TestInvariantsImportOnlyTheStandardLibraryAndYAML(t *testing.T) {
 		t.Fatalf("go list -deps ./invariants: %v", err)
 	}
 	for _, dep := range strings.Fields(string(out)) {
-		if dep == "github.com/inference-sim/blis-substrate/contracts/invariants" || dep == "gopkg.in/yaml.v3" {
+		if dep == "github.com/inference-sim/inference-sim/substrate/contracts/invariants" || dep == "gopkg.in/yaml.v3" {
 			continue
 		}
 		t.Errorf("contracts/invariants depends on %s; it may use only the standard library and gopkg.in/yaml.v3 (SUB-1)", dep)
@@ -151,7 +151,7 @@ func TestInvariantsImportOnlyTheStandardLibraryAndYAML(t *testing.T) {
 // model types it returns, the engine package for DemandFor (which takes an engine.Transfer),
 // and the reference implementation adds nothing else.
 func TestPlanPackagesStayInTheirLane(t *testing.T) {
-	const mod = "github.com/inference-sim/blis-substrate/contracts/"
+	const mod = "github.com/inference-sim/inference-sim/substrate/contracts/"
 	for pkg, allowed := range map[string][]string{
 		"./units":       {"units"},
 		"./engine/plan": {"units", "engine/plan"},
@@ -185,7 +185,7 @@ func TestHarnessImportsOnlyTheStandardLibrary(t *testing.T) {
 			t.Fatalf("go list -deps %s: %v", pkg, err)
 		}
 		for _, dep := range strings.Fields(string(out)) {
-			if dep == "github.com/inference-sim/blis-substrate/contracts/harness" || dep == "github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles" {
+			if dep == "github.com/inference-sim/inference-sim/substrate/contracts/harness" || dep == "github.com/inference-sim/inference-sim/substrate/contracts/harness/cmd/harnessfiles" {
 				continue
 			}
 			t.Errorf("%s depends on %s; the engine harness uses the standard library only (SUB-1)", pkg, dep)

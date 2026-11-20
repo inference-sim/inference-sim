@@ -9,7 +9,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/routertable"
 )
 
 // repoDir is this repository's root; a test runs in load/.

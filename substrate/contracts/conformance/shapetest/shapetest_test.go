@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 )
 
 // fake is a kernel with settable answers, to show each check fails on the input it exists for.

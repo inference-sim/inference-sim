@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/ledger"
+	"github.com/inference-sim/inference-sim/substrate/ledger"
 )
 
 // The legacy partition is inference-sim's tools/validation/inferencex/partition/

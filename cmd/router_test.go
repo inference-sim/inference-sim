@@ -11,10 +11,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/llmd"
 	"github.com/inference-sim/inference-sim/sim/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 )
 
 // pdAlwaysEPPConfig is an EndpointPickerConfig that disaggregates every request (llm-d's P/D

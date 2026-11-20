@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 )
 
 // A host that runs a data-parallel group as one instance (core/vllm's DPGroup) counts groups, not ranks: a pool

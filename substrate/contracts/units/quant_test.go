@@ -3,7 +3,7 @@ package units
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 func TestQuantFormatStoredBytes(t *testing.T) {

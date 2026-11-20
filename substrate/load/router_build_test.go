@@ -3,8 +3,8 @@ package load
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
-	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/pointrecord"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/routertable"
 )
 
 // A Dynamo recipe names its build by wheel version. The embedded table resolves the versions the

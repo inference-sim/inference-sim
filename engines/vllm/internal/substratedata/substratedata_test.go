@@ -4,15 +4,14 @@ package substratedata
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// With no override, each root is the pinned substrate's own directory in the module cache,
-// and holds the data the tests read.
-func TestTheRootsAreThePinnedSubstratesData(t *testing.T) {
+// With no override, each root is the repository's own substrate directory, and holds the data
+// the tests read.
+func TestTheRootsAreTheRepositorysSubstrateData(t *testing.T) {
 	t.Setenv(catalogEnv, "")
 	t.Setenv(registryEnv, "")
 	for _, c := range []struct {
@@ -27,8 +26,8 @@ func TestTheRootsAreThePinnedSubstratesData(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(got, Module+"@") || filepath.Base(got) != c.name {
-			t.Errorf("%s root %q is not <module cache>/%s@<version>/%s", c.name, got, Module, c.name)
+		if !strings.HasSuffix(filepath.ToSlash(got), "/substrate/"+c.name) {
+			t.Errorf("%s root %q is not <repository>/substrate/%s", c.name, got, c.name)
 		}
 		if _, err := os.Stat(filepath.Join(got, c.probe)); err != nil {
 			t.Errorf("%s root %q lacks %s: %v", c.name, got, c.probe, err)
@@ -43,66 +42,45 @@ func TestEachRootIsIndependentlyOverridable(t *testing.T) {
 	if got, _ := Catalog(); got != "/elsewhere/catalog" {
 		t.Errorf("Catalog() = %q with %s set", got, catalogEnv)
 	}
-	if got, _ := Registry(); !strings.Contains(got, Module+"@") {
+	if got, _ := Registry(); !strings.HasSuffix(filepath.ToSlash(got), "/substrate/registry") {
 		t.Errorf("Registry() = %q moved when only %s was set", got, catalogEnv)
 	}
 }
 
-// A path under the module is the released data; an override elsewhere is not.
-func TestInModuleRecognisesOnlyTheModulesOwnData(t *testing.T) {
+// A path under the substrate directory is the repository's data; an override elsewhere is not.
+func TestInModuleRecognisesOnlyTheRepositorysOwnData(t *testing.T) {
 	t.Setenv(catalogEnv, "")
 	cat, err := Catalog()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !InModule(cat) {
-		t.Errorf("InModule(%q) = false for the module's own catalog", cat)
+		t.Errorf("InModule(%q) = false for the repository's own catalog", cat)
 	}
 	if InModule(t.TempDir()) {
-		t.Error("InModule is true for a directory outside the module")
+		t.Error("InModule is true for a directory outside the substrate")
 	}
 }
 
-// A go.work (or GOWORK) that names a sibling blis-substrate checkout does not change the
-// directory reported: the pinned release in the module cache stays the answer (X25).
-func TestAWorkspaceDoesNotMoveThePinnedSubstrate(t *testing.T) {
-	t.Setenv(catalogEnv, "")
-	t.Setenv(registryEnv, "")
-	pinned, err := locate("")
-	if err != nil {
+// The directory is found from a go.mod that declares the module, not from a nearer go.mod of
+// another module or from the environment.
+func TestLocateWalksToTheModulesGoMod(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(simulatorModule+"\n\ngo 1.27.2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	own, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
+	deep := filepath.Join(root, "a", "b")
+	if err := os.MkdirAll(deep, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	parent := t.TempDir()
-	sibling := filepath.Join(parent, "blis-substrate")
-	if err := os.MkdirAll(sibling, 0o755); err != nil {
+	if got, err := locate(deep); err != nil || got != filepath.Join(root, "substrate") {
+		t.Errorf("locate(%s) = %q, %v", deep, got, err)
+	}
+	other := t.TempDir()
+	if err := os.WriteFile(filepath.Join(other, "go.mod"), []byte("module example.com/other\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sibling, "go.mod"), []byte("module "+Module+"\n\ngo 1.27.2\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	work := filepath.Join(parent, "go.work")
-	if err := os.WriteFile(work, []byte("go 1.27.2\n\nuse (\n\t"+own+"\n\t"+sibling+"\n)\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// Non-vacuity: the workspace really does move an unguarded go list.
-	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", Module)
-	cmd.Dir = own
-	cmd.Env = append(os.Environ(), "GOWORK="+work)
-	raw, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("%v: %s", err, raw)
-	}
-	if got := strings.TrimSpace(string(raw)); got != sibling {
-		t.Fatalf("the workspace reports %q for an unguarded go list, want the sibling %q: the test proves nothing", got, sibling)
-	}
-	t.Setenv("GOWORK", work)
-	t.Setenv("GOFLAGS", "-mod=readonly")
-	got, err := locate("")
-	if err != nil || got != pinned {
-		t.Errorf("under GOWORK=%s the substrate is %q (%v), want the pinned %q", work, got, err, pinned)
+	if got, err := locate(other); err == nil {
+		t.Errorf("locate in another module's tree = %q, want an error", got)
 	}
 }

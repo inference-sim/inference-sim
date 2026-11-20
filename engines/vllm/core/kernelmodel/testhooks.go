@@ -3,11 +3,11 @@
 package kernelmodel
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
-	sim "github.com/inference-sim/blis-vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // Test hooks for inference-sim's simulator-level tests of this adapter, which price a whole

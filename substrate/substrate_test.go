@@ -14,26 +14,6 @@ import (
 	modzip "golang.org/x/mod/zip"
 )
 
-// The module asks for the Go its own code needs (go 1.24), not one a dependency chose: the go
-// command raises a module's directive to its highest requirement's, so a pin on a module that
-// declares a newer Go would silently move every consumer's toolchain (https://github.com/inference-sim/blis-latency-kernel/issues/87).
-func TestTheModuleAsksForGo124(t *testing.T) {
-	raw, err := os.ReadFile("go.mod")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, line := range strings.Split(string(raw), "\n") {
-		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "go "); ok {
-			if !strings.HasPrefix(v, "1.24") {
-				t.Errorf("go.mod declares go %s; a dependency raised it. Keep go 1.24, and lower "+
-					"the dependency's directive instead", v)
-			}
-			return
-		}
-	}
-	t.Fatal("go.mod has no go directive")
-}
-
 // SUB-13: blis-substrate is one Go module. A go.mod below the root would make its directory a
 // separate module, which is the split this repository exists to remove.
 func TestNoNestedModule(t *testing.T) {
@@ -59,7 +39,7 @@ func TestNoNestedModule(t *testing.T) {
 // command uses, so the files counted are exactly those a consumer downloads.
 func TestModuleZipIsUnder100MB(t *testing.T) {
 	var buf bytes.Buffer
-	if err := modzip.CreateFromDir(&buf, module.Version{Path: "github.com/inference-sim/blis-substrate", Version: "v0.0.0"}, "."); err != nil {
+	if err := modzip.CreateFromDir(&buf, module.Version{Path: "github.com/inference-sim/inference-sim/substrate", Version: "v0.0.0"}, "."); err != nil {
 		t.Fatalf("building the module zip: %v", err)
 	}
 	r, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))

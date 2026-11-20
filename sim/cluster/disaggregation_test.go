@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
@@ -79,6 +79,7 @@ func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) Deployment
 		}, 0)
 		d.NumInstances = numInstances
 		d.PrefillInstances = prefill
+		d.PDPrefillSamplesFirstToken = true
 		d.DecodeInstances = decode
 		d.InstanceEndpoint = testInstanceEndpoint
 		return d
@@ -672,7 +673,7 @@ func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
 		// Independent reconstruction from decode sub-request per-instance metrics.
 		decodeOwnE2E, decodeDelay, hasDecode := pdDecodeOwnE2E(cs, parent.DecodeSubReqID)
 		if hasDecode {
-			want := float64(decodeDelay) + decodeOwnE2E
+			want := pdWantE2E(parent, decodeOwnE2E, decodeDelay)
 			if math.Abs(e2e-want) > 1e-9 {
 				t.Errorf("parent %s: E2E = %.0f, want %.0f (decodeSchedulingDelay %d + decodeOwnE2E %.0f)",
 					pid, e2e, want, decodeDelay, decodeOwnE2E)
@@ -706,33 +707,20 @@ func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
 // Test independence: the assertions never recompute the production formula (the pre-#1510
 // test did, making it a tautology). Instead they use two orthogonal guards —
 //
-//	(1) a residual reconstructed from ParentRequest phase timestamps
-//	    (DecodeEnqueueTime − ArrivalTime), recorded by a different mechanism than the
-//	    RequestSchedulingDelays map the fix reads; and
-//	(2) a differential comparison against the old buggy formula.
+//	a residual reconstructed from ParentRequest phase timestamps
+//	(DecodeEnqueueTime − ArrivalTime), recorded by a different mechanism than the
+//	RequestSchedulingDelays map the fix reads.
+//
+// (The differential against the pre-#1510 formula is gone: that formula's prefill-side TTFT came
+// from the retired compatibility engine, whose prefill leg did not sample the first token.)
 func TestDisaggregation_TTFT_IncludesTransferAndDecode(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
-	// OTPT is the per-output-token processing overhead; the old formula carried a
-	// second, phantom copy. Require it positive so the low-load "reported < old"
-	// differential below is non-trivially caused by removing that phantom OTPT.
-	if otpt := engineConfigOf(config).LatencyModel.OutputTokenProcessingTime(); otpt <= 0 {
-		t.Fatalf("test precondition: OTPT must be positive to distinguish the two-OTPT bug, got %d", otpt)
-	}
 	requests := newTestRequests(5)
 
 	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
-
-	// Collect prefill-only TTFTs from per-instance metrics (before projection) so the
-	// differential guard can reconstruct the OLD buggy formula independently.
-	prefillTTFTs := make(map[string]float64)
-	for _, inst := range cs.PerInstanceMetricsByID() {
-		for id, ttft := range inst.RequestTTFTs {
-			prefillTTFTs[id] = ttft
-		}
-	}
 
 	verified := 0
 	for _, parent := range cs.ParentRequests() {
@@ -774,30 +762,6 @@ func TestDisaggregation_TTFT_IncludesTransferAndDecode(t *testing.T) {
 		if residual < -1e-9 {
 			t.Errorf("BC-1: parent %s: residual decode-queue wait = %.1f < 0 (reported TTFT=%.1f, enqueue−arrival=%.0f, firstDecodeStep=%.0f) — causality violated",
 				pid, residual, ttft, enqueueToArrival, firstDecodeStep)
-		}
-
-		// --- Guard 2: differential vs the OLD buggy formula (regression guard) ---
-		// old = prefillTTFT + transferDuration + firstDecodeStep. The old formula mixed a
-		// prefill-INSTANCE-local prefillTTFT (which includes a second, phantom OTPT) with
-		// cluster-clock transfer/decode terms. The fix uses a single cluster-clock span
-		// (decodeDelay) + one instance-local step, so it is not a simple ±OTPT shift of the
-		// old value — the two live in different clock domains. What holds robustly is the
-		// DIRECTION the issue states: at low load (decode_queue_wait ≈ 0) the old formula
-		// OVER-states TTFT, so reported < old. This light workload (~100µs inter-arrival,
-		// short decodes) keeps the decode pool idle between requests, so every parent has
-		// ~zero queue wait and reported < old. This deterministically catches any regression
-		// to the old formula (which would make reported == old). The exact-composition proof
-		// is Guard 1's residual; this is the anti-regression companion.
-		origPrefillTTFT, hasPrefill := prefillTTFTs[parent.PrefillSubReqID]
-		if !hasPrefill {
-			t.Errorf("parent %s: no prefill TTFT for %s in per-instance metrics", pid, parent.PrefillSubReqID)
-			continue
-		}
-		transferDuration := float64(parent.TransferCompleteTime - parent.TransferStartTime)
-		oldFormula := origPrefillTTFT + transferDuration + firstDecodeStep
-		if ttft >= oldFormula {
-			t.Errorf("defect-1: parent %s: reported TTFT (%.1f) >= old-formula value (%.1f); at low load the fix must drop the phantom OTPT so reported < old",
-				pid, ttft, oldFormula)
 		}
 
 		// BC-4: TTFT <= E2E (causality). Missing E2E for a completed parent is itself a violation.
@@ -1478,7 +1442,7 @@ func TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression(t *testing.T
 		// Reconstruct from decode sub-request per-instance metrics.
 		decodeOwnE2E, decodeDelay, hasDecode := pdDecodeOwnE2E(cs, parent.DecodeSubReqID)
 		if hasDecode {
-			wantE2E := float64(decodeDelay) + decodeOwnE2E
+			wantE2E := pdWantE2E(parent, decodeOwnE2E, decodeDelay)
 			if e2e != wantE2E {
 				t.Errorf("parent %s: RequestE2Es = %.0f, want %.0f (decodeSchedulingDelay %d + decodeOwnE2E %.0f)",
 					parent.ID, e2e, wantE2E, decodeDelay, decodeOwnE2E)

@@ -35,17 +35,17 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/load"
 
-	core "github.com/inference-sim/blis-vllm/core/engine"
-	"github.com/inference-sim/blis-vllm/core/kv"
-	"github.com/inference-sim/blis-vllm/core/lora"
-	"github.com/inference-sim/blis-vllm/core/metrics"
-	"github.com/inference-sim/blis-vllm/core/placement"
-	"github.com/inference-sim/blis-vllm/core/sched"
+	core "github.com/inference-sim/inference-sim/engines/vllm/core/engine"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/lora"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/metrics"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/placement"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // eosToken is the token the engine samples for a request's last assigned output token, which

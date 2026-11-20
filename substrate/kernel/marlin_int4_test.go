@@ -3,7 +3,7 @@ package latencykernel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // Kimi-K2.5's routed experts are compressed-tensors int4 (W4A16). vLLM runs them on the Marlin

@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/mod/semver"
 
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
+	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
 )
 
 // Kind is what a repository releases, which decides its tag scheme (design §14.1).

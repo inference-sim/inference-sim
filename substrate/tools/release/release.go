@@ -14,9 +14,9 @@ import (
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
-	"github.com/inference-sim/blis-substrate/ledger"
-	"github.com/inference-sim/blis-substrate/tools/internal/bot"
+	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
+	"github.com/inference-sim/inference-sim/substrate/ledger"
+	"github.com/inference-sim/inference-sim/substrate/tools/internal/bot"
 )
 
 // Env is what the bot needs that is not in git: the registry, the invariant check results

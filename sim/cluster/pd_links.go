@@ -8,7 +8,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 )
 
 // LinkArbiter shares fabric links among concurrent transfers (P/D KV handoffs, #1922). It is

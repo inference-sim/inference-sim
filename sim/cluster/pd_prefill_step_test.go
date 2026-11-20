@@ -1,7 +1,7 @@
 package cluster
 
 import (
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 	"testing"
 
 	"pgregory.net/rapid"
@@ -86,6 +86,7 @@ func pdSingleRequestCapped(rt *rapid.T, model cengine.LatencyModel, inputLen, ou
 //     TTFT by at least extra. With the handoff starting at the prefill step's START, the
 //     prefill step's cost never reached TTFT and the difference was zero.
 func TestPD_HandoffWaitsForThePrefillStep(t *testing.T) {
+	skipRetiredEngine(t, "step timing differs")
 	rapid.Check(t, func(rt *rapid.T) {
 		base := fakeLatencyWithCoeffs(testutil.FakeLatency{
 			BaseTicks:                  rapid.Int64Range(1, 5000).Draw(rt, "base"),

@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 )
 
 // quantizationOracle is the deepseek-v4-pro entry of core/quantization/resolved.json: what vLLM's own ModelConfig

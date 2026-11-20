@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/inference-sim/blis-vllm/kerneltests/internal/harness"
+	"github.com/inference-sim/inference-sim/engines/vllm/kerneltests/internal/harness"
 )
 
 func main() {

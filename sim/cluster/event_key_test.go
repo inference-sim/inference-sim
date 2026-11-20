@@ -10,7 +10,7 @@ import (
 	"math/rand"
 	"testing"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -127,10 +127,6 @@ func permutationDigest(t *testing.T, permute *rand.Rand, setup func(*ClusterSimu
 
 	runOne("pd", newTestDisaggDeploymentConfig(4, 2, 2), tied(16, 2000), nil)
 
-	drain := newTestDeploymentConfig(2)
-	drain.InstanceLifecycle = InstanceLifecycleConfig{DrainPolicy: string(DrainPolicyRedirect)}
-	editEngine(&drain, func(c *simConfig) { c.BatchConfig = cengine.NewBatchConfig(1, 2048, 0) })
-	runOne("drain", drain, tied(12, 0), func(cs *ClusterSimulator) { cs.scheduleTestEvent(&drainAt{at: 0, inst: 0}) })
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 

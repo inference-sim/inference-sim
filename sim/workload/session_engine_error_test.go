@@ -3,14 +3,14 @@ package workload
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
 
 // failsAfterAdmit is a FIFO that admits request "s0" and runs the first chunk of its prefill,
-// then ends it in Batch.Finished as an error before any token is out, as blis-vllm's v0.33.0 engine ends a running
+// then ends it in Batch.Finished as an error before any token is out, as the vLLM engine's v0.33.0 engine ends a running
 // request whose KV load failed under kv_load_failure_policy "fail"
 // (vllm/v1/core/sched/scheduler.py:2306-2325@5df63a72). By then the driver has marked it running.
 type failsAfterAdmit struct {

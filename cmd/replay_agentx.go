@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/workload"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	simworkload "github.com/inference-sim/inference-sim/sim/workload"

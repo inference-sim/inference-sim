@@ -5,7 +5,7 @@
 
 package tiering
 
-import "github.com/inference-sim/blis-vllm/core/connector/offloading"
+import "github.com/inference-sim/inference-sim/engines/vllm/core/connector/offloading"
 
 // CPU is the connector's CPU tier as the tiering manager's primary tier
 // (CPUPrimaryTierOffloadingManager, manager.py:114-173): each method is the CPUPrimary method it

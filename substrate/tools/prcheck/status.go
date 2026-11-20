@@ -10,8 +10,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	validate "github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
+	validate "github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
 )
 
 // The nightly status page (X16, design §13.4). .github/gates.yaml lists each gate: a

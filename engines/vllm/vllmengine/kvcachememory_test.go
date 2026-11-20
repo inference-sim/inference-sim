@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // d010 is deepseek-v4-pro on one 8-GPU H200 node, tensor parallel 8, with gpu_memory_utilization
