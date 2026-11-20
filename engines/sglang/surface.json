@@ -7,9 +7,9 @@
  },
  "sites_under": "python/sglang/srt/",
  "counts": {
-  "modelled": 14,
+  "modelled": 20,
   "out_of_scope": 18,
-  "refused": 511
+  "refused": 505
  },
  "items": [
   {
@@ -468,7 +468,7 @@
    "site": "mem_cache/allocator/base.py:41",
    "built": "mem_cache/kv_cache_configurator.py:344",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "allocator:DSV4NPUTokenToKVPoolAllocator",
@@ -488,7 +488,7 @@
    "site": "mem_cache/allocator/hisparse.py:302",
    "built": "mem_cache/kv_cache_configurator.py:2941",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "allocator:FloatMultiEndedAllocator",
@@ -496,7 +496,7 @@
    "name": "FloatMultiEndedAllocator",
    "site": "mem_cache/allocator/unified_sub_pool.py:2204",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "allocator:HiSparseTokenToKVPoolAllocator",
@@ -505,7 +505,7 @@
    "site": "mem_cache/allocator/hisparse.py:22",
    "built": "mem_cache/kv_cache_configurator.py:729",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "allocator:MambaSlotAllocator",
@@ -513,7 +513,7 @@
    "name": "MambaSlotAllocator",
    "site": "mem_cache/allocator/mamba.py:30",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "allocator:MultiEndedAllocator",
@@ -521,7 +521,7 @@
    "name": "MultiEndedAllocator",
    "site": "mem_cache/allocator/unified_sub_pool.py:279",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "allocator:NPUPagedTokenToKVPoolAllocator",
@@ -541,7 +541,7 @@
    "site": "mem_cache/allocator/page_interleave.py:58",
    "built": "mem_cache/kv_cache_configurator.py:2904",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "allocator:PagedTokenToKVPoolAllocator",
@@ -549,8 +549,11 @@
    "name": "PagedTokenToKVPoolAllocator",
    "site": "mem_cache/allocator/paged.py:136",
    "built": "mem_cache/kv_cache_configurator.py:2857",
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/direct/paged-allocator-reuse.trace.json",
+    "core/cache/testdata/golden-pools/direct/paged-allocator-sorted.trace.json"
+   ]
   },
   {
    "id": "allocator:PureSWATokenToKVPoolAllocator",
@@ -559,7 +562,7 @@
    "site": "mem_cache/allocator/swa.py:727",
    "built": "mem_cache/kv_cache_configurator.py:2866",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "allocator:SWATokenToKVPoolAllocator",
@@ -568,7 +571,7 @@
    "site": "mem_cache/allocator/swa.py:41",
    "built": "mem_cache/kv_cache_configurator.py:2822",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "allocator:TokenToKVPoolAllocator",
@@ -576,8 +579,11 @@
    "name": "TokenToKVPoolAllocator",
    "site": "mem_cache/allocator/token.py:28",
    "built": "mem_cache/kv_cache_configurator.py:2917",
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/direct/token-allocator-reuse.trace.json",
+    "core/cache/testdata/golden-pools/direct/token-allocator-sorted.trace.json"
+   ]
   },
   {
    "id": "allocator:UnifiedMambaSWATokenToKVPoolAllocator",
@@ -586,7 +592,7 @@
    "site": "mem_cache/allocator/unified_hybrid_swa.py:1340",
    "built": "mem_cache/unified_memory_pool.py:2479",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "allocator:UnifiedMambaSlotAllocator",
@@ -594,7 +600,7 @@
    "name": "UnifiedMambaSlotAllocator",
    "site": "mem_cache/unified_memory_pool.py:1261",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "allocator:UnifiedMambaTokenToKVPoolAllocator",
@@ -603,7 +609,7 @@
    "site": "mem_cache/allocator/unified_mamba.py:42",
    "built": "mem_cache/kv_cache_configurator.py:659",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "allocator:UnifiedSWAAllocatorBase",
@@ -611,7 +617,7 @@
    "name": "UnifiedSWAAllocatorBase",
    "site": "mem_cache/allocator/unified_hybrid_swa.py:55",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "allocator:UnifiedSWATokenToKVPoolAllocator",
@@ -620,7 +626,7 @@
    "site": "mem_cache/allocator/unified_hybrid_swa.py:808",
    "built": "mem_cache/unified_memory_pool.py:2255",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "host_pool:AsymmetricMHATokenToKVPoolHost",
@@ -764,7 +770,7 @@
    "site": "mem_cache/base_swa_memory_pool.py:14",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:DSATokenToKVPool",
@@ -773,8 +779,10 @@
    "site": "mem_cache/memory_pool.py:5279",
    "built": "mem_cache/kv_cache_configurator.py:1811",
    "level": "L1",
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/direct/pool-sizing.trace.json"
+   ]
   },
   {
    "id": "kv_pool:DSV4NPUTokenToKVPool",
@@ -795,7 +803,7 @@
    "site": "mem_cache/deepseek_v4_memory_pool.py:545",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:DeepSeekV4SingleKVPool",
@@ -804,7 +812,7 @@
    "site": "mem_cache/deepseek_v4_memory_pool.py:237",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:DeepSeekV4TokenToKVPool",
@@ -814,7 +822,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2097",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:DeepSeekV4UniformFP8KVPool",
@@ -823,7 +831,7 @@
    "site": "mem_cache/deepseek_v4_memory_pool.py:383",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:HiSparseC4DevicePool",
@@ -832,7 +840,7 @@
    "site": "mem_cache/deepseek_v4_memory_pool.py:437",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:HiSparseDSATokenToKVPool",
@@ -842,7 +850,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2346",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:HiSparseMHAMainPool",
@@ -851,7 +859,7 @@
    "site": "mem_cache/hisparse_memory_pool.py:174",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:HybridLinearKVPool",
@@ -861,7 +869,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2680",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:KVCache",
@@ -870,7 +878,7 @@
    "site": "mem_cache/memory_pool.py:2005",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:LayerSplitDSATokenToKVPool",
@@ -880,7 +888,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2361",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:MHATokenToKOnlyPool",
@@ -889,7 +897,7 @@
    "site": "mem_cache/memory_pool.py:5732",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:MHATokenToKVPool",
@@ -898,8 +906,10 @@
    "site": "mem_cache/memory_pool.py:2184",
    "built": "mem_cache/kv_cache_configurator.py:1804",
    "level": "L1",
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/direct/pool-sizing.trace.json"
+   ]
   },
   {
    "id": "kv_pool:MHATokenToKVPoolFP4",
@@ -908,7 +918,7 @@
    "site": "mem_cache/memory_pool.py:3621",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:MHATokenToKVPoolMXFP8",
@@ -917,7 +927,7 @@
    "site": "mem_cache/memory_pool.py:3847",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:MLATokenToKVPool",
@@ -926,8 +936,10 @@
    "site": "mem_cache/memory_pool.py:4754",
    "built": "mem_cache/kv_cache_configurator.py:1808",
    "level": "L1",
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/direct/pool-sizing.trace.json"
+   ]
   },
   {
    "id": "kv_pool:MLATokenToKVPoolFP4",
@@ -936,7 +948,7 @@
    "site": "mem_cache/memory_pool.py:5133",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:MambaPool",
@@ -945,7 +957,7 @@
    "site": "mem_cache/memory_pool.py:505",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:MiniMaxM3Nvfp4IndexKPool",
@@ -954,7 +966,7 @@
    "site": "mem_cache/minimax_m3_nvfp4_pool.py:123",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:MiniMaxM3Nvfp4KVPool",
@@ -964,7 +976,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2576",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:MiniMaxM3Nvfp4MainKVPool",
@@ -973,7 +985,7 @@
    "site": "mem_cache/minimax_m3_nvfp4_pool.py:347",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:MiniMaxSparseKVPool",
@@ -983,7 +995,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2572",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:NPUDeepSeekV4IndexerPool",
@@ -1062,7 +1074,7 @@
    "built": "mem_cache/kv_cache_configurator.py:815",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:PageInterleaveDSATokenToKVPool",
@@ -1072,7 +1084,7 @@
    "built": "mem_cache/kv_cache_configurator.py:1976",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:PageInterleaveMHATokenToKVPool",
@@ -1082,7 +1094,7 @@
    "built": "mem_cache/kv_cache_configurator.py:1980",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:PageInterleaveMLATokenToKVPool",
@@ -1092,7 +1104,7 @@
    "built": "mem_cache/kv_cache_configurator.py:1975",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:PageMajorMHATokenToKVPool",
@@ -1102,7 +1114,7 @@
    "built": "mem_cache/kv_cache_configurator.py:1804",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:QSATokenToKVPool",
@@ -1112,7 +1124,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2683",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:SWAKVPool",
@@ -1122,7 +1134,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2191",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:UnifiedDraftKVPool",
@@ -1131,7 +1143,7 @@
    "site": "mem_cache/unified_draft_pool.py:37",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:UnifiedDraftMambaPool",
@@ -1140,7 +1152,7 @@
    "site": "mem_cache/unified_draft_pool.py:320",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:UnifiedDraftSWAKVPool",
@@ -1149,7 +1161,7 @@
    "site": "mem_cache/unified_draft_pool.py:128",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:UnifiedHybridLinearKVPool",
@@ -1159,7 +1171,7 @@
    "built": "mem_cache/unified_memory_pool.py:1749",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:UnifiedKVPool",
@@ -1169,7 +1181,7 @@
    "built": "mem_cache/unified_memory_pool.py:1704",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:UnifiedMHATokenToKVPool",
@@ -1179,7 +1191,7 @@
    "built": "mem_cache/unified_memory_pool.py:1739",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:UnifiedMLATokenToKVPool",
@@ -1189,7 +1201,7 @@
    "built": "mem_cache/unified_memory_pool.py:1732",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:UnifiedMambaPool",
@@ -1198,7 +1210,7 @@
    "site": "mem_cache/unified_memory_pool.py:1071",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:UnifiedSWAKVPool",
@@ -1208,7 +1220,7 @@
    "built": "mem_cache/unified_memory_pool.py:2246",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "kv_pool:_DummyKVCache",
@@ -1239,7 +1251,7 @@
    "site": "disaggregation/decode.py:171",
    "built": "mem_cache/kv_cache_configurator.py:1691",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "req_pool:HybridMambaDecodeReqToTokenPool",
@@ -1248,7 +1260,7 @@
    "site": "disaggregation/decode.py:275",
    "built": "mem_cache/kv_cache_configurator.py:1646",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "req_pool:HybridReqToTokenPool",
@@ -1257,7 +1269,7 @@
    "site": "mem_cache/memory_pool.py:1355",
    "built": "mem_cache/kv_cache_configurator.py:754",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "req_pool:MlxAuxiliaryStateReqToTokenPool",
@@ -1275,8 +1287,10 @@
    "name": "ReqToTokenPool",
    "site": "mem_cache/memory_pool.py:376",
    "built": "mem_cache/kv_cache_configurator.py:343",
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-fid5/recorded/tiny.trace.json.gz"
+   ]
   },
   {
    "id": "req_pool:UnifiedHybridReqToTokenPool",
@@ -1285,7 +1299,7 @@
    "site": "mem_cache/unified_memory_pool.py:1357",
    "built": "mem_cache/unified_memory_pool.py:1712",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
   },
   {
    "id": "hicache_option:hicache_write_policy=write_back",
