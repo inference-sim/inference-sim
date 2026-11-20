@@ -86,36 +86,21 @@ func TestEmbedPatternsEqualLoaderPatterns(t *testing.T) {
 	}
 }
 
-// D7, COV-2: the three published role lists are runtime data and ship in the release. go:embed
-// refuses a pattern that matches no file, so the pattern is added in the change that commits the
-// lists; this test fails the other order, lists committed and pattern missing, which would build
-// a release with no anchor list for the dashboard to score. Before the lists are committed there
-// is nothing to embed and the test checks only that the pattern is not there early.
-func TestPublishedListsAreEmbeddedWhenPresent(t *testing.T) {
-	const pattern = "ledger/published/*.yaml"
-	files, err := filepath.Glob("catalog/ledger/published/*.yaml")
+// Design §3.3, §10.2: nothing under catalog/ledger/ is embedded, so the simulator's data carries
+// no ledger file and no pattern can name one.
+func TestNothingUnderTheLedgerIsEmbedded(t *testing.T) {
+	for _, p := range CatalogPatterns {
+		if strings.HasPrefix(p, "ledger/") {
+			t.Errorf("CatalogPatterns lists %q; the ledger is not data", p)
+		}
+	}
+	err := fs.WalkDir(Catalog(), ".", func(p string, _ fs.DirEntry, err error) error {
+		if err == nil && (p == "ledger" || strings.HasPrefix(p, "ledger/")) {
+			t.Errorf("the embedded catalog holds %s", p)
+		}
+		return err
+	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	listed := false
-	for _, p := range CatalogPatterns {
-		listed = listed || p == pattern
-	}
-	if len(files) == 0 {
-		if listed {
-			t.Errorf("CatalogPatterns lists %q but catalog/ledger/published/ holds no list; go:embed would not build", pattern)
-		}
-		return
-	}
-	if !listed {
-		t.Fatalf("catalog/ledger/published/ holds %d lists but CatalogPatterns lacks %q, so the release would carry none (COV-2)", len(files), pattern)
-	}
-	for _, role := range []string{"fit", "anchor", "report"} {
-		raw, err := fs.ReadFile(Catalog(), "ledger/published/"+role+".yaml")
-		if err != nil {
-			t.Errorf("the embedded catalog lacks the %s list: %v", role, err)
-		} else if len(raw) == 0 {
-			t.Errorf("the embedded %s list is empty", role)
-		}
 	}
 }

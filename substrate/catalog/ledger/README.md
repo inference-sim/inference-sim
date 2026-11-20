@@ -238,16 +238,15 @@ hash. A person with admin rights on the repository, or an agent acting for one, 
 4. Run `.github/workflows/ledger.yml` with `job: release` on main. The job checks the seed
    against the recorded hash before it draws anything. Its artifact `published` holds
    `fit.yaml`, `anchor.yaml` and `report.yaml`. The release bot commits them under
-   `published/` in the release pull request. When that happens, the change also adds the
-   pattern `ledger/published/*.yaml` to `CatalogPatterns` and `catalog/ledger/published/*.yaml`
-   to the `//go:embed` line of `data.go`: `go:embed` refuses a pattern that matches no file, so
-   the pattern cannot come first. `TestPublishedListsAreEmbeddedWhenPresent` fails a tree that
-   has the lists without the pattern, and `ledger check -release` fails a tree without them.
+   `published/` in the release pull request. The lists are not embedded in the simulator's
+   data (`CatalogPatterns` names nothing under `ledger/`, and the loader ignores everything
+   under `catalog/ledger/`); the dashboard reads them from the release checkout.
+   `ledger check -release` fails a tree without them.
 5. Check the result before tagging:
 
    ```sh
    go run ./ledger/cmd/ledger check -release catalog/ledger     # exit 0; fit and anchor nonempty
-   go test -count=1 -run 'TestPublishedListsAreEmbeddedWhenPresent|TestEmbedPatterns' .
+   go test -count=1 -run 'TestNothingUnderTheLedgerIsEmbedded|TestEmbedPatterns' .
    ```
 
 When a partition version is retired, publish its seed in the pull request that retires it,

@@ -235,15 +235,14 @@ func refuse(source string, problems []dataset.Problem) error {
 }
 
 // catalogRules are the catalog's data patterns. Inside the data directories, each model's
-// config.json is ignored by name, and so is everything under ledger/ except published/
-// (design §3.3).
+// config.json is ignored by name, and so is everything under ledger/, which names no data
+// directory (design §3.3, §10.2).
 func catalogRules() rules {
-	return rules{patterns: substrate.CatalogPatterns, extraDirs: []string{"ledger/published"}, ignored: func(rel string) bool {
+	return rules{patterns: substrate.CatalogPatterns, ignored: func(rel string) bool {
 		if path.Base(rel) == "config.json" && path.Dir(path.Dir(rel)) == "models" {
 			return true
 		}
-		return strings.HasPrefix(rel, "ledger/") && rel != "ledger/published" &&
-			!strings.HasPrefix(rel, "ledger/published/")
+		return rel == "ledger" || strings.HasPrefix(rel, "ledger/")
 	}}
 }
 
@@ -255,7 +254,7 @@ func registryRules() rules { return rules{patterns: substrate.RegistryPatterns} 
 func catalogOverlayRules() rules {
 	var ps []string
 	for _, p := range substrate.CatalogPatterns {
-		if !strings.HasPrefix(p, "measurements/") && !strings.HasPrefix(p, "ledger/") {
+		if !strings.HasPrefix(p, "measurements/") {
 			ps = append(ps, p)
 		}
 	}

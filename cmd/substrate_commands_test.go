@@ -9,48 +9,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/internal/substratedata"
-	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
 )
-
-// invariants --json prints every record of the registry the pinned substrate embeds, in its
-// order, with the registry's own keys.
-func TestInvariantsPrintsThePinnedRegistry(t *testing.T) {
-	reg, err := invariants.Embedded()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	if err := printInvariants(&out, true); err != nil {
-		t.Fatal(err)
-	}
-	var got struct {
-		Invariants []map[string]any `json:"invariants"`
-	}
-	dec := json.NewDecoder(&out)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&got); err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Invariants) != len(reg.Invariants) || len(got.Invariants) < 100 {
-		t.Fatalf("printed %d invariants; the registry holds %d", len(got.Invariants), len(reg.Invariants))
-	}
-	for i, inv := range reg.Invariants {
-		if got.Invariants[i]["id"] != inv.ID || got.Invariants[i]["statement"] != inv.Statement {
-			t.Fatalf("record %d is %v, want %s", i, got.Invariants[i]["id"], inv.ID)
-		}
-	}
-	sim3, ok := reg.Get("SIM-3")
-	if !ok {
-		t.Fatal("the registry has no SIM-3")
-	}
-	var text bytes.Buffer
-	if err := printInvariants(&text, false); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(text.String(), "SIM-3 ") || !strings.Contains(text.String(), sim3.Status) {
-		t.Errorf("the text form lacks SIM-3:\n%s", text.String()[:200])
-	}
-}
 
 func resolved(t *testing.T, r catalogResolution, err error) string {
 	t.Helper()

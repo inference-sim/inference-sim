@@ -161,8 +161,8 @@ func TestTwoPathsDifferingInCaseAreRefused(t *testing.T) {
 	}
 }
 
-// Files outside the data directories, each model's config.json, and the ledger outside
-// published/ are not data: changing them changes neither the load nor the hash.
+// Files outside the data directories, each model's config.json, and everything under ledger/
+// are not data: changing them changes neither the load nor the hash.
 func TestFilesThatAreNotDataAreIgnored(t *testing.T) {
 	cat, reg := copyTree(t)
 	before, err := Open(Options{Catalog: cat, Registry: reg})
@@ -181,11 +181,15 @@ func TestFilesThatAreNotDataAreIgnored(t *testing.T) {
 	if before.Catalog.Hash != after.Catalog.Hash || before.Registry.Hash != after.Registry.Hash {
 		t.Error("a change outside the data changed a content hash")
 	}
-	// The ledger's published lists are data once they exist: a stray file there is refused.
+	// Nothing under ledger/ is data, the published lists included: a file there is ignored.
 	write(t, filepath.Join(cat, "ledger", "published", "fit.txt"), "x\n")
-	if _, err := Open(Options{Catalog: cat, Registry: reg}); err == nil ||
-		!strings.Contains(err.Error(), "ledger/published/fit.txt") {
-		t.Errorf("a file under ledger/published/ that matches no pattern was not refused: %v", err)
+	write(t, filepath.Join(cat, "ledger", "published", "fit.yaml"), "units: []\n")
+	again, err := Open(Options{Catalog: cat, Registry: reg})
+	if err != nil {
+		t.Fatalf("a file under ledger/published/ was refused: %v", err)
+	}
+	if before.Catalog.Hash != again.Catalog.Hash {
+		t.Error("a file under ledger/published/ changed the catalog hash")
 	}
 }
 

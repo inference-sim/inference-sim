@@ -272,9 +272,6 @@ func CheckCatalog(files map[string][]byte) (*Catalog, []Problem) {
 			if collect(&out, rel, p, err) {
 				c.Sources = v
 			}
-		case strings.HasPrefix(rel, "ledger/published/"):
-			// The ledger's published role lists. Their checks belong to the ledger's own
-			// package, which this loader calls once the ledger defines them.
 		default:
 			out = append(out, Problem{rel, "is not a kind of catalog file this validator knows"})
 		}
