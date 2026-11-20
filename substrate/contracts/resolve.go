@@ -51,7 +51,7 @@ func ValidateAgainstCatalog(b Bundle, catalogRoot, registryRoot string) Report {
 	if b.Scenario == nil {
 		field.Field("references",
 			"no scenario in the bundle: there are no by-name references to resolve")
-		return Report{Field: field, Rule: &validate.Problems{}}
+		return Report{Field: field}
 	}
 	s := b.Scenario
 
@@ -143,7 +143,7 @@ func ValidateAgainstCatalog(b Bundle, catalogRoot, registryRoot string) Report {
 			s.Routing.Profiles)
 	}
 
-	return Report{Field: field, Rule: &validate.Problems{}}
+	return Report{Field: field}
 }
 
 // resolveDir reports a problem at path unless <root>/<dir>/<name> is a directory the catalog

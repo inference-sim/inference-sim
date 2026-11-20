@@ -9,7 +9,7 @@ import (
 	"fmt"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
-	subrules "github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
 
@@ -63,7 +63,7 @@ func (l layout) moeDispatches() bool {
 // customAllReduce decides whether the SM-consuming reduction kernel runs, and records why when a
 // request for it is declined.
 func customAllReduce(e vllmsettings.Settings, l layout, rackIsOneDomain bool,
-	rules subrules.EngineRules) (bool, []plan.Override) {
+	rules enginefacts.EngineRules) (bool, []plan.Override) {
 	requested := true
 	if e.DisableCustomAllReduce != nil {
 		requested = !*e.DisableCustomAllReduce

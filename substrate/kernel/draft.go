@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
 	"github.com/inference-sim/inference-sim/substrate/kernel/internal/price"
@@ -497,7 +497,7 @@ func (k *Kernel) liftStepTerms(c *resolve.Coefficients, g *model.Graph) error {
 	// Not under dual-batch overlap: vLLM leaves the breakable wrapper off when it micro-batches
 	// (vllm/v1/worker/gpu_model_runner.py:5396-5407).
 	dbo := k.low.Microbatch
-	if a := g.Global.Architecture; !dbo && (a == rules.ArchDeepseekV41 || a == rules.ArchDeepseekV4) {
+	if a := g.Global.Architecture; !dbo && (a == enginefacts.ArchDeepseekV41 || a == enginefacts.ArchDeepseekV4) {
 		k.breakableCapture = true
 		k.captureBreaks = k.captureBreaksOf(k.plan.Layers)
 	}

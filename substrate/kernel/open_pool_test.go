@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
@@ -43,7 +43,7 @@ const twoChipPools = `  pools:
 func priceNodePool(t *testing.T, d *load.Data, body, nodePool string) (kernel.StepEstimate, kernel.MemoryBreakdown, float64) {
 	t.Helper()
 	r, name := openRepos(t, d, body)
-	r.Rules = func(string) rules.EngineRules { return inertRules{} }
+	r.Rules = func(string) enginefacts.EngineRules { return inertRules{} }
 	in, err := OpenInputsIn(name, r, 0, nodePool)
 	if err != nil {
 		t.Fatalf("node pool %q: %v", nodePool, err)

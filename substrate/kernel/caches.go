@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
 	"github.com/inference-sim/inference-sim/substrate/kernel/internal/price"
@@ -181,7 +181,7 @@ type poolGroup struct {
 // https://github.com/inference-sim/blis-schemas/issues/66), from the records and pages they are sized at here. Where the pack does
 // not model the grouping, the caches stay sized at their own pages, and that is recorded.
 func (k *Kernel) resolveKVPool() error {
-	var layers []rules.KVCacheLayer
+	var layers []enginefacts.KVCacheLayer
 	term := map[string]int{}
 	for i, t := range k.caches {
 		if t.draft && !k.speculating {
@@ -191,7 +191,7 @@ func (k *Kernel) resolveKVPool() error {
 		c.BytesPerEntry, c.BytesByCacheDType, c.BlockSize = t.entryBytes, nil, t.block
 		for j := 0; j < t.count; j++ {
 			name := fmt.Sprintf("%d.%s.%d", i, c.Name, j)
-			layers = append(layers, rules.KVCacheLayer{Name: name, Cache: c})
+			layers = append(layers, enginefacts.KVCacheLayer{Name: name, Cache: c})
 			term[name] = i
 		}
 	}
@@ -205,7 +205,7 @@ func (k *Kernel) resolveKVPool() error {
 	// two above K + 1) rows (vllm/models/deepseek_v41/compressor.py:147-149), which the
 	// graph's fixed entry count states only for K below 7.
 	spec := k.numSpecTokens()
-	g, err := k.rules.KVCacheGroups(rules.KVCacheGroupsInput{
+	g, err := k.rules.KVCacheGroups(enginefacts.KVCacheGroupsInput{
 		Layers: layers, EngineBlockSize: k.blockSize, CacheDType: k.cacheDType,
 		NumSpecTokens: &spec,
 	})

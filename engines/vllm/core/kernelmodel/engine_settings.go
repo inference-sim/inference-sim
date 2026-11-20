@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
-	subrules "github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
@@ -218,7 +218,7 @@ func (m *Model) EngineSources() map[string]string {
 // kernelResolvesCacheDType says whether the kernel itself resolves an unstated cache dtype for the
 // architecture: DeepSeek-V4 and V4.1 keep a packed cache whose layout the kernel owns.
 func kernelResolvesCacheDType(architecture string) bool {
-	return architecture == subrules.ArchDeepseekV4 || architecture == subrules.ArchDeepseekV41
+	return architecture == enginefacts.ArchDeepseekV4 || architecture == enginefacts.ArchDeepseekV41
 }
 
 // glmMoeDsaConfigs are the sha256 of the vendor config.json each catalog model whose

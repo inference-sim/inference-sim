@@ -1,11 +1,11 @@
 package resolve
 
 import (
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 )
 
 // EngineRules is the version-specific behaviour a resolver needs: blis-schemas'
-// rules.EngineRules, the interface a release's rules are consumed through.
+// enginefacts.EngineRules, the interface a release's rules are consumed through.
 //
 // It is an interface rather than a set of constants because these facts belong to one
 // engine release. A scenario names its version; the caller supplies the matching rules.
@@ -17,4 +17,4 @@ import (
 // Engram default, its decode-context backend names, its mega-MoE backends -- so the kernel
 // read them by asserting to *rules.Pack and quietly skipped them for any other rules value.
 // The shared interface names every one, so a caller's rules are read through it alone.
-type EngineRules = rules.EngineRules
+type EngineRules = enginefacts.EngineRules

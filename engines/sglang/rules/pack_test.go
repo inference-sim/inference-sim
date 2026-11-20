@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 	"gopkg.in/yaml.v3"
@@ -69,13 +69,13 @@ func TestCustomAllReduceWidths(t *testing.T) {
 // DeepSeek-R1's KV is one MLA latent of 576 elements a layer: 61 layers x 576 x 2 bytes is 70,272
 // bytes a token, and a page of 64 tokens is 64 times that. Every layer shares one block table.
 func TestKVCacheGroupsOfAnMLAModel(t *testing.T) {
-	var layers []rules.KVCacheLayer
+	var layers []enginefacts.KVCacheLayer
 	for i := 0; i < 61; i++ {
-		layers = append(layers, rules.KVCacheLayer{Name: fmt.Sprintf("layers.%d.kv", i),
+		layers = append(layers, enginefacts.KVCacheLayer{Name: fmt.Sprintf("layers.%d.kv", i),
 			Cache: model.Cache{Name: "kv", Kind: model.CacheKV, Owned: true, BytesPerEntry: 576 * 2}})
 	}
 	for _, page := range []int{1, 64} {
-		got, err := V0_5_23.KVCacheGroups(rules.KVCacheGroupsInput{Layers: layers, EngineBlockSize: page})
+		got, err := V0_5_23.KVCacheGroups(enginefacts.KVCacheGroupsInput{Layers: layers, EngineBlockSize: page})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -83,11 +83,11 @@ func TestKVCacheGroupsOfAnMLAModel(t *testing.T) {
 			t.Errorf("page %d: %d groups packed=%v bytes %d; want one group of 70272 x page", page, len(got.Groups), got.Packed, got.BytesPerBlock)
 		}
 	}
-	if _, err := V0_5_23.KVCacheGroups(rules.KVCacheGroupsInput{EngineBlockSize: 1}); err == nil {
+	if _, err := V0_5_23.KVCacheGroups(enginefacts.KVCacheGroupsInput{EngineBlockSize: 1}); err == nil {
 		t.Error("no caches were grouped")
 	}
-	win := []rules.KVCacheLayer{{Name: "layers.0.kv", Cache: model.Cache{Kind: model.CacheWindow, Window: 128}}}
-	if _, err := V0_5_23.KVCacheGroups(rules.KVCacheGroupsInput{Layers: win, EngineBlockSize: 1}); err == nil || !strings.Contains(err.Error(), "#94") {
+	win := []enginefacts.KVCacheLayer{{Name: "layers.0.kv", Cache: model.Cache{Kind: model.CacheWindow, Window: 128}}}
+	if _, err := V0_5_23.KVCacheGroups(enginefacts.KVCacheGroupsInput{Layers: win, EngineBlockSize: 1}); err == nil || !strings.Contains(err.Error(), "#94") {
 		t.Errorf("a window cache is a hybrid pool, refused naming its issue: %v", err)
 	}
 }

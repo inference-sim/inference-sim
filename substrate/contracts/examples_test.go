@@ -35,7 +35,7 @@ func TestDocExamplesValidate(t *testing.T) {
 	ex := func(name string) string { return filepath.Join("testdata", "examples", name) }
 
 	t.Run("colocated", func(t *testing.T) {
-		requireSilent(t, "colocated", Validate(Bundle{Rules: openAnyEngine,
+		requireSilent(t, "colocated", Validate(Bundle{Engine: openAnyEngine,
 			Scenario:   fixture(LoadScenario(ex("scenario.yaml"))),
 			Deployment: fixture(LoadDeployment(ex("deployment.yaml"))),
 			Model:      fixture(LoadModelGraph("../catalog/models/llama-3.1-8b-instruct/graph.yaml")),
@@ -43,7 +43,7 @@ func TestDocExamplesValidate(t *testing.T) {
 		}))
 	})
 	t.Run("disaggregated", func(t *testing.T) {
-		requireSilent(t, "disaggregated", Validate(Bundle{Rules: openAnyEngine,
+		requireSilent(t, "disaggregated", Validate(Bundle{Engine: openAnyEngine,
 			Scenario:   fixture(LoadScenario(ex("scenario-disaggregated.yaml"))),
 			Deployment: fixture(LoadDeployment(ex("deployment-disaggregated.yaml"))),
 			Model:      fixture(LoadModelGraph("../catalog/models/deepseek-v3/graph.yaml")),
@@ -63,7 +63,7 @@ func TestDocExamplesValidate(t *testing.T) {
 		}))
 	})
 	t.Run("replay", func(t *testing.T) {
-		requireSilent(t, "replay", Validate(Bundle{Rules: openAnyEngine,
+		requireSilent(t, "replay", Validate(Bundle{Engine: openAnyEngine,
 			Scenario: fixture(LoadScenario(ex("replay-binding.yaml"))),
 		}))
 	})
@@ -71,7 +71,7 @@ func TestDocExamplesValidate(t *testing.T) {
 		w := fixture(LoadCatalogWorkload(ex("workload-replay.yaml")))
 		requireSilent(t, "catalog replay", Validate(Bundle{ReplayWorkload: w.Replay}))
 		s := fixture(LoadScenario(ex("replay-reference.yaml")))
-		requireSilent(t, "replay reference", Validate(Bundle{Scenario: s, Rules: openAnyEngine}))
+		requireSilent(t, "replay reference", Validate(Bundle{Scenario: s, Engine: openAnyEngine}))
 		root := t.TempDir()
 		if err := os.MkdirAll(filepath.Join(root, "workloads"), 0o755); err != nil {
 			t.Fatal(err)
@@ -88,7 +88,7 @@ func TestDocExamplesValidate(t *testing.T) {
 		}
 	})
 	t.Run("acceptance pin", func(t *testing.T) {
-		requireSilent(t, "acceptance pin", Validate(Bundle{Rules: openAnyEngine,
+		requireSilent(t, "acceptance pin", Validate(Bundle{Engine: openAnyEngine,
 			Scenario: fixture(LoadScenario(ex("scenario-acceptance.yaml"))),
 		}))
 	})
@@ -134,7 +134,7 @@ func TestDocExamplesValidate(t *testing.T) {
 		}
 	})
 	t.Run("trace", func(t *testing.T) {
-		requireSilent(t, "trace", Validate(Bundle{Rules: openAnyEngine,
+		requireSilent(t, "trace", Validate(Bundle{Engine: openAnyEngine,
 			Scenario: fixture(LoadScenario(ex("trace-binding.yaml"))),
 		}))
 	})

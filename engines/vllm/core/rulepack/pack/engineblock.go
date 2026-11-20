@@ -3,7 +3,7 @@
 package pack
 
 import (
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
@@ -14,8 +14,8 @@ import (
 // (engineconfig.Validate), at the block's paths below at + ".engine", with the messages
 // blis-schemas reported before it held the block unopened. A block that does not decode is
 // one finding at at + ".engine", naming the key at its line.
-func (p *Pack) CheckEngineBlock(at string, b deployment.EngineBlock) *rules.Problems {
-	out := &rules.Problems{}
+func (p *Pack) CheckEngineBlock(at string, b deployment.EngineBlock) *validate.Problems {
+	out := &validate.Problems{}
 	e, err := engineconfig.Decode(b)
 	if err != nil {
 		out.Field(at+".engine", "%v", err)
@@ -40,8 +40,8 @@ func (p *Pack) DraftTokens(b deployment.EngineBlock) int {
 // (engineconfig.ValidateConnectorOptions), at the paths and with the messages blis-schemas
 // reported before it held them unopened. Options that do not decode are one finding at
 // at + ".connector_options".
-func (p *Pack) CheckConnectorOptions(at string, b deployment.EngineBlock) *rules.Problems {
-	out := &rules.Problems{}
+func (p *Pack) CheckConnectorOptions(at string, b deployment.EngineBlock) *validate.Problems {
+	out := &validate.Problems{}
 	c, err := engineconfig.DecodeConnectorOptions(b)
 	if err != nil {
 		out.Field(at+".connector_options", "%v", err)

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/v0_33"
@@ -183,7 +183,7 @@ func TestKernelCaptureTokensAreVLLMs(t *testing.T) {
 			if c.Case.SpecTokens > 0 || c.Case.Mode == "NONE" || (c.Case.MaxCapture == nil && c.Case.Sizes == nil) {
 				return
 			}
-			in := rules.CUDAGraphCaptureInput{Mode: c.Case.Mode, MaxNumBatchedTokens: c.Case.MaxBatched,
+			in := enginefacts.CUDAGraphCaptureInput{Mode: c.Case.Mode, MaxNumBatchedTokens: c.Case.MaxBatched,
 				MaxCaptureSize: c.Case.MaxCapture, CaptureSizes: c.Case.Sizes}
 			p, _, err := v0_33.Pack().CUDAGraphCaptureSizes(in)
 			if err != nil {

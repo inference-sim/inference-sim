@@ -11,16 +11,15 @@ import (
 	"path/filepath"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"gopkg.in/yaml.v3"
 )
 
-// exampleRules are an engine release's rules as an engine model supplies them, for the
-// examples: they open a pool's engine block, check one bound and refuse one value by a named
-// rule. A real caller passes its engine model's rules (blis-vllm/rules for vLLM).
+// exampleRules are an engine release's checker as an engine module supplies it, for the
+// examples: it opens a pool's engine block, checks one bound and refuses one value. A real
+// caller passes its engine module's checker (the vLLM engine module's for vLLM).
 type exampleRules struct {
-	rules.EngineRules
 	version string
 }
 
@@ -33,15 +32,14 @@ type exampleEngine struct {
 }
 
 func (r exampleRules) EngineVersion() string { return r.version }
-func (exampleRules) RuleNames() []string     { return []string{"enum-values-known"} }
 func (exampleRules) DraftTokens(deployment.EngineBlock) int {
 	return 0
 }
-func (exampleRules) CheckConnectorOptions(string, deployment.EngineBlock) *rules.Problems {
+func (exampleRules) CheckConnectorOptions(string, deployment.EngineBlock) *validate.Problems {
 	return nil
 }
-func (exampleRules) CheckEngineBlock(at string, b deployment.EngineBlock) *rules.Problems {
-	p := &rules.Problems{}
+func (r exampleRules) CheckEngineBlock(at string, b deployment.EngineBlock) *validate.Problems {
+	p := &validate.Problems{}
 	var e exampleEngine
 	if err := b.Decode(&e); err != nil {
 		p.Field(at+".engine", "%v", err)
@@ -50,20 +48,12 @@ func (exampleRules) CheckEngineBlock(at string, b deployment.EngineBlock) *rules
 	if e.GPUMemoryUtilization < 0 || e.GPUMemoryUtilization > 1 {
 		p.Field(at+".engine.gpu_memory_utilization", "must lie in [0, 1] (0 means unset), got %v", e.GPUMemoryUtilization)
 	}
-	return p
-}
-func (r exampleRules) Check(in rules.Input) *rules.Problems {
-	p := &rules.Problems{}
-	for i, pool := range in.Deployment.Pools {
-		var e exampleEngine
-		if pool.Engine.Decode(&e) == nil && e.CacheDType != "" && e.CacheDType != "auto" && e.CacheDType != "fp8" {
-			p.RuleErrorf("enum-values-known", "pools[%d].engine.cache_dtype: %q is not accepted by engine %s", i, e.CacheDType, r.version)
-		}
+	if e.CacheDType != "" && e.CacheDType != "auto" && e.CacheDType != "fp8" {
+		p.Field(at+".engine.cache_dtype", "%q is not accepted by engine %s", e.CacheDType, r.version)
 	}
 	return p
 }
-
-func exampleRulesFor(version string) rules.EngineRules { return exampleRules{version: version} }
+func exampleRulesFor(version string) contracts.EngineChecker { return exampleRules{version: version} }
 
 // setEngineKey sets one key of a pool's engine block, as an author edits the file.
 func setEngineKey(pool *deployment.Pool, key, value string) {
@@ -101,16 +91,16 @@ func ExampleValidate() {
 
 	rep := contracts.Validate(contracts.Bundle{
 		Scenario: s, Deployment: d, Model: g, Chip: c,
-		Rules: exampleRulesFor, // the release's rules, from its engine model
+		Engine: exampleRulesFor, // the release's checker, from its engine module
 	})
 	for _, p := range rep.Problems() {
 		fmt.Println(p)
 	}
-	fmt.Println("ok:", rep.OK(), "rules applied:", rep.RulesApplied)
+	fmt.Println("ok:", rep.OK())
 	// --8<-- [end:validate]
 
 	// Output:
-	// ok: true rules applied: 0.29.0
+	// ok: true
 }
 
 // ExampleValidate_problems shows what a failing bundle reports: every problem at once,
@@ -124,7 +114,7 @@ func ExampleValidate_problems() {
 	pool.Parallel.DCP = 3 // does not divide tp
 	setEngineKey(pool, "gpu_memory_utilization", "1.5")
 
-	rep := contracts.Validate(contracts.Bundle{Scenario: s, Deployment: d, Rules: exampleRulesFor})
+	rep := contracts.Validate(contracts.Bundle{Scenario: s, Deployment: d, Engine: exampleRulesFor})
 	for _, p := range rep.Problems() {
 		fmt.Println(p)
 	}
@@ -136,7 +126,7 @@ func ExampleValidate_problems() {
 	// error: deployment.pools[0].parallel.dcp: decode-context parallelism reuses the tensor-parallel ranks when prefill-context parallelism is off, so tp 8 must be divisible by dcp 3
 }
 
-// ExampleValidate_rules shows a rule problem: the documents are well formed, but the engine
+// ExampleValidate_rules shows an engine problem: the documents are well formed, but the engine
 // version they name would refuse them.
 func ExampleValidate_rules() {
 	s := must(contracts.LoadScenario("testdata/examples/scenario.yaml"))
@@ -144,16 +134,16 @@ func ExampleValidate_rules() {
 	// --8<-- [start:rules]
 	setEngineKey(&d.Pools[0], "cache_dtype", "fp8_e4m3fn") // not a name the release accepts
 
-	rep := contracts.Validate(contracts.Bundle{Scenario: s, Deployment: d, Rules: exampleRulesFor})
-	fmt.Println("field layer ok:", rep.Field.OK())
-	for _, p := range rep.Rule.All() {
+	rep := contracts.Validate(contracts.Bundle{Scenario: s, Deployment: d, Engine: exampleRulesFor})
+	fmt.Println("ok:", rep.OK())
+	for _, p := range rep.Problems() {
 		fmt.Println(p)
 	}
 	// --8<-- [end:rules]
 
 	// Output:
-	// field layer ok: true
-	// error [enum-values-known]: : pools[0].engine.cache_dtype: "fp8_e4m3fn" is not accepted by engine 0.29.0
+	// ok: false
+	// error: deployment.pools[0].engine.cache_dtype: "fp8_e4m3fn" is not accepted by engine 0.29.0
 }
 
 // ExampleValidateAgainstCatalog resolves a scenario's by-name references against a catalog

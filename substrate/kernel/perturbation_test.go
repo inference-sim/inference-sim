@@ -15,8 +15,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
@@ -183,7 +183,7 @@ func perturbationScenariosFor(t *testing.T, d *load.Data, m, c, offload, sets st
 			if err := os.WriteFile(filepath.Join(dir, "s.yaml"), []byte(body), 0o644); err != nil {
 				return nil, err
 			}
-			r := Repos{Scenarios: dir, Data: d, Rules: func(string) rules.EngineRules { return windowedRules{} },
+			r := Repos{Scenarios: dir, Data: d, Rules: func(string) enginefacts.EngineRules { return windowedRules{} },
 				DraftModel: noDrafter, Lower: lowerTo(8192, st.block, 0, st.edit)}
 			in, err := OpenInputs("s.yaml", r, 0)
 			if err != nil {

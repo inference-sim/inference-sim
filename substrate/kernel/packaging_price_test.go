@@ -2,10 +2,11 @@ package latencykernel
 
 import (
 	"fmt"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 	"testing"
 
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 	"github.com/inference-sim/inference-sim/substrate/load"
@@ -16,11 +17,9 @@ import (
 // engine model (the engine repositories test their own releases end to end).
 type inertRules struct{}
 
-func (inertRules) EngineVersion() string                                           { return "inert" }
-func (inertRules) Check(rules.Input) *rules.Problems                               { return &rules.Problems{} }
-func (inertRules) RuleNames() []string                                             { return nil }
-func (inertRules) CheckEngineBlock(string, deployment.EngineBlock) *rules.Problems { return nil }
-func (inertRules) CheckConnectorOptions(string, deployment.EngineBlock) *rules.Problems {
+func (inertRules) EngineVersion() string                                              { return "inert" }
+func (inertRules) CheckEngineBlock(string, deployment.EngineBlock) *validate.Problems { return nil }
+func (inertRules) CheckConnectorOptions(string, deployment.EngineBlock) *validate.Problems {
 	return nil
 }
 func (inertRules) DraftTokens(deployment.EngineBlock) int          { return 0 }
@@ -40,11 +39,11 @@ func (inertRules) DBOEngages(bool, int, bool) bool                           { r
 func (inertRules) EffectiveAll2AllBackend(b string) string                   { return b }
 func (inertRules) ResolveCacheDType(_ string, _, _ int, r string) string     { return r }
 func (inertRules) WindowPagesPerRequest(model.Cache, int, int, int, int) int { return 0 }
-func (inertRules) KVCacheGroups(rules.KVCacheGroupsInput) (rules.KVCacheGrouping, error) {
-	return rules.KVCacheGrouping{}, nil
+func (inertRules) KVCacheGroups(enginefacts.KVCacheGroupsInput) (enginefacts.KVCacheGrouping, error) {
+	return enginefacts.KVCacheGrouping{}, nil
 }
-func (inertRules) CUDAGraphCaptureSizes(rules.CUDAGraphCaptureInput) (rules.CUDAGraphCapture, bool, error) {
-	return rules.CUDAGraphCapture{}, false, nil
+func (inertRules) CUDAGraphCaptureSizes(enginefacts.CUDAGraphCaptureInput) (enginefacts.CUDAGraphCapture, bool, error) {
+	return enginefacts.CUDAGraphCapture{}, false, nil
 }
 func (inertRules) ResolveDPLoadBalancing(deployment.Parallelism) deployment.DPLoadBalancing {
 	return deployment.DPLBInternal
@@ -85,7 +84,7 @@ pools:
     parallel: {tp: %d, pp: 1, dp: 1}
 `, nodes, stated, tp, nodes, tp)
 	r, name := openRepos(t, d, body)
-	r.Rules = func(string) rules.EngineRules { return inertRules{} }
+	r.Rules = func(string) enginefacts.EngineRules { return inertRules{} }
 	r.DraftModel, r.Lower = noDrafter, lowerTo(8192, 16, 0)
 	in, err := OpenInputs(name, r, 0)
 	if err != nil {

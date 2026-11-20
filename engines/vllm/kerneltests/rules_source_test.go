@@ -3,6 +3,7 @@
 package latencykernel_test
 
 import (
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 	. "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"os"
@@ -10,7 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
 )
@@ -34,27 +36,27 @@ func TestRulesFromKeepsAMissingReleaseMissing(t *testing.T) {
 	// The same holds when the lookup's own result type is an interface whose value holds a
 	// nil pointer: comparing it with the interface's zero value would call it present.
 	var missing *pack.Pack
-	viaInterface := RulesFrom(func(string) rules.EngineRules { return missing })
+	viaInterface := RulesFrom(func(string) enginefacts.EngineRules { return missing })
 	if r := viaInterface("unknown"); r != nil {
 		t.Errorf("a nil *pack.Pack inside an interface gave non-nil rules %#v", r)
 	}
 }
 
-// countingRules counts how often the caller's rule checks run.
+// countingRules counts how often the caller's engine-block checks run.
 type countingRules struct {
-	rules.EngineRules
+	enginefacts.EngineRules
 	checked *int
 }
 
-func (c countingRules) Check(in rules.Input) *rules.Problems {
+func (c countingRules) CheckEngineBlock(at string, b deployment.EngineBlock) *validate.Problems {
 	*c.checked++
-	return c.EngineRules.Check(in)
+	return c.EngineRules.CheckEngineBlock(at, b)
 }
 
-// Building a kernel validates its documents with the caller's rules, never the packs a library
-// happens to register: blis-schemas' Validate runs the rules it is handed (Bundle.Rules), and a
-// release they do not know is refused by them. Only the field layer can refuse the documents
-// (validateDocuments), so this pins whose rules the rule layer reads, not that it refuses.
+// Building a kernel validates its documents with the caller's engine, never the packs a library
+// happens to register: Validate runs the checker it is handed (Bundle.Engine), and a release
+// it does not know is refused by it. So this pins whose engine reads the pool's engine block
+// while the kernel is built.
 func TestNewValidatesWithTheCallersRules(t *testing.T) {
 	in := fixtureInputs(t, "minimax-m25-h200-ep8.yaml")
 	n := 0
@@ -62,8 +64,8 @@ func TestNewValidatesWithTheCallersRules(t *testing.T) {
 	if _, err := newKernel(in); err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Errorf("the caller's rule checks ran %d times while the kernel was built, want once", n)
+	if want := len(in.Deployment.Pools); n != want {
+		t.Errorf("the caller's engine-block checks ran %d times while the kernel was built, want once per pool (%d)", n, want)
 	}
 }
 
