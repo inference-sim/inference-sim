@@ -61,6 +61,11 @@ In short:
   `python3 -I tools/surface/gen_surface.py <sglang-source> tools/surface/status.json > surface.json`.
   A refused item cites an open blis-sglang issue (X28); a framework is modelled only with recorded
   and direct traces at its interface (FID-5).
+  The list also records the particulars of Table DC at the modelled commit: the settings of
+  `gen_surface.py`'s `SETTINGS`, the P/D allocation policy, the tree cores (the Rust core is the
+  default; the oracle's divergences are `tree_core_divergence` items), the scheduler loops and
+  overlap conditions, the memory budget, the KV-event hashing, the NIXL plugins and the drafter
+  architectures. Add one by adding it to the generator, never to `surface.json`.
 - Tests: `go test ./...`; lint: `golangci-lint run ./...` (v2.14.0).
 - **Process checks.** `.github/workflows/blis.yml` calls blis-substrate's shared checks by
   commit; `.github/workflows/private-names.yml` is the name scan. The section below and
