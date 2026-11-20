@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
@@ -207,14 +208,11 @@ func TestReplicatedNodesAreNotDividedByTP(t *testing.T) {
 	}
 }
 
-// under_sequence_parallel describes only the model's own sequence parallelism. With it off
-// the field changes nothing; with it on, a token-sharded node runs fewer rows, so the step
-// is no dearer than if the node saw every token.
+// The plan's token-sharded roles describe only the model's own sequence parallelism. With it
+// off they change nothing; with it on, a token-sharded node runs fewer rows, so the step is no
+// dearer than if the node saw every token.
 func TestTokenShardingAppliesOnlyUnderSequenceParallelism(t *testing.T) {
-	clear := func(in *Inputs) {
-		editNodes(in.Model, func(n model.Node) bool { return n.UnderSequenceParallel != "" },
-			func(n *model.Node) { n.UnderSequenceParallel = "" })
-	}
+	clear := func(l *plan.Lowered) { l.Plan.TokenShardedRoles = nil }
 	same := func(a, b *Kernel, what string) {
 		for name, bt := range batchShapes() {
 			if a.StepTime(bt).NoOverlap != b.StepTime(bt).NoOverlap {
@@ -222,19 +220,19 @@ func TestTokenShardingAppliesOnlyUnderSequenceParallelism(t *testing.T) {
 			}
 		}
 	}
+	// Off: the lowering states no roles (they are stated only where the mode is on), so a plan
+	// that names them anyway prices what it would with none.
 	off := fixtureInputs(t, v41)
-	offCleared := fixtureInputs(t, v41)
-	clear(&offCleared)
-	same(build(t, off), build(t, offCleared), "sequence parallelism off")
+	offNamed := buildEditingPlan(t, off, func(l *plan.Lowered) {
+		l.Plan.TokenShardedRoles = []string{"router", "experts", "shared_gate_up", "shared_down", "hc_attn_fn"}
+	})
+	same(build(t, off), offNamed, "sequence parallelism off")
 
-	sp := func(edit func(*Inputs)) *Kernel {
+	sp := func(edit func(*plan.Lowered)) *Kernel {
 		in := fixtureInputs(t, v41)
 		pl := &in.Deployment.Pools[0].Parallel
 		pl.TP, pl.DP, pl.EnableExpertParallel = 4, 2, true
-		if edit != nil {
-			edit(&in)
-		}
-		return build(t, in)
+		return buildEditingPlan(t, in, edit)
 	}
 	on, onCleared := sp(nil), sp(clear)
 	b := kernel.Batch{Reqs: []kernel.ReqShape{{Scheduled: 4096, PromptLen: 4096}}}

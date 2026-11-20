@@ -60,7 +60,7 @@ layer_kinds:
   # token shard. The nodes above, between the all-gather and the reduce-scatter, see every
   # token, and state no split.
   - {op: GroupedGEMM, shared: false, role: experts, n: 2304, k: 5120, experts: 384, top_k: 6,
-     weight_dtype: mxfp4, under_sequence_parallel: token_sharded}
+     weight_dtype: mxfp4}
   - {op: All2All, role: moe_dispatch_combine, emit: expert_parallel}
   # The MoE's tensor-parallel reduction follows the model's own sequence parallelism, not
   # the engine-wide sequence-parallel-MoE rule, which V4.1 never consults: FusedMoE skips
@@ -289,7 +289,7 @@ layer_kinds:
     - {name: swa, kind: window, owned: true, bytes_per_entry: 584, window: 128,
        block_size: 32, page_alignment: 576}
   - {op: GroupedGEMM, shared: false, role: experts, n: 2304, k: 5120, experts: 128, top_k: 3,
-     weight_dtype: mxfp4, under_sequence_parallel: token_sharded}
+     weight_dtype: mxfp4}
   - {op: All2All, role: moe_dispatch_combine, emit: expert_parallel}
   edges: &edges4 [[0, 1], [1, 2], [2, 3]]
 - {id: dspark_1, nodes: *dspark_nodes, edges: *edges4}

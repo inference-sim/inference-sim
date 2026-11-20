@@ -21,27 +21,23 @@ layer_kinds:
     role: attn_hc_norm_mix
     bytes_per_token: 25600
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: GEMM
     role: attn_hc_down
     n: 320
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: attn_hc_inject
     n: 4
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: attn_hc_up
     n: 10240
     k: 320
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: AllGather
     role: attn_in
@@ -86,32 +82,27 @@ layer_kinds:
     role: attn_hc_combine
     bytes_per_token: 46080
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: Elementwise
     role: mlp_hc_norm_mix
     bytes_per_token: 25600
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: GEMM
     role: mlp_hc_down
     n: 320
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: mlp_hc_inject
     n: 4
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: mlp_hc_up
     n: 10240
     k: 320
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: AllGather
     role: mlp_in
@@ -168,7 +159,6 @@ layer_kinds:
     role: mlp_hc_combine
     bytes_per_token: 46080
     tp: replicated
-    under_sequence_parallel: token_sharded
   edges:
   - - 0
     - 1
@@ -230,27 +220,23 @@ layer_kinds:
     role: attn_hc_norm_mix
     bytes_per_token: 25600
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: GEMM
     role: attn_hc_down
     n: 320
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: attn_hc_inject
     n: 4
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: attn_hc_up
     n: 10240
     k: 320
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: AllGather
     role: attn_in
@@ -327,32 +313,27 @@ layer_kinds:
     role: attn_hc_combine
     bytes_per_token: 46080
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: Elementwise
     role: mlp_hc_norm_mix
     bytes_per_token: 25600
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: GEMM
     role: mlp_hc_down
     n: 320
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: mlp_hc_inject
     n: 4
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: mlp_hc_up
     n: 10240
     k: 320
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: AllGather
     role: mlp_in
@@ -409,7 +390,6 @@ layer_kinds:
     role: mlp_hc_combine
     bytes_per_token: 46080
     tp: replicated
-    under_sequence_parallel: token_sharded
   edges:
   - - 0
     - 1
@@ -484,13 +464,11 @@ layer_kinds:
     n: 12800
     k: 2560
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: Elementwise
     role: ple_norms
     bytes_per_token: 122880
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: RecurrentUpdate
     recurrent_kind: short_conv
     role: ple_conv
@@ -502,37 +480,31 @@ layer_kinds:
     role: ple_conv_io
     bytes_per_token: 81920
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: Elementwise
     role: ple_inject
     bytes_per_token: 61440
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: Elementwise
     role: attn_hc_norm_mix
     bytes_per_token: 25600
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: GEMM
     role: attn_hc_down
     n: 320
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: attn_hc_inject
     n: 4
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: attn_hc_up
     n: 10240
     k: 320
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: AllGather
     role: attn_in
@@ -547,32 +519,27 @@ layer_kinds:
     role: attn_hc_combine
     bytes_per_token: 46080
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: Elementwise
     role: mlp_hc_norm_mix
     bytes_per_token: 25600
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: GEMM
     role: mlp_hc_down
     n: 320
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: mlp_hc_inject
     n: 4
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: mlp_hc_up
     n: 10240
     k: 320
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: AllGather
     role: mlp_in
@@ -629,7 +596,6 @@ layer_kinds:
     role: mlp_hc_combine
     bytes_per_token: 46080
     tp: replicated
-    under_sequence_parallel: token_sharded
   edges:
   - - 0
     - 1
@@ -703,7 +669,6 @@ layer_kinds:
     role: mtp_pre_fc_norm
     bytes_per_token: 25600
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: GEMM
     role: mtp_fc_embedding
     n: 2560
@@ -718,27 +683,23 @@ layer_kinds:
     role: attn_hc_norm_mix
     bytes_per_token: 25600
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: GEMM
     role: attn_hc_down
     n: 320
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: attn_hc_inject
     n: 4
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: attn_hc_up
     n: 10240
     k: 320
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: AllGather
     role: attn_in
@@ -755,32 +716,27 @@ layer_kinds:
     role: attn_hc_combine
     bytes_per_token: 46080
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: Elementwise
     role: mlp_hc_norm_mix
     bytes_per_token: 25600
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: GEMM
     role: mlp_hc_down
     n: 320
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: mlp_hc_inject
     n: 4
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: mlp_hc_up
     n: 10240
     k: 320
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: AllGather
     role: mlp_in
@@ -837,25 +793,21 @@ layer_kinds:
     role: mlp_hc_combine
     bytes_per_token: 46080
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: Elementwise
     role: mtp_final_hc_norm_mix
     bytes_per_token: 25600
     tp: replicated
-    under_sequence_parallel: token_sharded
   - op: GEMM
     role: mtp_final_hc_down
     n: 320
     k: 10240
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   - op: GEMM
     role: mtp_final_hc_up
     n: 10240
     k: 320
     tp: replicated
-    under_sequence_parallel: token_sharded
     weight_dtype: bf16
   edges:
   - - 0
@@ -954,20 +906,17 @@ head:
   role: final_hc_norm_mix
   bytes_per_token: 25600
   tp: replicated
-  under_sequence_parallel: token_sharded
 - op: GEMM
   role: final_hc_down
   n: 320
   k: 10240
   tp: replicated
-  under_sequence_parallel: token_sharded
   weight_dtype: bf16
 - op: GEMM
   role: final_hc_up
   n: 10240
   k: 320
   tp: replicated
-  under_sequence_parallel: token_sharded
   weight_dtype: bf16
 - op: Elementwise
   role: final_norm

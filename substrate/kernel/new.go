@@ -391,6 +391,12 @@ func construct(in Inputs) (*Kernel, error) {
 	}
 
 	shardedRoles := map[string]bool{}
+	// The roles the engine runs on a token shard. A table names roles across the variants of
+	// an architecture, so a role no node of this model has is not a drift to refuse.
+	tokenShardedRoles := map[string]bool{}
+	for _, r := range k.low.TokenShardedRoles {
+		tokenShardedRoles[r] = true
+	}
 	built, err := price.BuildPlanWith(in.Model, emitter{k.layout}, price.PlanOptions{
 		WeightBytesPerParam: func(n model.Node) float64 {
 			return weightBytesPerParam(in.Model, n, served)
@@ -409,6 +415,9 @@ func construct(in Inputs) (*Kernel, error) {
 				}
 			}
 			return price.TokenRange{}, false
+		},
+		TokenSharded: func(n model.Node) bool {
+			return tokenShardedRoles[n.Role]
 		},
 	})
 	if err != nil {

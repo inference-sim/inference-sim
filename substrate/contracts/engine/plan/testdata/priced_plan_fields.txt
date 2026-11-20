@@ -74,6 +74,7 @@ PoolPlan.DecodeShards # kernel: TestADecodeShardThePlanStatesSplitsTheGEMMItName
 DecodeShard.Role # kernel: TestADecodeShardThePlanStatesSplitsTheGEMMItNamesForTheStepsItCovers
 DecodeShard.FromTokens # kernel: TestADecodeShardThePlanStatesSplitsTheGEMMItNamesForTheStepsItCovers
 DecodeShard.ToTokens # kernel: TestADecodeShardThePlanStatesSplitsTheGEMMItNamesForTheStepsItCovers
+PoolPlan.TokenShardedRoles # kernel: TestATokenShardedRoleThePlanNamesRunsOnItsRanksTokensUnderModelSequenceParallelism
 Transfer.Nodes # envtest: TestNodeAndGroupMovesChangeTheReferenceDemand
 Transfer.Groups # envtest: TestNodeAndGroupMovesChangeTheReferenceDemand
 NodeMove.From # envtest: TestNodeAndGroupMovesChangeTheReferenceDemand

@@ -307,6 +307,16 @@ func (p PoolPlan) ValidateResolved() error {
 			}
 		}
 	}
+	for i, r := range p.TokenShardedRoles {
+		if r == "" {
+			bad = append(bad, fmt.Sprintf("TokenShardedRoles[%d] names no role", i))
+		}
+		for j := range i {
+			if p.TokenShardedRoles[j] == r {
+				bad = append(bad, fmt.Sprintf("TokenShardedRoles[%d] names role %q, which TokenShardedRoles[%d] already does", i, r, j))
+			}
+		}
+	}
 	if len(bad) > 0 {
 		return fmt.Errorf("the plan's resolved settings: %s", strings.Join(bad, "; "))
 	}

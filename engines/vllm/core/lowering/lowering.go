@@ -586,6 +586,9 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 		return nil, err
 	}
 	p.DecodeShards = decodeShards(arch, c.family, lay, in.Rules.MegaMoEBackend(eng.MoEBackend))
+	if lay.ModelSequenceParallel {
+		p.TokenShardedRoles = tokenShardedRoles(arch)
+	}
 	if r, why := routingMode(g, &c, eng.MoEBackend); r != plan.RoutingNotStated || why != "" {
 		p.MoE.Routing = r
 		if why != "" {
