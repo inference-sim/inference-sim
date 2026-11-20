@@ -69,7 +69,7 @@ func New(cfg sched.Config, pricer Pricer, list fields.FieldList) (*Engine, error
 		return nil, errors.New("sglang: an engine needs a pricer")
 	}
 	if cfg.DisableConsecutivePrefillOverlap {
-		return nil, errors.New("sglang: SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP is not modelled by the engine: SGLang processes the last result between forming a batch and launching it, which the contract's Schedule and Complete cannot express (inference-sim/blis-sglang#59)")
+		return nil, errors.New("sglang: SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP is not modelled by the engine: SGLang processes the last result between forming a batch and launching it, which the contract's Schedule and Complete cannot express (inference-sim/blis-sglang#4)")
 	}
 	if len(cfg.EOSTokenIDs) == 0 {
 		return nil, errors.New("sglang: the model has no end-of-sequence token, which the engine ends a request with")

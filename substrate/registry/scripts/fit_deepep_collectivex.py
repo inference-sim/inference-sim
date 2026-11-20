@@ -2,7 +2,7 @@
 """Fit DeepEP dispatch + combine on GB200-NVL72 (EP8, EP16) and H200 (EP16, two nodes) from
 InferenceX CollectiveX.
 
-WHAT THIS CLOSES (inference-sim/blis-registry#60, gap 2). GB200-NVL72 carried one DeepEP
+WHAT THIS CLOSES. GB200-NVL72 carried one DeepEP
 entry, low-latency at 4 ranks (AISimulate, eager). An expert-parallel deployment on an NVL72
 rack runs wider than that, and fell back to the generic routed all-to-all. H200 carried DeepEP
 at 8 ranks on one node only.
