@@ -70,11 +70,12 @@ const release = "vLLM " + Version
 // that registers others).
 var (
 	// registeredConnectors: KVConnectorFactory.register_connector
-	// (vllm/distributed/kv_transfer/kv_connector/factory.py:153-249@5df63a72).
+	// (vllm/distributed/kv_transfer/kv_connector/factory.py:153-285@0fda86a3; UMBPStoreConnector is new
+	// since 5df63a72).
 	registeredConnectors = []string{"DecodeBenchConnector", "ExampleConnector", "ExampleHiddenStatesConnector",
 		"FlexKVConnectorV1", "HF3FSKVConnector", "HiSparseConnector", "LMCacheConnectorV1", "LMCacheMPConnector",
 		"MoRIIOConnector", "MooncakeConnector", "MooncakeStoreConnector", "MultiConnector", "NixlConnector",
-		"NixlPullConnector", "NixlPushConnector", "OffloadingConnector", "SimpleCPUOffloadConnector"}
+		"NixlPullConnector", "NixlPushConnector", "OffloadingConnector", "SimpleCPUOffloadConnector", "UMBPStoreConnector"}
 	// registeredSpecs: OffloadingSpecFactory.register_spec (vllm/v1/kv_offload/factory.py:62-68@5df63a72).
 	registeredSpecs = []string{"CPUOffloadingSpec", "TieringOffloadingSpec"}
 	// registeredTiers: SecondaryTierFactory.register_tier (vllm/v1/kv_offload/tiering/factory.py:146-174@4ba787ec).

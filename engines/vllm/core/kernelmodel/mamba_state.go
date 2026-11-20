@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/model_executor/layers/mamba/mamba_utils.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
+// Derived from vllm/model_executor/layers/mamba/mamba_utils.py at vLLM v0.34.0+0fda86a35419 (0fda86a35419c9c70dbfada224c838c10fbb62ad).
 // The recurrent layers' state shapes and dtypes: MambaStateShapeCalculator.mamba2_state_shape
 // (:195-221), gated_delta_net_state_shape (:280-302), kda_state_shape (:304-327) and
 // extra_groups_for_head_shards (:269-278); MambaStateDtypeCalculator._mamba_state_dtype (:98-110)

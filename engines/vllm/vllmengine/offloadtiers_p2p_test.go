@@ -30,7 +30,7 @@ func p2pScenario(t *testing.T, options string) map[string]string {
 // blocks_per_chunk was refused.
 func TestAP2PTierStatedInTheConnectorOptionsBuildsAPeeredEngine(t *testing.T) {
 	Register()
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0",
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419",
 		Roots: p2pScenario(t, "    secondary_tiers: [{type: p2p, port: 5710}]\n")}
 	done, err := prepare(spec, nil)
 	if err != nil {
@@ -70,7 +70,7 @@ func TestAConnectorOptionTierThatIsNotP2PIsRefused(t *testing.T) {
 		"an unknown key":             {"    p2p_port: 5710\n", "p2p_port not found"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: p2pScenario(t, c.options)}, nil)
+			_, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: p2pScenario(t, c.options)}, nil)
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("refusal %v, want one naming %q", err, c.want)
 			}
@@ -104,7 +104,7 @@ func TestAP2PHandoffDeploymentBuildsBothPoolsPeered(t *testing.T) {
 		if kt.Connector != "" || off.CPUBytes != 512<<30 {
 			t.Errorf("pool %d: kv_transfer %+v, kv_offload CPU bytes %d; want no kv_transfer and the 512 GiB tier", pool, kt, off.CPUBytes)
 		}
-		e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r, Pool: pool})
+		e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: r, Pool: pool})
 		if err != nil {
 			t.Fatalf("pool %d: %v", pool, err)
 		}
@@ -121,7 +121,7 @@ func TestAP2PHandoffDeploymentBuildsBothPoolsPeered(t *testing.T) {
 // with a host's own types. Before, the factory built it as an fs tier with root_dir /s3.
 func TestATierOnAnObjectStoreIsAnObjTier(t *testing.T) {
 	Register()
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: tieredScenario(t, "    - {tier: s3, bytes: 1099511627776}\n")}
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: tieredScenario(t, "    - {tier: s3, bytes: 1099511627776}\n")}
 	done, err := prepare(spec, nil)
 	if err != nil {
 		t.Fatal(err)

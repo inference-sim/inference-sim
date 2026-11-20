@@ -705,5 +705,5 @@
     "vllm/entrypoints/serve/utils/orca_metrics.py:vllm:num_requests_waiting": "maps the engine family of this name to an ORCA load-report field; the family is defined in vllm/v1/metrics/loggers.py",
     "vllm/v1/metrics/reader.py:vllm:spec_decode_num_accepted_tokens_per_pos": "the metrics reader recognizes this family by name to group its samples; it is defined in vllm/v1/spec_decode/metrics.py"
   },
-  "vllm": "0fda86a35419"
+  "vllm": "0.34.0+0fda86a35419"
 }

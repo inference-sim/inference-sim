@@ -11,7 +11,7 @@ import (
 // more FLOPs, and the utilization of its step is a fraction.
 func TestEngineStatesStepFLOPsAndPeak(t *testing.T) {
 	flops := func(prompt int) (f, secs, peak float64) {
-		e, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, "d058-032.yaml")}})
+		e, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: roots(t, "d058-032.yaml")}})
 		if err != nil {
 			t.Fatal(err)
 		}

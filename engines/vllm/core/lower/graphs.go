@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/worker/gpu/cudagraph_utils.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
+// Derived from vllm/v1/worker/gpu/cudagraph_utils.py at vLLM v0.34.0+0fda86a35419 (0fda86a35419c9c70dbfada224c838c10fbb62ad):
 // _is_compatible (:106-133), CudaGraphManager._init_candidates (:251-389) and dispatch (:518-548),
 // for a model without LoRA adapters, dynamic speculative decoding or microbatching. The recoverSSM
 // kernel (use_kda_recoverssm) is modelled: it keeps mixed graphs to the decode token bound.

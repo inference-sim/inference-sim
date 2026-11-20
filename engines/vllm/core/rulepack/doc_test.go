@@ -1,20 +1,21 @@
 package rulepack
 
 import (
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 	"reflect"
 	"testing"
 )
 
 // executed is the release blis-vllm executes: blisvllm.Upstream.Version in the root module
-// (provenance.go), which this data-only module must not import.
-const executed = "0.33.0"
+// (provenance.go), the engine release the pin states (internal/upstream).
+const executed = upstream.Version
 
 // Original to blis-vllm.
 
 // The registry holds the pack of the one release the engine executes: a scenario declaring
 // blis-vllm's own Upstream must find rules.
 func TestEveryReleaseHasItsPack(t *testing.T) {
-	if got, want := Versions(), []string{"0.33.0"}; !reflect.DeepEqual(got, want) {
+	if got, want := Versions(), []string{upstream.Version}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Versions() = %v, want %v", got, want)
 	}
 	if Lookup(executed) == nil {

@@ -907,7 +907,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [h100]}
-      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: fed44bcc9d3a0553988ad4ac07dd3aca253f305356ef2f862a8ddce9aa2bcd6c}]
+      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 965c1e944c21379c7b3658edd50415ea2cef5bbf20984f234667b73f4ed7bdaa}]
       measures:
         time: device
         execution: captured
@@ -926,7 +926,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [h100]}
-      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: fed44bcc9d3a0553988ad4ac07dd3aca253f305356ef2f862a8ddce9aa2bcd6c}]
+      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 965c1e944c21379c7b3658edd50415ea2cef5bbf20984f234667b73f4ed7bdaa}]
       measures:
         time: device
         execution: captured
@@ -945,7 +945,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [h100]}
-      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: fed44bcc9d3a0553988ad4ac07dd3aca253f305356ef2f862a8ddce9aa2bcd6c}]
+      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 965c1e944c21379c7b3658edd50415ea2cef5bbf20984f234667b73f4ed7bdaa}]
       measures:
         time: device
         execution: captured
@@ -964,10 +964,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [h100]}
-      kernel_impls: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: 32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244}]
+      kernel_impls: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc}]
       measured_on: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: 017848ff74e19726827750a0da4c155925b699fdda56ac79066383f1ad9d2945}]
       transferred_from: "hardware=h100"
-      transfer_rule: "measured on the vllm-csrc ced6857afa0e build of fused_moe_kernel (017848ff74e1) that the run image installs, on this chip, and used for the engine pin's build (32e168924521) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on the vllm-csrc ced6857afa0e build of fused_moe_kernel (017848ff74e1) that the run image installs, on this chip, and used for the engine pin's build (32e168924521) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [0.315, 0.345]
       fit_range:
         - {dim: tokens, low: 1.0, high: 16384.0}
@@ -982,10 +982,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [h100]}
-      kernel_impls: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: 32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244}]
+      kernel_impls: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc}]
       measured_on: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: 017848ff74e19726827750a0da4c155925b699fdda56ac79066383f1ad9d2945}]
       transferred_from: "hardware=h100"
-      transfer_rule: "measured on the vllm-csrc ced6857afa0e build of fused_moe_kernel (017848ff74e1) that the run image installs, on this chip, and used for the engine pin's build (32e168924521) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on the vllm-csrc ced6857afa0e build of fused_moe_kernel (017848ff74e1) that the run image installs, on this chip, and used for the engine pin's build (32e168924521) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [1, 1]
       fit_range:
         - {dim: tokens, low: 1.0, high: 16384.0}
@@ -1000,10 +1000,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [h100]}
-      kernel_impls: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: 32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244}]
+      kernel_impls: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc}]
       measured_on: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: 017848ff74e19726827750a0da4c155925b699fdda56ac79066383f1ad9d2945}]
       transferred_from: "hardware=h100"
-      transfer_rule: "measured on the vllm-csrc ced6857afa0e build of fused_moe_kernel (017848ff74e1) that the run image installs, on this chip, and used for the engine pin's build (32e168924521) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on the vllm-csrc ced6857afa0e build of fused_moe_kernel (017848ff74e1) that the run image installs, on this chip, and used for the engine pin's build (32e168924521) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [27.5, 33.5]
       fit_range:
         - {dim: tokens, low: 1.0, high: 16384.0}
@@ -1018,10 +1018,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [h100]}
-      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: efc342d135206fd89a3b9f9d044e288bf65023c66d33963da10b30aa39ad45f3}]
-      measured_on: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: fed44bcc9d3a0553988ad4ac07dd3aca253f305356ef2f862a8ddce9aa2bcd6c}]
+      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 2eb9160a5521722bd004b85476914a24145c338a4f57f40588b854da3178f8ff}]
+      measured_on: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 965c1e944c21379c7b3658edd50415ea2cef5bbf20984f234667b73f4ed7bdaa}]
       transferred_from: "hardware=h100"
-      transfer_rule: "measured on the flashinfer 0.6.18.post1 build of cutlass_fused_moe (fed44bcc9d3a) that the run image installs, on this chip, and used for the engine pin's build (efc342d13520) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on the flashinfer 0.6.18.post1 build of cutlass_fused_moe (fed44bcc9d3a) that the run image installs, on this chip, and used for the engine pin's build (efc342d13520) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [0.335, 0.385]
       fit_range:
         - {dim: tokens, low: 1.0, high: 16384.0}
@@ -1036,10 +1036,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [h100]}
-      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: efc342d135206fd89a3b9f9d044e288bf65023c66d33963da10b30aa39ad45f3}]
-      measured_on: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: fed44bcc9d3a0553988ad4ac07dd3aca253f305356ef2f862a8ddce9aa2bcd6c}]
+      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 2eb9160a5521722bd004b85476914a24145c338a4f57f40588b854da3178f8ff}]
+      measured_on: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 965c1e944c21379c7b3658edd50415ea2cef5bbf20984f234667b73f4ed7bdaa}]
       transferred_from: "hardware=h100"
-      transfer_rule: "measured on the flashinfer 0.6.18.post1 build of cutlass_fused_moe (fed44bcc9d3a) that the run image installs, on this chip, and used for the engine pin's build (efc342d13520) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on the flashinfer 0.6.18.post1 build of cutlass_fused_moe (fed44bcc9d3a) that the run image installs, on this chip, and used for the engine pin's build (efc342d13520) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [1, 4]
       fit_range:
         - {dim: tokens, low: 1.0, high: 16384.0}
@@ -1054,10 +1054,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [h100]}
-      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: efc342d135206fd89a3b9f9d044e288bf65023c66d33963da10b30aa39ad45f3}]
-      measured_on: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: fed44bcc9d3a0553988ad4ac07dd3aca253f305356ef2f862a8ddce9aa2bcd6c}]
+      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 2eb9160a5521722bd004b85476914a24145c338a4f57f40588b854da3178f8ff}]
+      measured_on: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 965c1e944c21379c7b3658edd50415ea2cef5bbf20984f234667b73f4ed7bdaa}]
       transferred_from: "hardware=h100"
-      transfer_rule: "measured on the flashinfer 0.6.18.post1 build of cutlass_fused_moe (fed44bcc9d3a) that the run image installs, on this chip, and used for the engine pin's build (efc342d13520) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on the flashinfer 0.6.18.post1 build of cutlass_fused_moe (fed44bcc9d3a) that the run image installs, on this chip, and used for the engine pin's build (efc342d13520) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [31.5, 34.5]
       fit_range:
         - {dim: tokens, low: 1.0, high: 16384.0}
@@ -1359,7 +1359,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [h200]}
-      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: fed44bcc9d3a0553988ad4ac07dd3aca253f305356ef2f862a8ddce9aa2bcd6c}]
+      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 965c1e944c21379c7b3658edd50415ea2cef5bbf20984f234667b73f4ed7bdaa}]
       measures:
         time: device
         execution: captured
@@ -1378,7 +1378,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [h200]}
-      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: fed44bcc9d3a0553988ad4ac07dd3aca253f305356ef2f862a8ddce9aa2bcd6c}]
+      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 965c1e944c21379c7b3658edd50415ea2cef5bbf20984f234667b73f4ed7bdaa}]
       measures:
         time: device
         execution: captured
@@ -1397,7 +1397,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [h200]}
-      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: fed44bcc9d3a0553988ad4ac07dd3aca253f305356ef2f862a8ddce9aa2bcd6c}]
+      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 965c1e944c21379c7b3658edd50415ea2cef5bbf20984f234667b73f4ed7bdaa}]
       measures:
         time: device
         execution: captured
@@ -1416,10 +1416,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [h200]}
-      kernel_impls: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: 32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244}]
+      kernel_impls: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc}]
       measured_on: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: 017848ff74e19726827750a0da4c155925b699fdda56ac79066383f1ad9d2945}]
       transferred_from: "hardware=h200"
-      transfer_rule: "measured on the vllm-csrc ced6857afa0e build of fused_moe_kernel (017848ff74e1) that the run image installs, on this chip, and used for the engine pin's build (32e168924521) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on the vllm-csrc ced6857afa0e build of fused_moe_kernel (017848ff74e1) that the run image installs, on this chip, and used for the engine pin's build (32e168924521) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [0.305, 0.335]
       fit_range:
         - {dim: tokens, low: 1.0, high: 16384.0}
@@ -1434,10 +1434,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [h200]}
-      kernel_impls: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: 32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244}]
+      kernel_impls: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc}]
       measured_on: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: 017848ff74e19726827750a0da4c155925b699fdda56ac79066383f1ad9d2945}]
       transferred_from: "hardware=h200"
-      transfer_rule: "measured on the vllm-csrc ced6857afa0e build of fused_moe_kernel (017848ff74e1) that the run image installs, on this chip, and used for the engine pin's build (32e168924521) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on the vllm-csrc ced6857afa0e build of fused_moe_kernel (017848ff74e1) that the run image installs, on this chip, and used for the engine pin's build (32e168924521) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [1, 1]
       fit_range:
         - {dim: tokens, low: 1.0, high: 16384.0}
@@ -1452,10 +1452,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [h200]}
-      kernel_impls: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: 32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244}]
+      kernel_impls: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc}]
       measured_on: [{library: vllm-csrc, variant: fused_moe_kernel, code_hash: 017848ff74e19726827750a0da4c155925b699fdda56ac79066383f1ad9d2945}]
       transferred_from: "hardware=h200"
-      transfer_rule: "measured on the vllm-csrc ced6857afa0e build of fused_moe_kernel (017848ff74e1) that the run image installs, on this chip, and used for the engine pin's build (32e168924521) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on the vllm-csrc ced6857afa0e build of fused_moe_kernel (017848ff74e1) that the run image installs, on this chip, and used for the engine pin's build (32e168924521) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [28.5, 33.5]
       fit_range:
         - {dim: tokens, low: 1.0, high: 16384.0}
@@ -1470,10 +1470,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [h200]}
-      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: efc342d135206fd89a3b9f9d044e288bf65023c66d33963da10b30aa39ad45f3}]
-      measured_on: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: fed44bcc9d3a0553988ad4ac07dd3aca253f305356ef2f862a8ddce9aa2bcd6c}]
+      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 2eb9160a5521722bd004b85476914a24145c338a4f57f40588b854da3178f8ff}]
+      measured_on: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 965c1e944c21379c7b3658edd50415ea2cef5bbf20984f234667b73f4ed7bdaa}]
       transferred_from: "hardware=h200"
-      transfer_rule: "measured on the flashinfer 0.6.18.post1 build of cutlass_fused_moe (fed44bcc9d3a) that the run image installs, on this chip, and used for the engine pin's build (efc342d13520) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on the flashinfer 0.6.18.post1 build of cutlass_fused_moe (fed44bcc9d3a) that the run image installs, on this chip, and used for the engine pin's build (efc342d13520) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [0.345, 0.385]
       fit_range:
         - {dim: tokens, low: 1.0, high: 16384.0}
@@ -1488,10 +1488,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [h200]}
-      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: efc342d135206fd89a3b9f9d044e288bf65023c66d33963da10b30aa39ad45f3}]
-      measured_on: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: fed44bcc9d3a0553988ad4ac07dd3aca253f305356ef2f862a8ddce9aa2bcd6c}]
+      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 2eb9160a5521722bd004b85476914a24145c338a4f57f40588b854da3178f8ff}]
+      measured_on: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 965c1e944c21379c7b3658edd50415ea2cef5bbf20984f234667b73f4ed7bdaa}]
       transferred_from: "hardware=h200"
-      transfer_rule: "measured on the flashinfer 0.6.18.post1 build of cutlass_fused_moe (fed44bcc9d3a) that the run image installs, on this chip, and used for the engine pin's build (efc342d13520) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on the flashinfer 0.6.18.post1 build of cutlass_fused_moe (fed44bcc9d3a) that the run image installs, on this chip, and used for the engine pin's build (efc342d13520) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [1, 8]
       fit_range:
         - {dim: tokens, low: 1.0, high: 16384.0}
@@ -1506,10 +1506,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [h200]}
-      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: efc342d135206fd89a3b9f9d044e288bf65023c66d33963da10b30aa39ad45f3}]
-      measured_on: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: fed44bcc9d3a0553988ad4ac07dd3aca253f305356ef2f862a8ddce9aa2bcd6c}]
+      kernel_impls: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 2eb9160a5521722bd004b85476914a24145c338a4f57f40588b854da3178f8ff}]
+      measured_on: [{library: flashinfer, variant: cutlass_fused_moe, code_hash: 965c1e944c21379c7b3658edd50415ea2cef5bbf20984f234667b73f4ed7bdaa}]
       transferred_from: "hardware=h200"
-      transfer_rule: "measured on the flashinfer 0.6.18.post1 build of cutlass_fused_moe (fed44bcc9d3a) that the run image installs, on this chip, and used for the engine pin's build (efc342d13520) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on the flashinfer 0.6.18.post1 build of cutlass_fused_moe (fed44bcc9d3a) that the run image installs, on this chip, and used for the engine pin's build (efc342d13520) on the same chip; the two builds' sources differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [34.5, 38.5]
       fit_range:
         - {dim: tokens, low: 1.0, high: 16384.0}

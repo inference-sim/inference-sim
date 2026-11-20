@@ -75,7 +75,10 @@ def main(argv):
             raise gen.Refused(f"--keep {args.keep} is not empty; regen.py fetches into an empty directory")
         work = args.keep or tempfile.mkdtemp(prefix="kernel-impls-")
         try:
-            vllm = fetch(VLLM_REPO, commit if tag is None else tag, os.path.join(work, "vllm"))
+            # A build label ("v0.34.0+<12 digits>", internal/upstream) names a commit past a release,
+            # not a git tag, so such a Tag is fetched by its Commit and keeps its name in the table.
+            by_commit = tag is None or (not args.ref and "+" in tag)
+            vllm = fetch(VLLM_REPO, commit if by_commit else tag, os.path.join(work, "vllm"))
             sources = {}
             for name, (_, pin, repo, ref) in gen.library_pins(vllm, cls).items():
                 if repo is not None:

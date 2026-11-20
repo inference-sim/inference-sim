@@ -32,7 +32,7 @@ func TestAPrefillPoolOffloadsWhileTheDecodePoolRunsNixlAlone(t *testing.T) {
 		t.Errorf("decode pool kv_offload %+v, want none: it has no CPU tier", off)
 	}
 	for i := 0; i < 2; i++ {
-		if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r, Pool: i}); err != nil {
+		if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: r, Pool: i}); err != nil {
 			t.Fatalf("pool %d does not build: %v", i, err)
 		}
 	}
@@ -42,7 +42,7 @@ func TestAPrefillPoolOffloadsWhileTheDecodePoolRunsNixlAlone(t *testing.T) {
 // and the refusal names the pool and the way out: a MultiConnector over NIXL alone is not modelled.
 func TestADecodePoolInheritingMultiConnectorWithoutATierIsRefusedByName(t *testing.T) {
 	Register()
-	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0",
+	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419",
 		Roots: roots(t, "muse-h100-roce-1p1d-prefill-offload-inherited.yaml"), Pool: 1})
 	if err == nil {
 		t.Fatal("a decode pool running a MultiConnector over NIXL alone was built")
@@ -53,7 +53,7 @@ func TestADecodePoolInheritingMultiConnectorWithoutATierIsRefusedByName(t *testi
 		}
 	}
 	// The prefill pool of the same deployment is fine.
-	if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0",
+	if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419",
 		Roots: roots(t, "muse-h100-roce-1p1d-prefill-offload-inherited.yaml"), Pool: 0}); err != nil {
 		t.Errorf("prefill pool: %v", err)
 	}

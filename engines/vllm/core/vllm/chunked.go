@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/config/scheduler.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
+// Derived from vllm/config/scheduler.py at vLLM v0.34.0+0fda86a35419 (0fda86a35419c9c70dbfada224c838c10fbb62ad).
 // Also vllm/model_executor/models/config.py (the Mamba hook's chunked-prefill assertion) and
 // vllm/v1/core/sched/scheduler.py (the waiting-queue check that chunked prefill off changes).
 

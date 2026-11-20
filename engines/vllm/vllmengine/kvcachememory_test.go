@@ -37,7 +37,7 @@ func d010With(t *testing.T, engineLines string, replace ...string) engine.Spec {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: map[string]string{RootScenario: path}}
+	return engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: map[string]string{RootScenario: path}}
 }
 
 // A stated kv_cache_memory_bytes is the KV cache's bytes on each GPU, taken whole: the worker

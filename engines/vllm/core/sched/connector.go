@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/sched/scheduler.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
+// Derived from vllm/v1/core/sched/scheduler.py at vLLM v0.34.0+0fda86a35419 (0fda86a35419c9c70dbfada224c838c10fbb62ad).
 // Also vllm/distributed/kv_transfer/kv_connector/v1/base.py (the scheduler-side hooks a
 // connector implements) and vllm/v1/outputs.py (KVConnectorOutput).
 

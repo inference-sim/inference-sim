@@ -1,6 +1,6 @@
 {
   "generator": "blis-vllm cmd/metricsmanifest",
-  "vllm": "0fda86a35419",
+  "vllm": "0.34.0+0fda86a35419",
   "families": [
     {
       "name": "vllm:\u003ckvcr DURATION_METRIC\u003e",

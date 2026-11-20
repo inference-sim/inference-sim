@@ -129,6 +129,7 @@ func TestCensusSlicesPartitionTheFixtures(t *testing.T) {
 }
 
 func TestBlockSizeResolutionOverTheCensusFixtures(t *testing.T) {
+	withRecordedBlockSizeTable(t)
 	stated := regexp.MustCompile(`(?m)^# block_size (\d+): stated by the run\.$`)
 	strip := regexp.MustCompile(`(?m)^\s*block_size:\s*\d+\s*\n`)
 	release := regexp.MustCompile(`(?m)^engine:\s*\{kind:\s*vllm\}\s*$`)

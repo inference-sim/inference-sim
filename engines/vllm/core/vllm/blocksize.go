@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
 // BlockSizeIssue is the open issue an unresolved block_size cites (design X28).
@@ -194,6 +196,22 @@ func selectorEnv(name string) bool {
 // setting of the facts it cannot discover. A combination resolves only if the size is the same
 // under all of them.
 func ResolveBlockSize(in BlockSizeInput) (BlockSize, error) {
+	// The table is the oracle's output at the commit it records. A build that models another
+	// commit does not read it: at the pin CacheConfig.DEFAULT_BLOCK_SIZE is 64 (vllm/config/cache.py:185)
+	// and _preferred_block_size_for_backends starts from it (vllm/platforms/interface.py:777-810@0fda86a3),
+	// not from the 16 the table's rows were resolved from, so no row says what the pin resolves.
+	if blockSizes.VLLM != upstream.Commit {
+		return BlockSize{}, fmt.Errorf("block_size is not stated, and the block-size oracle's table was recorded at vLLM %s while this build models %s, "+
+			"whose default block size is 64 and whose selection is not re-derived here; state block_size, or re-run oracle/blocksize at the pin (%s)",
+			blockSizes.VLLM, upstream.Commit, BlockSizeIssue)
+	}
+	return ResolveBlockSizeFromTable(in)
+}
+
+// ResolveBlockSizeFromTable is the block-size oracle's table looked up as recorded, whatever
+// commit the build models. ResolveBlockSize is the lookup a build may rely on: it refuses when
+// the table was recorded at another commit. This is for tests of the table itself.
+func ResolveBlockSizeFromTable(in BlockSizeInput) (BlockSize, error) {
 	refuse := func(why string) (BlockSize, error) {
 		return BlockSize{}, fmt.Errorf("block_size is not stated, and %s (%s)", why, BlockSizeIssue)
 	}

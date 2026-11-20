@@ -2,7 +2,7 @@
   "kind": "FieldList",
   "engine": {
     "kind": "vllm",
-    "version": "0fda86a35419"
+    "version": "0.34.0+0fda86a35419"
   },
   "fields": [
     {
@@ -9155,7 +9155,7 @@
             "closed": "below"
           },
           {
-            "value": 1.0,
+            "value": 1,
             "closed": "above"
           }
         ],

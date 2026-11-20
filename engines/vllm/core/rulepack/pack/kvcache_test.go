@@ -69,8 +69,9 @@ func TestKVCacheGroupsMatchEngineGoldens(t *testing.T) {
 		{"deepseek-v4.1-example", v0_33.Pack(), 256, 0, 0},
 		{"deepseek-v4.1-example", v0_33.Pack(), 64, 0, 7},
 	} {
-		name := c.layers + "." + "v" + strings.ReplaceAll(c.pack.Version, ".", "_")
-		name = strings.TrimSuffix(name, "_0") + ".block" + strconv.Itoa(c.block) + ".align" + strconv.Itoa(c.align)
+		// The golden files are named for the pack's directory (v0_33), not for the release it
+		// describes, so moving the pin does not rename them.
+		name := c.layers + ".v0_33.block" + strconv.Itoa(c.block) + ".align" + strconv.Itoa(c.align)
 		var k *int
 		if c.k > 0 {
 			name += ".k" + strconv.Itoa(c.k)

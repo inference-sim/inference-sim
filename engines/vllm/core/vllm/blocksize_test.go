@@ -3,6 +3,8 @@ package vllm
 import (
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
 // The committed table is the block-size oracle's output (oracle/blocksize/oracle.py): a
@@ -12,7 +14,7 @@ import (
 // carries the assumed facts exactly when its size is not the same under all 16 settings.
 func TestBlockSizeTableIsInternallyConsistent(t *testing.T) {
 	if blockSizes.VLLM != "4ba787ec9959e566d3b587a796dff07673324da5" {
-		t.Errorf("the table is for vLLM %s, not the pinned commit", blockSizes.VLLM)
+		t.Errorf("the table is for vLLM %s, not the oracle commit", blockSizes.VLLM)
 	}
 	if len(blockSizes.Facts) < 3 {
 		t.Errorf("the table names %d facts, want the ones the oracle toggles", len(blockSizes.Facts))
@@ -135,7 +137,7 @@ func TestResolveBlockSize(t *testing.T) {
 		{"an unrelated environment variable is ignored", with(func(i *BlockSizeInput) { i.Env = map[string]string{"VLLM_LOGGING_LEVEL": "DEBUG"} }), 16, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			got, err := ResolveBlockSize(c.in)
+			got, err := ResolveBlockSizeFromTable(c.in)
 			if c.why == "" || c.size > 0 {
 				if err != nil || got.Size != c.size || !strings.Contains(got.Source, "vllm/platforms/interface.py:750-794@4ba787ec") {
 					t.Fatalf("got %+v, %v; want size %d with a cited source", got, err, c.size)
@@ -171,8 +173,8 @@ func TestKVDTypeNamesResolveAsTheOraclesTwoNamesDo(t *testing.T) {
 		seen++
 		in := BlockSizeInput{Model: c.Model, Capability: c.Capability, KVCacheDType: c.KVCacheDType}
 		want := BlockSizeInput{Model: c.Model, Capability: c.Capability, KVCacheDType: base}
-		got, gerr := ResolveBlockSize(in)
-		exp, eerr := ResolveBlockSize(want)
+		got, gerr := ResolveBlockSizeFromTable(in)
+		exp, eerr := ResolveBlockSizeFromTable(want)
 		if (gerr == nil) != (eerr == nil) || (gerr == nil && got.Size != exp.Size) {
 			t.Errorf("%s %s: %s gives %+v, %v but %s gives %+v, %v", c.Model, c.Capability, c.KVCacheDType, got, gerr, base, exp, eerr)
 		}
@@ -182,7 +184,7 @@ func TestKVDTypeNamesResolveAsTheOraclesTwoNamesDo(t *testing.T) {
 	}
 	// The case the review reproduced: llama-3.1-70b-instruct on compute capability 9.0.
 	for _, kv := range []string{"fp8", "fp8_e4m3", "bfloat16", "float16", "auto"} {
-		got, err := ResolveBlockSize(BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: kv})
+		got, err := ResolveBlockSizeFromTable(BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: kv})
 		if err != nil || got.Size != 16 {
 			t.Errorf("llama-3.1-70b-instruct, 9.0, %s: %+v, %v; want 16", kv, got, err)
 		}
@@ -197,8 +199,8 @@ func TestKVDTypeNamesResolveAsTheOraclesTwoNamesDo(t *testing.T) {
 func TestMiniMaxM25NVFP4ResolvesAsMiniMaxM25Does(t *testing.T) {
 	for _, cap := range []string{"9.0", "10.0", "10.3"} {
 		for _, kv := range []string{"auto", "fp8", "fp8_e4m3", "bfloat16", "float16"} {
-			want, werr := ResolveBlockSize(BlockSizeInput{Model: "minimax-m2.5", Capability: cap, KVCacheDType: kv})
-			got, gerr := ResolveBlockSize(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: cap, KVCacheDType: kv})
+			want, werr := ResolveBlockSizeFromTable(BlockSizeInput{Model: "minimax-m2.5", Capability: cap, KVCacheDType: kv})
+			got, gerr := ResolveBlockSizeFromTable(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: cap, KVCacheDType: kv})
 			if werr != nil || gerr != nil {
 				t.Errorf("capability %s kv %s: minimax-m2.5 gives %v, minimax-m2.5-nvfp4 gives %v; both must resolve", cap, kv, werr, gerr)
 				continue
@@ -208,9 +210,28 @@ func TestMiniMaxM25NVFP4ResolvesAsMiniMaxM25Does(t *testing.T) {
 			}
 		}
 	}
-	a, _ := ResolveBlockSize(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: "10.0", KVCacheDType: "auto"})
-	f, _ := ResolveBlockSize(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: "10.0", KVCacheDType: "fp8"})
+	a, _ := ResolveBlockSizeFromTable(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: "10.0", KVCacheDType: "auto"})
+	f, _ := ResolveBlockSizeFromTable(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: "10.0", KVCacheDType: "fp8"})
 	if a.Size != 16 || f.Size != a.Size {
 		t.Errorf("on Blackwell the nvfp4 checkpoint resolves to %d under auto and %d under fp8, want 16 under both", a.Size, f.Size)
+	}
+}
+
+// The table is the oracle's output at the commit it records; a build that models another commit
+// refuses an unstated block_size citing #68 rather than read rows resolved from another default.
+func TestResolveBlockSizeRefusesWhenTheTableIsFromAnotherCommit(t *testing.T) {
+	in := BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: "auto"}
+	if _, err := ResolveBlockSizeFromTable(in); err != nil {
+		t.Fatalf("the table's own row for %+v: %v", in, err)
+	}
+	_, err := ResolveBlockSize(in)
+	if blockSizes.VLLM == upstream.Commit {
+		if err != nil {
+			t.Fatalf("the table is recorded at the pin, but ResolveBlockSize refuses: %v", err)
+		}
+		return
+	}
+	if err == nil || !strings.Contains(err.Error(), blockSizes.VLLM) || !strings.Contains(err.Error(), BlockSizeIssue) {
+		t.Fatalf("ResolveBlockSize = %v, want a refusal naming the table's commit %s and %s", err, blockSizes.VLLM, BlockSizeIssue)
 	}
 }

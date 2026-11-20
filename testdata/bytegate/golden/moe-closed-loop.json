@@ -4,8 +4,8 @@
   "name": "gpt-oss-120b-h100-fp4-vllm-tp2.c16-s11-ofecc7770",
   "engine": {
     "kind": "vllm",
-    "version": "0.33.0",
-    "commit": "4ba787ec9959e566d3b587a796dff07673324da5"
+    "version": "0.34.0+0fda86a35419",
+    "commit": "0fda86a35419c9c70dbfada224c838c10fbb62ad"
   },
   "data": {
     "catalog": {
@@ -15,8 +15,8 @@
     },
     "registry": {
       "source": "path",
-      "hash": "cdd8c345cd171d8945290f272086f59435a64d86b356e658acc329281be06461",
-      "combined_hash": "cdd8c345cd171d8945290f272086f59435a64d86b356e658acc329281be06461"
+      "hash": "8b52eb6caf2127cef49e178c2dde9bad6c43a8f23f425022ed9fd03fef5b0c90",
+      "combined_hash": "8b52eb6caf2127cef49e178c2dde9bad6c43a8f23f425022ed9fd03fef5b0c90"
     },
     "released_data": false,
     "build": "unreleased"
@@ -308,7 +308,7 @@
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
         "code_ids": [
-          "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+          "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
           "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
         ],
         "kernel_match": "unkeyed"
@@ -337,7 +337,7 @@
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
         "code_ids": [
-          "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+          "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
           "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
         ],
         "kernel_match": "unkeyed"
@@ -366,7 +366,7 @@
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
         "code_ids": [
-          "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+          "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
           "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
         ],
         "kernel_match": "unkeyed"
@@ -395,7 +395,7 @@
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
         "code_ids": [
-          "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+          "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
           "e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074"
         ],
         "kernel_match": "unkeyed"
@@ -422,7 +422,7 @@
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
         "code_ids": [
-          "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+          "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
           "e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074"
         ],
         "kernel_match": "unkeyed",
@@ -455,7 +455,7 @@
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
         "code_ids": [
-          "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+          "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
           "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
         ],
         "kernel_match": "unkeyed"
@@ -484,7 +484,7 @@
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
         "code_ids": [
-          "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+          "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
           "e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074"
         ],
         "kernel_match": "unkeyed"
@@ -2403,7 +2403,7 @@
             "Name": "max_cudagraph_capture_size",
             "Primitive": "",
             "Running": "",
-            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+            "Scope": "512: vLLM main's default (VllmConfig._set_cudagraph_sizes and _split_cudagraph_capture_sizes, vllm/config/vllm.py:2465-2870 at 0fda86a), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes: the interface default: one shared token ladder up to 512 (CudaPlatformBase.get_cudagraph_capture_defaults, vllm/platforms/cuda.py:640-652); a step above it runs with no graph",
             "Set": "blis-latency-kernel"
           },
           {
@@ -2439,7 +2439,7 @@
             "Name": "engine_version",
             "Primitive": "",
             "Running": "",
-            "Scope": "0.31.0: the scenario declares vLLM 0.33.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+            "Scope": "0.31.0: the scenario declares vLLM 0.34.0+0fda86a35419 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
         ],
@@ -2726,7 +2726,7 @@
             "Set": "cost-model-primitives"
           },
           {
-            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -2737,7 +2737,7 @@
             "Set": "cost-model-host-overheads"
           },
           {
-            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -2748,7 +2748,7 @@
             "Set": "cost-model-host-overheads"
           },
           {
-            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -2768,7 +2768,7 @@
             "Set": "cost-model-primitives"
           },
           {
-            "CodeID": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+            "CodeID": "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -2779,7 +2779,7 @@
             "Set": "cost-model-host-overheads"
           },
           {
-            "CodeID": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+            "CodeID": "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -2790,7 +2790,7 @@
             "Set": "cost-model-host-overheads"
           },
           {
-            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -2801,7 +2801,7 @@
             "Set": "cost-model-host-overheads"
           },
           {
-            "CodeID": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+            "CodeID": "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -2824,7 +2824,7 @@
         },
         "skipped_rule_findings": [
           {
-            "message": "pools[0].engine.quantization: \"nvfp4\" is not an in-tree method of engine 0.33.0; if it is an out-of-tree method this is expected, otherwise check the spelling. In-tree methods are [auto_awq auto_gptq awq awq_marlin compressed-tensors deepseek_v4_fp8 experts_int8 fbgemm_fp8 fp8 fp8_per_block fp8_per_channel fp8_per_tensor gpt_oss_mxfp4 gptq gptq_marlin humming inc inkling2 int8_per_channel_weight_only lut_b_moe modelopt modelopt_fp4 modelopt_int8 modelopt_mixed modelopt_mxfp8 moe_wna16 mxfp4 mxfp4_hadamard32 mxfp8 nvfp4_per_token nvfp4_weight_only online quark torchao w4afp8]",
+            "message": "pools[0].engine.quantization: \"nvfp4\" is not an in-tree method of engine 0.34.0+0fda86a35419; if it is an out-of-tree method this is expected, otherwise check the spelling. In-tree methods are [auto_awq auto_gptq awq awq_marlin compressed-tensors deepseek_v4_fp8 experts_int8 fbgemm_fp8 fp8 fp8_per_block fp8_per_channel fp8_per_tensor gpt_oss_mxfp4 gptq gptq_marlin humming inc inkling2 int8_per_channel_weight_only lut_b_moe modelopt modelopt_fp4 modelopt_int8 modelopt_mixed modelopt_mxfp8 moe_wna16 mxfp4 mxfp4_hadamard32 mxfp8 nvfp4_per_token nvfp4_weight_only online quark torchao w4afp8]",
             "rule": "quantization-known",
             "severity": "warning"
           }

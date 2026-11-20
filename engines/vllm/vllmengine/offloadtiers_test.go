@@ -38,7 +38,7 @@ func tieredScenario(t *testing.T, tier string) map[string]string {
 // TierTime to nvme_gen4 for n bytes.
 func TestATierBelowTheCPUTierIsAnFSTierPricedOnItsDevice(t *testing.T) {
 	Register()
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: tieredScenario(t, "    - {tier: nvme_gen4, bytes: 1099511627776}\n")}
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: tieredScenario(t, "    - {tier: nvme_gen4, bytes: 1099511627776}\n")}
 	done, err := prepare(spec, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestATierBelowTheCPUTierItCannotRunIsRefused(t *testing.T) {
 		"unpriced device": {"    - {tier: tape_drive_x, bytes: 1099511627776}\n", "offload_tier_tape_drive_x_"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: tieredScenario(t, c.tier)}, nil)
+			_, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: tieredScenario(t, c.tier)}, nil)
 			if err == nil || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), "offload.tiers[1]") ||
 				!strings.Contains(err.Error(), "issues/63") {
 				t.Fatalf("err %v, want a refusal of offload.tiers[1] naming %q and issues/63", err, c.want)

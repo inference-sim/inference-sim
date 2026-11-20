@@ -264,7 +264,7 @@ func TestFactoryRefuses(t *testing.T) {
 	for _, c := range []struct {
 		name, version, extra, want string
 	}{
-		{"another release", "0.32.0", "", "this build models vLLM 0.33.0"},
+		{"another release", "0.32.0", "", "this build models vLLM " + Version},
 		{"an unknown key", Version, "max_num_seqz: 3\n", "max_num_seqz"},
 		{"no KV blocks", Version, "num_gpu_blocks: 1\n", "num_gpu_blocks"},
 		{"an unknown policy", Version, "scheduling_policy: sjf\n", "fcfs and priority"},

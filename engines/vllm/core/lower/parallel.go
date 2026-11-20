@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/config/parallel.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
+// Derived from vllm/config/parallel.py at vLLM v0.34.0+0fda86a35419 (0fda86a35419c9c70dbfada224c838c10fbb62ad):
 // ParallelConfig.use_ubatching and num_ubatches (:636-646) and set_dcp_defaults (:607-620). Also
 // vllm/v1/worker/ubatch_utils.py (check_ubatch_thresholds, :140-148) and
 // vllm/model_executor/models/config.py (GlmMoeDsaForCausalLM, :66-70).
