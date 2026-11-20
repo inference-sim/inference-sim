@@ -35,6 +35,12 @@ func pin(t *testing.T, run string, attempt int, commit string, results ...string
 	name := "consolidated-metrics-" + run
 	js := []byte(fmt.Sprintf(`{"run_id":%q,"run_date":"2026-11-01T00:00:00+00:00","commit_sha":%q,"branch":"main","results":[%s]}`,
 		run, commit, strings.Join(results, ",")))
+	return pinBytes(t, run, attempt, commit, name, js)
+}
+
+// pinBytes zips js as the artifact name and pins it.
+func pinBytes(t *testing.T, run string, attempt int, commit, name string, js []byte) (ledger.Artifact, []byte) {
+	t.Helper()
 	var zb bytes.Buffer
 	w := zip.NewWriter(&zb)
 	f, _ := w.Create(name + ".json")
