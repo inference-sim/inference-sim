@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/embed"
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	embed "github.com/llm-d/llm-d-router/blisembed"
 
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 
