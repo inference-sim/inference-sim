@@ -1,0 +1,12 @@
+name: mistral-large-4-1t-a52b
+source:
+  provider: huggingface
+  repo: mistralai/Mistral-Large-4-1T-A52B
+  revision: af26e7869af601441d5cdf75a1272469ddc3d059
+  path: params.json
+  retrieved: 2026-11-20
+licence:
+  id: LicenseRef-mistral-ecosystem-open-weight
+  evidence: https://huggingface.co/mistralai/Mistral-Large-4-1T-A52B/raw/af26e7869af601441d5cdf75a1272469ddc3d059/LICENSE
+config:
+  sha256: dc6617d800bacc9d3caa41570f885467f733a7cee25f8eef3a60e01c1ff98343
