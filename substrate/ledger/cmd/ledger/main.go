@@ -11,6 +11,16 @@
 //	    equal them byte for byte (D4).
 //	ledger configiq-assets DIR
 //	    Print the configiq revision and each file it pins, one per line, for the nightly job.
+//	ledger ingest-vllm-perf -rows R -recipes C [-check] DIR
+//	    Generate units/vllm-ci-perf.jsonl.gz and its report from the rows and recipes
+//	    ledger/vllmperf/export.py printed (checked against their sources.yaml pins).
+//	ledger ingest-sglang-nightly -artifacts D [-check] DIR
+//	    Generate units/sglang-nightly.jsonl.gz and its report from the pinned artifact zips in D.
+//	ledger sglang-nightly-assets DIR
+//	    Print each pinned nightly artifact (run, attempt, name, id), one per line.
+//	ledger ingest-sglang-traces -listing L [-check] DIR
+//	    Generate units/sglang-traces.jsonl.gz and its report from the traces listing
+//	    ledger/sglangtraces/export.py printed.
 //	ledger check [-release] DIR
 //	    Load and check every committed ledger file (D3, D4, D6). With -release, also require
 //	    the three published lists a release carries, the fit and anchor lists nonempty.
@@ -77,13 +87,19 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/ledger"
 	"github.com/inference-sim/inference-sim/substrate/ledger/configiq"
 	"github.com/inference-sim/inference-sim/substrate/ledger/inferencex"
+	"github.com/inference-sim/inference-sim/substrate/ledger/sglangnightly"
+	"github.com/inference-sim/inference-sim/substrate/ledger/sglangtraces"
+	"github.com/inference-sim/inference-sim/substrate/ledger/vllmperf"
 )
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 var roleKeys = map[string]ledger.RoleKeyFunc{
-	inferencex.SourceID: inferencex.RoleKey,
-	configiq.SourceID:   configiq.RoleKey,
+	inferencex.SourceID:    inferencex.RoleKey,
+	configiq.SourceID:      configiq.RoleKey,
+	vllmperf.SourceID:      vllmperf.RoleKey,
+	sglangnightly.SourceID: sglangnightly.RoleKey,
+	sglangtraces.SourceID:  sglangtraces.RoleKey,
 }
 
 type usageError struct{ msg string }
@@ -92,29 +108,33 @@ func (u usageError) Error() string { return u.msg }
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stderr, "usage: ledger <ingest-inferencex|ingest-configiq|configiq-assets|supplement-records|pin-supplement|feed|check|check-generated|check-base|generate-aliases|scan-roles|lint-workflows|release|join|check-report|candidate-units|measured-inferencex|aggregate|method-error> ...")
+		_, _ = fmt.Fprintln(stderr, "usage: ledger <ingest-inferencex|ingest-configiq|configiq-assets|ingest-vllm-perf|ingest-sglang-nightly|sglang-nightly-assets|ingest-sglang-traces|supplement-records|pin-supplement|feed|check|check-generated|check-base|generate-aliases|scan-roles|lint-workflows|release|join|check-report|candidate-units|measured-inferencex|aggregate|method-error> ...")
 		return 2
 	}
 	cmds := map[string]func([]string, io.Writer) error{
-		"ingest-inferencex":   cmdIngest,
-		"ingest-configiq":     cmdIngestConfigiq,
-		"configiq-assets":     cmdConfigiqAssets,
-		"check":               cmdCheck,
-		"check-generated":     cmdCheckGenerated,
-		"check-base":          cmdCheckBase,
-		"generate-aliases":    cmdGenerateAliases,
-		"scan-roles":          cmdScanRoles,
-		"lint-workflows":      cmdLintWorkflows,
-		"release":             cmdRelease,
-		"join":                cmdJoin,
-		"check-report":        cmdCheckReport,
-		"candidate-units":     cmdCandidateUnits,
-		"measured-inferencex": cmdMeasuredInferenceX,
-		"supplement-records":  cmdSupplementRecords,
-		"pin-supplement":      cmdPinSupplement,
-		"feed":                cmdFeed,
-		"aggregate":           cmdAggregate,
-		"method-error":        cmdMethodError,
+		"ingest-inferencex":     cmdIngest,
+		"ingest-configiq":       cmdIngestConfigiq,
+		"configiq-assets":       cmdConfigiqAssets,
+		"ingest-vllm-perf":      cmdIngestVLLMPerf,
+		"ingest-sglang-nightly": cmdIngestSGLangNightly,
+		"sglang-nightly-assets": cmdSGLangNightlyAssets,
+		"ingest-sglang-traces":  cmdIngestSGLangTraces,
+		"check":                 cmdCheck,
+		"check-generated":       cmdCheckGenerated,
+		"check-base":            cmdCheckBase,
+		"generate-aliases":      cmdGenerateAliases,
+		"scan-roles":            cmdScanRoles,
+		"lint-workflows":        cmdLintWorkflows,
+		"release":               cmdRelease,
+		"join":                  cmdJoin,
+		"check-report":          cmdCheckReport,
+		"candidate-units":       cmdCandidateUnits,
+		"measured-inferencex":   cmdMeasuredInferenceX,
+		"supplement-records":    cmdSupplementRecords,
+		"pin-supplement":        cmdPinSupplement,
+		"feed":                  cmdFeed,
+		"aggregate":             cmdAggregate,
+		"method-error":          cmdMethodError,
 	}
 	f, ok := cmds[args[0]]
 	if !ok {

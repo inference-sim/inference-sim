@@ -99,6 +99,7 @@ func (c *Config) Validate() error {
 			}
 		}
 	}
+	errs = append(errs, c.checkTrainingOnly()...)
 	return errors.Join(errs...)
 }
 
@@ -197,16 +198,22 @@ type Artifact struct {
 
 // Revision is a pinned source revision.
 type Revision struct {
-	// Kind is git_commit, hf_dataset_revision, release_assets or workflow_artifact.
+	// Kind is git_commit, hf_dataset_revision, release_assets, workflow_artifact or api_rows.
 	Kind string `yaml:"kind"`
 	// URL locates the source at the revision.
 	URL string `yaml:"url"`
 	// Ref is the commit, dataset revision or release tag, or, for workflow_artifact, the
-	// workflow run's numeric id.
+	// workflow run's numeric id, or, for api_rows, the SHA-256 of the exported rows.
 	Ref string `yaml:"ref"`
 	// Commit is the full commit a release tag points at, required for release_assets, or the
-	// commit the run evaluated, required for workflow_artifact.
+	// commit the run evaluated, required for workflow_artifact, or the commit of the recipes
+	// the rows are joined with, required for api_rows.
 	Commit string `yaml:"commit,omitempty"`
+	// Cutoff is the last day of an api_rows snapshot (YYYY-MM-DD) and Rows the number of rows
+	// it holds. An API has no revision, so the snapshot is pinned by the hash of what it
+	// returned up to that day and by the count, which a reader checks before ingesting.
+	Cutoff string `yaml:"cutoff,omitempty"`
+	Rows   int    `yaml:"rows,omitempty"`
 	// Artifact names the uploaded artifact of a workflow run; required for workflow_artifact.
 	Artifact string `yaml:"artifact,omitempty"`
 	// RunAttempt is the run's attempt number; required for workflow_artifact.
@@ -392,10 +399,35 @@ func (r Revision) check(at string) error {
 		}
 	case "workflow_artifact":
 		errs = append(errs, r.checkArtifact(at)...)
+	case "api_rows":
+		errs = append(errs, r.checkAPIRows(at)...)
 	default:
-		errs = append(errs, fmt.Errorf("%s.kind: %q is not git_commit, hf_dataset_revision, release_assets or workflow_artifact", at, r.Kind))
+		errs = append(errs, fmt.Errorf("%s.kind: %q is not git_commit, hf_dataset_revision, release_assets, workflow_artifact or api_rows", at, r.Kind))
 	}
 	return errors.Join(errs...)
+}
+
+// checkAPIRows is D3 for an API that has no revision: the snapshot is the rows up to a cutoff
+// day, pinned by their SHA-256 (the ref) and count, with the commit of the recipes they are
+// joined with and the recipes file's SHA-256.
+func (r Revision) checkAPIRows(at string) []error {
+	var errs []error
+	if !hex64.MatchString(r.Ref) {
+		errs = append(errs, fmt.Errorf("%s.ref: %q is not the 64-digit SHA-256 of the exported rows", at, r.Ref))
+	}
+	if !isoDate.MatchString(r.Cutoff) {
+		errs = append(errs, fmt.Errorf("%s.cutoff: %q is not a YYYY-MM-DD day", at, r.Cutoff))
+	}
+	if r.Rows < 1 {
+		errs = append(errs, fmt.Errorf("%s.rows: %d; state how many rows the snapshot holds", at, r.Rows))
+	}
+	if !gitCommit.MatchString(r.Commit) {
+		errs = append(errs, fmt.Errorf("%s.commit: %q is not the full 40-digit commit of the recipes", at, r.Commit))
+	}
+	if len(r.Assets) != 1 || r.Assets[0].Name == "" || !hex64.MatchString(r.Assets[0].SHA256) {
+		errs = append(errs, fmt.Errorf("%s.assets: pin the recipes file by name and 64-digit sha256, and nothing else", at))
+	}
+	return errs
 }
 
 // checkArtifact is D3 for a workflow artifact: the run is named by its numeric id and attempt,

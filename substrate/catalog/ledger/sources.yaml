@@ -244,3 +244,848 @@ sources:
         runtime arguments, and it holds no per-request data, so a unit is one configuration at
         one concurrency with each measurement of it, and the dashboard compares it on
         percentiles. Its measured values are not committed (X12).
+
+  # Table 1.4 sources, training only (M3.2 row 13): fit, select and validate, never held, anchor
+  # or report. Each unit list holds identifying fields and hashes, never a measured value (X12).
+  - id: vllm-ci-perf
+    title: vLLM CI performance dashboard rows (ci.vllm.ai/api/perf) joined with the vllm-project/perf-eval recipes
+    revision:
+      kind: api_rows
+      url: https://ci.vllm.ai/api/perf
+      # The SHA-256 of rows.jsonl as ledger/vllmperf/export.py prints it from the API's body: every row dated
+      # up to the cutoff day, one canonical JSON object per line, sorted. The API has no revision, so
+      # the hash and the count pin the snapshot; the nightly job exports the rows and requires both.
+      ref: 2236a2f681545e7c252a093d8c3b8be22735ad07a909fb344efbf326bc27d529
+      cutoff: "2026-11-19"
+      rows: 7795
+      # The perf-eval commit whose workloads/*.yaml name each benchmark and give its serve arguments,
+      # and the SHA-256 of recipes.jsonl that export.py prints from it.
+      commit: 713ed1abba8c4a15aa2a1c5d85280bfd167ceabe
+      assets:
+        - {name: recipes.jsonl, sha256: 401e6dfcf837c92a477e4a6ddd60e90adeef95b6bb17a23f43b427074553066e}
+    units: units/vllm-ci-perf.jsonl.gz
+    licence:
+      spdx: NOASSERTION
+      evidence:
+        - url: https://github.com/vllm-project/perf-eval/blob/713ed1abba8c4a15aa2a1c5d85280bfd167ceabe/README.md
+          sha256: c8fe7c6a39b9d5cb6174a10bc050532146967f6e39d1f56a6a9d8842767668cd
+          lines: "34"
+          quote: "Raw JSON is saved and ingested into the perf dashboard."
+      note: >-
+        The repository that produces the rows has no licence file and its README states no terms
+        for the results the dashboard publishes, so the data's licence is NOASSERTION and its
+        values are never committed. The unit list holds identifiers and hashes only. A row whose
+        image tag is not a full commit, or that matches no single perf-eval recipe, is left out
+        and counted in the report.
+
+  - id: sglang-nightly
+    title: SGLang nightly consolidated metrics (sgl-project/sglang workflow artifacts)
+    revision:
+      kind: git_commit
+      url: https://github.com/sgl-project/sglang/tree/9667988e9cc9a99292d92855cec271c454431d4d
+      ref: 9667988e9cc9a99292d92855cec271c454431d4d
+    units: units/sglang-nightly.jsonl.gz
+    # One artifact per run attempt of the scheduled nightly workflow, 2026-08-23 to 2026-11-19:
+    # the zip of consolidated-metrics-<run>.json. GitHub keeps an artifact for about 90 days, so
+    # an older one can no longer be downloaded; a copy is authentic if its SHA-256 below matches.
+    artifacts:
+      - id: nightly-32644398526-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-32644398526.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/32644398526/attempts/1
+          ref: "32644398526"
+          run_attempt: 1
+          commit: de6a1dbd7a5a76ba3c30ea48f56a5ada23ad764b
+          artifact: consolidated-metrics-32644398526
+          assets:
+            - {name: consolidated-metrics-32644398526.zip, sha256: b8895f3686e96977619fffff3ba25b790926d5a3b58945713e9634bf19e3c97c}
+            - {name: consolidated-metrics-32644398526.json, sha256: f249a403ab9c5c2d846ca9684e6845d7d721b99b13afcc504906855556c93de2}
+      - id: nightly-32644398526-2
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-32644398526.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/32644398526/attempts/2
+          ref: "32644398526"
+          run_attempt: 2
+          commit: de6a1dbd7a5a76ba3c30ea48f56a5ada23ad764b
+          artifact: consolidated-metrics-32644398526
+          assets:
+            - {name: consolidated-metrics-32644398526.zip, sha256: ae75e92e54f5efe98f3cfb494ff9ba4575996b62db2bcca17d7b8dbe3c76a6d4}
+            - {name: consolidated-metrics-32644398526.json, sha256: ecdad18144a864a041b4c04797b66b488709ce828556b0b465719832bc18323c}
+      - id: nightly-32644398526-3
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-32644398526.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/32644398526/attempts/3
+          ref: "32644398526"
+          run_attempt: 3
+          commit: de6a1dbd7a5a76ba3c30ea48f56a5ada23ad764b
+          artifact: consolidated-metrics-32644398526
+          assets:
+            - {name: consolidated-metrics-32644398526.zip, sha256: 69c6e6129f8bf56d0fd0254835d19bb27c7018eb61a76e4df74528c58e1821b5}
+            - {name: consolidated-metrics-32644398526.json, sha256: f7695d93716b3d1e5a119ff50803be0b64dd3040809a48b23f4fe531b2996e35}
+      - id: nightly-32858458603-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-32858458603.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/32858458603/attempts/1
+          ref: "32858458603"
+          run_attempt: 1
+          commit: 46d9427b913b20ce0d72b95a9209717448b37368
+          artifact: consolidated-metrics-32858458603
+          assets:
+            - {name: consolidated-metrics-32858458603.zip, sha256: 37b1aaf62f43a0c12e931e1d060a024954a194fcf2ebf622efd51a61e8db2ba0}
+            - {name: consolidated-metrics-32858458603.json, sha256: 06515ea6e9f9f3f5e56e0e7c73db93ad063a136f0ef8058f8d95fe80d01eb25c}
+      - id: nightly-32858458603-2
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-32858458603.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/32858458603/attempts/2
+          ref: "32858458603"
+          run_attempt: 2
+          commit: 46d9427b913b20ce0d72b95a9209717448b37368
+          artifact: consolidated-metrics-32858458603
+          assets:
+            - {name: consolidated-metrics-32858458603.zip, sha256: 3384592ab99ef0acd0ffb58c7c0ddd6a634f08398e733a5667c553b1b590a329}
+            - {name: consolidated-metrics-32858458603.json, sha256: 2cdac38b58aecd379ddcc2818e9ba3a95a827f51c09cca08f2a141ce6e0564f2}
+      - id: nightly-33100113519-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-33100113519.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/33100113519/attempts/1
+          ref: "33100113519"
+          run_attempt: 1
+          commit: 20a491d1d311553bbab3f22e19bbafb86ef3c0cc
+          artifact: consolidated-metrics-33100113519
+          assets:
+            - {name: consolidated-metrics-33100113519.zip, sha256: 6a39c95675fe2a76365ce301766ca3f2315a5e23889a6ebcfb4f65760eccf6e5}
+            - {name: consolidated-metrics-33100113519.json, sha256: 36cd0610e664742a574e335c83f77a5ec7d5a399c22a3d3d37fd584525a7843f}
+      - id: nightly-33100113519-2
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-33100113519.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/33100113519/attempts/2
+          ref: "33100113519"
+          run_attempt: 2
+          commit: 20a491d1d311553bbab3f22e19bbafb86ef3c0cc
+          artifact: consolidated-metrics-33100113519
+          assets:
+            - {name: consolidated-metrics-33100113519.zip, sha256: b143e8e632e6c3cdf3749758490b5c98df93198b9abf024b01372f21f63b7171}
+            - {name: consolidated-metrics-33100113519.json, sha256: 2657d81c364c5339d309f57b3d438bd2fdbb12f38fd35fdcabd2cb643e00924d}
+      - id: nightly-33256748905-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-33256748905.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/33256748905/attempts/1
+          ref: "33256748905"
+          run_attempt: 1
+          commit: cdbfe90b4a6c728e03e6520862d792501b3a97bb
+          artifact: consolidated-metrics-33256748905
+          assets:
+            - {name: consolidated-metrics-33256748905.zip, sha256: e1fd70eac134db1b178b62d5a970d858b884650046f899087807af3a2824c5e3}
+            - {name: consolidated-metrics-33256748905.json, sha256: 57c26652cb7212a1131c61ffbf41909d29f4901a8f6f59d68d53b57ecd792b79}
+      - id: nightly-33401090919-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-33401090919.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/33401090919/attempts/1
+          ref: "33401090919"
+          run_attempt: 1
+          commit: 52e1c24744bf4efe75fe976e26596ae1c9f279e2
+          artifact: consolidated-metrics-33401090919
+          assets:
+            - {name: consolidated-metrics-33401090919.zip, sha256: d027bbaa783e459273927493dca00f74a4eb9e7ecb91d805eda84a075083100d}
+            - {name: consolidated-metrics-33401090919.json, sha256: 5c27bd58ecceec5a657c7cc69480dc969bae815af994deb3914a7caa69a22e0f}
+      - id: nightly-33517808023-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-33517808023.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/33517808023/attempts/1
+          ref: "33517808023"
+          run_attempt: 1
+          commit: 00689c0c947e5e5312993df58e89bd04245d6742
+          artifact: consolidated-metrics-33517808023
+          assets:
+            - {name: consolidated-metrics-33517808023.zip, sha256: 45b3385a52d941bdc6550c0c1ee6444a9918c509d695284a77a10050fd9090ae}
+            - {name: consolidated-metrics-33517808023.json, sha256: c1c0cb9cffd8383a02994a73d8aeb6f9992a25c8714e9720f1fd6b388a16c1a4}
+      - id: nightly-33587880631-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-33587880631.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/33587880631/attempts/1
+          ref: "33587880631"
+          run_attempt: 1
+          commit: a58751d54d7a3b9d4cb2724db6e9c00d6d9b0e95
+          artifact: consolidated-metrics-33587880631
+          assets:
+            - {name: consolidated-metrics-33587880631.zip, sha256: 12b23c6cb77ced1d6cb4fd7acb50b582144062db6c43d3e143f5da4e4b2d947c}
+            - {name: consolidated-metrics-33587880631.json, sha256: 56e56923ced0b27fd1235232d2561959f422e077c3bc147d0bad0a46b3a7f9c0}
+      - id: nightly-33765267993-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-33765267993.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/33765267993/attempts/1
+          ref: "33765267993"
+          run_attempt: 1
+          commit: bf71035d39d57a5b39cf3f72ae0134eaa5fff305
+          artifact: consolidated-metrics-33765267993
+          assets:
+            - {name: consolidated-metrics-33765267993.zip, sha256: 93e6de6b9c7a470c8eff0253d8c74b91c2f2c8733d17e66af8ec9917799fa32c}
+            - {name: consolidated-metrics-33765267993.json, sha256: 984ab36b665ca55334f7a60edbb96f50ba992014df3e08f4d94bdeba6e2da6de}
+      - id: nightly-33765267993-2
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-33765267993.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/33765267993/attempts/2
+          ref: "33765267993"
+          run_attempt: 2
+          commit: bf71035d39d57a5b39cf3f72ae0134eaa5fff305
+          artifact: consolidated-metrics-33765267993
+          assets:
+            - {name: consolidated-metrics-33765267993.zip, sha256: 1671c1f90665f4a783367bd4c178dfd8cff4a4acdc88ca9a9f5a31d85efa0077}
+            - {name: consolidated-metrics-33765267993.json, sha256: 2bc52127cc7629ea03c3d91ac1222280fcf55376ba713287e70b76032c61b630}
+      - id: nightly-33970864867-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-33970864867.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/33970864867/attempts/1
+          ref: "33970864867"
+          run_attempt: 1
+          commit: dc2843801d02f9130feff04635803353561eb604
+          artifact: consolidated-metrics-33970864867
+          assets:
+            - {name: consolidated-metrics-33970864867.zip, sha256: d94694496460789299ff85fe249e8a6054abd525309a2d9647a8fbfe8f5488fb}
+            - {name: consolidated-metrics-33970864867.json, sha256: 7ef6ff632a4c13aed41035a71baaa0aacb1ba7d3c72095a1cd04fa43cb17ee95}
+      - id: nightly-34131440112-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-34131440112.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/34131440112/attempts/1
+          ref: "34131440112"
+          run_attempt: 1
+          commit: b5c9b68f03c0552c94b717e200e7c2e6166c6741
+          artifact: consolidated-metrics-34131440112
+          assets:
+            - {name: consolidated-metrics-34131440112.zip, sha256: db5ef3b685dd4a9deece99ce4d9f47b145750d9a816933f2bdb94f3d65d704be}
+            - {name: consolidated-metrics-34131440112.json, sha256: 8997b6b633510f1be869e2e93a6d3092094f0789b1ba1add0ff9889fa769025f}
+      - id: nightly-34315934006-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-34315934006.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/34315934006/attempts/1
+          ref: "34315934006"
+          run_attempt: 1
+          commit: 0ee8e41a4ea02eb863e7b88e92891194c94b59fc
+          artifact: consolidated-metrics-34315934006
+          assets:
+            - {name: consolidated-metrics-34315934006.zip, sha256: 913a8d3ac88d6010969bc26bab1aa7799168594b85a1c98285fb919856810fe0}
+            - {name: consolidated-metrics-34315934006.json, sha256: 47300ffca63981ed43127eab31cf1bfd89b5a3ee9f76ad6f85a61cd4691e41f5}
+      - id: nightly-34608465032-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-34608465032.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/34608465032/attempts/1
+          ref: "34608465032"
+          run_attempt: 1
+          commit: ab9750fb355edaa792b351fd3183a3141d9a6bd7
+          artifact: consolidated-metrics-34608465032
+          assets:
+            - {name: consolidated-metrics-34608465032.zip, sha256: 46db2cff3be291a7388b9f9ef258b23f0371f74b8673bc499160034e17170d72}
+            - {name: consolidated-metrics-34608465032.json, sha256: 9ed247f09e9423d894d4bd7aca5b9fe8c4413ca6d4e1538213e0f60c05e0f019}
+      - id: nightly-34761767207-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-34761767207.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/34761767207/attempts/1
+          ref: "34761767207"
+          run_attempt: 1
+          commit: 7f1f8c706ac000b7a84ea0bda05135fc4177c6ca
+          artifact: consolidated-metrics-34761767207
+          assets:
+            - {name: consolidated-metrics-34761767207.zip, sha256: 9c8921da592528fab725a16e8b9a686f7230346b8fc6875cc507f5e843e823dc}
+            - {name: consolidated-metrics-34761767207.json, sha256: 50d74f97d6d799787eca5c531138ac14893b6c9e9b04acadf53c70405b665158}
+      - id: nightly-34979805212-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-34979805212.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/34979805212/attempts/1
+          ref: "34979805212"
+          run_attempt: 1
+          commit: 832ec39cc0324cb0e7823dc8385e27a30c356bdd
+          artifact: consolidated-metrics-34979805212
+          assets:
+            - {name: consolidated-metrics-34979805212.zip, sha256: 1a5c68cf61034adbfc8ddf8bab10fe9f1b593f6e95d21c02bd3469a4cbdb41b8}
+            - {name: consolidated-metrics-34979805212.json, sha256: 63143d6b748491f90a872197746760d1b491943e0907a503d8688ec42f8ca456}
+      - id: nightly-34979805212-2
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-34979805212.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/34979805212/attempts/2
+          ref: "34979805212"
+          run_attempt: 2
+          commit: 832ec39cc0324cb0e7823dc8385e27a30c356bdd
+          artifact: consolidated-metrics-34979805212
+          assets:
+            - {name: consolidated-metrics-34979805212.zip, sha256: 205523265efcfed422d5f08d15b5bb1dc0603c2d8e1f069e33638be8be6d5080}
+            - {name: consolidated-metrics-34979805212.json, sha256: 98a98a383c3982ea4e3d4fdadd5eda2e63fbeedb9ee09d86bc2ca742e7ee67d1}
+      - id: nightly-35231805157-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-35231805157.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/35231805157/attempts/1
+          ref: "35231805157"
+          run_attempt: 1
+          commit: 7ccbf5fd04f7ee23095fc38e49e749d58dc18282
+          artifact: consolidated-metrics-35231805157
+          assets:
+            - {name: consolidated-metrics-35231805157.zip, sha256: 20c3295e61d6c9cdb6b8820e5a0adcd0dbc8970080d671b1fdd572938b26eac8}
+            - {name: consolidated-metrics-35231805157.json, sha256: f745083bf132a4e9d43e9d1663b169218e4ac53ebbfb8c4a9b414fa77237804b}
+      - id: nightly-35447786547-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-35447786547.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/35447786547/attempts/1
+          ref: "35447786547"
+          run_attempt: 1
+          commit: 76f9213a411018547f4fd6a75f36feaa4d6bed58
+          artifact: consolidated-metrics-35447786547
+          assets:
+            - {name: consolidated-metrics-35447786547.zip, sha256: 7819a587964202701b7807c8fd38981b028438efdaf99647bbab2ce7c4acde7c}
+            - {name: consolidated-metrics-35447786547.json, sha256: 4781c66228027ae16ab1484614b29165049592f7a9ceeabff8800d085f0fff7d}
+      - id: nightly-35610345178-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-35610345178.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/35610345178/attempts/1
+          ref: "35610345178"
+          run_attempt: 1
+          commit: 50ec9702d0dc680d114c311a4df83d96a15062a0
+          artifact: consolidated-metrics-35610345178
+          assets:
+            - {name: consolidated-metrics-35610345178.zip, sha256: 17b3e3ae28d6e74aecc6db05789657ee37b98a609af4ec8493c443ff624e4330}
+            - {name: consolidated-metrics-35610345178.json, sha256: 0260d3d3617e6e6c6eb6ef9a194c4294028aa7cdc61c273e36af9f0ea54177a0}
+      - id: nightly-35872188346-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-35872188346.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/35872188346/attempts/1
+          ref: "35872188346"
+          run_attempt: 1
+          commit: 172b1b4825ac9865076b78ef2c0daa66c7cc39dd
+          artifact: consolidated-metrics-35872188346
+          assets:
+            - {name: consolidated-metrics-35872188346.zip, sha256: 628cb41c47493f4c52c24974f950273caf539ee202b6a38d4d875115936762b5}
+            - {name: consolidated-metrics-35872188346.json, sha256: b8630ae2ef45927219d71c09f1864e1b6a860e4e6e7be92d5b8cb763bbfbbaf9}
+      - id: nightly-35950538057-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-35950538057.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/35950538057/attempts/1
+          ref: "35950538057"
+          run_attempt: 1
+          commit: 77983865d8920ff14ba618c0754716808c60f045
+          artifact: consolidated-metrics-35950538057
+          assets:
+            - {name: consolidated-metrics-35950538057.zip, sha256: 42b221dd3c5dea855fa638e377d14b61138176fd9b823d9f3a76e63752245e8a}
+            - {name: consolidated-metrics-35950538057.json, sha256: cb8a4ee5aece831fe46b7e650baff08f8a8c0c1428795ba2d5c75c4398d33112}
+      - id: nightly-36145732791-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-36145732791.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/36145732791/attempts/1
+          ref: "36145732791"
+          run_attempt: 1
+          commit: 2f5c9ac43d76eef11e8561c89c55a79db7db715a
+          artifact: consolidated-metrics-36145732791
+          assets:
+            - {name: consolidated-metrics-36145732791.zip, sha256: 030382854b76ad206311d2023628dabd4d7f70caef2188b5d187f98b09593b7e}
+            - {name: consolidated-metrics-36145732791.json, sha256: 89143c6b97e539941346e4f3fe1f15cbc72a95f23a36e6277915d6ff4be80e86}
+      - id: nightly-36324829939-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-36324829939.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/36324829939/attempts/1
+          ref: "36324829939"
+          run_attempt: 1
+          commit: a0ba1968b161f1d2989aaacfdbd88a7e522d59a1
+          artifact: consolidated-metrics-36324829939
+          assets:
+            - {name: consolidated-metrics-36324829939.zip, sha256: 24f6cd062898efbf671ebc90362ec16ad4f3627519f36b8b472639abbb0ad8b5}
+            - {name: consolidated-metrics-36324829939.json, sha256: 3b4cba8fb1310c8cd68dcdeeb631013afd355fed8840e172304fdfb557519570}
+      - id: nightly-36580549354-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-36580549354.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/36580549354/attempts/1
+          ref: "36580549354"
+          run_attempt: 1
+          commit: 98fce73d5bd0a25afe7d68443d314190b1c47e64
+          artifact: consolidated-metrics-36580549354
+          assets:
+            - {name: consolidated-metrics-36580549354.zip, sha256: 3753b26bc904841325964271a7d648414009982d16437e05f90b1dbde536ae26}
+            - {name: consolidated-metrics-36580549354.json, sha256: 0f1ffd0763a4f104642467f6e4d55bfa2efde642aa86ac1304f197de1b3a8c1c}
+      - id: nightly-36874298733-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-36874298733.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/36874298733/attempts/1
+          ref: "36874298733"
+          run_attempt: 1
+          commit: 41cbe65de05b209f3263942389267f79bd749d6a
+          artifact: consolidated-metrics-36874298733
+          assets:
+            - {name: consolidated-metrics-36874298733.zip, sha256: 179a82ef10b446a77dd386c8adf5527391bfbcdc38d8ee2e1e9a463a5a2088e5}
+            - {name: consolidated-metrics-36874298733.json, sha256: 490b45afae1252f0643917e80be633e748dcc2b2c17613eeb725f024c6972fe6}
+      - id: nightly-37131301136-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-37131301136.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/37131301136/attempts/1
+          ref: "37131301136"
+          run_attempt: 1
+          commit: 5b5d72123935dc2a3fb341790796ec1a987d31ce
+          artifact: consolidated-metrics-37131301136
+          assets:
+            - {name: consolidated-metrics-37131301136.zip, sha256: dfa39d3b4c99f08604de82196a2dbaa52a1bdeed70a04d4620e398b2b3cfc663}
+            - {name: consolidated-metrics-37131301136.json, sha256: 1285134a1e5ede246e2ebe4773752cdad39c84b858d07a05268e2417e3d97c16}
+      - id: nightly-37322875241-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-37322875241.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/37322875241/attempts/1
+          ref: "37322875241"
+          run_attempt: 1
+          commit: a977e3b9d517a1eb16e68ae5c6b06562073d661a
+          artifact: consolidated-metrics-37322875241
+          assets:
+            - {name: consolidated-metrics-37322875241.zip, sha256: 18bab51a1d8738bd14ba1d6e4d8255def3e51c8bb3b046766589927a27e840fc}
+            - {name: consolidated-metrics-37322875241.json, sha256: 308e7a1afbca13f021e428117e59b12e3b30b241779daf685168d41225a9ae48}
+      - id: nightly-37634349989-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-37634349989.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/37634349989/attempts/1
+          ref: "37634349989"
+          run_attempt: 1
+          commit: 1e86143bf06d40082de878f05b8782b043f61ad2
+          artifact: consolidated-metrics-37634349989
+          assets:
+            - {name: consolidated-metrics-37634349989.zip, sha256: 6a117ab479a23d083840a57e6233de7fd3a8fe9cacc8feddae2ce6021351abbe}
+            - {name: consolidated-metrics-37634349989.json, sha256: 16c7e75ecbf015dfb6b09e762c66f8c55198cf88ed3f6d01c918b28459406eff}
+      - id: nightly-37942261386-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-37942261386.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/37942261386/attempts/1
+          ref: "37942261386"
+          run_attempt: 1
+          commit: 1203eb918127a370a9ece4c33593df62467a15b0
+          artifact: consolidated-metrics-37942261386
+          assets:
+            - {name: consolidated-metrics-37942261386.zip, sha256: 5d739b1fea7d61e04b6289df411467d6d9b6c189e2e5c7e7844108673aabc1d6}
+            - {name: consolidated-metrics-37942261386.json, sha256: 8baa400c7795a8908523b3bbceb2aceac02c8bae47283290a668a15206784921}
+      - id: nightly-38017818313-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-38017818313.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/38017818313/attempts/1
+          ref: "38017818313"
+          run_attempt: 1
+          commit: 37678784c6377267e5ef3cf56570d3cba441dab0
+          artifact: consolidated-metrics-38017818313
+          assets:
+            - {name: consolidated-metrics-38017818313.zip, sha256: b07a03d5c7e6c7ade85ccf72644bb6ab33264f4b32d92ed6cba8cc97a83f3e53}
+            - {name: consolidated-metrics-38017818313.json, sha256: 41ffc76eda658096a17956c0a92c7af11f4513342b99025042bb742c47d12fbb}
+      - id: nightly-38120779813-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-38120779813.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/38120779813/attempts/1
+          ref: "38120779813"
+          run_attempt: 1
+          commit: 89e24e7a20676eecf91d794e49f80c018ed13956
+          artifact: consolidated-metrics-38120779813
+          assets:
+            - {name: consolidated-metrics-38120779813.zip, sha256: 8153ca410b1332e4d33bd03958d122ca62b55c25991eb2eb39cec2b9126a77b1}
+            - {name: consolidated-metrics-38120779813.json, sha256: e19860a7d10b3fb8fd008a2b19212f930bccf59b49c3c80a7026d76c8a01eafb}
+      - id: nightly-38146010976-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-38146010976.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/38146010976/attempts/1
+          ref: "38146010976"
+          run_attempt: 1
+          commit: 11bfd868ac36c0d5c7089c3f1a65ed575feb5540
+          artifact: consolidated-metrics-38146010976
+          assets:
+            - {name: consolidated-metrics-38146010976.zip, sha256: d977af30736ac135f734bd9d757a67617c437acd90e8e18b9e2389d9f4d42da8}
+            - {name: consolidated-metrics-38146010976.json, sha256: 2cd959129d3cc58955792abbeab777e9e1ca458bf4484a05f8a0daaa1e1fa9ca}
+      - id: nightly-38146010976-2
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-38146010976.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/38146010976/attempts/2
+          ref: "38146010976"
+          run_attempt: 2
+          commit: 11bfd868ac36c0d5c7089c3f1a65ed575feb5540
+          artifact: consolidated-metrics-38146010976
+          assets:
+            - {name: consolidated-metrics-38146010976.zip, sha256: dc104c98b434ef374ad614c98ff4bf8ae43474f62485dd5f74d40e33bcc42b80}
+            - {name: consolidated-metrics-38146010976.json, sha256: 5b4831877e3ca7a3d2790092967f7b7e39d51807c5d8888fd8c9a3222bc992c8}
+      - id: nightly-38212198177-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-38212198177.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/38212198177/attempts/1
+          ref: "38212198177"
+          run_attempt: 1
+          commit: f9bd83e7a9bb5fcc0a62d23635202658f87467a6
+          artifact: consolidated-metrics-38212198177
+          assets:
+            - {name: consolidated-metrics-38212198177.zip, sha256: d300ae37763f02dbedebebd020de0185e5fe06965a19d55eed3ba1c7efb28328}
+            - {name: consolidated-metrics-38212198177.json, sha256: 33b9ebe5fd7ba1a63b25c0549df667ba574d73fce7fd85e440ad5126b2db117f}
+      - id: nightly-38411290852-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-38411290852.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/38411290852/attempts/1
+          ref: "38411290852"
+          run_attempt: 1
+          commit: 27b68303d043ddbddf9861c55c26bc8617ea7c35
+          artifact: consolidated-metrics-38411290852
+          assets:
+            - {name: consolidated-metrics-38411290852.zip, sha256: 89b8f8f38391ecd8a396c7d16e6016eb19b0cd700a89c9bd17cdfe5b97403fc5}
+            - {name: consolidated-metrics-38411290852.json, sha256: ee19ff035061371fe9ec326ee7c91aa3a95cbf9412c96fb69c5b7c8f21fb0970}
+      - id: nightly-38411290852-2
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-38411290852.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/38411290852/attempts/2
+          ref: "38411290852"
+          run_attempt: 2
+          commit: 27b68303d043ddbddf9861c55c26bc8617ea7c35
+          artifact: consolidated-metrics-38411290852
+          assets:
+            - {name: consolidated-metrics-38411290852.zip, sha256: b69ffb1b60a0bfb9307ff3573a6cf747e4e2b0906365e1639bc116de2805d690}
+            - {name: consolidated-metrics-38411290852.json, sha256: 6be1ab3a484af6a27b5e868278dfc49d9499bff6985266c9a552b4b29ab4d8c4}
+      - id: nightly-38748905836-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-38748905836.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/38748905836/attempts/1
+          ref: "38748905836"
+          run_attempt: 1
+          commit: c4870d98cfefa80f5cbf83de2ff6a6745032f86c
+          artifact: consolidated-metrics-38748905836
+          assets:
+            - {name: consolidated-metrics-38748905836.zip, sha256: 461f32fbb825c556a0e512b2957086260ac884bf6476016b5f8da2e9141cee8b}
+            - {name: consolidated-metrics-38748905836.json, sha256: 63b4391b34e62bc07fa42fe3db1c41cbfbff27baeef21fd4e3b3a27b2653772d}
+      - id: nightly-38872137880-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-38872137880.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/38872137880/attempts/1
+          ref: "38872137880"
+          run_attempt: 1
+          commit: a448fdf3161a10c059921ee1fba3c6b23b1792af
+          artifact: consolidated-metrics-38872137880
+          assets:
+            - {name: consolidated-metrics-38872137880.zip, sha256: bdc9c6c0ab0154a19de550d7f79d3050e4b42cde4e5850ac37dfd1e9e8467373}
+            - {name: consolidated-metrics-38872137880.json, sha256: 7716b84a3af2b77ecb3db90574b59594e89a76bde2b2d56a2b6f8839429a248c}
+      - id: nightly-39039402632-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-39039402632.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/39039402632/attempts/1
+          ref: "39039402632"
+          run_attempt: 1
+          commit: 4eb606b2aee8a9165e16352fd4c08d998ba37990
+          artifact: consolidated-metrics-39039402632
+          assets:
+            - {name: consolidated-metrics-39039402632.zip, sha256: 9a34144ed09b82e64d393b4587259293afe186cbef98362fa4f69a9212a42ec0}
+            - {name: consolidated-metrics-39039402632.json, sha256: a3c2daaabb7830bc95726e3bcca168fd4c44ddc6b7a2aa517568a16eb3c221eb}
+      - id: nightly-39039402632-2
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-39039402632.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/39039402632/attempts/2
+          ref: "39039402632"
+          run_attempt: 2
+          commit: 4eb606b2aee8a9165e16352fd4c08d998ba37990
+          artifact: consolidated-metrics-39039402632
+          assets:
+            - {name: consolidated-metrics-39039402632.zip, sha256: 7e8cd2a255f6179f5c72d4bb12eaaf0567ad14f8f23beee61f4f283f8a59f125}
+            - {name: consolidated-metrics-39039402632.json, sha256: a638490014659c3d16bae1cb29e90b07564f7c64b5e8ba266ac74eb1d33ee289}
+      - id: nightly-39266416650-2
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-39266416650.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/39266416650/attempts/2
+          ref: "39266416650"
+          run_attempt: 2
+          commit: 62cee1b15c22350b17a9256fc6ad5777feb2ec70
+          artifact: consolidated-metrics-39266416650
+          assets:
+            - {name: consolidated-metrics-39266416650.zip, sha256: e3ddc5b6ea699c215ed2b4bd91740c5f6f7da22fca8ee1612a3f85b4a8dd5f6a}
+            - {name: consolidated-metrics-39266416650.json, sha256: f510403896fc493c4339cce98ed4b2e8a6d6467e253cb8552bb7feb09e60edf3}
+      - id: nightly-39614482141-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-39614482141.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/39614482141/attempts/1
+          ref: "39614482141"
+          run_attempt: 1
+          commit: 8e3e2980db83a1b020a6d273a2b653891af81bfc
+          artifact: consolidated-metrics-39614482141
+          assets:
+            - {name: consolidated-metrics-39614482141.zip, sha256: b3e9a3bd48be79a6a3f5432a919aa77d92a32556d84fd3a8cd2272a96eea0149}
+            - {name: consolidated-metrics-39614482141.json, sha256: c212f2ca5f512362b960cef59be2b6c6f3c591825fee0185c4c172d0e4050192}
+      - id: nightly-39967266016-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-39967266016.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/39967266016/attempts/1
+          ref: "39967266016"
+          run_attempt: 1
+          commit: 02b983603d34c6af09e554ed2b8bf8d85290d9ae
+          artifact: consolidated-metrics-39967266016
+          assets:
+            - {name: consolidated-metrics-39967266016.zip, sha256: 30900a15c408e4e1a3142188250981d5b12d7c3042f93533eebf038d98e93f95}
+            - {name: consolidated-metrics-39967266016.json, sha256: 3f6a55078022f864e1c86867ab7dd1109eb058643eb6045f97fc70c44120c497}
+      - id: nightly-39967266016-2
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-39967266016.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/39967266016/attempts/2
+          ref: "39967266016"
+          run_attempt: 2
+          commit: 02b983603d34c6af09e554ed2b8bf8d85290d9ae
+          artifact: consolidated-metrics-39967266016
+          assets:
+            - {name: consolidated-metrics-39967266016.zip, sha256: 472369a2eea6faa2303c584279b2e6501b3342120ad6cc15c954e5d3069d2301}
+            - {name: consolidated-metrics-39967266016.json, sha256: d1028b2e641ad3d63de50a2bbc32ba2b6629f913552d567ca4308af0cd62ae6b}
+      - id: nightly-40200805483-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-40200805483.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/40200805483/attempts/1
+          ref: "40200805483"
+          run_attempt: 1
+          commit: a99c7d050faee00b104a0b861df2d394ded74eb6
+          artifact: consolidated-metrics-40200805483
+          assets:
+            - {name: consolidated-metrics-40200805483.zip, sha256: 699a29b19284ca19f4ec0b57318527e6d81658b455d23c65009c3acd7803abf4}
+            - {name: consolidated-metrics-40200805483.json, sha256: f012b47bf3bc9460f935df4024f36f8c720c5adb4700efb189f6a1e16c340c73}
+      - id: nightly-40518670092-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-40518670092.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/40518670092/attempts/1
+          ref: "40518670092"
+          run_attempt: 1
+          commit: 635430d07378e2b12381353781a23b0704969909
+          artifact: consolidated-metrics-40518670092
+          assets:
+            - {name: consolidated-metrics-40518670092.zip, sha256: 35ea9c6657614fde38bd4d1dcb05b9bd4c69efbf2eb6a4e5cae0d2ab3309a082}
+            - {name: consolidated-metrics-40518670092.json, sha256: 7d0464cfb56ac97b4cb6ffb8c607f3b19c4452d0556b68c8db27a9123f60d322}
+      - id: nightly-40888373759-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-40888373759.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/40888373759/attempts/1
+          ref: "40888373759"
+          run_attempt: 1
+          commit: 8b6de6719dc2076dd2fb88f2266c4152699968df
+          artifact: consolidated-metrics-40888373759
+          assets:
+            - {name: consolidated-metrics-40888373759.zip, sha256: 1371ec14a57aff394f7f015e634b880dc59ed153928c01a6aa6ad602915d72bc}
+            - {name: consolidated-metrics-40888373759.json, sha256: 594528a6cd09c6557d4654d220cf1713dae897eda183ed6fe02be647b03eb363}
+      - id: nightly-41208487121-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-41208487121.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/41208487121/attempts/1
+          ref: "41208487121"
+          run_attempt: 1
+          commit: 8368f86fd7a71b07e2b7dda5d4146695ec54cbfa
+          artifact: consolidated-metrics-41208487121
+          assets:
+            - {name: consolidated-metrics-41208487121.zip, sha256: a6b39bc8290d6ea178c8974b8b93906080e09ffa1086f450542cd721fb10c7e2}
+            - {name: consolidated-metrics-41208487121.json, sha256: 29a7528f2da34d5a2c6aafe0e471cc7daf3c5fe3ee66bcb7f0c6dd40458ed8bc}
+      - id: nightly-41314397568-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-41314397568.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/41314397568/attempts/1
+          ref: "41314397568"
+          run_attempt: 1
+          commit: f171859219b54e1dad45dda60028034490836974
+          artifact: consolidated-metrics-41314397568
+          assets:
+            - {name: consolidated-metrics-41314397568.zip, sha256: b78e64af3127653ec47b714763c9a65a76fc30c717a5c47a0869da762d62a884}
+            - {name: consolidated-metrics-41314397568.json, sha256: 747c771b90e7e75a99e32c32fe85581c57856ad58ec26b83188d6271e2c2db11}
+      - id: nightly-41650319945-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-41650319945.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/41650319945/attempts/1
+          ref: "41650319945"
+          run_attempt: 1
+          commit: 99fd01047d67bb249641a8e50282a1a5218afc63
+          artifact: consolidated-metrics-41650319945
+          assets:
+            - {name: consolidated-metrics-41650319945.zip, sha256: d83b2d182b454759399e073fad791d4367f2b9fcb254c2833dca71850dbe29d1}
+            - {name: consolidated-metrics-41650319945.json, sha256: 8aff1c066d06ab1733a1b08c15f2311108fcc25ed6814f511274f5099a38401e}
+      - id: nightly-42041763217-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-42041763217.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/42041763217/attempts/1
+          ref: "42041763217"
+          run_attempt: 1
+          commit: 3fa242f27c5e6caca28ccd2538f2043eec654740
+          artifact: consolidated-metrics-42041763217
+          assets:
+            - {name: consolidated-metrics-42041763217.zip, sha256: bd5165861e947579ef88125d1bc0ffb9d5ca9d00aed236b76d5b2e28af385121}
+            - {name: consolidated-metrics-42041763217.json, sha256: 911e9f7dc138a527fff02074305bd9b0bd95180c994300e132658fe4dbf26373}
+      - id: nightly-42379889040-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-42379889040.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/42379889040/attempts/1
+          ref: "42379889040"
+          run_attempt: 1
+          commit: ba5906471c62e82c0594a617b4d07d9b2c0fd2b3
+          artifact: consolidated-metrics-42379889040
+          assets:
+            - {name: consolidated-metrics-42379889040.zip, sha256: 9227f0e1d0b83a964841964046cab7ad359694da5210316666d359775d4e13de}
+            - {name: consolidated-metrics-42379889040.json, sha256: 75e9752c31c05507cf7f1c652be1755e0c51c388a7c7e6b8a47d2255a3da3fdf}
+      - id: nightly-42379889040-2
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-42379889040.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/42379889040/attempts/2
+          ref: "42379889040"
+          run_attempt: 2
+          commit: ba5906471c62e82c0594a617b4d07d9b2c0fd2b3
+          artifact: consolidated-metrics-42379889040
+          assets:
+            - {name: consolidated-metrics-42379889040.zip, sha256: 4bd6d75b9cff2808dda8b7efb172f8370ff95528e6e8496bf7c7f83d86f9e6a8}
+            - {name: consolidated-metrics-42379889040.json, sha256: eb83c88202422636a114381a916d7a18fb2e46b51e8d88b2e01239e359637296}
+      - id: nightly-42631415318-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-42631415318.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/42631415318/attempts/1
+          ref: "42631415318"
+          run_attempt: 1
+          commit: 704681229f1cdda291dbd2261dabb2ae80a4a49d
+          artifact: consolidated-metrics-42631415318
+          assets:
+            - {name: consolidated-metrics-42631415318.zip, sha256: cfc2e550e90532e71ccd49e343e607115b52e015c77483886bd834cc95a54052}
+            - {name: consolidated-metrics-42631415318.json, sha256: 7608b1131a0b62a03dc8fcd7d335afd7f071e500b4193529efcaf369227d40f1}
+      - id: nightly-43035132369-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-43035132369.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/43035132369/attempts/1
+          ref: "43035132369"
+          run_attempt: 1
+          commit: 23a45fd33921164fa440fd7c28cc63341259c28c
+          artifact: consolidated-metrics-43035132369
+          assets:
+            - {name: consolidated-metrics-43035132369.zip, sha256: c0a8144d7644cd6c887e6c1b85f563c94e9146443d40b5e8af649f92af3dd0f5}
+            - {name: consolidated-metrics-43035132369.json, sha256: 452097f370fc9a0482c7fa999d4c111c3a4ed9f8af69ca89811ff5afc4ff1121}
+      - id: nightly-43439537482-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-43439537482.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/43439537482/attempts/1
+          ref: "43439537482"
+          run_attempt: 1
+          commit: 1b2870d33de7b5f31844fd74e97eea6d7896c53a
+          artifact: consolidated-metrics-43439537482
+          assets:
+            - {name: consolidated-metrics-43439537482.zip, sha256: 120de3e51d1c44b2f88f9380adba6211b6419c9ca6ba3637872ef83405fc492b}
+            - {name: consolidated-metrics-43439537482.json, sha256: bfb2fe3c99578d6effcb34b06a568ff40c8f06c34ba705f3f66bbe18801ee7e2}
+      - id: nightly-43722390664-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-43722390664.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/43722390664/attempts/1
+          ref: "43722390664"
+          run_attempt: 1
+          commit: e4c3f001d6bc8cb43e778b6b27d562af550db8c9
+          artifact: consolidated-metrics-43722390664
+          assets:
+            - {name: consolidated-metrics-43722390664.zip, sha256: d4de81488d91f589b4c89ee648fa93839e095202b8b3dbbbdf9fb3d04ff1a955}
+            - {name: consolidated-metrics-43722390664.json, sha256: bee77d4962aa3fed2dbb71232a5bd784f1fe87755a58130e1fa6c3e1b355c848}
+      - id: nightly-44099435137-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-44099435137.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/44099435137/attempts/1
+          ref: "44099435137"
+          run_attempt: 1
+          commit: b2cc023f23e14e6482490238968e018573847d0c
+          artifact: consolidated-metrics-44099435137
+          assets:
+            - {name: consolidated-metrics-44099435137.zip, sha256: c58e1c6a59ecf6de33de4eda17c2612a560ac36a7c2520c4c6a1c351505a1906}
+            - {name: consolidated-metrics-44099435137.json, sha256: 1af959d1bcdb7e032932778adfd9faf15e06c3f285c0e2d6d6f37d2053808cfe}
+      - id: nightly-44099435137-2
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-44099435137.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/44099435137/attempts/2
+          ref: "44099435137"
+          run_attempt: 2
+          commit: b2cc023f23e14e6482490238968e018573847d0c
+          artifact: consolidated-metrics-44099435137
+          assets:
+            - {name: consolidated-metrics-44099435137.zip, sha256: c6df26431c6c9a3be24eda76e5318c5f699aa2cf53ead2b62c921e0ccc65eaa2}
+            - {name: consolidated-metrics-44099435137.json, sha256: 8d461029cc3e13820f93d52e7be282b5c12ca92c50e60df6f4189371b8d3df4b}
+      - id: nightly-44540138654-1
+        used_by: ledger ingest-sglang-nightly, which turns consolidated-metrics-44540138654.json into test-case units
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/sgl-project/sglang/actions/runs/44540138654/attempts/1
+          ref: "44540138654"
+          run_attempt: 1
+          commit: 9667988e9cc9a99292d92855cec271c454431d4d
+          artifact: consolidated-metrics-44540138654
+          assets:
+            - {name: consolidated-metrics-44540138654.zip, sha256: cd3ecb1acf46b85320dfde171152902ce5ddf59b39e421e1af0c543ff576e47f}
+            - {name: consolidated-metrics-44540138654.json, sha256: 142b5222b92c76a7fb19fd6767d8fa9a73f9e55534e5495b3638223746975ff0}
+    licence:
+      spdx: NOASSERTION
+      evidence:
+        - url: https://github.com/sgl-project/sglang/blob/9667988e9cc9a99292d92855cec271c454431d4d/LICENSE
+          sha256: 1495e1e757ef4d0925a2350563cf5754bb23c51701a8ec4fb3c5cdcbedae6747
+          lines: "189-191"
+          quote: >-
+            Copyright 2023-2024 SGLang Team /
+            Licensed under the Apache License, Version 2.0 (the "License");
+      note: >-
+        The repository's licence file is Apache-2.0 and covers its code; it states no terms for
+        the benchmark results its nightly workflow uploads, so the data's licence is NOASSERTION
+        and its values are never committed. The unit list holds identifiers and hashes only.
+
+  - id: sglang-traces
+    title: SGLang nightly profiler traces (sgl-project/ci-data, traces/)
+    revision:
+      kind: git_commit
+      url: https://github.com/sgl-project/ci-data/tree/2085ec76442096a48a19f5f17f0aff864209f2ee
+      ref: 2085ec76442096a48a19f5f17f0aff864209f2ee
+    units: units/sglang-traces.jsonl.gz
+    licence:
+      spdx: NOASSERTION
+      evidence:
+        - url: https://github.com/sgl-project/ci-data/blob/2085ec76442096a48a19f5f17f0aff864209f2ee/README.md
+          sha256: 6ee3966475990e7f1babea08cf09487da1c98d7dfd657e85781d08012e7c8f3a
+          lines: "1"
+          quote: "Storage Repo for Nightly ci of SGLang"
+      note: >-
+        The repository has no licence file and its README states no terms, so the data's licence
+        is NOASSERTION. A trace is hundreds of megabytes and is never read by the ingest tool: the
+        unit list holds each file's path and the git blob SHA-1 that identifies its content.

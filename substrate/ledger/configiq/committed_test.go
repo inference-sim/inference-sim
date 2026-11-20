@@ -9,11 +9,17 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/ledger"
 	"github.com/inference-sim/inference-sim/substrate/ledger/configiq"
 	"github.com/inference-sim/inference-sim/substrate/ledger/inferencex"
+	"github.com/inference-sim/inference-sim/substrate/ledger/sglangnightly"
+	"github.com/inference-sim/inference-sim/substrate/ledger/sglangtraces"
+	"github.com/inference-sim/inference-sim/substrate/ledger/vllmperf"
 )
 
 var roleKeys = map[string]ledger.RoleKeyFunc{
-	inferencex.SourceID: inferencex.RoleKey,
-	configiq.SourceID:   configiq.RoleKey,
+	inferencex.SourceID:    inferencex.RoleKey,
+	configiq.SourceID:      configiq.RoleKey,
+	vllmperf.SourceID:      vllmperf.RoleKey,
+	sglangnightly.SourceID: sglangnightly.RoleKey,
+	sglangtraces.SourceID:  sglangtraces.RoleKey,
 }
 
 func committed(t *testing.T) *ledger.Ledger {
