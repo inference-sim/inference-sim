@@ -162,7 +162,7 @@ func (a *DirectActuator) queuePending(id InstanceID, d ScaleDecision, cause erro
 		return false
 	}
 	simCfg := a.cluster.config.resolveConfigForRole(PoolRole(0))
-	a.cluster.placement.AddPendingAt(id, d.ModelID, d.Variant.GPUType, d.Variant.TPDegree, simCfg, a.cluster.clock)
+	a.cluster.placement.AddPendingAt(id, d.ModelID, d.Variant.GPUType, d.Variant.TPDegree, d.Variant.TPDegree, simCfg, a.cluster.clock)
 	logrus.Infof("[actuator] scale-up for model %q variant %v: %v; queued as pending placement %s", d.ModelID, d.Variant, cause, id)
 	// The cluster autoscaler hears of the new placement at once (#740).
 	a.cluster.runClusterAutoscaler()

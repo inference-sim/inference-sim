@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 
 	blisschemas "github.com/inference-sim/inference-sim/substrate/contracts"
@@ -270,15 +271,43 @@ func runGPUsByRole(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (al
 	return all, decode
 }
 
-// instanceGPUs is the GPUs each instance occupies, by instance id, and which of them are
-// decode instances.
-func instanceGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (gpus map[string]int, decode map[string]bool) {
+// poolGPUs is the GPUs one instance of each pool role occupies, tp x pp x pcp x dp
+// (sim.GPUsPerInstance): the one count node-pool placement, node span, cost and the Result's GPU
+// totals read. Empty without a deployment.
+func poolGPUs(dep *deployment.Deployment) map[deployment.Role]int {
 	perRole := map[deployment.Role]int{}
 	if dep != nil {
 		for _, p := range dep.Pools {
-			perRole[p.Role] = max(p.Parallel.TP, 1) * max(p.Parallel.PP, 1) * max(p.Parallel.PCP, 1) * max(p.Parallel.DP, 1)
+			perRole[p.Role] = sim.GPUsPerInstance(p.Parallel.TP, p.Parallel.PP, p.Parallel.PCP, p.Parallel.DP)
 		}
 	}
+	return perRole
+}
+
+// stateInstanceGPUs states in config the GPUs one instance of each pool occupies, so a node pool
+// reserves, spans and bills an instance for its whole layout and not its tensor-parallel degree
+// alone (#2260). A role the deployment has no pool for keeps the unstated count (its TP).
+func stateInstanceGPUs(config *cluster.DeploymentConfig) {
+	docs, err := resultScenarioDocs()
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	perRole := poolGPUs(docs.Deployment)
+	if g, ok := perRole[deployment.RoleColocated]; ok {
+		config.GPUs = g
+	}
+	if g, ok := perRole[deployment.RolePrefill]; ok && config.Roles.Prefill != nil {
+		config.Roles.Prefill.GPUs = g
+	}
+	if g, ok := perRole[deployment.RoleDecode]; ok && config.Roles.Decode != nil {
+		config.Roles.Decode.GPUs = g
+	}
+}
+
+// instanceGPUs is the GPUs each instance occupies, by instance id, and which of them are
+// decode instances.
+func instanceGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (gpus map[string]int, decode map[string]bool) {
+	perRole := poolGPUs(dep)
 	gpus, decode = map[string]int{}, map[string]bool{}
 	membership := cs.PoolMembership()
 	for _, inst := range cs.Instances() {

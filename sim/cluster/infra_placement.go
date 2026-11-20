@@ -27,7 +27,7 @@ type PlacementManager struct {
 	nodesByPool  map[string][]*Node // pool name → nodes in index order
 	gpusByID     map[string]*GPU    // all GPUs by ID (authoritative GPU-ID → node resolver, #1529)
 	pendingInsts []pendingInstance  // instances awaiting a Ready node
-	// placedTP is the GPU count each placed instance asked for (its tpDegree), kept from the
+	// placedTP is the GPU count each placed instance asked for (its whole layout, not only tp), kept from the
 	// request so VerifyConservation compares it with what the nodes show. Entries leave with
 	// ReleaseInstance.
 	placedTP     map[InstanceID]int
@@ -51,6 +51,7 @@ type pendingInstance struct {
 	model       string
 	gpuType     string
 	tpDegree    int
+	gpus        int                // GPUs the instance reserves: its whole parallel layout
 	simCfg      sim.InstanceConfig // per-instance simulator configuration
 	requestedAt int64              // simulation time the placement was first requested
 }
@@ -667,7 +668,7 @@ func (pm *PlacementManager) RetryPendingInstances() []placedInstance {
 	i := 0
 	for i < len(pm.pendingInsts) && i < maxIter {
 		p := pm.pendingInsts[i]
-		nodeID, gpuIDs, matchedGPUType, err := pm.PlaceInstance(p.id, p.model, p.gpuType, p.tpDegree)
+		nodeID, gpuIDs, matchedGPUType, err := pm.PlaceInstance(p.id, p.model, p.gpuType, p.gpus)
 		if err == nil {
 			nowPlaced = append(nowPlaced, placedInstance{id: p.id, nodeID: nodeID, gpuIDs: gpuIDs, model: p.model, gpuType: matchedGPUType, tpDegree: p.tpDegree, simCfg: p.simCfg})
 			// Remove from pending, keeping the rest in arrival order: placements are retried in
@@ -682,18 +683,20 @@ func (pm *PlacementManager) RetryPendingInstances() []placedInstance {
 	return nowPlaced
 }
 
-// AddPending registers an instance as pending (placement deferred until a node is ready).
+// AddPending registers an instance of tpDegree GPUs as pending (placement deferred until a node is ready).
 func (pm *PlacementManager) AddPending(id InstanceID, model, gpuType string, tpDegree int, simCfg sim.InstanceConfig) {
-	pm.AddPendingAt(id, model, gpuType, tpDegree, simCfg, 0)
+	pm.AddPendingAt(id, model, gpuType, tpDegree, tpDegree, simCfg, 0)
 }
 
-// AddPendingAt is AddPending for a placement requested at simulation time at (microseconds).
-func (pm *PlacementManager) AddPendingAt(id InstanceID, model, gpuType string, tpDegree int, simCfg sim.InstanceConfig, at int64) {
+// AddPendingAt is AddPending for an instance of tensor-parallel degree tpDegree that reserves gpus
+// GPUs (its whole tp x pp x pcp x dp layout), requested at simulation time at (microseconds).
+func (pm *PlacementManager) AddPendingAt(id InstanceID, model, gpuType string, tpDegree, gpus int, simCfg sim.InstanceConfig, at int64) {
 	pm.pendingInsts = append(pm.pendingInsts, pendingInstance{
 		id:          id,
 		model:       model,
 		gpuType:     gpuType,
 		tpDegree:    tpDegree,
+		gpus:        gpus,
 		simCfg:      simCfg,
 		requestedAt: at,
 	})
