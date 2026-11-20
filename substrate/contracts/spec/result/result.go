@@ -42,7 +42,9 @@ const Kind = "Result"
 // version 2 figure states none, and a definition is never inferred, so it is not read.
 // Version 4 requires the estimate: how many replications the figures come from and, for one
 // replication, the statement that they carry no interval (DEV-11, design §8.8). A version 3
-// document states none, and it is not read.
+// document states none, and it is not read. The same version also carries the interval a
+// request for one produces: the estimate's interval block and each figure's interval. A
+// document that asks for none is unchanged.
 const SchemaVersion = 4
 
 // Result is one simulator run's predicted output.
@@ -125,6 +127,65 @@ type Estimate struct {
 	// NoInterval is the statement that the figures carry no interval, and which uncertainty
 	// that leaves out. It is present exactly when the figures carry none.
 	NoInterval string `yaml:"no_interval,omitempty"`
+	// Interval is present exactly when an interval was requested: Replications is then at
+	// least MinReplications and every figure carries its interval.
+	Interval *IntervalEstimate `yaml:"interval,omitempty"`
+}
+
+// MinIntervalReplications is the fewest replications an interval is computed from (design
+// §8.8: replications start at five).
+const MinIntervalReplications = 5
+
+// IntervalMethodStudentT is IntervalEstimate.Method: a Student t interval on the mean of the
+// replications' figures.
+const IntervalMethodStudentT = "student_t_on_replication_means"
+
+// IntervalCovers is IntervalEstimate.Covers: the interval covers the randomness of the
+// workload (the seeds) and nothing else (design §8.8).
+const IntervalCovers = "workload randomness only: the replications differ in their seeds; the interval does not cover the cost model's coefficients or its methods"
+
+// IntervalStop is why the replications stopped.
+type IntervalStop string
+
+const (
+	// StoppedByWidth: the widest figure's relative width reached the target.
+	StoppedByWidth IntervalStop = "width"
+	// StoppedByLimit: the replication limit was reached first; the width reached is stated.
+	StoppedByLimit IntervalStop = "limit"
+)
+
+// IntervalEstimate states how the figures' intervals were obtained (design §8.8): the
+// replications and their seeds, the stopping rule, and the width it reached. When the
+// interval is present, each figure is the mean of its value over the replications; the
+// sections of the document other than metrics (window, requests, request rows, goodput,
+// breakdowns, reports, resolutions) are those of the first replication, whose seed is Seeds[0].
+type IntervalEstimate struct {
+	// Level is the confidence level of every figure's interval.
+	Level float64 `yaml:"level"`
+	// Method names how the interval was computed.
+	Method string `yaml:"method"`
+	// Covers states which uncertainty the interval covers.
+	Covers string `yaml:"covers"`
+	// Seeds are the replications' scenario seeds, in order, each drawn from a named stream
+	// of the run's seed (DEV-6).
+	Seeds []int64 `yaml:"seeds"`
+	// MinReplications and MaxReplications are the stopping rule's bounds: replications
+	// start at MinReplications and continue until the target width or MaxReplications.
+	MinReplications int `yaml:"min_replications"`
+	MaxReplications int `yaml:"max_replications"`
+	// TargetRelativeWidth is the stopping rule's fraction: the replications stop once every
+	// figure's interval is no wider than this fraction of the figure's value.
+	TargetRelativeWidth float64 `yaml:"target_relative_width"`
+	// StoppedBy is why the replications stopped.
+	StoppedBy IntervalStop `yaml:"stopped_by"`
+	// RelativeWidthReached is the widest figure's interval width as a fraction of its value.
+	RelativeWidthReached float64 `yaml:"relative_width_reached"`
+}
+
+// FigureInterval is the interval of one figure over the replications.
+type FigureInterval struct {
+	Low  float64 `yaml:"low"`
+	High float64 `yaml:"high"`
 }
 
 // Engine is the engine a run used: its kind and the upstream commit it models (LIF-6). The
@@ -625,6 +686,10 @@ type Figure struct {
 	// Samples is the size of the population the statistic was taken over: requests,
 	// token gaps or steps, as the metric's definition says. For a rate, the count summed.
 	Samples int `yaml:"samples"`
+	// Interval is the figure's interval over the replications, present exactly when
+	// Estimate.Interval is. Value is then the mean over the replications and Samples the
+	// samples summed over them.
+	Interval *FigureInterval `yaml:"interval,omitempty"`
 	// Scope, Member, Aggregate and Over are the figure's Basis (design §8.7): the scope it is
 	// at, the pool or instance it is of, and, for a figure that combines the figures of a
 	// narrower scope, the aggregate and the scope it ranges over. Scope is required; the

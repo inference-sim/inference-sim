@@ -139,6 +139,44 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		// estimate (DEV-11): one replication states that it has no interval
 		{"no replications", func(r *Result) { r.Estimate = Estimate{} }, "estimate.replications", "must be 1"},
 		{"point estimate silent about its interval", func(r *Result) { r.Estimate.NoInterval = "" }, "estimate.no_interval", "no interval"},
+		{"two replications are neither a point nor an interval", func(r *Result) { r.Estimate.Replications = 2 }, "estimate.replications", "at least 5"},
+		{"a point estimate with an interval block", func(r *Result) { r.Estimate.Interval = intervalEstimate(5) }, "estimate.interval", "one replication has no interval"},
+		{"a point estimate whose figure has an interval", func(r *Result) {
+			for id, f := range r.Metrics {
+				f.Interval = &FigureInterval{Low: f.Value, High: f.Value}
+				r.Metrics[id] = f
+			}
+		}, "metrics.ttft_p99_ms.interval", "point estimate has no interval"},
+		{"an interval with no block", func(r *Result) { withInterval(r, 5); r.Estimate.Interval = nil }, "estimate.interval", "required for 5 replications"},
+		{"an interval that still says it has none", func(r *Result) { withInterval(r, 5); r.Estimate.NoInterval = NoIntervalStatement }, "estimate.no_interval", "does not state that it has none"},
+		{"an interval with a seed missing", func(r *Result) { withInterval(r, 5); r.Estimate.Interval.Seeds = r.Estimate.Interval.Seeds[:4] }, "estimate.interval.seeds", "one per replication"},
+		{"an interval that does not say what it covers", func(r *Result) { withInterval(r, 5); r.Estimate.Interval.Covers = "" }, "estimate.interval.covers", "required"},
+		{"an interval with a level of 1", func(r *Result) { withInterval(r, 5); r.Estimate.Interval.Level = 1 }, "estimate.interval.level", "strictly between"},
+		{"a minimum below five", func(r *Result) { withInterval(r, 5); r.Estimate.Interval.MinReplications = 4 }, "estimate.interval.min_replications", "at least 5"},
+		{"more replications than the limit", func(r *Result) { withInterval(r, 5); r.Estimate.Interval.MaxReplications = 4 }, "estimate.interval.max_replications", "below min_replications"},
+		{"stopped by width above the target", func(r *Result) {
+			withInterval(r, 5)
+			r.Estimate.Interval.StoppedBy, r.Estimate.Interval.RelativeWidthReached = StoppedByWidth, 0.5
+		}, "estimate.interval.stopped_by", "exceeds the target"},
+		{"stopped by limit short of the limit", func(r *Result) {
+			withInterval(r, 5)
+			r.Estimate.Interval.StoppedBy, r.Estimate.Interval.MaxReplications = StoppedByLimit, 9
+		}, "estimate.interval.stopped_by", "against a limit of 9"},
+		{"stopped by nothing", func(r *Result) { withInterval(r, 5); r.Estimate.Interval.StoppedBy = "" }, "estimate.interval.stopped_by", "neither"},
+		{"an interval estimate with a figure lacking its interval", func(r *Result) {
+			withInterval(r, 5)
+			for id, f := range r.Metrics {
+				f.Interval = nil
+				r.Metrics[id] = f
+			}
+		}, "metrics.ttft_p99_ms.interval", "every figure carries one"},
+		{"a figure outside its own interval", func(r *Result) {
+			withInterval(r, 5)
+			for id, f := range r.Metrics {
+				f.Interval = &FigureInterval{Low: f.Value + 1, High: f.Value + 2}
+				r.Metrics[id] = f
+			}
+		}, "metrics.ttft_p99_ms.interval", "does not contain the value"},
 
 		// engine (SIM-1)
 		{"engine without kind", func(r *Result) { r.Engine.Kind = "" }, "engine.kind", "required"},
@@ -707,5 +745,49 @@ func TestPlannedNotIssuedRoundsHaveRowsOutsideGenerated(t *testing.T) {
 	r.RequestRows = append(r.RequestRows, RequestRow{ID: "session_s_round_1_unissued", Fate: FateNotStarted, PromptTokens: 4})
 	if p := r.Validate(); !p.OK() {
 		t.Fatalf("a planned round with its row is refused:\n%s", p.Error())
+	}
+}
+
+// intervalEstimate is the estimate of an interval over n replications that stopped on the width.
+func intervalEstimate(n int) *IntervalEstimate {
+	seeds := make([]int64, n)
+	for i := range seeds {
+		seeds[i] = int64(100 + i)
+	}
+	return &IntervalEstimate{
+		Level: 0.95, Method: IntervalMethodStudentT, Covers: IntervalCovers, Seeds: seeds,
+		MinReplications: MinIntervalReplications, MaxReplications: 30, TargetRelativeWidth: 0.1,
+		StoppedBy: StoppedByWidth, RelativeWidthReached: 0.05,
+	}
+}
+
+// withInterval turns the fixture into an n-replication estimate whose every figure carries an
+// interval around its value.
+func withInterval(r *Result, n int) {
+	r.Estimate = Estimate{Replications: n, Interval: intervalEstimate(n)}
+	for id, f := range r.Metrics {
+		f.Interval = &FigureInterval{Low: f.Value * 0.99, High: f.Value * 1.01}
+		r.Metrics[id] = f
+	}
+}
+
+func TestAnIntervalEstimateValidatesAndRoundTrips(t *testing.T) {
+	r := valid()
+	withInterval(r, 7)
+	if p := r.Validate(); !p.OK() {
+		t.Fatalf("an interval estimate over 7 replications must validate:\n%s", p.Error())
+	}
+	for _, f := range []Format{FormatJSON, FormatYAML} {
+		data, err := Marshal(r, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var back Result
+		if err := Unmarshal(data, &back); err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		if !reflect.DeepEqual(r.Estimate, back.Estimate) || !reflect.DeepEqual(r.Metrics, back.Metrics) {
+			t.Errorf("%s: the estimate or the figures changed in a round trip", f)
+		}
 	}
 }
