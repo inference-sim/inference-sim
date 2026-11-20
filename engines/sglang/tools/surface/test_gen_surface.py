@@ -583,16 +583,43 @@ class TestCommandLine(Base):
         self.assertEqual(rc, 1)
         self.assertIn("is not what the generator writes", err)
 
-    def test_a_checkout_at_another_commit_is_refused(self):
+    def git_checkout(self):
         write_tree(self.src, self.files)
         env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
                    GIT_COMMITTER_EMAIL="t@t", GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull)
         for cmd in (["init", "-q"], ["add", "."], ["commit", "-q", "--no-gpg-sign", "-m", "x"]):
             subprocess.run(["git", "-C", self.src] + cmd, check=True, env=env, capture_output=True)
-        rc, _, err = self.run_main(self.src, "--repo", self.repo, "--items")
+        return subprocess.run(["git", "-C", self.src, "rev-parse", "HEAD"], check=True, capture_output=True,
+                              text=True).stdout.strip()
+
+    def upstream_of(self, *extra):
+        status_path = os.path.join(self.tmp.name, "status.json")
+        with open(status_path, "w") as f:
+            json.dump(self.all_refused(), f)
+        rc, out, err = self.run_main(self.src, status_path, "--repo", self.repo, *extra)
+        self.assertEqual(rc, 0, err)
+        return json.loads(out)["upstream"]
+
+    def test_a_checkout_at_another_commit_is_generated_for_that_commit(self):
+        head = self.git_checkout()
+        self.assertNotEqual(head, COMMIT)
+        self.assertEqual(self.upstream_of(), {"name": "sglang", "tag": head[:12], "commit": head})
+        self.assertEqual(self.upstream_of("--upstream-tag", "v9.9.9"), {"name": "sglang", "tag": "v9.9.9", "commit": head})
+        self.assertEqual(self.upstream_of("--upstream-commit", head)["commit"], head)
+
+    def test_a_commit_the_checkout_is_not_at_is_refused(self):
+        self.git_checkout()
+        rc, _, err = self.run_main(self.src, "--repo", self.repo, "--items", "--upstream-commit", COMMIT)
         self.assertEqual(rc, 1)
         self.assertIn("the SGLang checkout is at", err)
         self.assertIn("not %s" % COMMIT, err)
+        rc, _, err = self.run_main(self.src, "--repo", self.repo, "--items", "--upstream-commit", "abc")
+        self.assertEqual(rc, 1)
+        self.assertIn("40 hex", err)
+
+    def test_a_directory_that_is_no_checkout_is_the_commit_provenance_names(self):
+        write_tree(self.src, self.files)
+        self.assertEqual(self.upstream_of(), {"name": "sglang", "tag": "v0.5.23", "commit": COMMIT})
 
 
 if __name__ == "__main__":
