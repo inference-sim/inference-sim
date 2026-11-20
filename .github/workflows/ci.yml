@@ -209,7 +209,7 @@ jobs:
           # renamed one, since the entries' names are required checks; this one is not.
           # scripts' TestEveryPackageWithTestsRunsInCI fails if a package with tests is in none.
           - name: "other packages"
-            packages: "./internal/substratedata ./internal/kernelfixtures ./internal/stack/... ./sim/saturation ./sim/check ./internal/invariantscan"
+            packages: "./internal/substratedata ./internal/kernelfixtures ./internal/stack/... ./sim/saturation ./sim/check ./internal/invariantscan ./internal/val8"
             timeout: "5m"
             flag: other
           # The checks that read the whole tree (design v4.2.0 section 3.4): the import graph
@@ -788,6 +788,12 @@ jobs:
       - name: The code-path hash and CodeID export tests
         working-directory: substrate
         run: python -m pytest tools/codepaths -q
+
+      # The tool that copies each engine's kernel_impls.json into registry/inputs (VAL-8). Each
+      # engine's own Go test holds its copy to the table it embeds.
+      - name: The kernel-implementation table export tests
+        working-directory: substrate
+        run: python -m pytest tools/kernelimpls -q
 
   # Before a release: every llm-d router package the binary links, tested at the versions
   # inference-sim selects (design §3.2, LIF-2). Also on pull requests that change go.mod. The
