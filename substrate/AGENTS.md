@@ -271,6 +271,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: A cost-model test that resolves every pair of scope kinds in both load orders and agrees with the validator (X15) (`kernel/internal/resolve: TestLookupAgreesWithTheValidatorOnPrecedenceInBothLoadOrders`)
 - **VAL-5** (partial; target ci by M2) The typical error of each method is measured by leaving one chip out, and published per primitive family, using data units with role validate (§10).
   - `ci`, nightly: Nightly job: leave one chip out and compare each method's estimate with the chip's measured value, per primitive family, over the registry's measured coefficients (`nightly.yml job method-error: ledger method-error`)
+  - `ci`, pull_request: The cross-generation transfer rule is validated by leaving one generation out and compared with roofline on the same held-out points; the committed validation equals what the registry and catalog compute, and a transfer ranks as the rule only where it beats roofline (`ledger: TestCommittedTransferValidationIsCurrent`)
   - `new`, nightly: The same comparison over data units with role validate, which the AISimulate and forward-pass sources do not list yet
 - **VAL-6** (partial; target ci by M1) A change to a measured or calibrated value passes the landing gate.
   - `ci`, pull_request: On fixtures per pull request (`registry/validator (pytest)`)

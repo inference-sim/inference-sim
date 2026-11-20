@@ -61,6 +61,9 @@
 //
 //	ledger method-error [-registry DIR] [-candidate SHA -out FILE] [-table FILE] [-check FILE]
 //	    VAL-5: the typical error of each method, leaving one chip out, per primitive family.
+//	ledger transfer-error [-registry DIR] (-out FILE | -check FILE)
+//	    VAL-5: the error of the cross-generation transfer rule against roofline, leaving one
+//	    generation out; -check requires FILE to equal what the registry and catalog give now.
 //
 // Exit 0 when everything passes, 1 when a check fails, 2 on misuse.
 package main
@@ -108,7 +111,7 @@ func (u usageError) Error() string { return u.msg }
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stderr, "usage: ledger <ingest-inferencex|ingest-configiq|configiq-assets|ingest-vllm-perf|ingest-sglang-nightly|sglang-nightly-assets|ingest-sglang-traces|supplement-records|pin-supplement|feed|check|check-generated|check-base|generate-aliases|scan-roles|lint-workflows|release|join|check-report|candidate-units|measured-inferencex|aggregate|method-error> ...")
+		_, _ = fmt.Fprintln(stderr, "usage: ledger <ingest-inferencex|ingest-configiq|configiq-assets|ingest-vllm-perf|ingest-sglang-nightly|sglang-nightly-assets|ingest-sglang-traces|supplement-records|pin-supplement|feed|check|check-generated|check-base|generate-aliases|scan-roles|lint-workflows|release|join|check-report|candidate-units|measured-inferencex|aggregate|method-error|transfer-error> ...")
 		return 2
 	}
 	cmds := map[string]func([]string, io.Writer) error{
@@ -135,6 +138,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		"feed":                  cmdFeed,
 		"aggregate":             cmdAggregate,
 		"method-error":          cmdMethodError,
+		"transfer-error":        cmdTransferError,
 	}
 	f, ok := cmds[args[0]]
 	if !ok {
