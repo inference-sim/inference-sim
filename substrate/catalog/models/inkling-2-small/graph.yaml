@@ -1,0 +1,907 @@
+kind: ModelGraph
+name: inkling-2-small
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 58211cb34baf5e71ef4cc12c2f17466775a0bfb2c23d5abae9ecc3bd44f770fb
+  deriver_version: 1
+global:
+  hidden_size: 4608
+  vocab_size: 201024
+  tie_word_embeddings: false
+  weight_dtype: bf16
+  architecture: Inkling2ForConditionalGeneration
+layer_kinds:
+- id: swa_nvfp4
+  nodes:
+  - op: Elementwise
+    role: attn_res_mix
+    bytes_per_token: 50688
+    tp: replicated
+  - op: GEMM
+    role: qkvr_gate_sink_proj
+    n: 15152
+    k: 4608
+    weight_dtype: bf16
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: k_sconv
+    conv_kernel: 4
+    intermediate_size: 1024
+    state_dtype: bf16
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: v_sconv
+    conv_kernel: 4
+    intermediate_size: 1024
+    state_dtype: bf16
+  - op: Elementwise
+    role: qk_rel_prep
+    bytes_per_token: 31744
+    tp: sharded
+  - op: Attention
+    holds_engine_kv: true
+    kind: swa
+    n_q: 48
+    n_kv: 8
+    d_h: 128
+    kv_heads_not_replicated: true
+    window: 1024
+  - op: Elementwise
+    role: attn_gate_sink
+    bytes_per_token: 36864
+    tp: sharded
+  - op: GEMM
+    role: wo_ud
+    n: 4608
+    k: 6144
+    tp: row
+    weight_dtype: bf16
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: attn_sconv
+    conv_kernel: 4
+    intermediate_size: 4608
+    state_dtype: bf16
+  - op: Elementwise
+    role: mlp_attn_res_mix
+    bytes_per_token: 50688
+    tp: replicated
+  - op: GEMM
+    role: router
+    n: 384
+    k: 4608
+    tp: replicated
+    weight_dtype: bf16
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 2304
+    k: 4608
+    experts: 384
+    top_k: 8
+    weight_dtype: nvfp4
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: mlp_sconv
+    conv_kernel: 4
+    intermediate_size: 4608
+    state_dtype: bf16
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+- id: full_nvfp4
+  nodes:
+  - op: Elementwise
+    role: attn_res_mix
+    bytes_per_token: 50688
+    tp: replicated
+  - op: Elementwise
+    role: input_norms
+    bytes_per_token: 55296
+    tp: replicated
+  - op: GEMM
+    role: q_gate_sink_proj
+    n: 13104
+    k: 4608
+    weight_dtype: bf16
+  - op: GEMM
+    role: k_proj
+    n: 1024
+    k: 4608
+    weight_dtype: bf16
+  - op: GEMM
+    role: v_proj
+    n: 1024
+    k: 4608
+    weight_dtype: bf16
+  - op: GEMM
+    role: k_tap_proj
+    n: 32
+    k: 4608
+    weight_dtype: bf16
+  - op: GEMM
+    role: v_tap_proj
+    n: 32
+    k: 4608
+    weight_dtype: bf16
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: k_sconv
+    conv_kernel: 4
+    intermediate_size: 1024
+    state_dtype: bf16
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: v_sconv
+    conv_kernel: 4
+    intermediate_size: 1024
+    state_dtype: bf16
+  - op: Elementwise
+    role: qk_rel_prep
+    bytes_per_token: 31744
+    tp: sharded
+  - op: Attention
+    holds_engine_kv: true
+    kind: gqa
+    n_q: 48
+    n_kv: 8
+    d_h: 128
+    kv_heads_not_replicated: true
+  - op: Elementwise
+    role: attn_gate_sink
+    bytes_per_token: 36864
+    tp: sharded
+  - op: GEMM
+    role: wo_ud
+    n: 4608
+    k: 6144
+    tp: row
+    weight_dtype: bf16
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: attn_sconv
+    conv_kernel: 4
+    intermediate_size: 4608
+    state_dtype: bf16
+  - op: Elementwise
+    role: mlp_attn_res_mix
+    bytes_per_token: 50688
+    tp: replicated
+  - op: GEMM
+    role: router
+    n: 384
+    k: 4608
+    tp: replicated
+    weight_dtype: bf16
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 2304
+    k: 4608
+    experts: 384
+    top_k: 8
+    weight_dtype: nvfp4
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: mlp_sconv
+    conv_kernel: 4
+    intermediate_size: 4608
+    state_dtype: bf16
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
+  - - 18
+    - 19
+  - - 19
+    - 20
+- id: swa_mxfp8
+  nodes:
+  - op: Elementwise
+    role: attn_res_mix
+    bytes_per_token: 50688
+    tp: replicated
+  - op: GEMM
+    role: qkvr_gate_sink_proj
+    n: 15152
+    k: 4608
+    weight_dtype: bf16
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: k_sconv
+    conv_kernel: 4
+    intermediate_size: 1024
+    state_dtype: bf16
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: v_sconv
+    conv_kernel: 4
+    intermediate_size: 1024
+    state_dtype: bf16
+  - op: Elementwise
+    role: qk_rel_prep
+    bytes_per_token: 31744
+    tp: sharded
+  - op: Attention
+    holds_engine_kv: true
+    kind: swa
+    n_q: 48
+    n_kv: 8
+    d_h: 128
+    kv_heads_not_replicated: true
+    window: 1024
+  - op: Elementwise
+    role: attn_gate_sink
+    bytes_per_token: 36864
+    tp: sharded
+  - op: GEMM
+    role: wo_ud
+    n: 4608
+    k: 6144
+    tp: row
+    weight_dtype: bf16
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: attn_sconv
+    conv_kernel: 4
+    intermediate_size: 4608
+    state_dtype: bf16
+  - op: Elementwise
+    role: mlp_attn_res_mix
+    bytes_per_token: 50688
+    tp: replicated
+  - op: GEMM
+    role: router
+    n: 384
+    k: 4608
+    tp: replicated
+    weight_dtype: bf16
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 2304
+    k: 4608
+    experts: 384
+    top_k: 8
+    weight_dtype: fp8
+    weight_scale:
+      elements: 32
+      bytes: 1
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: mlp_sconv
+    conv_kernel: 4
+    intermediate_size: 4608
+    state_dtype: bf16
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+- id: full_mxfp8
+  nodes:
+  - op: Elementwise
+    role: attn_res_mix
+    bytes_per_token: 50688
+    tp: replicated
+  - op: Elementwise
+    role: input_norms
+    bytes_per_token: 55296
+    tp: replicated
+  - op: GEMM
+    role: q_gate_sink_proj
+    n: 13104
+    k: 4608
+    weight_dtype: bf16
+  - op: GEMM
+    role: k_proj
+    n: 1024
+    k: 4608
+    weight_dtype: bf16
+  - op: GEMM
+    role: v_proj
+    n: 1024
+    k: 4608
+    weight_dtype: bf16
+  - op: GEMM
+    role: k_tap_proj
+    n: 32
+    k: 4608
+    weight_dtype: bf16
+  - op: GEMM
+    role: v_tap_proj
+    n: 32
+    k: 4608
+    weight_dtype: bf16
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: k_sconv
+    conv_kernel: 4
+    intermediate_size: 1024
+    state_dtype: bf16
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: v_sconv
+    conv_kernel: 4
+    intermediate_size: 1024
+    state_dtype: bf16
+  - op: Elementwise
+    role: qk_rel_prep
+    bytes_per_token: 31744
+    tp: sharded
+  - op: Attention
+    holds_engine_kv: true
+    kind: gqa
+    n_q: 48
+    n_kv: 8
+    d_h: 128
+    kv_heads_not_replicated: true
+  - op: Elementwise
+    role: attn_gate_sink
+    bytes_per_token: 36864
+    tp: sharded
+  - op: GEMM
+    role: wo_ud
+    n: 4608
+    k: 6144
+    tp: row
+    weight_dtype: bf16
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: attn_sconv
+    conv_kernel: 4
+    intermediate_size: 4608
+    state_dtype: bf16
+  - op: Elementwise
+    role: mlp_attn_res_mix
+    bytes_per_token: 50688
+    tp: replicated
+  - op: GEMM
+    role: router
+    n: 384
+    k: 4608
+    tp: replicated
+    weight_dtype: bf16
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 2304
+    k: 4608
+    experts: 384
+    top_k: 8
+    weight_dtype: fp8
+    weight_scale:
+      elements: 32
+      bytes: 1
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  - op: RecurrentUpdate
+    recurrent_kind: short_conv
+    role: mlp_sconv
+    conv_kernel: 4
+    intermediate_size: 4608
+    state_dtype: bf16
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
+  - - 18
+    - 19
+  - - 19
+    - 20
+- id: dspark_swa
+  nodes:
+  - op: Elementwise
+    role: input_norm
+    bytes_per_token: 18432
+    tp: replicated
+  - op: GEMM
+    role: qkv_proj
+    n: 8192
+    k: 4608
+    weight_dtype: bf16
+  - op: Elementwise
+    role: qk_norm_rope
+    bytes_per_token: 28672
+    tp: sharded
+  - op: Attention
+    holds_engine_kv: true
+    kind: swa
+    n_q: 48
+    n_kv: 8
+    d_h: 128
+    kv_heads_not_replicated: true
+    window: 1024
+  - op: GEMM
+    role: o_proj
+    n: 4608
+    k: 6144
+    tp: row
+    weight_dtype: bf16
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+    bytes_per_token: 27648
+    tp: replicated
+  - op: GEMM
+    role: mlp_gate_up
+    n: 36864
+    k: 4608
+    weight_dtype: bf16
+  - op: GEMM
+    role: mlp_down
+    n: 4608
+    k: 18432
+    tp: row
+    weight_dtype: bf16
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+- id: dspark_full
+  nodes:
+  - op: Elementwise
+    role: input_norm
+    bytes_per_token: 18432
+    tp: replicated
+  - op: GEMM
+    role: qkv_proj
+    n: 8192
+    k: 4608
+    weight_dtype: bf16
+  - op: Elementwise
+    role: qk_norm_rope
+    bytes_per_token: 28672
+    tp: sharded
+  - op: Attention
+    holds_engine_kv: true
+    kind: gqa
+    n_q: 48
+    n_kv: 8
+    d_h: 128
+    kv_heads_not_replicated: true
+  - op: GEMM
+    role: o_proj
+    n: 4608
+    k: 6144
+    tp: row
+    weight_dtype: bf16
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+    bytes_per_token: 27648
+    tp: replicated
+  - op: GEMM
+    role: mlp_gate_up
+    n: 36864
+    k: 4608
+    weight_dtype: bf16
+  - op: GEMM
+    role: mlp_down
+    n: 4608
+    k: 18432
+    tp: row
+    weight_dtype: bf16
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+- id: dspark_context
+  nodes:
+  - op: Elementwise
+    role: dspark_context_norm
+    bytes_per_token: 18432
+    tp: replicated
+  - op: GEMM
+    role: dspark_context_kv
+    n: 2048
+    k: 4608
+    weight_dtype: bf16
+  - op: Elementwise
+    role: dspark_context_kv_insert
+    bytes_per_token: 8192
+    tp: sharded
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+- id: dspark_context_mix
+  nodes:
+  - op: Elementwise
+    role: dspark_target_mix
+    bytes_per_token: 119808
+    tp: replicated
+  edges: []
+stack:
+  prologue:
+  - swa_nvfp4
+  pattern:
+  - swa_nvfp4
+  - swa_nvfp4
+  - swa_nvfp4
+  - swa_nvfp4
+  - full_nvfp4
+  - swa_nvfp4
+  - swa_nvfp4
+  - swa_nvfp4
+  - swa_nvfp4
+  - swa_nvfp4
+  - full_nvfp4
+  - swa_nvfp4
+  repeat: 3
+  epilogue:
+  - swa_nvfp4
+  - swa_nvfp4
+  - swa_nvfp4
+  - swa_mxfp8
+  - full_mxfp8
+  - swa_mxfp8
+  - swa_mxfp8
+  - swa_mxfp8
+  - swa_mxfp8
+  - swa_mxfp8
+  - full_mxfp8
+modality: multimodal
+encoder:
+  towers:
+  - modality: image
+    input:
+      patch_size: 20
+      channels: 3
+      class_tokens: 1
+    merge_ratio: 4
+    output_hidden_size: 4608
+    parallel: replicated
+    weight_dtype: bf16
+    embedding:
+    - op: gemm
+      role: patch_embed
+      n: 1024
+      k: 1200
+      tp: replicated
+    - op: elementwise
+      role: class_and_pos
+      bytes_per_row: 4096
+      params: 1050624
+    - op: elementwise
+      role: ln_pre
+      bytes_per_row: 4096
+      params: 2048
+      tp: replicated
+    layer_kinds:
+    - id: vit_block
+      nodes:
+      - op: elementwise
+        role: norms
+        bytes_per_row: 8192
+        params: 6144
+        tp: replicated
+      - op: gemm
+        role: qkv
+        n: 3072
+        k: 1024
+        bias: true
+        tp: replicated
+      - op: attention
+        role: attention
+        n_heads: 16
+        d_h: 64
+        tp: replicated
+      - op: gemm
+        role: o_proj
+        n: 1024
+        k: 1024
+        bias: true
+        tp: replicated
+      - op: gemm
+        role: fc1
+        n: 4096
+        k: 1024
+        bias: true
+        tp: replicated
+      - op: elementwise
+        role: act
+        bytes_per_row: 16384
+        tp: replicated
+      - op: gemm
+        role: fc2
+        n: 1024
+        k: 4096
+        bias: true
+        tp: replicated
+    stack:
+      pattern:
+      - vit_block
+      repeat: 23
+    projector:
+    - op: gemm
+      role: proj_in
+      n: 4096
+      k: 4096
+      tp: replicated
+      rows: output_tokens
+    - op: elementwise
+      role: proj_act
+      bytes_per_row: 16384
+      rows: output_tokens
+    - op: gemm
+      role: proj_out
+      n: 4608
+      k: 4096
+      tp: replicated
+      rows: output_tokens
+head:
+- op: Elementwise
+  role: output_attn_res_mix
+  bytes_per_token: 92160
+  tp: replicated
+- op: Elementwise
+  role: final_norm
+  bytes_per_token: 18432
+  tp: replicated
+- op: GEMM
+  role: lm_head
+  n: 201024
+  k: 4608
+  tp: column
+  weight_dtype: bf16
+- op: Elementwise
+  role: logit_softcap
+  bytes_per_token: 804096
+  tp: sharded
+speculator:
+  method: dspark
+  num_spec_tokens: 7
+  drafting: parallel_block
+  stack:
+    prologue:
+    - dspark_swa
+    - dspark_swa
+    - dspark_full
+    pattern:
+    - dspark_swa
+    repeat: 2
+  context_stack:
+    prologue:
+    - dspark_context_mix
+    pattern:
+    - dspark_context
+    repeat: 5
+  head:
+  - op: Elementwise
+    role: dspark_final_norm
+    bytes_per_token: 18432
+    tp: replicated
+  - op: GEMM
+    role: dspark_lm_head
+    n: 201024
+    k: 4608
+    tp: column
+    aliases: head.lm_head
+  - op: GEMM
+    role: markov_hidden_proj
+    n: 768
+    k: 9216
+    tp: replicated
+  sequential_head:
+  - op: Gather
+    role: markov_w1
+    rows: 201024
+    row_bytes: 512
+    rows_per_token: 1
+    out_bytes_per_token: 512
+  - op: GEMM
+    role: markov_rnn_proj
+    n: 768
+    k: 512
+    tp: replicated
+  - op: GEMM
+    role: markov_fold
+    n: 201024
+    k: 256
+    tp: column
+  aux_hidden_state_layers:
+  - 5
+  - 11
+  - 17
+  - 23
+  - 29
+  - 35
+  - 41
+  - 48

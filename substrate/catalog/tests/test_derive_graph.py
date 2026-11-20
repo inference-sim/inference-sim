@@ -10220,3 +10220,127 @@ def test_the_mla_prefill_widths_come_from_the_config(tmp_path):
     text_config(bumped)["v_head_dim"] = 64
     g = _derive_raw(bumped, tmp_path, "kimi-k2.5")
     assert {(a["prefill_qk_head_dim"], a["prefill_v_head_dim"]) for a in _attention_nodes(g) if a["kind"] == "mla"} == {(192, 64)}, t.get("v_head_dim")
+
+
+# --- Inkling-2-Small (Inkling2ForConditionalGeneration) ---------------------------------------
+
+def _inkling2_cfg(**edit) -> dict:
+    """Inkling-2-Small's structure at a small size: twelve layers of which the sixth and twelfth
+    attend over the whole context, and a DSpark drafter."""
+    text = {
+        "hidden_size": 256, "num_hidden_layers": 12, "vocab_size": 1000, "num_attention_heads": 4,
+        "num_key_value_heads": 2, "head_dim": 32, "d_rel": 8, "rel_extent": 64, "q_bias": False,
+        "o_bias": False, "torch_dtype": "bfloat16", "local_layer_ids": [i for i in range(12) if i % 6 != 5],
+        "sconv_kernel_size": 4, "swa_head_dim": 32, "swa_num_attention_heads": 4,
+        "swa_num_key_value_heads": 2, "sliding_window_size": 64, "n_layers_per_attn_res_block": 6,
+        "n_routed_experts": 8, "num_experts_per_tok": 2, "n_shared_experts": 0, "intermediate_size": 64,
+    }
+    text.update(edit)
+    return {"architectures": ["Inkling2ForConditionalGeneration"], "text_config": text,
+            "mtp_config": {"hidden_size": 256, "num_hidden_layers": 5, "num_attention_heads": 4,
+                           "num_key_value_heads": 2, "head_dim": 32, "intermediate_size": 512,
+                           "q_bias": False, "o_bias": False, "local_layer_ids": [0, 1, 3, 4],
+                           "sliding_window_size": 64, "block_size": 8, "markov_rank": 16,
+                           "markov_head_type": "rnn_hidden", "target_layer_ids": [5, 11]},
+            "quantization_config": {"quant_method": "modelopt", "quant_algo": "NVFP4"}}
+
+
+def _inkling2_headers(mxfp8_from: int = 10, layers: int = 12, hidden: int = 256, nq: int = 4, nkv: int = 2,
+                      dh: int = 32, d_rel: int = 8, experts: int = 8, inner: int = 64, vocab: int = 1000) -> dict:
+    bf = lambda *shape: {"dtype": "BF16", "shape": list(shape)}
+    h = {"model.llm.unembed.weight": bf(vocab, hidden)}
+    for i in range(layers):
+        p = f"model.llm.layers.{i}."
+        h.update({p + "attn.wq_du.weight": bf(nq * dh, hidden), p + "attn.wk_dv.weight": bf(nkv * dh, hidden),
+                  p + "attn.wv_dv.weight": bf(nkv * dh, hidden), p + "attn.wr_du.weight": bf(nq * d_rel, hidden),
+                  p + "attn.gate_attn.weight": bf(nq * dh, hidden), p + "attn.attn_sink_proj.weight": bf(nq, hidden),
+                  p + "attn.wo_ud.weight": bf(hidden, nq * dh), p + "mlp.gate.weight": bf(experts, hidden)})
+        e = p + "mlp.experts."
+        if i < mxfp8_from:
+            h.update({e + "w13_weight": {"dtype": "U8", "shape": [experts, 2 * inner, hidden // 2]},
+                      e + "w13_weight_scale": {"dtype": "F8_E4M3", "shape": [experts, 2 * inner, hidden // 16]},
+                      e + "w2_weight": {"dtype": "U8", "shape": [experts, hidden, inner // 2]},
+                      e + "w2_weight_scale": {"dtype": "F8_E4M3", "shape": [experts, hidden, inner // 16]}})
+        else:
+            h.update({e + "w13_weight": {"dtype": "F8_E4M3", "shape": [experts, 2 * inner, hidden]},
+                      e + "w13_weight_scale": {"dtype": "U8", "shape": [experts, 2 * inner, hidden // 32]},
+                      e + "w2_weight": {"dtype": "F8_E4M3", "shape": [experts, hidden, inner]},
+                      e + "w2_weight_scale": {"dtype": "U8", "shape": [experts, hidden, inner // 32]}})
+    return h
+
+
+def _inkling2_derive(tmp_path, raw=None, headers="default"):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps(raw or _inkling2_cfg()))
+    return derive_graph.derive(p, "inkling2-test", headers=_inkling2_headers() if headers == "default" else headers)
+
+
+def test_inkling2_each_layer_prices_the_expert_width_its_headers_store(tmp_path):
+    g = _inkling2_derive(tmp_path)
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    seq = layer_sequence(g["stack"])
+    assert len(seq) == 12
+    assert [kid.split("_")[1] for kid in seq] == ["nvfp4"] * 10 + ["mxfp8"] * 2
+    assert [kid.split("_")[0] for kid in seq] == ["swa"] * 5 + ["full"] + ["swa"] * 5 + ["full"]
+    nv, mx = _node(kinds["swa_nvfp4"], "experts"), _node(kinds["swa_mxfp8"], "experts")
+    assert nv["weight_dtype"] == "nvfp4" and "weight_scale" not in nv
+    assert (mx["weight_dtype"], mx["weight_scale"]) == ("fp8", {"elements": 32, "bytes": 1})
+    # The config states one algorithm; every other weight is the base width.
+    assert _node(kinds["swa_nvfp4"], "wo_ud")["weight_dtype"] == "bf16"
+    assert _node(kinds["swa_nvfp4"], "router")["weight_dtype"] == "bf16"
+
+
+def test_inkling2_a_full_layer_projects_from_three_norms_and_a_local_one_fuses_them(tmp_path):
+    g = _inkling2_derive(tmp_path)
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    fused = _node(kinds["swa_nvfp4"], "qkvr_gate_sink_proj")
+    assert (fused["n"], fused["k"]) == (2 * 4 * 32 + 4 * 8 + 4 + 2 * 2 * 32, 256)
+    full = kinds["full_nvfp4"]
+    assert "qkvr_gate_sink_proj" not in [n.get("role") for n in full["nodes"]]
+    assert _node(full, "q_gate_sink_proj")["n"] == fused["n"] - 2 * 2 * 32
+    assert (_node(full, "k_proj")["n"], _node(full, "k_tap_proj")["n"]) == (2 * 32, 4 * 2)
+    attn = lambda k: [n for n in kinds[k]["nodes"] if n["op"] == "Attention"][0]
+    assert (attn("swa_nvfp4")["kind"], attn("swa_nvfp4")["window"]) == ("swa", 64)
+    assert attn("full_nvfp4")["kind"] == "gqa" and "window" not in attn("full_nvfp4")
+
+
+def test_inkling2_attn_res_mix_reads_the_stack_mean_of_completed_blocks(tmp_path):
+    g = _inkling2_derive(tmp_path)
+    mix = _node({k["id"]: k for k in g["layer_kinds"]}["swa_nvfp4"], "attn_res_mix")
+    # Layers 0-5 read one completed block and the running one, layers 6-11 two: 1.5 on average,
+    # plus the vector written.
+    assert mix["bytes_per_token"] == round((1.5 + 1) * 256 * 2)
+
+
+def test_inkling2_dspark_drafter_is_its_own_speculator(tmp_path):
+    g = _inkling2_derive(tmp_path)
+    s = g["speculator"]
+    assert (s["method"], s["drafting"], s["num_spec_tokens"]) == ("dspark", "parallel_block", 7)
+    assert s["aux_hidden_state_layers"] == [5, 11]
+    assert layer_sequence(s["stack"]) == ["dspark_swa", "dspark_swa", "dspark_full", "dspark_swa", "dspark_swa"]
+    assert layer_sequence(s["context_stack"]) == ["dspark_context_mix"] + ["dspark_context"] * 5
+    assert _node({"nodes": s["head"]}, "dspark_lm_head")["aliases"] == "head.lm_head"
+    assert _node({"nodes": s["sequential_head"]}, "markov_rnn_proj")["k"] == 2 * 16
+
+
+@pytest.mark.parametrize("edit,match", [
+    (lambda h: h.__setitem__("model.llm.layers.3.mlp.experts.w13_weight_scale",
+                             {"dtype": "F8_E4M3", "shape": [8, 128, 17]}), "layer 3 w13 scale"),
+    (lambda h: h.__setitem__("model.llm.layers.3.mlp.experts.w13_weight", {"dtype": "BF16", "shape": [8, 128, 256]}),
+     "neither NVFP4 nor MXFP8"),
+    (lambda h: h.__setitem__("model.llm.layers.3.attn.wq_du.weight", {"dtype": "F8_E4M3", "shape": [128, 256]}),
+     "layer 3 attn.wq_du.weight"),
+    (lambda h: h.pop("model.llm.layers.7.mlp.experts.w2_weight"), "no expert weights for layer 7"),
+])
+def test_inkling2_refuses_headers_that_contradict_the_config(tmp_path, edit, match):
+    h = _inkling2_headers()
+    edit(h)
+    with pytest.raises(deriver().DeriveError, match=match):
+        _inkling2_derive(tmp_path, headers=h)
+
+
+def test_inkling2_refuses_to_guess_the_expert_width_without_headers(tmp_path):
+    with pytest.raises(deriver().DeriveError, match="shard headers"):
+        _inkling2_derive(tmp_path, headers=None)
