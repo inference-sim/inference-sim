@@ -15,8 +15,13 @@ Usage:
     python3 -I tools/surface/gen_surface.py <sglang-source> --items     (the derived item ids, one per line)
 
 <sglang-source> is a checkout of the SGLang repository. The working directory is the blis-sglang
-checkout, whose provenance.go names the release (--repo names another). A checkout at another
-commit is refused.
+checkout, whose provenance.go names the release (--repo names another).
+
+The generator works at any SGLang commit (design X9, §12.4). The commit is the one the checkout is
+at; --upstream-commit states it explicitly and a checkout at another commit than that is refused.
+A directory that is not a git checkout of its own is taken to be the commit provenance.go names.
+The commit's name is --upstream-tag, or provenance.go's tag when the commit is its Commit, or the
+commit's first 12 digits.
 
 SGLang has no single registry, so each category is read from the code that selects it. Paths are
 under python/sglang/srt/; each item's "site" is the file and line it was read at.
@@ -1087,6 +1092,21 @@ def checkout_commit(src):
     return r.stdout.strip()
 
 
+def resolve_upstream(repo, src, tag, commit):
+    """The (tag, commit) the list is generated for (see the module docstring)."""
+    pin_tag, pin_commit = provenance_upstream(repo)
+    head = checkout_commit(src)
+    if commit is not None and not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise GenError("upstream commit %r is not 40 hex digits" % commit)
+    if commit is None:
+        commit = head or pin_commit
+    elif head is not None and head != commit:
+        raise GenError("the SGLang checkout is at %s, not %s" % (head, commit))
+    if tag is None:
+        tag = pin_tag if commit == pin_commit else commit[:12]
+    return tag, commit
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("sglang_source")
@@ -1094,12 +1114,11 @@ def main(argv):
     ap.add_argument("--check", metavar="SURFACE_JSON")
     ap.add_argument("--repo", default=".", help="the blis-sglang checkout (default: the working directory)")
     ap.add_argument("--items", action="store_true", help="print the derived item ids and exit")
+    ap.add_argument("--upstream-tag", help="the name of the commit (default: provenance.go's Tag for its commit)")
+    ap.add_argument("--upstream-commit", help="the 40-hex commit (default: the one the checkout is at)")
     a = ap.parse_args(argv)
     try:
-        tag, commit = provenance_upstream(a.repo)
-        head = checkout_commit(a.sglang_source)
-        if head is not None and head != commit:
-            raise GenError("the SGLang checkout is at %s, not %s (%s)" % (head, commit, tag))
+        tag, commit = resolve_upstream(a.repo, a.sglang_source, a.upstream_tag, a.upstream_commit)
         UPSTREAM["tag"], UPSTREAM["commit"] = tag, commit
         if a.items:
             for it in derive(a.sglang_source):
