@@ -58,3 +58,21 @@ rules:
       - {role: validate, from: 40, to: 49}
       - {role: held, from: 50, to: 79}
       - {role: anchor, from: 80, to: 99}
+  # Table 1.4 sources (M3.2 row 13), added to partition version 1 with the seed kept, additively
+  # as for configiq. They are training-only: fit, select and validate in the proportions of
+  # aisimulate-fpm, with no held, anchor or report role and no legacy side.
+  vllm-ci-perf:
+    cut_points:
+      - {role: fit, from: 0, to: 69}
+      - {role: select, from: 70, to: 84}
+      - {role: validate, from: 85, to: 99}
+  sglang-nightly:
+    cut_points:
+      - {role: fit, from: 0, to: 69}
+      - {role: select, from: 70, to: 84}
+      - {role: validate, from: 85, to: 99}
+  sglang-traces:
+    cut_points:
+      - {role: fit, from: 0, to: 69}
+      - {role: select, from: 70, to: 84}
+      - {role: validate, from: 85, to: 99}

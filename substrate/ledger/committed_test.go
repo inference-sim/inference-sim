@@ -11,6 +11,9 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/ledger"
 	"github.com/inference-sim/inference-sim/substrate/ledger/configiq"
 	"github.com/inference-sim/inference-sim/substrate/ledger/inferencex"
+	"github.com/inference-sim/inference-sim/substrate/ledger/sglangnightly"
+	"github.com/inference-sim/inference-sim/substrate/ledger/sglangtraces"
+	"github.com/inference-sim/inference-sim/substrate/ledger/vllmperf"
 )
 
 // The committed ledger loads and passes every check that needs no source data: the layout,
@@ -18,8 +21,11 @@ import (
 // measurement, and the legacy table against the unit list.
 func TestCommittedLedger(t *testing.T) {
 	l, err := ledger.Load("../catalog/ledger", map[string]ledger.RoleKeyFunc{
-		inferencex.SourceID: inferencex.RoleKey,
-		configiq.SourceID:   configiq.RoleKey,
+		inferencex.SourceID:    inferencex.RoleKey,
+		configiq.SourceID:      configiq.RoleKey,
+		vllmperf.SourceID:      vllmperf.RoleKey,
+		sglangnightly.SourceID: sglangnightly.RoleKey,
+		sglangtraces.SourceID:  sglangtraces.RoleKey,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +117,8 @@ func TestExtractorPinEqualsTheLedgerEntry(t *testing.T) {
 // the jobs read holds a unit for it with the canonical role key. A pin added to sources.yaml
 // without regenerating the list fails here, with no network.
 func TestEverySupplementRecordHasAUnit(t *testing.T) {
-	l, err := ledger.Load("../catalog/ledger", map[string]ledger.RoleKeyFunc{inferencex.SourceID: inferencex.RoleKey, configiq.SourceID: configiq.RoleKey})
+	l, err := ledger.Load("../catalog/ledger", map[string]ledger.RoleKeyFunc{inferencex.SourceID: inferencex.RoleKey, configiq.SourceID: configiq.RoleKey,
+		vllmperf.SourceID: vllmperf.RoleKey, sglangnightly.SourceID: sglangnightly.RoleKey, sglangtraces.SourceID: sglangtraces.RoleKey})
 	if err != nil {
 		t.Fatal(err)
 	}
