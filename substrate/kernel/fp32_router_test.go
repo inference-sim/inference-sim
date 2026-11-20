@@ -3,8 +3,8 @@ package latencykernel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // MiniMax-M2's gate is an fp32 GateLinear, whole on every rank (minimax_m2.py:106-122). Above 32 tokens

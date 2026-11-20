@@ -5,9 +5,9 @@ package vllmengine
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
-	vllm "github.com/inference-sim/blis-vllm/core/vllm"
+	vllm "github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
 )
 
 // A batch that states vLLM v0.33.0's skip_drafts is priced without the drafter's proposing

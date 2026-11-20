@@ -8,13 +8,13 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/load"
 
-	"github.com/inference-sim/blis-vllm/core/kernelmodel"
-	"github.com/inference-sim/blis-vllm/core/vllm"
-	"github.com/inference-sim/blis-vllm/internal/substratedata"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/substratedata"
 )
 
 // recorder is the optional method a host reads by type assertion on the engine.Engine.

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
 )
 
 // museSyntheticScenario is the Muse adaptive scenario with its acceptance pin and speculative block

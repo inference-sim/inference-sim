@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 )
 
 // The HiCache radix cache (cache.RadixCache with L2 attached) answers every call SGLang's

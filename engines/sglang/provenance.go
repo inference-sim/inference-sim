@@ -2,7 +2,7 @@
 
 // Package blissglang is a Go model of the SGLang inference engine's scheduling, KV-cache,
 // hierarchical-cache, disaggregation and metrics behaviour, for a discrete-event simulator to call
-// through the engine-neutral contract in github.com/inference-sim/blis-substrate/contracts/engine.
+// through the engine-neutral contract in github.com/inference-sim/inference-sim/substrate/contracts/engine.
 //
 // One build of this module models one SGLang release, Upstream. Its behaviour is checked against
 // that release's own code (oracle/): the same inputs, fed to the real SGLang classes in Python and
@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"runtime/debug"
 
-	"github.com/inference-sim/blis-substrate/contracts/harness"
+	"github.com/inference-sim/inference-sim/substrate/contracts/harness"
 )
 
 // Kind is the engine kind this module registers with the contracts' engine factory.
@@ -43,8 +43,8 @@ type Provenance struct {
 	Module string `json:"module" yaml:"module"`
 }
 
-// ModulePath is this module's import path.
-const ModulePath = "github.com/inference-sim/blis-sglang"
+// ModulePath is the import path of the module this package is in: one module holds the substrate, both engines and the simulator, so a build records one revision for all.
+const ModulePath = "github.com/inference-sim/inference-sim"
 
 // moduleVersion reports this module's version from the running binary's build info.
 func moduleVersion() string {

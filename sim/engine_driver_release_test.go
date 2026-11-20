@@ -5,7 +5,7 @@ import (
 	"testing"
 	"weak"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
 )
 
 // A request that completed long before its client deadline must not be kept alive by the deadline

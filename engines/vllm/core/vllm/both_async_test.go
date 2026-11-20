@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 const asyncTight = "async_scheduling: true\nuse_v2_model_runner: true\nblock_size: 4\nmax_num_seqs: 3\n" +

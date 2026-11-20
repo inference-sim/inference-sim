@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // openM3Indexer opens the committed MiniMax-M3 fixture with attention_config.indexer_kv_dtype

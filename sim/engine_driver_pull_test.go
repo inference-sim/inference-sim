@@ -5,15 +5,15 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-vllm/core/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
-// decoder is blis-vllm's v0.33.0 engine as a NIXL kv_consumer under policy, at a fixed step price.
+// decoder is the vLLM engine's v0.33.0 engine as a NIXL kv_consumer under policy, at a fixed step price.
 func decoder(t *testing.T, policy string) *vllm.Engine {
 	t.Helper()
 	src := "block_size: 16\nmax_num_seqs: 4\nmax_num_batched_tokens: 64\nmax_model_len: 512\nnum_gpu_blocks: 64\n" +

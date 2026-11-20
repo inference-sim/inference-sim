@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
 )
 
 // The values of TraceHeader.Mode: which command wrote the trace.

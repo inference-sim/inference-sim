@@ -15,8 +15,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/kv"
-	"github.com/inference-sim/blis-vllm/internal/upstream"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
 // eosToken is tests/v1/core/utils.py:49@4ba787ec (EOS_TOKEN_ID), which the oracle's GPU mock

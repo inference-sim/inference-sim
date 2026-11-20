@@ -68,10 +68,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	validate "github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/ledger"
-	"github.com/inference-sim/blis-substrate/ledger/configiq"
-	"github.com/inference-sim/blis-substrate/ledger/inferencex"
+	validate "github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/ledger"
+	"github.com/inference-sim/inference-sim/substrate/ledger/configiq"
+	"github.com/inference-sim/inference-sim/substrate/ledger/inferencex"
 )
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }

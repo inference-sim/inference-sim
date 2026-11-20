@@ -6,7 +6,7 @@
 
 package sched
 
-import "github.com/inference-sim/blis-vllm/core/kv"
+import "github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 
 // MambaSplitConfig is what Scheduler.__init__ reads to set up the Mamba block-aligned split
 // (vllm/v1/core/sched/scheduler.py:430-465@4ba787ec), as plain inputs.

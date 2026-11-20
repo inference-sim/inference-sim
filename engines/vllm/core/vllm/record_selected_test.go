@@ -3,7 +3,7 @@ package vllm
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // recordingPricer counts the Data it is registered with.

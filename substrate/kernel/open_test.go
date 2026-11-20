@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // openRules stands in for an engine release's rules: OpenInputs only asks whether rules

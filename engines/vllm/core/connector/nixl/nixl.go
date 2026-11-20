@@ -19,7 +19,7 @@ package nixl
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // Config is the connector's slice of KVTransferConfig.kv_connector_extra_config.

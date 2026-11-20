@@ -5,14 +5,14 @@ import (
 	"path/filepath"
 	"reflect"
 
-	"github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // Repos locates the roots a scenario's names resolve against, and the engine rules its
@@ -21,7 +21,7 @@ import (
 // A scenario names its model, hardware, fabric and coefficient sets without saying where
 // they live — it describes a deployment, not a filesystem — so a caller supplies the roots.
 // It names its engine release the same way, without the rules: those belong to the engine
-// model (blis-vllm), not to this cost model, so a caller supplies them too.
+// model (the vLLM engine), not to this cost model, so a caller supplies them too.
 type Repos struct {
 	Scenarios string // directory holding scenario files
 	// Data is the catalog and registry the scenario's names resolve against, opened and
@@ -31,8 +31,7 @@ type Repos struct {
 	Data *load.Data
 
 	// Rules returns the engine rules for a release, or nil for a release it has none for:
-	// for vLLM, the packs of github.com/inference-sim/blis-vllm/rules (its Lookup, wrapped
-	// as RulesFrom does). Required: the kernel no longer looks rules up itself.
+	// for vLLM, the engine's rule packs (its Lookup, wrapped as RulesFrom does). Required: the kernel no longer looks rules up itself.
 	Rules func(version string) rules.EngineRules
 	// RulesKind is the engine kind the supplied Rules are for, as a scenario's engine block
 	// names it (engine: {kind, version}). Open refuses a scenario whose engine block names
@@ -295,7 +294,7 @@ func OpenInputsIn(scenario string, r Repos, poolIndex int, nodePool string) (Inp
 	if r.Rules == nil {
 		return Inputs{}, fmt.Errorf("%s: no engine rules source: Repos.Rules is unset, and the "+
 			"kernel looks no rules up itself. Pass the engine model's rules for the scenario's "+
-			"engine_version (for vLLM, github.com/inference-sim/blis-vllm/rules)", scenario)
+			"engine_version (for vLLM, the engine's rulepack)", scenario)
 	}
 	if sc.Engine != nil {
 		have := r.RulesKind
@@ -322,7 +321,7 @@ func OpenInputsIn(scenario string, r Repos, poolIndex int, nodePool string) (Inp
 	if r.DraftModel == nil {
 		return Inputs{}, fmt.Errorf("%s: no engine model: Repos.DraftModel is unset, and the kernel "+
 			"opens no engine block itself. Pass the engine model's reading of the block (for "+
-			"vLLM, github.com/inference-sim/blis-vllm/compat/kernelmodel)", scenario)
+			"vLLM, the engine's kernel adapter)", scenario)
 	}
 	name, err := r.DraftModel(dep, poolIndex)
 	if err != nil {

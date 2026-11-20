@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 )
 
 // KVLayerRun is a run of a model's consecutive attention layers that build one KV cache spec,

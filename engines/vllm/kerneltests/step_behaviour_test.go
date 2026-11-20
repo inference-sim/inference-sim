@@ -3,16 +3,16 @@
 package latencykernel_test
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	. "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	. "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // Step-time behaviour, as relations between steps, deployments and graphs.

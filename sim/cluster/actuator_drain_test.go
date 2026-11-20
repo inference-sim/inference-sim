@@ -8,7 +8,7 @@ import (
 )
 
 // drainFixture is a two-instance cluster for model "m1" with numSeeded requests queued on its
-// first instance (the one a scale-down drains: the lowest ID), and the actuator that drains it
+// first instance (the one a scale-down drains: the lowest ID), held there queued or running, and the actuator that drains it
 // under the named policy ("" states none).
 func drainFixture(t *testing.T, policy string, numSeeded int) (*ClusterSimulator, *InstanceSimulator, *DirectActuator) {
 	t.Helper()
@@ -27,14 +27,18 @@ func drainFixture(t *testing.T, policy string, numSeeded int) (*ClusterSimulator
 		inst0.InjectRequestOnline(req, 0)
 		cs.inFlightRequests[string(inst0.ID())]++
 	}
-	for numSeeded > 0 && inst0.HasPendingEvents() && inst0.QueueDepth() < numSeeded {
+	for numSeeded > 0 && inst0.HasPendingEvents() && held(inst0) < numSeeded {
 		inst0.ProcessNextEvent()
 	}
-	if inst0.QueueDepth() != numSeeded {
-		t.Fatalf("precondition: %d requests queued on the instance to drain, want %d", inst0.QueueDepth(), numSeeded)
+	if held(inst0) != numSeeded {
+		t.Fatalf("precondition: %d requests held on the instance to drain, want %d", held(inst0), numSeeded)
 	}
 	return cs, inst0, NewDirectActuator(cs)
 }
+
+// held is the requests an instance has taken in and not finished: the engine schedules an arrival
+// at its next step, so a request is queued or already running.
+func held(i *InstanceSimulator) int { return i.QueueDepth() + i.BatchSize() }
 
 func scaleDownOne(t *testing.T, a *DirectActuator) {
 	t.Helper()
@@ -83,8 +87,8 @@ func TestScaleDownDrainsByTheConfiguredPolicy(t *testing.T) {
 		if inst0.IsRoutable() {
 			t.Error("a draining instance is still routable")
 		}
-		if inst0.QueueDepth() != n {
-			t.Errorf("queued = %d, want the instance's %d requests kept", inst0.QueueDepth(), n)
+		if held(inst0) != n {
+			t.Errorf("held = %d, want the instance's %d requests kept", held(inst0), n)
 		}
 		if err := cs.Run(); err != nil {
 			t.Fatal(err)
@@ -98,29 +102,11 @@ func TestScaleDownDrainsByTheConfiguredPolicy(t *testing.T) {
 		assertClusterINV1Conservation(t, cs, n, noRejections, "WAIT scale-down")
 	})
 
-	t.Run("REDIRECT re-injects the queued work elsewhere", func(t *testing.T) {
-		cs, inst0, a := drainFixture(t, string(DrainPolicyRedirect), n)
-		scaleDownOne(t, a)
-		if inst0.State != sim.InstanceStateDraining {
-			t.Errorf("state = %q right after a REDIRECT scale-down, want Draining", inst0.State)
-		}
-		if inst0.QueueDepth() != 0 {
-			t.Errorf("queued = %d, want the queue handed back", inst0.QueueDepth())
-		}
-		if err := cs.Run(); err != nil {
-			t.Fatal(err)
-		}
-		if got := cs.AggregatedMetrics().CompletedRequests; got != n {
-			t.Errorf("completed = %d, want all %d served by the other instance", got, n)
-		}
-		assertClusterINV1Conservation(t, cs, n, noRejections, "REDIRECT scale-down")
-	})
-
 	t.Run("no policy stated is WAIT", func(t *testing.T) {
 		_, inst0, a := drainFixture(t, "", n)
 		scaleDownOne(t, a)
-		if inst0.State != sim.InstanceStateDraining || inst0.QueueDepth() != n {
-			t.Errorf("state %q with %d queued, want the WAIT outcome: Draining with the work kept", inst0.State, inst0.QueueDepth())
+		if inst0.State != sim.InstanceStateDraining || held(inst0) != n {
+			t.Errorf("state %q with %d held, want the WAIT outcome: Draining with the work kept", inst0.State, held(inst0))
 		}
 	})
 

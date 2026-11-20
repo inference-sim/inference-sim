@@ -8,7 +8,7 @@ import (
 
 	"pgregory.net/rapid"
 
-	sim "github.com/inference-sim/blis-vllm/core/runconfig"
+	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // Laws of the adapter's step price over generated batches, on deployments spanning the

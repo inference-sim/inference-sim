@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/ledger"
+	"github.com/inference-sim/inference-sim/substrate/ledger"
 )
 
 // apiRecord returns a synthetic API record. Its numbers are invented; no InferenceX

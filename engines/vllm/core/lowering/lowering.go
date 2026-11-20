@@ -19,16 +19,16 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	subrules "github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
-	"github.com/inference-sim/blis-substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	subrules "github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 
-	blisvllm "github.com/inference-sim/blis-vllm"
-	"github.com/inference-sim/blis-vllm/core/vllmsettings"
+	blisvllm "github.com/inference-sim/inference-sim/engines/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
 )
 
 // Input is what the lowering of one pool reads: the documents the cost model is built from, the

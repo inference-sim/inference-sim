@@ -23,13 +23,13 @@
 package result
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/metrics"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
-	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
-	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/contracts/metrics"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/measurement"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 )
 
 // Kind is the value of Result.Kind.
@@ -549,11 +549,11 @@ const (
 type Revisions struct {
 	// Simulator is the inference-sim build.
 	Simulator string `yaml:"simulator"`
-	// Substrate is the blis-substrate module version the build selected.
+	// Substrate is the substrate's version: the simulator's own, as the substrate is a package of its module.
 	Substrate string `yaml:"substrate"`
 	// Router is the llm-d router fork's version.
 	Router string `yaml:"router,omitempty"`
-	// EngineModule is the engine repository's module version, such as blis-vllm's.
+	// EngineModule is the engine's version: the simulator's own, as the engines are packages of its module.
 	EngineModule string `yaml:"engine_module,omitempty"`
 }
 

@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 	"pgregory.net/rapid"
 
-	sim "github.com/inference-sim/blis-vllm/core/runconfig"
+	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 )
 
 const dpLockstepScenario = "minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml"

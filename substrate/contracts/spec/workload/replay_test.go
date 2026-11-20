@@ -1,7 +1,7 @@
 package workload
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/routing"
 	"math"
 	"strings"
 	"testing"

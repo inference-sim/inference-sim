@@ -2,12 +2,12 @@ package latencykernel
 
 import (
 	"fmt"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/kernel/internal/price"
-	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/price"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve"
 )
 
 // deepEPA2A is one DeepEP backend's measured MoE dispatch + combine price: floor plus

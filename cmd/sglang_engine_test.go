@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 func sglangTestSpec(t *testing.T, scenario string) (engine.Spec, *load.Data) {
@@ -213,21 +213,22 @@ func sglangScenarioText(t *testing.T, name string) string {
 	return string(b)
 }
 
-// An SGLang run's Result names blis-sglang as its engine module, not blis-vllm.
-func TestSGLangResultNamesTheSGLangModule(t *testing.T) {
+// A Result's substrate and engine_module revisions are the simulator's own build for either
+// engine: both engines are packages of its module; the router fork is the only other revision.
+func TestResultRevisionsAreOneModuleAndTheRouterFork(t *testing.T) {
 	saved := scenarioEngine
 	defer func() { scenarioEngine = saved }()
-	info := &debug.BuildInfo{Deps: []*debug.Module{
-		{Path: "github.com/inference-sim/blis-vllm", Version: "v0.33.0-blis.1"},
-		{Path: "github.com/inference-sim/blis-sglang", Version: "v0.5.23-blis.1"},
-	}}
-	scenarioEngine = engineRef{Kind: "sglang", Version: "0.5.23"}
-	if got := revisionsFrom(info).EngineModule; got != "v0.5.23-blis.1" {
-		t.Errorf("an SGLang run's engine_module = %q, want blis-sglang's v0.5.23-blis.1", got)
+	info := &debug.BuildInfo{
+		Main: debug.Module{Version: "v0.19.0"},
+		Deps: []*debug.Module{{Path: "github.com/llm-d/llm-d-router", Version: "v1.0.0",
+			Replace: &debug.Module{Path: "github.com/inference-sim/llm-d-router", Version: "v1.0.0-blis.5"}}},
 	}
-	scenarioEngine = engineRef{Kind: "vllm", Version: "0.33.0"}
-	if got := revisionsFrom(info).EngineModule; got != "v0.33.0-blis.1" {
-		t.Errorf("a vLLM run's engine_module = %q, want blis-vllm's v0.33.0-blis.1", got)
+	for _, kind := range []string{"vllm", "sglang"} {
+		scenarioEngine = engineRef{Kind: kind}
+		got := revisionsFrom(info)
+		if got.Simulator != "v0.19.0" || got.Substrate != "v0.19.0" || got.EngineModule != "v0.19.0" || got.Router != "v1.0.0-blis.5" {
+			t.Errorf("%s run revisions = %+v", kind, got)
+		}
 	}
 }
 

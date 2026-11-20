@@ -3,9 +3,9 @@ package latencykernel
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
 
-	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve"
 )
 
 // fabricEfficiencyName is the registry entry that corrects a fabric's nominal line rate to

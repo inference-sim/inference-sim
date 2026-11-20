@@ -3,7 +3,7 @@ package plan
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 )
 
 // Memory is what a plan states about where its bytes live (SUB-14). GPU figures are per rank.

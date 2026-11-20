@@ -3,10 +3,10 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
-// stand-ins for blis-vllm's Engine and DPGroup, which report their KV cache size by a method that
+// stand-ins for the vLLM engine's Engine and DPGroup, which report their KV cache size by a method that
 // returns core/kv.Capacity: a struct with Tokens, Concurrency and BlocksPerRequest.
 type fakeCapacity struct {
 	Tokens           int64

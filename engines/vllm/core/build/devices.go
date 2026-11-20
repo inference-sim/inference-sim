@@ -10,7 +10,7 @@ package build
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // catalogEnvVar names the environment variable that names a catalog directory, for the

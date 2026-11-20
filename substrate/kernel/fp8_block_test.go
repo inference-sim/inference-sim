@@ -3,8 +3,8 @@ package latencykernel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // A checkpoint whose weight scales are one per 128x128 block (16,384 elements; MiniMax-M2.5) runs

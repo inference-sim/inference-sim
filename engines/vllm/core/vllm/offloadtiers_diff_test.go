@@ -14,10 +14,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
-	kvtier "github.com/inference-sim/blis-vllm/core/connector/tiering"
-	"github.com/inference-sim/blis-vllm/internal/upstream"
+	kvtier "github.com/inference-sim/inference-sim/engines/vllm/core/connector/tiering"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
 // The fs tier through the engine against vLLM: each scenario under oracle/scenarios/offloading-tiering

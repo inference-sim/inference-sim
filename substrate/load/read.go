@@ -5,14 +5,14 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
-	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
-	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
-	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/pointrecord"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/routertable"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/routing"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/workload"
 )
 
 // The readers below return documents shared by every caller of one Data. They are read

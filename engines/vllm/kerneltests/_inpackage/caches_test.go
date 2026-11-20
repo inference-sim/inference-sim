@@ -7,9 +7,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 
-	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve"
 )
 
 // Per-layer caches, as a graph states them (blis-schemas model.Cache), checked through

@@ -19,12 +19,12 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
 
-	"github.com/inference-sim/blis-sglang/core/cache"
-	"github.com/inference-sim/blis-sglang/core/metrics"
-	"github.com/inference-sim/blis-sglang/core/sched"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/metrics"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/sched"
 )
 
 // Pricer prices a batch: how long its forward pass takes. The engine decides what runs; the cost

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // The build site's per-pool engine settings (poolOverrides, resolvePoolConfig): a P/D pool's own

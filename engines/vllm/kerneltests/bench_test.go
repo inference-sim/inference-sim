@@ -3,12 +3,12 @@
 package latencykernel_test
 
 import (
-	. "github.com/inference-sim/blis-substrate/kernel"
+	. "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 )
 
 // StepTime is called once per simulated step, millions of times over a run, so its cost

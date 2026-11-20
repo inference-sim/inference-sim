@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 	"math"
 	"math/rand"
 	"reflect"
@@ -140,10 +140,12 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 				t.Errorf("total_output_tokens: got %d, want %d",
 					m.TotalOutputTokens, tc.Metrics.TotalOutputTokens)
 			}
-			// Verify timing: SimEndedTime must match golden vllm_estimated_duration_s
+			// Verify timing: SimEndedTime matches golden vllm_estimated_duration_s to 1e-5: the golden
+			// was recorded on the retired compatibility engine, which ended a run some tens of
+			// microseconds off the v0.33.0 engine's end.
 			vllmRuntime := float64(m.SimEndedTime) / 1e6
 			testutil.AssertFloat64Equal(t, "vllm_estimated_duration_s",
-				tc.Metrics.VllmEstimatedDurationS, vllmRuntime, 1e-9)
+				tc.Metrics.VllmEstimatedDurationS, vllmRuntime, 1e-5)
 		})
 	}
 }
@@ -1336,7 +1338,8 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 }
 
 // BC-6: Cluster-mode MaxModelLen drops surface in aggregated metrics with INV-1 conservation.
-// Exercises Guard 1a (input >= MaxModelLen) and Guard 1b (input + budget > MaxModelLen).
+// Exercises Guard 1a (input >= MaxModelLen). A request whose input plus budget passes MaxModelLen is
+// served, as vLLM serves it: the engine ends it at the window (finish "length").
 // Differs from TestClusterSimulator_InFlightRequests_DroppedUnservable_Decrements which tests
 // the KV-capacity Guard 2 path.
 func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
@@ -1358,7 +1361,7 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 	workloadRNG := rand.New(rand.NewSource(42))
 
 	var requests []*sim.Request
-	numFit, numGuard1a, numGuard1b := 0, 0, 0
+	numFit, numGuard1a := 0, 0
 
 	// 5 requests that fit (input=50, output=50, no budget → auto-filled to 150, budget check passes)
 	for i := 0; i < 5; i++ {
@@ -1386,22 +1389,8 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 		numGuard1a++
 	}
 
-	// 2 requests dropped by Guard 1b (input + budget > MaxModelLen)
-	for i := 0; i < 2; i++ {
-		req := &sim.Request{
-			ID:           fmt.Sprintf("guard1b_%d", i),
-			InputTokens:  sim.GenerateRandomTokenIDs(workloadRNG, 100),
-			OutputTokens: sim.GenerateRandomTokenIDs(workloadRNG, 50),
-			MaxOutputLen: 150, // 100 + 150 = 250 > MaxModelLen(200)
-			ArrivalTime:  int64((8 + i) * 100_000),
-			State:        sim.StateQueued,
-		}
-		requests = append(requests, req)
-		numGuard1b++
-	}
-
-	totalInjected := numFit + numGuard1a + numGuard1b
-	expectedDropped := numGuard1a + numGuard1b
+	totalInjected := numFit + numGuard1a
+	expectedDropped := numGuard1a
 
 	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
@@ -1410,8 +1399,8 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 
 	// DroppedUnservable matches expected oversized count
 	if agg.DroppedUnservable != expectedDropped {
-		t.Errorf("DroppedUnservable = %d, want %d (Guard1a=%d + Guard1b=%d)",
-			agg.DroppedUnservable, expectedDropped, numGuard1a, numGuard1b)
+		t.Errorf("DroppedUnservable = %d, want %d (Guard1a=%d)",
+			agg.DroppedUnservable, expectedDropped, numGuard1a)
 	}
 
 	assertClusterINV1Conservation(t, cs, totalInjected, noRejections, "oversized-request guards")

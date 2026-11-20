@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
+	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
 )
 
 // Notes writes a release's notes from its changes (LIF-4, design §13.3). They are generated,

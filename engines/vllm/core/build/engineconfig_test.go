@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 func writeLoRAFile(t *testing.T, body string) string {

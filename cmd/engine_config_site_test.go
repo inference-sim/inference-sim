@@ -19,7 +19,7 @@ import (
 
 // cmd builds the engine's configuration in one place, the build site (#2021 B2): no
 // production file in package cmd but cmd/engine_build.go calls the engine's configuration
-// constructors or validators (blis-vllm compat/engine, which only the build site imports). The build site hands the values to blis-vllm compat/build,
+// constructors or validators (the vLLM engine core/runconfig, which only the build site imports). The build site hands the values to the engine's core/build,
 // which parses, validates and assembles them, so cmd parses and validates no engine
 // configuration itself.
 func TestOnlyTheBuildSiteBuildsTheEngineConfiguration(t *testing.T) {
@@ -42,11 +42,11 @@ func TestOnlyTheBuildSiteBuildsTheEngineConfiguration(t *testing.T) {
 	}
 	if inSite != 0 {
 		t.Errorf("non-vacuity aside, cmd/engine_build.go itself calls %d engine configuration constructors; "+
-			"they belong in blis-vllm compat/build, which the build site calls", inSite)
+			"they belong in the engine's core/build, which the build site calls", inSite)
 	}
 }
 
-// engineConfigNames are the engine's configuration constructors and validators, as compat/engine
+// engineConfigNames are the engine's configuration constructors and validators, as core/runconfig
 // declares them, and as sim's policy names (sim/bundle.go) re-export the name tables.
 var engineConfigNames = map[string]bool{
 	"NewKVCacheConfig": true, "NewBatchConfig": true, "NewPolicyConfig": true,
@@ -60,8 +60,8 @@ var engineConfigNames = map[string]bool{
 
 // engineConfigPackages are the import paths whose engineConfigNames the check refuses.
 var engineConfigPackages = map[string]bool{
-	"github.com/inference-sim/inference-sim/sim":       true,
-	"github.com/inference-sim/blis-vllm/compat/engine": true,
+	"github.com/inference-sim/inference-sim/sim":                         true,
+	"github.com/inference-sim/inference-sim/engines/vllm/core/runconfig": true,
 }
 
 // engineConfigCallsIn lists, for the non-test Go files of dir, each selector that names an
@@ -114,25 +114,25 @@ func engineConfigCallsIn(t *testing.T, dir string) ([]string, int) {
 }
 
 // The check sees a configuration call however the seam is imported: through sim, through a
-// renamed sim import, as a function value, and through compat/engine itself. A file with none,
+// renamed sim import, as a function value, and through core/runconfig itself. A file with none,
 // and another package that happens to be named sim, are clean.
 func TestEngineConfigCheckCatchesEachForm(t *testing.T) {
 	cases := map[string]string{
-		"a constructor through compat/engine": `package probe
-import cengine "github.com/inference-sim/blis-vllm/compat/engine"
+		"a constructor through core/runconfig": `package probe
+import cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 func f() cengine.BatchConfig { return cengine.NewBatchConfig(1, 1, 0) }`,
 		"an option through a renamed import": `package probe
 import s "github.com/inference-sim/inference-sim/sim"
 func f() s.BatchOption { return s.WithPrefixCachingDisabled(true) }`,
 		"a function value": `package probe
-import cengine "github.com/inference-sim/blis-vllm/compat/engine"
+import cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 var g = cengine.NewKVCacheConfig`,
 		"a name check": `package probe
 import "github.com/inference-sim/inference-sim/sim"
 func f() bool { return sim.IsValidPreemptionPolicy("fcfs") }`,
-		"through compat/engine": `package probe
-import "github.com/inference-sim/blis-vllm/compat/engine"
-func f() any { return engine.AdapterRegistryConstructor() }`,
+		"through core/runconfig": `package probe
+import "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
+func f() any { return runconfig.AdapterRegistryConstructor() }`,
 	}
 	run := func(src string) []string {
 		dir := t.TempDir()
@@ -166,9 +166,9 @@ func f() any { return sim.NewBatchConfig }`); len(got) != 0 {
 
 // Outside the build site, package cmd neither builds a value of the engine's configuration types
 // as a composite literal, nor writes one of its fields, nor validates or checks one: such a value
-// comes from blis-vllm compat/build, which cmd/engine_build.go calls. Nor does it ask the kernel
+// comes from the engine's core/build, which cmd/engine_build.go calls. Nor does it ask the kernel
 // model to resolve the engine or reach its kernel, or call the kernel's pricing. The check is
-// type-checked, so it sees the types under any name: compat/engine's own, or a local alias. The engine's types are the struct types compat/engine
+// type-checked, so it sees the types under any name: core/runconfig's own, or a local alias. The engine's types are the struct types core/runconfig
 // declares whose names end in Config or Tier.
 func TestNoEngineConfigValuesOutsideTheBuildSite(t *testing.T) {
 	findings, scanned := engineConfigValuesIn(t, ".", "github.com/inference-sim/inference-sim/cmd")
@@ -194,13 +194,13 @@ func TestNoEngineConfigValuesOutsideTheBuildSite(t *testing.T) {
 }
 
 const (
-	compatEnginePath = "github.com/inference-sim/blis-vllm/compat/engine"
+	compatEnginePath = "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 	cmdPath          = "github.com/inference-sim/inference-sim/cmd"
 )
 
-// isEngineConfigType reports whether typ is a struct type compat/engine declares whose name ends
+// isEngineConfigType reports whether typ is a struct type core/runconfig declares whose name ends
 // in Config or Tier (KVOffloadConfig, KVOffloadTier, SimConfig, ...), or the build site's per-pool
-// engine settings (cmd's poolOverrides), which it fills from blis-vllm's resolution of each pool
+// engine settings (cmd's poolOverrides), which it fills from the vLLM engine's resolution of each pool
 // (build.PoolSettingsOf).
 func isEngineConfigType(typ types.Type) bool {
 	n, ok := types.Unalias(typ).(*types.Named)
@@ -217,12 +217,12 @@ func isEngineConfigType(typ types.Type) bool {
 	return strings.HasSuffix(name, "Config") || strings.HasSuffix(name, "Tier")
 }
 
-// kernelModelPath is blis-vllm's kernel adapter, whose Model resolves a pool's engine.
-const kernelModelPath = "github.com/inference-sim/blis-vllm/compat/kernelmodel"
+// kernelModelPath is the vLLM engine's kernel adapter, whose Model resolves a pool's engine.
+const kernelModelPath = "github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 
 // kernelModelResolvers are the kernel model's methods that resolve a pool's engine settings or
-// reach the kernel that prices them (Kernel): the build site calls them, through blis-vllm
-// compat/build, and nothing else in cmd does.
+// reach the kernel that prices them (Kernel): the build site calls them, through the vLLM engine
+// core/build, and nothing else in cmd does.
 var kernelModelResolvers = map[string]bool{"Settings": true, "SettingsReserving": true, "PrefixHit": true, "Engine": true, "Kernel": true}
 
 // isNamed reports whether typ is, or points to, the named type pkg.name.
@@ -257,7 +257,7 @@ func isKernelModel(typ types.Type) bool { return isNamed(typ, kernelModelPath, "
 
 // kernelPath is blis-schemas' kernel contract, whose Kernel prices a pool's batches, blocks and
 // transfers.
-const kernelPath = "github.com/inference-sim/blis-substrate/contracts/kernel"
+const kernelPath = "github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
 // engineConfigValuesIn type-checks the non-test Go files of dir as package path (dependencies from
 // the build's export data) and lists, as "file:line: what", each composite literal of an engine
@@ -302,7 +302,7 @@ func engineConfigValuesInWith(t *testing.T, dir, path, depsDir string) ([]string
 			switch x := n.(type) {
 			case *ast.AssignStmt:
 				// A write to a field of an engine configuration value (cfg.PerBlockBytes = ...):
-				// the value is the engine's, set by blis-vllm compat/build through the build site.
+				// the value is the engine's, set by the engine's core/build through the build site.
 				for _, lhs := range x.Lhs {
 					sel, ok := lhs.(*ast.SelectorExpr)
 					if !ok {
@@ -372,7 +372,7 @@ func exportImporter(t *testing.T, fset *token.FileSet, dir string) types.Importe
 	})
 }
 
-// The value check sees each form: a literal through sim's alias, through compat/engine itself, a
+// The value check sees each form: a literal through sim's alias, through core/runconfig itself, a
 // nested tier literal, a pointer literal, a Validate call through a local alias, a chunk check
 // through a pointer, a field write, the kernel model's resolvers and its kernel, a kernel pricing
 // call, and a Settings field read. A literal of another package's type with the same name, an
@@ -380,10 +380,10 @@ func exportImporter(t *testing.T, fset *token.FileSet, dir string) types.Importe
 func TestEngineConfigValueCheckCatchesEachForm(t *testing.T) {
 	dir := t.TempDir()
 	cases := map[string]string{
-		"a literal of the engine's":       `func f() engine.FrontendConfig { return engine.FrontendConfig{RendererNumWorkers: 1} }`,
-		"a literal through compat/engine": `func f() engine.KVOffloadConfig { return engine.KVOffloadConfig{Enabled: true} }`,
-		"a nested tier literal":           `func f() []engine.KVOffloadTier { return []engine.KVOffloadTier{{Type: "fs"}} }`,
-		"a pointer literal":               `func f() *engine.FrontendConfig { return &engine.FrontendConfig{APIServerCount: 2} }`,
+		"a literal of the engine's":        `func f() engine.FrontendConfig { return engine.FrontendConfig{RendererNumWorkers: 1} }`,
+		"a literal through core/runconfig": `func f() engine.KVOffloadConfig { return engine.KVOffloadConfig{Enabled: true} }`,
+		"a nested tier literal":            `func f() []engine.KVOffloadTier { return []engine.KVOffloadTier{{Type: "fs"}} }`,
+		"a pointer literal":                `func f() *engine.FrontendConfig { return &engine.FrontendConfig{APIServerCount: 2} }`,
 		"a Validate through a local alias": `type fc = engine.FrontendConfig
 func f(c fc) error { return c.Validate() }`,
 		"a kernel model's settings":       `func f(m *kernelmodel.Model) error { _, err := m.Settings(); return err }`,
@@ -407,7 +407,7 @@ func f() FrontendConfig { return FrontendConfig{N: 1} }`,
 		if err := os.MkdirAll(pkgDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		src := "package probe\n\nimport (\n\t\"github.com/inference-sim/blis-substrate/contracts/kernel\"\n\t\"github.com/inference-sim/blis-vllm/compat/engine\"\n\t\"github.com/inference-sim/blis-vllm/compat/kernelmodel\"\n\t\"github.com/inference-sim/inference-sim/sim\"\n\t\"github.com/inference-sim/inference-sim/sim/cluster\"\n)\n\nvar (\n\t_ = kernel.Placement{}\n\t_ = engine.ReplicaAPIServers\n\t_ = kernelmodel.Open\n\t_ = sim.EngineDriverConfig{}\n\t_ = cluster.NewSliceRequestSource\n)\n\n" + body + "\n"
+		src := "package probe\n\nimport (\n\t\"github.com/inference-sim/inference-sim/substrate/contracts/kernel\"\n\tengine \"github.com/inference-sim/inference-sim/engines/vllm/core/runconfig\"\n\t\"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel\"\n\t\"github.com/inference-sim/inference-sim/sim\"\n\t\"github.com/inference-sim/inference-sim/sim/cluster\"\n)\n\nvar (\n\t_ = kernel.Placement{}\n\t_ = engine.ReplicaAPIServers\n\t_ = kernelmodel.Open\n\t_ = sim.EngineDriverConfig{}\n\t_ = cluster.NewSliceRequestSource\n)\n\n" + body + "\n"
 		if err := os.WriteFile(filepath.Join(pkgDir, "probe.go"), []byte(src), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -427,10 +427,10 @@ func f() FrontendConfig { return FrontendConfig{N: 1} }`,
 	}
 }
 
-// engineSettingGlobals are the run's engine settings the build site adopts from blis-vllm's
+// engineSettingGlobals are the run's engine settings the build site adopts from the vLLM engine's
 // resolution of the first pool (adoptFirstPoolEngine, applyKernelLoRAReservation): the caps,
-// pages and window the kernel priced. blis-vllm checks each when it resolves it (vLLM's own
-// bounds, e.g. max_num_seqs >= 1, vllm/config/scheduler.py:48@5df63a72; compat/kernelmodel
+// pages and window the kernel priced. the vLLM engine checks each when it resolves it (vLLM's own
+// bounds, e.g. max_num_seqs >= 1, vllm/config/scheduler.py:48@5df63a72; core/kernelmodel
 // Model.Engine), so cmd neither checks nor compares them.
 var engineSettingGlobals = map[string]bool{
 	"totalKVBlocks": true, "blockSizeTokens": true, "maxNumSeqs": true, "maxNumBatchedTokens": true,
@@ -439,7 +439,7 @@ var engineSettingGlobals = map[string]bool{
 }
 
 // engineSettingFields are the same settings as fields of the records cmd carries them in (the
-// DP placement's dpPlacementDeployment, blis-vllm's build.FirstPoolSettings): a comparison on
+// DP placement's dpPlacementDeployment, the vLLM engine's build.FirstPoolSettings): a comparison on
 // x.TotalKVBlocks is the same copy of the engine's check as one on totalKVBlocks.
 var engineSettingFields = map[string]bool{
 	"TotalKVBlocks": true, "BlockSize": true, "BlockSizeTokens": true, "MaxNumSeqs": true,
@@ -511,7 +511,7 @@ func engineSettingComparisonsIn(t *testing.T, dir string) ([]string, int) {
 }
 
 // cmd keeps no copy of the engine's checks of the settings the build site adopts: a bound such as
-// max_num_seqs > 0 is vLLM's (ge=1), and blis-vllm applies it when it resolves the pool, before
+// max_num_seqs > 0 is vLLM's (ge=1), and the vLLM engine applies it when it resolves the pool, before
 // the build site assigns the value. A comparison on one of those globals in cmd is such a copy,
 // in any file (the build site only assigns them).
 func TestCmdChecksNoEngineSettingTheBuildSiteAdopts(t *testing.T) {
@@ -520,8 +520,8 @@ func TestCmdChecksNoEngineSettingTheBuildSiteAdopts(t *testing.T) {
 		t.Fatalf("non-vacuity: only %d production files scanned", scanned)
 	}
 	if len(findings) > 0 {
-		t.Errorf("cmd compares engine settings blis-vllm resolves and checks (move the check into blis-vllm "+
-			"compat/build, or drop it if the engine already refuses the value):\n  %s", strings.Join(findings, "\n  "))
+		t.Errorf("cmd compares engine settings the vLLM engine resolves and checks (move the check into the vLLM engine "+
+			"core/build, or drop it if the engine already refuses the value):\n  %s", strings.Join(findings, "\n  "))
 	}
 }
 

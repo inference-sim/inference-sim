@@ -1,31 +1,29 @@
 // Original to blis-vllm.
 
-// Package substratedata locates the catalog/ and registry/ directories of the blis-substrate
-// module go.mod pins, as the go command resolves it (go list -m), in the module cache and never
-// in a sibling checkout. BLIS_CATALOG and BLIS_REGISTRY override each directory.
+// Package substratedata locates the substrate/catalog and substrate/registry directories of this
+// repository, for the kernel tests that load single documents by path and edit them, which a
+// shared loader Data cannot hand out. BLIS_CATALOG and BLIS_REGISTRY override each directory.
 //
-// Runs and most tests read the data through blis-substrate's loader (load.Embedded, or
-// load.Open with these directories). This package is for the kernel tests that load single
-// documents by path and edit them, which a shared loader Data cannot hand out.
+// Runs and most tests read the data through the substrate's loader (load.Embedded, or load.Open
+// with these directories).
 package substratedata
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 )
 
-// Module is the module path of the substrate whose data this package locates.
-const Module = "github.com/inference-sim/blis-substrate"
+// Module is the import path of the substrate packages, whose directory holds the data.
+const Module = "github.com/inference-sim/inference-sim/substrate"
 
 const (
 	catalogEnv  = "BLIS_CATALOG"
 	registryEnv = "BLIS_REGISTRY"
+
+	simulatorModule = "module github.com/inference-sim/inference-sim"
 )
 
 var (
@@ -34,94 +32,40 @@ var (
 	dirErr error
 )
 
-// Dir is the on-disk directory of the blis-substrate module this module's go.mod requires, as
-// `go list -m` reports it from the working directory. locate runs the go command with the
-// workspace off (GOWORK=off) and the module graph read from go.mod alone, and refuses a result
-// whose version is not the one go.mod requires, so a test always gets blis-vllm's own pin, whatever
-// a go.work or a parent module selects. The simulator's tests that need its own selection do not
-// call this package.
+// Dir is the substrate/ directory of the repository the caller runs in. A test runs in its
+// package directory, inside the one module, so it is found by walking up to the go.mod that
+// declares the module.
 func Dir() (string, error) {
 	once.Do(func() { dir, dirErr = locate("") })
 	return dir, dirErr
 }
 
-// goEnv is the environment the go command runs in here: the caller's, with the workspace off
-// and the module graph read from go.mod alone (X25). A go.work above the checkout, GOWORK or
-// GOFLAGS would otherwise change which blis-substrate go list reports, and a sibling checkout
-// would pass for the pinned release.
-func goEnv() []string {
-	return append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod")
-}
-
-// goOutput runs the go command in wd (the working directory when empty) under goEnv.
-func goOutput(wd string, args ...string) (string, error) {
-	cmd := exec.Command("go", args...)
-	cmd.Dir = wd
-	cmd.Env = goEnv()
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("go %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-// locate is Dir for the module found from wd. It refuses a result whose version is not the one
-// go.mod requires, or whose directory is outside the module cache.
+// locate is Dir for the module found from wd (the working directory when empty).
 func locate(wd string) (string, error) {
-	listed, err := goOutput(wd, "list", "-m", "-f", "{{.Version}}\t{{.Dir}}", Module)
-	if err != nil {
-		return "", err
-	}
-	version, d, _ := strings.Cut(listed, "\t")
-	if d == "" {
-		return "", fmt.Errorf("go list -m %s reports no directory; run `go mod download`", Module)
-	}
-	edit, err := goOutput(wd, "mod", "edit", "-json")
-	if err != nil {
-		return "", err
-	}
-	var mod struct {
-		Require []struct{ Path, Version string }
-	}
-	if err := json.Unmarshal([]byte(edit), &mod); err != nil {
-		return "", fmt.Errorf("reading go.mod: %w", err)
-	}
-	want := ""
-	for _, r := range mod.Require {
-		if r.Path == Module {
-			want = r.Version
+	if wd == "" {
+		var err error
+		if wd, err = os.Getwd(); err != nil {
+			return "", err
 		}
 	}
-	if want == "" || version != want {
-		return "", fmt.Errorf("go list -m %s reports version %q, but go.mod requires %q", Module, version, want)
-	}
-	cache, err := goOutput(wd, "env", "GOMODCACHE")
-	if err != nil {
-		return "", err
-	}
-	real := func(p string) string {
-		if r, err := filepath.EvalSymlinks(p); err == nil {
-			return r
+	for d := wd; ; d = filepath.Dir(d) {
+		if b, err := os.ReadFile(filepath.Join(d, "go.mod")); err == nil && strings.HasPrefix(strings.TrimSpace(string(b)), simulatorModule) {
+			return filepath.Join(d, "substrate"), nil
 		}
-		return p
+		if filepath.Dir(d) == d {
+			return "", fmt.Errorf("no go.mod declaring %s above %s", strings.TrimPrefix(simulatorModule, "module "), wd)
+		}
 	}
-	if rel, err := filepath.Rel(real(cache), real(d)); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("go list -m %s reports %s, which is outside the module cache %s: a replace directive or a sibling checkout is not the pinned release", Module, d, cache)
-	}
-	return d, nil
 }
 
-// Catalog is the catalog root: BLIS_CATALOG when set, else the pinned substrate's catalog/.
+// Catalog is the catalog root: BLIS_CATALOG when set, else substrate/catalog.
 func Catalog() (string, error) { return root(catalogEnv, "catalog") }
 
-// Registry is the registry root: BLIS_REGISTRY when set, else the pinned substrate's
-// registry/.
+// Registry is the registry root: BLIS_REGISTRY when set, else substrate/registry.
 func Registry() (string, error) { return root(registryEnv, "registry") }
 
-// InModule reports whether path lies under the selected substrate module's directory: the
-// data a release carries, which is never optional, as an override may be.
+// InModule reports whether path lies under the substrate directory: the data the repository
+// carries, which is never optional, as an override may be.
 func InModule(path string) bool {
 	d, err := Dir()
 	if err != nil {

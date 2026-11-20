@@ -22,7 +22,7 @@
 //   - sim/llmd/: the embedded llm-d router, which makes every admission, routing and
 //     flow-control decision
 //
-// The engine's KV store and adapter registry register their constructors when blis-vllm's
+// The engine's KV store and adapter registry register their constructors when the vLLM engine's
 // compat/kv and compat/lora are linked (NewKVStoreFromConfig); inference-sim links them at its
 // one build site, cmd/engine_build.go. The latency model is not registered: the caller builds
 // it and passes it in (SimConfig.LatencyModel).

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // group builds a data-parallel group of four ranks with the load-balancing keys in extra.

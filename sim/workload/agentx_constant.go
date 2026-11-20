@@ -10,7 +10,7 @@ import (
 )
 
 // This file is the constant-load mode of AgentXReplay: aiperf 0.12.0 run without --scenario
-// over a Weka agentic corpus (blis-substrate contracts/spec/workload ConstantLoad,
+// over a Weka agentic corpus (the substrate contracts/spec/workload ConstantLoad,
 // inference-sim#2124). The harness then runs PhaseType.CONCURRENCY through RequestRateStrategy
 // (timing/config.py:47; timing/strategies/request_rate.py), not the agentic strategy, so:
 //

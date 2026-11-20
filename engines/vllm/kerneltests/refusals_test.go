@@ -3,11 +3,11 @@
 package latencykernel_test
 
 import (
-	. "github.com/inference-sim/blis-substrate/kernel"
+	. "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 )
 
 // WHAT THE KERNEL DOES NOT PRICE, IT REFUSES. Each case is a deployment that either does not

@@ -38,7 +38,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
+	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
 )
 
 // This repository's own name, for the files render writes.
@@ -189,7 +189,7 @@ func checkCopy(reg *invariants.Registry, repo, agentsPath, templatePath string, 
 		}
 		got, ok := extract(string(raw))
 		if !ok || got != c.want {
-			fmt.Fprintf(stderr, "%s: the generated block does not match the registry at this substrate version; regenerate it with go run github.com/inference-sim/blis-substrate/tools/invariants\n", c.path)
+			_, _ = fmt.Fprintf(stderr, "%s: the generated block does not match the registry; regenerate it with go run ./substrate/tools/invariants\n", c.path)
 			bad = true
 		}
 	}

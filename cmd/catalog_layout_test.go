@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 )
 
 // requireCompletedRequests fails unless stdout is one Result that completed at least one

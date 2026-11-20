@@ -3,7 +3,7 @@ package engine
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 )
 
 // Peered is implemented by an engine that exchanges control messages with peer engines, such

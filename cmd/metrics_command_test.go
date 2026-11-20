@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/substrate/contracts/metrics"
 )
 
 // `metrics --json` prints the registry exactly: the same identifiers in the same order, and for

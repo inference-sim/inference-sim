@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
 	"sigs.k8s.io/yaml"
 
@@ -168,6 +168,7 @@ schedulingProfiles:
 // TestPrecisePrefix_IndexFollowsTheEnginesCache: every block an engine still caches at the end of a
 // run with no event delay is in the router's index for that pod, and nothing else is.
 func TestPrecisePrefix_IndexFollowsTheEnginesCache(t *testing.T) {
+	skipRetiredEngine(t, "the engine does not list its cached block hashes")
 	dep := testDeployment(2)
 	editEngine(&dep, func(c *cengine.SimConfig) { c.KVCacheConfig = cengine.NewKVCacheConfig(200, 16, 0, 0, 0, 0) })
 	run := runPrecise(t, dep, prefixGroups(6, 5, 128, 15000), preciseConfig(""), Options{})
@@ -329,6 +330,7 @@ func TestPrecisePrefix_PerfHelmConfig(t *testing.T) {
 // offload chain), the router's index holds, per pod and per tier, exactly the blocks the engine
 // holds there: its GPU prefix cache, and the blocks ready on its CPU tier.
 func TestPrecisePrefix_IndexFollowsEveryTier(t *testing.T) {
+	skipRetiredEngine(t, "the engine does not list its cached block hashes")
 	offload := cengine.KVOffloadConfig{
 		Enabled: true, CPUBytesToUse: 300 * 1000, PerBlockBytes: 1000,
 		BlockSize: 16, BlocksPerChunk: 1, TokensPerHash: 16, EvictionPolicy: "lru", OffloadPromptOnly: true,
@@ -407,6 +409,7 @@ func TestPrecisePrefix_CachedBlockSurvivesCanonicalizerChurn(t *testing.T) {
 // matching request still matches it; after it arrives, one no longer does. The probes are too
 // long ever to fit the engine's cache, so they are routed and then dropped, caching nothing.
 func TestPrecisePrefix_DelayedRemovalKeepsTheRouterKey(t *testing.T) {
+	skipRetiredEngine(t, "the engine does not list its cached block hashes")
 	const delay = 1_000_000
 	group := prefixGroups(1, 1, 256, 0)
 	reqs := []*sim.Request{group[0]}
@@ -477,6 +480,7 @@ func TestPrecisePrefix_DelayedRemovalKeepsTheRouterKey(t *testing.T) {
 // tiers hold it; when it does not, the router indexes nothing on the tier and never a block the
 // engine does not hold.
 func TestPrecisePrefix_IndexFollowsAFilesystemTier(t *testing.T) {
+	skipRetiredEngine(t, "the engine does not list its cached block hashes")
 	for _, events := range []bool{true, false} {
 		t.Run(fmt.Sprintf("enable_kv_events=%v", events), func(t *testing.T) {
 			off := cengine.KVOffloadConfig{

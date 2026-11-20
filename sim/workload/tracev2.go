@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/check"
@@ -17,7 +17,7 @@ import (
 )
 
 // TraceVersion is the trace format this build reads and writes: version 4, the format
-// blis-substrate's contracts/spec/trace defines. A trace of another version is refused; a
+// substrate/contracts/spec/trace defines. A trace of another version is refused; a
 // version 3 trace is converted with `blis convert trace` (ConvertTraceV3).
 const TraceVersion = trace.Version
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
 )
 
 // A proven_inert field names a proof file, oracle/inertness/<field>.json; the file is for that

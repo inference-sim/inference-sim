@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/spec/kernelimpls"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/kernelimpls"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // prefillRow is one published trtllm-gen-style prefill build.

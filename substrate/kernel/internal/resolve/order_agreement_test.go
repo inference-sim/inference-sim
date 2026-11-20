@@ -3,9 +3,9 @@ package resolve
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
-	"github.com/inference-sim/blis-substrate/validate/dataset"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/validate/dataset"
 )
 
 // VAL-4 and X15: the registry validator and the cost model's lookup agree on precedence.

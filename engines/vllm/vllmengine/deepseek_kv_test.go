@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
-	"github.com/inference-sim/blis-vllm/core/kv"
-	vllm "github.com/inference-sim/blis-vllm/core/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
+	vllm "github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
 )
 
 // DeepSeek V4's and V4.1's KV cache layers, mapped from the catalog's model graph, group as vLLM

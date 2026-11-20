@@ -4,9 +4,9 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-substrate/kernel/internal/price"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/price"
 )
 
 // Per-layer caches, as a graph states them (blis-schemas model.Cache), checked through

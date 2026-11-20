@@ -28,7 +28,7 @@ var Copies = []Copy{
 }
 
 // Command is how an engine repository regenerates its copies.
-const Command = "go run github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles"
+const Command = "go run github.com/inference-sim/inference-sim/substrate/contracts/harness/cmd/harnessfiles"
 
 // Content is the copy's bytes: a line saying it is generated, then the source.
 func (c Copy) Content() ([]byte, error) {

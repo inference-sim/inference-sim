@@ -1,6 +1,6 @@
 package workload
 
-import "github.com/inference-sim/blis-substrate/contracts/spec/trace"
+import "github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
 
 // NormalizedRound is one LLM call in a captured agentic session, in the
 // source-agnostic form the shared TraceV2 encoder consumes. Per-format readers

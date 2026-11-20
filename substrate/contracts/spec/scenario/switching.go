@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 // Rule names for the ways a cluster's switch groups can be wrong. Each is the Rule of the

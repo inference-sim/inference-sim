@@ -5,7 +5,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -28,7 +28,7 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 	// pool's kernel is its role's latency model, rolesOf). The engine runs NIXL as that pool's
 	// kv_role, and the cluster drives the handoffs through the contract (sim.EngineDriver's
 	// AddRemote, LandRemote and ReleaseHandoff). A shared prefill-decode pod has no pool of its
-	// own, which blis-vllm's OpenPools refuses already. A data-parallel deployment is one
+	// own, which the vLLM engine's OpenPools refuses already. A data-parallel deployment is one
 	// instance whose engine is the whole DP group, its ranks, waves and balancer the engine's.
 	poolOf := kernelPDOpened.poolOfInstance()
 	// The DP group is vLLM's internal balancer, one endpoint routing to its ranks. Under the
@@ -139,7 +139,7 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 	}
 }
 
-// reportAssumptions writes an engine's disclosed assumptions (for blis-vllm's engine, that the
+// reportAssumptions writes an engine's disclosed assumptions (for the vLLM engine's engine, that the
 // latency kernel's 0.31.0 tuning prices 0.32.0) to stderr once.
 func reportAssumptions(eng engine.Engine) {
 	if assumptionsReported {

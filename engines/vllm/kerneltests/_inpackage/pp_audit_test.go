@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	schemas "github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	schemas "github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-substrate/kernel/internal/price"
-	"github.com/inference-sim/blis-vllm/core/vllmsettings"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/price"
 )
 
 // The pipeline-parallel fixes, read through the kernel's own state: each test builds a pool

@@ -5,14 +5,14 @@ package kernelmodel
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
-	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/routing"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/workload"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
+	"github.com/inference-sim/inference-sim/substrate/load"
 
-	sim "github.com/inference-sim/blis-vllm/core/runconfig"
+	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 )
 
 // Expert-parallel routing imbalance is resolved here, per pool, by blis-schemas'

@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 
-	blisschemas "github.com/inference-sim/blis-substrate/contracts"
+	blisschemas "github.com/inference-sim/inference-sim/substrate/contracts"
 
-	"github.com/inference-sim/blis-vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 )
 
 // The goldens under testdata/scenariovariant are the bytes inference-sim's harness wrote for these

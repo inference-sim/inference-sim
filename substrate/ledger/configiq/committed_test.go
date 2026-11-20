@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/ledger"
-	"github.com/inference-sim/blis-substrate/ledger/configiq"
-	"github.com/inference-sim/blis-substrate/ledger/inferencex"
+	"github.com/inference-sim/inference-sim/substrate/ledger"
+	"github.com/inference-sim/inference-sim/substrate/ledger/configiq"
+	"github.com/inference-sim/inference-sim/substrate/ledger/inferencex"
 )
 
 var roleKeys = map[string]ledger.RoleKeyFunc{

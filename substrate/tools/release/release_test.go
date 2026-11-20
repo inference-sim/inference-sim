@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
-	"github.com/inference-sim/blis-substrate/ledger"
+	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
+	"github.com/inference-sim/inference-sim/substrate/ledger"
 )
 
 // repo is a local git repository for a test.
@@ -725,7 +725,7 @@ func TestRealModlintRefusesABLISReplaceInAStagedTip(t *testing.T) {
 		t.Skip("builds modlint")
 	}
 	bin := filepath.Join(t.TempDir(), "modlint")
-	if out, err := exec.Command("go", "build", "-o", bin, "github.com/inference-sim/blis-substrate/tools/modlint").CombinedOutput(); err != nil {
+	if out, err := exec.Command("go", "build", "-o", bin, "github.com/inference-sim/inference-sim/substrate/tools/modlint").CombinedOutput(); err != nil {
 		t.Fatalf("build modlint: %v\n%s", err, out)
 	}
 	lower := t.TempDir()
@@ -745,7 +745,7 @@ func TestRealModlintRefusesABLISReplaceInAStagedTip(t *testing.T) {
 	e := env(t, nil)
 	e.Lint = func(dir string) ([]string, error) { return runModlint(bin, dir) }
 	sub := newRepo(t, mod)
-	sub.write("contracts/toolchain", "go1.27.2\n")
+	sub.write("substrate/contracts/toolchain", "go1.27.2\n")
 	sub.commit("Add the toolchain file")
 	sub.git("tag", "v0.11.0")
 	h := sub.branch("b", "core/a.go", "package core\n", "Change")
@@ -761,7 +761,7 @@ func TestRealModlintRefusesABLISReplaceInAStagedTip(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = Tag(e, l, steps, "", false)
-	if err == nil || !strings.Contains(err.Error(), "is replaced by") {
+	if err == nil || !strings.Contains(err.Error(), "only inference-sim may carry a replace") {
 		t.Fatalf("Tag = %v; want the replace finding", err)
 	}
 }

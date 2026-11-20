@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	blisvllm "github.com/inference-sim/blis-vllm"
+	blisvllm "github.com/inference-sim/inference-sim/engines/vllm"
 )
 
 // FID-5 (design §7.6): the offload framework's interfaces, OffloadingManager, OffloadingSpec and the

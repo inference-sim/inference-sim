@@ -5,8 +5,8 @@ package vllmengine
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // A model with recurrent layers (Nemotron-3-Ultra's Mamba-2, Kimi-K3's KDA) builds, sizes its KV

@@ -1,29 +1,23 @@
 // Package substratedata locates the catalog and registry that this module's tests and offline
-// tools read: the catalog/ and registry/ directories of the blis-substrate module that this
-// build selects, as the go command resolves it (go list -m), in the module cache and never in
-// a sibling checkout.
-//
-// It replaces the copies this repository vendored under testdata/catalog and
-// testdata/registry, and the lock files that pinned them. The substrate release carries its
-// own data (design §3.3), so go.mod's substrate requirement is the one place that says which
-// data the tests read.
+// tools read: the substrate/catalog and substrate/registry directories of this repository.
 //
 // A run does not use this package. It reads the data a run names with --catalog and
-// --registry; the tests pass these directories as those flags.
+// --registry, or the copy embedded in the binary; the tests pass these directories as those
+// flags.
 package substratedata
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"os/exec"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 )
 
-// Module is the module path of the substrate whose data this package locates.
-const Module = "github.com/inference-sim/blis-substrate"
+// Module is the import path of the substrate packages in this repository.
+const Module = "github.com/inference-sim/inference-sim/substrate"
+
+const simulatorModule = "module github.com/inference-sim/inference-sim"
 
 var (
 	once   sync.Once
@@ -31,53 +25,33 @@ var (
 	dirErr error
 )
 
-// Dir is the on-disk directory of the blis-substrate module this build selects. It runs
-// `go mod download -json` on the selected version, which downloads the module when the cache
-// does not hold it, so a test needs no earlier `go mod download` (X25: the module go.mod
-// selects is the test's declared input). A test runs in its package directory, inside this
-// module, so the version is this module's selection.
+// Dir is the substrate/ directory of the repository the caller runs in. A test runs in its
+// package directory, inside this module, so it is found by walking up to the go.mod that
+// declares the simulator's module.
 func Dir() (string, error) {
-	once.Do(func() { dir, dirErr = download() })
+	once.Do(func() { dir, dirErr = find() })
 	return dir, dirErr
 }
 
-func download() (string, error) {
-	version, err := goOutput("list", "-m", "-f", "{{.Version}}", Module)
+func find() (string, error) {
+	wd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	if version == "" {
-		return "", fmt.Errorf("go list -m %s reports no version: this module does not require it", Module)
+	for d := wd; ; d = filepath.Dir(d) {
+		if b, err := os.ReadFile(filepath.Join(d, "go.mod")); err == nil && strings.HasPrefix(strings.TrimSpace(string(b)), simulatorModule) {
+			return filepath.Join(d, "substrate"), nil
+		}
+		if filepath.Dir(d) == d {
+			return "", fmt.Errorf("no go.mod declaring %s above %s", strings.TrimPrefix(simulatorModule, "module "), wd)
+		}
 	}
-	out, err := goOutput("mod", "download", "-json", Module+"@"+version)
-	if err != nil {
-		return "", err
-	}
-	var d struct{ Dir, Error string }
-	if err := json.Unmarshal([]byte(out), &d); err != nil {
-		return "", fmt.Errorf("go mod download -json %s@%s: %w", Module, version, err)
-	}
-	if d.Error != "" || d.Dir == "" {
-		return "", fmt.Errorf("go mod download %s@%s: no directory (%s)", Module, version, d.Error)
-	}
-	return d.Dir, nil
 }
 
-func goOutput(args ...string) (string, error) {
-	cmd := exec.Command("go", args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("go %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-// Catalog is the selected substrate's catalog/ directory.
+// Catalog is the substrate/catalog directory.
 func Catalog() (string, error) { return sub("catalog") }
 
-// Registry is the selected substrate's registry/ directory.
+// Registry is the substrate/registry directory.
 func Registry() (string, error) { return sub("registry") }
 
 func sub(name string) (string, error) {
@@ -89,7 +63,7 @@ func sub(name string) (string, error) {
 }
 
 // MustCatalog is Catalog for a flag default or a test helper, where there is no caller to
-// return an error to. It panics with the go command's error.
+// return an error to. It panics with the lookup's error.
 func MustCatalog() string { return must(Catalog()) }
 
 // MustRegistry is Registry, panicking as MustCatalog does.

@@ -9,7 +9,7 @@ package sched
 import (
 	"sort"
 
-	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 )
 
 // Connector is the scheduler side of a KV connector (KVConnectorBase_V1's scheduler-role

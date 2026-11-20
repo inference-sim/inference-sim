@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
 )
 
 // fields/stand_in_vectors.json is the truth table of the stand-ins, whose rows come from vLLM's own

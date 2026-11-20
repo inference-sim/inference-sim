@@ -13,8 +13,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-vllm/core/lora"
-	"github.com/inference-sim/blis-vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/lora"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // loraConfigFile is the on-disk shape of a --lora-config YAML file: a single top-level lora:

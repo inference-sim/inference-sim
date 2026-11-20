@@ -5,10 +5,10 @@ package sglang
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
-	"github.com/inference-sim/blis-sglang/core/cache"
-	"github.com/inference-sim/blis-sglang/core/sched"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/sched"
 )
 
 // SchedArgs are the resolved ServerArgs the scheduler reads, by SGLang's names

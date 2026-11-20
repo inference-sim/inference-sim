@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/spec/kernelimpls"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/kernelimpls"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 )
 
 // Unselected is a registry entry that meets neither condition of design VAL-8: no lookup on the

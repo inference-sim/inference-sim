@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 )
 
 // A disaggregated request that asks for one output token completes with that token and its

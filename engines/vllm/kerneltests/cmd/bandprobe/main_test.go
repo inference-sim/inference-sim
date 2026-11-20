@@ -5,9 +5,9 @@ package main
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
-	"github.com/inference-sim/blis-vllm/kerneltests/internal/harness"
+	"github.com/inference-sim/inference-sim/engines/vllm/kerneltests/internal/harness"
 )
 
 // TestDecodeShapeMatchesTheHarness pins this command's batch construction against

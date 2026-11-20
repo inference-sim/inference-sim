@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/ledger"
-	"github.com/inference-sim/blis-substrate/ledger/configiq"
+	"github.com/inference-sim/inference-sim/substrate/ledger"
+	"github.com/inference-sim/inference-sim/substrate/ledger/configiq"
 )
 
 // row returns a synthetic exported row with every column. Identifying columns get plain

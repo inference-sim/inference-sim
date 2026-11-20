@@ -7,7 +7,7 @@ package cmd
 // report, to which each kernel that prices steps registers itself once (Kernel.RecordSelected),
 // so the Result reads extrapolation when it is built and recording is cumulative across kernels;
 // the second through result.ResolutionsOfPool. The engine registers its own pool's kernel when it
-// opens the pool over the run's Data (blis-vllm kernelmodel), once per engine instance, so this
+// opens the pool over the run's Data (the vLLM engine kernelmodel), once per engine instance, so this
 // file does not: it only labels each pool's resolutions (engineResolutions, in engine_build.go).
 
 // pooled is the run's opened pool models: the colocated pool, or the prefill and the decode

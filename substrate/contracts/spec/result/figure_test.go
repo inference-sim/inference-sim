@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/inference-sim/substrate/contracts/metrics"
 )
 
 // A figure of a Result states its scope, member, aggregate and scope ranged over (design 8.7,

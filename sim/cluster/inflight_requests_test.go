@@ -2,7 +2,7 @@ package cluster
 
 import (
 	"fmt"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"

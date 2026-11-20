@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 )
 
 // Kernel prices one instantiated deployment. Obtain one from a constructor that

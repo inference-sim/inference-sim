@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
 )
 
 // RunMap says which check runs prove each registry check (.github/check-runs.yaml): for a

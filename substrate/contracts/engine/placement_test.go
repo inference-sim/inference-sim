@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 )
 
 // bare is an engine with no placement support; placed records where it was put.

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 )
 
 // An engine block's kv_layers become the scheduler's KV cache groups, as vLLM groups them:

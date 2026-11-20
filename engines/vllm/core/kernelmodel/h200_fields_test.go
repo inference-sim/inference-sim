@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	sim "github.com/inference-sim/blis-vllm/core/runconfig"
+	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // The InferenceX DeepSeek-V4.1-Flash H200 rows (vLLM v0.33.0, agentic, DSpark) state three settings the

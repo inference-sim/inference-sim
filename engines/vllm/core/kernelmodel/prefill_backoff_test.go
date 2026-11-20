@@ -5,9 +5,9 @@ package kernelmodel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 )
 
 // NIXL's _prefill_backoff (nixl/base_scheduler.py:385-398 at v0.31.0): 1 for a Mamba-state

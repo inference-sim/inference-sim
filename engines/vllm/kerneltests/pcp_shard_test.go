@@ -3,16 +3,16 @@
 package latencykernel_test
 
 import (
-	. "github.com/inference-sim/blis-substrate/kernel"
+	. "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"math"
 	"path/filepath"
 	"testing"
 
-	schemas "github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	schemas "github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 )
 
 // Prefill-context parallelism splits a prefill sequence across ranks, and these pin that

@@ -3,14 +3,14 @@
 package latencykernel_test
 
 import (
-	. "github.com/inference-sim/blis-substrate/kernel"
+	. "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 )
 
 // THE CAPTURE CEILING FOLLOWS THE ENGINE'S DEFAULT, on every input that sets it. vLLM v0.31.0

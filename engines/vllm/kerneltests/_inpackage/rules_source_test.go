@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 
-	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
-	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve"
 )
 
 // opaqueRules is a release's rules behind the rules.EngineRules interface alone: every method

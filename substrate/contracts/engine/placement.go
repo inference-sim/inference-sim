@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 )
 
 // Placeable is implemented by an engine that can be told where its instance runs. The host owns

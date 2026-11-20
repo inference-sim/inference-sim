@@ -22,9 +22,9 @@ import (
 	"strings"
 	"sync"
 
-	substrate "github.com/inference-sim/blis-substrate"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/validate/dataset"
+	substrate "github.com/inference-sim/inference-sim/substrate"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/validate/dataset"
 )
 
 // Source says where a catalog or registry came from.

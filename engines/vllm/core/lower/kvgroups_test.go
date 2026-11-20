@@ -5,9 +5,9 @@ package lower
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 
-	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 )
 
 func layers(spec kv.LayerSpec, n, window int) []kv.Layer {

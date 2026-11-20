@@ -6,11 +6,11 @@
 package sglangengine
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
-	blissglang "github.com/inference-sim/blis-sglang"
-	"github.com/inference-sim/blis-sglang/core/sched"
-	"github.com/inference-sim/blis-sglang/core/sglang"
+	blissglang "github.com/inference-sim/inference-sim/engines/sglang"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/sched"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/sglang"
 )
 
 // Kind is the engine kind this package registers.

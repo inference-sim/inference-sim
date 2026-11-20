@@ -16,7 +16,7 @@ import (
 	"os"
 	"runtime"
 
-	blisvllm "github.com/inference-sim/blis-vllm"
+	blisvllm "github.com/inference-sim/inference-sim/engines/vllm"
 )
 
 // record is one run's Go-side provenance.

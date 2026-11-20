@@ -6,7 +6,7 @@
 // config by digest and leaves reading its bytes to the consumer that simulates it.
 package router
 
-import "github.com/inference-sim/blis-substrate/contracts/check"
+import "github.com/inference-sim/inference-sim/substrate/contracts/check"
 
 // Kind names how requests reach the engines.
 type Kind string

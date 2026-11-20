@@ -12,12 +12,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
 
-	blissglang "github.com/inference-sim/blis-sglang"
-	"github.com/inference-sim/blis-sglang/core/sched"
+	blissglang "github.com/inference-sim/inference-sim/engines/sglang"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/sched"
 )
 
 const (

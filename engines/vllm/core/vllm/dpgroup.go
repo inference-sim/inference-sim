@@ -11,15 +11,15 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/load"
 
-	core "github.com/inference-sim/blis-vllm/core/engine"
-	"github.com/inference-sim/blis-vllm/core/kv"
-	"github.com/inference-sim/blis-vllm/core/placement"
-	"github.com/inference-sim/blis-vllm/core/sched"
+	core "github.com/inference-sim/inference-sim/engines/vllm/core/engine"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/placement"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // DPGroup is a data-parallel group of vLLM v0.32.0 engine ranks behind one endpoint, through

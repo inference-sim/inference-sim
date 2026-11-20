@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 
-	"github.com/inference-sim/blis-vllm/core/connector/multi"
-	"github.com/inference-sim/blis-vllm/core/connector/nixl"
-	core "github.com/inference-sim/blis-vllm/core/engine"
-	"github.com/inference-sim/blis-vllm/core/kv"
-	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/multi"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/nixl"
+	core "github.com/inference-sim/inference-sim/engines/vllm/core/engine"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // P/D through engine.Engine, with vLLM's NIXL connector (core/connector/nixl) on the scheduler.

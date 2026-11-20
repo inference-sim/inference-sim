@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	validate "github.com/inference-sim/blis-substrate/contracts/check"
+	validate "github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 // File is one small input file the run read, held whole so the Result reproduces without it

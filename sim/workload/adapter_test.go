@@ -3,8 +3,8 @@ package workload
 import (
 	"testing"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
-	"github.com/inference-sim/blis-vllm/compat/lora"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/lora"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // adapterTestSpec builds a minimal single-client spec with the given adapter id.

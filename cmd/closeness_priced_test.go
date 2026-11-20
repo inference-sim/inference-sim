@@ -7,14 +7,14 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	specmodel "github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/contracts/units"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	vllmrules "github.com/inference-sim/blis-vllm/rules"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	vllmrules "github.com/inference-sim/inference-sim/engines/vllm/core/rulepack"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	specmodel "github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 )
 
 // The engine reports which implementation each lowered operation runs (plan.Operation.Impl); the

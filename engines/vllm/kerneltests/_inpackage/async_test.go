@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 )
 
 // withScheduler builds the fixture with async_scheduling as stated (nil leaves it to the

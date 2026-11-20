@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 )
 
 // Validate performs field-level validation of a coefficient set: the vocabulary

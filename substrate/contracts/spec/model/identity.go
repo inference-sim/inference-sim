@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 // Identity is a catalog model entry's identity manifest: the file blis-catalog commits

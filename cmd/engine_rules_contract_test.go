@@ -20,14 +20,14 @@ import (
 // rules.EngineRules (#2021 B4; PR BC-3). The test type-checks the pinned module's own source --
 // the versions go.mod names, not a copy -- so the claim is checked rather than taken on trust.
 //
-// The concrete pack type (blis-vllm's rules/pack.Pack since https://github.com/inference-sim/blis-schemas/issues/102 2c38342) and
-// blis-vllm's pack registry may appear in exactly one place: the adaptation that hands
-// blis-vllm/rules' lookup to the kernel's RulesFrom, which turns it into a function returning
+// The concrete pack type (the vLLM engine's rules/pack.Pack since https://github.com/inference-sim/blis-schemas/issues/102 2c38342) and
+// the vLLM engine's pack registry may appear in exactly one place: the adaptation that hands
+// engines/vllm/rules' lookup to the kernel's RulesFrom, which turns it into a function returning
 // rules.EngineRules, with the list of releases it answers for (allowedPackUses). Anywhere else,
 // any use of *pack.Pack is a finding: a
 // type assertion or type-switch case, a conversion, a parameter, result, field or variable of
 // that type, a field read or write on a pack, or an alias of the type. So is any call to the
-// global registry (blis-vllm/rules' Lookup, Packs and Versions), which looks a pack up instead of
+// global registry (engines/vllm/rules' Lookup, Packs and Versions), which looks a pack up instead of
 // taking the caller's.
 //
 // blis-schemas' Validate takes the caller's rules too (Bundle.Rules); with none it refuses the
@@ -42,29 +42,29 @@ func TestPinnedEngineReadsRulesOnlyThroughEngineRules(t *testing.T) {
 	}
 }
 
-// engineRulesScope is the code a blis run calls that sees engine rules: blis-vllm's build and
+// engineRulesScope is the code a blis run calls that sees engine rules: the vLLM engine's build and
 // kernel-adapter packages, and the latency kernel they hand the rules to.
 var engineRulesScope = []string{
-	"github.com/inference-sim/blis-vllm/compat/build",
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel",
-	"github.com/inference-sim/blis-substrate/kernel",
-	"github.com/inference-sim/blis-substrate/kernel/internal/resolve",
-	"github.com/inference-sim/blis-substrate/kernel/internal/price",
+	"github.com/inference-sim/inference-sim/engines/vllm/core/build",
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel",
+	"github.com/inference-sim/inference-sim/substrate/kernel",
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve",
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/price",
 }
 
-// allowedPackUses are the expressions that may name the concrete pack type or blis-vllm's pack
-// registry: the one adaptation of blis-vllm/rules' lookup into the interface (withEngineRules),
+// allowedPackUses are the expressions that may name the concrete pack type or the vLLM engine's pack
+// registry: the one adaptation of engines/vllm/rules' lookup into the interface (withEngineRules),
 // which is how the engine model's own rules reach the kernel, and the kernel's adapter itself.
 // Keyed by package and the expressions' source text.
 var allowedPackUses = map[string][]string{
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel": {"latencykernel.RulesFrom(vllmrules.Lookup)", "vllmrules.Versions"},
-	"github.com/inference-sim/blis-substrate/kernel":        {"RulesFrom"},
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel": {"latencykernel.RulesFrom(vllmrules.Lookup)", "vllmrules.Versions"},
+	"github.com/inference-sim/inference-sim/substrate/kernel":              {"RulesFrom"},
 }
 
 const (
-	vllmPackPath    = "github.com/inference-sim/blis-vllm/rules/pack"
-	vllmRulesPath   = "github.com/inference-sim/blis-vllm/rules"
-	schemasRootPath = "github.com/inference-sim/blis-substrate/contracts"
+	vllmPackPath    = "github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
+	vllmRulesPath   = "github.com/inference-sim/inference-sim/engines/vllm/core/rulepack"
+	schemasRootPath = "github.com/inference-sim/inference-sim/substrate/contracts"
 )
 
 // validatorsReadingRules are blis-schemas' root functions that apply a release's rules, which they
@@ -72,7 +72,7 @@ const (
 var validatorsReadingRules = map[string]bool{"Validate": true}
 
 // globalRegistry are the functions that look a pack up by version instead of taking the
-// caller's rules, in blis-vllm's packs module.
+// caller's rules, in the vLLM engine's packs module.
 var globalRegistry = map[string]bool{"Lookup": true, "Apply": true, "Register": true, "Versions": true, "Packs": true}
 
 // packFindings type-checks each package and lists every use of the concrete pack type and every
@@ -245,7 +245,7 @@ func bundleStatesRules(call *ast.CallExpr) bool {
 	return false
 }
 
-// isPackType reports whether typ is blis-vllm's pack.Pack (behind any aliases).
+// isPackType reports whether typ is the vLLM engine's pack.Pack (behind any aliases).
 func isPackType(typ types.Type) bool {
 	n, ok := types.Unalias(typ).(*types.Named)
 	return ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == vllmPackPath && n.Obj().Name() == "Pack"
@@ -284,19 +284,19 @@ func mentionsPack(typ types.Type) bool {
 // write, an alias, and the global registry. Each planted form, in a package that imports the
 // real pack and rules packages, is a finding; the interface-only form is none.
 func TestPackUseCheckCatchesEachForm(t *testing.T) {
-	// The registry forms import blis-vllm/rules, whose every export is the registry; the others
+	// The registry forms import engines/vllm/rules, whose every export is the registry; the others
 	// do not, so the clean probe imports nothing that is itself a finding.
 	header := func(registry bool) string {
 		imp := ""
 		if registry {
-			imp = "\tvllmrules \"github.com/inference-sim/blis-vllm/rules\"\n"
+			imp = "\tvllmrules \"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack\"\n"
 		}
 		return `package probe
 
 import (
-	blisschemas "github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/rules"
-` + imp + `	"github.com/inference-sim/blis-vllm/rules/pack"
+	blisschemas "github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+` + imp + `	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
 )
 
 var (
@@ -353,20 +353,20 @@ func okValidate(r rules.EngineRules) bool {
 	}
 }
 
-// The blis binary reaches blis-vllm through the build site alone (GOAL.md phase 2c): no other
-// package it links imports a blis-vllm package, and no other non-test file under sim/ or cmd/
+// The blis binary reaches the vLLM engine through the build site alone (GOAL.md phase 2c): no other
+// package it links imports a the vLLM engine package, and no other non-test file under sim/ or cmd/
 // does, linked or not. Every engine, the compatibility engine included, is built there and driven
 // through blis-schemas' engine.Engine contract; the host's types are its own. The offline
-// scoring tools, which open kernels through blis-vllm's adapter themselves, live under tools/.
+// scoring tools, which open kernels through the vLLM engine's adapter themselves, live under tools/.
 func TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite(t *testing.T) {
-	onlyThroughBuildSite(t, "github.com/inference-sim/blis-vllm", "cmd/engine_build.go")
+	onlyThroughBuildSite(t, "github.com/inference-sim/inference-sim/engines/vllm", "cmd/engine_build.go")
 }
 
-// The same rule for blis-sglang: the SGLang engine is built in cmd/sglang_engine.go, the file
+// The same rule for the SGLang engine: the SGLang engine is built in cmd/sglang_engine.go, the file
 // newContractEngine hands an sglang spec to, and no other package or file under sim/ or cmd/
-// imports a blis-sglang package.
+// imports a the SGLang engine package.
 func TestTheBinaryReachesBlisSGLangOnlyThroughTheBuildSite(t *testing.T) {
-	onlyThroughBuildSite(t, "github.com/inference-sim/blis-sglang", "cmd/sglang_engine.go")
+	onlyThroughBuildSite(t, "github.com/inference-sim/inference-sim/engines/sglang", "cmd/sglang_engine.go")
 }
 
 // onlyThroughBuildSite checks that no package the binary links, and no non-test file under sim/
@@ -387,6 +387,9 @@ func onlyThroughBuildSite(t *testing.T, module, site string) {
 			continue
 		}
 		linked++
+		if pkg == module || strings.HasPrefix(pkg, module+"/") {
+			continue // the engine's own packages import each other
+		}
 		for _, imp := range strings.Split(imports, ",") {
 			if strings.HasPrefix(imp, module) && !allowed[pkg] {
 				t.Errorf("%s imports %s; the binary reaches %s only through %s", pkg, imp, module, site)
@@ -440,11 +443,19 @@ func onlyThroughBuildSite(t *testing.T, module, site string) {
 	}
 }
 
-// inference-sim reaches blis-vllm's v0.33.0 engine only through blis-schemas' engine.Engine
-// contract (GOAL.md): no inference-sim package imports blis-vllm/core/... directly, the
+// inference-sim reaches the vLLM engine's v0.33.0 engine only through blis-schemas' engine.Engine
+// contract (GOAL.md): no inference-sim package imports engines/vllm/core/... directly, the
 // build site's registration package included only through its facade, and the host's driver
 // (sim/engine_driver.go) imports the contract's engine package and no engine implementation.
 func TestTheHostReachesTheV032EngineOnlyThroughTheContract(t *testing.T) {
+	// The engine's host-facing packages (what the copy called compat/*): the build entry, the
+	// kernel adapter and the settings types the host fills. Every other core/ package is the
+	// engine's own.
+	hostFacade := map[string]bool{
+		"github.com/inference-sim/inference-sim/engines/vllm/core/build":       true,
+		"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel": true,
+		"github.com/inference-sim/inference-sim/engines/vllm/core/runconfig":   true,
+	}
 	out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}|{{join .Imports \",\"}}", "..").Output()
 	if err != nil {
 		t.Fatalf("go list -deps: %v", err)
@@ -456,8 +467,11 @@ func TestTheHostReachesTheV032EngineOnlyThroughTheContract(t *testing.T) {
 			continue
 		}
 		checked++
+		if strings.HasPrefix(pkg, "github.com/inference-sim/inference-sim/engines/vllm/") {
+			continue // the engine's own packages import each other
+		}
 		for _, imp := range strings.Split(imports, ",") {
-			if strings.HasPrefix(imp, "github.com/inference-sim/blis-vllm/core") {
+			if strings.HasPrefix(imp, "github.com/inference-sim/inference-sim/engines/vllm/core") && !hostFacade[imp] {
 				t.Errorf("%s imports %s; inference-sim reaches the v0.33.0 engine only through engine.Engine", pkg, imp)
 			}
 		}
@@ -472,10 +486,10 @@ func TestTheHostReachesTheV032EngineOnlyThroughTheContract(t *testing.T) {
 	contract := false
 	for _, imp := range parsed.Imports {
 		p := strings.Trim(imp.Path.Value, `"`)
-		if p == "github.com/inference-sim/blis-substrate/contracts/engine" {
+		if p == "github.com/inference-sim/inference-sim/substrate/contracts/engine" {
 			contract = true
 		}
-		if strings.HasPrefix(p, "github.com/inference-sim/blis-vllm") {
+		if strings.HasPrefix(p, "github.com/inference-sim/inference-sim/engines/vllm") {
 			t.Errorf("sim/engine_driver.go imports %s; the driver knows only the contract", p)
 		}
 	}

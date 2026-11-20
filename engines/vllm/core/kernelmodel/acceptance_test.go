@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
+	"github.com/inference-sim/inference-sim/substrate/load"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
-	"github.com/inference-sim/blis-vllm/internal/substratedata"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/substratedata"
 )
 
 // museAdaptiveInputs are the Muse recipe default's Inputs, opened from vllmengine's testdata.

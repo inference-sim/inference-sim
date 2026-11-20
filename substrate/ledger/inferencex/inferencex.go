@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/ledger"
+	"github.com/inference-sim/inference-sim/substrate/ledger"
 )
 
 // SourceID is the source's identifier in the ledger and in every unit's identity.

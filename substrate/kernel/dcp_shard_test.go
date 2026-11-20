@@ -3,7 +3,7 @@ package latencykernel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // vllmLocalSeqLen is get_dcp_local_seq_lens transcribed for one rank

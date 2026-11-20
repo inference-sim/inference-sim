@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 )
 
 // Refusal is the open issue every refused scheduling feature cites (X28).

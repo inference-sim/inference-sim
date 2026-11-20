@@ -10,7 +10,7 @@ import (
 	"math"
 	"slices"
 
-	"github.com/inference-sim/blis-sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 )
 
 // NewTokenRatioConfig is NewTokenRatioTracker.from_config's result (scheduler_components/

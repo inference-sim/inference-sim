@@ -3,8 +3,8 @@ package result
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/metrics"
 )
 
 // Basis is what a figure states besides its metric: the scope it is at, the member of that

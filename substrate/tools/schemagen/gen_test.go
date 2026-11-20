@@ -13,7 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/schema"
+	"github.com/inference-sim/inference-sim/substrate/contracts/schema"
 )
 
 const root = "../.."

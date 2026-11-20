@@ -3,16 +3,16 @@
 package latencykernel_test
 
 import (
-	. "github.com/inference-sim/blis-substrate/kernel"
+	. "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 
-	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
 )
 
 // RulesFrom keeps "no rules for this release" as no rules: a nil *pack.Pack must not become

@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	check "github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	check "github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 )
 
 // Load reads and validates the table at path.

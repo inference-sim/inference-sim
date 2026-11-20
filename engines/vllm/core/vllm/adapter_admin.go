@@ -5,7 +5,7 @@ package vllm
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-vllm/core/lora"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/lora"
 )
 
 // LoadAdapter loads a LoRA adapter into the engine's worker, as vLLM's dynamic load does

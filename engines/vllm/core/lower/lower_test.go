@@ -8,10 +8,10 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 
-	"github.com/inference-sim/blis-vllm/internal/upstream"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
 // vllm_lower.json is the pinned release's own answers for every case below, printed by

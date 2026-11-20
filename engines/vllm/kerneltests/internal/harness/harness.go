@@ -15,13 +15,13 @@
 package harness
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
-	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
+	vllmrules "github.com/inference-sim/inference-sim/engines/vllm/core/rulepack"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-	"github.com/inference-sim/blis-vllm/core/kernelmodel"
-	"github.com/inference-sim/blis-vllm/core/vllmsettings"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 )
 
 // Repos is the root package's Repos. An alias rather than a second type, so that a
@@ -58,7 +58,7 @@ func Open(scenario string, r Repos) (*latencykernel.Kernel, error) {
 	return k, nil
 }
 
-// WithVLLMRules returns r with the vLLM rules packs (github.com/inference-sim/blis-vllm/core/rulepack)
+// WithVLLMRules returns r with the vLLM rules packs (github.com/inference-sim/inference-sim/engines/vllm/core/rulepack)
 // as its rules source, where it states none.
 func WithVLLMRules(r Repos) Repos {
 	if r.Rules == nil {

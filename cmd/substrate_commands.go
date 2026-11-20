@@ -10,9 +10,9 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // The commands the applications read substrate data through (design §5, accuracy-dashboard
@@ -24,8 +24,8 @@ var substrateJSON bool
 
 var invariantsCmd = &cobra.Command{
 	Use:   "invariants",
-	Short: "Print the invariant registry of the blis-substrate version this build pins",
-	Long: "Print every invariant of the registry embedded in blis-substrate's contracts/invariants, " +
+	Short: "Print the invariant registry of the substrate in this build",
+	Long: "Print every invariant of the registry embedded in substrate/contracts/invariants, " +
 		"at the version this build selects (stack.json names it). With --json the output is " +
 		"{\"invariants\": [...]}, each record with the registry's own keys; without it, one line " +
 		"per invariant: identifier, status, title.",
@@ -90,7 +90,7 @@ var (
 var catalogResolveCmd = &cobra.Command{
 	Use:   "resolve",
 	Short: "Map a model or chip name to its catalog identity, or report that none exists",
-	Long: "Resolve --model or --chip against the catalog in use: the one embedded in the blis-substrate " +
+	Long: "Resolve --model or --chip against the catalog in use: the one embedded in the substrate " +
 		"release this build pins, or the directory --catalog or BLIS_CATALOG names. A model " +
 		"resolves when the catalog has an entry of that name, or exactly one entry whose " +
 		"model.yaml source repository is that name (compared without regard to letter case); a " +
@@ -138,7 +138,7 @@ type catalogResolution struct {
 	// node and per rack the product fixes, each null where the entry leaves it to the
 	// scenario. Absent for a model, or a chip that does not resolve. A generator writes
 	// neither field for a value stated here, and the scenario's own for a null one
-	// (blis-substrate scenario.Cluster.Packaging, design SUB-3).
+	// (the substrate scenario.Cluster.Packaging, design SUB-3).
 	Packaging *chipPackaging `json:"packaging,omitempty"`
 }
 

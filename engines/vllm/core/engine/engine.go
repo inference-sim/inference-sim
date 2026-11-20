@@ -16,7 +16,7 @@ package engine
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // MaxConcurrentBatches is VllmConfig.max_concurrent_batches (vllm/config/vllm.py:577-588):

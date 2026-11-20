@@ -3,7 +3,7 @@ package vllm
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // A request whose prompt loads back from the CPU tier is counted like any other: its prompt is in

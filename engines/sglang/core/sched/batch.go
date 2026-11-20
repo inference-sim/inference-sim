@@ -10,7 +10,7 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/inference-sim/blis-sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 )
 
 // Mode is a ForwardMode (model_executor/forward_batch_info.py@297e54fd) the normal loop launches.

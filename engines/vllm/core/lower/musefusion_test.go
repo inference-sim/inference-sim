@@ -8,10 +8,10 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/load"
 
-	"github.com/inference-sim/blis-vllm/internal/upstream"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
 // muse_fusions.json is vLLM v0.33.0's own decisions for each case, printed by

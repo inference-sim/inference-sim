@@ -3,7 +3,7 @@ package lowering
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 )
 
 // The connectors a deployment configures are those of every block it states, a pool's own included:

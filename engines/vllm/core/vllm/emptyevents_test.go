@@ -3,7 +3,7 @@ package vllm
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // A schedule that runs no tokens can still change the prefix cache: a decoder admitting a remote

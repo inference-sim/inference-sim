@@ -2,10 +2,10 @@ package cluster
 
 import (
 	"fmt"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 	"testing"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // countingModel is a stateless latency model that counts how often it priced a step, so a
@@ -112,6 +112,7 @@ func newObservingModel(step int64) (observingModel, *bool, *bool, *int) {
 // caught -- the global model prices nothing in a fully disaggregated cluster, and a pool's own
 // admission cap binds its instances (a decode pool capped at one sequence never batches two).
 func TestPoolOverrides_EachRoleRunsItsOwnPoolsEngine(t *testing.T) {
+	skipRetiredEngine(t, "decode-pool pricing sees prefill work")
 	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
 	var global int
 	editEngine(&cfg, func(c *simConfig) { c.LatencyModel = countingModel{step: 50, calls: &global} })

@@ -3,7 +3,7 @@ package cmd
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // tierEngine is an engine that runs a secondary tier: it records the storage it was given.

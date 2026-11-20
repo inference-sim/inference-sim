@@ -11,7 +11,7 @@ package sched
 import (
 	"sort"
 
-	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 )
 
 // The hooks a connector that plans its own transfers each step uses: vLLM's Scheduler hands it

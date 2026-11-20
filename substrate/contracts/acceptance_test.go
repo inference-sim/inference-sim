@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
-	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
-	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/workload"
 )
 
 func alValue(k int, al float64) *acceptance.Value {

@@ -9,7 +9,7 @@ package vllm
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 )
 
 // chunkedInput is what checkChunkedPrefill reads besides the engine block: the values the rest of

@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"sync"
 
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 )
 
 // FormUnits is the unit each coefficient family must have: the unit the formula that reads it

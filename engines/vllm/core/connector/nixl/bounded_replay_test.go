@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/kv"
-	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // A decoder beside DeepSeek V4.1's KV cache layout: eight-odd sliding-window groups of 32-token

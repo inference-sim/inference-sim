@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/load"
-	"github.com/inference-sim/blis-vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // What a command or test reads by default: the committed scenario fixtures under
@@ -43,7 +43,7 @@ const scenariosEnv = "BLIS_SCENARIOS"
 // path will not exist, which is why the caller treats a missing root as a missing checkout
 // rather than a crash.
 func repoRoot() string {
-	const module = "module github.com/inference-sim/blis-vllm"
+	const module = "module github.com/inference-sim/inference-sim/engines/vllm"
 	if dir, err := os.Getwd(); err == nil {
 		for {
 			if b, err := os.ReadFile(filepath.Join(dir, "go.mod")); err == nil &&

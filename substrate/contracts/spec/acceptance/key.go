@@ -3,7 +3,7 @@ package acceptance
 import (
 	"regexp"
 
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 )
 
 // DraftSampler is how a drafter samples its drafts (inference-sim/blis-substrate#174).

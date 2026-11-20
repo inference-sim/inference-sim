@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/metrics"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/metrics"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 )
 
 // DEV-7: the stop rule states the request cap and the horizon that ended the run, and the drain

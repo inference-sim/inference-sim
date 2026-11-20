@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 
-	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
 )
 
 // This file re-derives the pack's constants from an engine checkout, when one is

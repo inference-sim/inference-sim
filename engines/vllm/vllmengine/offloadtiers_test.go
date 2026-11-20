@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // tieredScenario is Muse Spark's arm D PP1 sync scenario with TieringOffloadingSpec and tier, a

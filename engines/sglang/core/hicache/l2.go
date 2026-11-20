@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/inference-sim/blis-sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 )
 
 // StorageRefusalIssue is the open issue HiCache's L3 storage is refused with until it is

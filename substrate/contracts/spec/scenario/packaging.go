@@ -3,8 +3,8 @@ package scenario
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
 )
 
 // Who owns a cluster's packaging (design §2.2, SUB-3).

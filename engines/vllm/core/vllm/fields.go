@@ -5,9 +5,9 @@ package vllm
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
 
-	blisvllm "github.com/inference-sim/blis-vllm"
+	blisvllm "github.com/inference-sim/inference-sim/engines/vllm"
 )
 
 // fieldList is fields.json, parsed once. The engine reports it through engine.Engine.Fields

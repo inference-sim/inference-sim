@@ -18,8 +18,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/sim/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 )
 
 const agentXSlice = "../sim/workload/testdata/agentx/weka_v7_slice.jsonl"
@@ -462,12 +463,12 @@ func TestReplayAgentX_ConstantLoad(t *testing.T) {
 // The substrate's constant-load presets load through the strict replay reader and resolve with
 // a run's session slots, so a run can start from one.
 func TestReplayAgentX_ConstantLoadPresetsLoad(t *testing.T) {
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/inference-sim/blis-substrate").Output()
+	root, err := substratedata.Dir()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"agentx-constant-load-256k", "agentx-constant-load-uncapped"} {
-		r, err := loadReplaySpec(filepath.Join(strings.TrimSpace(string(out)), "catalog/workloads", name+".yaml"))
+		r, err := loadReplaySpec(filepath.Join(root, "catalog/workloads", name+".yaml"))
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}

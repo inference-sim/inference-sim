@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
 )
 
 // The census of X19/VLM-1 over the committed fixtures (kerneltests/testdata/direct and

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
-	sim "github.com/inference-sim/blis-vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // cudagraphAssumptions is the divergence a deployment that states cudagraph_mode or the capture

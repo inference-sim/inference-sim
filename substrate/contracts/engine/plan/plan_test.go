@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 )
 
 func goodPlan() PoolPlan {
@@ -302,7 +302,7 @@ func TestPlanTypesNameNoEngine(t *testing.T) {
 		for tp.Kind() == reflect.Pointer || tp.Kind() == reflect.Slice || tp.Kind() == reflect.Array {
 			tp = tp.Elem()
 		}
-		if tp.Kind() != reflect.Struct || seen[tp] || !strings.Contains(tp.PkgPath(), "blis-substrate") {
+		if tp.Kind() != reflect.Struct || seen[tp] || !strings.Contains(tp.PkgPath(), "/substrate/") {
 			return
 		}
 		seen[tp] = true
