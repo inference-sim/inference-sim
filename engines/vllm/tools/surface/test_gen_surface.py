@@ -204,6 +204,10 @@ FILES = {
         def load(module_path):
             module = importlib.import_module(module_path)
     """,
+    "vllm/v1/worker/gpu/spec_decode/__init__.py": """
+        def init_speculator(qualname):
+            speculator_cls = resolve_obj_by_qualname(qualname)
+    """,
 }
 
 MANIFEST = {"generator": "test", "vllm": "0.32.0", "families": [
@@ -406,6 +410,50 @@ class GenSurfaceTest(unittest.TestCase):
         err = self.refusal(good_status())
         self.assertIn("secondary_tier:obj: no status", err)
         self.assertIn("kv_cache_spec:NewSpec: no status", err)
+
+    def test_a_relative_import_resolves_against_the_importing_package(self):
+        self.tree.write(self.tree.src, "vllm/conn/pull/__init__.py",
+                        "from .impl import PullConnector, OldConnector\n")
+        got = self.items()
+        self.assertEqual(set(got), set(good_status()["items"]))
+        self.assertEqual(got["connector:OldConnector"]["status"], "modelled")
+
+    def test_without_a_spec_registry_the_kv_cache_managers_are_listed(self):
+        self.tree.write(self.tree.src, "vllm/v1/core/single_type_kv_cache_manager.py", textwrap.dedent("""
+            class SingleTypeKVCacheManager:
+                pass
+            class _InternalBase(SingleTypeKVCacheManager):
+                pass
+            class FullAttentionManager(SingleTypeKVCacheManager):
+                pass
+            class MambaManager(_InternalBase):
+                pass
+            class NotAManager:
+                pass
+        """))
+        s = good_status()
+        for k in [k for k in s["items"] if k.startswith("kv_cache_spec:")]:
+            del s["items"][k]
+        s["items"]["kv_cache_manager:FullAttentionManager"] = refused()
+        s["items"]["kv_cache_manager:MambaManager"] = refused()
+        got = self.items(s)
+        managers = {k: v for k, v in got.items() if k.startswith("kv_cache_manager:")}
+        self.assertEqual(set(managers), {"kv_cache_manager:FullAttentionManager", "kv_cache_manager:MambaManager"})
+        self.assertEqual(managers["kv_cache_manager:MambaManager"]["extends"], "_InternalBase")
+
+    def test_a_path_loader_whose_file_a_commit_lacks_is_left_out(self):
+        os.remove(os.path.join(self.tree.src, "vllm/v1/spec_decode/custom_class_proposer.py"))
+        s = good_status()
+        del s["items"]["path_loader:speculative_config.method custom_class (speculative_config.model as a module path)"]
+        got = self.items(s)
+        self.assertFalse([k for k in got if "custom_class" in k])
+        self.assertIn("path_loader:speculative_config.speculator_config.speculator_class (qualified name)", got)
+
+    def test_an_optional_path_loader_whose_call_a_file_lacks_is_left_out(self):
+        self.tree.write(self.tree.src, "vllm/v1/worker/gpu/spec_decode/__init__.py", "def init_speculator(config):\n    pass\n")
+        s = good_status()
+        del s["items"]["path_loader:speculative_config.speculator_config.speculator_class (qualified name)"]
+        self.assertFalse([k for k in self.items(s) if "speculator_class" in k])
 
     def test_a_new_path_loaded_component_must_be_accounted_for(self):
         self.tree.append("vllm/v1/kv_offload/base.py", """
