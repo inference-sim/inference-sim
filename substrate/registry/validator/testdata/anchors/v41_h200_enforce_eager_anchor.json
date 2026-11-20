@@ -1,0 +1,21 @@
+{
+ "source": "an internal DeepSeek-V4.1-Flash H200 enforce-eager serving run's report (not redistributed)",
+ "sha256": "f250d35ee0fbb67184638ef154dd8c88158bab9911c6945863bcf458ee38c078",
+ "setup": "2 replicas behind the llm-d EPP router, TP8 per replica, 8x H200 each, vLLM nightly ddd6fbc, --enforce-eager, no speculative decoding, CPU KV offload + Engram CPU offload, an agentic multi-turn trace replay",
+ "plateau": {
+  "levels": [
+   1,
+   2,
+   4,
+   8,
+   16,
+   32,
+   64
+  ],
+  "unit": "ms, mean ITL per level",
+  "median_itl_ms": 96.56,
+  "min_itl_ms": 93.84,
+  "max_itl_ms": 101.61
+ },
+ "derived_by": "scripts/fit_deepseek_v41_host.py --extract-anchor <report.html>"
+}

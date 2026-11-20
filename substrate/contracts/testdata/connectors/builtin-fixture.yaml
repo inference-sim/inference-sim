@@ -1,0 +1,14 @@
+# A test fixture, not the registry. The vLLM entries live in blis-vllm.
+kind: ConnectorRegistry
+name: fixture
+connectors:
+  MultiConnector:
+    upstream: KVConnectorBase_V1
+    behaves_like: multi
+    roles: [composite, offload, pd_transfer]
+    evidence: diff-test @ vLLM v0.32.0
+  SimpleCPUOffloadConnector:
+    upstream: KVConnectorBase_V1
+    behaves_like: simple-cpu-offload
+    roles: [offload]
+    evidence: diff-test @ vLLM v0.32.0

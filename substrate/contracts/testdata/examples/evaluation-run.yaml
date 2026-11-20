@@ -1,0 +1,23 @@
+kind: EvaluationRun
+name: llama-3.1-8b-on-h100-tp2-dp4
+scenario: llama-3.1-8b-on-h100
+harness: aiperf
+engine_version: "0.29.0"
+date: "2026-09-20"
+points:
+  - concurrency: 1
+    completed_requests: 96
+    output_tokens_per_sec: 157.3
+    input_tokens_per_sec: 2543.0
+    ttft_ms: 168.6
+    itl_ms: 6.0
+    mean_isl: 8015
+    mean_osl: 496
+    kv_utilization: 0.10
+  - concurrency: 8
+    completed_requests: 640
+    output_tokens_per_sec: 1084.2
+    ttft_ms: 212.4
+    itl_ms: 7.1
+    kv_utilization: 0.62
+    prefix_cache_hit_rate: 0.54

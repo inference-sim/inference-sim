@@ -1,0 +1,50 @@
+name: blis
+
+# This repository's use of its own shared workflows. Every other BLIS repository calls them
+# by commit (inference-sim/blis-substrate/.github/workflows/<file>@<commit>, X21); here they
+# are called by path, so a pull request that changes a shared check is judged by the changed
+# check, and substrate-ref is the pull request's own commit.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer run for the same pull request replaces the one in progress (a push, or an edit of the
+# description). Scheduled and manual runs are never cancelled.
+concurrency:
+  group: blis-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # The check run "pr / blis checks" is one of this repository's required checks, with
+  # `required` and `scan` (X17). Branch protection holds the list, in this repository.
+  pr:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/shared-pr-checks.yml
+    # A same-repository pull request runs its own substrate-ref code with pull-requests:
+    # write, by design: a pull request is judged by its own changed checks. A fork's pull
+    # request is given a read-only token.
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    with:
+      repo: blis-substrate
+      substrate-ref: ${{ github.event.pull_request.head.sha }}
+
+  nightly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/shared-nightly.yml
+    permissions:
+      contents: read
+      issues: read
+    with:
+      substrate-ref: ${{ github.sha }}
+    secrets:
+      INTERNAL_NAME_PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}

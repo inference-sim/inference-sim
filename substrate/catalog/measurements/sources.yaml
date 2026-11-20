@@ -1,0 +1,177 @@
+# Licence registry for measured runs: one entry per source a run under
+# measurements/<id>/ may cite as its license_ref. Validated by blis-schemas'
+# validate-catalog (spec/measurement Registry).
+#
+# Only a `verified` entry permits anything. `unverified` and `refused` entries
+# permit nothing: a run citing one fails the catalog gate, and an adapter must
+# not emit it. A committed run also needs `redistribute`.
+#
+# Seeded 2026-10-15 from the BLIS validation survey records only: the external
+# dataset survey (EXTERNAL_DATASETS.md), the per-sample PROVENANCE.txt files
+# under its data/external/, validation/prism/PROVENANCE.md and the case
+# notes of our internal calibration runs. Each quote below is copied from one of those
+# records, and `location` names the record and line. `permits` on a verified
+# entry is what its stated licence grants; no reviewer has signed these off yet.
+kind: MeasurementSources
+sources:
+  - id: aiconfigurator
+    title: NVIDIA ai-dynamo/aiconfigurator silicon_sample.csv (measured TTFT/TPOT per configuration)
+    license: Apache-2.0
+    status: verified
+    permits: [score, derive_coefficients, redistribute]
+    evidence:
+      - url: https://github.com/ai-dynamo/aiconfigurator/blob/main/LICENSE
+        quote: "License: Apache-2.0 (repo LICENSE, copy in LICENSE.txt, sha256 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4)"
+        location: survey record data/external/aiconfigurator/PROVENANCE.txt, line 8
+      - url: https://github.com/ai-dynamo/aiconfigurator/blob/main/LICENSE
+        quote: "Licence: Apache-2.0, so it can be redistributed with the notice."
+        location: survey EXTERNAL_DATASETS.md, section 2
+    attribution: Redistribute with the Apache-2.0 notice.
+    note: The TTFT/TPOT aggregation statistic (mean or median) is not documented in the repo, so its runs cannot be EXACT.
+
+  - id: burstgpt
+    title: HPMLL/BurstGPT request traces (workload only; no engine latency)
+    license: CC-BY-4.0
+    status: verified
+    permits: [score, derive_coefficients, redistribute]
+    evidence:
+      - url: https://github.com/HPMLL/BurstGPT
+        quote: "License: CC-BY-4.0 (repo LICENSE 'Attribution 4.0 International', copied to LICENSE.txt). Cite BurstGPT paper per repo CITATION.cff."
+        location: survey record data/external/burstgpt/PROVENANCE.txt, line 3
+    attribution: Cite the BurstGPT paper per the repo's CITATION.cff.
+
+  - id: llmservingsim
+    title: casys-kaist/LLMServingSim bench/examples (vLLM meta.json and per-request timestamps)
+    license: MIT
+    status: verified
+    permits: [score, derive_coefficients, redistribute]
+    evidence:
+      - url: https://github.com/casys-kaist/LLMServingSim
+        quote: "License: MIT (repo LICENSE, copied to LICENSE.txt; 'Copyright (c) 2024, CASYS Lab at KAIST')"
+        location: survey record data/external/llmservingsim/PROVENANCE.txt, line 3
+
+  - id: vidur
+    title: microsoft/vidur operator profiles (kernel cross-check; no end-to-end data)
+    license: MIT
+    status: verified
+    permits: [score, derive_coefficients, redistribute]
+    evidence:
+      - url: https://github.com/microsoft/vidur
+        quote: "License: MIT (repo LICENSE, copied to LICENSE.txt)"
+        location: survey record data/external/vidur/PROVENANCE.txt, line 3
+
+  - id: trtllm-perf-overview
+    title: NVIDIA TensorRT-LLM perf-overview (offline trtllm-bench output tok/s/GPU)
+    license: Apache-2.0
+    status: verified
+    permits: [score, derive_coefficients, redistribute]
+    evidence:
+      - url: https://github.com/NVIDIA/TensorRT-LLM/blob/main/LICENSE
+        quote: "License: repo LICENSE states \"This project is licensed under the Apache 2.0 license\""
+        location: survey record data/external/trtllm-perf-overview/PROVENANCE.txt, line 6
+    note: TRT-LLM offline throughput, not vLLM serving latency; the survey rates it no use as latency ground truth.
+
+  - id: vllm-ci-configs
+    title: vLLM repo .buildkite/performance-benchmarks/tests serving configs
+    license: Apache-2.0
+    status: verified
+    permits: [score, derive_coefficients, redistribute]
+    evidence:
+      - url: https://github.com/vllm-project/vllm/blob/main/LICENSE
+        quote: "License: Apache-2.0 (https://github.com/vllm-project/vllm/blob/main/LICENSE)"
+        location: survey record data/external/vllm-perf-benchmarks/PROVENANCE.txt, line 8
+    note: Configs only. CI replaces these files with pytorch-integration-testing's for the HUD runs.
+
+  - id: pytorch-integration-testing
+    title: pytorch/pytorch-integration-testing vllm-benchmarks configs
+    license: MIT
+    status: verified
+    permits: [score, derive_coefficients, redistribute]
+    evidence:
+      - url: https://github.com/pytorch/pytorch-integration-testing/blob/main/LICENSE
+        quote: "License: MIT (https://github.com/pytorch/pytorch-integration-testing/blob/main/LICENSE)"
+        location: survey record data/external/vllm-perf-benchmarks/PROVENANCE.txt, line 15
+    note: Configs only; the measured results they produce are pytorch-hud-results.
+
+  - id: pytorch-test-infra
+    title: pytorch/test-infra HUD benchmark schema and queries
+    license: BSD-3-Clause
+    status: verified
+    permits: [score, derive_coefficients, redistribute]
+    evidence:
+      - url: https://github.com/pytorch/test-infra/blob/main/LICENSE
+        quote: "License: BSD License (3-clause text) https://github.com/pytorch/test-infra/blob/main/LICENSE"
+        location: survey record data/external/pytorch-hud/PROVENANCE.txt, line 15
+    note: Schema and query files only, no results.
+
+  - id: pytorch-hud-results
+    title: PyTorch x vLLM benchmark results (GitHub Actions job logs, HUD rows, ossci-benchmarks S3)
+    status: unverified
+    note: >-
+      "Data terms for HUD / OSS benchmark DB / ossci-benchmarks S3: NONE FOUND." and
+      "no license is stated for CI logs or benchmark results; GitHub Terms of Service
+      apply to access." (data/external/pytorch-hud/PROVENANCE.txt, lines 22 and 24).
+      The survey recommends not redistributing bulk HUD or log data until the PyTorch
+      Foundation / LF confirms the terms (EXTERNAL_DATASETS.md, section 1.6).
+
+  - id: vllm-ci-dashboard
+    title: vLLM CI dashboard perf API (ci.vllm.ai), produced by vllm-project/perf-eval
+    status: unverified
+    note: >-
+      "License evidence: NONE FOUND. vllm-project/perf-eval and vllm-project/vllm-dashboard
+      have no LICENSE file (GitHub license API 404)" (data/external/vllm-ci-perf-api/PROVENANCE.txt,
+      line 9).
+
+  - id: vllm-pr-bench-serve
+    title: vllm bench serve results posted in vLLM pull-request descriptions
+    status: unverified
+    note: >-
+      "PR descriptions and attachments carry NO separate license; GitHub ToS governs. Treat
+      as citable-with-link, do not redistribute in bulk." (data/external/vllm-pr-bench-serve/PROVENANCE.txt,
+      line 6).
+
+  - id: mlperf-inference-v6.0
+    title: MLCommons inference_results_v6.0
+    status: unverified
+    note: >-
+      The repo is Apache-2.0 (EXTERNAL_DATASETS.md, section 3), but the MLPerf Results
+      Messaging Guidelines (mlcommons/policies @a4520be8) state "MLPerf results may not
+      be compared against non-MLPerf results." Whether a BLIS error metric against a
+      result is permitted has not been settled.
+
+  - id: mlperf-inference-v5.0
+    title: MLCommons inference_results_v5.0
+    status: refused
+    note: >-
+      "Note: inference_results_v5.0 has no LICENSE file at commit 0bc17ab3 (GitHub API
+      license: none)." and "inference_results_v5.0 states no license, so the terms do not
+      permit redistribution or use." (data/external/mlperf/PROVENANCE.txt, lines 11 and 13).
+
+  - id: sharegpt-vicuna-unfiltered
+    title: Hugging Face anon8231489123/ShareGPT_Vicuna_unfiltered (revision 192ab2185289094fc556ec8ce5ce1e8e587154ca)
+    status: unverified
+    note: >-
+      The survey records only "The HF card licence is apache-2.0." (EXTERNAL_DATASETS.md,
+      section 1.4), a dataset-card claim not checked against a licence file.
+
+  - id: llm-d-prism
+    title: llm-d Prism archive records and gs://llm-d-benchmarks Benchmark Reports
+    status: unverified
+    note: >-
+      validation/prism/PROVENANCE.md records no licence or terms for the archive record
+      or the reports.
+
+  - id: internal-calibration
+    title: Internal llm-d deployment calibration runs (not published)
+    status: unverified
+    note: >-
+      Internal runs, usable for validation and calibration; their case notes state no
+      licence or terms for redistribution, so nothing from them is committed here.
+
+  - id: artificial-analysis
+    title: Artificial Analysis
+    status: refused
+    note: >-
+      ToS v1.0 (2024-04-28) §2.1 "solely for your own personal, noncommercial use";
+      §2.2(d) "no part of the Site may be copied, reproduced, distributed, republished,
+      downloaded…"; §2.3 bans scraping (EXTERNAL_DATASETS.md, ranked summary, row 10).

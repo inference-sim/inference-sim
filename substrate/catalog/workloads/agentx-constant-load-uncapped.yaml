@@ -1,0 +1,25 @@
+_comment: "Provenance: constant-load replay of the uncapped agentic corpus, aiperf 0.12.0 run without --scenario (so --concurrency is the number of live root sessions) over the public-dataset alias semianalysis_cc_traces_weka_062126 with each trace's idle gaps capped at 1 s (--trace-idle-gap-cap-seconds 1), 900 s measured and 360 s grace per level, as our internal single-node experiments ran it (https://github.com/inference-sim/inference-sim/issues/2124). Sessions are drawn from the corpus in order (SequentialSampler, wrapping), a new one starting whenever a root session's final turn returns, with sub-agent requests kept. The lane count and the number of sessions the measured phase started are each run's choice, so a binding states them. The harness behaviour is cited in blis-substrate contracts/spec/workload/replay.go to aiperf commit be53bf2953d30e46c500e6a80fc1f8b6f84bc718."
+_comment_corpus: "Corpus: the same file as agentx-mvp-uncapped (semianalysisai/cc-traces-weka-062126 at the same revision and sha256); see that entry for its size, trace counts and license."
+_comment_run: "Run settings: random_seed 42; benchmark_duration_s 900 and grace_period_s 360 as the internal runs stated them; max_context_length is unstated, so no trace is dropped, since the runs recorded no limit. No warmup phase is stated for these runs, so none is replayed; a run that had one states load.warmup_duration_s as a named substitution."
+replay:
+  scenario: aiperf-constant-load
+  harness_version: 0.12.0
+  corpus:
+    loader: semianalysis_cc_traces_weka_062126
+    format: weka-trace-v7
+    encoding: jsonl
+    source:
+      huggingface: semianalysisai/cc-traces-weka-062126
+      revision: 23f152f6f0f9399a85901b89a6458def0ef16729
+      file: traces.jsonl
+      split: train
+    sha256: 29b6a19e751ff5230771519aab755f80a0f43a4ba9cf96b72d3a6a437ec99276
+  random_seed: 42
+  benchmark_duration_s: 900
+  grace_period_s: 360
+  split_flattened_agents: true
+  load:
+    recycling: sequential
+    trace_idle_gap_cap_s: 1
+  category: coding
+  thinking: "on"

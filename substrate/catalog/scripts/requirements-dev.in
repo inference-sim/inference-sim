@@ -1,0 +1,7 @@
+# Dev/CI dependencies for the graph-derivation check (scripts/derive_graph.py and
+# tests/test_derive_graph.py). The catalog payload itself is plain YAML/JSON and
+# needs nothing installed to be read; these are only for re-deriving and diffing
+# model graphs in CI. Structural/schema validation is owned by blis-schemas and
+# needs no Python.
+PyYAML>=6.0
+pytest>=7.4

@@ -1,0 +1,623 @@
+// Package engine is the interface an inference-engine model implements and a
+// discrete-event simulator calls: the counterpart of package kernel for scheduling
+// rather than pricing.
+//
+// The boundary follows from who owns time. The simulator owns the clock, the event queue
+// and the decision of when to step. An engine owns every scheduling, KV-cache and
+// connector decision, and the metrics those decisions produce. An engine never reads a
+// clock and never schedules an event: every call carries the simulated instant as a
+// value, and where an engine rule makes work wait until a later instant, the engine
+// reports that instant through NextWake and the simulator decides what to do with it.
+//
+// Nothing here names an engine. A configuration reaches an engine as an opaque Spec that
+// the simulator hands over unread, so a second engine implements this interface in its
+// own repository without changing this package or the simulator. Package enginetest holds
+// the contract checks that every implementation, and every fake a simulator's tests
+// build, runs against itself.
+package engine
+
+import (
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/blis-substrate/contracts/units"
+)
+
+// Time is a simulated instant in microseconds since the start of a run. It is a value,
+// never a clock reading.
+type Time = int64
+
+// Duration is a simulated span in microseconds.
+type Duration = int64
+
+// Engine is one simulated engine instance: the state machine behind one server process.
+//
+// Calls are sequential. The simulator never calls an engine from two goroutines, and an
+// engine starts none.
+//
+// Every call carries the instant it happens at. The instants of Add, Schedule,
+// TransferDone and Finish never decrease. Complete carries the instant its batch's step
+// ends, which a simulator that applies a step's results as the step starts passes before
+// it delivers the inputs that arrive during the step. An engine therefore stamps what a
+// batch makes visible at Complete's instant, and must not assume a later call's instant
+// is later than it.
+//
+// After every call that can change engine state (Add, Schedule, Complete, TransferDone,
+// Finish, and a wake firing) the simulator calls NextWake again. That is the whole timer
+// protocol: an engine has no other way to ask for future attention, and needs none.
+type Engine interface {
+	// Add hands the engine a request that has arrived at now. The engine decides when it
+	// runs; Add schedules nothing. Add returns the error of Request.Validate for a request
+	// that does not validate, which it may wrap, and does not run it as another request: an
+	// adapter path with no adapter would otherwise run as the base model. A refused Add
+	// leaves no trace: the engine keeps nothing of the request. enginetest.CheckProtocolErrors
+	// checks both, at every in-flight limit.
+	Add(r Request, now Time) error
+
+	// Schedule decides one batch at now: which requests run, how many tokens each, which
+	// are preempted, and which KV transfers start. It returns ErrNoCapacity when as many
+	// batches as InFlightLimit allows are already in flight. A batch that runs requests
+	// gets an ID greater than every earlier batch of this engine, and stays in flight until
+	// Complete names it. A batch that runs none (Empty) is not in flight, but may still
+	// start transfers, which the simulator prices like any other.
+	Schedule(now Time) (Batch, error)
+
+	// StepTime prices a batch that runs requests: how long its forward pass takes, at least
+	// one microsecond, so a step always advances time. An Empty batch runs no forward pass,
+	// so a simulator does not price it.
+	StepTime(b Batch) Duration
+
+	// Complete applies the outcome of an in-flight batch, whose step ends at end: tokens
+	// sampled and drafts accepted. It returns what became visible: first tokens, finishes
+	// and KV events. Batches complete in the order they were scheduled; Complete returns
+	// ErrOutOfOrder otherwise and ErrUnknownBatch for an ID not in flight.
+	Complete(id BatchID, outcome Outcome, end Time) (Result, error)
+
+	// TransferDone reports that an asynchronous KV load or store the engine started has
+	// finished at now, successfully or not. An ID the engine does not know is an error.
+	TransferDone(id TransferID, ok bool, now Time) error
+
+	// Finish ends a request at now for a reason the engine did not decide: a client abort
+	// or a timeout. It frees what the request holds. Finishing an unknown or an already
+	// finished request is a no-op, as the engine's finish_requests is.
+	Finish(id string, why FinishReason, now Time) error
+
+	// NextWake is the earliest instant after now at which engine state may change without
+	// another external input: a deferred admission becoming possible, a cooldown expiring,
+	// a deadline passing. False means there is no such instant. See the wake protocol
+	// below.
+	NextWake(now Time) (Time, bool)
+
+	// InFlightLimit is how many batches may be in flight at once: the engine's own bound
+	// (for the engine, max_concurrent_batches), fixed at construction and at least one.
+	InFlightLimit() int
+
+	// Metrics returns the engine's exported metrics as of now.
+	Metrics(now Time) Metrics
+
+	// Snapshot returns the engine's current state for routing and tests. It is a copy the
+	// caller may keep.
+	Snapshot() State
+
+	// Fields returns the field list of the engine release this engine models: every
+	// configuration field and environment variable it reads, each with its status and the
+	// estimation rule a scoring harness applies (design VLM-3, SGL-3). The substrate defines
+	// this method and the shape of a list (spec/fields) and holds no engine's fields: a list
+	// depends on the engine and its release, and only the engine repository can state it.
+	//
+	// The list is the same on every call and valid under fields.FieldList.Validate, and its
+	// Engine names the kind and the upstream release this engine was built for. A simulator's
+	// `fields` command prints what the registered engine returns without reading it.
+	Fields() fields.FieldList
+}
+
+// Pipelined is implemented by an engine whose batches run through more than one pipeline
+// stage, each stage on its own devices: vLLM with pipeline_parallel_size > 1. It is
+// optional; a simulator that does not look for it times every batch as one step of
+// StepTime on one device, which serializes the stages and so is conservative.
+//
+// StageTimes splits StepTime(b) by stage, in pipeline order: one entry per stage, each at
+// least one microsecond, summing exactly to StepTime(b). A simulator that honours it starts
+// stage s of a batch once stage s-1 of that batch has ended and stage s has finished the
+// batch before it, and ends the batch when its last stage ends: a new batch can enter the
+// pipeline every slowest-stage time, while each batch's output still takes the whole sum.
+// An engine with one stage returns a single entry equal to StepTime(b).
+type Pipelined interface {
+	StageTimes(b Batch) []Duration
+}
+
+// Planned is implemented by every engine that starts a transfer. Plan returns the PoolPlan of
+// the pool the engine models, the plan its transfers are priced against: a simulator asks
+// env.TransferDemand(e.Plan(), t.Move) for each Transfer in a Batch's TransfersStarted (design
+// §6.2; env.DemandFor does exactly that). The plan is the one the engine built with its
+// Environment, with its KV budget filled in, and it is the same on every call.
+//
+// It is a separate interface so that an engine which starts no transfer needs no plan to be
+// driven. enginetest fails an engine that starts a transfer and is not Planned.
+type Planned interface {
+	Plan() plan.PoolPlan
+}
+
+// The wake protocol. NextWake answers one question: with no new input, when could this
+// engine's state change? The simulator owns everything that follows from the answer.
+//
+//   - It asks after every state-changing call, so an answer is never stale by more than
+//     one call. An engine therefore never cancels a wake: it reports a different instant,
+//     or false, the next time it is asked.
+//   - An instant earlier than the pending wake supersedes it; a later one, or false,
+//     replaces it. A superseded wake is dropped without running.
+//   - When a wake fires, the simulator steps the engine at the wake instant.
+//   - An engine with unfinished work, no batch in flight, no transfer outstanding and an
+//     empty Schedule must report a wake. Otherwise nothing would ever step it again. This
+//     is the liveness law enginetest checks.
+//   - At one instant a simulator processes, in this order: arrivals; transfer
+//     completions; batch completions; wakes and steps; timeouts last, so a request that
+//     completes at the instant its deadline passes has completed. An engine may rely on
+//     that order.
+//
+// The order is stated here rather than left to each simulator because the same events
+// processed in a different order at one instant are a different run.
+
+// ErrNoCapacity is returned by Schedule when InFlightLimit batches are in flight.
+var ErrNoCapacity = errors.New("engine: no free in-flight batch slot")
+
+// ErrOutOfOrder is returned by Complete when a batch is completed before an earlier one.
+var ErrOutOfOrder = errors.New("engine: batches complete in the order they were scheduled")
+
+// ErrUnknownBatch is returned by Complete for an ID that is not in flight.
+var ErrUnknownBatch = errors.New("engine: no such batch in flight")
+
+// ErrUnknownTransfer is returned by TransferDone for an ID the engine did not start.
+var ErrUnknownTransfer = errors.New("engine: no such transfer outstanding")
+
+// BatchID identifies one scheduled batch for the life of the engine.
+type BatchID uint64
+
+// TransferID identifies one asynchronous KV transfer for the life of the engine.
+type TransferID uint64
+
+// Request is what an engine is told about a request: its identity, its prompt, the
+// output the simulator has assigned it, and the scheduling facts the simulator owns.
+type Request struct {
+	ID string
+	// Prompt is the prompt's token IDs, in order. An engine may hash them for its prefix
+	// cache; it must not modify them.
+	Prompt []int32
+	// Output is the output the simulator assigned the request: what the model will sample,
+	// one of the inputs a simulator estimates rather than an engine decides. An engine
+	// reads Output[i] only once token i is sampled, and never consults the length of
+	// Output for an admission, ordering or preemption decision: only to stop the request
+	// where its output ends, as a real engine stops at an end-of-sequence token.
+	Output []int32
+	// MaxOutputTokens is the client's output budget; zero means none beyond the engine's
+	// own context limit.
+	MaxOutputTokens int
+	// Priority orders requests under a priority policy; lower is more urgent.
+	Priority int
+	// ArrivalTime is when the request arrived, which FCFS and priority policies break ties
+	// by. It may be earlier than the instant of the Add call that delivers it.
+	ArrivalTime Time
+	// Adapter names a LoRA adapter, or is empty for the base model. It is vLLM's lora_name.
+	Adapter string
+	// AdapterPath is where the adapter's weights are, as the client gave it (vLLM's
+	// lora_path). vLLM adds it, with the name, to the hash of every prefix-cache block of a
+	// LoRA request, so that pointing a name at different weights does not reuse KV computed
+	// with the old ones; an engine that models that hash needs it. Empty for the base model.
+	// It is a label for hashing: an engine never opens it. Only vLLM's name and path enter
+	// the hash, not its integer adapter ID.
+	AdapterPath string
+	// CacheSalt isolates the request's prefix-cache entries from requests with another
+	// salt; an empty salt shares with every unsalted request.
+	CacheSalt string
+	// Tags are opaque facts a simulator passes through for an engine that reads them. An
+	// engine ignores keys it does not know.
+	Tags map[string]string
+	// RemoteDecode marks a disaggregated prefill: the request computes its prompt here and a
+	// peer engine decodes it, pulling its KV. When it finishes, the engine holds that KV for
+	// the pull and reports it in Result.Handoffs, until the simulator ends the handoff
+	// (TransferDone with Handoff.Transfer). An engine that does not disaggregate refuses it.
+	RemoteDecode bool
+	// RemotePrefill marks a disaggregated decode: a peer engine computed the prompt, and this
+	// engine loads its KV rather than computing it. The engine decides when the load starts (a
+	// TransferLoad among a Batch's TransfersStarted), and runs the request once the simulator
+	// reports that transfer done. An engine that does not disaggregate refuses it.
+	RemotePrefill bool
+	// Peer is where the engine holding the prompt's KV sits, in that engine's own pool's
+	// numbering (plan.Endpoint: node and rack both relative to that pool): the node and rack the
+	// pull reads from. A host sets it with RemotePrefill, as a P/D proxy hands
+	// a decode engine the address of the prefill it must read from (vLLM's kv_transfer_params);
+	// the decode engine cannot learn it any other way, and the pull's links depend on it. Nil
+	// for every other request.
+	Peer *plan.Endpoint
+}
+
+// Validate reports a request that cannot exist: an adapter path with no adapter to belong
+// to, a remote prefill with no peer to pull from, or a peer on a request that pulls nothing. It does not require the path of a named adapter, because an engine that never hashes
+// it has no use for one; an engine that models vLLM refuses a LoRA request without a path,
+// as vLLM does.
+func (r Request) Validate() error {
+	if r.AdapterPath != "" && r.Adapter == "" {
+		return fmt.Errorf("engine: request %s has adapter path %q and no adapter name", r.ID, r.AdapterPath)
+	}
+	if r.RemotePrefill && r.Peer == nil {
+		return fmt.Errorf("engine: request %s is a remote prefill and states no peer to pull from", r.ID)
+	}
+	if !r.RemotePrefill && r.Peer != nil {
+		return fmt.Errorf("engine: request %s names a peer and is not a remote prefill", r.ID)
+	}
+	if r.Peer != nil && (r.Peer.Node < 0 || r.Peer.Rack < 0) {
+		return fmt.Errorf("engine: request %s: peer %+v", r.ID, *r.Peer)
+	}
+	return nil
+}
+
+// Batch is one scheduling decision.
+type Batch struct {
+	ID BatchID
+	// Reqs are the requests that run in this batch, with their tokens, in the engine's own
+	// order.
+	Reqs []Scheduled
+	// Preempted are the requests this decision evicted, in eviction order.
+	Preempted []string
+	// TransfersStarted are the asynchronous KV transfers this decision started. The
+	// simulator prices each and reports its end with TransferDone.
+	TransfersStarted []Transfer
+	// Finished are requests this decision ended without running them, with why: a request
+	// whose asynchronous KV load failed under a fail-the-request policy, which the engine
+	// finishes at its next schedule. A request finished here never appears in a Result.
+	Finished []Finished
+	// SkipDrafts says the drafter proposes no drafts in this step, because no request on any
+	// rank of the engine's data-parallel group can use them (vLLM v0.33.0's skip_drafts, ANDed
+	// across the group: vllm/v1/worker/gpu/dp_utils.py:75-88@4ba787ec). The engine decides it,
+	// states the same value on every rank's batch of the step, and prices the step without the
+	// passes that propose (kernel.Batch.SkipDrafts). An engine that does not speculate, or whose
+	// upstream always proposes, leaves it false.
+	SkipDrafts bool
+}
+
+// Empty reports whether the batch runs nothing.
+func (b Batch) Empty() bool { return len(b.Reqs) == 0 }
+
+// Tokens returns the batch's total scheduled tokens.
+func (b Batch) Tokens() int {
+	n := 0
+	for _, r := range b.Reqs {
+		n += r.Tokens
+	}
+	return n
+}
+
+// Scheduled is one request's share of a batch.
+type Scheduled struct {
+	ID string
+	// Tokens is how many tokens run for this request in this batch, including any
+	// speculative drafts it verifies.
+	Tokens int
+	// Computed is how many tokens were already computed before this batch, including
+	// prefix-cache hits. It is what separates a chunked-prefill tail from a decode.
+	Computed int
+	// PromptLen is the request's prompt length.
+	PromptLen int
+	// CachedTokens is the part of Computed that a prefix-cache hit supplied at this
+	// batch's admission, zero otherwise.
+	CachedTokens int
+	// PrefixLookup reports that the engine looked the request's prompt up in its prefix
+	// cache at this batch's admission, so CachedTokens is that lookup's hit, zero for a miss.
+	// An engine with no prefix cache, or one that skipped the lookup, leaves it false. A
+	// simulator counts a hit rate over the lookups a request's first admission made.
+	PrefixLookup bool
+	// Drafts is how many of Tokens are speculative tokens being verified.
+	Drafts int
+}
+
+// Transfer is one asynchronous KV transfer an engine started. It is the one report of a move
+// (design §6.2): the simulator reads ID and Request to run the transfer's life, and asks
+// env.TransferDemand(e.Plan(), t.Move) what it asks of the fabric.
+//
+// Move is the same transfer stated in the cost model's terms, and the engine states it: which
+// catalog device a tier name stands for, which node and rack send and receive, and which way
+// the bytes go. Only the engine knows those (a tier name is its configuration's, the ranks are
+// its placement), so the simulator neither derives them nor fills them in. Tokens, Kind and
+// Tier are the engine's own report of the same move and must agree with Move; Validate says
+// how.
+type Transfer struct {
+	ID TransferID
+	// Request is the request the transfer serves.
+	Request string
+	// Kind says which way the KV moves.
+	Kind TransferKind
+	// Tokens and Blocks size the transfer. Both may be zero for a pull from a peer that finds all
+	// of its KV already here; the move then demands zero bytes. A load or store to a tier moves
+	// at least one token.
+	Tokens int
+	Blocks int
+	// Tier names the offload tier as the engine's configuration names it: empty for a move
+	// between pools. Move.Tier is the catalog device this name stands for.
+	Tier string
+	// Move is the transfer as the cost model prices it. It is required: a transfer whose Move
+	// is the zero value is refused by Validate. Two limits are deferred to M3. For a pool that
+	// spans nodes Move names one node, the one that holds the tier, because plan.Transfer has
+	// one From and one To (inference-sim/blis-substrate#48). Move has one token count, so the
+	// per-KV-group sizes of a hybrid model are lost at the boundary and an engine that prices
+	// them itself cannot pass them on (inference-sim/blis-substrate#49).
+	Move plan.Transfer
+}
+
+// Validate reports a transfer whose report and whose Move do not describe the same move, or
+// that the cost model would refuse. It checks what a Transfer can say about itself; whether
+// Move.Tier is a device of the engine's pool needs the plan (plan.PoolPlan.CheckTransfer).
+func (t Transfer) Validate() error {
+	var bad []string
+	if t.Request == "" {
+		bad = append(bad, "no request")
+	}
+	// Tokens 0 is a pull that finds all of its KV already here; Move.Validate allows it for a
+	// move between pools only, so a tier load or store of nothing is refused below.
+	if t.Tokens < 0 {
+		bad = append(bad, fmt.Sprintf("%d tokens", t.Tokens))
+	}
+	if t.Blocks < 0 {
+		bad = append(bad, fmt.Sprintf("%d blocks", t.Blocks))
+	}
+	if err := t.Move.Validate(); err != nil {
+		bad = append(bad, err.Error())
+	}
+	if units.Tokens(t.Tokens) != t.Move.Tokens {
+		bad = append(bad, fmt.Sprintf("reports %d tokens and Move %d", t.Tokens, t.Move.Tokens))
+	}
+	switch t.Kind {
+	case TransferLoad:
+		if t.Move.Kind == plan.TransferToTier {
+			bad = append(bad, "a load whose Move goes to a tier")
+		}
+	case TransferStore:
+		if t.Move.Kind == plan.TransferFromTier {
+			bad = append(bad, "a store whose Move comes from a tier")
+		}
+	default:
+		bad = append(bad, fmt.Sprintf("kind %q", t.Kind))
+	}
+	if (t.Tier == "") != (t.Move.Kind == plan.TransferPeer) {
+		bad = append(bad, fmt.Sprintf("tier %q beside a %s move: a tier name goes with a move to or from a tier, and only with one", t.Tier, t.Move.Kind))
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+	sort.Strings(bad)
+	return fmt.Errorf("engine: transfer %d of request %q: %s", t.ID, t.Request, strings.Join(bad, "; "))
+}
+
+// TransferKind says which way a transfer moves KV.
+type TransferKind string
+
+const (
+	// TransferLoad moves KV into the engine's cache: an offload hit or a remote prefill.
+	TransferLoad TransferKind = "load"
+	// TransferStore moves KV out of it: an offload write or a handoff to a peer.
+	TransferStore TransferKind = "store"
+)
+
+// Outcome is what executing a batch produced that the engine did not decide, supplied by
+// the simulator from inputs it owns.
+type Outcome struct {
+	// Accepted maps a request that verified drafts to how many of them the target model
+	// accepted, from the simulator's calibrated acceptance. A request absent from it
+	// accepted none. An engine that verified no drafts ignores it.
+	Accepted map[string]int
+}
+
+// Result is what a completed batch made visible.
+type Result struct {
+	// Emitted maps each request that produced output tokens in this batch to how many.
+	Emitted map[string]int
+	// FirstTokens are the requests that produced their first output token in this batch.
+	FirstTokens []string
+	// Finished are the requests that finished in this batch, with why.
+	Finished []Finished
+	// KVEvents are the prefix-cache changes this batch caused, in order.
+	KVEvents []KVEvent
+	// Handoffs are the disaggregated prefills (Request.RemoteDecode) this batch finished whose
+	// KV the engine holds for a peer's pull, in the order they finished.
+	Handoffs []Handoff
+}
+
+// Handoff is the KV a finished disaggregated prefill left for a peer engine to pull. The
+// engine holds it until the simulator reports Transfer done: when the peer's pull has landed,
+// or when the hold has run out.
+type Handoff struct {
+	ID string
+	// Transfer is the handoff, which the simulator ends with TransferDone.
+	Transfer TransferID
+	// Blocks are the engine's IDs of the KV blocks held, opaque to the simulator, which may
+	// count distinct blocks across handoffs: a block a prefix cache shares appears in several.
+	Blocks []int64
+	// At is where the held KV sits, in the engine's own pool's numbering (plan.Endpoint): the node
+	// and rack of the rank that computed it. A pool whose data-parallel ranks sit on several nodes
+	// holds each request's KV on one rank's node, and the peer's pull reads from there: a host sets
+	// the peer's Request.Peer from At. Nil means the pool's first node, the only place a pool on
+	// one node holds anything, and what a handoff meant before the field.
+	At *plan.Endpoint
+}
+
+// Validate reports a handoff whose held KV has an endpoint that cannot exist.
+func (h Handoff) Validate() error {
+	if h.At != nil && (h.At.Node < 0 || h.At.Rack < 0) {
+		return fmt.Errorf("engine: handoff %s: held at %+v", h.ID, *h.At)
+	}
+	return nil
+}
+
+// Finished is one request an engine finished.
+type Finished struct {
+	ID           string
+	Reason       FinishReason
+	OutputTokens int
+}
+
+// FinishReason says why a request finished.
+type FinishReason string
+
+const (
+	FinishStop    FinishReason = "stop"    // the assigned output ended
+	FinishLength  FinishReason = "length"  // the output budget or the context limit
+	FinishAbort   FinishReason = "abort"   // the client went away
+	FinishTimeout FinishReason = "timeout" // a deadline passed
+	FinishError   FinishReason = "error"   // the engine refused or failed the request
+)
+
+// KVEvent is one change to the set of KV blocks an engine's prefix cache can serve.
+//
+// A stored block carries the identity the engine hashed it under, so a router that indexes the
+// engine's blocks keys them as the engine does: a request of an adapter, a salt or a KV-cache
+// group is a different key from a base-model request with the same tokens. Every identity field
+// is the zero value when the engine has none or does not say; a block with none is the common
+// case. The fields follow what vLLM and SGLang publish (vLLM's BlockStored: lora_id, lora_name,
+// extra_keys, group_idx, kv_cache_spec_kind, kv_cache_spec_sliding_window; SGLang's: lora_id,
+// lora_name, cache_salt).
+type KVEvent struct {
+	Removed bool
+	Hash    string
+	Parent  string
+	Tokens  []int32
+	// Tier is where the block is cached: empty for the device cache, else the tier's name.
+	Tier string
+
+	// Cleared marks the engine dropping its whole cache (AllBlocksCleared): every block stored
+	// before it is gone. A Cleared event carries no Hash, Parent, Tokens or identity; Tier names
+	// the one tier cleared, or is empty for every tier.
+	Cleared bool
+
+	// LoRAID is the adapter's numeric id; nil for a block of no adapter or an engine that did
+	// not say.
+	LoRAID *int
+	// LoRAName is the adapter's public name; "" for none.
+	LoRAName string
+	// ExtraKeys are what the engine folded into this block's hash besides its tokens: the
+	// adapter, multimodal identifiers, the cache salt, prompt-embedding digests. Each element
+	// is a string, a 2-element []any of (string, int), or an adapter's 3-element ("lora", name,
+	// path) of strings, as vLLM publishes them. Nil for none.
+	ExtraKeys []any
+	// CacheSalt is the salt of the request that stored the block; "" for none. An engine sets
+	// the salt or ExtraKeys, not both (SGLang the salt, vLLM the keys).
+	CacheSalt string
+	// GroupIdx is the KV-cache group that stored the block (a hybrid-memory model has several);
+	// nil for an engine with one group or one that did not say.
+	GroupIdx *int
+	// SpecKind is the kind of that group in the engine's words ("full_attention",
+	// "sliding_window", "mamba", ...); "" when not said.
+	SpecKind string
+	// SlidingWindow is the group's window in tokens when SpecKind is a sliding-window kind
+	// ("sliding_window" or "sliding_window_mla"); nil otherwise.
+	SlidingWindow *int
+}
+
+// Validate reports an event that cannot exist: a Cleared event that names a block or an
+// identity, a removal that carries tokens or a storing identity, a cache salt beside extra keys,
+// a negative group, or a window that is not positive or that belongs to a group that has none.
+func (e KVEvent) Validate() error {
+	identity := e.LoRAID != nil || e.LoRAName != "" || e.ExtraKeys != nil || e.CacheSalt != "" ||
+		e.SpecKind != "" || e.SlidingWindow != nil
+	if e.Cleared {
+		if e.Removed || e.Hash != "" || e.Parent != "" || len(e.Tokens) > 0 || identity || e.GroupIdx != nil {
+			return errors.New("engine: a cleared KVEvent names no block and carries no identity (only Tier)")
+		}
+		return nil
+	}
+	if e.Hash == "" {
+		return errors.New("engine: a KVEvent that is not cleared names a block hash")
+	}
+	if e.Removed {
+		if len(e.Tokens) > 0 || e.Parent != "" || identity {
+			return errors.New("engine: a removal carries no tokens, parent or storing identity (only GroupIdx)")
+		}
+	}
+	if e.CacheSalt != "" && e.ExtraKeys != nil {
+		return errors.New("engine: a KVEvent carries a cache salt or extra keys, not both " +
+			"(SGLang folds the salt, vLLM the keys)")
+	}
+	if e.GroupIdx != nil && *e.GroupIdx < 0 {
+		return fmt.Errorf("engine: KVEvent group %d is negative", *e.GroupIdx)
+	}
+	if e.SlidingWindow != nil {
+		if *e.SlidingWindow <= 0 {
+			return fmt.Errorf("engine: KVEvent sliding window %d is not positive", *e.SlidingWindow)
+		}
+		if e.SpecKind != "sliding_window" && e.SpecKind != "sliding_window_mla" {
+			return fmt.Errorf("engine: KVEvent sliding window with spec kind %q, which has none", e.SpecKind)
+		}
+	}
+	return nil
+}
+
+// State is an engine's current state as a router or a test sees it.
+type State struct {
+	Waiting  int
+	Running  int
+	InFlight int
+	// KVBlocksTotal and KVBlocksUsed describe the device KV pool, in the engine's blocks.
+	KVBlocksTotal int64
+	KVBlocksUsed  int64
+	// KVBlockSize is tokens per block.
+	KVBlockSize int
+}
+
+// Metrics is an engine's exported metrics: every series it exposes, by family. A family's
+// name and labels are the engine's own. A simulator reads the ones it routes on and
+// copies the rest to its report untouched.
+type Metrics struct {
+	At       Time
+	Families []Family
+}
+
+// Family is one metric family: a name, its kind and its samples.
+type Family struct {
+	Name    string
+	Kind    MetricKind
+	Help    string
+	Samples []Sample
+}
+
+// MetricKind is a Prometheus metric type.
+type MetricKind string
+
+const (
+	Gauge     MetricKind = "gauge"
+	Counter   MetricKind = "counter"
+	Histogram MetricKind = "histogram"
+	Info      MetricKind = "info"
+)
+
+// Sample is one labelled value. A histogram family carries one sample per bucket with an
+// "le" label, then a _sum and a _count sample, as Prometheus exposes them.
+type Sample struct {
+	Name   string
+	Labels map[string]string
+	Value  float64
+}
+
+// Family returns the named family and whether it exists.
+func (m Metrics) Family(name string) (Family, bool) {
+	for _, f := range m.Families {
+		if f.Name == name {
+			return f, true
+		}
+	}
+	return Family{}, false
+}
+
+// Value returns the value of a family that has exactly one sample, the shape of the
+// gauges and counters a router reads.
+func (m Metrics) Value(name string) (float64, error) {
+	f, ok := m.Family(name)
+	if !ok {
+		return 0, fmt.Errorf("engine: no metric family %q", name)
+	}
+	if len(f.Samples) != 1 {
+		return 0, fmt.Errorf("engine: metric family %q has %d samples, not one", name, len(f.Samples))
+	}
+	return f.Samples[0].Value, nil
+}

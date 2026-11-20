@@ -1,0 +1,14 @@
+kind: Deployment
+name: tp2-dp4
+pools:
+  - role: colocated
+    nodes: 1
+    parallel:
+      tp: 2
+      pp: 1
+      dp: 4
+    engine:
+      block_size: 16
+      max_num_seqs: 256
+      max_num_batched_tokens: 8192
+      gpu_memory_utilization: 0.9

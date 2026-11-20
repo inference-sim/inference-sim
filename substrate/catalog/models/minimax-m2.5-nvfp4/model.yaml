@@ -1,0 +1,11 @@
+name: minimax-m2.5-nvfp4
+source:
+  provider: huggingface
+  repo: nvidia/MiniMax-M2.5-NVFP4
+  revision: b6220d658389629b9d507d4b2bb314f41fea7898
+  retrieved: 2026-11-10
+licence:
+  id: LicenseRef-nvidia-open-model-license
+  evidence: https://huggingface.co/nvidia/MiniMax-M2.5-NVFP4/raw/b6220d658389629b9d507d4b2bb314f41fea7898/README.md
+config:
+  sha256: 37659e0844702fc61a77e2e5930e894341a22d75753c04a4ab9a6207074f8025

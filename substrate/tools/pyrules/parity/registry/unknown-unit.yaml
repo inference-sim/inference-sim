@@ -1,0 +1,12 @@
+# expect: "furlongs" is not one of
+kind: CoefficientSet
+name: parity-unknown-unit
+coefficients:
+  - gemm_eps_max_bf16:
+      value: 0.72
+      units: furlongs
+      method: assumed
+      fitted: false
+      scope:
+        hardware: [h200]
+      rationale: a unit outside the closed vocabulary

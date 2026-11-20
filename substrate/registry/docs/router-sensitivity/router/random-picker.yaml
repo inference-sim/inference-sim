@@ -1,0 +1,30 @@
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: approx-prefix-cache-producer
+  parameters: {maxPrefixTokensToMatch: 16384, lruCapacityPerServer: 31250}
+- type: prefix-cache-scorer
+- type: queue-scorer
+- type: kv-cache-utilization-scorer
+- type: inflight-load-producer
+- type: active-request-scorer
+- type: prefill-filter
+- type: decode-filter
+- type: max-score-picker
+- type: random-picker
+- type: always-disagg-pd-decider
+- type: disagg-profile-handler
+  parameters:
+    deciders:
+      prefill: always-disagg-pd-decider
+schedulingProfiles:
+- name: prefill
+  plugins:
+  - pluginRef: prefill-filter
+  - pluginRef: random-picker
+
+- name: decode
+  plugins:
+  - pluginRef: decode-filter
+  - pluginRef: random-picker
+

@@ -1,0 +1,8 @@
+Provenance: vendor_spec
+TFlopsPeak: 989.5
+TFlopsFP8: 1979.0
+BwPeakTBs: 3.35
+MemoryGiB: 80.0
+_comment_interconnect: "IntraNodeBwGBps is the on-package NVLink per-GPU nominal unidirectional bandwidth; a comment key the strict loader must still accept."
+IntraNodeBwGBps: 450
+SMCount: 132
