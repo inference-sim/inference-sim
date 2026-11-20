@@ -32,6 +32,7 @@ import (
 	"net"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -978,6 +979,9 @@ func (g *Gateway) requestBody(f *flight) []byte {
 	if f.req.Adapter != "" {
 		model = f.req.Adapter
 	}
+	if !f.req.IsMultimodal() {
+		return textRequestBody(model, f.prompt, f.stream, f.req.MaxOutputLen)
+	}
 	body := map[string]any{"model": model, "prompt": f.prompt, "stream": f.stream}
 	if f.req.IsMultimodal() {
 		// One content part per modality the request carries, after its text, as a client sends
@@ -1003,6 +1007,41 @@ func (g *Gateway) requestBody(f *flight) []byte {
 		panic(err)
 	}
 	return b
+}
+
+// textRequestBody writes, byte for byte, what json.Marshal writes for the map
+// {"max_tokens"(when positive), "model", "prompt", "stream"}: keys in sorted order, the prompt as an
+// array of unsigned integers. It skips the reflection and the per-token allocation of Marshal.
+func textRequestBody(model string, prompt []uint32, stream bool, maxTokens int) []byte {
+	m, err := json.Marshal(model)
+	if err != nil {
+		panic(err)
+	}
+	b := make([]byte, 0, 64+len(m)+len(prompt)*7)
+	b = append(b, '{')
+	if maxTokens > 0 {
+		b = append(b, `"max_tokens":`...)
+		b = strconv.AppendInt(b, int64(maxTokens), 10)
+		b = append(b, ',')
+	}
+	b = append(b, `"model":`...)
+	b = append(b, m...)
+	b = append(b, `,"prompt":`...)
+	if prompt == nil {
+		b = append(b, "null"...)
+	} else {
+		b = append(b, '[')
+		for i, t := range prompt {
+			if i > 0 {
+				b = append(b, ',')
+			}
+			b = strconv.AppendUint(b, uint64(t), 10)
+		}
+		b = append(b, ']')
+	}
+	b = append(b, `,"stream":`...)
+	b = strconv.AppendBool(b, stream)
+	return append(b, '}')
 }
 
 type usage struct {
