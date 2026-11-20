@@ -2,7 +2,7 @@
  "assumptions": {
   "9.0": {
    "fa3_available": {
-    "evidence": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)",
+    "evidence": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; core/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)",
     "value": true
    }
   }
@@ -10,7 +10,7 @@
  "combinations": [
   {
    "assumed_facts": {
-    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
+    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; core/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
    },
    "backends": [
     "FLASH_ATTN_MLA"
@@ -110,7 +110,7 @@
   },
   {
    "assumed_facts": {
-    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
+    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; core/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
    },
    "backends": [
     "FLASH_ATTN_MLA"
@@ -144,7 +144,7 @@
   },
   {
    "assumed_facts": {
-    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
+    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; core/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
    },
    "backends": [
     "FLASH_ATTN_MLA"
@@ -2453,7 +2453,7 @@
   },
   {
    "assumed_facts": {
-    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
+    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; core/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
    },
    "backends": [
     "FLASH_ATTN_MLA"
@@ -2553,7 +2553,7 @@
   },
   {
    "assumed_facts": {
-    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
+    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; core/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
    },
    "backends": [
     "FLASH_ATTN_MLA"
@@ -2587,7 +2587,7 @@
   },
   {
    "assumed_facts": {
-    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
+    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; core/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
    },
    "backends": [
     "FLASH_ATTN_MLA"

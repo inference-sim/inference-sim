@@ -9,7 +9,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	. "github.com/inference-sim/blis-substrate/kernel"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/blis-vllm/core/kernelmodel"
 )
 
 // GLM-5.3-Flash on an H200 runs its sparse-MLA layers on FlashInfer's SM90 backend, whose kernel is
@@ -67,7 +67,7 @@ func TestGLM53FlashSparseMLAIsPricedFromTheFamilyKeyedToItsKernel(t *testing.T) 
 }
 
 // The family prices the sparse-MLA kernel of a prefill of any length (the plan states the prefill primitive;
-// vLLM's dense multi-head route at or below the top-k is named on the pool, compat/kernelmodel) and of every
+// vLLM's dense multi-head route at or below the top-k is named on the pool, core/kernelmodel) and of every
 // decode. A prefill of 1024 tokens (at most the top-k of 2048) and one of 8192 both read the prefill family as
 // an exact kernel match, and a decode step reads the decode family.
 func TestGLM53FlashPrefillsBelowAndAboveTheTopKAndDecodesReadTheirFamilies(t *testing.T) {

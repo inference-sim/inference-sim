@@ -1,6 +1,6 @@
 name: recorded-logs
 
-# The recorded block sizes (compat/kernelmodel/testdata/recorded_block_sizes) are read from
+# The recorded block sizes (core/kernelmodel/testdata/recorded_block_sizes) are read from
 # InferenceX server logs that a public API serves and that can change or disappear. Every night
 # this fetches the log of each recorded row again and fails, naming the row, when its sha256
 # differs from the recorded one or the log is gone, so a changed or withdrawn log is seen before
@@ -24,4 +24,4 @@ jobs:
         with:
           python-version: "3.12"
       - name: re-fetch every recorded log and compare its hash
-        run: python3 -I compat/kernelmodel/testdata/recorded_block_sizes/fetch.py --check compat/kernelmodel/testdata/recorded_block_sizes/recorded_block_sizes.json
+        run: python3 -I core/kernelmodel/testdata/recorded_block_sizes/fetch.py --check core/kernelmodel/testdata/recorded_block_sizes/recorded_block_sizes.json

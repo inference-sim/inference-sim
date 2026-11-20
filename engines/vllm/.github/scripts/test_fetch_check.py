@@ -14,7 +14,7 @@ import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FETCH = os.path.join(HERE, "..", "..", "compat", "kernelmodel", "testdata", "recorded_block_sizes", "fetch.py")
+FETCH = os.path.join(HERE, "..", "..", "core", "kernelmodel", "testdata", "recorded_block_sizes", "fetch.py")
 
 
 def load():

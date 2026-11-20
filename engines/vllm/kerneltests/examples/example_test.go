@@ -18,9 +18,9 @@ import (
 	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/kernelmodel"
+	"github.com/inference-sim/blis-vllm/core/vllmsettings"
 )
 
 // --8<-- [start:repos]

@@ -15,7 +15,7 @@
   "env:VLLM_USE_SIMPLE_KV_OFFLOAD": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:348 marks it inert; a run that does not set it leaves vLLM's default, off (vllm/envs.py:2243@5df63a72), which the engine resolves",
   "env:VLLM_FLASHINFER_ALLREDUCE_BACKEND": "vllm/distributed/device_communicators/flashinfer_all_reduce.py:143-178@5df63a72 resolves an unset (auto) backend to mnnvl, with a trtllm fallback allowed, on one node, and to mnnvl without fallback on compute capability 10.0 and up across nodes, so a recipe that states mnnvl across nodes on such a part runs as the default does, while one that states it on one node does not (no fallback); the latency kernel prices every tensor-parallel all-reduce from the NCCL sweep whichever FlashInfer backend runs (it has no implementation-keyed all-reduce entry), so the stand-in changes no price. The field's valid_when says for which values and groups the stand-in is exact; fields/stand_in_vectors.json holds it to _resolve_fi_ar_backend; a single-node group on compute capability 10.0 and up is exact under the assumption that the node has NVSwitch multicast (a stated mnnvl on a node without it disables the FlashInfer all-reduce, auto falls back to trtllm, flashinfer_all_reduce.py:196-232@4ba787ec), true of every Blackwell part in the catalog (owner _resolve_fi_ar_backend+multicast)",
   "env:UCX_RCACHE_MAX_UNRELEASED": "vllm/distributed/nixl_utils.py:20-36@5df63a72 sets UCX_RCACHE_MAX_UNRELEASED to 1024 itself when the environment does not state it, so a run that states 1024 runs as an unset one does; UCX's variable (src/ucs/memory/rcache.c:114-118 at UCX v1.19.0, the version inside the nixl 1.5.0 wheel is not known) only sets when invalidated registration regions are cleaned up and does not choose a transport or a rate; the field's valid_when says for which values the stand-in is exact; fields/stand_in_vectors.json holds it to _maybe_set_ucx_rcache_limit",
-  "env:UCX_TLS": "NIXL's UCX backend is the default (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:525-526@5df63a72) and UCX_TLS restricts the transports it may use (UCX FAQ). The engine prices a handoff between nodes over the NIC at the cluster fabric's rate unless UCX_CUDA_IPC_ENABLE_MNNVL=y is stated (compat/kernelmodel, rackHandoff), which is the path a list of RDMA transports without cuda_ipc takes, so unset stands in exactly for such a list; the field's valid_when says for which lists the stand-in is exact",
+  "env:UCX_TLS": "NIXL's UCX backend is the default (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:525-526@5df63a72) and UCX_TLS restricts the transports it may use (UCX FAQ). The engine prices a handoff between nodes over the NIC at the cluster fabric's rate unless UCX_CUDA_IPC_ENABLE_MNNVL=y is stated (core/kernelmodel, rackHandoff), which is the path a list of RDMA transports without cuda_ipc takes, so unset stands in exactly for such a list; the field's valid_when says for which lists the stand-in is exact",
   "env:NCCL_CUMEM_ENABLE": "vLLM's serving process does not read NCCL_CUMEM_ENABLE (it names it only in vllm/distributed/weight_transfer/sharded_rdt_trainer.py:1156@4ba787ec); NCCL does. NCCL autodetects cuMem since 2.19 and the variable only overrides that, so a stated 1 on a run that completed is NCCL's default and the unset stand-in is exact for it; a stated 0 disables cuMem (and with it NVLS and MNNVL), changes the buffers NCCL registers, and is not exact. The field's valid_when says for which values; fields/stand_in_vectors.json holds it (owner nccl-user-guide)",
   "env:NCCL_NVLS_ENABLE": "vLLM's serving process does not read NCCL_NVLS_ENABLE (it names it only in vllm/model_executor/determinism/batch_invariant.py:1409@4ba787ec, where it sets 0); NCCL does. The default is 2 and 1 differs from it only in making a failed NVLS allocation fatal (NCCL user guide), so a stated 1 or 2 on a run that completed runs as the unset stand-in does; 0 disables NVLink SHARP, which changes the collectives' algorithm, and is not exact. The field's valid_when says for which values; fields/stand_in_vectors.json holds it (owner nccl-user-guide)",
   "env:VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8": "vLLM v0.33.0 does not read VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8; v0.22.0 did (vllm/model_executor/layers/fused_moe/oracle/mxfp4.py at v0.22.0, lines 501-509: a set value forces FLASHINFER_TRTLLM_MXFP4_MXFP8 with a dynamic MXFP8 activation). It was deprecated in 9b54e50e2 (vllm-project/vllm#43148, 2026-05-21) and removed in v0.24.0 by 03878d1c2 (vllm-project/vllm#44992, 2026-06-11, 'Deprecations for v0.23 and v0.24'; v0.23.0 still lists it as deprecated). At vLLM 4ba787ec the same selection is --moe-backend flashinfer_trtllm with quantization_config.moe.activation mxfp8: map_mxfp4_backend gives the BF16 and MXFP8 variants and _filter_by_activation keeps the MXFP8 one (fused_moe/oracle/mxfp4.py:361-364, :614-631); its kernel needs compute capability family 10 (experts/trtllm_mxfp4_moe.py:121-123).",
@@ -425,8 +425,8 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/engine_settings_test.go",
-     "compat/kernelmodel/indexer_record_test.go",
+     "core/kernelmodel/engine_settings_test.go",
+     "core/kernelmodel/indexer_record_test.go",
      "core/rulepack/v0_33/indexer_kv_dtype_test.go",
      "core/rulepack/v0_33/testdata/vllm_indexer_kv_dtype.json"
     ]
@@ -730,7 +730,7 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/capture_oracle_test.go",
+     "core/kernelmodel/capture_oracle_test.go",
      "core/lower/testdata/vllm_lower.json",
      "core/rulepack/pack/cudagraph_test.go"
     ]
@@ -770,7 +770,7 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/capture_oracle_test.go",
+     "core/kernelmodel/capture_oracle_test.go",
      "core/lower/testdata/vllm_lower.json",
      "core/rulepack/pack/cudagraph_test.go"
     ]
@@ -837,7 +837,7 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/decoder_replay_test.go"
+     "core/kernelmodel/decoder_replay_test.go"
     ]
    },
    "status": "modelled"
@@ -947,7 +947,7 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/capture_oracle_test.go",
+     "core/kernelmodel/capture_oracle_test.go",
      "core/lower/testdata/vllm_lower.json",
      "core/rulepack/pack/cudagraph_test.go"
     ]
@@ -1182,7 +1182,7 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/capture_oracle_test.go",
+     "core/kernelmodel/capture_oracle_test.go",
      "core/lower/testdata/vllm_lower.json",
      "core/rulepack/pack/cudagraph_test.go"
     ]
@@ -1778,7 +1778,7 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/ep_oracle_test.go",
+     "core/kernelmodel/ep_oracle_test.go",
      "core/lower/testdata/vllm_lower.json"
     ]
    },
@@ -2315,8 +2315,8 @@
    },
    "evidence": {
     "traces": [
-     "compat/build/memory_utilization_test.go",
-     "compat/kernelmodel/capacity_test.go"
+     "core/build/memory_utilization_test.go",
+     "core/kernelmodel/capacity_test.go"
     ]
    },
    "status": "modelled"
@@ -2863,7 +2863,7 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/language_model_only_test.go"
+     "core/kernelmodel/language_model_only_test.go"
     ]
    },
    "status": "modelled"
@@ -3144,7 +3144,7 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/capture_oracle_test.go",
+     "core/kernelmodel/capture_oracle_test.go",
      "core/lower/testdata/vllm_lower.json",
      "core/rulepack/pack/cudagraph_test.go"
     ]
@@ -4113,9 +4113,9 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/quantization_v4_test.go",
-     "compat/kernelmodel/quantization_m3_test.go",
-     "compat/quantization/resolved.json"
+     "core/kernelmodel/quantization_v4_test.go",
+     "core/kernelmodel/quantization_m3_test.go",
+     "core/quantization/resolved.json"
     ]
    },
    "status": "modelled"
@@ -4757,7 +4757,7 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/muse_kvlayers_test.go",
+     "core/kernelmodel/muse_kvlayers_test.go",
      "testdata/scenarios/muse-h100-pp2tp8-dspark.yaml"
     ]
    },
@@ -4835,7 +4835,7 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/synthetic_acceptance_test.go",
+     "core/kernelmodel/synthetic_acceptance_test.go",
      "core/engineconfig/synthetic_acceptance_test.go",
      "core/engineconfig/testdata/synthetic_acceptance.json"
     ]
@@ -4893,7 +4893,7 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/synthetic_acceptance_test.go",
+     "core/kernelmodel/synthetic_acceptance_test.go",
      "core/engineconfig/synthetic_acceptance_test.go",
      "core/engineconfig/testdata/synthetic_acceptance.json"
     ]
@@ -6661,8 +6661,8 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/packaging_test.go",
-     "compat/kernelmodel/group_placement_test.go"
+     "core/kernelmodel/packaging_test.go",
+     "core/kernelmodel/group_placement_test.go"
     ]
    },
    "status": "modelled"
@@ -6772,7 +6772,7 @@
   "env:UCX_TLS": {
    "estimation": {
     "rule": "leave_unset",
-    "preserves": "the NIC path the engine prices for a handoff between nodes when UCX_CUDA_IPC_ENABLE_MNNVL=y is not stated (compat/kernelmodel): a transport list that names an RDMA transport, or all, reaches the NIC; a deny list or a list with no RDMA transport does not. UCX FAQ for the list syntax; no vLLM function resolves it",
+    "preserves": "the NIC path the engine prices for a handoff between nodes when UCX_CUDA_IPC_ENABLE_MNNVL=y is not stated (core/kernelmodel): a transport list that names an RDMA transport, or all, reaches the NIC; a deny list or a list with no RDMA transport does not. UCX FAQ for the list syntax; no vLLM function resolves it",
     "valid_when": [
      {
       "value_list_has_any": [
@@ -8277,7 +8277,7 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/profiler_graphs_test.go",
+     "core/kernelmodel/profiler_graphs_test.go",
      "core/vllm/readenv_test.go"
     ]
    },
@@ -9626,7 +9626,7 @@
    },
    "evidence": {
     "traces": [
-     "compat/kernelmodel/h200_fields_test.go",
+     "core/kernelmodel/h200_fields_test.go",
      "kerneltests/prefill_forms_test.go",
      "vllmengine/testdata/deepseek-v41-flash-h200-tp8-dspark5-synthetic-rust.yaml"
     ]

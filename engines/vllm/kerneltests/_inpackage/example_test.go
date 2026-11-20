@@ -10,9 +10,9 @@ package latencykernel_test
 import (
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-vllm/compat/lowering"
-	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/core/lowering"
 	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
+	"github.com/inference-sim/blis-vllm/core/vllmsettings"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-substrate/load"

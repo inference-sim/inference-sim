@@ -24,10 +24,10 @@
 // https://github.com/inference-sim/blis-vllm/issues/90. For that pool the factory:
 //
 //   - prices every step with blis-latency-kernel, the same kernel the compatibility engine's
-//     compat/kernelmodel opens, so a 0.32.0 run and a 0.31.0 run of one deployment are priced by
+//     core/kernelmodel opens, so a 0.32.0 run and a 0.31.0 run of one deployment are priced by
 //     one cost model. The kernel's engine behaviour is vLLM 0.31.0's; it records that as an
 //     assumption for a 0.32.0 scenario, and the engine discloses it (Assumptions);
-//   - sizes the KV cache from the kernel's memory model (compat/kernelmodel KVBudget): the
+//   - sizes the KV cache from the kernel's memory model (core/kernelmodel KVBudget): the
 //     compatibility engine's block count for a model of one full-attention group, and for a
 //     hybrid model the memory left for KV over its widest KV cache group's bytes per block, as
 //     vLLM sizes its shared pool (poolBlocks);
@@ -54,8 +54,8 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/load"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/kernelmodel"
 	"github.com/inference-sim/blis-vllm/core/placement"
 	vllm "github.com/inference-sim/blis-vllm/core/vllm"
 )
@@ -146,7 +146,7 @@ type pool struct {
 	offload *yaml.Node
 }
 
-// open opens the spec's pool through compat/kernelmodel, as the compatibility engine opens it.
+// open opens the spec's pool through core/kernelmodel, as the compatibility engine opens it.
 // given is the host's opened Data, or nil to open a fresh one from the spec's Roots.
 func open(s engine.Spec, given *load.Data) (pool, error) {
 	path := s.Roots[RootScenario]
@@ -263,7 +263,7 @@ const cpuTier = "cpu_dram"
 // the engine does not model. The OffloadingConnector's kv_connector_extra_config is its CPU tier:
 // cpu_bytes_to_use is the tier's bytes, the engine's, which vLLM divides among its workers'
 // copies (vllm/v1/kv_offload/cpu/spec.py:107-125@4ba787ec), as the compatibility engine reads the
-// same tier (compat/build KVOffloadBlockFromDeployment), so one deployment's 0.31.0 and 0.32.0
+// same tier (core/build KVOffloadBlockFromDeployment), so one deployment's 0.31.0 and 0.32.0
 // runs hold one CPU tier. eviction_policy and spec_name pass through, and blocks_per_chunk comes from the connector options. What vLLM derives at start-up
 // the kernel states: one worker's KV bytes for one GPU block over the offloaded groups
 // (worker_kv_bytes_per_block, offloading/config.py:174-189), the engine's world size (num_workers,
@@ -366,12 +366,12 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 
 // objectStores are the catalog's storage classes that are object stores (catalog/devices/storage.yaml:
 // s3, "an object store reached over the network"), which vLLM reaches through its obj tier; every
-// other storage class is a file system, reached through its fs tier. compat/build names the same set.
+// other storage class is a file system, reached through its fs tier. core/build names the same set.
 var objectStores = map[string]bool{"s3": true}
 
 // deviceTierOf is a deployment's tier below the CPU tier as one of TieringOffloadingSpec's tiers on
 // that catalog device (core/vllm offloadtiers.go), refused unless the kernel prices the device's
-// moves both ways (its offload_tier_<device>_* coefficients), as compat/build refuses an unpriced
+// moves both ways (its offload_tier_<device>_* coefficients), as core/build refuses an unpriced
 // tier. The tier's bytes are the device's capacity, which neither tier bounds: neither evicts, and a
 // block file or object is present until something outside vLLM removes it
 // (vllm/v1/kv_offload/tiering/fs/manager.py:86-104, obj/manager.py@4ba787ec).
@@ -773,7 +773,7 @@ func pricerOf(p pool) vllm.Pricer {
 	return k
 }
 
-// kernelPricer prices an engine.Batch with the latency kernel, as compat/kernelmodel prices the
+// kernelPricer prices an engine.Batch with the latency kernel, as core/kernelmodel prices the
 // compatibility engine's batches (Model.StepTime): the kernel's StepTime of the batch, its
 // NoOverlap figure, in microseconds, at least one.
 type kernelPricer struct {
@@ -794,7 +794,7 @@ func (k kernelPricer) StepTime(b engine.Batch) engine.Duration {
 
 // VerifiedDrafts implements core/vllm.VerifyingPricer: how many of each request's scheduled
 // drafts the verifier runs under DSpark adaptive verification, from the same kernel and the same
-// shapes StepTime priced (compat/kernelmodel.VerifiedDraftsOfShapes); nil when the pool does not
+// shapes StepTime priced (core/kernelmodel.VerifiedDraftsOfShapes); nil when the pool does not
 // verify adaptively, so the engine caps acceptance at the scheduled drafts as before.
 func (k kernelPricer) VerifiedDrafts(b engine.Batch) []int {
 	return k.m.VerifiedDraftsOfShapes(shapes(b))
@@ -811,7 +811,7 @@ func (k kernelPricer) TransferTime(t engine.Transfer) engine.Duration {
 // TierTransferTime implements core/vllm.TierPricer: a secondary tier's job of bytes between the CPU
 // tier and its catalog device, t.Move.Tier, as the kernel prices that device (TierTime, one at a
 // time). TierTime's contract is a GPU<->tier move; the job crosses the same device and host link,
-// as compat/build prices the compatibility engine's tier jobs.
+// as core/build prices the compatibility engine's tier jobs.
 func (k kernelPricer) TierTransferTime(t engine.Transfer, bytes int64) engine.Duration {
 	return engine.Duration(k.m.TierTransferTicksOf(t.Move.Tier, t.Kind == engine.TransferStore, bytes, int64(t.Blocks)))
 }
@@ -838,7 +838,7 @@ func (k kernelPricer) GroupTransferTime(t engine.Transfer, groupBlocks []int) en
 }
 
 // StageTimes implements core/vllm.StagePricer: the batch's price split by pipeline stage
-// (compat/kernelmodel.StageTimesOfStep), summing to StepTime.
+// (core/kernelmodel.StageTimesOfStep), summing to StepTime.
 func (k kernelPricer) StageTimes(b engine.Batch) []engine.Duration {
 	got := k.m.StageTimesOfStep(shapes(b), b.SkipDrafts)
 	out := make([]engine.Duration, len(got))
@@ -863,13 +863,13 @@ func (k kernelPricer) Assumptions() []string {
 // for core/vllm's Engine.RecordSelected and DPGroup.RecordSelected.
 func (k kernelPricer) RecordSelected(d *load.Data) { k.m.RecordSelected(d) }
 
-// shapes is the batch in the kernel's request shapes. The mapping is compat/kernelmodel's
+// shapes is the batch in the kernel's request shapes. The mapping is core/kernelmodel's
 // (shapeOf): Scheduled is the tokens the forward pass runs, which under speculation is the verify
 // width, and the contract's Tokens already counts the drafts; Computed and PromptLen pass
 // through; CachedTokens is zero because a prefix hit is already in Computed, and the kernel
 // subtracts CachedTokens from Scheduled only for a caller that has not.
 // StepTimesAcrossDP implements core/vllm.DPPricer: one lockstep step of a data-parallel group,
-// each rank priced with the group's padding (compat/kernelmodel.StepTimesAcrossDPOfStep, the
+// each rank priced with the group's padding (core/kernelmodel.StepTimesAcrossDPOfStep, the
 // rule the compatibility engine prices its lockstep with), an empty rank as vLLM's dummy batch.
 func (k kernelPricer) StepTimesAcrossDP(ranks []engine.Batch) []engine.Duration {
 	in := make([][]kernelmodel.ReqShape, len(ranks))

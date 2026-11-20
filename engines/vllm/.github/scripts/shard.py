@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Partition a list of test items into shards, and check that a shard ran exactly its share.
 
-An item is one line: a Go package ("compat/build"), or a package and one of its top-level
-tests ("compat/kernelmodel TestCensus"). Every shard lists the whole set itself, takes its share by
+An item is one line: a Go package ("core/build"), or a package and one of its top-level
+tests ("core/kernelmodel TestCensus"). Every shard lists the whole set itself, takes its share by
 a rule that depends on the list and the weights alone, and then proves it ran exactly that share.
 A package or test that is in no shard is therefore impossible by construction (the shards are
 the classes of one function over one list), and the checks below fail the job if the list is

@@ -20,8 +20,8 @@ import (
 	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/core/kernelmodel"
+	"github.com/inference-sim/blis-vllm/core/vllmsettings"
 )
 
 // Repos is the root package's Repos. An alias rather than a second type, so that a

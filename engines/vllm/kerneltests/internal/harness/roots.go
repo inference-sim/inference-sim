@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/load"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/blis-vllm/core/kernelmodel"
 )
 
 // What a command or test reads by default: the committed scenario fixtures under

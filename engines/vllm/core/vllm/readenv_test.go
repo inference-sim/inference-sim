@@ -10,7 +10,7 @@ import (
 )
 
 // The engine reads UCX_CUDA_IPC_ENABLE_MNNVL (the KV handoff path) and
-// VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS (the KV budget, compat/kernelmodel) and refuses
+// VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS (the KV budget, core/kernelmodel) and refuses
 // every other environment variable it does not read, by name.
 func TestTheEngineReadsTheMNNVLFlagAndRefusesOtherUnreadEnv(t *testing.T) {
 	if err := refuseUnmodelled(engineconfig.Engine{Env: map[string]string{"UCX_CUDA_IPC_ENABLE_MNNVL": "y"}}); err != nil {

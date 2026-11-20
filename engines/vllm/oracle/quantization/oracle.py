@@ -29,8 +29,8 @@ Usage:
     python3 -I oracle/quantization/oracle.py <vllm checkout> json              print the resolutions as JSON
     python3 -I oracle/quantization/oracle.py <vllm checkout> check <file>      fail unless <file> equals what it prints
 
-compat/quantization/resolved.json is the committed output; the package embeds it, and
-compat/kernelmodel/quantization_v4_test.go and quantization_m3_test.go hold the kernel's plans to it.
+core/quantization/resolved.json is the committed output; the package embeds it, and
+core/kernelmodel/quantization_v4_test.go and quantization_m3_test.go hold the kernel's plans to it.
 """
 import hashlib
 import json

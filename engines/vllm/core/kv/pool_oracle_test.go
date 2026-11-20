@@ -107,7 +107,7 @@ func layersOfCase(t *testing.T, c ocCase) []Layer {
 // off): there the two rules differ (1453248 against 1437696 for V4-pro), and V4's layout is
 // block-outermost, which rounds once, as the substrate's single least-common-multiple field
 // (rules.KVCacheGroupsInput.BlockStrideAlignment) does. The substrate has no per-layer field, and
-// no default setting needs one; compat/kernelmodel's TestSubstrateStatesNoPerLayerStrideAlignment records that.
+// no default setting needs one; core/kernelmodel's TestSubstrateStatesNoPerLayerStrideAlignment records that.
 //
 // Two assumptions behind the DeepSeek-V4 rows. The pool is the packed fp8_ds_mla layout: vLLM maps
 // cache_dtype auto and fp8 to it when use_fp8_ds_mla_layout holds

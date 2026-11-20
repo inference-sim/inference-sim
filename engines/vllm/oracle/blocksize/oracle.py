@@ -195,7 +195,7 @@ ASSUMED_FACTS = {
             "(vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the "
             "external flash-attention repository, which is not in the pinned tree, so this is an assumption about the "
             "images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, "
-            "block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only "
+            "block_size 16; core/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only "
             "fa3_available=0 with flashmla_built=1 (size 64)")),
     },
 }

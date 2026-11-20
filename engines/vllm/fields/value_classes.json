@@ -257,7 +257,7 @@
       "other": true,
       "compared_at": [],
       "covered_by": [
-       "compat/kernelmodel/packaging_test.go"
+       "core/kernelmodel/packaging_test.go"
       ]
      }
     ],
@@ -266,7 +266,7 @@
     "stated": [
      {
       "value": "y",
-      "trace": "compat/kernelmodel/packaging_test.go",
+      "trace": "core/kernelmodel/packaging_test.go",
       "reviewed": true
      }
     ],
@@ -293,7 +293,7 @@
        "vllm/v1/worker/gpu_worker.py:781"
       ],
       "covered_by": [
-       "compat/kernelmodel/profiler_graphs_test.go"
+       "core/kernelmodel/profiler_graphs_test.go"
       ]
      },
      {
@@ -305,7 +305,7 @@
        "vllm/v1/worker/gpu_worker.py:781"
       ],
       "covered_by": [
-       "compat/kernelmodel/profiler_graphs_test.go"
+       "core/kernelmodel/profiler_graphs_test.go"
       ]
      }
     ],
@@ -331,12 +331,12 @@
     "stated": [
      {
       "value": false,
-      "trace": "compat/kernelmodel/profiler_graphs_test.go",
+      "trace": "core/kernelmodel/profiler_graphs_test.go",
       "reviewed": true
      },
      {
       "value": true,
-      "trace": "compat/kernelmodel/profiler_graphs_test.go",
+      "trace": "core/kernelmodel/profiler_graphs_test.go",
       "reviewed": true
      }
     ],
@@ -367,7 +367,7 @@
        "vllm/entrypoints/launchers/dp_supervisor.py:263"
       ],
       "covered_by": [
-       "compat/kernelmodel/h200_fields_test.go"
+       "core/kernelmodel/h200_fields_test.go"
       ]
      },
      {
@@ -446,7 +446,7 @@
      },
      {
       "value": false,
-      "trace": "compat/kernelmodel/h200_fields_test.go",
+      "trace": "core/kernelmodel/h200_fields_test.go",
       "reviewed": true
      }
     ],
@@ -1136,7 +1136,7 @@
        "vllm/platforms/rocm.py:401"
       ],
       "covered_by": [
-       "compat/kernelmodel/engine_settings_test.go"
+       "core/kernelmodel/engine_settings_test.go"
       ]
      },
      {
@@ -1156,7 +1156,7 @@
        "vllm/config/attention.py:186"
       ],
       "covered_by": [
-       "compat/kernelmodel/engine_settings_test.go"
+       "core/kernelmodel/engine_settings_test.go"
       ]
      },
      {
@@ -1234,12 +1234,12 @@
     "stated": [
      {
       "value": "auto",
-      "trace": "compat/kernelmodel/engine_settings_test.go",
+      "trace": "core/kernelmodel/engine_settings_test.go",
       "reviewed": true
      },
      {
       "value": "fp8",
-      "trace": "compat/kernelmodel/engine_settings_test.go",
+      "trace": "core/kernelmodel/engine_settings_test.go",
       "reviewed": true
      }
     ],
@@ -1565,7 +1565,7 @@
       "compared_at": [],
       "uncut": true,
       "covered_by": [
-       "compat/kernelmodel/capture_oracle_test.go"
+       "core/kernelmodel/capture_oracle_test.go"
       ]
      }
     ],
@@ -1767,22 +1767,22 @@
     "stated": [
      {
       "value": 8,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 16,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 64,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 100000,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      }
     ],
@@ -1869,7 +1869,7 @@
       "uncompared": true,
       "compared_at": [],
       "covered_by": [
-       "compat/kernelmodel/capture_oracle_test.go"
+       "core/kernelmodel/capture_oracle_test.go"
       ]
      }
     ],
@@ -2171,27 +2171,27 @@
     "stated": [
      {
       "value": "NONE",
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": "PIECEWISE",
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": "FULL",
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": "FULL_DECODE_ONLY",
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": "FULL_AND_PIECEWISE",
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      }
     ],
@@ -2217,7 +2217,7 @@
       "compared_at": [],
       "uncut": true,
       "covered_by": [
-       "compat/kernelmodel/decoder_replay_test.go"
+       "core/kernelmodel/decoder_replay_test.go"
       ]
      }
     ],
@@ -2226,12 +2226,12 @@
     "stated": [
      {
       "value": 64,
-      "trace": "compat/kernelmodel/decoder_replay_test.go",
+      "trace": "core/kernelmodel/decoder_replay_test.go",
       "reviewed": true
      },
      {
       "value": 4096,
-      "trace": "compat/kernelmodel/decoder_replay_test.go",
+      "trace": "core/kernelmodel/decoder_replay_test.go",
       "reviewed": true
      }
     ],
@@ -2285,7 +2285,7 @@
        "vllm/config/vllm.py:2582"
       ],
       "covered_by": [
-       "compat/kernelmodel/capture_oracle_test.go"
+       "core/kernelmodel/capture_oracle_test.go"
       ]
      },
      {
@@ -2298,7 +2298,7 @@
        "vllm/config/vllm.py:2587"
       ],
       "covered_by": [
-       "compat/kernelmodel/capture_oracle_test.go"
+       "core/kernelmodel/capture_oracle_test.go"
       ]
      },
      {
@@ -2310,7 +2310,7 @@
        "vllm/config/vllm.py:2587"
       ],
       "covered_by": [
-       "compat/kernelmodel/capture_oracle_test.go"
+       "core/kernelmodel/capture_oracle_test.go"
       ]
      }
     ],
@@ -2594,47 +2594,47 @@
     "stated": [
      {
       "value": 2,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 16,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 64,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 100,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 128,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 300,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 1000,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 1024,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 2048,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      }
     ],
@@ -2660,7 +2660,7 @@
       "compared_at": [],
       "uncut": true,
       "covered_by": [
-       "compat/kernelmodel/capture_oracle_test.go"
+       "core/kernelmodel/capture_oracle_test.go"
       ]
      }
     ],
@@ -2870,22 +2870,22 @@
     "stated": [
      {
       "value": 8,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 16,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 64,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 100000,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      }
     ],
@@ -5122,7 +5122,7 @@
        "vllm/v1/worker/ubatch_utils.py:100"
       ],
       "covered_by": [
-       "compat/kernelmodel/ep_oracle_test.go"
+       "core/kernelmodel/ep_oracle_test.go"
       ]
      }
     ],
@@ -5620,7 +5620,7 @@
     "stated": [
      {
       "value": true,
-      "trace": "compat/kernelmodel/ep_oracle_test.go",
+      "trace": "core/kernelmodel/ep_oracle_test.go",
       "reviewed": true
      }
     ],
@@ -6024,8 +6024,8 @@
       "compared_at": [],
       "uncut": true,
       "covered_by": [
-       "compat/build/memory_utilization_test.go",
-       "compat/kernelmodel/capacity_test.go"
+       "core/build/memory_utilization_test.go",
+       "core/kernelmodel/capacity_test.go"
       ]
      }
     ],
@@ -6034,17 +6034,17 @@
     "stated": [
      {
       "value": 0.9,
-      "trace": "compat/build/memory_utilization_test.go",
+      "trace": "core/build/memory_utilization_test.go",
       "reviewed": true
      },
      {
       "value": 0.95,
-      "trace": "compat/build/memory_utilization_test.go",
+      "trace": "core/build/memory_utilization_test.go",
       "reviewed": true
      },
      {
       "value": 0.8,
-      "trace": "compat/kernelmodel/capacity_test.go",
+      "trace": "core/kernelmodel/capacity_test.go",
       "reviewed": true
      }
     ],
@@ -7600,7 +7600,7 @@
        "vllm/models/qwen4_exp/nvidia/qsa.py:440"
       ],
       "covered_by": [
-       "compat/kernelmodel/language_model_only_test.go"
+       "core/kernelmodel/language_model_only_test.go"
       ]
      }
     ],
@@ -7730,7 +7730,7 @@
     "stated": [
      {
       "value": true,
-      "trace": "compat/kernelmodel/language_model_only_test.go",
+      "trace": "core/kernelmodel/language_model_only_test.go",
       "reviewed": true
      }
     ],
@@ -8015,7 +8015,7 @@
        "vllm/config/vllm.py:2582"
       ],
       "covered_by": [
-       "compat/kernelmodel/capture_oracle_test.go"
+       "core/kernelmodel/capture_oracle_test.go"
       ]
      },
      {
@@ -8028,7 +8028,7 @@
        "vllm/config/vllm.py:2587"
       ],
       "covered_by": [
-       "compat/kernelmodel/capture_oracle_test.go"
+       "core/kernelmodel/capture_oracle_test.go"
       ]
      },
      {
@@ -8040,7 +8040,7 @@
        "vllm/config/vllm.py:2587"
       ],
       "covered_by": [
-       "compat/kernelmodel/capture_oracle_test.go"
+       "core/kernelmodel/capture_oracle_test.go"
       ]
      }
     ],
@@ -8332,47 +8332,47 @@
     "stated": [
      {
       "value": 2,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 16,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 64,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 100,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 128,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 300,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 1000,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 1024,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
      {
       "value": 2048,
-      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "trace": "core/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      }
     ],
@@ -10213,7 +10213,7 @@
        "vllm/model_executor/model_loader/weight_utils.py:391"
       ],
       "covered_by": [
-       "compat/kernelmodel/quantization_m3_test.go"
+       "core/kernelmodel/quantization_m3_test.go"
       ]
      },
      {
@@ -10230,8 +10230,8 @@
       "other": true,
       "compared_at": [],
       "covered_by": [
-       "compat/kernelmodel/quantization_m3_test.go",
-       "compat/kernelmodel/quantization_v4_test.go"
+       "core/kernelmodel/quantization_m3_test.go",
+       "core/kernelmodel/quantization_v4_test.go"
       ]
      },
      {
@@ -10472,17 +10472,17 @@
     "stated": [
      {
       "value": "deepseek_v4_fp8",
-      "trace": "compat/kernelmodel/quantization_v4_test.go",
+      "trace": "core/kernelmodel/quantization_v4_test.go",
       "reviewed": true
      },
      {
       "value": "mxfp8",
-      "trace": "compat/kernelmodel/quantization_m3_test.go",
+      "trace": "core/kernelmodel/quantization_m3_test.go",
       "reviewed": true
      },
      {
       "value": "modelopt_mixed",
-      "trace": "compat/kernelmodel/quantization_m3_test.go",
+      "trace": "core/kernelmodel/quantization_m3_test.go",
       "reviewed": true
      }
     ],
@@ -12512,7 +12512,7 @@
        "vllm/v1/worker/gpu/spec_decode/rejection_sampler.py:177"
       ],
       "covered_by": [
-       "compat/kernelmodel/h200_fields_test.go"
+       "core/kernelmodel/h200_fields_test.go"
       ]
      },
      {
@@ -12551,7 +12551,7 @@
        "vllm/v1/worker/gpu/spec_decode/rejection_sampler.py:168"
       ],
       "covered_by": [
-       "compat/kernelmodel/h200_fields_test.go",
+       "core/kernelmodel/h200_fields_test.go",
        "core/engineconfig/synthetic_acceptance_test.go"
       ]
      }
@@ -12655,12 +12655,12 @@
      },
      {
       "value": "synthetic",
-      "trace": "compat/kernelmodel/h200_fields_test.go",
+      "trace": "core/kernelmodel/h200_fields_test.go",
       "reviewed": true
      },
      {
       "value": "block",
-      "trace": "compat/kernelmodel/h200_fields_test.go",
+      "trace": "core/kernelmodel/h200_fields_test.go",
       "reviewed": true
      },
      {
@@ -12691,7 +12691,7 @@
       "compared_at": [],
       "uncut": true,
       "covered_by": [
-       "compat/kernelmodel/synthetic_acceptance_test.go",
+       "core/kernelmodel/synthetic_acceptance_test.go",
        "core/engineconfig/synthetic_acceptance_test.go"
       ]
      },
@@ -12742,12 +12742,12 @@
      },
      {
       "value": 2.84,
-      "trace": "compat/kernelmodel/synthetic_acceptance_test.go",
+      "trace": "core/kernelmodel/synthetic_acceptance_test.go",
       "reviewed": true
      },
      {
       "value": 3.5,
-      "trace": "compat/kernelmodel/synthetic_acceptance_test.go",
+      "trace": "core/kernelmodel/synthetic_acceptance_test.go",
       "reviewed": true
      }
     ],

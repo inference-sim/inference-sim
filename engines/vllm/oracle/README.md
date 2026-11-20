@@ -51,7 +51,7 @@ so, when it is unset.
 | T3/T4 data parallel with NIXL on every rank | `run_dp.py` | `scenarios-dp-nixl/` | | `./core/engine` |
 | T4 NIXL connector | `run_connector.py` | `scenarios/connector/` | `gen_connector_fuzz.py` (seeds 10000+ reach `max_model_len`; 20000+ add hybrid groups and drafters; 30000+ the batch queue) | `./core/connector/nixl` (`BLIS_VLLM_CONNECTOR_FUZZ_DIR`) |
 | T4 OffloadingConnector (CPU tier, LRU) | `run_offloading.py` | `scenarios/offloading/` | `gen_offloading_fuzz.py` (seeds 20000+ add sliding-window groups) | `./core/connector/offloading` (`BLIS_VLLM_OFFLOAD_FUZZ_DIR`) |
-| T2 stated `swa_bounded_replay` (vLLM resolves the layout) | `run_swa_layout.py` | `scenarios/swa/` | | `./core/sched` (`TestSWALayoutScenariosAgainstVLLM`), `./compat/kernelmodel` |
+| T2 stated `swa_bounded_replay` (vLLM resolves the layout) | `run_swa_layout.py` | `scenarios/swa/` | | `./core/sched` (`TestSWALayoutScenariosAgainstVLLM`), `./core/kernelmodel` |
 | T2 whether the server answers render calls (`enable_scale_out`) | `run_render.py` | `scenarios/render/` | | `./core/vllm` (`TestRenderGoldensAreVLLMsDecision`) |
 | T4 MultiConnector over NIXL and the OffloadingConnector, both orders | `run_multiconnector.py` | `scenarios/multiconnector/` | `gen_multiconnector_fuzz.py` (seeds 20000+ add sliding-window groups; 40000+ async scheduling) | `./core/connector/multi` (`BLIS_VLLM_MULTI_FUZZ_DIR`) |
 | T5 metrics | `run_metrics.py` | `scenarios/` (tier-2 scenarios) | `gen_fuzz.py` | `./core/metrics` (`BLIS_VLLM_METRICS_FUZZ_DIR`) |
@@ -172,15 +172,15 @@ does not list. Each answer is the method vLLM resolves to, or the text of the er
 MiniMax-M3 checkpoints it also builds vLLM's quantization config from the checkpoint's `quantization_config`
 and asks it, for every layer prefix MiniMax-M3's model builds (`vllm/models/minimax_m3/nvidia/model.py`),
 whether the layer is excluded and which algorithm the per-layer mapping gives it, and records the algorithms
-by class of layer. The committed answers are `compat/quantization/resolved.json`, which the
-`compat/quantization` package embeds, which `compat/kernelmodel/quantization_v4_test.go` and
+by class of layer. The committed answers are `core/quantization/resolved.json`, which the
+`core/quantization` package embeds, which `core/kernelmodel/quantization_v4_test.go` and
 `quantization_m3_test.go` hold the kernel's plans to, and CI fails if the file differs from what the oracle
 prints. It needs vLLM's `requirements/common.txt`, `torch` and `torchvision` (the model registry imports the
 model's modules); it does not need a GPU.
 
 ```sh
 BLIS_ORACLE_CATALOG=<blis-substrate>/catalog/models \
-  python -I oracle/quantization/oracle.py <vllm checkout> json > compat/quantization/resolved.json
+  python -I oracle/quantization/oracle.py <vllm checkout> json > core/quantization/resolved.json
 ```
 
 ## Scenario

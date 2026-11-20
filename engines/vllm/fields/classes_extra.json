@@ -124,7 +124,7 @@
  "UCX_CUDA_IPC_ENABLE_MNNVL": {
   "stated": [
    {
-    "trace": "compat/kernelmodel/packaging_test.go",
+    "trace": "core/kernelmodel/packaging_test.go",
     "values": [
      "y"
     ],
@@ -143,7 +143,7 @@
  "attention_config.indexer_kv_dtype": {
   "stated": [
    {
-    "trace": "compat/kernelmodel/engine_settings_test.go",
+    "trace": "core/kernelmodel/engine_settings_test.go",
     "values": [
      "auto",
      "fp8"
@@ -155,7 +155,7 @@
  "compilation_config.cudagraph_mode": {
   "stated": [
    {
-    "trace": "compat/kernelmodel/capture_oracle_test.go",
+    "trace": "core/kernelmodel/capture_oracle_test.go",
     "values": ["NONE", "PIECEWISE", "FULL", "FULL_DECODE_ONLY", "FULL_AND_PIECEWISE"],
     "why": "the capture oracle (CAPTURE_CASES of oracle/lower/extract.py, 57 cases) states each of the five modes on h200 and b200 and compares the kernel's capture ceiling and sizes with vLLM's own VllmConfig._set_cudagraph_sizes and its dispatcher; the kernel's step price per mode follows the v0.31.0 policy, as the entry's note says"
    }
@@ -164,7 +164,7 @@
  "compilation_config.cudagraph_capture_sizes": {
   "stated": [
    {
-    "trace": "compat/kernelmodel/capture_oracle_test.go",
+    "trace": "core/kernelmodel/capture_oracle_test.go",
     "values": [8, 16, 64, 100000],
     "why": "the capture oracle states these sizes as elements of the lists it gives (a list is one value of the field, and the evidence's classes are the single class that holds every value): [8, 16] and [64, 8, 8, 16, 100000] sorted by the resolver; the kernel's resolved sizes and ceiling equal vLLM's VllmConfig._set_cudagraph_sizes"
    }
@@ -173,7 +173,7 @@
  "cudagraph_capture_sizes": {
   "stated": [
    {
-    "trace": "compat/kernelmodel/capture_oracle_test.go",
+    "trace": "core/kernelmodel/capture_oracle_test.go",
     "values": [8, 16, 64, 100000],
     "why": "the capture oracle states these sizes as elements of the lists it gives (a list is one value of the field, and the evidence's classes are the single class that holds every value): [8, 16] and [64, 8, 8, 16, 100000] sorted by the resolver; the kernel's resolved sizes and ceiling equal vLLM's VllmConfig._set_cudagraph_sizes"
    }
@@ -189,7 +189,7 @@
     "why": "the scenario states env VLLM_USE_RUST_FRONTEND \"1\" on DeepSeek-V4.1-Flash on h200, and TestTheRustFrontendIsPricedAtItsAdmissionRate prices its admission at the Rust rate. The rate is the registry's, method assumed (a vendor speedup applied to the Python rate), so the class is covered by a pricing test and no measurement"
    },
    {
-    "trace": "compat/kernelmodel/h200_fields_test.go",
+    "trace": "core/kernelmodel/h200_fields_test.go",
     "values": [
      false
     ],
@@ -207,7 +207,7 @@
     "why": "TestSyntheticAcceptanceLengthIsVLLMsOwnResolution states synthetic with every length of the oracle's grid and finds vLLM's per-position rates equal acceptance.MinimumVarianceRates; the Triton sampler that consumes the rates is not compared (it needs a GPU)"
    },
    {
-    "trace": "compat/kernelmodel/h200_fields_test.go",
+    "trace": "core/kernelmodel/h200_fields_test.go",
     "values": [
      "synthetic",
      "block"
@@ -237,7 +237,7 @@
     "why": "TestSyntheticAcceptanceLengthIsVLLMsOwnResolution states every length of oracle/synthetic_acceptance's grid (1, 1.1, 1.5, 2, 2.5, 2.84, 3, 10/3, K, K+0.5, K+1 for K 1 to 8) with rejection_sample_method synthetic and finds vLLM's rates equal acceptance.MinimumVarianceRates, bit for bit, and each length outside [1, K+1] refused by the block as by vLLM"
    },
    {
-    "trace": "compat/kernelmodel/synthetic_acceptance_test.go",
+    "trace": "core/kernelmodel/synthetic_acceptance_test.go",
     "values": [
      2.84,
      3.5
@@ -249,7 +249,7 @@
  "compilation_config.max_cudagraph_capture_size": {
   "stated": [
    {
-    "trace": "compat/kernelmodel/capture_oracle_test.go",
+    "trace": "core/kernelmodel/capture_oracle_test.go",
     "values": [
      2,
      16,
@@ -268,7 +268,7 @@
  "enable_expert_parallel": {
   "stated": [
    {
-    "trace": "compat/kernelmodel/ep_oracle_test.go",
+    "trace": "core/kernelmodel/ep_oracle_test.go",
     "values": [
      true
     ],
@@ -279,7 +279,7 @@
  "gpu_memory_utilization": {
   "stated": [
    {
-    "trace": "compat/build/memory_utilization_test.go",
+    "trace": "core/build/memory_utilization_test.go",
     "values": [
      0.9,
      0.95
@@ -287,7 +287,7 @@
     "why": "the test restates 0.9 and 0.95 on a scenario the way a scoring harness does, and finds the KV pool equal to vLLM's rule (ceil(total memory x utilization) less the non-KV memory, in whole pages), larger at 0.95 than at 0.9, and not the default's"
    },
    {
-    "trace": "compat/kernelmodel/capacity_test.go",
+    "trace": "core/kernelmodel/capacity_test.go",
     "values": [
      0.8
     ],
@@ -318,7 +318,7 @@
  "language_model_only": {
   "stated": [
    {
-    "trace": "compat/kernelmodel/language_model_only_test.go",
+    "trace": "core/kernelmodel/language_model_only_test.go",
     "values": [
      true
     ],
@@ -329,7 +329,7 @@
  "max_cudagraph_capture_size": {
   "stated": [
    {
-    "trace": "compat/kernelmodel/capture_oracle_test.go",
+    "trace": "core/kernelmodel/capture_oracle_test.go",
     "values": [
      2,
      16,
@@ -348,14 +348,14 @@
  "quantization": {
   "stated": [
    {
-    "trace": "compat/kernelmodel/quantization_v4_test.go",
+    "trace": "core/kernelmodel/quantization_v4_test.go",
     "values": [
      "deepseek_v4_fp8"
     ],
     "why": "the test states deepseek_v4_fp8 on a DeepSeek-V4 FP8 checkpoint and finds the plan equal to the unstated one"
    },
    {
-    "trace": "compat/kernelmodel/quantization_m3_test.go",
+    "trace": "core/kernelmodel/quantization_m3_test.go",
     "values": [
      "mxfp8",
      "modelopt_mixed"
@@ -424,7 +424,7 @@
  "compilation_config.decoder_replay_cudagraph_capture_sizes": {
   "stated": [
    {
-    "trace": "compat/kernelmodel/decoder_replay_test.go",
+    "trace": "core/kernelmodel/decoder_replay_test.go",
     "values": [
      64,
      4096
@@ -436,7 +436,7 @@
  "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": {
   "stated": [
    {
-    "trace": "compat/kernelmodel/profiler_graphs_test.go",
+    "trace": "core/kernelmodel/profiler_graphs_test.go",
     "values": [
      false,
      true

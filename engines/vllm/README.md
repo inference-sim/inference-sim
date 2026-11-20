@@ -48,9 +48,8 @@ inference-sim's.
 
 | Path | What |
 |---|---|
-| `core/` | the engine, diff-tested against vLLM's own classes |
+| `core/` | the engine, diff-tested against vLLM's own classes, and the configuration, cost-model glue and run types inference-sim builds it from (`core/build`, `core/kernelmodel`, `core/runconfig`) |
 | `vllmengine/` | how a simulator gets the engine: it registers the factory, prices steps with the cost model and sizes the KV cache |
-| `compat/` | inference-sim's engine as it ran before the extraction, kept verbatim, each file stating its source |
 | `core/rulepack/`, `core/engineconfig/` | the per-release validation rules and the engine block's configuration |
 | `fields/`, `fields.json` | the field list, its generator and hand-written statuses |
 | `kernels/`, `kernel_impls.json`, `kernelimpls.go` | the kernel-implementation table, its generator, and the lookup the lowering uses |

@@ -16,9 +16,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/kernelmodel"
+	"github.com/inference-sim/blis-vllm/core/vllmsettings"
 )
 
 // VLM-3: a field marked not modelled is refused when it is set away from its default, and the

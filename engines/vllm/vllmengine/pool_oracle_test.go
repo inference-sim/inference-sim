@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/blis-vllm/core/kernelmodel"
 	"github.com/inference-sim/blis-vllm/core/vllm"
 )
 

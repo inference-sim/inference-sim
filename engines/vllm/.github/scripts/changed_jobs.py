@@ -77,7 +77,7 @@ ORACLE_PATHS = [
     r"^core/kv/testdata/",
     r"^core/lora/testdata/",
     r"^core/vllm/testdata/golden-render/",
-    r"^compat/quantization/resolved\.json$",
+    r"^core/quantization/resolved\.json$",
     r"^core/lower/testdata/",
     r"^core/engineconfig/testdata/",
     r"^core/rulepack/v0_33/testdata/",

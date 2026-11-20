@@ -71,7 +71,7 @@ func TestFieldListJSONIsTheCommittedFile(t *testing.T) {
 	}
 }
 
-// gpu_memory_utilization sizes the KV pool the engine admits against (compat/kernelmodel
+// gpu_memory_utilization sizes the KV pool the engine admits against (core/kernelmodel
 // KVMemory, after vLLM's request_memory), and a stated value reaches it, so the list classes it
 // modelled with the tests that show that as its evidence. A not_modelled field with the rule
 // leave_unset is dropped to the default by a scorer, which priced the pool at the wrong size for

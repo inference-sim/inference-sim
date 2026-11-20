@@ -142,9 +142,7 @@ func readRatchet(t *testing.T, path string) (head []string, lines []string) {
 	return head, lines
 }
 
-// TestNoDecisionDependsOnAFreeTextLabel runs the lint over the engine's own code. compat/ is the
-// compatibility engine, deleted in M4 (plan, "Relaxing the deprecation rule until M4"); it keeps
-// its sites on the list under its own prefix so the ratchet covers it too.
+// TestNoDecisionDependsOnAFreeTextLabel runs the lint over the engine's own code.
 func TestNoDecisionDependsOnAFreeTextLabel(t *testing.T) {
 	got := findLabelBranches(t, nil, ".")
 	_, want := readRatchet(t, "testdata/label_branches.txt")

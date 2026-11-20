@@ -14,7 +14,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
-	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/core/vllmsettings"
 )
 
 // The pipeline-parallel fixes, read through the kernel's own state: each test builds a pool

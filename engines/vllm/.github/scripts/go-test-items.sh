@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# List the items a Go test group is made of, one per line: a package ("compat/build"; "." is the
+# List the items a Go test group is made of, one per line: a package ("core/build"; "." is the
 # module's root package), or, for a package named in the split file, each of its top-level tests
-# ("compat/kernelmodel TestName"). Only packages that hold a test are listed.
+# ("core/kernelmodel TestName"). Only packages that hold a test are listed.
 #
 # Usage: go-test-items.sh [-exclude REGEX] [-split FILE] PATTERN...
 #   PATTERN  go list patterns (./... for every package)

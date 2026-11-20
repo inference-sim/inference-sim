@@ -12,7 +12,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/load"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/blis-vllm/core/kernelmodel"
 	"github.com/inference-sim/blis-vllm/core/vllm"
 	"github.com/inference-sim/blis-vllm/internal/substratedata"
 )

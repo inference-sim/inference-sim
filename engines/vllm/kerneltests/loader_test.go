@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/core/kernelmodel"
 	"github.com/inference-sim/blis-vllm/core/vllm"
+	"github.com/inference-sim/blis-vllm/core/vllmsettings"
 	"github.com/inference-sim/blis-vllm/internal/substratedata"
 	"github.com/inference-sim/blis-vllm/kerneltests/internal/artifacttest"
 
@@ -23,8 +23,8 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-vllm/compat/lowering"
 	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/lowering"
 	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
 	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
 )

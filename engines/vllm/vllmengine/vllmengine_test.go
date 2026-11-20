@@ -16,7 +16,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/load"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/blis-vllm/core/kernelmodel"
 	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/vllm"
 )
@@ -392,7 +392,7 @@ func TestKVPoolBlocksAreVLLMsOverTheKVCacheGroups(t *testing.T) {
 		// get_kv_cache_config_from_groups on those bytes and the same layers sizes 72645 blocks
 		// (oracle/run_scheduler.py on the probe scenario with kv_available_bytes 52667592213).
 		// The graph now also prices MiniMax-M3's vision tower, resident unless language_model_only
-		// is true (compat/lowering/encoder.go): 867238911 bytes more off a rank's budget, 51800353302
+		// is true (core/lowering/encoder.go): 867238911 bytes more off a rank's budget, 51800353302
 		// bytes. The pool is those bytes over the 724992 bytes of a block over the group's layers
 		// (the law the two figures above obey: 72893 blocks at 52846898709 bytes, 72645 at
 		// 52667592213), floored: 71449 blocks. Re-run the oracle probe at that budget to confirm.

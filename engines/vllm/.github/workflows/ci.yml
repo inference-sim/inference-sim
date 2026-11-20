@@ -307,17 +307,16 @@ jobs:
           path: bench.txt
 
   # The race detector stays on every package that holds a goroutine, channel, atomic, mutex or
-  # Once. Today those are internal/substratedata (a sync.Once), core/vllm (the registration Once)
-  # and compat/prefix (two atomic counters); the guard below re-derives them from the non-test
-  # sources on every run. The legs also run the packages that drive them: compat/kv and compat/engine
-  # (through compat/prefix), vllmengine, core/sched, core/engine, core/connector, compat/dplb and
-  # compat/kvtransfer (through core/vllm).
+  # Once. Today those are internal/substratedata (a sync.Once) and core/vllm (the registration Once);
+  # the guard below re-derives them from the non-test
+  # sources on every run. The legs also run the packages that drive them: vllmengine, core/sched,
+  # core/engine, core/connector and core/kvtransfer (through core/vllm).
   #
-  # compat/kernelmodel's non-test sources hold no primitive and start no goroutine, but its census test
+  # core/kernelmodel's non-test sources hold no primitive and start no goroutine, but its census test
   # (TestBlockSizeResolutionOverTheCensusFixtures) runs parallel subtests that share counters under a
   # sync.Mutex, and the package drives core/vllm through its registration Once. So one leg raced
   # exactly the tests that use t.Parallel, sync or a goroutine (derived with grep over its _test.go
-  # files: that one test). The rest of compat/kernelmodel, about 90 seconds of serial pricing tests, is
+  # files: that one test). The rest of core/kernelmodel, about 90 seconds of serial pricing tests, is
   # raced nowhere: under -race it took 1,659 seconds, and it holds no goroutine of its own.
   #
   # The guard is its own small job. The race run is a matrix with one leg for each package or
@@ -325,17 +324,16 @@ jobs:
   # required checks: `go` aggregates them.
 
   # The race detector stays on every package that holds a goroutine, channel, atomic, mutex or
-  # Once. Today those are internal/substratedata (a sync.Once), core/vllm (the registration Once)
-  # and compat/prefix (two atomic counters); the guard below re-derives them from the non-test
-  # sources on every run. The legs also run the packages that drive them: compat/kv and compat/engine
-  # (through compat/prefix), vllmengine, core/sched, core/engine, core/connector, compat/dplb and
-  # compat/kvtransfer (through core/vllm).
+  # Once. Today those are internal/substratedata (a sync.Once) and core/vllm (the registration Once);
+  # the guard below re-derives them from the non-test
+  # sources on every run. The legs also run the packages that drive them: vllmengine, core/sched,
+  # core/engine, core/connector and core/kvtransfer (through core/vllm).
   #
-  # compat/kernelmodel's non-test sources hold no primitive and start no goroutine, but its census test
+  # core/kernelmodel's non-test sources hold no primitive and start no goroutine, but its census test
   # (TestBlockSizeResolutionOverTheCensusFixtures) runs parallel subtests that share counters under a
   # sync.Mutex, and the package drives core/vllm through its registration Once. So legs race exactly the
   # tests that use t.Parallel, sync or a goroutine (derived with grep over its _test.go files: that one test).
-  # The rest of compat/kernelmodel, about 90 seconds of serial pricing tests, is raced nowhere: under -race it took
+  # The rest of core/kernelmodel, about 90 seconds of serial pricing tests, is raced nowhere: under -race it took
   # 1,659 seconds, and it holds no goroutine of its own. The census test took 13 minutes alone under -race,
   # so it runs in four slices side by side: BLIS_CENSUS_SLICE=k/n gives slice k the fixtures at the positions
   # k, k+n, k+2n, ... of the sorted list (every fixture is in exactly one slice), and the exact counts of the
@@ -355,9 +353,9 @@ jobs:
       # when a package with a primitive is in neither this list nor EXCLUDED, and the legs' packages
       # (.github/shards/race-legs.json) are checked against this list by the second guard step.
       RACE_PKGS: >-
-        ./internal/substratedata ./core/vllm ./compat/prefix
-        ./compat/engine ./core/sched ./core/engine ./vllmengine ./compat/dplb ./compat/kv
-        ./compat/kvtransfer ./core/connector/...
+        ./internal/substratedata ./core/vllm
+        ./core/sched ./core/engine ./vllmengine
+        ./core/kvtransfer ./core/connector/...
       # Import paths of packages with concurrency primitives that run without -race, space
       # separated, each with its reason stated here. None today.
       EXCLUDED: ""
@@ -717,7 +715,7 @@ jobs:
       - name: the quantization resolutions are vLLM's own
         run: |
           catalog="$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)/catalog/models"
-          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/quantization/oracle.py vllm-source check compat/quantization/resolved.json
+          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/quantization/oracle.py vllm-source check core/quantization/resolved.json
       # speculative_config.synthetic_acceptance_length, resolved to per-position rates by vLLM's own
       # function over a grid of lengths, valid and not (the sampler that consumes the rates needs a GPU).
       - name: the synthetic acceptance resolutions are vLLM's own

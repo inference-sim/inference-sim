@@ -22,7 +22,7 @@ case_() {
 ALL="bench blocksize go goldens inpackage kerneltests lint metrics oracle packs_v0_33 race race_guard rest"
 CENSUS="kernelmodel-census-0 kernelmodel-census-1 kernelmodel-census-2 kernelmodel-census-3"
 ENGINE="vllmengine-0 vllmengine-1"
-EVERY_LEG="core compat $ENGINE $CENSUS"
+EVERY_LEG="core $ENGINE $CENSUS"
 
 case_ "a documents-only change"                 "-" "-" -- docs/feature-matrix.md docs/feature-matrix.md README.md AGENTS.md
 case_ "a licence file"                          "-" "-" -- LICENSE NOTICE .gitignore
@@ -42,8 +42,8 @@ case_ "a render-endpoint golden only"            "bench goldens metrics oracle r
 case_ "an oracle scenario"                      "goldens metrics oracle race rest" "$EVERY_LEG" -- oracle/scenarios/connector/nixl-d-abort-waiting.json
 case_ "a rules pack's source"                   "bench go inpackage kerneltests lint oracle packs_v0_33 race race_guard rest" "core $ENGINE $CENSUS" -- core/rulepack/v0_33/pack.go
 case_ "a rules pack's test"                     "go lint packs_v0_33 rest" "-" -- core/rulepack/v0_33/source_test.go
-case_ "a kernelmodel Go file"                   "go kerneltests lint race race_guard rest" "$ENGINE $CENSUS" -- compat/kernelmodel/acceptance.go
-case_ "a kernelmodel test"                      "go lint race rest" "$CENSUS" -- compat/kernelmodel/blocksize_census_test.go
+case_ "a kernelmodel Go file"                   "go kerneltests lint race race_guard rest" "$ENGINE $CENSUS" -- core/kernelmodel/acceptance.go
+case_ "a kernelmodel test"                      "go lint race rest" "$CENSUS" -- core/kernelmodel/blocksize_census_test.go
 case_ "a kernel-test fixture"                   "inpackage kerneltests race rest" "$EVERY_LEG" -- kerneltests/testdata/direct/x.yaml
 case_ "a kernel test in the kernel package"     "go inpackage" "-" -- kerneltests/_inpackage/caches_test.go
 case_ "a vllmengine Go file"                    "go lint race race_guard rest" "$ENGINE" -- vllmengine/engine.go

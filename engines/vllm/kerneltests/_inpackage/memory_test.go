@@ -4,7 +4,7 @@ package latencykernel
 
 import (
 	"fmt"
-	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/core/vllmsettings"
 	"math"
 	"path/filepath"
 	"strings"
@@ -279,7 +279,7 @@ func TestASparseMLALayersIndexerIsAPiecewiseSplitPoint(t *testing.T) {
 // head), a 64-token page -- the block a DSA model runs -- must hold exactly that times its
 // layers.
 //
-// A plain "fp8" is whatever the chosen backend makes of it (blis-vllm's compat/lowering): on h200,
+// A plain "fp8" is whatever the chosen backend makes of it (blis-vllm's core/lowering): on h200,
 // FlashMLA-sparse serves it as fp8_ds_mla, 656; on the same chip marked data-center
 // Blackwell, FlashInfer serves it as stated, 576. "fp8_e4m3" stays 576 on h200, because
 // FlashMLA-sparse does not list it and FlashInfer's SM90 sparse MLA does.

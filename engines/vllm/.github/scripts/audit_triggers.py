@@ -164,7 +164,7 @@ def ci_yml():
 
 
 def oracle_python():
-    top = r"(?:core|compat|rules|docs|fields|registry|kerneltests|testdata|cmd|vllmengine|internal)"
+    top = r"(?:core|docs|fields|registry|kerneltests|testdata|cmd|vllmengine|internal)"
     rx = re.compile(r"[\"'](%s/[A-Za-z0-9_./*-]+|fields\.json|go\.mod)[\"']" % top)
     for py in glob.glob(os.path.join(ROOT, "oracle", "**", "*.py"), recursive=True):
         if os.path.basename(py).startswith("mutate"):

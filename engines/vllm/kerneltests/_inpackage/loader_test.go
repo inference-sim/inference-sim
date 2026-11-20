@@ -9,9 +9,9 @@ import (
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/artifacttest"
 	"github.com/inference-sim/blis-substrate/load"
-	"github.com/inference-sim/blis-vllm/compat/lowering"
-	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/core/lowering"
 	"github.com/inference-sim/blis-vllm/core/vllm"
+	"github.com/inference-sim/blis-vllm/core/vllmsettings"
 
 	schemas "github.com/inference-sim/blis-substrate/contracts"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"

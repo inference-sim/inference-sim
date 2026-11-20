@@ -1570,8 +1570,8 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/packaging_test.go",
-          "compat/kernelmodel/group_placement_test.go"
+          "core/kernelmodel/packaging_test.go",
+          "core/kernelmodel/group_placement_test.go"
         ]
       },
       "value_classes": {
@@ -1707,7 +1707,7 @@
       },
       "estimation": {
         "rule": "leave_unset",
-        "preserves": "the NIC path the engine prices for a handoff between nodes when UCX_CUDA_IPC_ENABLE_MNNVL=y is not stated (compat/kernelmodel): a transport list that names an RDMA transport, or all, reaches the NIC; a deny list or a list with no RDMA transport does not. UCX FAQ for the list syntax; no vLLM function resolves it",
+        "preserves": "the NIC path the engine prices for a handoff between nodes when UCX_CUDA_IPC_ENABLE_MNNVL=y is not stated (core/kernelmodel): a transport list that names an RDMA transport, or all, reaches the NIC; a deny list or a list with no RDMA transport does not. UCX FAQ for the list syntax; no vLLM function resolves it",
         "valid_when": [
           {
             "value_list_has_any": [
@@ -3526,7 +3526,7 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/profiler_graphs_test.go",
+          "core/kernelmodel/profiler_graphs_test.go",
           "core/vllm/readenv_test.go"
         ]
       },
@@ -5168,7 +5168,7 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/h200_fields_test.go",
+          "core/kernelmodel/h200_fields_test.go",
           "kerneltests/prefill_forms_test.go",
           "vllmengine/testdata/deepseek-v41-flash-h200-tp8-dspark5-synthetic-rust.yaml"
         ]
@@ -5875,8 +5875,8 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/engine_settings_test.go",
-          "compat/kernelmodel/indexer_record_test.go",
+          "core/kernelmodel/engine_settings_test.go",
+          "core/kernelmodel/indexer_record_test.go",
           "core/rulepack/v0_33/indexer_kv_dtype_test.go",
           "core/rulepack/v0_33/testdata/vllm_indexer_kv_dtype.json"
         ]
@@ -6284,7 +6284,7 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/capture_oracle_test.go",
+          "core/kernelmodel/capture_oracle_test.go",
           "core/lower/testdata/vllm_lower.json",
           "core/rulepack/pack/cudagraph_test.go"
         ]
@@ -6338,7 +6338,7 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/capture_oracle_test.go",
+          "core/kernelmodel/capture_oracle_test.go",
           "core/lower/testdata/vllm_lower.json",
           "core/rulepack/pack/cudagraph_test.go"
         ]
@@ -6432,7 +6432,7 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/decoder_replay_test.go"
+          "core/kernelmodel/decoder_replay_test.go"
         ]
       },
       "value_classes": {
@@ -6572,7 +6572,7 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/capture_oracle_test.go",
+          "core/kernelmodel/capture_oracle_test.go",
           "core/lower/testdata/vllm_lower.json",
           "core/rulepack/pack/cudagraph_test.go"
         ]
@@ -6877,7 +6877,7 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/capture_oracle_test.go",
+          "core/kernelmodel/capture_oracle_test.go",
           "core/lower/testdata/vllm_lower.json",
           "core/rulepack/pack/cudagraph_test.go"
         ]
@@ -7678,7 +7678,7 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/ep_oracle_test.go",
+          "core/kernelmodel/ep_oracle_test.go",
           "core/lower/testdata/vllm_lower.json"
         ]
       },
@@ -8349,8 +8349,8 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/build/memory_utilization_test.go",
-          "compat/kernelmodel/capacity_test.go"
+          "core/build/memory_utilization_test.go",
+          "core/kernelmodel/capacity_test.go"
         ]
       },
       "value_classes": {
@@ -9078,7 +9078,7 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/language_model_only_test.go"
+          "core/kernelmodel/language_model_only_test.go"
         ]
       },
       "value_classes": {
@@ -9451,7 +9451,7 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/capture_oracle_test.go",
+          "core/kernelmodel/capture_oracle_test.go",
           "core/lower/testdata/vllm_lower.json",
           "core/rulepack/pack/cudagraph_test.go"
         ]
@@ -10734,9 +10734,9 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/quantization_v4_test.go",
-          "compat/kernelmodel/quantization_m3_test.go",
-          "compat/quantization/resolved.json"
+          "core/kernelmodel/quantization_v4_test.go",
+          "core/kernelmodel/quantization_m3_test.go",
+          "core/quantization/resolved.json"
         ]
       },
       "value_classes": {
@@ -11590,7 +11590,7 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/muse_kvlayers_test.go",
+          "core/kernelmodel/muse_kvlayers_test.go",
           "testdata/scenarios/muse-h100-pp2tp8-dspark.yaml"
         ]
       },
@@ -11706,7 +11706,7 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/synthetic_acceptance_test.go",
+          "core/kernelmodel/synthetic_acceptance_test.go",
           "core/engineconfig/synthetic_acceptance_test.go",
           "core/engineconfig/testdata/synthetic_acceptance.json"
         ]
@@ -11790,7 +11790,7 @@
       "status": "modelled",
       "evidence": {
         "traces": [
-          "compat/kernelmodel/synthetic_acceptance_test.go",
+          "core/kernelmodel/synthetic_acceptance_test.go",
           "core/engineconfig/synthetic_acceptance_test.go",
           "core/engineconfig/testdata/synthetic_acceptance.json"
         ]

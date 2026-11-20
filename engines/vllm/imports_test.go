@@ -29,11 +29,11 @@ import (
 // holds each import, not the file; test files are skipped, so a _test.go file may import any
 // substrate package.
 var declaredSubstrateExceptions = []string{
-	"github.com/inference-sim/blis-substrate/kernel compat/kernelmodel",
+	"github.com/inference-sim/blis-substrate/kernel core/kernelmodel",
 	"github.com/inference-sim/blis-substrate/kernel kerneltests/cmd/worked-table",
 	"github.com/inference-sim/blis-substrate/kernel kerneltests/internal/harness",
-	"github.com/inference-sim/blis-substrate/load compat/build",
-	"github.com/inference-sim/blis-substrate/load compat/kernelmodel",
+	"github.com/inference-sim/blis-substrate/load core/build",
+	"github.com/inference-sim/blis-substrate/load core/kernelmodel",
 	"github.com/inference-sim/blis-substrate/load core/vllm",
 	"github.com/inference-sim/blis-substrate/load kerneltests/internal/harness",
 	"github.com/inference-sim/blis-substrate/load vllmengine",
