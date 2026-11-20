@@ -532,7 +532,14 @@ func attentionOf(g *model.Graph, e engineconfig.Engine, tp int) (attentionFacts,
 		if qsa && !n.ReadsEngineKV() {
 			return
 		}
-		mla := n.AttentionKind == model.AttentionMLA
+		// GLM-5.3-Flash's sparse-MLA layer is an MLAAttentionSpec of its main latent
+		// (glm5NextLayerRuns); its indexer's scorer keeps caches of its own that size no page of the
+		// model's attention.
+		sparseMLA := n.AttentionKind == model.AttentionSparseMLA && isGlm5Next(g)
+		if sparseMLA && !n.ReadsEngineKV() {
+			return
+		}
+		mla := n.AttentionKind == model.AttentionMLA || sparseMLA
 		kv, head := max(n.NumKVHeads/max(tp, 1), 1), n.HeadDim
 		if mla {
 			kv = 1
@@ -542,9 +549,9 @@ func attentionOf(g *model.Graph, e engineconfig.Engine, tp int) (attentionFacts,
 			geo[2] = 1
 		}
 		switch {
-		case n.AttentionKind != model.AttentionMLA && n.AttentionKind != model.AttentionGQA && n.AttentionKind != model.AttentionSWA && !qsa:
+		case n.AttentionKind != model.AttentionMLA && n.AttentionKind != model.AttentionGQA && n.AttentionKind != model.AttentionSWA && !qsa && !sparseMLA:
 			err = fmt.Errorf("layer kind %s: %s attention beside recurrent layers is not mapped", id, n.AttentionKind)
-		case len(n.Caches) > 0 && !qsa:
+		case len(n.Caches) > 0 && !qsa && !sparseMLA:
 			err = fmt.Errorf("layer kind %s: an attention node stating caches beside recurrent layers is not mapped", id)
 		case head <= 0 || n.NumKVHeads <= 0:
 			err = fmt.Errorf("layer kind %s: the attention node states no n_kv or d_h", id)

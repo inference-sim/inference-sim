@@ -212,6 +212,7 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 		kinds[k.ID] = k
 	}
 	tp := max(pool.Parallel.TP, 1)
+	glm5 := isGlm5Next(g)
 	var runs []KVLayerRun
 	plain, shared := true, false
 	// Beside recurrent layers a model is a hybrid, whose groups are sized by page bytes, and an
@@ -249,6 +250,23 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 				continue
 			}
 			if n.Op != model.OpAttention {
+				continue
+			}
+			if glm5 && n.AttentionKind == model.AttentionSparseMLA {
+				// GLM-5.3-Flash's sparse-MLA layer registers the indexer's key cache, the kpool tail
+				// ring and the main latent.
+				gr, err := glm5NextLayerRuns(g, id, kinds[id], n, engine, false)
+				if err != nil {
+					return nil, err
+				}
+				plain = plain && len(gr) == 0
+				for _, r := range gr {
+					if l := len(runs) - 1; l >= 0 && sameRun(runs[l], r) {
+						runs[l].Count++
+					} else {
+						runs = append(runs, r)
+					}
+				}
 				continue
 			}
 			if n.AttentionKind == sparseGQA {
@@ -306,6 +324,22 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 		for _, id := range g.Speculator.Stack.Expand() {
 			for _, n := range kinds[id].Nodes {
 				if n.Op != model.OpAttention {
+					continue
+				}
+				if glm5 && n.AttentionKind == model.AttentionSparseMLA {
+					// The MTP module's sparse-MLA layer registers the caches a target layer does.
+					gr, err := glm5NextLayerRuns(g, id, kinds[id], n, engine, true)
+					if err != nil {
+						return nil, err
+					}
+					plain = false
+					for _, r := range gr {
+						if l := len(runs) - 1; l >= 0 && sameRun(runs[l], r) {
+							runs[l].Count++
+						} else {
+							runs = append(runs, r)
+						}
+					}
 					continue
 				}
 				if n.AttentionKind == sparseGQA {

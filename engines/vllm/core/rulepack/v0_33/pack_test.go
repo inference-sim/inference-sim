@@ -1211,6 +1211,15 @@ func TestResolveCacheDType(t *testing.T) {
 		{ArchGlmMoeDsa, 10, 8, "bfloat16", "bfloat16"},
 		{ArchGlmMoeDsa, 9, 8, "auto", "auto"},
 		{ArchGlmMoeDsa, 12, 8, "auto", "auto"},
+		// Glm5NextModelConfig: an unstated (auto) dtype becomes plain fp8 on SM10x for both
+		// registered architectures (vllm/model_executor/models/config.py:209-224, :1894-1895@0fda86a3).
+		{ArchGlm5NextConditional, 10, 8, "", "fp8"},
+		{ArchGlm5NextConditional, 10, 4, "auto", "fp8"},
+		{ArchGlm5NextCausal, 10, 8, "auto", "fp8"},
+		{ArchGlm5NextConditional, 10, 8, "fp8_e4m3", "fp8_e4m3"},
+		{ArchGlm5NextConditional, 10, 8, "bfloat16", "bfloat16"},
+		{ArchGlm5NextConditional, 9, 8, "auto", "auto"},
+		{ArchGlm5NextConditional, 12, 8, "auto", "auto"},
 	} {
 		if got := p.ResolveCacheDType(c.arch, c.family, c.tp, c.requested); got != c.want {
 			t.Errorf("%s sm%d0 tp %d %q: %q, want %q", c.arch, c.family, c.tp, c.requested, got, c.want)

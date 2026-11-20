@@ -16,11 +16,13 @@ import (
 // refused with "recurrent state is not mapped to a KV cache spec". The Qwen fixtures are the
 // cells the cluster matrix refused: a 256-wide attention head beside the recurrent layers
 // (blis-vllm#309) and a QSA model whose pool page was derived from the memory model's bytes
-// (blis-vllm#310).
+// (blis-vllm#310). The GLM fixtures are sparse-MLA attention beside KDA layers, with the MTP drafter
+// on a B200 (blis-vllm#308).
 func TestRecurrentModelsBuildAndRun(t *testing.T) {
 	Register()
 	for _, scenario := range []string{"recurrent-nemotron-3-ultra-h100-tp8.yaml", "recurrent-kimi-k3-h200-dep16.yaml",
-		"recurrent-qwen3-8-flash-next-h200-tp4.yaml", "recurrent-qwen3-6-35b-a3b-h200-tp8.yaml", "recurrent-qwen3-8-27b-h200-tp4.yaml"} {
+		"recurrent-qwen3-8-flash-next-h200-tp4.yaml", "recurrent-qwen3-6-35b-a3b-h200-tp8.yaml", "recurrent-qwen3-8-27b-h200-tp4.yaml",
+		"recurrent-glm-5-3-flash-h200-tp8.yaml", "recurrent-glm-5-3-flash-b200-tp8-mtp.yaml"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Config: poolEngine(t, scenario),

@@ -785,10 +785,9 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 		{"a scenario offload block with a prefetch depth", "offload.prefetch_depth",
 			pd(writeScenarioVariant(t, "cost-model-fabric]", "cost-model-fabric, cost-model-offload-tiers]", "pd_transfer:", "offload:\n  prefetch_depth: 2\n  tiers:\n    - tier: cpu_dram\n      bytes: 107374182400\npd_transfer:"), topology...)},
 		// qwen3.5's linear-attention layers carry recurrent state, which the engine maps to a
-		// Mamba cache spec; its attention head size of 256 beside them would make the attention
-		// backend's kernel block depend on the install's FlashAttention version, which it does not
-		// model, so it refuses this model by that reason.
-		{"a recurrent model whose kernel block is not modelled", "which is not modelled",
+		// Mamba cache spec. A P/D decode engine recomputes the last prompt token a Mamba-state
+		// model's prefill engine does not compute, which is not modelled (inference-sim#2322).
+		{"a recurrent model whose prefill engine backs off its prompt", "recomputes the last 1 prompt token",
 			pd(writeScenarioVariant(t, "model: glm-5\n", "model: qwen3.5-397b-a17b\n"), topology...)},
 		{"more decode instances than the pool holds", "decode pool holds 1 data-parallel group(s)",
 			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "2")},

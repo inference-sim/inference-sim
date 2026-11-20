@@ -33,7 +33,8 @@ import (
 // docs/support-matrix.tsv is the expected outcome of each cell and the published support matrix.
 // `go test ./cmd -run ClusterMatrix -update-matrix` searches each model's smallest tensor-parallel
 // size that fits, runs every cell, and rewrites both files; BLIS_MATRIX_FULL=1 runs every
-// recorded cell instead of the per-pull-request subset.
+// recorded cell instead of the per-pull-request subset, and BLIS_MATRIX_MODELS=a,b searches only
+// those models and keeps every other recorded cell.
 
 var updateMatrix = flag.Bool("update-matrix", false, "rewrite docs/support-matrix.{tsv,md} from a search of every cell")
 
@@ -136,8 +137,6 @@ var matrixClasses = []matrixClass{
 		issue: "inference-sim/blis-vllm#309", why: "a 256-wide attention head beside recurrent layers: the kernel block depends on the FlashAttention version"},
 	{id: "upstream_no_kv_connector", re: regexp.MustCompile(`supports_kv_connector False`),
 		why: "vLLM's own attention backend for this model supports no KV connector, so it cannot serve P/D"},
-	{id: "kv_layers_remainder", re: regexp.MustCompile(`kv_layers: the memory model's .* are not a whole number of bytes`), defect: true,
-		issue: "inference-sim/blis-vllm#310", why: "the KV layer sizing leaves a remainder that is not a whole number of bytes for the other layers"},
 }
 
 var matrixIssueRef = regexp.MustCompile(`inference-sim/[a-z-]+#\d+`)
@@ -638,6 +637,29 @@ func TestClusterMatrix_UpdateFromSearch(t *testing.T) {
 	}
 	r := newMatrixRunner(t)
 	models := matrixCatalogModels(t)
+	// BLIS_MATRIX_MODELS (comma-separated) searches only those models and keeps every other recorded cell.
+	var kept []matrixCell
+	if only := os.Getenv("BLIS_MATRIX_MODELS"); only != "" {
+		want := map[string]bool{}
+		for _, m := range strings.Split(only, ",") {
+			want[m] = true
+		}
+		var picked []string
+		for _, m := range models {
+			if want[m] {
+				picked = append(picked, m)
+			}
+		}
+		if len(picked) != len(want) {
+			t.Fatalf("BLIS_MATRIX_MODELS names %d models, the catalog has %d of them", len(want), len(picked))
+		}
+		for _, c := range readMatrixTSV(t) {
+			if !want[c.Model] {
+				kept = append(kept, c)
+			}
+		}
+		models = picked
+	}
 	type job struct {
 		model, engine string
 		chip          matrixChip
@@ -674,6 +696,7 @@ func TestClusterMatrix_UpdateFromSearch(t *testing.T) {
 	if t.Failed() {
 		t.Fatal("not writing the support matrix: a cell failed")
 	}
+	cells = append(cells, kept...)
 	sortCells(cells)
 	if err := writeMatrixTSV(cells); err != nil {
 		t.Fatal(err)
