@@ -424,9 +424,9 @@ vLLM v0.31.0 sources:
 
 **Statement:** An engine computes the SHA-256 block hash (`hash.HashBlock`) of a given prompt block -- a block's tokens together with the chain hash before it -- at most once, however many times the request is examined (a waiting request is re-examined every step), whichever lookup asks (`GetCachedBlocks`, the offload tail keys of `ReloadablePrefixEnd` / `cpuLoadPlan` / `beginCPULoad`, the router snapshot, allocation), and whether a later turn's prompt lives in the same token array or a fresh one. The memoised hashes equal `hash.ComputeBlockHashes` exactly, so outputs are byte-identical to the uncached path. It is an efficiency invariant: the 1P1D c512 corner spent 75% of its CPU re-hashing 100k-token prompts. It holds while an engine's distinct prompt blocks number at most `hash.MemoCapacity` (the memo is cleared beyond it) and output blocks are excluded (they are hashed once, at allocation).
 
-**Enforced:** `hash.ChainCache` (blis-vllm `compat/prefix/chain_cache.go`), one per GPU tier (`KVCacheState.chainOf`, `blockHash`).
+**Enforced:** `hash.ChainCache` (formerly blis-vllm `compat/prefix/chain_cache.go`), one per GPU tier (`KVCacheState.chainOf`, `blockHash`). The chain cache and its counters are not in `engines/vllm` (M3.2 row 2.R, with the rest of `compat/*`).
 
-**Verification:** `TestHashOnce_EachPromptBlockHashedAtMostOncePerEngine` (`sim/cluster`, rapid: random prompt lengths, shared prefixes, multi-turn growth, P/D on/off, CPU tier on/off; counts `hash.PromptBlockHashes()` (prompt blocks the chain caches hashed; output blocks are hashed once at allocation and excluded) and compares every instance's metrics with `hash.SetChainCacheOff(true)`); `TestChainCache_EqualsComputeBlockHashes` (blis-vllm `compat/prefix`).
+**Verification:** none at present. The simulator-level `TestHashOnce_EachPromptBlockHashedAtMostOncePerEngine` and `TestChainCache_EqualsComputeBlockHashes` counted `hash.PromptBlockHashes()` and toggled `hash.SetChainCacheOff`, hooks that no longer exist; they were removed in row 2.R. Restoring the check at the engine (`engines/vllm/core/kv`) is a follow-up.
 
 ### Batch formation
 
