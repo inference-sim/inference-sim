@@ -90,3 +90,54 @@ func TestMistralLarge4KVLayersAreTheEnginesAndTheCacheDTypeIsFP8DSMLA(t *testing
 		}
 	}
 }
+
+// A DSpark drafter's three layers register after the target's, each a SlidingWindowMLASpec of the
+// window 2048 widened by the draft block (num_speculative_tokens), holding the draft's own bf16
+// latent record (576 elements x 2 B) because the draft does not use fp8_ds_mla
+// (v1/worker/gpu/spec_decode/dspark/config.py:79-86@0fda86a3). A stated draft cache dtype of
+// fp8_ds_mla is refused where vLLM refuses it (mla_attention.py:524-530).
+func TestMistralLarge4DSparkDraftLayersAreSlidingWindowMLA(t *testing.T) {
+	const spec = "speculative_config: {method: dspark, num_speculative_tokens: 3%s}"
+	for _, c := range []struct {
+		name, kvDType string
+		head          int
+		refused       bool
+	}{
+		{"default", "", 1152, false},
+		{"fp8 draft cache", ", kv_cache_dtype: fp8", 576, false},
+		{"fp8_ds_mla draft cache", ", kv_cache_dtype: fp8_ds_mla", 0, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m, err := openMistral(t, "mistral-nvfp4-gb200-tp8.yaml", strings.Replace(spec, "%s", c.kvDType, 1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			runs, err := m.KVLayers()
+			if c.refused {
+				if err == nil || !strings.Contains(err.Error(), "mla_attention.py:524") {
+					t.Fatalf("fp8_ds_mla draft cache: got %v, want vLLM's refusal named", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var draft []KVLayerRun
+			target := 0
+			for _, r := range runs {
+				if r.Draft {
+					draft = append(draft, r)
+				} else {
+					target += r.Count
+				}
+			}
+			if target != 44+63 {
+				t.Errorf("%d target layers, want 107 (44 indexer + 63 mla)", target)
+			}
+			if len(draft) != 1 || draft[0].Count != 3 || draft[0].Spec != "sliding_window_mla" ||
+				draft[0].SlidingWindow != 2048+3 || draft[0].HeadSize != c.head || draft[0].NumKVHeads != 1 {
+				t.Errorf("draft runs %+v, want 3 sliding_window_mla layers of window 2051 and head %d", draft, c.head)
+			}
+		})
+	}
+}

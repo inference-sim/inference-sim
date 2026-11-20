@@ -31,8 +31,15 @@ func isMistralLarge4(g *model.Graph) bool {
 //
 // Both specs are full attention to the grouping with unequal pages, which vLLM's uniform-type
 // spec groups together, so the runs state the record in bytes (one-byte elements).
-// The drafter's layers are not mapped: a stated drafter makes the caller refuse.
-func mistralKVLayers(g *model.Graph, _ deployment.Pool, _ engineconfig.Engine, ds deepseekServing) ([]KVLayerRun, error) {
+//
+// A DSpark drafter's layers register after the target's (MistralLarge4DSparkModel,
+// vllm/models/mistral/mistral_large4/nvidia/dspark.py@0fda86a3): each is a dense MLA layer of the
+// draft block, a SlidingWindowMLASpec of window sliding_window + num_speculative_tokens whose
+// latent record is the draft's own cache dtype, "auto" (bf16) unless speculative_config states
+// kv_cache_dtype (adapt_draft_model_config, v1/worker/gpu/spec_decode/dspark/config.py:79-86, because the
+// target's fp8_ds_mla layout does not apply to dense draft layers). vLLM refuses fp8_ds_mla and
+// nvfp4_ds_mla on a sliding-window MLA layer (mla_attention.py:524-530), and so does this mapping.
+func mistralKVLayers(g *model.Graph, _ deployment.Pool, engine engineconfig.Engine, ds deepseekServing) ([]KVLayerRun, error) {
 	kinds := map[string]model.LayerKind{}
 	for _, k := range g.LayerKinds {
 		kinds[k.ID] = k
@@ -63,6 +70,30 @@ func mistralKVLayers(g *model.Graph, _ deployment.Pool, _ engineconfig.Engine, d
 				default:
 					return nil, fmt.Errorf("layer kind %s: its %s cache is not mapped to a KV cache spec", id, c.Kind)
 				}
+			}
+		}
+	}
+	if sp := engine.Speculative; sp != nil && sp.NumSpecTokens > 0 && g.Speculator != nil {
+		elem := 0
+		switch d := sp.KVCacheDType; d {
+		case "", "auto", "bfloat16", "float16":
+			elem = 2
+		case "fp8", "fp8_e4m3", "fp8_e5m2":
+			elem = 1
+		default:
+			return nil, fmt.Errorf("speculative kv_cache_dtype %q: vLLM refuses it on the drafter's sliding-window MLA layers "+
+				"(vllm/model_executor/layers/attention/mla_attention.py:524-530@0fda86a3)", d)
+		}
+		for _, id := range g.Speculator.Stack.Expand() {
+			for _, n := range kinds[id].Nodes {
+				if n.Op != model.OpAttention {
+					continue
+				}
+				if n.AttentionKind != model.AttentionMLA || len(n.Caches) > 0 || n.Window <= 0 {
+					return nil, fmt.Errorf("drafter layer kind %s: only a dense sliding-window MLA layer without stated caches is mapped", id)
+				}
+				add(KVLayerRun{Count: 1, Spec: "sliding_window_mla", SlidingWindow: n.Window + sp.NumSpecTokens,
+					NumKVHeads: 1, HeadSize: n.HeadDim * elem, ElemBytes: 1, Draft: true})
 			}
 		}
 	}
