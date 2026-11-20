@@ -7,7 +7,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // decodeEngine is a pool's engine block as vLLM's engine configuration (engineconfig.Decode),

@@ -16,7 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-vllm/compat/engine"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // KVOffloadFile is the on-disk shape of a --kv-offload-config YAML file: a single

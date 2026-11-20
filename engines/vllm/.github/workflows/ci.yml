@@ -505,14 +505,13 @@ jobs:
         run: test "$(git -C vllm-source rev-parse HEAD)" = "${{ matrix.commit }}"
       - name: verify pack constants
         if: needs.changes.outputs[format('packs_{0}', matrix.pack)] == 'true'
-        working-directory: rules
         env:
           VLLM_SOURCE: ${{ github.workspace }}/vllm-source
           VLLM_SOURCE_REQUIRED: "1"
         run: |
           set -o pipefail
-          mkdir -p ../tier1-out
-          go test -v -run MatchSource ./${{ matrix.pack }}/ | tee ../tier1-out/match-source-${{ matrix.pack }}.txt
+          mkdir -p tier1-out
+          go test -v -run MatchSource ./core/rulepack/${{ matrix.pack }}/ | tee tier1-out/match-source-${{ matrix.pack }}.txt
       # Provenance for the tier-1 results: the commit checked, the vLLM tag and its commit, Go.
       - name: record tier-1 provenance
         if: needs.changes.outputs[format('packs_{0}', matrix.pack)] == 'true'
@@ -722,7 +721,7 @@ jobs:
       # speculative_config.synthetic_acceptance_length, resolved to per-position rates by vLLM's own
       # function over a grid of lengths, valid and not (the sampler that consumes the rates needs a GPU).
       - name: the synthetic acceptance resolutions are vLLM's own
-        run: python -I oracle/synthetic_acceptance/oracle.py vllm-source check rules/engineconfig/testdata/synthetic_acceptance.json
+        run: python -I oracle/synthetic_acceptance/oracle.py vllm-source check core/engineconfig/testdata/synthetic_acceptance.json
       # The lowering (core/lower) is held to vLLM's own CUDA-graph capture, dispatch and
       # data-parallel padding code, run unmodified with only the all-reduce supplied (FID-1,
       # FID-8). The committed answers must equal what the pinned release gives now.
@@ -739,11 +738,11 @@ jobs:
         run: |
           python3 -I oracle/lower/check_replacements.py oracle/lower/extract.py oracle/lower/replacements.json
           python3 -I oracle/lower/test_check_replacements.py
-      # The DeepSeek indexer's cache dtype (rules/pack ResolveIndexerKVDType) is held to vLLM's own
+      # The DeepSeek indexer's cache dtype (core/rulepack/pack ResolveIndexerKVDType) is held to vLLM's own
       # resolution and record-width code, run unmodified over a stub platform (FID-1, FID-8).
       - name: the indexer cache dtype table is vLLM's own
         run: |
-          python -I oracle/indexer/oracle.py vllm-source check rules/v0_33/testdata/vllm_indexer_kv_dtype.json
+          python -I oracle/indexer/oracle.py vllm-source check core/rulepack/v0_33/testdata/vllm_indexer_kv_dtype.json
           python3 -I oracle/lower/check_replacements.py oracle/indexer/oracle.py oracle/indexer/replacements.json
       # Tier 5: the families vLLM's own Prometheus logger registers at runtime agree with the
       # manifest the source scan wrote (type and labels).
@@ -843,11 +842,11 @@ jobs:
           # pinned vLLM about the keys the committed answer covers, and compare.
           python3 -I - <<'PY' > oracle/out/block-keys.json
           import json
-          t = json.load(open("rules/engineconfig/testdata/vllm_names.json"))
+          t = json.load(open("core/engineconfig/testdata/vllm_names.json"))
           print(json.dumps({"top": sorted(t["top"]), "nested": {g: sorted(v) for g, v in t["nested"].items()}}))
           PY
           python -I oracle/run_engineargs.py --key-names vllm-source oracle/out/block-keys.json > oracle/out/vllm_names.json
-          python3 -I -c "import json,sys; a,b=(json.load(open(f)) for f in sys.argv[1:]); sys.exit(0 if a==b else 'the EngineArgs name answers differ from rules/engineconfig/testdata/vllm_names.json')" rules/engineconfig/testdata/vllm_names.json oracle/out/vllm_names.json
+          python3 -I -c "import json,sys; a,b=(json.load(open(f)) for f in sys.argv[1:]); sys.exit(0 if a==b else 'the EngineArgs name answers differ from core/engineconfig/testdata/vllm_names.json')" core/engineconfig/testdata/vllm_names.json oracle/out/vllm_names.json
       # The block-hash fixture: every case's hashes recomputed by vLLM's own hash_block_tokens;
       # the generator exits non-zero if any differs from the committed file.
       - name: the block-hash fixture is vLLM's own hashes

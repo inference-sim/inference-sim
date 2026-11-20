@@ -16,8 +16,8 @@ import (
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 	"github.com/inference-sim/blis-vllm/core/vllm"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // Decoder-side SWA bounded replay: the rows the layers after the last KV-producing layer run.

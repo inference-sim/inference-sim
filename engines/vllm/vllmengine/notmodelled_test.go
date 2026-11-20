@@ -18,7 +18,7 @@ import (
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // VLM-3: a field marked not modelled is refused when it is set away from its default, and the

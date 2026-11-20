@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // ResolveBatch is vLLM v0.32.0's resolution of an unstated max_num_seqs and

@@ -13,7 +13,7 @@ import (
 
 	blisschemas "github.com/inference-sim/blis-substrate/contracts"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // engineCopyScenarioDirs are the scenario directories the copy is checked over: the kernel's

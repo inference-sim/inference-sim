@@ -11,7 +11,7 @@ import (
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // eagleDropMethods are vLLM v0.33.0's needs_eagle_block_drop methods: an EAGLE-style drafter

@@ -13,9 +13,9 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
-	"github.com/inference-sim/blis-vllm/rules/v0_33"
+	"github.com/inference-sim/blis-vllm/core/rulepack/v0_33"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // The three decode-context-parallel engine knobs blis-schemas v0.2.2 made expressible --

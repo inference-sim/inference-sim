@@ -1,4 +1,4 @@
-package rules
+package rulepack
 
 import (
 	"reflect"

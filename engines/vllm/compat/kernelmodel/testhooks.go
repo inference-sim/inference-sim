@@ -7,7 +7,7 @@ import (
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // Test hooks for inference-sim's simulator-level tests of this adapter, which price a whole

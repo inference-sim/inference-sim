@@ -890,7 +890,7 @@ func blockFP8Experts(g *model.Graph) bool {
 
 // resolvedAll2AllBackend is the backend the engine runs for the stated one beside the stated MoE
 // backend. A pack that knows the binding to passthrough beside a self-communicating MoE backend
-// (rules/pack ResolvedAll2AllBackend) applies it; any other rules value gives the effective backend.
+// (core/rulepack/pack ResolvedAll2AllBackend) applies it; any other rules value gives the effective backend.
 func resolvedAll2AllBackend(r subrules.EngineRules, backend, moeBackend string) string {
 	if b, ok := r.(interface {
 		ResolvedAll2AllBackend(backend, moeBackend string) string

@@ -8,7 +8,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // towerlessMultimodalConfigs are the sha256 of the vendor config.json of each catalog model that is

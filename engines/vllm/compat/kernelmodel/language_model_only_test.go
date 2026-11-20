@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 	"github.com/inference-sim/blis-vllm/internal/substratedata"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // languageModelOnlyFixtures are one committed 0.32.0 deployment of each model class the rule

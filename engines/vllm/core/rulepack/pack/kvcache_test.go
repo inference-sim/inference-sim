@@ -15,8 +15,8 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-vllm/rules/pack"
-	"github.com/inference-sim/blis-vllm/rules/v0_33"
+	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
+	"github.com/inference-sim/blis-vllm/core/rulepack/v0_33"
 )
 
 const kvDir = "testdata/kvgroups"

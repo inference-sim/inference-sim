@@ -13,7 +13,7 @@ import (
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 	_ "github.com/inference-sim/blis-vllm/compat/kv"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // openSpeculative opens a committed scenario with its pool given a draft configuration of k

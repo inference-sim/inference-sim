@@ -11,7 +11,7 @@ import (
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // The scenarios under oracle/scenarios/swa state swa_bounded_replay (and the model runner) and

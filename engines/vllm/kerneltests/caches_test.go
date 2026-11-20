@@ -10,7 +10,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // Per-layer caches, as a graph states them (blis-schemas model.Cache), checked through
@@ -346,7 +346,7 @@ func TestTheDefaultCacheRecordIsNotAnAssumption(t *testing.T) {
 // group's pages, 3 x 19,008 + 37,440 + 3 x 4,608 + 8,640 B, which every group's block costs
 // (_get_kv_cache_bytes_per_block, vllm/v1/core/kv_cache_utils.py:1606-1632). It is the figure
 // vLLM's own functions return for the same layers in blis-schemas' golden vectors
-// (rules/testdata/kvgroups), where the 43 window layers fall into 8 groups of at most six.
+// (core/rulepack/pack/testdata/kvgroups), where the 43 window layers fall into 8 groups of at most six.
 const v41PoolBlock = 116928
 
 // The stated caches are sized in whole blocks of the engine's shared pool, group by group: a

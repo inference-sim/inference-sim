@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // The mapping: a cpu_dram tier of N bytes, with the OffloadingConnector, either of its specs

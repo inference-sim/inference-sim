@@ -79,8 +79,8 @@ ORACLE_PATHS = [
     r"^core/vllm/testdata/golden-render/",
     r"^compat/quantization/resolved\.json$",
     r"^core/lower/testdata/",
-    r"^rules/engineconfig/testdata/",
-    r"^rules/v0_33/testdata/",
+    r"^core/engineconfig/testdata/",
+    r"^core/rulepack/v0_33/testdata/",
 ]
 # The block-size oracle (oracle/blocksize) checked against the committed table. ci.yml runs it in oracle-scenarios; a
 # stacked layer's ci-light runs it when one of these changes (the light-blocksize job reads this output).
@@ -100,7 +100,7 @@ METRICS_PATHS = [r"^fields/", r"^fields\.json$", r"^oracle/metrics/manifest\.jso
                  r"^kernels/", r"^kernel_impls\.json$"]
 GOLDEN_PATHS = [r"^oracle/", r"^core/.*/testdata/", r"^tools/migrateengineblock/"]
 BENCH_GO = ["./core/sched", "./core/vllm"]
-PACKS = {"v0_33": "./rules/v0_33"}
+PACKS = {"v0_33": "./core/rulepack/v0_33"}
 
 
 @functools.lru_cache(maxsize=None)

@@ -15,7 +15,7 @@ import (
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/compat/kv"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // A KV budget must be derived from the kernel's own memory answers, and it must be

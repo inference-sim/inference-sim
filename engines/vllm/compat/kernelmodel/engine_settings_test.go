@@ -16,8 +16,8 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 	"github.com/inference-sim/blis-vllm/core/vllm"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // openEdited opens glm-5-h200-tp8-mtp3 (h200, block_size 64, max_num_batched_tokens 8192,
@@ -313,7 +313,7 @@ func TestEngineKeepsOrRefusesAStatedMemoryUtilization(t *testing.T) {
 		}
 	}
 	// And the resolver never replaces such a value with the default, whatever reaches it: only
-	// 0, which the schema reads as unset (rules/engineconfig/validate.go:65), is replaced.
+	// 0, which the schema reads as unset (core/engineconfig/validate.go:65), is replaced.
 	in := latencykernel.Inputs{Scenario: &scenario.Scenario{EngineVersion: "0.33.0"},
 		Deployment: &deployment.Deployment{Pools: []deployment.Pool{{}}}, Chip: &hardware.Chip{MemoryGiB: 141}, Model: &model.Graph{}}
 	for _, c := range []struct {
@@ -534,7 +534,7 @@ func TestIndexerKVDTypeIsReadForMiniMaxM3Only(t *testing.T) {
 // DeepSeek V4 and V4.1 build their indexer cache as an MLA spec, so attention_config.indexer_kv_dtype
 // is neither "read only for MiniMax-M3" nor absent for them: vLLM resolves it
 // (dsa_indexer_uses_fp4, vllm/v1/attention/backends/mla/indexer.py:59-84@5df63a72; the table in
-// rules/v0_33/testdata/vllm_indexer_kv_dtype.json is that function's output). auto and fp8 are the
+// core/rulepack/v0_33/testdata/vllm_indexer_kv_dtype.json is that function's output). auto and fp8 are the
 // 132-byte record the catalog graph states, so they are accepted and leave the KV layers unchanged;
 // bf16 and nvfp4 are refused with vLLM's reason, fp8_e4m3 is not a member of the dtype's type, and
 // mxfp4 is vLLM's refusal below SM10x and, on SM10x, accepted with its 68-byte record in place of

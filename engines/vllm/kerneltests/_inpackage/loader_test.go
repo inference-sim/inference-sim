@@ -18,9 +18,9 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	vllmrules "github.com/inference-sim/blis-vllm/rules"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
-	"github.com/inference-sim/blis-vllm/rules/pack"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
+	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
 )
 
 // catalogRoot, registryRoot and envOr are the kernel package's own (loader_test.go there):

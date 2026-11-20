@@ -13,7 +13,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 
-	"github.com/inference-sim/blis-vllm/rules/pack"
+	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
 )
 
 // This file re-derives the pack's constants from an engine checkout, when one is
@@ -1088,7 +1088,7 @@ func pyFunction(t *testing.T, src, name string) string {
 }
 
 // KVCacheGroups transcribes these three functions, and its goldens were computed by
-// running them (rules/testdata/kvgroups/golden.py). A changed body is a changed grouping,
+// running them (core/rulepack/pack/testdata/kvgroups/golden.py). A changed body is a changed grouping,
 // so each is pinned by digest; re-derive the transcription and the goldens when one moves.
 // The specs it maps caches to are pinned too: a state cache is a CircularBufferSpec.
 func TestKVCachePackingMatchSource(t *testing.T) {
@@ -1138,7 +1138,7 @@ func TestKVCachePackingMatchSource(t *testing.T) {
 	// (vllm/v1/attention/backends/mla/indexer.py:347-351@5df63a72). So the models whose
 	// caches these packs group run the block-outermost branch: v0.31.0's form, which
 	// KVCacheGroups transcribes. v0.32.0's own functions return the v0.31.0 goldens for every
-	// golden case under that layout (checked by running them, rules/testdata/kvgroups/golden.py
+	// golden case under that layout (checked by running them, core/rulepack/pack/testdata/kvgroups/golden.py
 	// with the layout argument).
 	if !strings.Contains(pyFunction(t, src, "_get_packed_kv_cache_groups"),
 		"    if not layout.is_block_outermost or len(page_sizes) <= 1:\n        return None\n") {

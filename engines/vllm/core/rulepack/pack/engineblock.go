@@ -6,7 +6,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // CheckEngineBlock implements rules.EngineRules: it opens a pool's engine block as vLLM's

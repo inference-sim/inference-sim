@@ -10,7 +10,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // sparseGQA is model.AttentionSparseGQA (blis-substrate#253). It is spelled here until this module

@@ -18,7 +18,7 @@ import (
 	blisschemas "github.com/inference-sim/blis-substrate/contracts"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // RunSettings are the settings one measured point ran with that a scoring harness restates on a

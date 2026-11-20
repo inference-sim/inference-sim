@@ -9,7 +9,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // cudagraphAssumptions is the divergence a deployment that states cudagraph_mode or the capture

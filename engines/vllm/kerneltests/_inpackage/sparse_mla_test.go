@@ -5,7 +5,7 @@ package latencykernel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // A DSA MODEL RUNS 64-TOKEN BLOCKS. Its indexer's backend takes exactly 64

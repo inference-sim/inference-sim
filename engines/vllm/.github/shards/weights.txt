@@ -330,5 +330,5 @@ core/vllm	4.42
 internal/substratedata	0.70
 registry	0.41
 rules	0.49
-rules/engineconfig	0.65
-rules/pack	0.55
+core/engineconfig	0.65
+core/rulepack/pack	0.55

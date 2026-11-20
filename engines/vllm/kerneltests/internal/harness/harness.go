@@ -16,8 +16,8 @@ package harness
 
 import (
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	vllmrules "github.com/inference-sim/blis-vllm/rules"
-	"github.com/inference-sim/blis-vllm/rules/pack"
+	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
+	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
@@ -58,7 +58,7 @@ func Open(scenario string, r Repos) (*latencykernel.Kernel, error) {
 	return k, nil
 }
 
-// WithVLLMRules returns r with the vLLM rules packs (github.com/inference-sim/blis-vllm/rules)
+// WithVLLMRules returns r with the vLLM rules packs (github.com/inference-sim/blis-vllm/core/rulepack)
 // as its rules source, where it states none.
 func WithVLLMRules(r Repos) Repos {
 	if r.Rules == nil {

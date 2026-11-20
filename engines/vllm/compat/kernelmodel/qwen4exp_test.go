@@ -12,7 +12,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 const qwen4 = "Qwen4ExpForConditionalGeneration"

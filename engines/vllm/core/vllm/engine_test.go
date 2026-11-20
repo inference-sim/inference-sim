@@ -13,8 +13,8 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
-	"github.com/inference-sim/blis-vllm/rules/pack"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
 )
 
 // base is the engine block every test starts from.
@@ -315,7 +315,7 @@ func TestFactoryRefuses(t *testing.T) {
 		{"adaptive verification without full CUDA graphs", Version, "use_v2_model_runner: true\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\ncompilation_config: {cudagraph_mode: PIECEWISE}\n", "requires full CUDA graphs"},
 		{"adaptive verification with a lowercase piecewise mode", Version, "use_v2_model_runner: true\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\ncompilation_config: {cudagraph_mode: piecewise}\n", "requires full CUDA graphs"},
 		{"adaptive verification with PP", Version, "use_v2_model_runner: true\npipeline_parallel_size: 2\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\n", "pipeline parallelism"},
-		// What rules/v0_33 refuses in an engine block (inference-sim issue 2021 B11 step 2).
+		// What core/rulepack/v0_33 refuses in an engine block (inference-sim issue 2021 B11 step 2).
 		{"a cache dtype v0.32.0 does not accept", Version, "kv_cache_dtype: fp9\n", "enum-values-known"},
 		{"an all2all backend v0.32.0 does not accept", Version, "all2all_backend: carrier_pigeon\n", "all2all-backend-known"},
 		{"a moe backend v0.32.0 does not accept", Version, "moe_backend: flashinfer_moe_ep_mega_cutedsl\n", "moe_backend"},
@@ -380,7 +380,7 @@ func TestFactoryAccepts(t *testing.T) {
 			"speculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\n"},
 		// The factory sees one engine block and not the pool's parallel block, so EPLB beside
 		// expert parallelism is a shape the block can have; eplb-needs-expert-parallelism is the
-		// whole-document validator's (rules/v0_33 TestEPLBNeedsExpertParallelism).
+		// whole-document validator's (core/rulepack/v0_33 TestEPLBNeedsExpertParallelism).
 		{"EPLB stated in the block alone", "enable_eplb: true\n"},
 		{"adaptive verification at vLLM's default graph mode", "use_v2_model_runner: true\n" +
 			"speculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\n"},
@@ -400,7 +400,7 @@ func TestFactoryAccepts(t *testing.T) {
 	}
 }
 
-// The factory checks rules/v0_33 over the engine block alone, so it refuses only what the block
+// The factory checks core/rulepack/v0_33 over the engine block alone, so it refuses only what the block
 // decides. The pool's other parallel widths are not in the block: a rule clause that turns on
 // them is the caller's, which validates the whole document set. dp_shared_memory "requires dp
 // above 1" (engram-config-valid), which the block cannot state, and it requires cpu_offload,

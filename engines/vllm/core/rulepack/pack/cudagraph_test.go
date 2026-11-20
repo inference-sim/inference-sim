@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-vllm/rules/v0_33"
+	"github.com/inference-sim/blis-vllm/core/rulepack/v0_33"
 )
 
 func ip(n int) *int { return &n }
@@ -114,7 +114,7 @@ func TestCUDAGraphCaptureSizesProperties(t *testing.T) {
 // max_num_batched_tokens, and stated sizes. A deployment that states neither is the consumer's
 // to resolve, and the pack says so.
 func TestCUDAGraphCaptureSizesAreVLLMs032(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "core", "lower", "testdata", "vllm_lower.json"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "lower", "testdata", "vllm_lower.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

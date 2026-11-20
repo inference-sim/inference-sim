@@ -17,7 +17,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
-	vllmrules "github.com/inference-sim/blis-vllm/rules"
+	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
 )
 
 // A model-specific MTP name is the method vLLM runs as mtp, so a deployment naming mtp

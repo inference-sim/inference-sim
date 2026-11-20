@@ -13,7 +13,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
 	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // A DECODE STEP DOES NOT LAUNCH THE GRAPH'S PREFILL-ONLY NODES. DeepSeek-V4.1 dequantizes and

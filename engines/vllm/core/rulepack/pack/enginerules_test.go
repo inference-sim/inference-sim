@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-vllm/rules/pack"
-	"github.com/inference-sim/blis-vllm/rules/v0_33"
+	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
+	"github.com/inference-sim/blis-vllm/core/rulepack/v0_33"
 )
 
 // Each EngineRules method answers from the pack's own data, so a consumer moved from the

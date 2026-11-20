@@ -21,8 +21,8 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 	"github.com/inference-sim/blis-vllm/core/vllm"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // kdaGateLowerBoundAssumption is the one fact the KDA prefill backend turns on that the model

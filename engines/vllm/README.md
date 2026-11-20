@@ -51,7 +51,7 @@ inference-sim's.
 | `core/` | the engine, diff-tested against vLLM's own classes |
 | `vllmengine/` | how a simulator gets the engine: it registers the factory, prices steps with the cost model and sizes the KV cache |
 | `compat/` | inference-sim's engine as it ran before the extraction, kept verbatim, each file stating its source |
-| `rules/` | the per-release validation rules and the engine block's configuration |
+| `core/rulepack/`, `core/engineconfig/` | the per-release validation rules and the engine block's configuration |
 | `fields/`, `fields.json` | the field list, its generator and hand-written statuses |
 | `kernels/`, `kernel_impls.json`, `kernelimpls.go` | the kernel-implementation table, its generator, and the lookup the lowering uses |
 | `oracle/` | the Python side: vLLM's classes with the GPU mocked, goldens, fuzz corpora, metric manifest (`oracle/metrics/`); `oracle/README.md` gives each runner's command |

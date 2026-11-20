@@ -17,7 +17,7 @@ import (
 	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
-	vllmrules "github.com/inference-sim/blis-vllm/rules"
+	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
 )
 
 // SUB-6: the lowering resolves every setting the cost model prices, so the kernel receives a

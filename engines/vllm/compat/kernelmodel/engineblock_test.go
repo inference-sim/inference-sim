@@ -9,7 +9,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // editPoolEngine changes a pool's engine block the way a caller changes a scenario: decoded as

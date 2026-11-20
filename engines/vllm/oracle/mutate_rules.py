@@ -1,5 +1,5 @@
 # Original to blis-vllm.
-"""Mutation sweep for the tier-1 rules (rules/v0_33): apply one mutant at a time to a scratch copy
+"""Mutation sweep for the tier-1 rules (core/rulepack/v0_33): apply one mutant at a time to a scratch copy
 of the module, run the rule's unit tests and its MatchSource checks against the pinned vLLM source,
 and report whether each is caught.
 
@@ -17,8 +17,8 @@ import shutil
 import subprocess
 import sys
 
-PACK = "rules/v0_33/pack.go"
-SOURCE = "rules/v0_33/source_test.go"
+PACK = "core/rulepack/v0_33/pack.go"
+SOURCE = "core/rulepack/v0_33/source_test.go"
 
 DCP = "TestDCPDividesTP"
 BIND = "TestMoEEPBackendBindsPassthrough"
@@ -119,8 +119,8 @@ TESTS = "|".join(sorted({t for m in MUTANTS for t in m[5].split("|")}))
 
 def run(scratch: str, vllm: str, tests: str) -> subprocess.CompletedProcess:
     env = dict(os.environ, VLLM_SOURCE=vllm, VLLM_SOURCE_REQUIRED="1")
-    return subprocess.run(["go", "test", "-count=1", "-run", tests, "./v0_33/"],
-                          cwd=os.path.join(scratch, "rules"), capture_output=True, text=True, env=env)
+    return subprocess.run(["go", "test", "-count=1", "-run", tests, "./core/rulepack/v0_33/"],
+                          cwd=scratch, capture_output=True, text=True, env=env)
 
 
 def copy(src: str, scratch: str) -> None:

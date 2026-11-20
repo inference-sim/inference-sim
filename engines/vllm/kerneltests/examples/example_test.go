@@ -15,12 +15,12 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/load"
-	vllmrules "github.com/inference-sim/blis-vllm/rules"
+	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // --8<-- [start:repos]

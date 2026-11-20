@@ -40,8 +40,8 @@ case_ "an adapter-cache golden only"            "goldens metrics oracle rest" "-
 case_ "the adapter cache's source"              "bench go inpackage kerneltests lint oracle race race_guard rest" "core $CENSUS $ENGINE" -- core/lora/cache.go
 case_ "a render-endpoint golden only"            "bench goldens metrics oracle race rest" "core" -- core/vllm/testdata/golden-render/unset.json
 case_ "an oracle scenario"                      "goldens metrics oracle race rest" "$EVERY_LEG" -- oracle/scenarios/connector/nixl-d-abort-waiting.json
-case_ "a rules pack's source"                   "bench go inpackage kerneltests lint oracle packs_v0_33 race race_guard rest" "core $ENGINE $CENSUS" -- rules/v0_33/pack.go
-case_ "a rules pack's test"                     "go lint packs_v0_33 rest" "-" -- rules/v0_33/source_test.go
+case_ "a rules pack's source"                   "bench go inpackage kerneltests lint oracle packs_v0_33 race race_guard rest" "core $ENGINE $CENSUS" -- core/rulepack/v0_33/pack.go
+case_ "a rules pack's test"                     "go lint packs_v0_33 rest" "-" -- core/rulepack/v0_33/source_test.go
 case_ "a kernelmodel Go file"                   "go kerneltests lint race race_guard rest" "$ENGINE $CENSUS" -- compat/kernelmodel/acceptance.go
 case_ "a kernelmodel test"                      "go lint race rest" "$CENSUS" -- compat/kernelmodel/blocksize_census_test.go
 case_ "a kernel-test fixture"                   "inpackage kerneltests race rest" "$EVERY_LEG" -- kerneltests/testdata/direct/x.yaml

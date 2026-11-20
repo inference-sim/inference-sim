@@ -9,7 +9,7 @@ import (
 	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // Speculative acceptance (#1939): how far a verification step advances a request is resolved

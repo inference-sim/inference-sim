@@ -12,7 +12,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // Decode-context parallelism shards the KV cache by token, and these pin that

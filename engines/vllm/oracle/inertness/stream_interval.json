@@ -331,8 +331,8 @@
   "StreamInterval"
  ],
  "go_files_allowed": [
-  "rules/engineconfig/engine.go",
-  "rules/engineconfig/validate.go",
+  "core/engineconfig/engine.go",
+  "core/engineconfig/validate.go",
   "compat/kernelmodel/kernelmodel.go"
  ],
  "result": {

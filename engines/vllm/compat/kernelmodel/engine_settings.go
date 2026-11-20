@@ -11,9 +11,9 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/rulepack/v0_33"
 	"github.com/inference-sim/blis-vllm/core/vllm"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
-	"github.com/inference-sim/blis-vllm/rules/v0_33"
 )
 
 // resolvedEngine is a pool's engine block with the settings its release resolves filled in,
@@ -46,14 +46,14 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 		r.sources = map[string]string{"gpu_memory_utilization": vllm.SourceStated}
 		if e.GPUMemoryUtilization == 0 {
 			// 0 reads as unstated: the field is a number with omitempty, and the schema says
-			// "0 means unset" (rules/engineconfig/validate.go:65). A negative value or one above 1
+			// "0 means unset" (core/engineconfig/validate.go:65). A negative value or one above 1
 			// is not unstated, and stays what it is, for KVMemory to refuse.
 			r.engine.GPUMemoryUtilization = d.Value
 			r.sources["gpu_memory_utilization"] = d.Source
 		}
 	}
 	// An unstated cache dtype is "auto", which an architecture's own hook can change on the
-	// chip that runs it (GlmMoeDsaForCausalLM on SM10x: fp8_e4m3, rules/v0_33). A stated dtype is
+	// chip that runs it (GlmMoeDsaForCausalLM on SM10x: fp8_e4m3, core/rulepack/v0_33). A stated dtype is
 	// never changed here. A DeepSeek-V4 or V4.1 graph is left to the kernel, which resolves that
 	// packed layout itself. Every other graph is resolved here, whether it names its architecture
 	// (the catalog's GLM-5 graphs do since the layer-10 pin) or is named by its config digest.

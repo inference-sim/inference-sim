@@ -10,7 +10,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 
-	"github.com/inference-sim/blis-vllm/rules/pack"
+	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
 )
 
 type indexerCase struct {

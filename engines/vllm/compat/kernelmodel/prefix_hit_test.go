@@ -11,7 +11,7 @@ import (
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 func boolPtr(b bool) *bool { return &b }

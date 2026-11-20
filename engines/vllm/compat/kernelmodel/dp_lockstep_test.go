@@ -13,7 +13,7 @@ import (
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 const dpLockstepScenario = "minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml"

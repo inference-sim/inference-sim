@@ -1,25 +1,25 @@
 // Original to blis-vllm.
 
-// Package rules holds the vLLM rules packs: one per vLLM release, each the release's accepted
+// Package rulepack holds the vLLM rules packs: one per vLLM release, each the release's accepted
 // values, its defaults and its version-scoped checks, implementing blis-schemas'
 // rules.EngineRules.
 //
 // The packs moved here from blis-schemas (inference-sim/inference-sim#2021 B4), which keeps
 // only the engine-neutral contract, rules.EngineRules. The pack type is this module's
-// (rules/pack), and the engine block the packs read is too (rules/engineconfig). A consumer
+// (core/rulepack/pack), and the engine block the packs read is too (core/engineconfig). A consumer
 // takes a pack from this module and passes it on; the latency kernel takes it from its caller.
 //
 // It is a package of its own, separate from the engine model, so a cost model can import the
 // packs without importing the engine. 0.33 is the one release, the one the engine executes
 // (blis-vllm's Upstream), checked against vLLM v0.33.0's own source in CI; a scenario that
 // declares another release is refused.
-package rules
+package rulepack
 
 import (
 	"sort"
 
-	"github.com/inference-sim/blis-vllm/rules/pack"
-	"github.com/inference-sim/blis-vllm/rules/v0_33"
+	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
+	"github.com/inference-sim/blis-vllm/core/rulepack/v0_33"
 )
 
 // Packs returns a fresh copy of every pack, by version.

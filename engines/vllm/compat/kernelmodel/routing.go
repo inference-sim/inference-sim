@@ -12,7 +12,7 @@ import (
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // Expert-parallel routing imbalance is resolved here, per pool, by blis-schemas'

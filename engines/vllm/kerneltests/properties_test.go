@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // Properties that must hold for EVERY deployment the catalog can price, checked across a

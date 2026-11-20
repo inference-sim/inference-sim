@@ -55,9 +55,9 @@ import (
 	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 	"github.com/inference-sim/blis-vllm/core/placement"
 	vllm "github.com/inference-sim/blis-vllm/core/vllm"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // The Roots keys the factory reads.

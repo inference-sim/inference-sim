@@ -7,7 +7,7 @@ import (
 
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // WHAT THE KERNEL DOES NOT PRICE, IT REFUSES. Each case is a deployment that either does not

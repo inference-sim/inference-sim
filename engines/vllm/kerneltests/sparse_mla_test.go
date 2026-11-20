@@ -5,7 +5,7 @@ package latencykernel_test
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // A REPACKED CACHE IS REPORTED AS RESOLVED. Where the backend serves a stated "fp8" cache as

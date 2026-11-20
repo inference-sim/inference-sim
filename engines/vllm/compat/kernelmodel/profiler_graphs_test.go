@@ -8,7 +8,7 @@ import (
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 func kvMemoryWithEnv(t *testing.T, env map[string]string, edit ...func(*engineconfig.Engine)) (*Model, KVMemory, error) {

@@ -73,9 +73,9 @@ import (
 	"github.com/inference-sim/blis-substrate/load"
 	"github.com/inference-sim/blis-vllm/compat/lowering"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 	"github.com/inference-sim/blis-vllm/core/placement"
-	vllmrules "github.com/inference-sim/blis-vllm/rules"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 )
@@ -134,7 +134,7 @@ func LowerPool(in latencykernel.Inputs) (*plan.Lowered, error) {
 }
 
 // withEngineRules returns r with the vLLM engine rules filled in where r states none: the
-// packs of github.com/inference-sim/blis-vllm/rules, which the kernel takes from its caller
+// packs of github.com/inference-sim/blis-vllm/core/rulepack, which the kernel takes from its caller
 // rather than looking up itself (inference-sim#2021 B4). It is the one place this repository
 // chooses the rules a scenario's engine_version selects, so a run, a replay and every scoring
 // tool price a release against the same pack.

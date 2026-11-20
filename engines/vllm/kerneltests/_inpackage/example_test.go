@@ -12,7 +12,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/compat/lowering"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
-	vllmrules "github.com/inference-sim/blis-vllm/rules"
+	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-substrate/load"

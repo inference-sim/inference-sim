@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // Laws Settings must satisfy on every committed scenario, so a simulator sized from it is

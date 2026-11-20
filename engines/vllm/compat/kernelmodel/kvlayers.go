@@ -20,8 +20,8 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
-	"github.com/inference-sim/blis-vllm/rules/pack"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
 )
 
 // KVLayerRun is a run of consecutive attention layers of one KV cache spec, in core/vllm's

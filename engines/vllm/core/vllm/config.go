@@ -19,11 +19,11 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/core/engine"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/placement"
+	"github.com/inference-sim/blis-vllm/core/rulepack/v0_33"
 	"github.com/inference-sim/blis-vllm/core/sched"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
-	"github.com/inference-sim/blis-vllm/rules/v0_33"
 )
 
 // Config is the engine block of one pool, as the simulator hands it over in engine.Spec.Config.
@@ -937,7 +937,7 @@ func fullCUDAGraphs(mode string) bool {
 	return false
 }
 
-// checkRules runs the v0.33.0 rules pack (rules/v0_33) over the engine block, the startup check
+// checkRules runs the v0.33.0 rules pack (core/rulepack/v0_33) over the engine block, the startup check
 // inference-sim issue 2021 B11 step 2 gives the engine: the values the release accepts and the refusals it makes.
 // The block is one pool's engine, and it is all the engine is given: the model graph, the cluster
 // and the pool's parallel widths other than pipeline_parallel_size are not in it. So a refusal

@@ -48,8 +48,8 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
-	"github.com/inference-sim/blis-vllm/rules/pack"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
 )
 
 // ArchGlmMoeDsa is the architecture name of GLM-5, 5.2, 5.2-fp8 and 5.3, the architectures[0] of

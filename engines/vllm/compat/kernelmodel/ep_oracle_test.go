@@ -14,7 +14,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
-	"github.com/inference-sim/blis-vllm/rules/v0_33"
+	"github.com/inference-sim/blis-vllm/core/rulepack/v0_33"
 )
 
 // moeCase is one case of core/lower/testdata/vllm_lower.json's moe_parallel section

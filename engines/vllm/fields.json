@@ -5877,8 +5877,8 @@
         "traces": [
           "compat/kernelmodel/engine_settings_test.go",
           "compat/kernelmodel/indexer_record_test.go",
-          "rules/v0_33/indexer_kv_dtype_test.go",
-          "rules/v0_33/testdata/vllm_indexer_kv_dtype.json"
+          "core/rulepack/v0_33/indexer_kv_dtype_test.go",
+          "core/rulepack/v0_33/testdata/vllm_indexer_kv_dtype.json"
         ]
       },
       "value_classes": {
@@ -6286,7 +6286,7 @@
         "traces": [
           "compat/kernelmodel/capture_oracle_test.go",
           "core/lower/testdata/vllm_lower.json",
-          "rules/pack/cudagraph_test.go"
+          "core/rulepack/pack/cudagraph_test.go"
         ]
       },
       "value_classes": {
@@ -6340,7 +6340,7 @@
         "traces": [
           "compat/kernelmodel/capture_oracle_test.go",
           "core/lower/testdata/vllm_lower.json",
-          "rules/pack/cudagraph_test.go"
+          "core/rulepack/pack/cudagraph_test.go"
         ]
       },
       "value_classes": {
@@ -6574,7 +6574,7 @@
         "traces": [
           "compat/kernelmodel/capture_oracle_test.go",
           "core/lower/testdata/vllm_lower.json",
-          "rules/pack/cudagraph_test.go"
+          "core/rulepack/pack/cudagraph_test.go"
         ]
       },
       "value_classes": {
@@ -6879,7 +6879,7 @@
         "traces": [
           "compat/kernelmodel/capture_oracle_test.go",
           "core/lower/testdata/vllm_lower.json",
-          "rules/pack/cudagraph_test.go"
+          "core/rulepack/pack/cudagraph_test.go"
         ]
       },
       "value_classes": {
@@ -9453,7 +9453,7 @@
         "traces": [
           "compat/kernelmodel/capture_oracle_test.go",
           "core/lower/testdata/vllm_lower.json",
-          "rules/pack/cudagraph_test.go"
+          "core/rulepack/pack/cudagraph_test.go"
         ]
       },
       "value_classes": {
@@ -11707,8 +11707,8 @@
       "evidence": {
         "traces": [
           "compat/kernelmodel/synthetic_acceptance_test.go",
-          "rules/engineconfig/synthetic_acceptance_test.go",
-          "rules/engineconfig/testdata/synthetic_acceptance.json"
+          "core/engineconfig/synthetic_acceptance_test.go",
+          "core/engineconfig/testdata/synthetic_acceptance.json"
         ]
       },
       "value_classes": {
@@ -11791,8 +11791,8 @@
       "evidence": {
         "traces": [
           "compat/kernelmodel/synthetic_acceptance_test.go",
-          "rules/engineconfig/synthetic_acceptance_test.go",
-          "rules/engineconfig/testdata/synthetic_acceptance.json"
+          "core/engineconfig/synthetic_acceptance_test.go",
+          "core/engineconfig/testdata/synthetic_acceptance.json"
         ]
       },
       "value_classes": {

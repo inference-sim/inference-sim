@@ -8,7 +8,7 @@ import (
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // Settings is everything a simulator sizes one engine from, every value answered by the

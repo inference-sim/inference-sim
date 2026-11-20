@@ -12,7 +12,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // dep8 is DeepSeek-V4.1-Flash as one DEP8 engine on the fixture's node: tp 1, dp 8, expert

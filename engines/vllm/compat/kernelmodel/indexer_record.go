@@ -7,7 +7,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-vllm/rules/pack"
+	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
 )
 
 // lowerIndexerKV is the catalog graph as the deployment's attention_config.indexer_kv_dtype

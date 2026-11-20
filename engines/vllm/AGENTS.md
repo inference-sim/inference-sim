@@ -65,7 +65,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 
 - **X1** (partial; target ci by M3) What a user would hand llm-d, vLLM or SGLang is what they hand BLIS, in the upstream's own field names, types, defaults and errors.
   - `new`, pull_request: Every configuration field of the pinned release is classified as modelled, proven inert, or not modelled (VLM-3, SGL-3)
-  - `ci`, pull_request: An unknown field, or a not-modelled field set away from its default, is refused with its upstream name (`rules/engineconfig: TestDecodeRefusesAnUnknownKey`)
+  - `ci`, pull_request: An unknown field, or a not-modelled field set away from its default, is refused with its upstream name (`core/engineconfig: TestDecodeRefusesAnUnknownKey`)
   - `ci`, pull_request: Defaults match: the upstream's own configuration code resolves each oracle scenario, and the port's values are compared field by field (`ci.yml job packs-against-vllm: go test -run MatchSource`)
   - `new`, pull_request: Every configuration the upstream rejects is rejected. This is tested on a generated set: each field's boundary values, taken from the upstream's own argument and validation metadata, and one case for each branch of the upstream's validation code, with branch coverage required
 - **X3** (partial; target ci by M4) Scheduling, KV management, KV connectors and tiering decisions, default resolution, and lowering a model to kernel implementations belong to blis-vllm or blis-sglang.

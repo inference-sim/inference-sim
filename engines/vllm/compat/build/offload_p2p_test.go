@@ -12,7 +12,7 @@ import (
 
 	"github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // An offload block whose connector options state only vLLM's p2p tier resolves to its CPU tier:

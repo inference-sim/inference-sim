@@ -10,7 +10,7 @@ import (
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-substrate/load"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // Speculative acceptance reaches the kernel only for DSpark adaptive verification

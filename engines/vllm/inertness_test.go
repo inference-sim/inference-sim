@@ -228,7 +228,7 @@ func TestTheProofCheckFailsOnEachKnownBadInput(t *testing.T) {
 	copyTree := func() string {
 		dir := t.TempDir()
 		mustCopy(t, "oracle/inertness", filepath.Join(dir, "oracle", "inertness"), ".json")
-		for _, d := range []string{"core", "compat", "vllmengine", "rules", "registry"} {
+		for _, d := range []string{"core", "compat", "vllmengine", "registry"} {
 			mustCopy(t, d, filepath.Join(dir, d), ".go")
 		}
 		return dir

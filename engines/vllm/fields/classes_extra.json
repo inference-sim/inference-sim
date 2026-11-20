@@ -200,7 +200,7 @@
  "speculative_config.rejection_sample_method": {
   "stated": [
    {
-    "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+    "trace": "core/engineconfig/synthetic_acceptance_test.go",
     "values": [
      "synthetic"
     ],
@@ -226,7 +226,7 @@
  "speculative_config.synthetic_acceptance_length": {
   "stated": [
    {
-    "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+    "trace": "core/engineconfig/synthetic_acceptance_test.go",
     "values": [
      1,
      2,

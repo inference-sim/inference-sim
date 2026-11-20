@@ -8,7 +8,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-	vllmrules "github.com/inference-sim/blis-vllm/rules"
+	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 )

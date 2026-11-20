@@ -18,7 +18,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // Fixed memory occupancy is the registry's magnitudes in NVIDIA's composition, with nothing

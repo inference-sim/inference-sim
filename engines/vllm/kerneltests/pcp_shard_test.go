@@ -12,7 +12,7 @@ import (
 	schemas "github.com/inference-sim/blis-substrate/contracts"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // Prefill-context parallelism splits a prefill sequence across ranks, and these pin that

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // The engine reads UCX_CUDA_IPC_ENABLE_MNNVL (the KV handoff path) and

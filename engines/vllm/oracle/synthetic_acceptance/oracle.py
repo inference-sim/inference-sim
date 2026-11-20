@@ -19,7 +19,7 @@ Usage:
     python3 -I oracle/synthetic_acceptance/oracle.py <vllm checkout> json              print the record as JSON
     python3 -I oracle/synthetic_acceptance/oracle.py <vllm checkout> check <file>      fail unless <file> equals what it prints
 
-rules/engineconfig/synthetic_acceptance_test.go reads the committed file and holds the engine
+core/engineconfig/synthetic_acceptance_test.go reads the committed file and holds the engine
 block's validation and blis-substrate's acceptance.MinimumVarianceRates to it.
 """
 import json

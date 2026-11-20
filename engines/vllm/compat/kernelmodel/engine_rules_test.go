@@ -8,9 +8,9 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-	vllmrules "github.com/inference-sim/blis-vllm/rules"
+	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
 
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
 )
 
 // The engine rules come from the caller, the vLLM rules packs of blis-vllm (inference-sim#2021

@@ -12552,7 +12552,7 @@
       ],
       "covered_by": [
        "compat/kernelmodel/h200_fields_test.go",
-       "rules/engineconfig/synthetic_acceptance_test.go"
+       "core/engineconfig/synthetic_acceptance_test.go"
       ]
      }
     ],
@@ -12650,7 +12650,7 @@
     "stated": [
      {
       "value": "synthetic",
-      "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+      "trace": "core/engineconfig/synthetic_acceptance_test.go",
       "reviewed": true
      },
      {
@@ -12692,7 +12692,7 @@
       "uncut": true,
       "covered_by": [
        "compat/kernelmodel/synthetic_acceptance_test.go",
-       "rules/engineconfig/synthetic_acceptance_test.go"
+       "core/engineconfig/synthetic_acceptance_test.go"
       ]
      },
      {
@@ -12717,27 +12717,27 @@
     "stated": [
      {
       "value": 1,
-      "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+      "trace": "core/engineconfig/synthetic_acceptance_test.go",
       "reviewed": true
      },
      {
       "value": 2,
-      "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+      "trace": "core/engineconfig/synthetic_acceptance_test.go",
       "reviewed": true
      },
      {
       "value": 2.84,
-      "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+      "trace": "core/engineconfig/synthetic_acceptance_test.go",
       "reviewed": true
      },
      {
       "value": 3,
-      "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+      "trace": "core/engineconfig/synthetic_acceptance_test.go",
       "reviewed": true
      },
      {
       "value": 4,
-      "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+      "trace": "core/engineconfig/synthetic_acceptance_test.go",
       "reviewed": true
      },
      {

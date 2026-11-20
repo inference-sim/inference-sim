@@ -24,9 +24,9 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-vllm/compat/lowering"
-	vllmrules "github.com/inference-sim/blis-vllm/rules"
-	"github.com/inference-sim/blis-vllm/rules/engineconfig"
-	"github.com/inference-sim/blis-vllm/rules/pack"
+	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
+	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
 )
 
 // The catalog and registry are blis-substrate's catalog/ and registry/ at the release go.mod

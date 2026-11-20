@@ -1,4 +1,4 @@
-# Golden KV cache groupings from vLLM's own code, for rules/kvcache_test.go.
+# Golden KV cache groupings from vLLM's own code, for core/rulepack/pack/kvcache_test.go.
 #
 # It extracts _approximate_gcd, _get_packed_kv_cache_groups, _get_kv_cache_bytes_per_block
 # and _get_per_layer_spec from a release's vllm/v1/core/kv_cache_utils.py, runs them over
