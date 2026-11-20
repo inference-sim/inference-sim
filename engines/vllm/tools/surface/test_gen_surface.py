@@ -4,6 +4,7 @@
 Run: python3 -I tools/surface/test_gen_surface.py
 """
 
+import ast
 import copy
 import io
 import json
@@ -163,6 +164,41 @@ FILES = {
             def get_scheduler_cls(self):
                 return resolve_obj_by_qualname(self.scheduler_cls)
     """,
+    "vllm/model_executor/models/registry.py": """
+        _TEXT_GENERATION_MODELS = {
+            "LlamaForCausalLM": ("llama", "LlamaForCausalLM"),
+            "OlmoForCausalLM": ("olmo", "OlmoForCausalLM"),
+        }
+        _EMBEDDING_MODELS = {
+            "BertModel": ("bert", "BertEmbeddingModel"),
+            **{
+                k: (mod, arch)
+                for k, (mod, arch) in _TEXT_GENERATION_MODELS.items()
+                if arch == "LlamaForCausalLM"
+            },
+        }
+        _TRANSFORMERS_SUPPORTED_MODELS = {
+            "GlmForCausalLM": ("transformers", "TransformersForCausalLM"),
+            "EmuForConditionalGeneration": (
+                "transformers",
+                "TransformersMultiModalForCausalLM",
+            ),
+        }
+        _TRANSFORMERS_BACKEND_MODELS: dict = {
+            "TransformersForCausalLM": ("transformers", "TransformersForCausalLM"),
+            "TransformersMultiModalForCausalLM": ("transformers", "TransformersMultiModalForCausalLM"),
+        }
+        _PREVIOUSLY_SUPPORTED_MODELS = {"GlmForCausalLM": {"max_transformers_version": "4.0"}}
+        _VLLM_MODELS = {
+            **_TEXT_GENERATION_MODELS,
+            **_EMBEDDING_MODELS,
+            **_TRANSFORMERS_SUPPORTED_MODELS,
+            **_TRANSFORMERS_BACKEND_MODELS,
+        }
+        class _ModelRegistry:
+            def _try_resolve_transformers(self, architecture, model_config):
+                pass
+    """,
     "vllm/v1/spec_decode/custom_class_proposer.py": """
         import importlib
         def load(module_path):
@@ -236,6 +272,11 @@ def good_status():
         "framework:KVConnectorBase_V1 worker side": refused(),
         "framework:KVConnectorBase_V1 scheduler side": refused(),
         "metric_family:vllm:num_requests_running": refused(),
+        "transformers_fallback:GlmForCausalLM": refused(),
+        "transformers_fallback:EmuForConditionalGeneration": refused(),
+        "transformers_fallback:TransformersForCausalLM": refused(),
+        "transformers_fallback:TransformersMultiModalForCausalLM": refused(),
+        "transformers_fallback:auto": refused(),
     }
     for name, *_ in gen_surface.PATH_LOADERS:
         s["path_loader:" + name] = refused()
@@ -302,6 +343,38 @@ class GenSurfaceTest(unittest.TestCase):
         self.assertEqual(got["connector:StoreConnector"]["status"], "refused")
         self.assertEqual(got["connector:StoreConnector"]["issue"], ISSUE)
 
+    def test_the_transformers_fallback_paths_are_listed_by_route(self):
+        got = self.items()
+        reg = "vllm/model_executor/models/registry.py"
+        self.assertEqual(got["transformers_fallback:GlmForCausalLM"]["route"], "architecture")
+        self.assertEqual(got["transformers_fallback:GlmForCausalLM"]["backend"], "TransformersForCausalLM")
+        self.assertEqual(got["transformers_fallback:GlmForCausalLM"]["site"], reg + ":15")
+        self.assertEqual(got["transformers_fallback:TransformersForCausalLM"]["route"], "backend_class")
+        self.assertEqual(got["transformers_fallback:auto"]["route"], "unregistered_architecture")
+        self.assertNotIn("transformers_fallback:LlamaForCausalLM", got)
+        self.assertNotIn("transformers_fallback:BertModel", got)
+
+    def test_model_architectures_say_which_route_vllm_resolves_each_by(self):
+        self.assertEqual(gen_surface.model_architectures(self.tree.src), {
+            "LlamaForCausalLM": "native", "OlmoForCausalLM": "native", "BertModel": "native",
+            "GlmForCausalLM": "transformers", "EmuForConditionalGeneration": "transformers",
+            "TransformersForCausalLM": "transformers", "TransformersMultiModalForCausalLM": "transformers"})
+
+    def test_only_literal_tables_and_items_of_one_are_evaluated(self):
+        def pure(src):
+            return gen_surface.pure_table(ast.parse(src, mode="eval").body)
+        self.assertTrue(pure("{'A': ('m', 'C')}"))
+        self.assertTrue(pure("{k: v for k, v in table.items()}"))
+        self.assertFalse(pure("{'A': mod.CLS}"))
+        self.assertFalse(pure("table.pop('A')"))
+        self.assertFalse(pure("build()"))
+
+    def test_a_registry_table_that_is_not_literal_fails(self):
+        self.tree.append("vllm/model_executor/models/registry.py", """
+            _VLLM_MODELS = {**build_models()}
+        """)
+        self.assertIn("_VLLM_MODELS is not a table of literals", self.refusal(good_status()))
+
     def test_a_name_bound_to_another_names_class_is_an_alias(self):
         got = self.items()
         self.assertEqual(got["connector:OldConnector"].get("alias_of"), "PullConnector")
@@ -365,7 +438,7 @@ class GenSurfaceTest(unittest.TestCase):
     def test_refused_needs_a_blis_vllm_issue(self):
         s = good_status()
         s["items"]["connector:StoreConnector"] = {"status": "refused", "issue": "https://example.com/1"}
-        self.assertIn("is not a blis-vllm issue URL", self.refusal(s))
+        self.assertIn("is not a blis-vllm or inference-sim issue URL", self.refusal(s))
         s["items"]["connector:StoreConnector"] = {"status": "refused", "issue": ISSUE, "refusal": "made_up"}
         self.assertIn("refusal 'made_up'", self.refusal(s))
 

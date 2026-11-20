@@ -8,7 +8,7 @@
  "counts": {
   "modelled": 70,
   "out_of_scope": 40,
-  "refused": 151
+  "refused": 187
  },
  "items": [
   {
@@ -1373,6 +1373,353 @@
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/13",
    "why": "no recorded or direct trace at its interface (FID-5)"
+  },
+  {
+   "id": "transformers_fallback:ArceeForCausalLM",
+   "category": "transformers_fallback",
+   "name": "ArceeForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:749",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:CwmForCausalLM",
+   "category": "transformers_fallback",
+   "name": "CwmForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:750",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:FlexOlmoForCausalLM",
+   "category": "transformers_fallback",
+   "name": "FlexOlmoForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:751",
+   "route": "architecture",
+   "backend": "TransformersMoEForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:GlmForCausalLM",
+   "category": "transformers_fallback",
+   "name": "GlmForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:752",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:GPTBigCodeForCausalLM",
+   "category": "transformers_fallback",
+   "name": "GPTBigCodeForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:753",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:GPTNeoXForCausalLM",
+   "category": "transformers_fallback",
+   "name": "GPTNeoXForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:754",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:HunYuanDenseV1ForCausalLM",
+   "category": "transformers_fallback",
+   "name": "HunYuanDenseV1ForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:755",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:HunYuanMoEV1ForCausalLM",
+   "category": "transformers_fallback",
+   "name": "HunYuanMoEV1ForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:756",
+   "route": "architecture",
+   "backend": "TransformersMoEForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:Jais2ForCausalLM",
+   "category": "transformers_fallback",
+   "name": "Jais2ForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:757",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:Kolibri1ForCausalLM",
+   "category": "transformers_fallback",
+   "name": "Kolibri1ForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:758",
+   "route": "architecture",
+   "backend": "TransformersMoEForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:MellumForCausalLM",
+   "category": "transformers_fallback",
+   "name": "MellumForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:759",
+   "route": "architecture",
+   "backend": "TransformersMoEForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:NanbeigeForCausalLM",
+   "category": "transformers_fallback",
+   "name": "NanbeigeForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:760",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:OlmoForCausalLM",
+   "category": "transformers_fallback",
+   "name": "OlmoForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:761",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:Olmo2ForCausalLM",
+   "category": "transformers_fallback",
+   "name": "Olmo2ForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:762",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:Olmo3ForCausalLM",
+   "category": "transformers_fallback",
+   "name": "Olmo3ForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:763",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:PhiForCausalLM",
+   "category": "transformers_fallback",
+   "name": "PhiForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:764",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:SeedOssForCausalLM",
+   "category": "transformers_fallback",
+   "name": "SeedOssForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:765",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:SmolLM3ForCausalLM",
+   "category": "transformers_fallback",
+   "name": "SmolLM3ForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:766",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:Starcoder2ForCausalLM",
+   "category": "transformers_fallback",
+   "name": "Starcoder2ForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:767",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:VaultGemmaForCausalLM",
+   "category": "transformers_fallback",
+   "name": "VaultGemmaForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:768",
+   "route": "architecture",
+   "backend": "TransformersForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:Emu3ForConditionalGeneration",
+   "category": "transformers_fallback",
+   "name": "Emu3ForConditionalGeneration",
+   "site": "vllm/model_executor/models/registry.py:770",
+   "route": "architecture",
+   "backend": "TransformersMultiModalForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:HunYuanVLForConditionalGeneration",
+   "category": "transformers_fallback",
+   "name": "HunYuanVLForConditionalGeneration",
+   "site": "vllm/model_executor/models/registry.py:774",
+   "route": "architecture",
+   "backend": "TransformersMultiModalForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:VibeVoiceAsrForConditionalGeneration",
+   "category": "transformers_fallback",
+   "name": "VibeVoiceAsrForConditionalGeneration",
+   "site": "vllm/model_executor/models/registry.py:778",
+   "route": "architecture",
+   "backend": "TransformersMultiModalForCausalLM",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersForCausalLM",
+   "category": "transformers_fallback",
+   "name": "TransformersForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:786",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMoEForCausalLM",
+   "category": "transformers_fallback",
+   "name": "TransformersMoEForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:787",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersForMTP",
+   "category": "transformers_fallback",
+   "name": "TransformersForMTP",
+   "site": "vllm/model_executor/models/registry.py:789",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMoEForMTP",
+   "category": "transformers_fallback",
+   "name": "TransformersMoEForMTP",
+   "site": "vllm/model_executor/models/registry.py:790",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMultiModalForCausalLM",
+   "category": "transformers_fallback",
+   "name": "TransformersMultiModalForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:792",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMultiModalMoEForCausalLM",
+   "category": "transformers_fallback",
+   "name": "TransformersMultiModalMoEForCausalLM",
+   "site": "vllm/model_executor/models/registry.py:796",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersEmbeddingModel",
+   "category": "transformers_fallback",
+   "name": "TransformersEmbeddingModel",
+   "site": "vllm/model_executor/models/registry.py:801",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMoEEmbeddingModel",
+   "category": "transformers_fallback",
+   "name": "TransformersMoEEmbeddingModel",
+   "site": "vllm/model_executor/models/registry.py:802",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMultiModalEmbeddingModel",
+   "category": "transformers_fallback",
+   "name": "TransformersMultiModalEmbeddingModel",
+   "site": "vllm/model_executor/models/registry.py:803",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersForSequenceClassification",
+   "category": "transformers_fallback",
+   "name": "TransformersForSequenceClassification",
+   "site": "vllm/model_executor/models/registry.py:808",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMoEForSequenceClassification",
+   "category": "transformers_fallback",
+   "name": "TransformersMoEForSequenceClassification",
+   "site": "vllm/model_executor/models/registry.py:812",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMultiModalForSequenceClassification",
+   "category": "transformers_fallback",
+   "name": "TransformersMultiModalForSequenceClassification",
+   "site": "vllm/model_executor/models/registry.py:816",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:auto",
+   "category": "transformers_fallback",
+   "name": "auto",
+   "site": "vllm/model_executor/models/registry.py:1266",
+   "route": "unregistered_architecture",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
   },
   {
    "id": "metric_family:vllm:<kvcr DURATION_METRIC>",

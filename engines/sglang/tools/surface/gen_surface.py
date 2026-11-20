@@ -76,6 +76,9 @@ under python/sglang/srt/; each item's "site" is the file and line it was read at
                        resolution-step overrides, and each platform class hook
                        (platforms/interface.py get_*_cls).
   server_args_group    each namespace of arg_groups/fields/*.py.
+  transformers_fallback  each class in the EntryClass of models/transformers.py (route backend_class)
+                       and resolve_transformers_arch (model_loader/utils.py), the fallback for an
+                       architecture no module of models/ registers (route unregistered_architecture).
 
 Statuses (X9). Each status.json entry is keyed by item id ("<category>:<name>") and holds:
   modelled       "evidence": repository paths that exist, at least one an oracle scenario or a
@@ -97,7 +100,7 @@ import sys
 import warnings
 
 UPSTREAM = {"tag": None, "commit": None}
-ISSUE = re.compile(r"^https://github\.com/inference-sim/blis-sglang/issues/[0-9]+$")
+ISSUE = re.compile(r"^https://github\.com/inference-sim/(blis-sglang|inference-sim)/issues/[0-9]+$")
 REASONS = ("hardware", "no_priced_work", "deprecated")
 STATUSES = ("modelled", "refused", "out_of_scope")
 SCENARIO = re.compile(r"^(oracle/scenarios[^/]*/|.*/testdata/golden[^/]*/)")
@@ -128,6 +131,9 @@ KV_EVENTS = "disaggregation/kv_events.py"
 PLATFORM = "platforms/interface.py"
 RESOLUTION_HOOKS = "arg_groups/resolution_hooks.py"
 FIELDS_DIR = "arg_groups/fields"
+MODELS_DIR = "models"
+TRANSFORMERS_MODELS = MODELS_DIR + "/transformers.py"
+ARCH_RESOLVER = "model_loader/utils.py"
 
 # A --disaggregation-transfer-backend choice that is not a TransferBackend member, the member the
 # resolution rewrites it to, and the line of the rewrite.
@@ -949,6 +955,47 @@ def server_args_groups(src):
     return out
 
 
+def entry_classes(src, rel):
+    """(class name, line) of each name in a module's top-level EntryClass, which the registry
+    keys by the class's name."""
+    for stmt in parse(src, rel).body:
+        if isinstance(stmt, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "EntryClass" for t in stmt.targets):
+            elts = stmt.value.elts if isinstance(stmt.value, (ast.List, ast.Tuple)) else [stmt.value]
+            if not all(isinstance(e, ast.Name) for e in elts):
+                raise GenError("%s%s:%d: EntryClass names something other than classes by name" % (SRT, rel, stmt.lineno))
+            return [(e.id, e.lineno) for e in elts]
+    return []
+
+
+def model_architectures(src):
+    """{architecture: "native" | "transformers"}: how SGLang resolves each architecture its models/
+    registers. An architecture it does not register falls back to the Transformers backend."""
+    d = os.path.join(src, SRT, MODELS_DIR)
+    try:
+        files = sorted(f for f in os.listdir(d) if f.endswith(".py") and f != "__init__.py")
+    except OSError as e:
+        raise GenError("%s%s: %s" % (SRT, MODELS_DIR, e))
+    out = {}
+    for fn in files:
+        rel = MODELS_DIR + "/" + fn
+        for name, _ in entry_classes(src, rel):
+            out[name] = "transformers" if rel == TRANSFORMERS_MODELS else "native"
+    _TREES.clear()
+    return out
+
+
+def transformers_fallback(src):
+    out = [item("transformers_fallback", name, TRANSFORMERS_MODELS, line, route="backend_class")
+           for name, line in entry_classes(src, TRANSFORMERS_MODELS)]
+    if not out:
+        raise GenError("%s%s: no EntryClass" % (SRT, TRANSFORMERS_MODELS))
+    for node in parse(src, ARCH_RESOLVER).body:
+        if isinstance(node, ast.FunctionDef) and node.name == "resolve_transformers_arch":
+            out.append(item("transformers_fallback", "auto", ARCH_RESOLVER, node.lineno, route="unregistered_architecture"))
+            return out
+    raise GenError("%s%s: no resolve_transformers_arch" % (SRT, ARCH_RESOLVER))
+
+
 def derive(src):
     _TREES.clear()
     _INDEX.clear()
@@ -967,6 +1014,7 @@ def derive(src):
     its += spec_algos(src)
     its += moe_a2a(src)
     its += kv_events(src)
+    its += transformers_fallback(src)
     its += metric_families(src)
     its += frameworks(src)
     its += extension_points(src)
@@ -1016,7 +1064,7 @@ def check_entry(repo, it, st, errs):
     elif status == "refused":
         allowed |= {"issue"}
         if not ISSUE.match(str(st.get("issue", ""))):
-            errs.append("%s: refused, but issue %r is not a blis-sglang issue URL" % (iid, st.get("issue")))
+            errs.append("%s: refused, but issue %r is not a blis-sglang or inference-sim issue URL" % (iid, st.get("issue")))
     else:
         allowed |= {"reason", "citation"}
         if st.get("reason") not in REASONS:

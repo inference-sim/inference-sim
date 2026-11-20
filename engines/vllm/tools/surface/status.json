@@ -1529,6 +1529,150 @@
   "speculative_method:suffix": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
+  },
+  "transformers_fallback:ArceeForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:CwmForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:Emu3ForConditionalGeneration": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:FlexOlmoForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:GPTBigCodeForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:GPTNeoXForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:GlmForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:HunYuanDenseV1ForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:HunYuanMoEV1ForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:HunYuanVLForConditionalGeneration": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:Jais2ForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:Kolibri1ForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:MellumForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:NanbeigeForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:Olmo2ForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:Olmo3ForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:OlmoForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:PhiForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:SeedOssForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:SmolLM3ForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:Starcoder2ForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersEmbeddingModel": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersForMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersForSequenceClassification": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMoEEmbeddingModel": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMoEForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMoEForMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMoEForSequenceClassification": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalEmbeddingModel": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalForSequenceClassification": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalMoEForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:VaultGemmaForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:VibeVoiceAsrForConditionalGeneration": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:auto": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
   }
  }
 }
