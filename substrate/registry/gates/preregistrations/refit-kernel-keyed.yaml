@@ -1,0 +1,45 @@
+# Pre-registration of a refit family (M3.2 plan Table W row 18). Fixed before any fit reads the
+# sources below; thresholds are the section 1.5 defaults of ../defaults.yaml and roles are drawn
+# per role key (requirements 1.4). Nothing in this file is a result. A change that touches a
+# coefficient set of this family states its own lanes and one idea in the dashboard's gate
+# pre-registration (state/gate/preregistrations/); this record fixes what the family may read
+# and the bar it is held to.
+kind: CalibrationPreRegistration
+id: refit-kernel-keyed
+partition_version: 1
+hypothesis: "Refitting the kernel-keyed coefficients, which both engines read, on the fit share of the sources below lowers the error on the lanes that run the refit kernels and raises it on no lane of either engine."
+layer: "coefficient: kernel-keyed attention, collective, primitive and recurrent sets (design section 3.2, shared across engines)"
+predicted_change: "Relative error on tpot_us and ttft_us does not rise on any lane of either engine (margin 0), and falls on the target lanes the change names."
+coefficient_class: kernel-keyed
+coefficient_sets: [cost-model-attention, cost-model-collectives, cost-model-collectives-inferencex, cost-model-primitives, cost-model-recurrent]
+target_engines: [vllm, sglang]
+sources: [aisimulate, aisimulate-fpm, inferencex, sglang-nightly, sglang-traces, vllm-ci-perf]
+target_lanes:
+  - {engine: vllm}
+  - {engine: sglang}
+criteria:
+  - {criterion: error, margin: 0}
+  - {criterion: distance, margin: 0}
+metrics: [tpot_us, ttft_us]
+min_points: 10
+substream: gate/refit-kernel-keyed
+# Fixed by the base gate-candidate run (accuracy-dashboard whole-run gate); empty until it exists.
+measured_sha256: ""
+pins:
+  partition_version: 1
+  seed_sha256: "0c741364a9f124cb87d0364c3de4682bd45cb20707ba19dbce704bb1795fb839"
+  defaults_sha256: "ce5778052ee645bd17c6f096f1052d980c07700fd64963f5bedf2958f7ec2bfc"
+  sources:
+    aisimulate: "af58ec7de2894f3167c7efceb6f1bc214f37e69f23d73e84784a7834ad8c0a63"
+    aisimulate-fpm: "b99fceea8d2cff09bfe9e63338a52f8f142eb8a634db94c82d958f1bc8ac90d5"
+    inferencex: "606493f08e76aa0aab39e34729d825caed84e0b0bbc57625c8d1b123aae5fbbf"
+    sglang-nightly: "90077a6fae004586ec5e9325e2bdbd26be47c706ea2fd30370d94aac5545dee2"
+    sglang-traces: "30216b47ab4260acbb3c401de4d81a76b608dcb8d14a042d9e40c901f191b898"
+    vllm-ci-perf: "262ffe0b1f24abb8ea51d022aecafc36b7b50e467d403dff83c87d55644226cc"
+  cut_points:
+    aisimulate: "dc3b3417b923c6fc13bb5f1c6b3d83979530567e06c9adc3c96ed831d06bc591"
+    aisimulate-fpm: "4c3f733b05fd31c7ffb0ad43ee9a3791f6d85a4a1eb8e11f503c393f4374248d"
+    inferencex: "22721dd252cb5cab738c147ee339e3b3d6b274b33f6d80f4e9209ccf5a4101ec"
+    sglang-nightly: "4c3f733b05fd31c7ffb0ad43ee9a3791f6d85a4a1eb8e11f503c393f4374248d"
+    sglang-traces: "4c3f733b05fd31c7ffb0ad43ee9a3791f6d85a4a1eb8e11f503c393f4374248d"
+    vllm-ci-perf: "4c3f733b05fd31c7ffb0ad43ee9a3791f6d85a4a1eb8e11f503c393f4374248d"

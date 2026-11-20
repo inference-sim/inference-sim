@@ -1,0 +1,98 @@
+# The calibration acceptance gate's defaults, fixed before any fit reads a new source (M3.2
+# requirements section 1.5; plan Table W row 18). A pre-registration (preregistrations/*.yaml)
+# takes every threshold from here; it departs from one only through threshold_override, which
+# names the merged pull request in which a maintainer set it. Nothing here is a result.
+#
+# The values are the design's, not tuned: the VAL-6 landing gate (design section 9.4), the
+# held-evaluation rule of section 12.3, and the whole-run gate of accuracy-dashboard
+# (branch m32/row25-whole-run-gate, commit 1bfbbf6; docs/m3/gate/README.md, orchestrator/gate/).
+# A change to any value below is a new defaults file, reviewed as a threshold change; the
+# digest every pre-registration records (pins.defaults_sha256) makes an unreviewed change fail.
+kind: CalibrationGateDefaults
+
+# The base a candidate is compared with: the registry of the previous release.
+baseline: previous-release-registry
+
+# The error is relative: |predicted - measured| / measured, per metric, then averaged over the
+# units of one role key, so a role key (the unit of independence, section 1.4) counts once.
+error:
+  definition: relative-absolute
+  metrics: [tpot_us, ttft_us]
+  per: role-key
+# The error is reported on each of these slices, and a lane that holds a slice is judged on it.
+slices: [engine, chip, workload]
+
+# A lane with fewer role keys than this is reported but not judged (COV-13).
+min_points: 10
+
+# The margin d of VAL-6: a lane fails only when the whole interval of (candidate error - base
+# error) lies above d. The invariant registry carries no numeric margin, so d is zero. The
+# distance criterion is held to the same margin. A maintainer who wants another d sets it in
+# a merged pull request and cites it in threshold_override.
+margin:
+  error: 0
+  distance: 0
+
+# The test: a paired bootstrap of (candidate error - base error), resampled over role keys,
+# bias-corrected and accelerated, one-sided, Holm-corrected across the lanes of a change.
+test:
+  method: paired-bootstrap-bca
+  resamples: 10000
+  alpha: 0.05
+  correction: holm
+  resample_over: role-key
+
+# The held-out verdict is read once, after selection, in the gate job.
+heldout:
+  evaluations: 1
+  after: selection
+
+# A change that fails the gate may be revised once, under a new pre-registration, and is
+# reverted if the revision fails too. A failed idea leaves a negative-result note (T-A4).
+revision:
+  retries: 1
+  retry_needs_new_preregistration: true
+  then: revert
+  negative_result_note: true
+
+# Roles are drawn per role key, not per row: the HMAC of the seed over the canonical role key,
+# modulo 100, read against the source's cut-points (design section 10.2).
+roles_drawn_per: role-key
+training_roles: [fit, select, validate]
+# The fit step reads the fit share; selection reads the select and validate shares only (X8).
+fit_reads: [fit]
+select_reads: [select, validate]
+
+# The fields each source's role key holds (the canonical JSON the draw is taken over).
+role_key_fields:
+  inferencex: [source, model, hardware, precision, framework, benchmark_type, configuration_hash]
+  vllm-ci-perf: [source, commit, model, hardware, benchmark, config_sha256]
+  sglang-nightly: [source, commit, test, model, hardware]
+  sglang-traces: [source, file]
+
+# configiq is anchor-only (section 1.4): never fit, selected, validated or held, so no
+# pre-registration may name it as a source.
+forbidden_sources: [configiq]
+
+# Directories whose scripts fit coefficients. A script here that names a gated or forbidden
+# source must say which pre-registration covers it (see prereg.ScanScripts).
+fit_script_dirs: [registry/scripts]
+
+# Whole-run gate lane fields a target lane may constrain (accuracy-dashboard orchestrator/gate/prereg.py).
+lane_fields: [engine, modelled_commit, chip, model, layout]
+
+# The sources whose first read by a fit must be pre-registered: the three Table 1.4 sources
+# that are new in M3.2 (requirements section 1.4). Every record that lists one of them is a
+# promise not to fit on it before it is merged.
+gated_sources: [vllm-ci-perf, sglang-nightly, sglang-traces]
+
+# Coefficient sets no record covers. A set here is not refit from the gated sources in this
+# milestone's plan or has no keying class settled by design section 3.2; a refit of one needs
+# its own record first (the validator fails on a set that is in neither place).
+not_preregistered_sets:
+  - set: cost-model-fabric
+    reason: "No entry is a measurement this project made (literature and assumed values only, see the file header), so no source of the ledger refits it."
+  - set: cost-model-offload-tiers
+    reason: "Every entry is a representative value or a single-host fit the file header records; no ledger source measures a storage tier."
+  - set: cost-model-memory
+    reason: "Capacity magnitudes anchored on engine start-up logs, hardware independent for the capture figures; whether a refit is kernel-keyed or engine-path is not settled, so a maintainer assigns it before any refit."
