@@ -1,0 +1,77 @@
+name: go-toolchain
+description: >-
+  Install exactly the Go toolchain named in substrate/contracts/toolchain of the repository this
+  action comes from, and fail if the go command reports any other version (LIF-2). The file is
+  read from the action's own checkout, so a caller at a commit gets the toolchain of that commit.
+  Callers set GOTOOLCHAIN=local on the job, so no build downloads a toolchain. Call it by commit:
+  uses: inference-sim/inference-sim/.github/actions/go-toolchain@<commit>
+  Nothing references it until the substrate merge is complete (M3.2 row 2.5).
+
+inputs:
+  build-cache:
+    description: >-
+      A name for this job's Go build cache. When set, the build cache (compiled packages, race
+      builds, test binaries) of the newest earlier run with the same name is restored, and
+      build-cache-key is the key to save under. Entries are content-addressed, so a stale cache
+      is never wrong, only less useful. Saving is the caller's step (actions/cache/save), and
+      callers save on pushes and manual runs, not on pull requests, so a pull request only reads
+      the cache of main. Empty: no build cache.
+    default: ""
+
+outputs:
+  build-cache-key:
+    description: The key to save the build cache under; empty when build-cache is empty.
+    value: ${{ steps.cachekey.outputs.key }}
+  version:
+    description: The installed version, as the go command reports it (for example go1.N.M).
+    value: ${{ steps.read.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - id: read
+      shell: bash
+      run: |
+        set -euo pipefail
+        file="${{ github.action_path }}/../../../substrate/contracts/toolchain"
+        version=$(tr -d '[:space:]' < "$file")
+        case "$version" in
+          go1.*) ;;
+          *) echo "substrate/contracts/toolchain holds '$version', not a Go version of the form go1.N.M" >&2; exit 1 ;;
+        esac
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "number=${version#go}" >> "$GITHUB_OUTPUT"
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: ${{ steps.read.outputs.number }}
+        check-latest: false
+    - shell: bash
+      env:
+        WANT: ${{ steps.read.outputs.version }}
+      run: |
+        set -euo pipefail
+        got=$(GOTOOLCHAIN=local go env GOVERSION)
+        if [ "$got" != "$WANT" ]; then
+          echo "go reports $got; substrate/contracts/toolchain names $WANT (LIF-2)" >&2
+          exit 1
+        fi
+        echo "GOTOOLCHAIN=local" >> "$GITHUB_ENV"
+        echo "go toolchain: $got"
+    - id: cachekey
+      shell: bash
+      env:
+        NAME: ${{ inputs.build-cache }}
+      run: |
+        set -euo pipefail
+        if [ -n "$NAME" ]; then
+          echo "key=gobuild-$NAME-$RUNNER_OS-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "prefix=gobuild-$NAME-$RUNNER_OS-" >> "$GITHUB_OUTPUT"
+        else
+          echo "key=" >> "$GITHUB_OUTPUT"
+        fi
+    - if: inputs.build-cache != ''
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ~/.cache/go-build
+        key: ${{ steps.cachekey.outputs.key }}
+        restore-keys: ${{ steps.cachekey.outputs.prefix }}

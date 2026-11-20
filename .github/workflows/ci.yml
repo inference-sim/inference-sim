@@ -72,6 +72,10 @@ jobs:
       selected: ${{ steps.groups.outputs.selected }}
       actionlint: ${{ steps.groups.outputs.actionlint }}
       claudemd: ${{ steps.groups.outputs.claudemd }}
+      structure: ${{ steps.groups.outputs.structure }}
+      substrate: ${{ steps.groups.outputs.substrate }}
+      vllm: ${{ steps.groups.outputs.vllm }}
+      sglang: ${{ steps.groups.outputs.sglang }}
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -208,6 +212,13 @@ jobs:
             packages: "./internal/substratedata ./internal/kernelfixtures ./internal/stack/... ./sim/saturation ./sim/check ./internal/invariantscan"
             timeout: "5m"
             flag: other
+          # The checks that read the whole tree (design v4.2.0 section 3.4): the import graph
+          # against Table 1, the X7 path references, no nested go.mod, and the module zip size
+          # (SUB-13). Any change runs it. A new entry, so no existing required name moves.
+          - name: "repository structure"
+            packages: "./internal/repocheck"
+            timeout: "10m"
+            flag: structure
 
     steps:
       - name: The change filter ran, and whether this entry's group is on
