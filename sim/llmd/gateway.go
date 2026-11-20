@@ -2,7 +2,7 @@
 // gateway.
 //
 // The router is the real llm-d-router code, from the inference-sim fork, reached only through the
-// router contract of blis-schemas (package embed) and the fork's constructor for it
+// router contract the fork owns (blisembed, package embed) and the fork's constructor for it
 // (pkg/embed.New). It is configured exactly as a deployment configures it: the EPP command-line
 // flags, the EndpointPickerConfig they name, and the InferencePool, InferenceObjective and
 // InferenceModelRewrite manifests. Nothing in this package decides where a request goes; it only
@@ -36,7 +36,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/inference-sim/blis-substrate/contracts/embed"
+	embed "github.com/llm-d/llm-d-router/blisembed"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 

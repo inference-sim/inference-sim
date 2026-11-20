@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/embed"
+	embed "github.com/llm-d/llm-d-router/blisembed"
 )
 
 // The router's timers and tickers run on simulated time. They deliver on buffered channels from
