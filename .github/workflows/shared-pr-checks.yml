@@ -1,22 +1,12 @@
 name: shared pull-request checks
 
-# The checks every BLIS repository runs on every pull request (design §13.2), ported from
-# blis-substrate as-is except that the tools and the toolchain come from this repository's
-# substrate/ directory. Nothing calls it yet: blis.yml still calls the blis-substrate copy, and
-# the switch is M3.2 row 2.5, which also moves the tools it builds (substrate/tools/...). A
-# repository calls this workflow by commit, which X21 requires:
-#
-#   jobs:
-#     blis:
-#       uses: inference-sim/inference-sim/.github/workflows/shared-pr-checks.yml@<40-hex commit>
-#       with:
-#         repo: blis-vllm
-#         substrate-ref: <the same commit>
-#       secrets: inherit
-#
-# Each job checks out the caller's pull request, and this repository at substrate-ref, and runs
-# blis-substrate's tools from that checkout, so a caller is judged by the code at the commit
-# it pins and by the invariant registry of that commit.
+# The checks every pull request runs (design §13.2). Called by blis.yml of this repository as a
+# local reusable workflow (`uses: ./.github/workflows/shared-pr-checks.yml`), so it runs at the
+# commit of the calling workflow, which on a pull request is the pull request's own merge commit:
+# a pull request is judged by its own changed checks and by the invariant registry it carries.
+# The tools (substrate/tools/...) and the toolchain (substrate/contracts/toolchain) are built from
+# the checked-out pull request; there is no second checkout. Before the single module this was
+# called at a blis-substrate commit (X21) by every BLIS repository.
 #
 #   description     X14: listed hashes are branch heads, it merges cleanly, cited invariants exist
 #   commit-policy   X20: one Assisted-by line, no tool as co-author or sign-off
@@ -40,18 +30,13 @@ on:
   workflow_call:
     inputs:
       repo:
-        description: The calling repository's BLIS name, such as blis-vllm.
-        type: string
-        required: true
-      substrate-ref:
-        description: The inference-sim commit this workflow is called at.
+        description: The repository's BLIS name (inference-sim).
         type: string
         required: true
 
 # On a pull request from the same repository, the checks run the pull request's own code with
-# pull-requests: write: blis.yml passes the pull request's head commit as substrate-ref, so a
-# pull request is judged by its own changed checks. That is by design. A pull request from a
-# fork gets a read-only token whatever is declared here.
+# pull-requests: write, so a pull request is judged by its own changed checks. That is by design.
+# A pull request from a fork gets a read-only token whatever is declared here.
 permissions:
   contents: read
   pull-requests: write
@@ -78,15 +63,9 @@ jobs:
           ref: ${{ env.HEAD }}
           fetch-depth: 0
           path: repo
-      - name: Check out inference-sim at the called commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: inference-sim/inference-sim
-          ref: ${{ inputs.substrate-ref }}
-          path: checks
-      - uses: ./checks/.github/actions/go-toolchain
+      - uses: ./repo/.github/actions/go-toolchain
       - name: Build the checks
-        working-directory: checks
+        working-directory: repo
         run: |
           set -euo pipefail
           go build -o "$RUNNER_TEMP/bin/" ./substrate/tools/prcheck ./substrate/tools/invariants ./substrate/tools/modlint
@@ -164,4 +143,4 @@ jobs:
           go mod download
           # A BLIS module pinned by commit is deferred while the substrate's deferral file
           # holds (plan §3.1: drafts depend on commits; tags follow review).
-          modlint -deferral "$GITHUB_WORKSPACE/checks/substrate/.github/modlint-deferral.yaml"
+          modlint -deferral "$GITHUB_WORKSPACE/repo/.github/modlint-deferral.yaml"
