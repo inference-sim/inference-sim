@@ -1,0 +1,40 @@
+# Pre-registration of a refit family (M3.2 plan Table W row 18). Fixed before any fit reads the
+# sources below; thresholds are the section 1.5 defaults of ../defaults.yaml and roles are drawn
+# per role key (requirements 1.4). Nothing in this file is a result. A change that touches a
+# coefficient set of this family states its own lanes and one idea in the dashboard's gate
+# pre-registration (state/gate/preregistrations/); this record fixes what the family may read
+# and the bar it is held to.
+kind: CalibrationPreRegistration
+id: refit-engine-path-vllm
+partition_version: 1
+hypothesis: "Refitting the vllm engine-path host-overhead coefficients, keyed by that engine's CodeIDs, on the fit share of the sources below lowers the error on the vllm lanes and leaves the other engine's lanes as they were."
+layer: "coefficient: engine-path host overheads of vllm, keyed by CodeID (design section 3.2)"
+predicted_change: "Relative error on tpot_us and ttft_us does not rise on any vllm lane (margin 0), and falls on the target lanes the change names; no lane of the other engine moves."
+coefficient_class: engine-path
+coefficient_sets: [cost-model-host-overheads]
+target_engines: [vllm]
+engine_code_ids:
+  vllm:
+    host: 1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521
+    graphs: 83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776
+sources: [inferencex, vllm-ci-perf]
+target_lanes:
+  - {engine: vllm}
+criteria:
+  - {criterion: error, margin: 0}
+  - {criterion: distance, margin: 0}
+metrics: [tpot_us, ttft_us]
+min_points: 10
+substream: gate/refit-engine-path-vllm
+# Fixed by the base gate-candidate run (accuracy-dashboard whole-run gate); empty until it exists.
+measured_sha256: ""
+pins:
+  partition_version: 1
+  seed_sha256: "0c741364a9f124cb87d0364c3de4682bd45cb20707ba19dbce704bb1795fb839"
+  defaults_sha256: "ce5778052ee645bd17c6f096f1052d980c07700fd64963f5bedf2958f7ec2bfc"
+  sources:
+    inferencex: "606493f08e76aa0aab39e34729d825caed84e0b0bbc57625c8d1b123aae5fbbf"
+    vllm-ci-perf: "262ffe0b1f24abb8ea51d022aecafc36b7b50e467d403dff83c87d55644226cc"
+  cut_points:
+    inferencex: "22721dd252cb5cab738c147ee339e3b3d6b274b33f6d80f4e9209ccf5a4101ec"
+    vllm-ci-perf: "4c3f733b05fd31c7ffb0ad43ee9a3791f6d85a4a1eb8e11f503c393f4374248d"
