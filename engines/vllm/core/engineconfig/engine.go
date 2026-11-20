@@ -48,9 +48,12 @@ type Engine struct {
 	// largest step, in tokens, a CUDA graph is captured for. A larger step runs eager,
 	// so with DSpark at K=5, where a decode step verifies 6 tokens per request, a size of
 	// 64 sends every step of more than 10 decoding requests eager. Nil takes the release
-	// default, min(max_num_seqs x decode query length x 2, 512), or 1024 on SM100 (v0.31.0
-	// vllm/config/vllm.py _set_cudagraph_sizes). The engine caps it at
-	// max_num_batched_tokens; Pack.CUDAGraphCaptureSizes resolves the sizes that run.
+	// default: at vLLM main head 0fda86a one shared ladder up to min(max_num_seqs x decode
+	// query length x 2, 512) off SM100, and on SM100 a prefill token grid up to 8192 beside a
+	// decode request grid up to max_num_seqs (vllm/config/vllm.py _set_cudagraph_sizes and
+	// _split_cudagraph_capture_sizes; pack.DefaultCUDAGraphCapture). The engine caps it at
+	// max_num_batched_tokens; Pack.CUDAGraphCaptureSizes resolves the sizes that run when it
+	// is stated.
 	//
 	// A pointer, because a stated 0 is not unset: the engine refuses it.
 	MaxCUDAGraphCaptureSize *int `yaml:"max_cudagraph_capture_size,omitempty"`

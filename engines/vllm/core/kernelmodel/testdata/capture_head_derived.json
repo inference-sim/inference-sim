@@ -1,0 +1,91 @@
+{
+ "cases": {
+  "batched-tokens-off-stride": {
+   "max": 300
+  },
+  "batched-tokens-off-stride-blackwell": {
+   "max": 300
+  },
+  "default-blackwell": {
+   "max": 8192
+  },
+  "default-decode": {
+   "max": 512
+  },
+  "full-decode-only": {
+   "max": 128
+  },
+  "full-decode-only-blackwell": {
+   "max": 128
+  },
+  "full-mode": {
+   "max": 256
+  },
+  "full-mode-spec": {
+   "max": 256
+  },
+  "mtp1-seqs-above-blackwell-ceiling": {
+   "max": 2200
+  },
+  "mtp1-seqs-above-platform-ceiling": {
+   "max": 512
+  },
+  "mtp1-small": {
+   "max": 64
+  },
+  "mtp1-small-blackwell": {
+   "max": 64
+  },
+  "mtp2-rounds-past-the-ceiling": {
+   "max": 512
+  },
+  "mtp3": {
+   "max": 512
+  },
+  "mtp3-blackwell": {
+   "max": 8192
+  },
+  "mtp3-recoverssm": {
+   "max": 512
+  },
+  "mtp5-varlen": {
+   "max": 512
+  },
+  "mtp6-more-seqs-than-fit": {
+   "max": 504
+  },
+  "none": {
+   "max": 0
+  },
+  "none-blackwell": {
+   "max": 0
+  },
+  "piecewise": {
+   "max": 512
+  },
+  "piecewise-blackwell": {
+   "max": 8192
+  },
+  "seqs-off-stride": {
+   "max": 200
+  },
+  "seqs-off-stride-blackwell": {
+   "max": 8192
+  },
+  "small-seqs": {
+   "max": 32
+  },
+  "small-seqs-blackwell": {
+   "max": 2048
+  },
+  "tiny-seqs-ceiling-8": {
+   "max": 8
+  },
+  "tiny-seqs-ceiling-8-blackwell": {
+   "max": 2048
+  }
+ },
+ "derivation": "derived from source, oracle not re-run",
+ "script": "core/kernelmodel/testdata/derive_capture_head.py",
+ "vllm_commit": "0fda86a35419c9c70dbfada224c838c10fbb62ad"
+}

@@ -1,9 +1,12 @@
 package v0_33
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -1225,7 +1228,8 @@ func TestCUDAGraphCaptureSizesMatchSource(t *testing.T) {
 	root := vllmSource(t)
 	src := readSource(t, root, "vllm", "config", "vllm.py")
 	for _, want := range []string{
-		"1024 if current_platform.is_device_capability_family(100) else 512",
+		"defaults = current_platform.get_cudagraph_capture_defaults(self)",
+		"default_max_graph_size = defaults.legacy_max_tokens",
 		"max_num_seqs * decode_query_len * 2, default_max_graph_size",
 		"max_cudagraph_capture_size = min(max_num_tokens, max_cudagraph_capture_size)",
 		"dedup_sizes = list(set(self.compilation_config.cudagraph_capture_sizes))",
@@ -1246,6 +1250,105 @@ func TestCUDAGraphCaptureSizesMatchSource(t *testing.T) {
 	// the default is computed.
 	if !strings.Contains(src, "uniform_decode_sizes: list[int] = []") {
 		t.Error("the uniform decode sizes are no longer empty for a stated maximum")
+	}
+	// The platform split the default capture applies (pack.DefaultCUDAGraphCapture).
+	cuda := readSource(t, root, "vllm", "platforms", "cuda.py")
+	for _, want := range []string{
+		"if self.is_device_capability_family(100):",
+		"legacy_max_tokens=1024,",
+		"max_prefill_tokens=8192,",
+		"max_decode_requests=vllm_config.scheduler_config.max_num_seqs,",
+		"max_decode_tokens=8192,",
+	} {
+		if !strings.Contains(cuda, want) {
+			t.Errorf("the CUDA platform's capture defaults changed: %q is gone", want)
+		}
+	}
+	comp := readSource(t, root, "vllm", "config", "compilation.py")
+	for _, want := range []string{
+		"legacy_max_tokens: int = 512",
+		"lambda t: min(t, max(8, t / 4), 0.07 * max(t, 4096))",
+		"lambda n: 0.65 * n ** (2 / 3)",
+		"stride = 1 << max(0, math.floor(math.log2(max(1.0, step(size)))))",
+		"size = (size // stride + 1) * stride",
+	} {
+		if !strings.Contains(comp, want) {
+			t.Errorf("the capture grids changed: %q is gone", want)
+		}
+	}
+}
+
+// pack.DefaultCUDAGraphCapture must give the sizes vLLM's own resolver does. The Python
+// side is the checkout's _set_cudagraph_sizes and _split_cudagraph_capture_sizes, cut out
+// of its source and run on the same inputs (core/rulepack/pack/testdata/cudagraph/harness.py).
+func TestDefaultCUDAGraphCaptureMatchesSource(t *testing.T) {
+	root := vllmSource(t)
+	type in struct {
+		Seqs      int    `json:"seqs"`
+		MNBT      int    `json:"mnbt"`
+		Spec      int    `json:"spec"`
+		Family100 bool   `json:"family100"`
+		Mode      string `json:"mode"`
+		Method    string `json:"method"`
+		NPredict  int    `json:"npredict"`
+	}
+	type out struct {
+		Sizes   []int `json:"sizes"`
+		Max     int   `json:"max"`
+		Prefill []int `json:"prefill"`
+		Decode  []int `json:"decode"`
+	}
+	var cases []in
+	for _, seqs := range []int{1, 8, 64, 256, 512, 1024} {
+		for _, mnbt := range []int{256, 2048, 8192, 16384} {
+			for _, spec := range []int{0, 1, 3, 7} {
+				for _, f100 := range []bool{false, true} {
+					for _, mode := range []string{"FULL_AND_PIECEWISE", "FULL_DECODE_ONLY", "FULL", "PIECEWISE"} {
+						cases = append(cases, in{seqs, mnbt, spec, f100, mode, "", 0})
+						if spec > 0 {
+							// A draft model's one-token steps, a single-module MTP, and a
+							// multi-module one (three modules; two when it drafts one token).
+							cases = append(cases, in{seqs, mnbt, spec, f100, mode, "eagle", 0},
+								in{seqs, mnbt, spec, f100, mode, "mtp", 1},
+								in{seqs, mnbt, spec, f100, mode, "mtp", 3})
+						}
+					}
+				}
+			}
+		}
+	}
+	payload, err := json.Marshal(cases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("python3", "../pack/testdata/cudagraph/harness.py", root)
+	cmd.Stdin = bytes.NewReader(payload)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	raw, err := cmd.Output()
+	if err != nil {
+		if os.Getenv("VLLM_SOURCE_REQUIRED") == "" {
+			t.Skipf("the Python harness did not run (%v: %s); the default capture was NOT checked", err, stderr.String())
+		}
+		t.Fatalf("the Python harness failed: %v: %s", err, stderr.String())
+	}
+	var want []out
+	if err := json.Unmarshal(raw, &want); err != nil || len(want) != len(cases) {
+		t.Fatalf("harness output: %d results for %d cases, err %v", len(want), len(cases), err)
+	}
+	for i, c := range cases {
+		got := pack.DefaultCUDAGraphCapture(pack.DefaultCaptureInput{
+			MaxNumSeqs: c.Seqs, MaxNumBatchedTokens: c.MNBT, DecodeQueryLen: 1 + c.Spec,
+			Family100: c.Family100, MixedGraphs: c.Mode != "FULL_DECODE_ONLY",
+			DraftDecode: c.Spec >= 2 && (c.Method == "eagle" || (c.Method == "mtp" && min(c.NPredict, c.Spec) <= 1)),
+		})
+		w := want[i]
+		if !reflect.DeepEqual(got.Sizes, w.Sizes) || got.Max != w.Max ||
+			!reflect.DeepEqual(got.PrefillSizes, w.Prefill) || !reflect.DeepEqual(got.DecodeRequestSizes, w.Decode) {
+			t.Errorf("%+v:\n  got  sizes %v max %d prefill %v decode %v\n  want sizes %v max %d prefill %v decode %v",
+				c, got.Sizes, got.Max, got.PrefillSizes, got.DecodeRequestSizes, w.Sizes, w.Max, w.Prefill, w.Decode)
+			return
+		}
 	}
 }
 

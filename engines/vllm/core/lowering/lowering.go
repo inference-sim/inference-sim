@@ -29,6 +29,7 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 
 	blisvllm "github.com/inference-sim/inference-sim/engines/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
 )
 
@@ -535,23 +536,30 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 					fmt.Sprint(capture.Sizes), "vLLM v0.31.0 drops the sizes above max_num_batched_tokens")
 			}
 		} else {
-			platform := 512
-			if c.chip.NVFP4Peak > 0 {
-				platform = 1024
+			// The default capture of vLLM main head 0fda86a: the shared ladder, then a
+			// prefill token grid and a decode request grid per platform, recorded as the
+			// union of every graph's token count (pack.DefaultCUDAGraphCapture).
+			sm100 := c.chip.NVFP4Peak > 0
+			dc := pack.DefaultCUDAGraphCapture(pack.DefaultCaptureInput{
+				MaxNumSeqs: seqs, MaxNumBatchedTokens: e.MaxNumBatchedTokens,
+				DecodeQueryLen: uniformDecodeWidth, Family100: sm100,
+				MixedGraphs: p.Graphs.Other != plan.LaunchEager,
+				DraftDecode: spec >= 2 && (method == "eagle" || method == "eagle3" || method == "draft_model" ||
+					(method == "mtp" && (sp == nil || min(sp.NumSpec, spec) <= 1))),
+			})
+			p.Graphs.Ceiling = units.Tokens(dc.Max)
+			p.Graphs.Buckets = dc.Sizes
+			platform := "the interface default: one shared token ladder up to " + strconv.Itoa(dc.LegacyMax)
+			if sm100 {
+				platform = "the SM100 split defaults: a prefill token grid up to 8192 and a decode request grid up to max_num_seqs"
 			}
-			ceiling := min(seqs*uniformDecodeWidth*2, platform)
-			p.Graphs.Ceiling = units.Tokens(ceiling)
-			defaulted := e
-			defaulted.MaxCaptureSize = &ceiling
-			if d, _, err := in.Rules.CUDAGraphCaptureSizes(defaulted); err == nil {
-				p.Graphs.Buckets = d.Sizes
-			}
-			note("max_cudagraph_capture_size", strconv.Itoa(ceiling),
-				"vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, "+
-					strconv.Itoa(platform)+") (VllmConfig._set_cudagraph_sizes, "+
-					"vllm/config/vllm.py:2442-2460), as the deployment states neither "+
-					"max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it "+
-					"runs with no graph")
+			note("max_cudagraph_capture_size", strconv.Itoa(dc.Max),
+				"vLLM main's default (VllmConfig._set_cudagraph_sizes and "+
+					"_split_cudagraph_capture_sizes, vllm/config/vllm.py:2465-2870 at 0fda86a), "+
+					"as the deployment states neither max_cudagraph_capture_size nor "+
+					"cudagraph_capture_sizes: "+platform+" (CudaPlatformBase."+
+					"get_cudagraph_capture_defaults, vllm/platforms/cuda.py:640-652); a step "+
+					"above it runs with no graph")
 		}
 	}
 
