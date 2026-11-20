@@ -815,12 +815,12 @@ func (k *Kernel) denseDispatch(key collKey) bool {
 // every rank with all_gatherv and returns them with reduce_scatterv over the same group
 // (vllm/distributed/device_communicators/all2all.py:84-157 at v0.31.0), so each phase's
 // tensor is the whole group's tokens -- the DP funnel the expert GEMM already charges
-// (moeDPFunnel) -- not one rank's. Each phase is priced as the NCCL collective it is, on
+// (stepShape.funnel) -- not one rank's. Each phase is priced as the NCCL collective it is, on
 // the tensor's full size as the TP all-gather is.
-func (k *Kernel) agrsDispatchSeconds(bytes float64) float64 {
+func (k *Kernel) agrsDispatchSeconds(bytes, funnel float64) float64 {
 	ag := collKey{Op: model.OpAllGather, Group: price.GroupExpert}
 	rs := collKey{Op: model.OpReduceScatter, Group: price.GroupExpert}
-	full := bytes * k.moeDPFunnel()
+	full := bytes * funnel
 	if k.crossesNodes(ag) {
 		full *= k.spanFor(ag)
 	}
