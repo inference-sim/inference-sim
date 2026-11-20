@@ -124,6 +124,26 @@ func sglangEngineRelease() (kind, version, commit string) {
 // host-side state has been adopted from the scenario's vLLM-form twin (adoptSGLangTwin).
 var sglangRealScenario string
 
+// sglangSpeculation is what the first pool of the run's SGLang scenario states of speculative
+// decoding, read by adoptSGLangTwin: the algorithm, and the draft width (speculative_num_draft_tokens
+// less the verified token, else speculative_num_steps; zero when the block states neither).
+var sglangSpeculation struct {
+	Algorithm string
+	Drafts    int
+}
+
+// sglangSpeculationRefusal is the refusal for an acceptance flag on an SGLang scenario that
+// speculates: the host resolves acceptance from the vLLM-form speculative block the twin
+// carries, which states no drafts, so it cannot resolve this scenario's (inference-sim/blis-sglang#68).
+func sglangSpeculationRefusal(flag string) error {
+	drafts := ""
+	if sglangSpeculation.Drafts > 0 {
+		drafts = fmt.Sprintf(", %d drafts", sglangSpeculation.Drafts)
+	}
+	return fmt.Errorf("--%s: scenario %q speculates through the SGLang engine (speculative_algorithm %s%s), and the host cannot yet resolve an SGLang scenario's acceptance (inference-sim/blis-sglang#68)",
+		flag, kernelScenario, sglangSpeculation.Algorithm, drafts)
+}
+
 // engineScenarioPath is the scenario file the engine factory reads: the SGLang scenario when the
 // run adopted one, else the run's scenario.
 func engineScenarioPath() string {
@@ -147,6 +167,7 @@ func adoptSGLangTwin() error {
 		return nil
 	}
 	real := filepath.Join(kernelScenarioDir, kernelScenario)
+	sglangSpeculation.Algorithm, sglangSpeculation.Drafts = "", 0
 	raw, err := os.ReadFile(real)
 	if err != nil {
 		return err
@@ -168,9 +189,12 @@ func adoptSGLangTwin() error {
 			doc["engine"] = map[string]any{"kind": "vllm"}
 		case "Deployment":
 			pools, _ := doc["pools"].([]any)
-			for _, p := range pools {
+			for i, p := range pools {
 				pm, _ := p.(map[string]any)
 				blk, _ := pm["engine"].(map[string]any)
+				if i == 0 {
+					recordSGLangSpeculation(blk)
+				}
 				ctx, ok := blk["context_length"]
 				if !ok {
 					return fmt.Errorf("scenario %s: the SGLang engine block must state context_length: the catalog graph carries no context window (inference-sim/blis-sglang#49)", real)
@@ -226,6 +250,20 @@ func adoptSGLangTwin() error {
 	}
 	sglangRealScenario, kernelScenarioDir = real, dir
 	return nil
+}
+
+// recordSGLangSpeculation records the speculative settings of the first pool's SGLang engine block.
+func recordSGLangSpeculation(blk map[string]any) {
+	alg, _ := blk["speculative_algorithm"].(string)
+	if alg == "" {
+		return
+	}
+	sglangSpeculation.Algorithm = alg
+	if n, ok := blk["speculative_num_draft_tokens"].(int); ok && n > 1 {
+		sglangSpeculation.Drafts = n - 1
+	} else if n, ok := blk["speculative_num_steps"].(int); ok {
+		sglangSpeculation.Drafts = n
+	}
 }
 
 // sglangKernels are the kernels the SGLang engines of the run opened, by pool index. The Result's
