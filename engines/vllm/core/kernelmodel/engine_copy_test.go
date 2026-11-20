@@ -58,7 +58,14 @@ func TestTheEngineCopyIsTheKernelsDeploymentEngine(t *testing.T) {
 				if err != nil {
 					t.Fatalf("%s pool %d: %v", path, pool, err)
 				}
-				if !reflect.DeepEqual(m.engine, file) {
+				// A hybrid model's block_size is the one the platform aligns to the Mamba page, stated
+				// or not (Platform.update_block_size_for_backend, interface.py:812-816@0fda86a3): the
+				// copy carries the aligned size and nothing else of the block differs.
+				copied := m.engine
+				if p := m.resolved.mamba; p != nil && m.resolved.mambaErr == nil && copied.BlockSize == p.blockSize {
+					copied.BlockSize = file.BlockSize
+				}
+				if !reflect.DeepEqual(copied, file) {
 					t.Errorf("%s pool %d: the engine copy is not the pool's engine block", path, pool)
 				}
 				if n := m.engine.MaxNumBatchedTokens; n > 0 && int(m.Lowered().Plan.Batch.Tokens) != n {
@@ -74,11 +81,15 @@ func TestTheEngineCopyIsTheKernelsDeploymentEngine(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if !reflect.DeepEqual(m.engine, kernelBlock) {
+				if !reflect.DeepEqual(copied, kernelBlock) {
 					t.Errorf("%s pool %d: the engine copy differs from the kernel's deployment engine:\n"+
-						"  copy   %+v\n  kernel %+v", path, pool, m.engine, kernelBlock)
+						"  copy   %+v\n  kernel %+v", path, pool, copied, kernelBlock)
 				}
 				got, err := m.Engine()
+				if got.BlockSize != m.engine.BlockSize {
+					t.Errorf("%s pool %d: Engine() block_size %d, the copy's %d", path, pool, got.BlockSize, m.engine.BlockSize)
+				}
+				got.BlockSize = copied.BlockSize
 				if err == nil && !reflect.DeepEqual(got, kernelBlock) {
 					t.Errorf("%s pool %d: Engine() is not the kernel's deployment engine", path, pool)
 				}

@@ -214,8 +214,8 @@ func TestRecurrentLayersRefuseWhatTheyDoNotMap(t *testing.T) {
 	otherGeometry.NumHeads = 128
 	swa := gqa
 	swa.AttentionKind = model.AttentionSparseMLA
-	wide := gqa
-	wide.HeadDim = 256
+	wider := gqa
+	wider.HeadDim = 512
 	cached := gqa
 	cached.Caches = []model.Cache{{Kind: model.CacheState}}
 	mixed := hybridGraph(mamba2, &gqa)
@@ -246,8 +246,8 @@ func TestRecurrentLayersRefuseWhatTheyDoNotMap(t *testing.T) {
 			"drafter layer kind rec holds a recurrent layer"},
 		{"sparse attention beside", hybridGraph(mamba2, &swa), engineconfig.Engine{BlockSize: 16}, 8, 1, "sparse_mla attention beside recurrent layers"},
 		{"attention caches", hybridGraph(mamba2, &cached), engineconfig.Engine{BlockSize: 16}, 8, 1, "stating caches"},
-		{"head size 256, block stated", hybridGraph(mamba2, &wide), engineconfig.Engine{BlockSize: 16}, 8, 1, "attention head size 256"},
-		{"head size 256, block unstated", hybridGraph(mamba2, &wide), engineconfig.Engine{}, 8, 1, "blis-vllm/issues/68"},
+		{"head size 512, block stated", hybridGraph(mamba2, &wider), engineconfig.Engine{BlockSize: 16}, 8, 1, "attention head size 512"},
+		{"head size 512, block unstated", hybridGraph(mamba2, &wider), engineconfig.Engine{}, 8, 1, "blis-vllm/issues/68"},
 		{"packed cache dtype", hybridGraph(mamba2, &gqa), engineconfig.Engine{BlockSize: 16, CacheDType: "nvfp4"}, 8, 1, `cache_dtype "nvfp4"`},
 		{"mla block off the multiple", hybridGraph(kda, &mla), engineconfig.Engine{BlockSize: 200}, 8, 1, "block_size 200 beside MLA"},
 		{"none mode, no window", hybridGraph(kda, &mla), engineconfig.Engine{EnablePrefixCaching: &off}, 8, 1, "mamba_cache_mode none"},
@@ -259,6 +259,54 @@ func TestRecurrentLayersRefuseWhatTheyDoNotMap(t *testing.T) {
 		_, err := planMamba(c.g, c.e, env)
 		if err == nil || !strings.HasPrefix(err.Error(), "recurrent layers: ") || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want a recurrent-layers refusal containing %q", c.name, err, c.want)
+		}
+	}
+}
+
+// A 256-wide attention head beside recurrent layers is sized like a 128-wide one. At the modelled vLLM
+// no FlashAttention version chooses a kernel block for it: get_supported_kernel_block_sizes is
+// MultipleOf(16) (flash_attn.py:454-461@0fda86a3), as FlashInfer's and Triton's smallest are
+// (flashinfer.py:596-613, triton_attn.py:339-340), so whichever backend the install selects the
+// smallest kernel block is 16 and the unstated block_size stays 16 before the hybrid alignment.
+// Laws, for every head size up to 256 and both stated and unstated block: the kernel block is 16, the
+// aligned block is a multiple of it, its attention page holds the Mamba page, and no smaller multiple
+// of the kernel block does.
+func TestWideHeadBesideRecurrentLayersIsSizedByTheAlignment(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		rec   model.Node
+		head  int
+		e     engineconfig.Engine
+		tp    int
+		block int // 0 when only the laws are checked
+	}{
+		{"gdn head 256 stated 16", gdn, 256, engineconfig.Engine{BlockSize: 16}, 8, 528},
+		{"gdn head 256 unstated", gdn, 256, engineconfig.Engine{}, 8, 528},
+		{"gdn head 256 fp8", gdn, 256, engineconfig.Engine{BlockSize: 16, CacheDType: "fp8_e4m3"}, 8, 1056},
+		{"gdn head 256 stated above", gdn, 256, engineconfig.Engine{BlockSize: 1024}, 8, 1024},
+		{"mamba2 head 256", mamba2, 256, engineconfig.Engine{BlockSize: 16}, 8, 0},
+		{"gdn head 192", gdn, 192, engineconfig.Engine{}, 4, 0},
+		{"gdn head 128", gdn, 128, engineconfig.Engine{}, 8, 0},
+	} {
+		attn := gqa
+		attn.HeadDim = c.head
+		g := hybridGraph(c.rec, &attn)
+		facts, err := attentionOf(g, c.e, c.tp)
+		if err != nil || facts.kernelErr != nil || facts.kernelMin != 16 {
+			t.Fatalf("%s: facts %+v, error %v; want the 16-token kernel block and no refusal", c.name, facts, err)
+		}
+		p := mustPlan(t, g, c.e, c.tp)
+		state := int64(p.run.StateBytes)
+		bs := int64(p.blockSize)
+		if p.blockSize%16 != 0 || bs*facts.page1Token < state {
+			t.Errorf("%s: block %d, attention page %d B a token: not a multiple of 16 or its page does not hold the %d B Mamba page",
+				c.name, p.blockSize, facts.page1Token, state)
+		}
+		if p.blockSize > max(c.e.BlockSize, 16) && (bs-16)*facts.page1Token >= state {
+			t.Errorf("%s: block %d is not the smallest multiple of 16 whose page holds the %d B Mamba page", c.name, p.blockSize, state)
+		}
+		if c.block != 0 && p.blockSize != c.block {
+			t.Errorf("%s: block %d, want %d", c.name, p.blockSize, c.block)
 		}
 	}
 }
