@@ -176,7 +176,6 @@ func TestEachResolvedPlanSettingMovesAPrice(t *testing.T) {
 		hybrid    = where{"nemotron-3.5-lightning-30b-a3b-bf16", "h100", 1, "tp: 2, pp: 1, dp: 1"}
 		v41       = where{"deepseek-v4.1-flash", "b200", 1, "tp: 4, pp: 1, dp: 1"}
 		v41ep     = where{"deepseek-v4.1-flash", "b200", 1, "tp: 1, pp: 1, dp: 4, enable_expert_parallel: true"}
-		muse      = where{"muse-spark-open-816b-a42b", "gb200-nvl72", 1, "tp: 4, pp: 1, dp: 1"}
 		ringed    = where{"gpt-oss-120b", "h200", 1, "tp: 4, pp: 1, dp: 1"}
 		hopperFP8 = where{"minimax-m2.5", "h200", 1, "tp: 4, pp: 1, dp: 1"}
 		v4pro     = where{"deepseek-v4-pro", "b200", 1, "tp: 8, pp: 1, dp: 1"}
@@ -210,7 +209,6 @@ func TestEachResolvedPlanSettingMovesAPrice(t *testing.T) {
 		{"MoEPlan.Experts", hopperFP8, nil, func(l *plan.Lowered) {
 			l.Plan.MoE.Experts = pinnedBuild(t, d, "gemm_floor_fp8_grouped_triton", "h200")
 		}},
-		{"MoEPlan.Fused", muse, nil, func(l *plan.Lowered) { l.Plan.MoE.Fused = true }},
 		{"MoEPlan.Routing", routed, nil, func(l *plan.Lowered) { l.Plan.MoE.Routing = plan.RoutingSeparate }},
 		{"MoEPlan.RedundantExperts", routed, nil, func(l *plan.Lowered) { l.Plan.MoE.RedundantExperts = 16 }},
 		{"CollectivePlan.AllReduce", dense, func(l *plan.Lowered) {

@@ -86,7 +86,6 @@ var requiredKeys = map[string][]string{
 	"model.Node":                  {"d_h", "experts", "holds_engine_kv", "k", "kind", "n", "n_kv", "n_q", "op", "out_bytes_per_token", "recurrent_kind", "row_bytes", "rows", "rows_per_token", "shared", "top_k"},
 	"model.NodeOverride":          {"role"},
 	"model.OmittedTower":          {"issue", "modality", "reason"},
-	"model.ShardedAtDecode":       {"capability_family", "max_tokens"},
 	"model.Source":                {"provider", "repo", "revision"},
 	"model.Speculator":            {"method", "num_spec_tokens", "stack"},
 	"model.Stack":                 {},

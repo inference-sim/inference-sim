@@ -407,15 +407,14 @@ func TestMusePoolerShardsAtDecodeOnBlackwell(t *testing.T) {
 		if g.ShardedAtDecode == nil {
 			continue
 		}
-		if g.ShardedAtDecode.MinTokensAcrossNodes == 0 {
+		if g.ShardedAtDecode.From == 1 {
 			pool = g
 		} else {
 			unpool = g
 		}
 	}
-	// blis-catalog 0.5.0's Muse graphs mark the pooler and unpooler sharded_at_decode.
 	if pool == nil || unpool == nil {
-		t.Fatal("the pinned catalog's Muse graph marks no pooler or unpooler sharded_at_decode")
+		t.Fatal("the plan marks no pooler or unpooler for a decode split")
 	}
 	for _, c := range []struct {
 		tokens       int

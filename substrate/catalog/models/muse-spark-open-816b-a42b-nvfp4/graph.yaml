@@ -67,9 +67,6 @@ layer_kinds:
     n: 4096
     k: 8192
     tp: replicated
-    sharded_at_decode: &id001
-      capability_family: 10
-      max_tokens: 256
     weight_dtype: bf16
   - op: Elementwise
     role: pre_expert_norm
@@ -104,10 +101,6 @@ layer_kinds:
     n: 8192
     k: 4096
     tp: replicated
-    sharded_at_decode:
-      capability_family: 10
-      max_tokens: 256
-      min_tokens_across_nodes: 32
     weight_dtype: bf16
   edges:
   - - 0
@@ -191,7 +184,6 @@ layer_kinds:
     n: 4096
     k: 8192
     tp: replicated
-    sharded_at_decode: *id001
     weight_dtype: bf16
   - op: Elementwise
     role: pre_expert_norm
@@ -226,10 +218,6 @@ layer_kinds:
     n: 8192
     k: 4096
     tp: replicated
-    sharded_at_decode:
-      capability_family: 10
-      max_tokens: 256
-      min_tokens_across_nodes: 32
     weight_dtype: bf16
   edges:
   - - 0
@@ -317,7 +305,6 @@ layer_kinds:
     n: 4096
     k: 8192
     tp: replicated
-    sharded_at_decode: *id001
     weight_dtype: bf16
   - op: Elementwise
     role: pre_expert_norm
@@ -352,10 +339,6 @@ layer_kinds:
     n: 8192
     k: 4096
     tp: replicated
-    sharded_at_decode:
-      capability_family: 10
-      max_tokens: 256
-      min_tokens_across_nodes: 32
     weight_dtype: bf16
   edges:
   - - 0
@@ -439,7 +422,6 @@ layer_kinds:
     n: 4096
     k: 8192
     tp: replicated
-    sharded_at_decode: *id001
     weight_dtype: bf16
   - op: Elementwise
     role: pre_expert_norm
@@ -474,10 +456,6 @@ layer_kinds:
     n: 8192
     k: 4096
     tp: replicated
-    sharded_at_decode:
-      capability_family: 10
-      max_tokens: 256
-      min_tokens_across_nodes: 32
     weight_dtype: bf16
   edges:
   - - 0

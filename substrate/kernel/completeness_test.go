@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/load"
 )
@@ -45,7 +46,16 @@ func pricedEverywhere(t *testing.T) (built int, coefficient, engine map[string]m
 			}
 			r := Repos{Scenarios: dir, Data: d,
 				Rules:      func(string) enginefacts.EngineRules { return inertRules{} },
-				DraftModel: noDrafter, Lower: lowerTo(8192, 16, 0)}
+				DraftModel: noDrafter, Lower: func(in Inputs) (*plan.Lowered, error) {
+					return lowerTo(8192, 16, 0, func(l *plan.Lowered) {
+						// The engine splits Muse Spark's pooler and unpooler on a Blackwell part at tp 8.
+						if major, _ := in.Chip.CapabilityMajor(); major >= 10 && strings.HasPrefix(in.Model.Global.Architecture, "MuseSpark") {
+							l.Plan.DecodeShards = []plan.DecodeShard{
+								{Role: "routed_expert_down_proj", FromTokens: 1, ToTokens: 256},
+								{Role: "routed_expert_up_proj", FromTokens: 1, ToTokens: 256}}
+						}
+					})(in)
+				}}
 			in, err := OpenInputs("s.yaml", r, 0)
 			var k *Kernel
 			if err == nil {

@@ -185,10 +185,6 @@ func (g *Graph) clone() *Graph {
 				c := *n.Context
 				n.Context = &c
 			}
-			if n.ShardedAtDecode != nil {
-				d := *n.ShardedAtDecode
-				n.ShardedAtDecode = &d
-			}
 			cp[i] = n
 		}
 		return cp

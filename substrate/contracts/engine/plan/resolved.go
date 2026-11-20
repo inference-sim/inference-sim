@@ -91,8 +91,6 @@ type MoEPlan struct {
 	// Dispatch is the all-to-all kernel that moves tokens to their experts and back, when one
 	// runs; the zero value is none, the experts then running on gathered or replicated tokens.
 	Dispatch KernelImpl
-	// Fused is true when the dispatch, the expert GEMMs and the combine run as one fused kernel.
-	Fused bool
 	// Experts is the kernel the engine runs the routed experts' grouped GEMMs with, as its MoE
 	// backend selection resolves it (a stated backend, or the engine's own choice for the weight
 	// format, part and parallelism), with the build it runs where the engine's kernel table
@@ -292,6 +290,20 @@ func (p PoolPlan) ValidateResolved() error {
 				bad = append(bad, fmt.Sprintf("Launches[%d] (%d to %d tokens) overlaps Launches[%d] "+
 					"(%d to %d); a step's launches change one way", i, c.FromTokens, c.ToTokens, j,
 					o.FromTokens, o.ToTokens))
+			}
+		}
+	}
+	for i, d := range p.DecodeShards {
+		switch {
+		case d.Role == "":
+			bad = append(bad, fmt.Sprintf("DecodeShards[%d] names no role", i))
+		case d.FromTokens < 1 || d.ToTokens < d.FromTokens:
+			bad = append(bad, fmt.Sprintf("DecodeShards[%d] covers %d to %d tokens; a range starts at 1 "+
+				"token or more and ends at or after its start", i, d.FromTokens, d.ToTokens))
+		}
+		for j := range i {
+			if p.DecodeShards[j].Role == d.Role {
+				bad = append(bad, fmt.Sprintf("DecodeShards[%d] names role %q, which DecodeShards[%d] already does", i, d.Role, j))
 			}
 		}
 	}

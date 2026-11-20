@@ -478,37 +478,6 @@ func TestKVHeadsNotReplicatedPlacement(t *testing.T) {
 	}
 }
 
-// sharded_at_decode belongs on a replicated GEMM, with positive bounds.
-func TestShardedAtDecodePlacement(t *testing.T) {
-	ok := &ShardedAtDecode{CapabilityFamily: 10, MaxTokens: 256, MinTokensAcrossNodes: 32}
-	g := validGraph()
-	g.LayerKinds[0].Nodes[1].TP, g.LayerKinds[0].Nodes[1].ShardedAtDecode = TPReplicated, ok
-	if p := g.Validate(); !p.OK() {
-		t.Fatalf("a replicated GEMM stating it was rejected:\n%s", p.Error())
-	}
-	for name, mutate := range map[string]func(*Node){
-		"column GEMM":   func(n *Node) { n.TP = TPColumn },
-		"no family":     func(n *Node) { n.ShardedAtDecode.CapabilityFamily = 0 },
-		"no max":        func(n *Node) { n.ShardedAtDecode.MaxTokens = 0 },
-		"min above max": func(n *Node) { n.ShardedAtDecode.MinTokensAcrossNodes = 300 },
-		"negative min":  func(n *Node) { n.ShardedAtDecode.MinTokensAcrossNodes = -1 },
-	} {
-		g := validGraph()
-		n := &g.LayerKinds[0].Nodes[1]
-		d := *ok
-		n.TP, n.ShardedAtDecode = TPReplicated, &d
-		mutate(n)
-		if p := g.Validate(); p.OK() || !strings.Contains(p.Error(), "sharded_at_decode") {
-			t.Errorf("%s: want a sharded_at_decode problem, got %v", name, p)
-		}
-	}
-	g = validGraph()
-	g.LayerKinds[0].Nodes[2].ShardedAtDecode = ok
-	if p := g.Validate(); p.OK() {
-		t.Error("an Attention node stating sharded_at_decode was accepted")
-	}
-}
-
 // SUB-20: holds_engine_kv is required on every Attention node and shared on every
 // GroupedGEMM node, and each is refused on any other op. A missing value is refused, so an
 // absent field can never silently mean either answer.

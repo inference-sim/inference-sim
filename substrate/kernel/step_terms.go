@@ -404,33 +404,12 @@ func (k *Kernel) logitsGather(head price.PlannedLayer, rows float64) (onNode, cr
 }
 
 // shardsAtDecode reports whether the engine splits a replicated GEMM's output columns over the
-// tensor-parallel ranks for a step of tokens (blis-schemas Node.ShardedAtDecode): on a chip of
-// the stated compute capability or later, with tensor parallelism and no data parallelism,
-// mega-MoE or sequence-parallel MoE, and with tokens in the stated range -- from
-// min_tokens_across_nodes where the TP group spans nodes. That is Muse Spark's
-// replicated_tokens and tep_default (vllm/models/muse_spark/nvidia/model.py:505-523@0f6b2619)
-// with shards_pooler and shards_unpooler (:635-644, :535-539); batch invariance, which would
-// turn it off, has no deployment field.
+// tensor-parallel ranks for a step of tokens: the plan names the GEMM and the step is in its
+// range (plan.PoolPlan.DecodeShards). When, and for which layouts, the engine splits is its own
+// lowering of the model and is decided before the plan is handed over.
 func (k *Kernel) shardsAtDecode(g *price.PlannedGEMM, tokens int) bool {
 	d := g.ShardedAtDecode
-	if d == nil || k.layout.TP <= 1 || max(k.layout.DP, 1) > 1 || k.family < d.CapabilityFamily ||
-		k.layout.SequenceParallelMoE || k.layout.ModelSequenceParallel ||
-		k.low.MoE.Fused || tokens <= 0 || tokens > d.MaxTokens {
-		return false
-	}
-	// Spanning nodes is the engine's host test (tp_group_spans_nodes, in_the_same_node_as,
-	// vllm/models/muse_spark/nvidia/ops/mnnvl_fusions.py:21-23@0f6b2619): a TP group over two
-	// trays of one NVLink rack spans nodes though its gather never leaves NVLink.
-	if min := d.MinTokensAcrossNodes; min > 0 && tokens < min && k.tpSpansHosts() {
-		return false
-	}
-	return true
-}
-
-// tpSpansHosts reports whether a tensor-parallel group's ranks sit on more than one node (host),
-// whatever links join them.
-func (k *Kernel) tpSpansHosts() bool {
-	return k.layout.GPUsPerNode > 0 && max(k.layout.TP, 1) > k.layout.GPUsPerNode
+	return d != nil && tokens >= d.From && tokens <= d.To
 }
 
 // columnGatherSeconds prices an all-gather over the TP group of a tensor whose whole is bytes,
