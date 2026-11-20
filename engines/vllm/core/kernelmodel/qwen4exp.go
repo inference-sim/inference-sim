@@ -145,8 +145,11 @@ func hasSparseGQA(g *model.Graph) bool {
 
 // qsaLayerRuns is the runs of the QSA layer whose main node is n in layer kind lk: nothing for the
 // indexer's scorer, which registers its caches with its main node. The MTP module's layer (draft)
-// has the same caches, marked as the drafter's.
-func qsaLayerRuns(id string, lk model.LayerKind, n model.Node, tp int, e engineconfig.Engine, draft bool) ([]KVLayerRun, error) {
+// has the same caches, marked as the drafter's. The main cache states its element size, the
+// cache dtype's (qsa.py:361-368), as the ring's and the indexer's cache do, so the pool's page
+// bytes are the specs' and none is taken from the memory model's, which counts the graph's
+// stated caches at a width the TP split does not give (blis-vllm#310).
+func qsaLayerRuns(g *model.Graph, id string, lk model.LayerKind, n model.Node, tp int, e engineconfig.Engine, draft bool) ([]KVLayerRun, error) {
 	if !n.ReadsEngineKV() {
 		return nil, nil
 	}
@@ -167,6 +170,11 @@ func qsaLayerRuns(id string, lk model.LayerKind, n model.Node, tp int, e enginec
 	if err != nil {
 		return nil, fmt.Errorf("layer kind %s: %w", id, err)
 	}
+	elem, err := attentionElemBytes(e.CacheDType, g)
+	if err != nil {
+		return nil, fmt.Errorf("layer kind %s: %w", id, err)
+	}
+	runs[0].ElemBytes = int(elem)
 	for i := range runs {
 		runs[i].Draft = draft
 	}

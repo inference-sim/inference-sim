@@ -245,11 +245,11 @@ func TestResult_AnFP16CacheDoesNotPriceTheBF16Lane(t *testing.T) {
 	var wideRead bool
 	for n, e := range fp {
 		if strings.HasPrefix(n, "attention_prefill_") && !slices.Contains(laneNames, n) && !strings.Contains(n, "trtllm_gen") &&
-			slices.Equal(implList(e["priced"]), keysOf(laneBF)) {
+			e["primitive"] == "attention.prefill" && e["kernel_match"] == "unkeyed" && len(implList(e["priced"])) == 0 {
 			wideRead = true
 		}
 	}
 	if !wideRead {
-		t.Errorf("an fp16 cache: no part-wide prefill entry reports the kernel the prefill runs as priced; got %v", fp)
+		t.Errorf("an fp16 cache: no part-wide prefill entry is selected (unkeyed, so it names no priced build); got %v", fp)
 	}
 }

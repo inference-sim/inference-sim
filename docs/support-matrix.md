@@ -9,38 +9,36 @@ Each cell is one model on one chip, over one fabric, in one serving mode, on one
 | | cells |
 |---|---|
 | cells | 3840 |
-| simulate | 1664 |
+| simulate | 1640 |
 | refused, a limit (capacity or upstream) | 192 |
-| refused, a defect | 1984 |
+| refused, a defect | 2008 |
 
 ## By engine and chip
 
 | engine | chip | simulate | limit | defect |
 |---|---|---|---|---|
-| sglang | b200 | 34 | 24 | 262 |
-| sglang | b300 | 34 | 24 | 262 |
-| sglang | gb200-nvl72 | 34 | 24 | 262 |
-| sglang | gb300 | 34 | 24 | 262 |
-| sglang | h100 | 22 | 24 | 274 |
-| sglang | h200 | 22 | 20 | 278 |
-| vllm | b200 | 248 | 8 | 64 |
-| vllm | b300 | 248 | 8 | 64 |
-| vllm | gb200-nvl72 | 248 | 8 | 64 |
-| vllm | gb300 | 248 | 8 | 64 |
-| vllm | h100 | 244 | 12 | 64 |
-| vllm | h200 | 248 | 8 | 64 |
+| sglang | b200 | 0 | 24 | 296 |
+| sglang | b300 | 0 | 24 | 296 |
+| sglang | gb200-nvl72 | 0 | 24 | 296 |
+| sglang | gb300 | 0 | 24 | 296 |
+| sglang | h100 | 0 | 24 | 296 |
+| sglang | h200 | 12 | 20 | 288 |
+| vllm | b200 | 272 | 8 | 40 |
+| vllm | b300 | 272 | 8 | 40 |
+| vllm | gb200-nvl72 | 272 | 8 | 40 |
+| vllm | gb300 | 272 | 8 | 40 |
+| vllm | h100 | 268 | 12 | 40 |
+| vllm | h200 | 272 | 8 | 40 |
 
 ## Defects, by issue
 
 | issue | cause | cells | models |
 |---|---|---|---|
-| inference-sim/blis-sglang#49 | the SGLang engine does not lower this architecture, chip or setting | 1036 | 55 |
-| inference-sim/blis-sglang#56 | the SGLang engine does not lower this architecture, chip or setting | 24 | 2 |
-| inference-sim/blis-sglang#64 | the SGLang engine does not model prefill/decode disaggregation | 204 | 19 |
-| inference-sim/blis-vllm#308 | sparse MLA attention beside recurrent layers is not mapped | 144 | 6 |
-| inference-sim/blis-vllm#309 | a 256-wide attention head beside recurrent layers: the kernel block depends on the FlashAttention version | 288 | 12 |
-| inference-sim/blis-vllm#310 | the KV layer sizing leaves a remainder that is not a whole number of bytes for the other layers | 48 | 4 |
-| inference-sim/inference-sim#2322 | P/D with a prefill engine that backs off its last prompt tokens (a Mamba-state model, or MTP with K>1) is not modelled | 168 | 14 |
+| inference-sim/blis-sglang#49 | the SGLang engine does not lower this architecture, chip or setting | 1476 | 76 |
+| inference-sim/blis-sglang#64 | the SGLang engine does not model prefill/decode disaggregation | 12 | 6 |
+| inference-sim/blis-sglang#94 | the SGLang engine does not lower this architecture, chip or setting | 40 | 5 |
+| inference-sim/blis-vllm#308 | sparse MLA attention beside recurrent layers is not mapped | 48 | 2 |
+| inference-sim/inference-sim#2322 | P/D with a prefill engine that backs off its last prompt tokens (a Mamba-state model, or MTP with K>1) is not modelled | 360 | 30 |
 | inference-sim/inference-sim#2323 | the P/D pools of a DSpark or DFlash model resolve no per-block KV | 72 | 6 |
 
 The models of each issue are the `model` and `engine` columns of `support-matrix.tsv` for its `issue`.
@@ -51,9 +49,9 @@ The share of the prices a cell's pools hold that each method supplies, summed ov
 
 | chip | measured | calibrated | transferred | literature | vendor_spec | roofline | assumed | not_charged |
 |---|---|---|---|---|---|---|---|---|
-| h100 | 65.1% | 0.0% | 0.3% | 0.3% | 8.0% | 0.0% | 25.7% | 0.6% |
-| h200 | 64.2% | 0.0% | 1.5% | 0.3% | 8.2% | 0.0% | 25.2% | 0.6% |
-| b200 | 62.4% | 0.0% | 2.3% | 0.3% | 7.9% | 0.0% | 26.5% | 0.6% |
-| b300 | 63.9% | 0.0% | 0.0% | 0.0% | 8.1% | 0.0% | 27.4% | 0.6% |
-| gb200-nvl72 | 74.1% | 0.0% | 3.5% | 0.3% | 8.2% | 0.0% | 13.4% | 0.6% |
-| gb300 | 55.5% | 0.0% | 0.0% | 0.0% | 8.4% | 0.0% | 35.5% | 0.6% |
+| h100 | 65.0% | 0.0% | 0.3% | 0.3% | 8.0% | 0.0% | 25.8% | 0.6% |
+| h200 | 64.1% | 0.0% | 1.5% | 0.3% | 8.1% | 0.0% | 25.3% | 0.6% |
+| b200 | 62.3% | 0.0% | 2.3% | 0.3% | 7.9% | 0.0% | 26.6% | 0.6% |
+| b300 | 63.8% | 0.0% | 0.0% | 0.0% | 8.1% | 0.0% | 27.4% | 0.6% |
+| gb200-nvl72 | 74.0% | 0.0% | 3.5% | 0.3% | 8.2% | 0.0% | 13.5% | 0.6% |
+| gb300 | 55.5% | 0.0% | 0.0% | 0.0% | 8.3% | 0.0% | 35.5% | 0.6% |

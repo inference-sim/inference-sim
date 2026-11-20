@@ -65,21 +65,32 @@ func TestPerTokenKVSharesAcrossTensorParallelWidth(t *testing.T) {
 }
 
 // The KV-head floor is real engine behaviour: a model cannot shard below one KV head per
-// rank, so beyond that width KV per rank stops falling. qwen3.5 has n_kv=2, so TP=4 and
-// TP=8 must report the SAME per-token KV. A budget that assumed KV keeps halving would
-// admit requests the engine cannot fit.
+// rank, so beyond that width the attention layers' K/V cache per rank stops falling. qwen3.5
+// has n_kv=2, so TP=4 and TP=8 must give the same attention cache shape. The per-sequence figure
+// is not compared: the model is a hybrid, so its block size and its recurrent state follow the
+// width too (Platform._align_hybrid_block_size).
 func TestKVStopsSharingAtOneHeadPerRank(t *testing.T) {
-	const tokens = 4096
-	four := open(t, "qwen3.5-397b-a17b-b200-fp8-sglang-tp4.yaml")
-	eight := open(t, "qwen3.5-397b-a17b-b200-fp8-sglang-tp8.yaml")
-	f := four.Kernel().SequenceVariableBytes(tokens)
-	e := eight.Kernel().SequenceVariableBytes(tokens)
-	if f <= 0 || e <= 0 {
-		t.Fatalf("per-sequence KV must be positive: tp4=%d tp8=%d", f, e)
+	full := func(scenario string) KVLayerRun {
+		runs, err := open(t, scenario).KVLayers()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range runs {
+			if r.Spec == "full" {
+				return r
+			}
+		}
+		t.Fatalf("%s: no full-attention layer among %+v", scenario, runs)
+		return KVLayerRun{}
 	}
-	if f != e {
-		t.Errorf("a 2-KV-head model reports %d at tp=4 and %d at tp=8; both are at the "+
-			"one-head-per-rank floor and must agree", f, e)
+	four := full("qwen3.5-397b-a17b-b200-fp8-sglang-tp4.yaml")
+	eight := full("qwen3.5-397b-a17b-b200-fp8-sglang-tp8.yaml")
+	if four.NumKVHeads != 1 || four.HeadSize <= 0 {
+		t.Fatalf("tp=4: %+v, want one KV head per rank", four)
+	}
+	if four.NumKVHeads != eight.NumKVHeads || four.HeadSize != eight.HeadSize || four.ElemBytes != eight.ElemBytes {
+		t.Errorf("a 2-KV-head model's attention cache is %+v at tp=4 and %+v at tp=8; both are at the "+
+			"one-head-per-rank floor and must agree", four, eight)
 	}
 }
 

@@ -259,10 +259,11 @@ func planMamba(g *model.Graph, e engineconfig.Engine, env mambaEnv) (*mambaPlan,
 			return refuse("block_size is not stated, and %v (%s)", attn.kernelErr, vllm.BlockSizeIssue)
 		default:
 			// Every non-MLA CUDA attention backend accepts a 16-token block (FlashAttention
-			// flash_attn.py:355-368, FlashInfer flashinfer.py:460-478, Triton triton_attn.py:315-316
-			// @5df63a72), so the platform keeps CacheConfig.DEFAULT_BLOCK_SIZE
-			// (_preferred_block_size_for_backends, vllm/platforms/interface.py:700-745@5df63a72), for
-			// the head sizes attentionOf accepts.
+			// flash_attn.py:455-464, FlashInfer flashinfer.py:596-613, Triton triton_attn.py:339-340
+			// @0fda86a3) and prefers none other (backend.py:167-176; FlashAttention's preference
+			// differs only at fp8 KV and head size 512 on SM90, flash_attn.py:467-472), so the platform
+			// keeps CacheConfig.DEFAULT_BLOCK_SIZE (_preferred_block_size_for_backends,
+			// vllm/platforms/interface.py:711-770@0fda86a3), for the head sizes attentionOf accepts.
 			block = 16
 			plan.assumptions = append(plan.assumptions, "block_size = 16 before the hybrid alignment: unstated, and every "+
 				"non-MLA CUDA attention backend accepts a 16-token block, so vLLM keeps CacheConfig.DEFAULT_BLOCK_SIZE "+
@@ -505,9 +506,9 @@ type attentionFacts struct {
 	// kernelErr is why the attention backend's smallest kernel block is not known.
 	kernelErr error
 	// page1Token is the page of one token on a rank in bytes; kernelMin the smallest kernel block
-	// of the attention backends, 16 for every non-MLA CUDA backend (FlashAttention
-	// flash_attn.py:355-368, FlashInfer flashinfer.py:460-478 and Triton triton_attn.py:315-316
-	// @5df63a72).
+	// of the attention backends, 16 for every non-MLA CUDA backend at a head size up to 256
+	// (FlashAttention flash_attn.py:455-464, FlashInfer flashinfer.py:596-613 and Triton
+	// triton_attn.py:339-340 @0fda86a3).
 	page1Token int64
 	kernelMin  int
 }
@@ -531,7 +532,14 @@ func attentionOf(g *model.Graph, e engineconfig.Engine, tp int) (attentionFacts,
 		if qsa && !n.ReadsEngineKV() {
 			return
 		}
-		mla := n.AttentionKind == model.AttentionMLA
+		// GLM-5.3-Flash's sparse-MLA layer is an MLAAttentionSpec of its main latent
+		// (glm5NextLayerRuns); its indexer's scorer keeps caches of its own that size no page of the
+		// model's attention.
+		sparseMLA := n.AttentionKind == model.AttentionSparseMLA && isGlm5Next(g)
+		if sparseMLA && !n.ReadsEngineKV() {
+			return
+		}
+		mla := n.AttentionKind == model.AttentionMLA || sparseMLA
 		kv, head := max(n.NumKVHeads/max(tp, 1), 1), n.HeadDim
 		if mla {
 			kv = 1
@@ -541,18 +549,20 @@ func attentionOf(g *model.Graph, e engineconfig.Engine, tp int) (attentionFacts,
 			geo[2] = 1
 		}
 		switch {
-		case n.AttentionKind != model.AttentionMLA && n.AttentionKind != model.AttentionGQA && n.AttentionKind != model.AttentionSWA && !qsa:
+		case n.AttentionKind != model.AttentionMLA && n.AttentionKind != model.AttentionGQA && n.AttentionKind != model.AttentionSWA && !qsa && !sparseMLA:
 			err = fmt.Errorf("layer kind %s: %s attention beside recurrent layers is not mapped", id, n.AttentionKind)
-		case len(n.Caches) > 0 && !qsa:
+		case len(n.Caches) > 0 && !qsa && !sparseMLA:
 			err = fmt.Errorf("layer kind %s: an attention node stating caches beside recurrent layers is not mapped", id)
 		case head <= 0 || n.NumKVHeads <= 0:
 			err = fmt.Errorf("layer kind %s: the attention node states no n_kv or d_h", id)
-		case !mla && !qsa && head > 128 && out.kernelErr == nil:
-			// FlashAttention 4 selects its own kernel block for head sizes of 256 and for fp8 KV at
-			// head size 512 (flash_attn.py:296-352@5df63a72), which the install decides. It is
-			// reported after an unstated block_size, which is the more basic gap.
-			out.kernelErr = fmt.Errorf("layer kind %s: an attention head size %d beside recurrent layers: the attention backend's "+
-				"kernel block depends on the FlashAttention version the install selects, which is not modelled", id, head)
+		case !mla && !qsa && head > 256 && out.kernelErr == nil:
+			// Only FlashAttention 4 serves a head above 256 (FlashAttentionBackend.supports_head_size,
+			// flash_attn.py:518-528@0fda86a3), whether the install has it is not stated, and on SM90 with
+			// an fp8 KV cache its kernel block at head size 512 is 64, not 16 (:408-451). Up to 256 every
+			// backend's smallest kernel block is 16 and no FlashAttention version changes it.
+			out.kernelErr = fmt.Errorf("layer kind %s: an attention head size %d beside recurrent layers: only FlashAttention 4 serves "+
+				"a head above 256, and its kernel block at fp8 KV on SM90 is 64 where it is 16 otherwise, which the install and the "+
+				"chip decide and the graph does not state", id, head)
 		case out.present && geo != shape:
 			err = fmt.Errorf("layer kind %s: attention layers of different geometry beside recurrent layers: vLLM aligns the "+
 				"block size from one model-level page (model_config.get_head_size)", id)

@@ -5,6 +5,9 @@
 package kernelmodel
 
 import (
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -13,6 +16,7 @@ import (
 	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
 )
 
 const qwen4 = "Qwen4ExpForConditionalGeneration"
@@ -131,8 +135,7 @@ func TestQwen4ExpLayerRefusesWhatTheEngineRefuses(t *testing.T) {
 
 // A sparse-GQA layer beside Gated DeltaNet layers is a hybrid the block-size alignment can size:
 // its page is the main K/V cache's (2 KV heads of 256, tp 8 replicates one head per rank) and
-// its backend's smallest kernel block is 16, not the FlashAttention-4 block that head size 256
-// would otherwise leave undecided (qsa.py:188-190). Without this it was refused as unmapped.
+// its backend's smallest kernel block is 16 (qsa.py:188-190). Without this it was refused as unmapped.
 func TestSparseGQABesideRecurrentLayersIsAHybridTheAlignmentSizes(t *testing.T) {
 	main, scorer := qsaNodes()
 	main.Caches = []model.Cache{{Name: "kv", Kind: model.CacheKV, Owned: true, BytesPerEntry: 2048}}
@@ -152,12 +155,12 @@ func TestSparseGQABesideRecurrentLayersIsAHybridTheAlignmentSizes(t *testing.T) 
 	if want := int64(1 * 256 * 2 * 2); facts.page1Token != want {
 		t.Errorf("a token's page is %d B, want %d (one KV head of 256, K and V, bf16)", facts.page1Token, want)
 	}
-	// Plain GQA of the same shape still leaves its kernel block undecided.
+	// Plain GQA of the same shape has the same kernel block.
 	main.AttentionKind = model.AttentionGQA
 	main.Caches = nil
 	g.LayerKinds[1].Nodes = []model.Node{main}
-	if f, _ := attentionOf(g, engineconfig.Engine{BlockSize: 64, CacheDType: "auto"}, 8); f.kernelErr == nil {
-		t.Error("head size 256 on plain GQA lost its kernel-block caveat")
+	if f, err := attentionOf(g, engineconfig.Engine{BlockSize: 64, CacheDType: "auto"}, 8); err != nil || f.kernelErr != nil || f.kernelMin != 16 {
+		t.Errorf("head size 256 on plain GQA: facts %+v, error %v; want the 16-token kernel block", f, err)
 	}
 }
 
@@ -273,5 +276,98 @@ func TestQwen4ExpSizesTheMambaPageAsTheLargerOfItsTwoStateLayouts(t *testing.T) 
 	if _, err := planMamba(qwen4MambaGraph("Qwen3_5MoeForConditionalGeneration", short), engineconfig.Engine{BlockSize: 64},
 		mambaEnv{tp: 8, dcp: 1, pcp: 1, capability: 9, maxModelLen: 262144}); err == nil {
 		t.Error("a short convolution beside Gated DeltaNet was mapped for another architecture")
+	}
+}
+
+// qwen4ExpScenario is a one-pool vLLM scenario for a catalog model on h200 at tp, written to a
+// directory of its own; cacheDType "" leaves it unstated.
+func qwen4ExpScenario(t *testing.T, modelName string, tp int, cacheDType string) (string, Repos) {
+	t.Helper()
+	dtype := ""
+	if cacheDType != "" {
+		dtype = "\n      kv_cache_dtype: " + cacheDType
+	}
+	nodes := strconv.Itoa((tp + 7) / 8)
+	src := `kind: Scenario
+name: s
+engine: {kind: vllm}
+model: ` + modelName + `
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
+cluster: {hardware: h200, fabric: ib-400g, nodes: ` + nodes + `, gpus_per_node: 8}
+---
+kind: Deployment
+name: s
+pools:
+  - role: colocated
+    nodes: ` + nodes + `
+    parallel: {tp: ` + strconv.Itoa(tp) + `, pp: 1, dp: 1, enable_expert_parallel: false}
+    engine:
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 4096
+      gpu_memory_utilization: 0.9
+      compilation_config: {cudagraph_mode: PIECEWISE}` + dtype + "\n"
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "s.yaml"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := repos()
+	r.Scenarios = dir
+	return "s.yaml", r
+}
+
+// Every cache a Qwen4Exp layer registers states its own element size -- the main K/V cache's is
+// the dtype the QSA layer reads (cache_dtype, qsa.py:361-368), the indexer's two are bf16 or
+// indexer_kv_dtype -- so the pool's page bytes are the specs' and none is derived from the memory
+// model's bytes, which count the graph's stated caches at a width the TP split does not give
+// (blis-vllm#310). Laws at every tensor-parallel size the model shards to: it opens, no cache is
+// left without an element size, the main cache's follows cache_dtype, and the pool's bytes a
+// block do not depend on the memory model's page.
+func TestQwen4ExpPoolPageIsTheSpecsAndNotTheMemoryModels(t *testing.T) {
+	for _, c := range []struct {
+		dtype string
+		elem  int
+	}{{"", 2}, {"bfloat16", 2}, {"fp8", 1}, {"fp8_e4m3", 1}} {
+		for _, tp := range []int{2, 4, 8, 16} {
+			scen, r := qwen4ExpScenario(t, "qwen3.8-flash-next", tp, c.dtype)
+			m, err := Open(scen, r)
+			if err != nil {
+				t.Fatalf("tp %d cache_dtype %q: %v", tp, c.dtype, err)
+			}
+			runs, err := m.KVLayers()
+			if err != nil {
+				t.Fatalf("tp %d cache_dtype %q: %v", tp, c.dtype, err)
+			}
+			full := 0
+			vr := make([]vllm.KVLayerRun, len(runs))
+			for i, run := range runs {
+				vr[i] = vllm.KVLayerRun(run)
+				if run.Spec == "mamba" {
+					continue
+				}
+				if run.ElemBytes == 0 {
+					t.Errorf("tp %d cache_dtype %q: a %s run states no element size: %+v", tp, c.dtype, run.Spec, run)
+				}
+				if run.Spec == "full" {
+					full++
+					if run.ElemBytes != c.elem {
+						t.Errorf("tp %d cache_dtype %q: the main cache's element is %d B, want %d", tp, c.dtype, run.ElemBytes, c.elem)
+					}
+				}
+			}
+			if full == 0 {
+				t.Fatalf("tp %d: no main cache among %+v", tp, runs)
+			}
+			var per [2]int64
+			for i, page := range []int64{1 << 20, 3<<20 + 7} {
+				if per[i], err = vllm.KVPoolBytesPerBlock(vr, false, m.engine.BlockSize, page); err != nil {
+					t.Fatalf("tp %d cache_dtype %q: memory model page %d: %v", tp, c.dtype, page, err)
+				}
+			}
+			if per[0] != per[1] || per[0] <= 0 {
+				t.Errorf("tp %d cache_dtype %q: the pool's bytes a block follow the memory model's page: %d and %d", tp, c.dtype, per[0], per[1])
+			}
+		}
 	}
 }
