@@ -7945,6 +7945,15 @@ def handler_gemma4(cfg, raw, model):
     return kinds, compress(sequence), {"embedding": embedding, "head": head}
 
 
+# Architectures a checkpoint is known to use that have no handler yet, each with the open issue
+# that adds one; the refusal for such an architecture cites the issue (X28) instead of leaving a
+# user to guess whether the gap is known. The dense Qwen3_5ForConditionalGeneration of #317 has a
+# handler below (handler_qwen3_5_dense) and an entry (qwen3.8-27b), so it is not listed.
+UNHANDLED_ARCHITECTURE_ISSUES = {
+    "HYV3ForCausalLM": "inference-sim/blis-substrate#317",
+    "MiMoV2ForCausalLM": "inference-sim/blis-substrate#317",
+}
+
 HANDLERS = {
     "LlamaForCausalLM": handler_dense_placed,
     "LlamaForCausalLMEagle3": handler_llama_eagle3,
@@ -8507,8 +8516,10 @@ def _derive(config_path: Path, model: str) -> dict[str, Any]:
     arch = arches[0]
     handler = HANDLERS.get(arch)
     if handler is None:
+        issue = UNHANDLED_ARCHITECTURE_ISSUES.get(arch)
+        named = f" (open issue {issue})" if issue else ""
         raise DeriveError(
-            f"{model}: no handler for architecture {arch!r}; add one rather than "
+            f"{model}: no handler for architecture {arch!r}{named}; add one rather than "
             f"letting a default misprice the model"
         )
 
