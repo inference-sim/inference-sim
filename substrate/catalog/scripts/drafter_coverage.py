@@ -22,7 +22,7 @@ the target's own repository. Listing is not enough: the draft must run the deplo
 A graph's `speculator.method` states the method it prices (the target's graph for `speculator`,
 the drafter's own graph for a separate drafter), and it is compared with the method the
 deployment states after vLLM's own rewrite of a model-specific MTP name to `mtp`
-(`derive_graph.vllm_speculative_method`). A target whose in-graph speculator is MTP does not
+(`deployment_method`: a recipe's spelling, not a graph's). A target whose in-graph speculator is MTP does not
 satisfy an `eagle3` deployment, and a same-repository DSpark drafter does not satisfy an `mtp`
 one. A target the catalog lacks is
 reported apart: it is a missing model, not a missing drafter. A recipe for a quantisation of a
@@ -44,7 +44,13 @@ from pathlib import Path
 
 import yaml
 
-from derive_graph import vllm_speculative_method
+
+
+def deployment_method(method: str) -> str:
+    """The method a recipe's speculative config runs: vLLM rewrites every model-specific MTP name
+    (deepseek_mtp, minimax_m3_mtp ...) to mtp (SpeculativeConfig, vllm/config/speculative.py). A
+    graph states mtp itself, so only a recipe's text needs this."""
+    return "mtp" if method.endswith("_mtp") else method
 
 
 @dataclass(frozen=True)
@@ -158,7 +164,7 @@ class Catalog:
         return self.drafters_by_repo.get(r) or self.targets_by_repo.get(r)
 
     def speculator_method(self, name: str) -> str | None:
-        """The method a model's graph states for its speculator, as a deployment states it
+        """The method a model's graph states for its speculator
         (None when the graph has no speculator or no graph is committed)."""
         if name not in self._methods:
             self._methods[name] = None
@@ -166,7 +172,7 @@ class Catalog:
             if graph.is_file():
                 spec = (yaml.load(graph.read_text(), Loader=_Loader) or {}).get("speculator") or {}
                 if spec.get("method"):
-                    self._methods[name] = vllm_speculative_method(str(spec["method"]))
+                    self._methods[name] = str(spec["method"])
         return self._methods[name]
 
     def shipped_drafters(self, target: str) -> list[str]:
@@ -201,7 +207,7 @@ def check(cat: Catalog, deployments: list[Deployment]) -> dict[str, list[str]]:
             gaps["missing_model"].add(d.target)
             continue
         listed = (cat.models[target].get("drafters") or [])
-        method = vllm_speculative_method(d.method)
+        method = deployment_method(d.method)
         if not d.draft:
             if not cat.runs_method_without_a_draft_checkpoint(target, method):
                 held = [cat.speculator_method(target) if "speculator" in listed else None,

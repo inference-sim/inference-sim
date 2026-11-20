@@ -23,7 +23,7 @@ def entry(root: Path, name: str, model_yaml: str, method: str | None = None) -> 
 @pytest.fixture
 def cat(tmp_path):
     entry(tmp_path, "mm3", "source:\n  provider: huggingface\n  repo: Org/MM3\ndrafters: [speculator, mm3-eagle3]\n",
-          "minimax_m3_mtp")
+          "mtp")
     entry(tmp_path, "mm3-eagle3", "source:\n  repo: Org/MM3-EAGLE3\ntargets: [mm3]\n", "eagle3")
     entry(tmp_path, "other-eagle3", "source:\n  repo: Org/Other-EAGLE3\ntargets: [mm3]\n", "eagle3")
     # A DSpark head shipped in its target's repository, the target having no in-graph head.

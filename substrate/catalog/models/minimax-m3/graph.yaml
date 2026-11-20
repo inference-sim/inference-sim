@@ -296,7 +296,7 @@ head:
   n: 200064
   k: 6144
 speculator:
-  method: minimax_m3_mtp
+  method: mtp
   num_spec_tokens: 7
   stack:
     pattern:

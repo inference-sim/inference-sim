@@ -8725,55 +8725,26 @@ def _derive(config_path: Path, model: str) -> dict[str, Any]:
     return graph
 
 
-# The engine's speculative method name per architecture. It is a vLLM vocabulary
-# rather than a config field, so it is recorded here per family rather than guessed
-# from the model name.
-SPEC_METHODS = {
-    # glm_moe_dsa is rewritten to deepseek_mtp, NOT to glm4_moe_mtp. vLLM lists it
-    # alongside deepseek_v3 and deepseek_v32 in one branch -- `if hf_config.model_type in
-    # ("deepseek_v3", "deepseek_v32", "glm_moe_dsa"): hf_config.model_type =
-    # "deepseek_mtp"` (config/speculative.py:678-685) -- and all four committed GLM DSA
-    # configs declare model_type glm_moe_dsa. glm4_moe_mtp is set on a different branch
-    # (:780) for a different family, so naming it here priced the wrong draft method.
-    # The comment below already stated the correct mapping while this entry contradicted
-    # it, which is how the error survived.
-    "GlmMoeDsaForCausalLM": "deepseek_mtp",
-    "KimiK3ForConditionalGeneration": "kimi_k3_mtp",
-    "NemotronHForCausalLM": "nemotron_h_mtp",
-    "InklingForConditionalGeneration": "inkling_mtp",
-    "DeepseekV2ForCausalLM": "deepseek_mtp",
-    # Verified in vLLM's own resolution rather than inferred from the family name:
-    # config/speculative.py rewrites model_type deepseek_v3 to deepseek_mtp alongside
-    # deepseek_v32 and glm_moe_dsa (architectures DeepSeekMTPModel). The method names
-    # "deepseek_mtp" here and above are v0.31.0's deprecated aliases, which it accepts
-    # and rewrites to "mtp" (:1135-1139); DeepSeek-V4 states "mtp" itself.
-    "DeepseekV3ForCausalLM": "deepseek_mtp",
-    # vLLM v0.31.0 rewrites the draft config's model_type deepseek_v4 to deepseek_mtp
-    # and reads n_predict from num_nextn_predict_layers, NOT from num_mtp_modules the
-    # way MiniMax-M3 does (config/speculative.py:696-707, architectures
-    # DeepSeekV4MTPModel), so this architecture needs no entry in MTP_MODULE_ARCHS. The
-    # METHOD it serves is "mtp", which every MTP-family name is rewritten to
-    # (:1135-1139). handler_deepseek_v4 states its own speculator; this entry is the
-    # fallback's.
-    "DeepseekV4ForCausalLM": "mtp",
-    "Qwen3_5MoeForConditionalGeneration": "qwen3_5_mtp",
-    "Qwen3_5ForConditionalGeneration": "qwen3_5_mtp",
-    # config/speculative.py:915-932@v0.33.0 rewrites model_type qwen4_exp to qwen4_exp_mtp.
-    "Qwen4ExpForConditionalGeneration": "qwen4_exp_mtp",
-    # vLLM rewrites model_type glm5_next to glm5_next_mtp and reads n_predict from
-    # get_text_config().num_nextn_predict_layers, architectures ["Glm5NextMTPModel"]
-    # (config/speculative.py:1060-1065 on vllm-project/vllm main, with
-    # "glm5_next_mtp" in its valid-method list at line 66). Read from upstream rather
-    # than inferred from the glm4_moe_mtp entry above: the two are distinct methods and
-    # this family is not the GLM-4 one. The alias table already resolves
-    # num_nextn_predict_layers, so this needs no MTP_MODULE_ARCHS entry.
-    "Glm5NextForConditionalGeneration": "glm5_next_mtp",
-    # vLLM resolves both the VL wrapper and the text decoder to one method, reading
-    # n_predict from num_mtp_modules rather than num_nextn_predict_layers
-    # (config/speculative.py:958-974, and "minimax_m3_mtp" in its valid-method list).
-    "MiniMaxM3SparseForConditionalGeneration": "minimax_m3_mtp",
-    "MiniMaxM3SparseForCausalLM": "minimax_m3_mtp",
-}
+# The architectures whose checkpoint ships a multi-token-prediction (MTP) module this deriver
+# prices as a draft stack. The graph states the draft's kind, mtp, which is a fact of the
+# checkpoint; the engine's name for the draft (deepseek_mtp, nemotron_h_mtp ...) is lowering
+# and is the engine module's (SUB-15). An architecture absent here is refused rather than
+# guessed, so adding a family is a deliberate act.
+MTP_ARCHS = frozenset({
+    "GlmMoeDsaForCausalLM",
+    "KimiK3ForConditionalGeneration",
+    "NemotronHForCausalLM",
+    "InklingForConditionalGeneration",
+    "DeepseekV2ForCausalLM",
+    "DeepseekV3ForCausalLM",
+    "DeepseekV4ForCausalLM",
+    "Qwen3_5MoeForConditionalGeneration",
+    "Qwen3_5ForConditionalGeneration",
+    "Qwen4ExpForConditionalGeneration",
+    "Glm5NextForConditionalGeneration",
+    "MiniMaxM3SparseForConditionalGeneration",
+    "MiniMaxM3SparseForCausalLM",
+})
 
 
 # Architectures whose speculative method takes its draft length from num_mtp_modules
@@ -8786,28 +8757,12 @@ MTP_MODULE_ARCHS = frozenset({
 
 
 def speculative_method(arch: str, model: str) -> str:
-    method = SPEC_METHODS.get(arch)
-    if method is None:
+    """The kind of draft a checkpoint's own MTP module is: always mtp."""
+    if arch not in MTP_ARCHS:
         raise DeriveError(
-            f"{model}: {arch} declares draft layers but no speculative method is "
-            f"recorded for it"
+            f"{model}: {arch} declares draft layers but is not a known MTP architecture"
         )
-    return method
-
-
-def vllm_speculative_method(graph_method: str) -> str:
-    """The method name a deployment states for a graph's speculator method.
-
-    The graph names a model's own MTP speculator by family (deepseek_mtp, minimax_m3_mtp,
-    nemotron_h_mtp ...), which is how vLLM's model type for the draft is spelled. A deployment
-    states `method: mtp`: vLLM replaces every model-specific MTP name with mtp
-    (SpeculativeConfig, `if self.method in get_args(MTPModelTypes) and self.method != "mtp":
-    ... self.method = "mtp"`, vllm/config/speculative.py:1141-1145@v0.32.0) and, for a
-    MiniMax-M3 checkpoint, rewrites the model to minimax_m3_mtp with n_predict =
-    num_mtp_modules (:1030-1046). So a deployment's `mtp` is the graph's `*_mtp` speculator, and
-    a lookup that compares the two strings finds no speculator. Any other method (eagle3,
-    dflash, dspark ...) is its own name. blis-latency-kernel's specMethod applies the same rule."""
-    return "mtp" if graph_method.endswith("_mtp") else graph_method
+    return "mtp"
 
 
 def pinned_config_sha256(model_yaml: Path) -> str | None:

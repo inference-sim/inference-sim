@@ -53,7 +53,7 @@ func TestANamedDrafterPricesInPlaceOfTheTargetsOwnSpeculator(t *testing.T) {
 			name := c.target + "+" + c.drafter + "/" + chip
 			t.Run(name, func(t *testing.T) {
 				in := withNamedDrafter(t, d, c.target, c.drafter, chip, 3)
-				if in.Model.Speculator == nil || in.Model.Speculator.Method != "minimax_m3_mtp" {
+				if in.Model.Speculator == nil || in.Model.Speculator.Method != "mtp" {
 					t.Fatalf("the target graph does not state the in-graph speculator this test replaces: %+v", in.Model.Speculator)
 				}
 				k := mustKernel(t, in)
@@ -98,7 +98,7 @@ func TestWithNoNamedDrafterTheTargetsOwnSpeculatorIsStillPriced(t *testing.T) {
 	in := quantCase(t, d, "minimax-m3-mxfp8", "b200")
 	in = passesOf(drafting(in, 1), plan.FirstPassScheduled, plan.PassRequestsAll)
 	k := mustKernel(t, in)
-	if k.plan.Draft == nil || k.plan.Draft.Method != "minimax_m3_mtp" || !k.speculating {
+	if k.plan.Draft == nil || k.plan.Draft.Method != "mtp" || !k.speculating {
 		t.Fatalf("the target's own MTP is not priced: %+v", k.plan.Draft)
 	}
 	if pricesOf(k) == pricesOf(mustKernel(t, strippedOfItsSpeculator(in))) {
@@ -160,7 +160,7 @@ func TestTheReplacedSpeculatorsOwnKindsLeaveTheGraph(t *testing.T) {
 	target, draft := draftGraphs()
 	norm := model.Node{Op: model.OpElementwise, Role: "input_norm"}
 	target.LayerKinds = append(target.LayerKinds, model.LayerKind{ID: "mtp_only", Nodes: []model.Node{norm}})
-	target.Speculator = &model.Speculator{Method: "deepseek_mtp", NumSpec: 1,
+	target.Speculator = &model.Speculator{Method: "mtp", NumSpec: 1,
 		Stack: model.Stack{Pattern: []string{"mtp_only", "layer"}, Repeat: 1}}
 	g, err := withDrafter(target, draft)
 	if err != nil {
@@ -184,7 +184,7 @@ func TestTheReplacedSpeculatorsOwnKindsLeaveTheGraph(t *testing.T) {
 			t.Errorf("the grafted graph: %s", pr.Message)
 		}
 	}
-	if target.Speculator.Method != "deepseek_mtp" || len(target.LayerKinds) != 2 {
+	if target.Speculator.Method != "mtp" || len(target.LayerKinds) != 2 {
 		t.Error("the target graph was modified")
 	}
 }

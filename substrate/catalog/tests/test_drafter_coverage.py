@@ -18,7 +18,7 @@ import drafter_coverage as dc  # noqa: E402
 def catalog(tmp_path, models: dict, methods: dict | None = None) -> Path:
     """A catalog of cards. `methods` maps a model to the method its graph states for its
     speculator; a drafter without an entry gets `eagle3`, a target without one gets `mtp`
-    (the committed graphs' spelling is deepseek_mtp, minimax_m3_mtp ...: vLLM's `mtp`)."""
+    (the committed graphs state `mtp`; an engine's family spellings are not in the graph)."""
     methods = methods or {}
     for name, card in models.items():
         d = tmp_path / "models" / name
@@ -144,7 +144,7 @@ def test_an_in_graph_speculator_of_another_method_does_not_satisfy_a_deployment(
     # the model-specific name vLLM rewrites to it.
     for method in ("mtp", "deepseek_mtp"):
         assert not any(gaps(tmp_path / method, {"target": TARGET}, [dep(draft=None, method=method)],
-                            {"target": "deepseek_mtp"}).values())
+                            {"target": "mtp"}).values())
 
 
 def test_a_target_with_no_speculator_in_its_graph_runs_no_method_in_graph(tmp_path):
@@ -168,7 +168,7 @@ def test_in_graph_mtp_beside_a_same_repository_dspark_drafter_does_not_certify_e
     """The review's case: in-graph MTP plus a same-repository DSpark drafter, deployment eagle3."""
     models = {"flash": {"source": {"repo": "Org/Flash"}, "drafters": ["speculator", "flash-dspark"]},
               "flash-dspark": {"source": {"repo": "Org/Flash", "path": "dspark/config.json"}, "targets": ["flash"]}}
-    ms = {"flash": "minimax_m3_mtp", "flash-dspark": "dspark"}
+    ms = {"flash": "mtp", "flash-dspark": "dspark"}
     g = gaps(tmp_path, models, [dep(draft=None, method="eagle3", target="Org/Flash")], ms)
     assert len(g["missing_speculator"]) == 1
     for method in ("mtp", "dspark"):

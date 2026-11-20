@@ -313,7 +313,7 @@ head:
   n: 248320
   k: 5120
 speculator:
-  method: qwen3_5_mtp
+  method: mtp
   num_spec_tokens: 1
   stack:
     pattern:
