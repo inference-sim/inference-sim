@@ -1,0 +1,42 @@
+# Pre-registration of a refit family (M3.2 plan Table W row 18). Fixed before any fit reads the
+# sources below; thresholds are the section 1.5 defaults of ../defaults.yaml and roles are drawn
+# per role key (requirements 1.4). Nothing in this file is a result. A change that touches a
+# coefficient set of this family states its own lanes and one idea in the dashboard's gate
+# pre-registration (state/gate/preregistrations/); this record fixes what the family may read
+# and the bar it is held to.
+kind: CalibrationPreRegistration
+id: refit-engine-path-sglang
+partition_version: 1
+hypothesis: "Refitting the sglang engine-path host-overhead coefficients, keyed by that engine's CodeIDs, on the fit share of the sources below lowers the error on the sglang lanes and leaves the other engine's lanes as they were."
+layer: "coefficient: engine-path host overheads of sglang, keyed by CodeID (design section 3.2)"
+predicted_change: "Relative error on tpot_us and ttft_us does not rise on any sglang lane (margin 0), and falls on the target lanes the change names; no lane of the other engine moves."
+coefficient_class: engine-path
+coefficient_sets: [cost-model-host-overheads]
+target_engines: [sglang]
+engine_code_ids:
+  sglang:
+    host: 6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096
+    graphs: e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074
+sources: [inferencex, sglang-nightly, sglang-traces]
+target_lanes:
+  - {engine: sglang}
+criteria:
+  - {criterion: error, margin: 0}
+  - {criterion: distance, margin: 0}
+metrics: [tpot_us, ttft_us]
+min_points: 10
+substream: gate/refit-engine-path-sglang
+# Fixed by the base gate-candidate run (accuracy-dashboard whole-run gate); empty until it exists.
+measured_sha256: ""
+pins:
+  partition_version: 1
+  seed_sha256: "0c741364a9f124cb87d0364c3de4682bd45cb20707ba19dbce704bb1795fb839"
+  defaults_sha256: "ce5778052ee645bd17c6f096f1052d980c07700fd64963f5bedf2958f7ec2bfc"
+  sources:
+    inferencex: "606493f08e76aa0aab39e34729d825caed84e0b0bbc57625c8d1b123aae5fbbf"
+    sglang-nightly: "90077a6fae004586ec5e9325e2bdbd26be47c706ea2fd30370d94aac5545dee2"
+    sglang-traces: "30216b47ab4260acbb3c401de4d81a76b608dcb8d14a042d9e40c901f191b898"
+  cut_points:
+    inferencex: "22721dd252cb5cab738c147ee339e3b3d6b274b33f6d80f4e9209ccf5a4101ec"
+    sglang-nightly: "4c3f733b05fd31c7ffb0ad43ee9a3791f6d85a4a1eb8e11f503c393f4374248d"
+    sglang-traces: "4c3f733b05fd31c7ffb0ad43ee9a3791f6d85a4a1eb8e11f503c393f4374248d"
