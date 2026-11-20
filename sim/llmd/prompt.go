@@ -30,7 +30,18 @@ type promptCanon struct {
 	next      uint64 // canonical id of the next new chain
 	chains    map[string]*chain
 	lru       *list.List // the unpinned chains, most recent first
+
+	// memos remember, per session, the last prompt canonicalSession saw, so the next prompt of the
+	// session reuses the chain hashes of the blocks it shares with it (see canonicalSession).
+	memos      map[string]*canonMemo
+	memoLRU    *list.List // the memos, most recently used first
+	memoTokens int        // tokens held by the memos
+	memoCap    int        // bound on memoTokens
 }
+
+// defaultMemoCap bounds the tokens the per-session memos hold (about 8 bytes each for the prompt
+// and its canonical form).
+const defaultMemoCap = 8 << 20
 
 // chain is one prefix chain's canonical id. A chain an engine reports cached (pins > 0, from its
 // KV events) is out of the LRU: forgetting it would show the router new tokens for a block the
@@ -39,12 +50,14 @@ type chain struct {
 	id   uint64
 	pins int
 	elem *list.Element // nil while pinned
+	dead bool          // forgotten by trim: the key now names a fresh chain, with a fresh id
 }
 
 func newPromptCanon(seed int64, blockSize, capacity int) *promptCanon {
 	return &promptCanon{
 		seed: uint64(seed), blockSize: max(blockSize, 1), capacity: max(capacity, 1),
 		chains: map[string]*chain{}, lru: list.New(),
+		memos: map[string]*canonMemo{}, memoLRU: list.New(), memoCap: defaultMemoCap,
 	}
 }
 
@@ -83,19 +96,27 @@ func (c *promptCanon) canonicalBlock(blockHash string, n int) []uint32 {
 	return out
 }
 
-func (c *promptCanon) chainID(key string) uint64 {
+func (c *promptCanon) chainID(key string) uint64 { return c.lookup(key).id }
+
+// lookup finds chain key, recording a use of it, or creates it.
+func (c *promptCanon) lookup(key string) *chain {
 	if ch, ok := c.chains[key]; ok {
-		if ch.elem != nil {
-			c.lru.MoveToFront(ch.elem)
-		}
-		return ch.id
+		c.touch(ch)
+		return ch
 	}
 	ch := &chain{id: c.next}
 	c.next++
 	c.chains[key] = ch
 	ch.elem = c.lru.PushFront(key)
 	c.trim()
-	return ch.id
+	return ch
+}
+
+// touch records a use of a live chain: an unpinned one becomes the most recent.
+func (c *promptCanon) touch(ch *chain) {
+	if ch.elem != nil {
+		c.lru.MoveToFront(ch.elem)
+	}
 }
 
 // pin keeps chain key while an engine caches the block it names (a stored KV event).
@@ -127,7 +148,9 @@ func (c *promptCanon) trim() {
 	for c.lru.Len() > c.capacity {
 		oldest := c.lru.Back()
 		c.lru.Remove(oldest)
-		delete(c.chains, oldest.Value.(string))
+		key := oldest.Value.(string)
+		c.chains[key].dead = true
+		delete(c.chains, key)
 	}
 }
 

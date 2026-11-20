@@ -594,7 +594,7 @@ func (g *Gateway) handleRequest(f *flight) {
 	// the request's context from it, and cancellation propagates synchronously only through stdlib
 	// cancel contexts, so a client deadline reaches the router at its simulated instant (INV-6).
 	f.ctx, f.cancel = context.WithCancel(g.ctx)
-	f.prompt = g.canon.canonicalUnder(identityRoot(f.req.Adapter, nil), f.req.InputTokens)
+	f.prompt = g.canon.canonicalSession(identityRoot(f.req.Adapter, nil), f.req.SessionID, f.req.InputTokens)
 	if g.observe != nil {
 		g.observe("request", f.req.ID)
 	}
