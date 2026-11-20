@@ -1,0 +1,497 @@
+name: oracle-vllm
+
+# Tiers 1 to 5 of the vLLM engine's oracle (engines/vllm/oracle, engines/vllm/AGENTS.md): vLLM v0.33.0's own code,
+# run on CPU in the hash-pinned locked environment, re-derives every committed golden and fuzz corpus and the Go
+# engine is compared with it. Ported from blis-vllm's ci.yml jobs oracle-scenarios, oracle-inertness and
+# oracle-fuzz. ci.yml calls it when a change touches engines/vllm or substrate (the `vllm` group of
+# scripts/ci-changes.sh); a person can start it on any branch with workflow_dispatch. The mutation sweeps
+# (mutation-vllm.yml) and the real-tracer oracle (oracle-traces-vllm.yml) are separate and manual.
+#
+# Needs the network (the pinned vLLM source, the helper model's config files, the hash-locked wheels) and so
+# runs on GitHub-hosted Linux only; a skipped step or test is a failure (X16), never a pass.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: engines/vllm
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  # Tier 2: vLLM v0.33.0's (4ba787ec) real Scheduler driven through every scenario, on CPU, and the other scenario-driven
+  # oracles. Every committed golden is re-derived from vLLM here on every run. The seeded fuzz corpora are the
+  # jobs below this one; the mutation sweeps are mutation.yml's.
+  oracle-scenarios:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: env
+        uses: ./.github/actions/oracle-env-vllm
+      - uses: ./.github/actions/go-toolchain
+      - name: the mocks replace no decision code
+        run: python -I oracle/check_mocks.py oracle/mocks.json
+      # An unstated block_size is vLLM's own choice, from the attention backends it selects for the
+      # model, GPU and KV dtype (core/vllm/blocksize.go). The oracle runs vLLM's selection on this
+      # CPU, with every replacement listed in its table, and the committed table must equal what
+      # it prints. The models' config.json files are this repository's substrate/catalog.
+      - name: the block-size table is vLLM's own selection
+        run: |
+          catalog="$GITHUB_WORKSPACE/substrate/catalog/models"
+          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/blocksize/oracle.py vllm-source check core/vllm/blocksize_table.json oracle/blocksize/TABLE.tsv
+      # The quantization vLLM serves the DeepSeek-V4 FP8 and MiniMax-M3 MXFP8 and NVFP4 checkpoints
+      # with, for each value a deployment can state, from vLLM's own ModelConfig over the catalog's
+      # config.json, and the layout of each class of MiniMax-M3 layers from vLLM's quantization config.
+      - name: the quantization resolutions are vLLM's own
+        run: |
+          catalog="$GITHUB_WORKSPACE/substrate/catalog/models"
+          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/quantization/oracle.py vllm-source check core/quantization/resolved.json
+      # speculative_config.synthetic_acceptance_length, resolved to per-position rates by vLLM's own
+      # function over a grid of lengths, valid and not (the sampler that consumes the rates needs a GPU).
+      - name: the synthetic acceptance resolutions are vLLM's own
+        run: |
+          python3 -I oracle/goldengz.py cat core/engineconfig/testdata/synthetic_acceptance.json > "$RUNNER_TEMP/synthetic_acceptance.json"
+          python -I oracle/synthetic_acceptance/oracle.py vllm-source check "$RUNNER_TEMP/synthetic_acceptance.json"
+      # The lowering (core/lower) is held to vLLM's own CUDA-graph capture, dispatch and
+      # data-parallel padding code, run unmodified with only the all-reduce supplied (FID-1,
+      # FID-8). The committed answers must equal what the pinned release gives now.
+      - name: the lowering's expected answers are vLLM's own
+        run: |
+          python3 -I oracle/goldengz.py cat core/lower/testdata/vllm_lower.json > "$RUNNER_TEMP/vllm_lower.json"
+          python -I oracle/lower/extract.py vllm-source check "$RUNNER_TEMP/vllm_lower.json"
+      # Which of Muse Spark's three fused kernels vLLM builds for a layout, and at which step sizes
+      # (core/lower MuseSparkFusionsFor), from the release's own gating code run on this CPU with
+      # the GPU, FlashInfer's MNNVL workspaces and the process group replaced.
+      - name: the Muse Spark fusion decisions are vLLM's own
+        run: |
+          catalog="$GITHUB_WORKSPACE/substrate/catalog/models"
+          python3 -I oracle/goldengz.py cat core/lower/testdata/muse_fusions.json > "$RUNNER_TEMP/muse_fusions.json"
+          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/musefusion/oracle.py vllm-source check "$RUNNER_TEMP/muse_fusions.json"
+      - name: every replacement the lowering oracle makes is listed
+        run: |
+          python3 -I oracle/lower/check_replacements.py oracle/lower/extract.py oracle/lower/replacements.json
+          python3 -I oracle/lower/test_check_replacements.py
+      # The DeepSeek indexer's cache dtype (core/rulepack/pack ResolveIndexerKVDType) is held to vLLM's own
+      # resolution and record-width code, run unmodified over a stub platform (FID-1, FID-8).
+      - name: the indexer cache dtype table is vLLM's own
+        run: |
+          python -I oracle/indexer/oracle.py vllm-source check core/rulepack/v0_33/testdata/vllm_indexer_kv_dtype.json
+          python3 -I oracle/lower/check_replacements.py oracle/indexer/oracle.py oracle/indexer/replacements.json
+      # Tier 5: the families vLLM's own Prometheus logger registers at runtime agree with the
+      # manifest the source scan wrote (type and labels).
+      - name: the metrics manifest agrees with vLLM's live registry
+        env:
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          HF_HUB_OFFLINE: "1"
+        run: |
+          python -I oracle/check_manifest.py vllm-source oracle/metrics/manifest.json --buckets oracle/out-buckets.json
+          diff -u oracle/metrics/buckets.json oracle/out-buckets.json
+      - name: run every tier-2 scenario
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/engines/vllm/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          # the helper model's config states 2048 positions; a dashboard scenario states its deployment's
+          # max_model_len (oracle/README.md)
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out/scenarios
+          python -I oracle/run_scheduler.py vllm-source oracle/scenarios oracle/out/scenarios
+      # The committed goldens must be what the pinned vLLM release produces here and now.
+      - name: every golden trace is vLLM's own output
+        run: python3 -I oracle/compare_goldens.py core/sched/testdata/golden oracle/out/scenarios
+      # swa_bounded_replay stated, vLLM's own resolution into the layout, then its Scheduler on that
+      # layout (oracle/run_swa_layout.py).
+      - name: run the swa_bounded_replay layout scenarios
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/engines/vllm/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out/scenarios-swa
+          python -I oracle/run_swa_layout.py vllm-source oracle/scenarios/swa oracle/out/scenarios-swa
+      - name: the swa_bounded_replay goldens are vLLM's own output
+        run: python3 -I oracle/compare_goldens.py core/sched/testdata/golden-swa oracle/out/scenarios-swa
+      # The worker's LoRA adapter cache (max_cpu_loras): vLLM's own LRUCacheWorkerLoRAManager driven
+      # through the dummy LoRA model of its test suite (oracle/run_lora_cache.py).
+      - name: run the LoRA adapter-cache scenarios
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/engines/vllm/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out/lora-cache
+          python -I oracle/run_lora_cache.py vllm-source oracle/scenarios/lora-cache oracle/out/lora-cache
+      - name: the LoRA adapter-cache goldens are vLLM's own output
+        run: python3 -I oracle/compare_goldens_lora.py core/lora/testdata/golden oracle/out/lora-cache
+      # Whether the server answers the router's render calls (enable_scale_out): vLLM's own
+      # register_scale_out_api_routers decision, run as written (oracle/run_render.py).
+      - name: run the render-endpoint scenarios
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/engines/vllm/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+        run: |
+          mkdir -p oracle/out/render
+          python -I oracle/run_render.py vllm-source oracle/scenarios/render oracle/out/render
+      - name: the render-endpoint goldens are vLLM's own output
+        run: python3 -I oracle/compare_goldens_render.py core/vllm/testdata/golden-render oracle/out/render
+      # Tier 5's goldens too: each metric series re-derived from vLLM's own Prometheus logger
+      # on the scenario it was made from.
+      - name: every metric golden is vLLM's own series
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/engines/vllm/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+        run: |
+          mkdir -p oracle/out/metrics-scenarios oracle/out/metrics
+          for g in core/metrics/testdata/golden/*.metrics.json*; do
+            n="${g##*/}"
+            cp "oracle/scenarios/${n%%.metrics.json*}.json" oracle/out/metrics-scenarios/
+          done
+          python -I oracle/run_metrics.py vllm-source oracle/out/metrics-scenarios oracle/out/metrics
+          python3 -I oracle/compare_goldens_metrics.py core/metrics/testdata/golden oracle/out/metrics
+      # Tier 1, the dynamic half: the engine-block shapes of oracle/engineargs-cases.json run
+      # through vLLM's own EngineArgs(...).create_engine_config(), and the committed answers the
+      # factory is compared with (core/vllm TestEngineArgsAgainstVLLM) must equal them.
+      - name: the EngineArgs answers are vLLM's own
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/engines/vllm/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out
+          python -I oracle/run_engineargs.py vllm-source oracle/engineargs-cases.json > oracle/out/engineargs.json
+          python3 -I oracle/compare_engineargs.py core/vllm/testdata/engineargs.json oracle/out/engineargs.json
+          # Every key the engine block takes is a name vLLM's EngineArgs takes (blis-vllm#93): ask the
+          # pinned vLLM about the keys the committed answer covers, and compare.
+          python3 -I - <<'PY' > oracle/out/block-keys.json
+          import json
+          t = json.load(open("core/engineconfig/testdata/vllm_names.json"))
+          print(json.dumps({"top": sorted(t["top"]), "nested": {g: sorted(v) for g, v in t["nested"].items()}}))
+          PY
+          python -I oracle/run_engineargs.py --key-names vllm-source oracle/out/block-keys.json > oracle/out/vllm_names.json
+          python3 -I -c "import json,sys; a,b=(json.load(open(f)) for f in sys.argv[1:]); sys.exit(0 if a==b else 'the EngineArgs name answers differ from core/engineconfig/testdata/vllm_names.json')" core/engineconfig/testdata/vllm_names.json oracle/out/vllm_names.json
+      # The block-hash fixture: every case's hashes recomputed by vLLM's own hash_block_tokens;
+      # the generator exits non-zero if any differs from the committed file.
+      - name: the block-hash fixture is vLLM's own hashes
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/engines/vllm/oracle-env.lock
+        run: python -I oracle/gen_block_hashes.py vllm-source core/kv/testdata/block_hashes.json > oracle/out/block_hashes.json
+      # Block hashes under a stated PYTHONHASHSEED, from vLLM's own init_none_hash and hash_block_tokens.
+      - name: the seeded block-hash fixture is vLLM's own hashes
+        run: |
+          python -I oracle/gen_seeded_block_hashes.py vllm-source > oracle/out/seeded_block_hashes.json
+          diff -u core/kv/testdata/seeded_block_hashes.json oracle/out/seeded_block_hashes.json
+      # The Go side of the run's provenance: blis-vllm's ProvenanceFor, the commit, Go and the
+      # platform. Each trace carries the Python side (vLLM, lockfile, mocks, seed, commit).
+      - name: record the Go side's provenance
+        run: go run ./cmd/provenance > oracle/out/provenance.json
+      # Tier 3: vLLM's own EngineCore.step_with_batch_queue (async scheduling, the batch
+      # queue, PP) on every tier-3 scenario, and its DP engine-core loop.
+      - name: run every tier-3 scenario through vLLM's EngineCore
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/engines/vllm/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+        run: |
+          mkdir -p oracle/out/scenarios-t3
+          python -I oracle/run_enginecore.py vllm-source oracle/scenarios-t3 oracle/out/scenarios-t3
+          # Data parallel: vLLM's DP engine-core loop and internal load balancer; with async
+          # scheduling, each rank's own step_with_batch_queue.
+          mkdir -p oracle/out/scenarios-dp oracle/out/scenarios-dp-async oracle/out/scenarios-dp-nixl
+          python -I oracle/run_dp.py vllm-source oracle/scenarios-dp oracle/out/scenarios-dp
+          python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-async oracle/out/scenarios-dp-async
+          python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-nixl oracle/out/scenarios-dp-nixl
+          # Several load-balancing clients (api_server_count): one DPLBAsyncMPClient each.
+          mkdir -p oracle/out/scenarios-dp-clients
+          python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-clients oracle/out/scenarios-dp-clients
+          # Hybrid and external load balancing: one client per node or per rank, the router
+          # naming each request's front end.
+          mkdir -p oracle/out/scenarios-dp-modes
+          python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-modes oracle/out/scenarios-dp-modes
+      # The multi-client routing is compared with the trace vLLM just produced (no committed
+      # golden), and the test must run: a skip would read as a pass (X16).
+      - name: the Go routing through several clients equals vLLM's
+        env:
+          BLIS_VLLM_DP_CLIENTS_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/scenarios-dp-clients
+        run: |
+          set -o pipefail
+          go test ./core/engine -run 'TestDPClientsAgainstVLLM' -count=1 -v | tee dpclients.log
+          grep -q -- '--- PASS: TestDPClientsAgainstVLLM/dp4-lb-clients2' dpclients.log
+      - name: the Go routing under hybrid and external balancing equals vLLM's
+        env:
+          BLIS_VLLM_DP_MODES_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/scenarios-dp-modes
+        run: |
+          set -o pipefail
+          go test ./core/engine -run 'TestDPModesAgainstVLLM' -count=1 -v | tee dpmodes.log
+          grep -q -- '--- PASS: TestDPModesAgainstVLLM/dp4-hybrid-local2 (' dpmodes.log
+          grep -q -- '--- PASS: TestDPModesAgainstVLLM/dp4-external-rank-affinity (' dpmodes.log
+      - name: every tier-3 golden trace is vLLM's own output
+        run: |
+          python3 -I oracle/compare_goldens_t3.py core/engine/testdata/golden oracle/out/scenarios-t3
+          python3 -I oracle/compare_goldens_t3.py core/engine/testdata/golden-dp oracle/out/scenarios-dp
+          python3 -I oracle/compare_goldens_t3.py core/engine/testdata/golden-dp-async oracle/out/scenarios-dp-async
+          python3 -I oracle/compare_goldens_t3.py core/engine/testdata/golden-dp-nixl oracle/out/scenarios-dp-nixl
+      # Tier 4: vLLM's real NIXL connector scheduler side (pull mode), with only the worker's
+      # transfer outcomes as the mock input, on every NIXL scenario.
+      - name: run every NIXL scenario through vLLM's Scheduler
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/engines/vllm/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+        run: |
+          mkdir -p oracle/out/scenarios-connector
+          python -I oracle/run_connector.py vllm-source oracle/scenarios/connector oracle/out/scenarios-connector
+      - name: every NIXL golden trace is vLLM's own output
+        run: python3 -I oracle/compare_goldens.py core/connector/nixl/testdata/golden oracle/out/scenarios-connector
+      # Tier 4: vLLM's real OffloadingConnector scheduler side over its CPU tier (CPUOffloadingManager,
+      # LRU), with only the worker mocked (completions as OffloadingWorkerMetadata), on every
+      # offloading scenario.
+      - name: run every offloading scenario through vLLM's Scheduler
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/engines/vllm/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out/scenarios-offloading
+          python -I oracle/run_offloading.py vllm-source oracle/scenarios/offloading oracle/out/scenarios-offloading
+      - name: every offloading golden trace is vLLM's own output
+        run: python3 -I oracle/compare_goldens.py core/connector/offloading/testdata/golden oracle/out/scenarios-offloading
+      # The same connector over TieringOffloadingSpec's manager and its fs tier (oracle/run_offloading.py,
+      # run_tiered): vLLM's own tier code over a real directory; core/vllm's replay compares the engine.
+      - name: run every offloading scenario with an fs tier through vLLM's Scheduler
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/engines/vllm/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out/scenarios-offloading-tiering
+          python -I oracle/run_offloading.py vllm-source oracle/scenarios/offloading-tiering oracle/out/scenarios-offloading-tiering
+      - name: every offloading-with-tiers golden trace is vLLM's own output
+        run: python3 -I oracle/compare_goldens.py core/connector/tiering/testdata/golden-engine oracle/out/scenarios-offloading-tiering
+      # Tier 4: vLLM's real MultiConnector over its NIXL and offloading children, both orders, on
+      # every multi-connector scenario and 3000 fuzz seeds (1000 with hybrid KV cache groups, 1000 with
+      # async scheduling).
+      - name: run every multi-connector scenario through vLLM's Scheduler
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/engines/vllm/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out/scenarios-multi
+          python -I oracle/run_multiconnector.py vllm-source oracle/scenarios/multiconnector oracle/out/scenarios-multi
+      - name: every multi-connector golden trace is vLLM's own output
+        run: python3 -I oracle/compare_goldens.py core/connector/multi/testdata/golden oracle/out/scenarios-multi
+      # FID-5 (design §7.6): the offload framework's interfaces, traced at the interface. Recorded: every
+      # call the OffloadingConnector's scheduler side makes at OffloadingManager, the manager at its
+      # CachePolicy and each spec's get_manager, observed (sys.monitoring, nothing replaced) while the
+      # offloading and multi-connector scenarios run. Direct: this repository's driver makes calls no
+      # feature makes (oracle/scenarios-fid5), on vLLM's CPUOffloadingSpec, TieringOffloadingSpec with no
+      # secondary tiers, and LRUCachePolicy alone. Each must equal its committed trace, which
+      # core/connector/offloading's fid5_test.go replays against the port.
+      - name: the offload interface traces are vLLM's own calls and answers
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/engines/vllm/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out/fid5
+          python3 -I oracle/goldengz.py unpack core/connector/offloading/testdata/golden-fid5 "$RUNNER_TEMP/golden-fid5"
+          status=0
+          python -I oracle/run_kv_interfaces.py vllm-source oracle/out/fid5 oracle/scenarios/offloading oracle/scenarios/multiconnector \
+            --check "$RUNNER_TEMP/golden-fid5" || status=1
+          python -I oracle/drive_kv_interfaces.py vllm-source oracle/scenarios-fid5 oracle/out/fid5 \
+            --check "$RUNNER_TEMP/golden-fid5" || status=1
+          exit $status
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: oracle-tier2
+          path: |
+            engines/vllm/oracle/out/
+            engines/vllm/oracle-env.lock
+
+
+  # Tier 1: every inertness proof (oracle/inertness/*.json) is what the harness computes from vLLM's own code
+  # now, and the harness finds a field that is not inert, a read it was not told about and a variable the source
+  # names (oracle/test_inertness.py). The negative controls run vLLM several times each and take minutes, so the
+  # tests of the file are shared out by name (cksum mod 3, listed by unittest so a test added later is in a shard);
+  # each job checks that unittest ran exactly the tests it was given.
+  oracle-inertness:
+    name: oracle-inertness (shard ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    env:
+      SHARDS: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: env
+        uses: ./.github/actions/oracle-env-vllm
+      - name: every inertness proof is what the harness computes
+        env:
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+          VLLM_SOURCE: ${{ github.workspace }}/engines/vllm/vllm-source
+          SHARD: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          python3 -I - > "$RUNNER_TEMP/all.txt" <<'PY'
+          import importlib.util, unittest
+          spec = importlib.util.spec_from_file_location("t", "oracle/test_inertness.py")
+          m = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(m)
+          def walk(s):
+              for t in s:
+                  if isinstance(t, unittest.TestSuite):
+                      yield from walk(t)
+                  else:
+                      yield t
+          for t in walk(unittest.defaultTestLoader.loadTestsFromModule(m)):
+              print(t.id().split(".", 1)[1])
+          PY
+          # The shard of a test is cksum(name) mod SHARDS (the rule scripts/ci-shard.sh uses): the shards
+          # are disjoint and cover the list by construction, and a test added later lands in exactly one.
+          test "$(wc -l < "$RUNNER_TEMP/all.txt")" -ge 10
+          while IFS= read -r name; do
+            h="$(printf '%s' "$name" | cksum | cut -d' ' -f1)"
+            if [ $((h % SHARDS)) -eq "$SHARD" ]; then printf '%s\n' "$name"; fi
+          done < "$RUNNER_TEMP/all.txt" > "$RUNNER_TEMP/mine.txt"
+          n="$(wc -l < "$RUNNER_TEMP/mine.txt" | tr -d ' ')"
+          test "$n" -ge 1
+          echo "shard $SHARD of $SHARDS runs $n of $(wc -l < "$RUNNER_TEMP/all.txt") tests"
+          cat "$RUNNER_TEMP/mine.txt"
+          # shellcheck disable=SC2046
+          python -I oracle/test_inertness.py -v --durations 20 $(cat "$RUNNER_TEMP/mine.txt") 2>&1 | tee "$RUNNER_TEMP/inertness.log"
+          grep -q "^Ran $n tests\? in" "$RUNNER_TEMP/inertness.log"
+
+  # The seeded fuzz corpora (tier 2: 4000 scenarios; tier 3: 1000, DP: 1000; the connector: 3300; the
+  # offloading connector: 2600), each from fixed seeds and run through vLLM, then through blis-vllm, which must
+  # match at zero mismatches. A corpus is cached, keyed on the generators, seeds, runners, mock, lock and vLLM
+  # pin, and regenerated when any of them changes; a miss costs minutes, so each corpus has its own job and
+  # they run side by side.
+  oracle-fuzz:
+    name: oracle-fuzz (${{ matrix.corpus }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        corpus: [t2, mamba, t3, connector, offloading, multi]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: env
+        uses: ./.github/actions/oracle-env-vllm
+      - uses: ./.github/actions/go-toolchain
+      - name: the fuzz corpus and vLLM's traces for it
+        uses: ./.github/actions/oracle-fuzz-vllm
+        with:
+          python-version: ${{ steps.env.outputs.python-version }}
+          corpora: ${{ matrix.corpus }}
+      # The property and metamorphic tests (#2021 B8) run over fixed seeds in Go alone; their
+      # verbose results go into the artifact beside the provenance.
+      - name: property and metamorphic tests
+        if: matrix.corpus == 't2'
+        run: |
+          set -o pipefail
+          mkdir -p oracle/out
+          go test -v -count=1 -run 'TestPropertiesHoldOnRandomScenarios|TestMoreKVNeverAddsPreemptionsOneAtATime|TestLargerBudgetNeverDelaysALoneRequestsFirstToken' ./core/sched/ | tee oracle/out/property-results.txt
+      - name: blis-vllm against vLLM (differential + fuzz)
+        if: matrix.corpus == 't2'
+        env:
+          BLIS_VLLM_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz
+        run: |
+          set -o pipefail
+          go test -v -count=1 -run 'TestDifferentialAgainstVLLM|TestFuzzCorpusAgainstVLLM' ./core/sched/ | tee oracle/out/diff-results.txt
+      - name: blis-vllm against vLLM (hybrid Mamba fuzz)
+        if: matrix.corpus == 'mamba'
+        env:
+          BLIS_VLLM_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-mamba
+        run: |
+          set -o pipefail
+          mkdir -p oracle/out
+          go test -v -count=1 -run 'TestFuzzCorpusAgainstVLLM' ./core/sched/ | tee oracle/out/diff-mamba-results.txt
+      # Tier 5: every exact vllm:* family, after every step, against vLLM's own Prometheus
+      # logger on the same scenarios and fuzz seeds.
+      - name: blis-vllm's metrics against vLLM's (scenarios + fuzz)
+        if: matrix.corpus == 't2'
+        env:
+          BLIS_VLLM_METRICS_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz
+        run: |
+          set -o pipefail
+          go test -v -count=1 -run 'TestMetricsAgainstVLLM|TestMetricsFuzzCorpusAgainstVLLM' ./core/metrics/ | tee oracle/out/metrics-results.txt
+      # Tier 3: blis-vllm's core/engine against the EngineCore traces of the 1000 fuzz seeds, and the DP loop's.
+      - name: blis-vllm's EngineCore against vLLM's (scenarios + fuzz)
+        if: matrix.corpus == 't3'
+        env:
+          BLIS_VLLM_T3_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-t3
+          BLIS_VLLM_DP_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-t3-dp
+        run: |
+          set -o pipefail
+          mkdir -p oracle/out
+          go test -v -count=1 -run 'TestEngineCoreAgainstVLLM|TestEngineCoreFuzzCorpusAgainstVLLM|TestDPAgainstVLLM|TestDPAsyncAgainstVLLM|TestDPNixlAgainstVLLM|TestDPFuzzCorpusAgainstVLLM' ./core/engine/ | tee oracle/out/engine-results.txt
+      - name: blis-vllm's NIXL connector against vLLM's (scenarios + fuzz)
+        if: matrix.corpus == 'connector'
+        env:
+          BLIS_VLLM_CONNECTOR_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-connector
+        run: |
+          set -o pipefail
+          mkdir -p oracle/out
+          go test -v -count=1 -run 'TestNIXLAgainstVLLM|TestNIXLFuzzCorpusAgainstVLLM' ./core/connector/nixl/ | tee oracle/out/connector-results.txt
+      - name: blis-vllm's OffloadingConnector against vLLM's (scenarios + fuzz)
+        if: matrix.corpus == 'offloading'
+        env:
+          BLIS_VLLM_OFFLOAD_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-offloading
+        run: |
+          set -o pipefail
+          mkdir -p oracle/out
+          go test -v -count=1 -run 'TestOffloadingAgainstVLLM|TestOffloadingFuzzCorpusAgainstVLLM' ./core/connector/offloading/ | tee oracle/out/offloading-results.txt
+      # Tier 4: vLLM's real MultiConnector over its NIXL and offloading children, both orders, on 3000 fuzz seeds
+      # (1000 with hybrid KV cache groups, 1000 with async scheduling).
+      - name: blis-vllm's MultiConnector against vLLM's (scenarios + fuzz)
+        if: matrix.corpus == 'multi'
+        env:
+          BLIS_VLLM_MULTI_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-multi
+        run: |
+          set -o pipefail
+          mkdir -p oracle/out
+          go test -v -count=1 -run 'TestMultiConnectorAgainstVLLM|TestMultiConnectorFuzzCorpusAgainstVLLM' ./core/connector/multi/ | tee oracle/out/multi-results.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: oracle-fuzz-${{ matrix.corpus }}
+          path: |
+            engines/vllm/oracle/out/*-results.txt
+            engines/vllm/oracle/out/fuzz-cache.json

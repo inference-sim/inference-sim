@@ -34,3 +34,10 @@ go.work.sum
 
 # Python bytecode
 __pycache__/
+
+# Fetched by the oracle jobs and .github/actions/oracle-env-*; never committed
+/sglang-source/
+/oracle-model/
+/oracle-env.lock
+/oracle/out/
+/oracle/.venv/

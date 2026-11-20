@@ -2,3 +2,6 @@
 /oracle/out/
 __pycache__/
 *.pyc
+/vllm-source/
+/oracle-model/
+/oracle-env.lock
