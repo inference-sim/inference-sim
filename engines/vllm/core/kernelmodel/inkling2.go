@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+// Derived from vllm/models/inkling2/nvidia/attention.py at vLLM v0.34.0+0fda86a35419 (0fda86a35419c9c70dbfada224c838c10fbb62ad).
 
 package kernelmodel
 
