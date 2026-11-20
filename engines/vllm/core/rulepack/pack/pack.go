@@ -331,7 +331,10 @@ func (p *Pack) ModelSequenceParallel(architecture string, pl deployment.Parallel
 	if !c.MegaMoEOrDataParallelAboveOne {
 		return true
 	}
-	return p.MegaMoEBackends[NormalizeMoEBackend(moeBackend)] || dp > 1
+	if p.MegaMoEBackends[NormalizeMoEBackend(moeBackend)] {
+		return true
+	}
+	return dp > 1 && (!c.DataParallelRouteNeedsPipelineParallelOne || pp == 1)
 }
 
 // SequenceParallelCondition is one architecture's sequence-parallelism condition, as
@@ -351,6 +354,11 @@ type SequenceParallelCondition struct {
 	// MegaMoEOrDataParallelAboveOne requires a MoE backend in MegaMoEBackends or data
 	// parallelism above one.
 	MegaMoEOrDataParallelAboveOne bool
+	// DataParallelRouteNeedsPipelineParallelOne narrows MegaMoEOrDataParallelAboveOne: data
+	// parallelism above one counts only with pipeline parallelism exactly one, while a mega-MoE
+	// backend counts at any pipeline width (DeepSeek-V4: "SP from DP alone is not validated with
+	// PP"). Without MegaMoEOrDataParallelAboveOne it has no effect.
+	DataParallelRouteNeedsPipelineParallelOne bool
 }
 
 // String renders the condition for the generated documentation.
@@ -366,7 +374,11 @@ func (c SequenceParallelCondition) String() string {
 		parts = append(parts, "tp above 1")
 	}
 	if c.MegaMoEOrDataParallelAboveOne {
-		parts = append(parts, "a mega-MoE backend or dp above 1")
+		if c.DataParallelRouteNeedsPipelineParallelOne {
+			parts = append(parts, "a mega-MoE backend or dp above 1 with pp 1")
+		} else {
+			parts = append(parts, "a mega-MoE backend or dp above 1")
+		}
 	}
 	if len(parts) == 0 {
 		return "always"

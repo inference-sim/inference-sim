@@ -173,14 +173,17 @@ func Pack() *pack.Pack {
 
 		// DeepSeek-V4.1's _use_sequence_parallel on CUDA (vllm/models/deepseek_v41/nvidia/
 		// model.py; the ROCm module's is always False, see SequenceParallelCondition):
-		// pipeline_parallel_size == 1 and enable_expert_parallel and tensor_parallel_size
-		// > 1 and (use_mega_moe or data_parallel_size > 1).
-		// DeepSeek-V4's is the same function (vllm/models/deepseek_v4/nvidia/model.py).
+		// enable_expert_parallel and tensor_parallel_size > 1 and (use_mega_moe or
+		// data_parallel_size > 1). The head dropped the pipeline_parallel_size == 1 term.
+		// DeepSeek-V4's (vllm/models/deepseek_v4/nvidia/model.py) keeps pipeline parallelism one
+		// for the data-parallel route only: (use_mega_moe or (data_parallel_size > 1 and
+		// pipeline_parallel_size == 1)).
 		ModelSequenceParallelRules: map[string]pack.SequenceParallelCondition{
-			enginefacts.ArchDeepseekV41: pack.SequenceParallelCondition{PipelineParallelOne: true, ExpertParallel: true,
+			enginefacts.ArchDeepseekV41: pack.SequenceParallelCondition{ExpertParallel: true,
 				TensorParallelAboveOne: true, MegaMoEOrDataParallelAboveOne: true},
-			enginefacts.ArchDeepseekV4: pack.SequenceParallelCondition{PipelineParallelOne: true, ExpertParallel: true,
-				TensorParallelAboveOne: true, MegaMoEOrDataParallelAboveOne: true},
+			enginefacts.ArchDeepseekV4: pack.SequenceParallelCondition{ExpertParallel: true,
+				TensorParallelAboveOne: true, MegaMoEOrDataParallelAboveOne: true,
+				DataParallelRouteNeedsPipelineParallelOne: true},
 		},
 
 		// DeepSeek-V4.1's packed layout rewrites auto and fp8 to its backend's record
@@ -1009,7 +1012,7 @@ func ruleList(p *pack.Pack) []pack.Rule {
 					moe := pack.NormalizeMoEBackend(e.MoEBackend)
 					selfCommunicating := moe == "flashinfer_moe_ep_cutedsl" || moe == "flashinfer_moe_ep_mega_deep_gemm"
 					// The binding reads the backend after ParallelConfig has renamed the removed
-					// pplx and naive to allgather_reducescatter (vllm/config/parallel.py:533-538@5df63a72),
+					// pplx and naive to allgather_reducescatter (vllm/config/parallel.py _resolve_all2all_backend),
 					// so those start beside an EP megakernel, as the default does.
 					a2a := p.EffectiveAll2AllBackend(e.All2AllBackend)
 					switch {

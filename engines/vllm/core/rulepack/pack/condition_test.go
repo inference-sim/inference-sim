@@ -15,10 +15,11 @@ import (
 func TestModelSequenceParallelEvaluatesEveryConditionShape(t *testing.T) {
 	const arch = "Arch"
 	mega := "mega"
-	for shape := 0; shape < 16; shape++ {
+	for shape := 0; shape < 32; shape++ {
 		c := SequenceParallelCondition{
 			PipelineParallelOne: shape&1 != 0, ExpertParallel: shape&2 != 0,
 			TensorParallelAboveOne: shape&4 != 0, MegaMoEOrDataParallelAboveOne: shape&8 != 0,
+			DataParallelRouteNeedsPipelineParallelOne: shape&16 != 0,
 		}
 		p := &Pack{ModelSequenceParallelRules: map[string]SequenceParallelCondition{arch: c},
 			MegaMoEBackends: map[string]bool{mega: true}}
@@ -38,8 +39,11 @@ func TestModelSequenceParallelEvaluatesEveryConditionShape(t *testing.T) {
 							if c.TensorParallelAboveOne && tp <= 1 {
 								want = false
 							}
-							if c.MegaMoEOrDataParallelAboveOne && moe != mega && dp <= 1 {
-								want = false
+							if c.MegaMoEOrDataParallelAboveOne && moe != mega {
+								dpRoute := dp > 1 && (!c.DataParallelRouteNeedsPipelineParallelOne || pp <= 1)
+								if !dpRoute {
+									want = false
+								}
 							}
 							if got := p.ModelSequenceParallel(arch, pl, moe); got != want {
 								t.Fatalf("condition %+v, %+v, moe %q: got %v, want %v", c, pl, moe, got, want)
