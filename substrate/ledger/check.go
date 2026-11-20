@@ -78,9 +78,19 @@ func Load(dir string, roleKeys map[string]RoleKeyFunc) (*Ledger, error) {
 		}
 		l.Units[src.ID] = units
 	}
-	for src := range l.Config.Rules {
+	for src, rule := range l.Config.Rules {
 		if l.Sources.Lookup(src) == nil {
 			errs = append(errs, fmt.Errorf("%s: rules.%s names no source in %s", FileLedger, src, FileSources))
+		}
+		inList := map[string]bool{}
+		for _, u := range l.Units[src] {
+			inList[u.UnitID] = true
+		}
+		for _, id := range rule.LeftOut {
+			if !inList[id] {
+				errs = append(errs, fmt.Errorf("%s: rules.%s.left_out names unit %s, which is not in the %s unit list", FileLedger, src, id, src))
+				break
+			}
 		}
 	}
 	if l.Legacy != nil {
@@ -305,13 +315,27 @@ func LoadAliases(dir string) ([]*AliasTable, error) {
 	return out, nil
 }
 
+// heldRulesUnchanged reports whether every held source's rule is present in both ledgers and
+// the same in each, so a version bump that keeps the seed leaves its units' roles where they were.
+func heldRulesUnchanged(base, cand *Config) bool {
+	for _, src := range HeldSources {
+		b, ok := base.Rules[src]
+		c, ok2 := cand.Rules[src]
+		if !ok || !ok2 || fmt.Sprint(b) != fmt.Sprint(c) {
+			return false
+		}
+	}
+	return true
+}
+
 // CheckAgainstBase is D4's check against the ledger at the pull request's merge base. Every
 // unit at the base must still exist with the same role key, or an alias table in the candidate
 // must map it to a unit of the candidate with the role key the alias names.
 //
 // The partition version, the seed record and the cut-points change only together, as one new
 // partition version: the next number, with a seed record that is created and whose SHA-256
-// differs from the base's, and the cut-points the new version states. Nobody approves it in the pull request
+// differs from the base's, and the cut-points the new version states, or, when the version keeps the
+// seed, the base's seed record whole and the held source's rule unchanged. Nobody approves it in the pull request
 // (no check waits on a person). What keeps D7 is the seed itself: a ledger owner creates the
 // secret at release time, and every seed-holding job refuses a secret whose SHA-256 is not the
 // one the record states (NewAssigner), so a record without its secret draws no role.
@@ -325,11 +349,16 @@ func CheckAgainstBase(base, cand *Ledger) error {
 			errs = append(errs, fmt.Errorf("partition_version changed from %d to %d; a new partition version is the next number, %d", bc.PartitionVersion, cc.PartitionVersion, bc.PartitionVersion+1))
 		case !cc.Seed.Created():
 			errs = append(errs, fmt.Errorf("partition_version changed from %d to %d with no seed record; a new partition version records its new seed (D7)", bc.PartitionVersion, cc.PartitionVersion))
+		case cc.Seed.SHA256 == bc.Seed.SHA256 && cc.Seed == bc.Seed && heldRulesUnchanged(bc, cc):
+			// A version that keeps the seed redraws no InferenceX unit: its rule, which holds
+			// the held cut-point and the legacy sides, is the one thing it may not change, and
+			// the seed record is the base's exactly. It moves the other sources' cut-points
+			// only (M3.2 row 26, Table DC "keeps the partition secret").
 		case cc.Seed.SHA256 == bc.Seed.SHA256:
 			// A seed's identity is its SHA-256: what every seed-holding job checks the secret
 			// against. A record that differs only in who generated it, when, or who owns the
 			// rotation names the same secret, so it draws the same roles.
-			errs = append(errs, fmt.Errorf("partition_version changed from %d to %d with the seed record's sha256 unchanged; a new partition version is drawn from a new seed, and a seed is identified by its SHA-256, not by who generated it or when (D7)", bc.PartitionVersion, cc.PartitionVersion))
+			errs = append(errs, fmt.Errorf("partition_version changed from %d to %d with the seed record's sha256 unchanged; a new partition version is drawn from a new seed unless it keeps the base's seed record whole and leaves the held source's rule unchanged, and a seed is identified by its SHA-256, not by who generated it or when (D7)", bc.PartitionVersion, cc.PartitionVersion))
 		}
 	}
 	if !newVersion && bc.Seed.Created() && bc.Seed != cc.Seed {

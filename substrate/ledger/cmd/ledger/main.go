@@ -38,6 +38,9 @@
 //	    D7's lint of the seed-holding workflows.
 //	ledger release -out DIR LEDGER          (seed-holding: reads LEDGER_SEED)
 //	ledger join -assign LEDGER READS...     (seed-holding with -assign: reads LEDGER_SEED)
+//	ledger partition-prep [-source S] [-require A,B] -out REPORT [-propose FILE] LEDGER READS...
+//	    The D2 join report for the move to partition version 2: which units of an anchor-only
+//	    source no consumer read under a training role. Reads no seed and assigns no role.
 //	ledger check-report REPORT LEDGER
 //	    Refuse a seed-holding job's output that names a unit or aggregates fewer than 10 (D7).
 //	ledger candidate-units -out FILE LEDGER
@@ -111,7 +114,7 @@ func (u usageError) Error() string { return u.msg }
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stderr, "usage: ledger <ingest-inferencex|ingest-configiq|configiq-assets|ingest-vllm-perf|ingest-sglang-nightly|sglang-nightly-assets|ingest-sglang-traces|supplement-records|pin-supplement|feed|check|check-generated|check-base|generate-aliases|scan-roles|lint-workflows|release|join|check-report|candidate-units|measured-inferencex|aggregate|method-error|transfer-error> ...")
+		_, _ = fmt.Fprintln(stderr, "usage: ledger <ingest-inferencex|ingest-configiq|configiq-assets|ingest-vllm-perf|ingest-sglang-nightly|sglang-nightly-assets|ingest-sglang-traces|supplement-records|pin-supplement|feed|check|check-generated|check-base|generate-aliases|scan-roles|lint-workflows|release|join|partition-prep|check-report|candidate-units|measured-inferencex|aggregate|method-error|transfer-error> ...")
 		return 2
 	}
 	cmds := map[string]func([]string, io.Writer) error{
@@ -130,6 +133,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		"lint-workflows":        cmdLintWorkflows,
 		"release":               cmdRelease,
 		"join":                  cmdJoin,
+		"partition-prep":        cmdPartitionPrep,
 		"check-report":          cmdCheckReport,
 		"candidate-units":       cmdCandidateUnits,
 		"measured-inferencex":   cmdMeasuredInferenceX,
@@ -796,8 +800,8 @@ func cmdPinSupplement(args []string, stdout io.Writer) error {
 
 func cmdAggregate(args []string, stdout io.Writer) error {
 	fs := flags("aggregate")
-	job := fs.String("job", "", "select, error or gate")
-	role := fs.String("role", "", "select, validate or held")
+	job := fs.String("job", "", "select or error")
+	role := fs.String("role", "", "select or validate")
 	predPath := fs.String("predictions", "", "the candidate job's predictions file (untrusted)")
 	candidate := fs.String("candidate", "", "head_sha of the Actions run that produced the predictions, from the runs API")
 	unitsPath := fs.String("units", "", "the units the candidate was handed (candidate-units, run from main)")
@@ -806,9 +810,9 @@ func cmdAggregate(args []string, stdout io.Writer) error {
 	if err := parse(fs, args, 1, "aggregate -job J -role R -predictions P -candidate SHA -units U -measured M -out FILE LEDGER"); err != nil {
 		return err
 	}
-	pairs := map[string]string{"select": "select", "error": "validate", "gate": "held"}
+	pairs := map[string]string{"select": "select", "error": "validate"}
 	if pairs[*job] == "" || pairs[*job] != *role {
-		return usageError{fmt.Sprintf("-job %q -role %q: the select job reads select, the error job validate, the gate job held", *job, *role)}
+		return usageError{fmt.Sprintf("-job %q -role %q: the select job reads select units and the error job validate units; no operator-level job reads held units", *job, *role)}
 	}
 	l, err := ledger.Load(fs.Arg(0), roleKeys)
 	if err != nil {
