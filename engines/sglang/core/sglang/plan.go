@@ -41,6 +41,10 @@ type SchedArgs struct {
 	RadixEvictionPolicy            string
 	EnableMetrics                  bool
 	DecodeLogInterval              int
+	// SpeculativeNumSteps and SpeculativeNumDraftTokens are speculative_num_steps and
+	// speculative_num_draft_tokens of an EAGLE-family algorithm at top-k 1; zero is no speculation.
+	SpeculativeNumSteps       int
+	SpeculativeNumDraftTokens int
 }
 
 // Env is the environment variables the scheduler's settings read (environ.py@297e54fd).
@@ -74,6 +78,21 @@ type Runtime struct {
 // extraMaxContextLen is the request pool's row slack beyond the context length for a model with
 // no speculative decoding (kv_cache_configurator.py, extra_max_context_len).
 const extraMaxContextLen = 4
+
+// requestRowLen is the request pool's row length: the context length plus the headroom of
+// get_req_to_token_extra_context_len (allocation_sizing.py:96-116@297e54fd), 4 plus the draft tokens, and
+// at a page size above one at least the double-buffered decode reserve plus the page's rounding.
+func requestRowLen(a SchedArgs, contextLen int) int {
+	extra := extraMaxContextLen
+	if a.SpeculativeNumDraftTokens > 0 {
+		alloc := max(a.SpeculativeNumSteps, a.SpeculativeNumDraftTokens)
+		extra = extraMaxContextLen + a.SpeculativeNumDraftTokens
+		if a.PageSize > 1 {
+			extra = max(extra, 2*alloc+a.PageSize-1)
+		}
+	}
+	return contextLen + extra
+}
 
 // SchedConfig is the settings SGLang's Scheduler.__init__ derives from resolved ServerArgs, the
 // model runner's pool sizes and the environment (scheduler.py:480-735, 1195-1250, 1352-1380,
@@ -132,7 +151,7 @@ func SchedConfig(a SchedArgs, rt Runtime, env Env) (sched.Config, error) {
 		ChunkedPrefillSize:  chunk,
 		MaxRunningRequests:  rt.MaxRunningRequests,
 		ReqPoolSize:         rt.ReqPoolSize,
-		MaxContextLen:       rt.ContextLen + extraMaxContextLen,
+		MaxContextLen:       requestRowLen(a, rt.ContextLen),
 		PPMaxMicroBatchSize: microBatch,
 		PPSize:              a.PPSize,
 		MaxReqLen:           maxReqLen,
@@ -170,6 +189,8 @@ func SchedConfig(a SchedArgs, rt Runtime, env Env) (sched.Config, error) {
 		AbortOnPriorityWhenDisabled: a.AbortOnPriorityWhenDisabled,
 		MaxQueuedRequests:           a.MaxQueuedRequests,
 		PrefillMaxRequests:          a.PrefillMaxRequests,
+		SpecNumSteps:                a.SpeculativeNumSteps,
+		SpecNumDraftTokens:          a.SpeculativeNumDraftTokens,
 	}, nil
 }
 

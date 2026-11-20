@@ -276,6 +276,24 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 		p.InFlight = 2
 	}
 
+	// Speculative decoding at top-k 1 (inference-sim/blis-sglang#68): a chain of speculative_num_steps
+	// drafts, verified in one target pass. The draft passes are the engine's execution decisions and are
+	// stated here, so the cost model prices what it is told and guesses none (SUB-6).
+	if first, passes, ok := DraftPasses(a); ok {
+		p.Drafts.Chain = *a.SpeculativeNumSteps
+		p.Drafts.FirstPassRows, p.Drafts.PassRequests = first, passes
+		if a.EnableMultiLayerEagle {
+			note("enable_multi_layer_eagle", "true",
+				"the multi-layer drafter runs its passes in _draft_extend_for_decode (speculative/multi_layer_eagle_worker_v2.py:814@297e54fd), a path "+
+					"DraftPolicy cannot state; its draft passes are priced as a single-layer chain's, which "+
+					"under-prices them (inference-sim/blis-sglang#68)")
+		}
+		note("speculative_first_draft_chain", "prefill_step",
+			"the first draft chain of a request runs after its prefill in SGLang's draft-extend pass; it is priced "+
+				"inside the prefill step, one step before the first verify, and the draft pass of a verify step "+
+				"is priced inside that step")
+	}
+
 	// The routed experts' kernel (layers/quantization/fp8.py:2962-2972@297e54fd): under
 	// moe_runner_backend auto, a block-fp8 MoE runs Triton's fused_moe unless the DeepEP-family
 	// all-to-all selects DeepGEMM; the all-to-all backends are refused above (config).
@@ -466,4 +484,19 @@ func routedExpertsDType(g *model.Graph) model.DType {
 		return ""
 	}
 	return d
+}
+
+// DraftPasses states how the drafter's passes run when the resolved arguments speculate, and
+// ok=false when they do not. SGLang's EAGLE worker (v2) extends the draft model over every token the
+// target scheduled in a prefill step to write the draft KV (_draft_extend_for_prefill,
+// speculative/eagle_worker_v2.py:961-1108@297e54fd), and the draft chain itself (draft(), :660) runs
+// in the decode step of a request that has completed its prompt: the passes after the first are
+// priced for the requests that complete their prompt in the step. A mid-prompt request's one head
+// row in the extend pass (:1000-1050, last-position hidden state per request) is not priced. The
+// host hands the words to the cost model as kernel Inputs.DraftFirstPassRows and DraftPassRequests.
+func DraftPasses(a *config.ServerArgs) (first plan.FirstPassRows, passes plan.PassRequests, ok bool) {
+	if a.SpeculativeAlgorithm == nil || a.SpeculativeNumSteps == nil {
+		return "", "", false
+	}
+	return plan.FirstPassScheduled, plan.PassRequestsSampling, true
 }

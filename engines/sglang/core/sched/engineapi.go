@@ -93,9 +93,13 @@ type FinishedReq struct {
 	ScriptEnded bool
 }
 
-// Complete processes the result of the oldest launched pass.
-func (s *Scheduler) Complete(l *Launched) (c Completion, err error) {
+// Complete processes the result of the oldest launched pass. accepted is the drafts the pass's
+// verify accepted, by request; a request absent from it accepted none. It matters only under
+// speculation.
+func (s *Scheduler) Complete(l *Launched, accepted map[string]int) (c Completion, err error) {
 	defer s.recoverRefusal(&err)
+	s.accepted = accepted
+	defer func() { s.accepted = nil }()
 	b := l.batch
 	if s.cfg.EnableOverlap {
 		if len(s.resultQueue) == 0 {

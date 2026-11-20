@@ -116,8 +116,11 @@ func newFromDocument(h Host, s engine.Spec) (engine.Engine, error) {
 		return nil, err
 	}
 	var buckets []int
+	// A verify pass carries the target's whole draft width per request (num_draft_tokens), and the
+	// decode runner captures its batch sizes at that width (base_cuda_graph_runner.py:65-110).
+	width := max(sa.SpeculativeNumDraftTokens, 1)
 	if !a.DisableCudaGraph {
-		if buckets, err = lower.CaptureBatchSizes(&a, rt.ReqPoolSize, 1); err != nil {
+		if buckets, err = lower.CaptureBatchSizes(&a, rt.ReqPoolSize, width); err != nil {
 			return nil, err
 		}
 	}
@@ -125,7 +128,7 @@ func newFromDocument(h Host, s engine.Spec) (engine.Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return sglang.New(cfg, &pricer{k: pool.Kernel, buckets: buckets}, list)
+	return sglang.New(cfg, &pricer{k: pool.Kernel, buckets: buckets, width: width}, list)
 }
 
 type factory struct{ host Host }
@@ -137,8 +140,8 @@ func (f factory) New(s engine.Spec) (engine.Engine, error) { return newFromDocum
 // refuseUnmodelled names what a resolved configuration asks for that the engine does not run.
 func refuseUnmodelled(a *config.ServerArgs) error {
 	switch {
-	case a.SpeculativeAlgorithm != nil:
-		return fmt.Errorf("sglangengine: speculative decoding is not modelled by the engine (inference-sim/blis-sglang#68)")
+	case a.SpeculativeEagleTopk != nil && *a.SpeculativeEagleTopk > 1:
+		return fmt.Errorf("sglangengine: tree drafting and tree verification (speculative_eagle_topk %d) are not modelled by the engine (inference-sim/blis-sglang#68)", *a.SpeculativeEagleTopk)
 	case a.EnableDpAttention || a.DpSize > 1:
 		return fmt.Errorf("sglangengine: DP attention is not modelled by the engine (inference-sim/blis-sglang#70)")
 	case a.PpSize > 1:
@@ -170,7 +173,17 @@ func schedArgs(a *config.ServerArgs, seed int64) (sglang.SchedArgs, error) {
 		PrefillMaxRequests: a.PrefillMaxRequests, RetractionPolicy: a.RetractionPolicy, AllowAutoTruncate: a.AllowAutoTruncate,
 		RandomSeed: rs, DisaggregationMode: a.DisaggregationMode, PPSize: a.PpSize, PPMaxMicroBatchSize: a.PpMaxMicroBatchSize,
 		RadixEvictionPolicy: a.RadixEvictionPolicy, EnableMetrics: a.EnableMetrics, DecodeLogInterval: a.DecodeLogInterval,
+		SpeculativeNumSteps:       specValue(a.SpeculativeAlgorithm, a.SpeculativeNumSteps),
+		SpeculativeNumDraftTokens: specValue(a.SpeculativeAlgorithm, a.SpeculativeNumDraftTokens),
 	}, nil
+}
+
+// specValue is a speculative setting when an algorithm is on, and zero otherwise.
+func specValue(algorithm *string, v *int) int {
+	if algorithm == nil || v == nil {
+		return 0
+	}
+	return *v
 }
 
 // pricer prices a pass with the host's cost model. A decode-only pass is padded to the CUDA graph
@@ -178,26 +191,35 @@ func schedArgs(a *config.ServerArgs, seed int64) (sglang.SchedArgs, error) {
 type pricer struct {
 	k       kernel.Kernel
 	buckets []int
+	// width is the tokens a decode request carries in a pass: 1, or num_draft_tokens under
+	// speculation (the verify pass feeds the pending token and the drafts after it).
+	width int
 }
 
 func (p *pricer) StepTime(b engine.Batch) engine.Duration {
-	// A request that schedules one token is a decode: SGLang's decode pass runs one token per request
-	// (no speculation is modelled, #68), so the kernel counts a request as a prefill only above one.
+	// NoOverlap is the edge blis-vllm measured nearly unbiased (compat/kernelmodel); microseconds,
+	// at least one so a pass always takes time.
+	return max(engine.Duration(p.k.StepTime(p.shape(b)).NoOverlap.Microseconds()), 1)
+}
+
+// shape is the batch the cost model prices for a pass.
+func (p *pricer) shape(b engine.Batch) kernel.Batch {
+	// A request that schedules its decode width is a decode: SGLang's decode pass runs one token per
+	// request, a verify pass num_draft_tokens, so the kernel counts a request as a prefill only above it.
 	// With the threshold left at zero the kernel prices every decode request through the prefill
 	// attention path (kernel/step.go: `Scheduled > DecodeThreshold`). blis-vllm sets 8 for vLLM's own
 	// classifier (compat/kernelmodel DecodeThreshold); SGLang has no such short-chunk class.
-	kb := kernel.Batch{Reqs: make([]kernel.ReqShape, len(b.Reqs)), DecodeThreshold: 1}
+	width := max(p.width, 1)
+	kb := kernel.Batch{Reqs: make([]kernel.ReqShape, len(b.Reqs)), DecodeThreshold: width}
 	decode := len(b.Reqs) > 0
 	for i, r := range b.Reqs {
 		kb.Reqs[i] = kernel.ReqShape{Scheduled: r.Tokens, Computed: r.Computed, PromptLen: r.PromptLen, CachedTokens: r.CachedTokens}
-		decode = decode && r.Tokens == 1
+		decode = decode && r.Tokens == width && r.Drafts == width-1
 	}
 	if decode && len(p.buckets) > 0 {
 		if padded, ok := lower.PadToBucket(len(b.Reqs), p.buckets); ok {
-			kb.PadTokens = padded - len(b.Reqs)
+			kb.PadTokens = (padded - len(b.Reqs)) * width
 		}
 	}
-	// NoOverlap is the edge blis-vllm measured nearly unbiased (compat/kernelmodel); microseconds,
-	// at least one so a pass always takes time.
-	return max(engine.Duration(p.k.StepTime(kb).NoOverlap.Microseconds()), 1)
+	return kb
 }

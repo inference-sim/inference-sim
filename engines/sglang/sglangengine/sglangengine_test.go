@@ -4,6 +4,7 @@ package sglangengine
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -34,7 +35,11 @@ func (f fakeKernel) StepTime(b kernel.Batch) kernel.StepEstimate {
 	return kernel.StepEstimate{NoOverlap: 5 * time.Millisecond}
 }
 
-type fakeHost struct{ k fakeKernel }
+// fakeHost opens the pool of the oracle case named by oracleCase, qwen-h100-defaults when it is empty.
+type fakeHost struct {
+	k          fakeKernel
+	oracleCase string
+}
 
 func (h fakeHost) Open(engine.Spec) (Pool, error) {
 	var doc struct {
@@ -51,8 +56,12 @@ func (h fakeHost) Open(engine.Spec) (Pool, error) {
 	if err := json.Unmarshal(b, &doc); err != nil {
 		return Pool{}, err
 	}
+	want := h.oracleCase
+	if want == "" {
+		want = "qwen-h100-defaults"
+	}
 	for _, c := range doc.Cases {
-		if c.Name == "qwen-h100-defaults" {
+		if c.Name == want {
 			return Pool{Kernel: h.k, Chip: c.Chip, Model: c.Model, PreModelLoadGiB: 78, ContextLen: 32768,
 				EOSTokenIDs: []int64{151643, 151645}, VocabSize: 151936}, nil
 		}
@@ -211,13 +220,13 @@ func TestEachUnmodelledSettingIsRefusedOnItsOwn(t *testing.T) {
 	if err := refuseUnmodelled(&def); err != nil {
 		t.Fatalf("the defaults are refused: %v", err)
 	}
-	spec := "EAGLE"
+	spec, topk := "EAGLE", 2
 	for _, tc := range []struct {
 		name  string
 		set   func(*config.ServerArgs)
 		issue string
 	}{
-		{"speculative decoding", func(a *config.ServerArgs) { a.SpeculativeAlgorithm = &spec }, "#68"},
+		{"tree drafting and verification", func(a *config.ServerArgs) { a.SpeculativeAlgorithm = &spec; a.SpeculativeEagleTopk = &topk }, "#68"},
 		{"DP attention", func(a *config.ServerArgs) { a.EnableDpAttention = true }, "#70"},
 		{"a data-parallel size above one", func(a *config.ServerArgs) { a.DpSize = 2 }, "#70"},
 		{"pipeline parallelism", func(a *config.ServerArgs) { a.PpSize = 2 }, "#72"},
@@ -228,6 +237,14 @@ func TestEachUnmodelledSettingIsRefusedOnItsOwn(t *testing.T) {
 		tc.set(&a)
 		if err := refuseUnmodelled(&a); err == nil || !strings.Contains(err.Error(), tc.issue) {
 			t.Errorf("%s: got %v, want a refusal citing %s", tc.name, err, tc.issue)
+		}
+	}
+	// A chain (top-k 1) of the EAGLE family is modelled (S30): the algorithm alone is not refused.
+	for _, alg := range []string{"EAGLE", "EAGLE3", "NEXTN"} {
+		a, one := config.Defaults(), 1
+		a.SpeculativeAlgorithm, a.SpeculativeEagleTopk = &alg, &one
+		if err := refuseUnmodelled(&a); err != nil {
+			t.Errorf("%s at top-k 1: %v", alg, err)
 		}
 	}
 }
@@ -261,5 +278,94 @@ func TestTheEngineReadsItsEnvironmentFromTheEnvMap(t *testing.T) {
 	}
 	if _, err := FactoryFor(h).New(specOf(t, "model_path: m\nenv: [SGLANG_RADIX_FORCE_MISS]\n")); err == nil || !strings.Contains(err.Error(), "map") {
 		t.Errorf("an env that is not a map: got %v", err)
+	}
+}
+
+// A verify pass carries num_draft_tokens per request (S30, blis-sglang#68). It is a decode: the kernel
+// must price it through its decode path and pad it to a capture bucket, counted in tokens, whose
+// batch size the runner captured at that width. A prefill chunk is not one, and neither is a pass whose
+// request carries the width as a chunk of prompt.
+func TestAVerifyPassIsPricedAsDecodeAtTheDraftWidth(t *testing.T) {
+	const width = 4
+	h := newHost()
+	p := &pricer{k: h.k, buckets: []int{1, 2, 4, 8}, width: width}
+	verify := func(n int) engine.Batch {
+		b := engine.Batch{}
+		for i := 0; i < n; i++ {
+			b.Reqs = append(b.Reqs, engine.Scheduled{Tokens: width, Computed: 100, Drafts: width - 1})
+		}
+		return b
+	}
+	for _, tc := range []struct{ reqs, wantPad int }{{1, 0}, {3, 1 * width}, {5, 3 * width}, {8, 0}} {
+		kb := p.shape(verify(tc.reqs))
+		if kb.DecodeThreshold != width {
+			t.Fatalf("decode threshold %d, want the draft width %d", kb.DecodeThreshold, width)
+		}
+		if kb.PadTokens != tc.wantPad {
+			t.Errorf("%d verify requests padded by %d tokens, want %d (bucket rows x width)", tc.reqs, kb.PadTokens, tc.wantPad)
+		}
+	}
+	if kb := p.shape(verify(9)); kb.PadTokens != 0 {
+		t.Errorf("a batch past the largest bucket runs eagerly: padded by %d", kb.PadTokens)
+	}
+	// A pass that mixes in a prompt chunk is not a graph decode.
+	mixed := verify(3)
+	mixed.Reqs = append(mixed.Reqs, engine.Scheduled{Tokens: 37, PromptLen: 37})
+	if kb := p.shape(mixed); kb.PadTokens != 0 {
+		t.Errorf("a pass with a prefill chunk was padded by %d tokens", kb.PadTokens)
+	}
+	// A request that schedules the width without drafts is a prompt chunk, not a verify.
+	chunk := engine.Batch{Reqs: []engine.Scheduled{{Tokens: width, PromptLen: width}, {Tokens: width, PromptLen: width}, {Tokens: width, PromptLen: width}}}
+	if kb := p.shape(chunk); kb.PadTokens != 0 {
+		t.Errorf("a prompt chunk of the draft width was padded as a graph decode: %d", kb.PadTokens)
+	}
+}
+
+// The factory builds a speculating engine for each algorithm of the EAGLE family at top-k 1, on a model
+// whose draft layers ship in its checkpoint, and the engine drives the draft/verify contract: a decode
+// pass schedules num_draft_tokens tokens of which num_draft_tokens-1 are drafts, the outcome's accepted
+// drafts plus the one the target samples are emitted, and NEXTN is EAGLE.
+func TestTheFactoryBuildsAnEagleChain(t *testing.T) {
+	const steps = 3
+	for _, alg := range []string{"EAGLE", "EAGLE3", "NEXTN"} {
+		for accepted := 0; accepted <= steps; accepted++ {
+			t.Run(fmt.Sprintf("%s/accept%d", alg, accepted), func(t *testing.T) {
+				h := newHost()
+				h.oracleCase = "glm53-h100-tp8-mtp"
+				e, err := FactoryFor(h).New(specOf(t, fmt.Sprintf("model_path: m\nspeculative_algorithm: %s\nspeculative_num_steps: %d\n"+
+					"speculative_eagle_topk: 1\nspeculative_num_draft_tokens: %d\n", alg, steps, steps+1)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				out := make([]int32, 40)
+				for i := range out {
+					out[i] = int32(500 + i)
+				}
+				if err := e.Add(engine.Request{ID: "a", Prompt: make([]int32, 64), Output: out, Tags: map[string]string{"ignore_eos": "true"}}, 0); err != nil {
+					t.Fatal(err)
+				}
+				b, err := e.Schedule(0)
+				if err != nil || b.Empty() {
+					t.Fatalf("prefill: %+v %v", b, err)
+				}
+				if _, err := e.Complete(b.ID, engine.Outcome{}, 1); err != nil {
+					t.Fatal(err)
+				}
+				b, err = e.Schedule(2)
+				if err != nil || b.Empty() {
+					t.Fatalf("verify pass: %+v %v", b, err)
+				}
+				if r := b.Reqs[0]; r.Tokens != steps+1 || r.Drafts != steps {
+					t.Fatalf("verify pass schedules %d tokens with %d drafts, want %d and %d", r.Tokens, r.Drafts, steps+1, steps)
+				}
+				res, err := e.Complete(b.ID, engine.Outcome{Accepted: map[string]int{"a": accepted}}, 3)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := res.Emitted["a"]; got != accepted+1 {
+					t.Fatalf("emitted %d tokens, want the %d accepted drafts and the target's own", got, accepted)
+				}
+			})
+		}
 	}
 }
