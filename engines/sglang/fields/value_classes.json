@@ -6,6 +6,79 @@
  },
  "limits": "Comparisons are found where the field, or a name the same function assigned from it, is compared with a literal: ==, !=, <, <=, >, >=, in, not in, is None, is not None, and a bare truth test. A value passed to another function, stored in a container or computed before the comparison is not followed, and a ServerArgs field is recognised only through the base names listed in CONFIG_BASES. The classes under-approximate what SGLang does with the field: a field with one class is one no scanned comparison singles out, not one SGLang treats alike at every value.",
  "fields": {
+  "abort_on_priority_when_disabled": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "name": "abort_on_priority_when_disabled",
+    "kind": "boolean",
+    "sites": [],
+    "stated": [
+     {
+      "value": true,
+      "trace": "core/sched/testdata/golden-sched/priority-disabled.trace.json"
+     },
+     {
+      "value": false,
+      "trace": "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
+     }
+    ],
+    "classes": [
+     {
+      "uncut": true,
+      "compared_at": [],
+      "covered_by": [
+       "core/sched/testdata/golden-sched/priority-disabled.trace.json",
+       "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
+      ]
+     }
+    ]
+   }
+  },
+  "allow_auto_truncate": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "name": "allow_auto_truncate",
+    "kind": "boolean",
+    "sites": [],
+    "stated": [
+     {
+      "value": false,
+      "trace": "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+     },
+     {
+      "value": true,
+      "trace": "core/sched/testdata/golden-sched/truncate-a.trace.json"
+     },
+     {
+      "value": true,
+      "trace": "core/sched/testdata/golden-sched/truncate-loose.trace.json"
+     }
+    ],
+    "classes": [
+     {
+      "uncut": true,
+      "compared_at": [],
+      "covered_by": [
+       "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+       "core/sched/testdata/golden-sched/truncate-a.trace.json",
+       "core/sched/testdata/golden-sched/truncate-loose.trace.json"
+      ]
+     }
+    ]
+   }
+  },
   "attention_backend": {
    "value_classes": {
     "type": "enumerated",
@@ -6304,6 +6377,83 @@
     ]
    }
   },
+  "enable_priority_scheduling": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "name": "enable_priority_scheduling",
+    "kind": "boolean",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:367",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.enable_priority_scheduling"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:281",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.enable_priority_scheduling"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:303",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.enable_priority_scheduling"
+     }
+    ],
+    "stated": [
+     {
+      "value": false,
+      "trace": "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+     },
+     {
+      "value": true,
+      "trace": "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
+     }
+    ],
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:367",
+       "python/sglang/srt/arg_groups/validation_hook.py:281",
+       "python/sglang/srt/arg_groups/validation_hook.py:303"
+      ],
+      "covered_by": [
+       "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+      ]
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:367",
+       "python/sglang/srt/arg_groups/validation_hook.py:281",
+       "python/sglang/srt/arg_groups/validation_hook.py:303"
+      ],
+      "covered_by": [
+       "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
+      ]
+     }
+    ]
+   }
+  },
   "kv_cache_dtype": {
    "value_classes": {
     "type": "enumerated",
@@ -8166,6 +8316,48 @@
        "config/testdata/serverargs.json",
        "core/sched/testdata/golden-sched/max-prefill-tokens-250.trace.json",
        "core/sched/testdata/golden-sched/max-prefill-tokens.trace.json"
+      ]
+     }
+    ]
+   }
+  },
+  "max_queued_requests": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "name": "max_queued_requests",
+    "kind": "numeric",
+    "sites": [],
+    "stated": [
+     {
+      "value": null,
+      "trace": "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+     },
+     {
+      "value": 2,
+      "trace": "core/sched/testdata/golden-sched/queue-limit.trace.json"
+     },
+     {
+      "value": 3,
+      "trace": "core/sched/testdata/golden-sched/queue-limit-heavy.trace.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "core/sched/testdata/golden-sched/queue-limit-heavy.trace.json",
+       "core/sched/testdata/golden-sched/queue-limit.trace.json"
       ]
      }
     ]
@@ -11611,6 +11803,96 @@
     ]
    }
   },
+  "prefill_max_requests": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "name": "prefill_max_requests",
+    "kind": "numeric",
+    "sites": [],
+    "stated": [
+     {
+      "value": null,
+      "trace": "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+     },
+     {
+      "value": 2,
+      "trace": "core/sched/testdata/golden-sched/prefill-max.trace.json"
+     },
+     {
+      "value": 1,
+      "trace": "core/sched/testdata/golden-sched/prefill-max-nocache.trace.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "core/sched/testdata/golden-sched/prefill-max-nocache.trace.json",
+       "core/sched/testdata/golden-sched/prefill-max.trace.json"
+      ]
+     }
+    ]
+   }
+  },
+  "priority_scheduling_preemption_threshold": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "name": "priority_scheduling_preemption_threshold",
+    "kind": "numeric",
+    "sites": [],
+    "stated": [
+     {
+      "value": 10,
+      "trace": "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+     },
+     {
+      "value": 0,
+      "trace": "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
+     },
+     {
+      "value": 1,
+      "trace": "core/sched/testdata/golden-sched/priority-heavy.trace.json"
+     },
+     {
+      "value": 2,
+      "trace": "core/sched/testdata/golden-sched/priority-threshold.trace.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+       "core/sched/testdata/golden-sched/priority-fcfs.trace.json",
+       "core/sched/testdata/golden-sched/priority-heavy.trace.json",
+       "core/sched/testdata/golden-sched/priority-threshold.trace.json"
+      ]
+     }
+    ]
+   }
+  },
   "quantization": {
    "value_classes": {
     "type": "enumerated",
@@ -12790,6 +13072,194 @@
       ],
       "covered_by": [
        "config/testdata/serverargs.json"
+      ]
+     }
+    ]
+   }
+  },
+  "retraction_policy": {
+   "value_classes": {
+    "type": "enumerated",
+    "covered": [
+     "length",
+     "priority"
+    ],
+    "values": [
+     "length",
+     "priority"
+    ]
+   },
+   "basis": {
+    "name": "retraction_policy",
+    "kind": "enumerated",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:303",
+      "op": "Eq",
+      "values": [
+       "priority"
+      ],
+      "expr": "cfg.retraction_policy == 'priority'"
+     }
+    ],
+    "stated": [
+     {
+      "value": "length",
+      "trace": "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+     },
+     {
+      "value": "priority",
+      "trace": "core/sched/testdata/golden-sched/retract-priority.trace.json"
+     },
+     {
+      "value": "priority",
+      "trace": "core/sched/testdata/golden-sched/retract-priority-lof.trace.json"
+     }
+    ],
+    "classes": [
+     {
+      "values": [
+       "priority"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/validation_hook.py:303"
+      ],
+      "covered_by": [
+       "core/sched/testdata/golden-sched/retract-priority-lof.trace.json",
+       "core/sched/testdata/golden-sched/retract-priority.trace.json"
+      ]
+     }
+    ]
+   }
+  },
+  "schedule_low_priority_values_first": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "name": "schedule_low_priority_values_first",
+    "kind": "boolean",
+    "sites": [],
+    "stated": [
+     {
+      "value": false,
+      "trace": "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
+     },
+     {
+      "value": true,
+      "trace": "core/sched/testdata/golden-sched/priority-low-first.trace.json"
+     }
+    ],
+    "classes": [
+     {
+      "uncut": true,
+      "compared_at": [],
+      "covered_by": [
+       "core/sched/testdata/golden-sched/priority-fcfs.trace.json",
+       "core/sched/testdata/golden-sched/priority-low-first.trace.json"
+      ]
+     }
+    ]
+   }
+  },
+  "schedule_policy": {
+   "value_classes": {
+    "type": "enumerated",
+    "covered": [
+     "dfs-weight",
+     "fcfs",
+     "hrrn",
+     "lof",
+     "lpm",
+     "random",
+     "routing-key",
+     "shortest-prefill-first"
+    ],
+    "values": [
+     "lpm",
+     "random",
+     "fcfs",
+     "dfs-weight",
+     "lof",
+     "priority",
+     "routing-key",
+     "hrrn",
+     "shortest-prefill-first"
+    ]
+   },
+   "basis": {
+    "name": "schedule_policy",
+    "kind": "enumerated",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:282",
+      "op": "In",
+      "values": [
+       "fcfs",
+       "lof"
+      ],
+      "expr": "cfg.schedule_policy in ['fcfs', 'lof']"
+     }
+    ],
+    "stated": [
+     {
+      "value": "fcfs",
+      "trace": "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+     },
+     {
+      "value": "dfs-weight",
+      "trace": "core/sched/testdata/golden-sched/dfs-a.trace.json"
+     },
+     {
+      "value": "hrrn",
+      "trace": "core/sched/testdata/golden-sched/heavy-hrrn.trace.json"
+     },
+     {
+      "value": "lof",
+      "trace": "core/sched/testdata/golden-sched/heavy-lof.trace.json"
+     },
+     {
+      "value": "lpm",
+      "trace": "core/sched/testdata/golden-sched/heavy-lpm.trace.json"
+     },
+     {
+      "value": "shortest-prefill-first",
+      "trace": "core/sched/testdata/golden-sched/heavy-spf.trace.json"
+     },
+     {
+      "value": "random",
+      "trace": "core/sched/testdata/golden-sched/random-a.trace.json"
+     },
+     {
+      "value": "routing-key",
+      "trace": "core/sched/testdata/golden-sched/routing-a.trace.json"
+     }
+    ],
+    "classes": [
+     {
+      "values": [
+       "fcfs"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/validation_hook.py:282"
+      ],
+      "covered_by": [
+       "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+      ]
+     },
+     {
+      "values": [
+       "lof"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/validation_hook.py:282"
+      ],
+      "covered_by": [
+       "core/sched/testdata/golden-sched/heavy-lof.trace.json"
       ]
      }
     ]

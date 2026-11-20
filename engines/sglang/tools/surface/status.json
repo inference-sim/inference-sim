@@ -205,8 +205,12 @@
    "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
   },
   "engine_setting:allow_auto_truncate": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+    "core/sched/testdata/golden-sched/truncate-a.trace.json",
+    "core/sched/testdata/golden-sched/truncate-loose.trace.json"
+   ]
   },
   "engine_setting:chunked_prefill_size": {
    "status": "modelled",
@@ -1795,48 +1799,78 @@
    "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
   },
   "retraction_policy:length": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+    "core/sched/testdata/golden-sched/retract1.trace.json",
+    "core/sched/testdata/golden-sched/retract16.trace.json"
+   ]
   },
   "retraction_policy:priority": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/77"
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/retract-priority.trace.json",
+    "core/sched/testdata/golden-sched/retract-priority-lof.trace.json",
+    "core/sched/testdata/golden-sched/retract-priority-page16.trace.json"
+   ]
   },
   "schedule_policy:dfs-weight": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/dfs-a.trace.json",
+    "core/sched/testdata/golden-sched/dfs-heavy.trace.json"
+   ]
   },
   "schedule_policy:fcfs": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+    "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
+   ]
   },
   "schedule_policy:hrrn": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/heavy-hrrn.trace.json"
+   ]
   },
   "schedule_policy:lof": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/heavy-lof.trace.json",
+    "core/sched/testdata/golden-sched/nocache-lof.trace.json"
+   ]
   },
   "schedule_policy:lpm": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/heavy-lpm.trace.json",
+    "core/sched/testdata/golden-sched/retract-lpm.trace.json"
+   ]
   },
   "schedule_policy:priority": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
   },
   "schedule_policy:random": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/random-a.trace.json",
+    "core/sched/testdata/golden-sched/random-basic.trace.json"
+   ]
   },
   "schedule_policy:routing-key": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/routing-a.trace.json",
+    "core/sched/testdata/golden-sched/routing-basic.trace.json"
+   ]
   },
   "schedule_policy:shortest-prefill-first": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/heavy-spf.trace.json"
+   ]
   },
   "scheduler_loop:event_loop_normal": {
    "status": "refused",

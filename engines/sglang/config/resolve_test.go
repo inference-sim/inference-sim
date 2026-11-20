@@ -220,6 +220,77 @@ func TestResolveRefusalsNameTheIssueOfTheFeature(t *testing.T) {
 	}
 }
 
+// The scheduler's queue, priority, truncation and retraction settings resolve as stated: no resolution
+// step of SGLang v0.5.23 reads them (grep of python/sglang/srt/arg_groups@297e54fd finds them only in
+// validation_hook.py:281-305, which CheckServerArgs ports, and kv_cache_hook.py:368, a decode-server rule).
+func TestTheSchedulersSettingsResolveAsStated(t *testing.T) {
+	c := readAnswers(t).Cases[0]
+	base, err := Resolve(Input{Args: map[string]any{"model_path": "<model>"}, Chip: c.Chip, Model: c.ModelFacts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := map[string]any{
+		"model_path": "<model>", "enable_priority_scheduling": true,
+		"priority_scheduling_preemption_threshold": 3, "schedule_low_priority_values_first": true,
+		"abort_on_priority_when_disabled": true, "max_queued_requests": 7, "prefill_max_requests": 2,
+		"allow_auto_truncate": true, "retraction_policy": "priority",
+	}
+	got, err := Resolve(Input{Args: args, Chip: c.Chip, Model: c.ModelFacts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := got.Args
+	if !a.EnablePriorityScheduling || a.PrioritySchedulingPreemptionThreshold != 3 ||
+		!a.ScheduleLowPriorityValuesFirst || !a.AbortOnPriorityWhenDisabled || a.MaxQueuedRequests == nil || *a.MaxQueuedRequests != 7 ||
+		a.PrefillMaxRequests == nil || *a.PrefillMaxRequests != 2 || !a.AllowAutoTruncate || a.RetractionPolicy != "priority" {
+		t.Errorf("a stated setting did not resolve as stated: %+v", a)
+	}
+	if len(got.DeclaredBy) != len(base.DeclaredBy) {
+		t.Errorf("stating the settings changes %d fields of the resolution, the unset one changes %d", len(got.DeclaredBy), len(base.DeclaredBy))
+	}
+	// The retraction policy has two choices (fields/schedule.py:136); another is refused by name.
+	args["retraction_policy"] = "random"
+	_, err = Resolve(Input{Args: args, Chip: c.Chip, Model: c.ModelFacts})
+	var nm *NotModelled
+	if !errors.As(err, &nm) || nm.Name != "retraction_policy" {
+		t.Errorf("retraction_policy random: got %v, want NotModelled naming it", err)
+	}
+}
+
+// CheckServerArgs ports the two rules of check_server_args that read the priority settings
+// (validation_hook.py:281-305@297e54fd), with SGLang's messages.
+func TestCheckServerArgsRefusesWhatSGLangRefusesOfThePrioritySettings(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		set  func(*ServerArgs)
+		want string
+	}{
+		{"defaults", func(*ServerArgs) {}, ""},
+		{"priority scheduling over fcfs", func(a *ServerArgs) { a.EnablePriorityScheduling = true }, ""},
+		{"priority scheduling over lof", func(a *ServerArgs) { a.EnablePriorityScheduling, a.SchedulePolicy = true, "lof" }, ""},
+		{"priority retraction with priority scheduling", func(a *ServerArgs) { a.EnablePriorityScheduling, a.RetractionPolicy = true, "priority" }, ""},
+		{"disabled preemption without priority scheduling", func(a *ServerArgs) { a.DisablePriorityPreemption = true }, ""},
+		{"priority scheduling over lpm", func(a *ServerArgs) { a.EnablePriorityScheduling, a.SchedulePolicy = true, "lpm" },
+			"To use priority scheduling, schedule_policy must be 'fcfs' or 'lof'. 'lpm' is not supported."},
+		{"priority retraction without priority scheduling", func(a *ServerArgs) { a.RetractionPolicy = "priority" },
+			"--retraction-policy priority requires --enable-priority-scheduling"},
+	} {
+		a := Defaults()
+		tc.set(&a)
+		err := CheckServerArgs(&a)
+		if tc.want == "" {
+			if err != nil {
+				t.Errorf("%s: %v", tc.name, err)
+			}
+			continue
+		}
+		var up *UpstreamRefusal
+		if !errors.As(err, &up) || up.Message != tc.want || !strings.HasSuffix(up.Site, "validation_hook.py:check_server_args") {
+			t.Errorf("%s: got %v, want SGLang's refusal %q", tc.name, err, tc.want)
+		}
+	}
+}
+
 // A server's record of its resolved arguments states custom_weight_loader as an empty list; SGLang's
 // resolution gives an unset field the same value, so it is not a setting and resolves like the unset
 // one. A real loader is still refused.
