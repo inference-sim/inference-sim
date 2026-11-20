@@ -16,13 +16,16 @@ type Point struct {
 	NodesSpanned int
 	// Fabric is the cluster's inter-node network, or "" for a single-node cluster.
 	Fabric string
+	// HostCPU is the host CPU family of the deployment's node packaging, or "" when the chip
+	// states none.
+	HostCPU string
 }
 
 // Admits reports whether the scope covers the point. A dimension the scope does not state
 // admits any value. A stated dimension must list the point's value, so a coefficient scoped
 // to hardware alone applies at every width, and one scoped to tp [8] does not apply at tp 4.
 // A fabric-scoped entry was measured over one interconnect, so a point on another fabric, or
-// on none, is outside it.
+// on none, is outside it. So is a host-CPU-scoped entry for a point whose chip states no host CPU.
 func (s Scope) Admits(p Point) bool {
 	if len(s.Hardware) > 0 && !containsFold(s.Hardware, p.Hardware) {
 		return false
@@ -42,6 +45,9 @@ func (s Scope) Admits(p Point) bool {
 	if len(s.Fabric) > 0 && (p.Fabric == "" || !containsFold(s.Fabric, p.Fabric)) {
 		return false
 	}
+	if len(s.HostCPU) > 0 && (p.HostCPU == "" || !containsFold(s.HostCPU, p.HostCPU)) {
+		return false
+	}
 	return true
 }
 
@@ -58,9 +64,10 @@ func (s Scope) Admits(p Point) bool {
 //
 // The model comes first, as the cost model's lookup has always had it: a value fitted on one
 // model is a narrower claim than a part-wide one, whichever part it names. Then the chip, the
-// layout widths (tp, ep), the nodes spanned, and the fabric. Two entries equal on every
-// dimension are not ordered either.
-var PrecedenceOrder = []string{"model", "hardware", "tp", "ep", "nodes_spanned", "fabric"}
+// layout widths (tp, ep), the nodes spanned, the fabric, and last the host CPU, which narrows a
+// value the GPU-side dimensions have already placed. Two entries equal on every dimension are
+// not ordered either.
+var PrecedenceOrder = []string{"model", "hardware", "tp", "ep", "nodes_spanned", "fabric", "host_cpu"}
 
 // ComparePrecedence orders two scopes by PrecedenceOrder. It returns -1 when a is chosen
 // over b, +1 when b is chosen over a, and ordered=false when the order does not choose.
@@ -80,6 +87,8 @@ func ComparePrecedence(a, b Scope) (cmp int, ordered bool) {
 			sa, sb = intsAsStrings(a.NodesSpanned), intsAsStrings(b.NodesSpanned)
 		case "fabric":
 			sa, sb = a.Fabric, b.Fabric
+		case "host_cpu":
+			sa, sb = a.HostCPU, b.HostCPU
 		}
 		switch {
 		case len(sa) == 0 && len(sb) == 0:

@@ -250,6 +250,7 @@ func (e Entry) citesKind(k vocab.SourceKind) bool {
 func (e Entry) validateEvidenceRecords(p *validate.Problems, at string) {
 	ValidateKernelImpls(p, at+".kernel_impls", e.KernelImpls)
 	ValidateKernelImpls(p, at+".measured_on", e.MeasuredOn)
+	e.validateCodeIDs(p, at)
 	if len(e.KernelImpls) > 0 && !MayStateKernelImpls(e.Method) {
 		// A vendor_spec, roofline, assumed or not_charged value says nothing about a kernel; a
 		// list on it would key a lookup to something the value does not depend on (design 6.2).

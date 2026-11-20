@@ -11,11 +11,13 @@ import (
 	"slices"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 
+	blissglang "github.com/inference-sim/inference-sim/engines/sglang"
 	"github.com/inference-sim/inference-sim/engines/sglang/config"
 )
 
@@ -124,6 +126,10 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 	}
 	out := &plan.Lowered{}
 	p := &out.Plan
+	// The identity of the code that does the host and the launch work (Table DC): the engine-path
+	// coefficients are keyed by it, so a release that changes that code is priced by its own.
+	p.Host.CodeID = blissglang.CodeIDOf(coefficient.CodePathHost)
+	p.Graphs.CodeID = blissglang.CodeIDOf(coefficient.CodePathGraphs)
 	note := func(name, value, reason string) {
 		out.Notes = append(out.Notes, plan.Note{Name: name, Value: value, Reason: reason})
 	}

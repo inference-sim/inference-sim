@@ -17,7 +17,8 @@ func TestValidateResolvedRefusesEachMeaninglessSettingByName(t *testing.T) {
 			Recurrent: RecurrentPageAligned}, MoE: MoEPlan{RedundantExperts: 16},
 		DecodeContext: DecodeContextPlan{Combine: CombineAllToAll, Interleave: 16},
 		Engram:        EngramPlacement{Host: true, Shards: 2},
-		Graphs:        GraphPolicy{Decode: LaunchGraph, Other: LaunchPiecewise, Ceiling: 512},
+		Graphs:        GraphPolicy{Decode: LaunchGraph, Other: LaunchPiecewise, Ceiling: 512, CodeID: "0123456789abcdef"},
+		Host:          HostPlan{CodeID: "fedcba9876543210"},
 		Drafts:        DraftPolicy{RetainedTokens: 2}, InFlight: 2,
 		Launches: []LaunchChange{{FromTokens: 1, ToTokens: 128, PerLayer: -3}, {FromTokens: 129, ToTokens: 256, PerLayer: -2}}}
 	if err := ok.ValidateResolved(); err != nil {
@@ -27,6 +28,9 @@ func TestValidateResolvedRefusesEachMeaninglessSettingByName(t *testing.T) {
 		field string
 		edit  func(*PoolPlan)
 	}{
+		{"Host.CodeID", func(p *PoolPlan) { p.Host.CodeID = "NotAHash" }},
+		{"Host.CodeID", func(p *PoolPlan) { p.Host.CodeID = "abc" }},
+		{"Graphs.CodeID", func(p *PoolPlan) { p.Graphs.CodeID = "0123456789ABCDEF" }},
 		{"Batch.Requests", func(p *PoolPlan) { p.Batch.Requests = -1 }},
 		{"Batch.Tokens", func(p *PoolPlan) { p.Batch.Tokens = -1 }},
 		{"MaxContext", func(p *PoolPlan) { p.MaxContext = -1 }},

@@ -230,3 +230,39 @@ bound:
 		t.Errorf("another affinity setting is another key, but its missing citation is refused: %v", problems)
 	}
 }
+
+// An engine-path name is one coefficient per code: two entries at one scope that are valid for
+// different CodeIDs never both match (a plan states one CodeID per path), and two that share a
+// CodeID or leave it unstated can. host_cpu partitions entries the same way: x86 and grace hosts
+// never meet.
+func TestCheckOrderedSeparatesEnginePathEntriesByCodeAndHostCPU(t *testing.T) {
+	const idA, idB = "aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"
+	scope := func(cpu ...string) coefficient.Scope {
+		return coefficient.Scope{Hardware: []string{"h200"}, HostCPU: cpu}
+	}
+	e := func(s coefficient.Scope, ids ...string) coefficient.Entry {
+		x := entry("host_output_token", s, vocab.MethodMeasured)
+		x.CodeIDs = ids
+		return x
+	}
+	for _, c := range []struct {
+		name string
+		a, b coefficient.Entry
+		bad  bool
+	}{
+		{"different CodeIDs", e(scope("x86"), idA), e(scope("x86"), idB), false},
+		{"the same CodeID", e(scope("x86"), idA), e(scope("x86"), idA), true},
+		{"one CodeID in common", e(scope("x86"), idA, idB), e(scope("x86"), idB), true},
+		{"one entry unkeyed", e(scope("x86"), idA), e(scope("x86")), true},
+		{"different host CPUs", e(scope("x86"), idA), e(scope("grace"), idA), false},
+		{"a host CPU and none", e(scope("x86"), idA), e(scope(), idA), false},
+	} {
+		sets := map[string]*coefficient.Set{
+			"a": {Name: "a", Coefficients: []coefficient.Entry{c.a}},
+			"b": {Name: "b", Coefficients: []coefficient.Entry{c.b}},
+		}
+		if got := CheckOrdered(sets); (len(got) > 0) != c.bad {
+			t.Errorf("%s: problems %v, want refused=%v", c.name, got, c.bad)
+		}
+	}
+}

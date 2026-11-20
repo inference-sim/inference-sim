@@ -436,6 +436,10 @@ type GraphPolicy struct {
 	// Ceiling is the largest token count a captured graph covers; a step above it launches
 	// eagerly. 0 is none.
 	Ceiling units.Tokens
+	// CodeID identifies the engine's graph-capture and launch code that the launch costs depend on
+	// (engines/*/code_paths.json): the key of the host_launch_* and host_replay_graph_* coefficients.
+	// Empty means the engine states none, and then only an unkeyed coefficient prices a launch.
+	CodeID string
 }
 
 // GraphMode is how captured graphs are keyed.
@@ -532,6 +536,11 @@ type HostPlan struct {
 	// from its own settings; what a request asks of it is the cost model's answer
 	// (kernel.HostDemand). The zero value is no queue.
 	Admission AdmissionQueue
+	// CodeID identifies the engine's host and scheduler code that admission, per-token, completion
+	// and scheduler costs depend on (engines/*/code_paths.json): the key of the host_admission_*,
+	// host_output_token, host_completion and host_step_per_request coefficients. Empty means the
+	// engine states none, and then only an unkeyed coefficient prices that work.
+	CodeID string
 }
 
 // AdmissionQueue is Servers independent first-in first-out queues, each served by

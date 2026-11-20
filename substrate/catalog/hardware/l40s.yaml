@@ -10,3 +10,5 @@ _comment_sm: 'SMCount is the count of enabled Streaming Multiprocessors on the A
 SMCount: 142
 _comment_cc: "ComputeCapability is the CUDA compute capability NVIDIA lists for this part (https://developer.nvidia.com/cuda-gpus). A model graph that differs by GPU generation resolves its architecture overlay by the major version, so a chip that states none cannot run such a graph."
 ComputeCapability: "8.9"
+_comment_host_cpu: "HostCPU is the architecture of the CPU that drives the GPUs, the packaging fact an engine-path coefficient (host, scheduler and launch cost) is scoped by (coefficient.Scope.HostCPU). CAVEAT: this is a PCIe card and NVIDIA's product pages state no host CPU for it (checked: the product page and the NVIDIA-Certified Systems page name none). x86 is this catalog's packaging convention for a PCIe server part, not a vendor statement; it is recorded so that the engine-path coefficients already carried for this chip keep applying to it, and is to be replaced by a cited figure when a measured host is available."
+HostCPU: x86

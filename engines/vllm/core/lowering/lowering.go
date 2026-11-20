@@ -21,6 +21,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 	subrules "github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
@@ -434,6 +435,11 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 	}
 
 	p.Host.NativeFrontend = eng.RustFrontend()
+
+	// The identity of the code that does the host and the launch work (Table DC): the engine-path
+	// coefficients are keyed by it, so a release that changes that code is priced by its own.
+	p.Host.CodeID = blisvllm.CodeIDOf(coefficient.CodePathHost)
+	p.Graphs.CodeID = blisvllm.CodeIDOf(coefficient.CodePathGraphs)
 
 	// The CUDA graph mode, per batch (vllm/config/compilation.py:604-640;
 	// vllm/v1/cudagraph_dispatcher.py:233-310 at v0.31.0). FULL_AND_PIECEWISE is v0.31.0's

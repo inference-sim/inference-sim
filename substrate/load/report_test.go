@@ -471,3 +471,38 @@ func TestARouterSubstitutionIsCheckedAgainstTheTableAtTheRoutersBuild(t *testing
 		}
 	}
 }
+
+// An engine-path entry reaches the Result with the CodeIDs it is valid for and the host CPUs it
+// is scoped to, is copied (the report does not follow the caller's slice), and two entries that
+// differ only in their CodeIDs are two rows in the order the Result validator requires.
+func TestAnEnginePathEntryReachesTheResultWithItsCodeIDs(t *testing.T) {
+	d, err := Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := func(id string) coefficient.Entry {
+		return coefficient.Entry{Name: "host_output_token", Value: 45.9, Method: "measured",
+			Scope:   coefficient.Scope{Hardware: []string{"h200"}, HostCPU: []string{"x86"}},
+			CodeIDs: []string{id}}
+	}
+	b, a := mk("bbbbbbbbbbbbbbbb"), mk("aaaaaaaaaaaaaaaa")
+	recordEntry(d, "cost-model-host-overheads", b, false)
+	recordEntry(d, "cost-model-host-overheads", a, false)
+	b.CodeIDs[0] = "changed"
+	se := d.Report().Result()
+	if len(se.Coefficients) != 2 {
+		t.Fatalf("got %d rows, want one per CodeID: %+v", len(se.Coefficients), se.Coefficients)
+	}
+	if got := se.Coefficients[0].CodeIDs; !reflect.DeepEqual(got, []string{"aaaaaaaaaaaaaaaa"}) {
+		t.Errorf("first row code_ids = %v", got)
+	}
+	if got := se.Coefficients[1].CodeIDs; !reflect.DeepEqual(got, []string{"bbbbbbbbbbbbbbbb"}) {
+		t.Errorf("second row code_ids = %v (the report followed the caller's slice?)", got)
+	}
+	if se.Coefficients[0].Scope.HostCPU[0] != "x86" {
+		t.Errorf("host_cpu was dropped: %+v", se.Coefficients[0].Scope)
+	}
+	if se.ClosenessVersion == 0 {
+		t.Error("the report of whole entries is not marked with the closeness version")
+	}
+}

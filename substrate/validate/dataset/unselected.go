@@ -54,7 +54,7 @@ func FindUnselected(sets map[string]*coefficient.Set, selected []result.Selected
 	picked := map[string]bool{}
 	for _, s := range selected {
 		for _, c := range s.Coefficients {
-			e := coefficient.Entry{Name: c.Name, Scope: c.Scope, Method: c.Method, KernelImpls: c.KernelImpls}
+			e := coefficient.Entry{Name: c.Name, Scope: c.Scope, Method: c.Method, KernelImpls: c.KernelImpls, CodeIDs: c.CodeIDs}
 			picked[c.Set+"\x00"+e.Identity()] = true
 		}
 	}

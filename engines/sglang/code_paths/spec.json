@@ -1,0 +1,92 @@
+{
+  "_comment": "The closure of SGLang code that the engine-path costs depend on, for the release named below. People edit this file; gen_code_paths.py (blis-substrate tools/codepaths) refuses a function that is not in the source and hashes the rest into code_paths.json. host: the work host_admission_*, host_output_token, host_completion and host_step_per_request price. graphs: the launch work host_launch_* and host_replay_graph_per_step price. Add a function here when a cost starts to depend on it; its code then changes the path's CodeID.",
+  "engine": {
+    "kind": "sglang",
+    "version": "0.5.23",
+    "commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+    "tag": "v0.5.23",
+    "repo": "https://github.com/sgl-project/sglang"
+  },
+  "paths": {
+    "host": [
+      {
+        "id": "python/sglang/srt/managers/tokenizer_manager.py::TokenizerManager._tokenize_one_request",
+        "why": "tokenizes a request's prompt: host_admission_per_token, host_admission_per_request"
+      },
+      {
+        "id": "python/sglang/srt/managers/tokenizer_manager.py::TokenizerManager._create_tokenized_object",
+        "why": "builds the tokenized request sent to the scheduler: host_admission_per_request"
+      },
+      {
+        "id": "python/sglang/srt/managers/tokenizer_manager.py::TokenizerManager._handle_batch_output",
+        "why": "receives a step's detokenized outputs per request: host_output_token"
+      },
+      {
+        "id": "python/sglang/srt/managers/detokenizer_manager.py::DetokenizerManager.handle_batch_token_id_out",
+        "why": "the detokenizer process's entry for a step's tokens: host_output_token"
+      },
+      {
+        "id": "python/sglang/srt/managers/detokenizer_manager.py::DetokenizerManager._decode_batch_token_id_output",
+        "why": "incremental detokenization of each emitted token: host_output_token"
+      },
+      {
+        "id": "python/sglang/srt/managers/scheduler.py::Scheduler.handle_generate_request",
+        "why": "the scheduler's admission of a request: host_admission_per_request"
+      },
+      {
+        "id": "python/sglang/srt/managers/scheduler.py::Scheduler.get_next_batch_to_run",
+        "why": "the scheduler's per-step choice of work: host_step_per_request"
+      },
+      {
+        "id": "python/sglang/srt/managers/scheduler.py::Scheduler.get_new_batch_prefill",
+        "why": "the scheduler's per-step, per-request prefill batch formation: host_step_per_request"
+      },
+      {
+        "id": "python/sglang/srt/managers/scheduler_components/batch_result_processor.py::SchedulerBatchResultProcessor.process_batch_result_decode",
+        "why": "the scheduler's per-step, per-request handling of decode results: host_step_per_request"
+      },
+      {
+        "id": "python/sglang/srt/managers/scheduler_components/batch_result_processor.py::SchedulerBatchResultProcessor.process_batch_result_prefill",
+        "why": "the scheduler's per-step, per-request handling of prefill results: host_step_per_request"
+      },
+      {
+        "id": "python/sglang/srt/managers/scheduler_components/output_streamer.py::SchedulerOutputStreamer.stream_output",
+        "why": "builds the per-step output sent to the detokenizer: host_output_token"
+      },
+      {
+        "id": "python/sglang/srt/managers/schedule_batch.py::Req._check_token_based_finish",
+        "why": "decides a request has finished after a token: host_completion"
+      },
+      {
+        "id": "python/sglang/srt/mem_cache/common.py::release_kv_cache",
+        "why": "the teardown of a finished request: host_completion"
+      }
+    ],
+    "graphs": [
+      {
+        "id": "python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py::DecodeCudaGraphRunner.can_run_graph",
+        "why": "decides whether a decode step replays a captured graph or runs eagerly"
+      },
+      {
+        "id": "python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py::DecodeCudaGraphRunner.load_batch",
+        "why": "stages a step into a captured graph's buffers before replay: host_replay_graph_per_step"
+      },
+      {
+        "id": "python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py::DecodeCudaGraphRunner._copy_replay_inputs",
+        "why": "copies a step's inputs into the graph: host_replay_graph_per_step"
+      },
+      {
+        "id": "python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py::DecodeCudaGraphRunner.execute",
+        "why": "replays the captured graph: host_replay_graph_per_step"
+      },
+      {
+        "id": "python/sglang/srt/model_executor/runner/eager_runner.py::EagerRunner._execute_decode",
+        "why": "the eager decode path: host_launch_per_kernel, host_launch_eager_per_layer"
+      },
+      {
+        "id": "python/sglang/srt/model_executor/runner/eager_runner.py::EagerRunner._execute_extend",
+        "why": "the eager prefill path: host_launch_per_kernel, host_launch_eager_per_layer"
+      }
+    ]
+  }
+}

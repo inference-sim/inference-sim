@@ -1,0 +1,112 @@
+{
+  "kind": "CodePathTable",
+  "engine": {
+    "kind": "vllm",
+    "version": "0.33.0",
+    "commit": "4ba787ec9959e566d3b587a796dff07673324da5"
+  },
+  "paths": [
+    {
+      "path": "host",
+      "code_id": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+      "functions": [
+        {
+          "id": "vllm/renderers/base.py::BaseRenderer._tokenize_prompt",
+          "source": "vllm/renderers/base.py:667@4ba787ec",
+          "hash": "7dcdc602654c4863ae5e1e126f56106381257c28ac5fcf0fc5c8b2870a1bdb82"
+        },
+        {
+          "id": "vllm/v1/core/sched/scheduler.py::Scheduler._free_request",
+          "source": "vllm/v1/core/sched/scheduler.py:3031@4ba787ec",
+          "hash": "51e03c07572a642ffd921568f47a27830490fe70e08c099cc9f243559e4c120b"
+        },
+        {
+          "id": "vllm/v1/core/sched/scheduler.py::Scheduler._update_request_with_output",
+          "source": "vllm/v1/core/sched/scheduler.py:2744@4ba787ec",
+          "hash": "fd3f4187e47f99dce9f0858c34a798715f10f834c1226a21950315a251549344"
+        },
+        {
+          "id": "vllm/v1/core/sched/scheduler.py::Scheduler.finish_requests",
+          "source": "vllm/v1/core/sched/scheduler.py:2964@4ba787ec",
+          "hash": "f864396b5dfeb3898ab3d1e2acd05e36fac109f6646916bfaf7218f9184f305c"
+        },
+        {
+          "id": "vllm/v1/core/sched/scheduler.py::Scheduler.schedule",
+          "source": "vllm/v1/core/sched/scheduler.py:699@4ba787ec",
+          "hash": "d5f13331cb600f970a151e71e3a5d23aa5632af433a11076a99acc5a696d1e55"
+        },
+        {
+          "id": "vllm/v1/core/sched/scheduler.py::Scheduler.update_from_output",
+          "source": "vllm/v1/core/sched/scheduler.py:2259@4ba787ec",
+          "hash": "765f6404dc52185623fdb930f7369c3136eada657ab639a26e5a33e9dac03fe2"
+        },
+        {
+          "id": "vllm/v1/engine/async_llm.py::AsyncLLM.add_request",
+          "source": "vllm/v1/engine/async_llm.py:397@4ba787ec",
+          "hash": "92643484671f7333f1f053c84d5fff6561a88e705d793145aee13cb331df1b1d"
+        },
+        {
+          "id": "vllm/v1/engine/core.py::EngineCore.preprocess_add_request",
+          "source": "vllm/v1/engine/core.py:1126@4ba787ec",
+          "hash": "e347aaa23d79bada779b7dcc901effff5dd2c1d8caf975d8591f3ac6e54ab85f"
+        },
+        {
+          "id": "vllm/v1/engine/detokenizer.py::BaseIncrementalDetokenizer.update",
+          "source": "vllm/v1/engine/detokenizer.py:96@4ba787ec",
+          "hash": "17985bfb2b23dce67ea556653de4293dc4d4cb3991f9ece591c9fbe411623b81"
+        },
+        {
+          "id": "vllm/v1/engine/detokenizer.py::FastIncrementalDetokenizer.decode_next",
+          "source": "vllm/v1/engine/detokenizer.py:222@4ba787ec",
+          "hash": "661e8554a7fdde6de19f99ee52af0f24bdb7c3e62794d086e7099bf0b47d6f09"
+        },
+        {
+          "id": "vllm/v1/engine/input_processor.py::InputProcessor.process_inputs",
+          "source": "vllm/v1/engine/input_processor.py:373@4ba787ec",
+          "hash": "eb02a061e8b8d1fbed4403260f70e9c4df3ebc904c58eaed5e50f9932bb216f5"
+        },
+        {
+          "id": "vllm/v1/engine/output_processor.py::OutputProcessor._update_stats_from_finished",
+          "source": "vllm/v1/engine/output_processor.py:1024@4ba787ec",
+          "hash": "91ce9b2c2c751e4b241eb1f302afeabaa56d1b22376efa3944c16cee9361b411"
+        },
+        {
+          "id": "vllm/v1/engine/output_processor.py::OutputProcessor.process_outputs",
+          "source": "vllm/v1/engine/output_processor.py:728@4ba787ec",
+          "hash": "349508dd5a005d32dfac3d3b379a85d93d0039022586901698b74ecb7c7f4b04"
+        },
+        {
+          "id": "vllm/v1/engine/output_processor.py::RequestState.make_request_output",
+          "source": "vllm/v1/engine/output_processor.py:354@4ba787ec",
+          "hash": "40f1eb7b28cd63fe16fb235f8efc4e6ce5a981e11c0236097b5a697ee7aecbdc"
+        }
+      ]
+    },
+    {
+      "path": "graphs",
+      "code_id": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+      "functions": [
+        {
+          "id": "vllm/compilation/cuda_graph.py::CUDAGraphWrapper.__call__",
+          "source": "vllm/compilation/cuda_graph.py:235@4ba787ec",
+          "hash": "bb54104376ccebdd22a2faee655267f6d9ff23c83bc48af88cbaa38c7b1378f9"
+        },
+        {
+          "id": "vllm/v1/cudagraph_dispatcher.py::CudagraphDispatcher._create_padded_batch_descriptor",
+          "source": "vllm/v1/cudagraph_dispatcher.py:130@4ba787ec",
+          "hash": "30c52dcfe3e4bc1280d0b37f15951099880329926493b220e380c8fff44de2cc"
+        },
+        {
+          "id": "vllm/v1/cudagraph_dispatcher.py::CudagraphDispatcher.dispatch",
+          "source": "vllm/v1/cudagraph_dispatcher.py:233@4ba787ec",
+          "hash": "a3afb3bef5d9275a798a3ea4bb77d393ffc0592cf2ca33dac2cbd9532c85cab2"
+        },
+        {
+          "id": "vllm/v1/worker/gpu_model_runner.py::GPUModelRunner._determine_batch_execution_and_padding",
+          "source": "vllm/v1/worker/gpu_model_runner.py:3684@4ba787ec",
+          "hash": "e6917bf51a8bba5450a3969a7fe63d701c0a46387c246b8d5d7b9a3ca2949a26"
+        }
+      ]
+    }
+  ]
+}

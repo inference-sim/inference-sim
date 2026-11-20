@@ -244,12 +244,19 @@ func (s SelectedEntries) validate(p *validate.Problems) {
 			p.Field(at+".method", "%q is not a registry method", c.Method)
 		}
 		key := c.Set + "\x00" + c.Name + "\x00" + string(c.Method) + "\x00" + c.Scope.Key() + "\x00" + coefficient.DescribeImpls(c.KernelImpls)
+		if len(c.CodeIDs) > 0 {
+			key += "\x00" + coefficient.DescribeCodeIDs(c.CodeIDs)
+		}
 		if i > 0 && key <= prev {
 			p.Field(at, "coefficients are listed once each, sorted by set, name, method, scope and kernel implementations")
 		}
 		prev = key
 		read[c.File] = true
 		coefficient.ValidateKernelImpls(p, at+".kernel_impls", c.KernelImpls)
+		coefficient.ValidateCodeIDs(p, at+".code_ids", c.CodeIDs)
+		if len(c.CodeIDs) > 0 && coefficient.CodePathOf(c.Name) == "" {
+			p.Field(at+".code_ids", "%q prices no engine-path code, so a code key on it could never match", c.Name)
+		}
 		coefficient.ValidateFitRange(p, at+".fit_range", c.FitRange)
 		if iv := c.CI95; iv != nil && (math.IsNaN(iv.Low) || math.IsNaN(iv.High) || iv.Low > iv.High) {
 			p.Field(at+".ci95", "must be an interval [low, high] with low not above high, got [%v, %v]", iv.Low, iv.High)
@@ -267,7 +274,7 @@ func (s SelectedEntries) validate(p *validate.Problems) {
 		if s.ClosenessVersion == 0 && (len(c.Priced) > 0 || c.KernelMatch != "" || len(c.MeasuredOn) > 0) {
 			p.Field(at, "states the implementation it priced, but selected_entries.closeness_version is absent")
 		}
-		if s.ClosenessVersion == 0 && (len(c.KernelImpls) > 0 || len(c.FitRange) > 0 || c.CI95 != nil || c.Extrapolated || c.Unidentified) {
+		if s.ClosenessVersion == 0 && (len(c.KernelImpls) > 0 || len(c.CodeIDs) > 0 || len(c.FitRange) > 0 || c.CI95 != nil || c.Extrapolated || c.Unidentified) {
 			p.Field(at, "states closeness data, but selected_entries.closeness_version is absent: without it a reader cannot tell an omitted flag from false")
 		}
 		if c.Extrapolated && len(c.FitRange) == 0 {

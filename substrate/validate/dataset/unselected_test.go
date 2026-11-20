@@ -115,3 +115,25 @@ func TestAReportWithoutClosenessDataIsRefused(t *testing.T) {
 		t.Fatalf("a report without closeness data was read; it listed %v", names(got))
 	}
 }
+
+// A conformance run that selected an engine-path entry names the CodeIDs it is valid for, and the
+// entry is accounted for only by a selection that names them: a report of the entry for another
+// code does not account for it.
+func TestAnEnginePathEntryIsAccountedForByItsOwnCodeIDs(t *testing.T) {
+	const idA, idB = "aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"
+	at := func(id string) coefficient.Entry {
+		return coefficient.Entry{Name: "host_output_token", Method: vocab.MethodMeasured,
+			Scope: coefficient.Scope{Hardware: []string{"h200"}}, CodeIDs: []string{id}}
+	}
+	sets := map[string]*coefficient.Set{"host": {Name: "host", Coefficients: []coefficient.Entry{at(idA), at(idB)}}}
+	picked := at(idA)
+	selected := []result.SelectedEntries{{ClosenessVersion: result.ClosenessVersion, Coefficients: []result.SelectedCoefficient{
+		{Set: "host", Name: picked.Name, Method: picked.Method, Scope: picked.Scope, CodeIDs: picked.CodeIDs}}}}
+	got, err := FindUnselected(sets, selected, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Entry.CodeIDs[0] != idB {
+		t.Errorf("unselected = %v, want only the entry valid for %s", got, idB)
+	}
+}
