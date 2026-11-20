@@ -53,7 +53,7 @@ func FirstPoolSettingsOf(scenario string, s kernelmodel.Settings) (FirstPoolSett
 // set aside (the LoRA adapter reservation, which vLLM takes beside the weights before it profiles
 // the KV pool). It refuses a pool whose budget cannot be sized, or whose window no longer fits.
 func KVBlocksReserving(scenario string, m *kernelmodel.Model, reservedBytes int64) (int64, error) {
-	s, err := m.SettingsReserving(reservedBytes)
+	s, err := m.SettingsCheckedByGroupsReserving(reservedBytes)
 	if err != nil {
 		return 0, fmt.Errorf("scenario %q with a %d-byte LoRA adapter reservation: %v", scenario, reservedBytes, err)
 	}

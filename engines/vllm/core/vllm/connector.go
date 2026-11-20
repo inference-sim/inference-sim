@@ -144,13 +144,19 @@ func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.S
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
 	cfg := nixl.Default()
-	cfg.PrefillBackoff = nixl.Backoff(spec, s.KV.PrefixReplayTokens() > 0)
+	hasMamba := false
+	for g := 0; g < s.KV.NumGroups(); g++ {
+		hasMamba = hasMamba || s.KV.GroupSpec(g).Kind == kv.Mamba
+	}
+	cfg.PrefillBackoff = nixl.Backoff(spec, hasMamba, s.KV.PrefixReplayTokens() > 0)
 	for g := 0; g < s.KV.NumGroups(); g++ {
 		// blocks_per_sw reads the window of a SlidingWindowSpec (SlidingWindowMLASpec is one) and the
 		// group's own block size (base_scheduler.py:143-153@5df63a72).
 		grp := nixl.Group{BlockSize: s.KV.GroupBlockSize(g)}
 		if spec := s.KV.GroupSpec(g); spec.Kind == kv.SlidingWindow || spec.Kind == kv.SlidingWindowMLA {
 			grp.Window = spec.Window
+		} else if spec.Kind == kv.Mamba {
+			grp.SSM, grp.SpecBlocks = true, spec.MambaSpeculativeBlocks
 		}
 		cfg.Groups = append(cfg.Groups, grp)
 	}

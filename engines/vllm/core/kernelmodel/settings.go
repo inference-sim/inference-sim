@@ -69,11 +69,17 @@ func (m *Model) Settings() (Settings, error) { return m.SettingsReserving(0) }
 // sliding-window layers of 62 -- it refuses a pool vLLM starts, so a group-aware caller skips it.
 // A model with no KV groups to check keeps it.
 func (m *Model) SettingsCheckedByGroups() (Settings, error) {
+	return m.SettingsCheckedByGroupsReserving(0)
+}
+
+// SettingsCheckedByGroupsReserving is SettingsCheckedByGroups with reservedBytes of each rank's
+// HBM set aside before the KV budget is sized (see KVBudgetReserving).
+func (m *Model) SettingsCheckedByGroupsReserving(reservedBytes int64) (Settings, error) {
 	runs, err := m.KVLayers()
 	if err != nil {
 		return Settings{}, err
 	}
-	return m.settings(0, len(runs) == 0)
+	return m.settings(reservedBytes, len(runs) == 0)
 }
 
 // SettingsReserving is Settings with reservedBytes of each rank's HBM set aside before the KV

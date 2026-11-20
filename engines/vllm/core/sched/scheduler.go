@@ -434,16 +434,18 @@ func (s *Scheduler) SetConnector(c Connector, conf ConnectorConfig) error {
 	}
 	for g := 0; g < s.KV.NumGroups(); g++ {
 		spec := s.KV.GroupSpec(g)
-		packed := spec.Kind == kv.SlidingWindowMLA || spec.Kind == kv.CircularBuffer || spec.BlockSize != 0
-		if (spec.Kind != kv.FullAttention && spec.Kind != kv.SlidingWindow && !packed) || (packed && !caps.PackedGroups) {
+		mamba := spec.Kind == kv.Mamba
+		packed := !mamba && (spec.Kind == kv.SlidingWindowMLA || spec.Kind == kv.CircularBuffer || spec.BlockSize != 0)
+		if (spec.Kind != kv.FullAttention && spec.Kind != kv.SlidingWindow && !packed && !mamba) ||
+			(packed && !caps.PackedGroups) || (mamba && !caps.MambaGroups) {
 			// A connector not diff-tested beside a bounded-replay window, a ring or a group of its own
 			// block size reaches code its oracle has not run: the replay window a load restores
 			// (_load_restores_replay_window, scheduler.py:3094-3101) and the per-group transfer
-			// clipping. Mamba groups are not modelled at all (blis-vllm#7).
+			// clipping; a Mamba group reaches the state-block clip and the external allocation.
 			return fmt.Errorf("sched: a KV connector beside KV cache group %d (%+v) is not modelled for this connector: "+
 				"only full attention and sliding windows at the engine's block size are (%s)", g, spec, connectorGroupIssue)
 		}
-		if packed {
+		if packed || mamba {
 			if _, ok := c.(GroupLoader); !ok {
 				return fmt.Errorf("sched: a KV connector beside KV cache group %d (%+v) must state the groups its load "+
 					"restores (get_loaded_kv_cache_group_ids)", g, spec)

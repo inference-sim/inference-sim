@@ -297,7 +297,7 @@ func configure(t *testing.T, sc scenario) setup {
 				t.Fatal(err)
 			}
 			ncfg := nixl.Default()
-			ncfg.PrefillBackoff = nixl.Backoff(spec, false)
+			ncfg.PrefillBackoff = nixl.Backoff(spec, false, false)
 			if v, ok := ex["kv_recompute_threshold"].(float64); ok {
 				ncfg.RecomputeThreshold = int(v)
 			}

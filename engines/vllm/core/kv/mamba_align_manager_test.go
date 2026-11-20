@@ -126,3 +126,33 @@ func TestManagerMambaAlign_RefusesPartialHashHitsAtConstruction(t *testing.T) {
 	NewManagerWith(20, 4, 64, true, 0, Options{Groups: []Group{
 		{Kind: FullAttention, BlockSize: 4}, {Kind: Mamba, MambaCacheMode: "align", BlockSize: 8}}})
 }
+
+// A decoder that pulls a Mamba request's prompt over a KV connector holds, beside the nulls of
+// the tokens it need not keep, the one real block that ends the table (the state of the last
+// token it loaded; SingleTypeKVCacheManager.allocate_external_computed_blocks, which
+// MambaManager does not override), then allocates the tokens it computes itself. Its blocks
+// all return to the pool on Free.
+func TestManagerMambaAlign_ExternalComputedTokensHoldTheStateBlock(t *testing.T) {
+	m := NewManagerWith(20, alignBS, 64, true, 0, Options{Groups: []Group{
+		{Kind: Mamba, MambaCacheMode: "align", MambaSpeculativeBlocks: 2}}})
+	free := m.Pool.NumFree()
+	n := 3*alignBS - 1
+	if !m.Allocate("d", Alloc{External: n, New: 1, NumTokens: n + 1, FullSequenceMustFit: true,
+		Run: StoredRun{NumPromptTokens: n + 1}}) {
+		t.Fatal("a decoder pulling the prompt's state was refused")
+	}
+	table := m.GroupBlocks(0, "d")
+	if len(table) < 3 {
+		t.Fatalf("table %q holds fewer than the 3 blocks that cover %d tokens", shape(table), n+1)
+	}
+	if last := table[len(table)-1]; last == nil || last.Null {
+		t.Errorf("table %q ends in a null block, want the real block that holds the state", shape(table))
+	}
+	if m.Pool.NumFree() >= free {
+		t.Errorf("free blocks %d, want fewer than %d after holding the state", m.Pool.NumFree(), free)
+	}
+	m.Free("d")
+	if m.Pool.NumFree() != free {
+		t.Errorf("free after Free = %d, want %d: a pulled request must return every block it took", m.Pool.NumFree(), free)
+	}
+}

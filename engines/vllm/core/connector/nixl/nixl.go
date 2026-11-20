@@ -42,8 +42,12 @@ type Config struct {
 
 // Group is what NIXL's block clipping reads of one KV cache group: a sliding window's size, in
 // tokens, and the group's block size. Window is 0 for every group that is not a sliding window.
+// SSM marks a Mamba group, whose SpecBlocks trailing scratch blocks the exchange drops
+// (MambaManager.Params.num_speculative_blocks, base_scheduler.py:158-165).
 type Group struct {
 	Window, BlockSize int
+	SSM               bool
+	SpecBlocks        int
 }
 
 // Default is the defaults kv_connector_extra_config leaves (base_scheduler.py:160-175).
@@ -53,11 +57,11 @@ func Default() Config { return Config{RecomputeThreshold: 64} }
 // a bounded-replay group else 0, num_prefill_lookahead_tokens - 1). A multi-module MTP drafter's
 // lookahead window stays off the prefiller, which would otherwise embed unverified drafts in the
 // MTP layers' KV (:391-394); DeepSeek V4.1's bounded-replay window is not replayed after a P/D
-// load, so it is laid out for the one token the decoder recomputes. Mamba groups are not modelled
-// (SetConnector refuses them), so the floor is boundedReplay's.
-func Backoff(spec sched.Spec, boundedReplay bool) int {
+// load, so it is laid out for the one token the decoder recomputes. A Mamba model's decoder derives
+// h(N) from h(N-1), so the prefiller stops one token short (:379-394).
+func Backoff(spec sched.Spec, hasMamba, boundedReplay bool) int {
 	floor := 0
-	if boundedReplay {
+	if hasMamba || boundedReplay {
 		floor = 1
 	}
 	return max(floor, spec.PrefillLookahead-1)
@@ -73,19 +77,34 @@ func (c Config) blocksPerWindow(g int) int {
 	return (c.Groups[g].Window+c.Groups[g].BlockSize-1)/c.Groups[g].BlockSize + 1
 }
 
-// ClipBlocks is get_exchange_clipped_blocks (base_scheduler.py:262-300) for a hybrid layout: every
-// full-attention group's blocks, and the last blocksPerWindow blocks of each sliding window (the
+// ClipBlocks is get_exchange_clipped_blocks (base_scheduler.py:262-305) for a hybrid layout: every
+// full-attention group's blocks, the last blocksPerWindow blocks of each sliding window (the
 // manager allocates a block for the whole sequence and frees the out-of-window ones only after the
-// request_finished hook). With no sliding window it is the identity.
+// request_finished hook), and a Mamba group's one state-bearing block (clip_ssm_state_blocks,
+// kv_connector/utils.py:89-96). With neither it is the identity.
 func (c Config) ClipBlocks(ids [][]int) [][]int {
 	out := make([][]int, len(ids))
 	for g, blocks := range ids {
 		if n := c.blocksPerWindow(g); n > 0 && len(blocks) > n {
 			blocks = blocks[len(blocks)-n:]
+		} else if g < len(c.Groups) && c.Groups[g].SSM {
+			blocks = clipSSMStateBlocks(blocks, c.Groups[g].SpecBlocks)
 		}
 		out[g] = blocks
 	}
 	return out
+}
+
+// clipSSMStateBlocks is clip_ssm_state_blocks: drop the speculative scratch slots, at least the
+// running-state slot staying, and keep only that slot.
+func clipSSMStateBlocks(blocks []int, numSpecBlocks int) []int {
+	if len(blocks) == 0 {
+		return blocks
+	}
+	if scratch := min(numSpecBlocks, len(blocks)-1); scratch > 0 {
+		blocks = blocks[:len(blocks)-scratch]
+	}
+	return blocks[len(blocks)-1:]
 }
 
 // CheckWorker refuses what vLLM's NIXL worker refuses at start-up for the parallel layout
@@ -172,7 +191,8 @@ func (s *Scheduler) truncateForPrefill(r *sched.Request) {
 // ConnectorModels implements sched.ConnectorCapabilities: what this model of NIXL's scheduler
 // side is diff-tested beside, against vLLM v0.32.0 (oracle/run_connector.py).
 func (s *Scheduler) ConnectorModels() sched.Capabilities {
-	return sched.Capabilities{HybridGroups: true, Drafters: true, ConcurrentBatches: true, PackedGroups: true}
+	return sched.Capabilities{HybridGroups: true, Drafters: true, ConcurrentBatches: true, PackedGroups: true,
+		MambaGroups: true}
 }
 
 // LoadedGroups implements sched.GroupLoader: NIXL transfers the request's own blocks, so its load

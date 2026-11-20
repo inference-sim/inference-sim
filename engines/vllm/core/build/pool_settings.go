@@ -42,7 +42,7 @@ type PoolSettings struct {
 // policy cannot be read.
 func PoolSettingsOf(scenario string, m *kernelmodel.Model, reservedBytes int64, prefixHit runconfig.KVPrefixHit, f EngineKnobFlags) (PoolSettings, error) {
 	what := string(m.Role()) + " pool"
-	s, err := m.SettingsReserving(reservedBytes)
+	s, err := m.SettingsCheckedByGroupsReserving(reservedBytes)
 	if err != nil {
 		return PoolSettings{}, fmt.Errorf("%s pool: %v", m.Role(), err)
 	}
