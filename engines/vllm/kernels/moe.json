@@ -36,7 +36,8 @@
             "_prepare_expert_assignment": "host-side routing bookkeeping",
             "_weights_host_resident": "a residency predicate",
             "invoke_fused_moe_wna16_triton_kernel": "the weight-only int path, not block FP8",
-            "try_get_optimal_moe_config": "picks the kernel's tile configuration from the configs/ tables, which the hash covers"
+            "try_get_optimal_moe_config": "picks the kernel's tile configuration from the configs/ tables, which the hash covers",
+            "get_moe_configs": "loads the kernel's tile configuration from the configs/ tables, which the hash covers"
           }
         },
         "FLASHINFER_CUTLASS": {
@@ -117,6 +118,10 @@
           "status": "not_cuda",
           "cuda_gated": true,
           "reason": "CPU kernels with AMX-FP8"
+        },
+        "FLASHINFER_MOE_EP_CUTEDSL": {
+          "status": "gap",
+          "issue": "inference-sim/blis-substrate#150"
         }
       },
       "kernels": [
