@@ -67,6 +67,15 @@ func NewEngineInstance(id InstanceID, cfg sim.InstanceConfig, drv *sim.EngineDri
 // When NodePools are absent, this reflects config.GPU (the CLI flag).
 func (i *InstanceSimulator) GPU() string { return i.gpu }
 
+// gpusHeld is the GPUs the instance occupies: those its node pool allocated to it, else its
+// tensor-parallel degree when it was not placed through a pool.
+func (i *InstanceSimulator) gpusHeld() int {
+	if len(i.allocatedGPUIDs) > 0 {
+		return len(i.allocatedGPUIDs)
+	}
+	return i.TPDegree
+}
+
 // Run executes the simulation to completion.
 // Delegates directly to wrapped Simulator.Run().
 //
