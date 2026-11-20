@@ -31,9 +31,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/load"
-	sim "github.com/inference-sim/blis-vllm/compat/engine"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 type Price struct {

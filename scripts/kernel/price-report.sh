@@ -13,7 +13,7 @@ OUT=${2:?output directory}
 BASE=${REPORT_BASE:?commit holding the old testdata/kernel (the parent of the regeneration)}
 HERE=$(cd "$(dirname "$0")/../.." && pwd)
 mkdir -p "$OUT/old-fixtures" "$OUT/attr"
-SUB=$(cd "$HERE" && go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)
+SUB="$HERE/substrate"
 (cd "$HERE" && git archive "$BASE" testdata/kernel) | tar -x -C "$OUT/old-fixtures"
 # v0.15.0's probe: the same probe.go, with repos.go naming directories (its adapter takes them).
 mkdir -p "$OLD_REPO/scripts/kernel/priceprobe"

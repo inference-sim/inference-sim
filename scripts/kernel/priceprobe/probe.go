@@ -7,8 +7,8 @@
 // It uses only kernel APIs both builds have (blis-vllm compat/kernelmodel's Open and
 // Kernel(), the contracts kernel's StepTime, SequenceVariableBytes and FixedBytes), so this
 // file builds in both. repos.go, the one file that differs, builds the adapter's roots: from
-// directories at v0.15.0, through blis-substrate's loader here. The steps are those blis-vllm's own fixture move reported
-// (blis-vllm fe56e4b): decode batches of 1, 32 and 256 sequences at context 4096, one
+// directories at v0.15.0, through the substrate's loader here. The steps are those the vLLM engine's own fixture move reported
+// (the vLLM engine fe56e4b): decode batches of 1, 32 and 256 sequences at context 4096, one
 // prefill of 2048 tokens, the per-sequence KV bytes at 1024 tokens, and the fixed bytes.
 //
 // Usage: go run ./scripts/kernel/priceprobe -scenarios <dir> [-catalog <dir>] [-registry <dir>]
@@ -22,7 +22,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 )
 
 // Price is one fixture's prices. Err is set, and the prices are zero, when the fixture does
