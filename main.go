@@ -4,6 +4,8 @@ package main
 
 import (
 	_ "embed"
+	"os"
+	"runtime/debug"
 
 	"github.com/inference-sim/inference-sim/cmd"
 )
@@ -23,5 +25,8 @@ var stackJSON []byte
 func main() {
 	cmd.SetBundledDefaults(defaultsYAML)
 	cmd.SetBundledStack(stackJSON)
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(400) // the run is allocation-heavy and short; GC was 10-20% of CPU
+	}
 	cmd.Execute()
 }
