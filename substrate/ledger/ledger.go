@@ -52,6 +52,12 @@ func (s SeedRecord) Created() bool { return s.SHA256 != "" }
 type SourceRule struct {
 	CutPoints CutPoints          `yaml:"cut_points"`
 	Legacy    map[Side]CutPoints `yaml:"legacy,omitempty"`
+	// LeftOut lists, sorted, the units of an anchor-only source that have no role: they were
+	// read as training data before the source became an anchor, so they are not anchors
+	// (partition version 2 on; roleholders.go).
+	// The json tag keeps the digest of a rule with no left-out units what it was: prereg pins
+	// hash this struct through encoding/json.
+	LeftOut []string `yaml:"left_out,omitempty" json:"LeftOut,omitempty"`
 }
 
 var hex64 = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -100,6 +106,7 @@ func (c *Config) Validate() error {
 		}
 	}
 	errs = append(errs, c.checkTrainingOnly()...)
+	errs = append(errs, c.checkRoleHolders()...)
 	return errors.Join(errs...)
 }
 

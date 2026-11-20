@@ -57,12 +57,15 @@ func (a *Assigner) LegacySide(source string, u *Unit) (Side, bool) {
 	return s, ok
 }
 
-// Role returns a unit's role. A unit on a legacy side keeps that side, and the draw chooses
+// Role returns a unit's role, or RoleNone for a unit its rule leaves out. A unit on a legacy side keeps that side, and the draw chooses
 // within it with the side's cut-point. Any other unit is drawn with the source's cut-points.
 func (a *Assigner) Role(source string, u *Unit) (Role, error) {
 	rule, ok := a.rules[source]
 	if !ok {
 		return "", fmt.Errorf("source %q has no cut-points in ledger.yaml", source)
+	}
+	if rule.leftOut(u.UnitID) {
+		return RoleNone, nil
 	}
 	rkf, ok := a.roleKeys[source]
 	if !ok {

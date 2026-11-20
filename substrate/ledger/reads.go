@@ -88,7 +88,8 @@ func (c Conflict) String() string {
 // Join is D2's nightly join: it fails if any unit was read under two roles across all
 // consumers. It also fails if any record reads a unit under a role other than the one the
 // seed assigns, when assign is given (inside the gate job), so a consumer that read a held
-// unit as fit is caught even if no other consumer read it.
+// unit as fit is caught even if no other consumer read it. A unit with no assigned role (RoleNone, a unit its
+// rule leaves out) is held to the one-role check alone.
 func Join(records []*Reads, assign func(source, unitID string) (Role, error)) ([]Conflict, error) {
 	by := map[[2]string]map[Role]map[string]bool{}
 	for _, rec := range records {
@@ -124,7 +125,7 @@ func Join(records []*Reads, assign func(source, unitID string) (Role, error)) ([
 			if err != nil {
 				return nil, err
 			}
-			if _, ok := roles[want]; !ok {
+			if _, ok := roles[want]; want != RoleNone && !ok {
 				c.Roles[want] = append(c.Roles[want], "(assigned)")
 				bad = true
 			}

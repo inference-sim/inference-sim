@@ -118,8 +118,9 @@ func ReadPredictions(r io.Reader, want map[string]bool, wantCandidate string) (*
 // are fixed by the seed and the measured data alone, never by the candidate's predictions.
 // The select and error jobs report only for a candidate whose run is on main of this
 // repository, so differencing across a pull request's pushes is not possible: a candidate on
-// main is a merged change, and the number of evaluations is the number of merges. The held
-// role stays pre-registered and counted (design §10.2).
+// main is a merged change, and the number of evaluations is the number of merges. No job
+// reduces held units: the held role is evaluated by the whole-run gate (D9), and the operator
+// level reports method error on validate units, never as accuracy and never to decide a landing.
 type Aggregate struct {
 	Lane   string  `json:"lane"`
 	Metric string  `json:"metric"`
@@ -134,12 +135,13 @@ type Aggregate struct {
 // Report is what a seed-holding job publishes: aggregates only.
 type Report struct {
 	Kind       string      `json:"kind"` // "AggregateReport"
-	Job        string      `json:"job"`  // release, select, error or gate
+	Job        string      `json:"job"`  // release, select or error
 	Candidate  string      `json:"candidate"`
 	Aggregates []Aggregate `json:"aggregates"`
 	// Evaluated is false when no unit of the role was predicted; such a report decides nothing.
 	Evaluated bool `json:"evaluated"`
-	// Evaluation counts this change's evaluations on held units, for the gate (design §10.2).
+	// Evaluation counts this change's evaluations on held units (design §10.2). No operator-level
+	// job sets it; it stays so that a report written before row 26 still decodes.
 	Evaluation int `json:"evaluation,omitempty"`
 }
 

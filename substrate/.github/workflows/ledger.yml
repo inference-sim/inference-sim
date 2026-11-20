@@ -13,7 +13,7 @@ name: ledger
 #              and no network while it predicts. It is handed every unit not on the published
 #              lists and writes one prediction per unit, nothing else (ledger.Predictions,
 #              64 MB at most). It never learns which unit has which role.
-#   select / error / gate
+#   select / error
 #              run only from main, in the environment that holds the seed. Each checks out
 #              main, reads the candidate's predictions as untrusted input with a strict
 #              loader, computes roles, and reduces the predictions on its own role's units to
@@ -22,13 +22,15 @@ name: ledger
 #
 # The select job is started by workflow_run when a "ledger candidate" run completes;
 # workflow_run always runs this file from the default branch, so a pull request cannot change
-# these steps. The error and gate jobs are started by a dispatch on main, and the release job
+# these steps. The error job is started by a dispatch on main, and the release job
 # by a dispatch or the nightly schedule. The dispatch needs write access, not a person: the one
 # step only a ledger owner can take is creating the seed (a release-time step, README).
 # `ledger lint-workflows` (run by ci.yml) refuses any other shape.
 #
-# Operator-level candidates run here. Whole-run candidates run the dashboard's scoring
-# harness and are reduced by accuracy-dashboard's own gate job, with its own seed (§13.5).
+# Operator-level candidates run here, and are reported on select and validate units only: the
+# error job's figures are method error, reported and never a landing decision. There is no
+# operator-level held-out gate. Whole-run candidates run the dashboard's scoring harness and
+# are reduced by accuracy-dashboard's own gate job, with its own seed (§13.5).
 #
 # Every action is pinned by commit (X21).
 
@@ -42,12 +44,12 @@ on:
   workflow_dispatch:
     inputs:
       job:
-        description: "release: write the published lists; error or gate: reduce one candidate run's predictions"
+        description: "release: write the published lists; error: reduce one candidate run's predictions on validate units"
         type: choice
-        options: [release, error, gate]
+        options: [release, error]
         required: true
       run_id:
-        description: "for error and gate: the id of the ledger candidate run whose predictions to reduce"
+        description: "for error: the id of the ledger candidate run whose predictions to reduce"
         type: string
         required: false
 
@@ -196,68 +198,7 @@ jobs:
           name: error-report
           path: ${{ runner.temp }}/report.json
 
-  # The gate job: aggregates on held units, for a pre-registered change (design §10.2, §12.3).
-  # Held aggregates are returned only for a pre-registered change. The pre-registration file
-  # and its automatic check do not exist yet, so a ledger owner starts this job by hand on main
-  # for the candidate run of a change they have checked is pre-registered, and records the
-  # evaluation's count on the pull request (README). No pull request can start it.
-  gate:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.job == 'gate'
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    environment: ledger
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: main
-          persist-credentials: false
-      - uses: ./.github/actions/go-toolchain
-      - name: Fetch the candidate's predictions (untrusted)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.run_id }}
-          REPO_ID: ${{ github.repository_id }}
-        run: |
-          set -euo pipefail
-          case "$RUN_ID" in ''|*[!0-9]*) echo "run_id must be a run id, got '$RUN_ID'" >&2; exit 1 ;; esac
-          # A ledger owner types the id, so the run is checked before its artifact is read: it
-          # must be a successful run of the ledger candidate workflow of this repository, not a
-          # run of another workflow or of a fork.
-          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" \
-            --jq '[.name, .conclusion, (.head_repository.id | tostring)] | join("|")')
-          if [ "$run" != "ledger candidate|success|$REPO_ID" ]; then
-            echo "run $RUN_ID is not a successful ledger candidate run of this repository" >&2
-            exit 1
-          fi
-          mkdir -p "$RUNNER_TEMP/in"
-          # The commit the run was made for, from the Actions API and not from the artifact. The
-          # strict loader refuses predictions whose candidate field is any other commit (X22).
-          sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .head_sha)
-          echo "CANDIDATE_SHA=$sha" >> "$GITHUB_ENV"
-          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name predictions --dir "$RUNNER_TEMP/in"
-      - name: Units and measured values, computed here from main
-        run: |
-          set -euo pipefail
-          go run ./ledger/cmd/ledger candidate-units -out "$RUNNER_TEMP/units.json" catalog/ledger
-          ./ledger/inferencex/restore.sh ix
-          psql -d ix -At -f ledger/inferencex/export.sql -o "$RUNNER_TEMP/rows.jsonl"
-          go run ./ledger/cmd/ledger measured-inferencex -rows "$RUNNER_TEMP/rows.jsonl" -out "$RUNNER_TEMP/measured.json" catalog/ledger
-      - name: Aggregate on held units
-        env:
-          LEDGER_SEED: ${{ secrets.LEDGER_SEED }}
-        run: |
-          go run ./ledger/cmd/ledger aggregate -job gate -role held \
-            -predictions "$RUNNER_TEMP/in/predictions.json" -candidate "$CANDIDATE_SHA" -units "$RUNNER_TEMP/units.json" \
-            -measured "$RUNNER_TEMP/measured.json" -out "$RUNNER_TEMP/report.json" catalog/ledger
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: gate-report
-          path: ${{ runner.temp }}/report.json
-
-  # The gate job's nightly run (D2, D4): the join over every consumer's record of the units it
+  # The nightly run of the join job (D2, D4): the join over every consumer's record of the units it
   # read, checked against the roles the seed gives; and the unit list regenerated from the
   # pinned dump, byte for byte.
   gate-nightly:
