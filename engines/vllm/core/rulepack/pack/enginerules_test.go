@@ -3,13 +3,14 @@
 package pack_test
 
 import (
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 	"reflect"
 	"sort"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/v0_33"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 )
 
 // Each EngineRules method answers from the pack's own data, so a consumer moved from the
@@ -18,7 +19,7 @@ import (
 func TestEngineRulesAnswersFromThePack(t *testing.T) {
 	for _, p := range []*pack.Pack{v0_33.Pack()} {
 		t.Run(p.Version, func(t *testing.T) {
-			var r rules.EngineRules = p
+			var r enginefacts.EngineRules = p
 			if r.EngineVersion() != p.Version {
 				t.Errorf("EngineVersion() = %q, want %q", r.EngineVersion(), p.Version)
 			}
@@ -79,7 +80,7 @@ func TestEngineRulesAnswersFromThePack(t *testing.T) {
 func TestARuleCanBeWrittenOutsideThePackage(t *testing.T) {
 	p := &pack.Pack{Version: "test", Rules: []pack.Rule{{
 		Name: "always", Because: "a test",
-		Check: func(_ pack.Input, out *rules.Problems) { out.RuleWarnf("always", "fired") },
+		Check: func(_ pack.Input, out *validate.Problems) { out.RuleWarnf("always", "fired") },
 	}}}
 	all := p.Check(pack.Input{}).All()
 	if len(all) != 1 || all[0].Rule != "always" {

@@ -8,14 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 )
 
 // What the substrate's KV grouping input can state about block-stride alignment today, and so
 // what the kernel can size a pool with. vLLM v0.32.0 pads each layer's page to its own alignment
 // when the layout is layer-outermost (_get_layer_block_stride, vllm/v1/core/kv_cache_utils.py:
 // 1515-1518@5df63a72) and rounds the summed block once to the lcm of the alignments when it is
-// block-outermost (:1540-1552). rules.KVCacheGroupsInput carries one integer, the lcm, which is
+// block-outermost (:1540-1552). enginefacts.KVCacheGroupsInput carries one integer, the lcm, which is
 // the block-outermost rule and nothing else; the kernel passes none (kernel/caches.go
 // resolveKVPool, pinned substrate f70c6c7).
 //
@@ -31,7 +31,7 @@ import (
 // that case to core/kv's oracle sweep through the kernel, and delete this test.
 func TestSubstrateStatesNoPerLayerStrideAlignment(t *testing.T) {
 	var fields []string
-	for _, typ := range []reflect.Type{reflect.TypeOf(rules.KVCacheGroupsInput{}), reflect.TypeOf(rules.KVCacheLayer{})} {
+	for _, typ := range []reflect.Type{reflect.TypeOf(enginefacts.KVCacheGroupsInput{}), reflect.TypeOf(enginefacts.KVCacheLayer{})} {
 		for i := range typ.NumField() {
 			if strings.Contains(strings.ToLower(typ.Field(i).Name), "align") {
 				fields = append(fields, typ.Name()+"."+typ.Field(i).Name)

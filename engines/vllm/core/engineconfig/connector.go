@@ -7,8 +7,7 @@ package engineconfig
 
 import (
 	"fmt"
-
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 )
 
@@ -72,7 +71,7 @@ func EncodeConnectorOptions(c *ConnectorOptions) (deployment.EngineBlock, error)
 
 // ValidateConnectorOptions is the checks blis-schemas ran on an offload's connector options,
 // with the same messages and paths. at is the offload block's path, "offload".
-func ValidateConnectorOptions(p *rules.Problems, at string, c *ConnectorOptions) {
+func ValidateConnectorOptions(p *validate.Problems, at string, c *ConnectorOptions) {
 	if c == nil {
 		return
 	}

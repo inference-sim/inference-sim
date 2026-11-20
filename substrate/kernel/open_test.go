@@ -6,14 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve"
 	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // openRules stands in for an engine release's rules: OpenInputs only asks whether rules
 // exist for the scenario's release.
-type openRules struct{ rules.EngineRules }
+type openRules struct{ enginefacts.EngineRules }
 
 const openScenario = `kind: Scenario
 name: open-test
@@ -43,7 +43,7 @@ func openRepos(t *testing.T, d *load.Data, body string) (Repos, string) {
 	}
 	return Repos{
 		Scenarios: dir, Data: d,
-		Rules:      func(string) rules.EngineRules { return openRules{} },
+		Rules:      func(string) enginefacts.EngineRules { return openRules{} },
 		DraftModel: noDrafter, Lower: lowerTo(0, 16, 0),
 	}, "s.yaml"
 }

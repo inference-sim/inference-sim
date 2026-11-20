@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/check"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
@@ -47,7 +47,7 @@ func colocated(pl deployment.Parallelism, e engineconfig.Engine) deployment.Pool
 // run fires the pack's rules over a deployment, pairing it with the scenario its pool
 // node counts imply so the cluster-aware rules (custom-allreduce-reachable) have the
 // inventory they read.
-func run(t *testing.T, d *deployment.Deployment, g *model.Graph) *rules.Problems {
+func run(t *testing.T, d *deployment.Deployment, g *model.Graph) *validate.Problems {
 	t.Helper()
 	nodes := 0
 	for _, pl := range d.Pools {
@@ -64,14 +64,14 @@ func run(t *testing.T, d *deployment.Deployment, g *model.Graph) *rules.Problems
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &rules.Problems{}
+	p := &validate.Problems{}
 	for _, r := range Pack().Rules {
 		r.Check(pack.Input{Scenario: s, Deployment: d, Model: g, Packaging: &pk}, p)
 	}
 	return p
 }
 
-func fired(p *rules.Problems, rule string) bool {
+func fired(p *validate.Problems, rule string) bool {
 	for _, it := range p.All() {
 		if it.Rule == rule {
 			return true
@@ -448,16 +448,16 @@ func TestMLAPrefillBackendKnown(t *testing.T) {
 		// severity is the finding's, when it fires: a warning for a name a plugin could register,
 		// an error for one no plugin can, since MLAPrefillBackendEnum.register refuses a name that
 		// is not a Python identifier (vllm/v1/attention/backends/mla/prefill/registry.py:85-86@5df63a72).
-		severity rules.Severity
+		severity validate.Severity
 	}{
 		{"", false, ""}, {"TRTLLM_RAGGED", false, ""}, {"FLASHINFER", false, ""}, {"ROCM_AITER_FA", false, ""},
 		{"flash_attn", false, ""}, // upper-cased before the lookup
 		{"CUSTOM", false, ""},     // a member: a backend registered out of tree takes it
-		{"TRTLLM", true, rules.SeverityWarning}, {"FLASH_MLA", true, rules.SeverityWarning},
-		{"auto", true, rules.SeverityWarning}, {"my_plugin_prefill", true, rules.SeverityWarning},
+		{"TRTLLM", true, validate.SeverityWarning}, {"FLASH_MLA", true, validate.SeverityWarning},
+		{"auto", true, validate.SeverityWarning}, {"my_plugin_prefill", true, validate.SeverityWarning},
 		// Not identifiers once upper-cased, so no plugin can register them: always refused.
-		{"flash-attn", true, rules.SeverityError}, {"1BAD", true, rules.SeverityError},
-		{"FLASH ATTN", true, rules.SeverityError}, {"trtllm.ragged", true, rules.SeverityError},
+		{"flash-attn", true, validate.SeverityError}, {"1BAD", true, validate.SeverityError},
+		{"FLASH ATTN", true, validate.SeverityError}, {"trtllm.ragged", true, validate.SeverityError},
 	} {
 		p := run(t, dep(colocated(deployment.Parallelism{TP: 1, PP: 1, DP: 1},
 			engineconfig.Engine{MLAPrefillBackend: c.backend})), nil)
@@ -586,7 +586,7 @@ func TestDBOThresholdsAtLeastMicrobatches(t *testing.T) {
 // DeepSeek-V4.1 with engram layers.
 func engramGraph() *model.Graph {
 	g := moe224Graph()
-	g.Global.Architecture = rules.ArchDeepseekV41
+	g.Global.Architecture = enginefacts.ArchDeepseekV41
 	g.LayerKinds[0].Nodes = append(g.LayerKinds[0].Nodes, model.Node{
 		Op: model.OpGather, Role: "engram_lookup", Rows: 384006168, RowBytes: 264,
 		RowsPerToken: 24, OutBytesPerToken: 12288, Residency: model.ResidencyHost,
@@ -623,7 +623,7 @@ func TestEngramExcludesDBO(t *testing.T) {
 
 func TestModelSequenceParallel(t *testing.T) {
 	p := Pack()
-	v41 := rules.ArchDeepseekV41
+	v41 := enginefacts.ArchDeepseekV41
 	for _, c := range []struct {
 		name string
 		arch string
@@ -661,7 +661,7 @@ func TestSequenceParallelArchitectureKnown(t *testing.T) {
 		if !fired(p, "sequence-parallel-architecture-known") || !strings.Contains(p.Error(), "."+name+": ") {
 			t.Errorf("%s: an architecture with no rule should warn, naming the field:\n%s", name, p.Error())
 		}
-		g.Global.Architecture = rules.ArchDeepseekV41
+		g.Global.Architecture = enginefacts.ArchDeepseekV41
 		if p := run(t, dep(colocated(pl, engineconfig.Engine{})), g); fired(p, "sequence-parallel-architecture-known") {
 			t.Errorf("%s: V4.1 has a rule in this release:\n%s", name, p.Error())
 		}
@@ -822,7 +822,7 @@ func TestSequenceParallelMoEAgreesWithItsRule(t *testing.T) {
 // off. An architecture without a rule is never on.
 func TestModelSequenceParallelProperties(t *testing.T) {
 	p := Pack()
-	v41 := rules.ArchDeepseekV41
+	v41 := enginefacts.ArchDeepseekV41
 	moes := append(sortedKeys(p.MoEBackends), "")
 	for _, pl := range layoutGrid() {
 		for _, moe := range moes {
@@ -853,7 +853,7 @@ func TestModelSequenceParallelProperties(t *testing.T) {
 func TestDeepseekV41RefusesMTP(t *testing.T) {
 	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1}
 	v41 := moe224Graph()
-	v41.Global.Architecture = rules.ArchDeepseekV41
+	v41.Global.Architecture = enginefacts.ArchDeepseekV41
 	v3 := moe224Graph()
 	v3.Global.Architecture = "DeepseekV3ForCausalLM"
 	for _, m := range mtpMethods {
@@ -870,7 +870,7 @@ func TestDeepseekV41RefusesMTP(t *testing.T) {
 		t.Errorf("dspark refused on V4.1:\n%s", p.Error())
 	}
 	g := moe224Graph()
-	g.Global.Architecture = rules.ArchDeepseekV41
+	g.Global.Architecture = enginefacts.ArchDeepseekV41
 	g.Speculator = &model.Speculator{Method: "mtp", NumSpec: 1, Stack: g.Stack}
 	if p := run(t, dep(colocated(pl, engineconfig.Engine{})), g); !fired(p, "deepseek-v41-refuses-mtp") {
 		t.Errorf("an MTP speculator in the graph accepted on V4.1:\n%s", p.Error())
@@ -883,7 +883,7 @@ func TestEngramConfigArchitectures(t *testing.T) {
 	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1}
 	e := engineconfig.Engine{EngramConfig: &engineconfig.EngramConfig{}}
 	for arch, want := range map[string]string{
-		rules.ArchDeepseekV41: "", "Qwen4ExpForCausalLM": "", "GraniteMoeForCausalLM": "error", "": "warning",
+		enginefacts.ArchDeepseekV41: "", "Qwen4ExpForCausalLM": "", "GraniteMoeForCausalLM": "error", "": "warning",
 	} {
 		g := engramGraph()
 		g.Global.Architecture = arch
@@ -1001,7 +1001,7 @@ func TestModelSequenceParallelCollectives(t *testing.T) {
 		}
 		return ""
 	}
-	v41 := rules.ArchDeepseekV41
+	v41 := enginefacts.ArchDeepseekV41
 	for _, c := range []struct {
 		arch   string
 		emit   model.EmitCondition
@@ -1034,7 +1034,7 @@ func TestDraftEmbeddingReductionIsNotADecoderLayerOne(t *testing.T) {
 	}
 	graph := func(inSlot bool) *model.Graph {
 		g := moe224Graph()
-		g.Global.Architecture = rules.ArchDeepseekV41
+		g.Global.Architecture = enginefacts.ArchDeepseekV41
 		g.Embedding = []model.Node{{Op: model.OpGather, Role: "embed_tokens", Rows: 49155,
 			RowBytes: 3072, RowsPerToken: 1, OutBytesPerToken: 3072, Shard: model.ShardRows}}
 		draft := model.LayerKind{ID: "draft", Nodes: []model.Node{
@@ -1089,7 +1089,7 @@ func TestMoEBackendIsNormalized(t *testing.T) {
 		}
 	}
 	v4 := deployment.Parallelism{TP: 8, PP: 1, DP: 1, EnableExpertParallel: true}
-	if !Pack().ModelSequenceParallel(rules.ArchDeepseekV4, v4, "deep-gemm-mega-moe") {
+	if !Pack().ModelSequenceParallel(enginefacts.ArchDeepseekV4, v4, "deep-gemm-mega-moe") {
 		t.Error("a dashed mega-MoE backend should count as one")
 	}
 }
@@ -1098,7 +1098,7 @@ func TestMoEBackendIsNormalized(t *testing.T) {
 // so the rule stays silent for it on a layout where the engine-wide rule is on.
 func TestSequenceParallelMoEImpliedSkipsOwnRule(t *testing.T) {
 	pl := deployment.Parallelism{TP: 2, PP: 2, DP: 2, EnableExpertParallel: true}
-	for arch, want := range map[string]bool{rules.ArchDeepseekV4: false, "DeepseekV3ForCausalLM": true} {
+	for arch, want := range map[string]bool{enginefacts.ArchDeepseekV4: false, "DeepseekV3ForCausalLM": true} {
 		g := moe224Graph()
 		g.Global.Architecture = arch
 		if got := fired(run(t, dep(colocated(pl, engineconfig.Engine{})), g), "sequence-parallel-moe-implied"); got != want {
@@ -1166,7 +1166,7 @@ func TestMoonEPOnFP16Warns(t *testing.T) {
 // a stated packed dtype runs as stated; other architectures run what they request.
 func TestResolveCacheDType(t *testing.T) {
 	p := Pack()
-	v41 := rules.ArchDeepseekV41
+	v41 := enginefacts.ArchDeepseekV41
 	for _, c := range []struct {
 		arch            string
 		family, tp      int
@@ -1224,7 +1224,7 @@ func TestCUDAGraphCaptureSizesRule(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		e    engineconfig.Engine
-		sev  rules.Severity // empty: the rule stays silent
+		sev  validate.Severity // empty: the rule stays silent
 	}{
 		{"unstated", engineconfig.Engine{MaxNumBatchedTokens: 8192}, ""},
 		{"on the stride", engineconfig.Engine{MaxNumBatchedTokens: 8192, MaxCUDAGraphCaptureSize: n(64)}, ""},
@@ -1232,17 +1232,17 @@ func TestCUDAGraphCaptureSizesRule(t *testing.T) {
 			CUDAGraphCaptureSizes: []int{8, 32}}, ""},
 		{"unstated max_num_batched_tokens", engineconfig.Engine{MaxCUDAGraphCaptureSize: n(100)}, ""},
 		{"inconsistent pair", engineconfig.Engine{MaxNumBatchedTokens: 8192, MaxCUDAGraphCaptureSize: n(64),
-			CUDAGraphCaptureSizes: []int{8, 32}}, rules.SeverityError},
-		{"capped", engineconfig.Engine{MaxNumBatchedTokens: 512, MaxCUDAGraphCaptureSize: n(1024)}, rules.SeverityWarning},
-		{"truncated", engineconfig.Engine{MaxNumBatchedTokens: 8192, MaxCUDAGraphCaptureSize: n(100)}, rules.SeverityWarning},
-		{"dropped sizes", engineconfig.Engine{MaxNumBatchedTokens: 16, CUDAGraphCaptureSizes: []int{8, 32}}, rules.SeverityWarning},
-		{"ignored under NONE", engineconfig.Engine{CUDAGraphMode: "NONE", MaxCUDAGraphCaptureSize: n(64)}, rules.SeverityWarning},
+			CUDAGraphCaptureSizes: []int{8, 32}}, validate.SeverityError},
+		{"capped", engineconfig.Engine{MaxNumBatchedTokens: 512, MaxCUDAGraphCaptureSize: n(1024)}, validate.SeverityWarning},
+		{"truncated", engineconfig.Engine{MaxNumBatchedTokens: 8192, MaxCUDAGraphCaptureSize: n(100)}, validate.SeverityWarning},
+		{"dropped sizes", engineconfig.Engine{MaxNumBatchedTokens: 16, CUDAGraphCaptureSizes: []int{8, 32}}, validate.SeverityWarning},
+		{"ignored under NONE", engineconfig.Engine{CUDAGraphMode: "NONE", MaxCUDAGraphCaptureSize: n(64)}, validate.SeverityWarning},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			p := run(t, dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1}, c.e)), moe224Graph())
-			var got rules.Severity
+			var got validate.Severity
 			for _, it := range p.All() {
-				if it.Rule == "cudagraph-capture-sizes" && (got == "" || it.Severity == rules.SeverityError) {
+				if it.Rule == "cudagraph-capture-sizes" && (got == "" || it.Severity == validate.SeverityError) {
 					got = it.Severity
 				}
 			}
@@ -1283,17 +1283,17 @@ func TestDataParallelLoadBalancing(t *testing.T) {
 		name string
 		pl   deployment.Parallelism
 		g    *model.Graph
-		sev  rules.Severity
+		sev  validate.Severity
 		runs deployment.DPLoadBalancing
 	}{
 		{"internal", pl("", 8, 0), moe224Graph(), "", deployment.DPLBInternal},
 		{"external on a MoE", pl(deployment.DPLBExternal, 8, 8), moe224Graph(), "", deployment.DPLBExternal},
-		{"external on a dense model", pl(deployment.DPLBExternal, 8, 8), dense, rules.SeverityError, deployment.DPLBExternal},
+		{"external on a dense model", pl(deployment.DPLBExternal, 8, 8), dense, validate.SeverityError, deployment.DPLBExternal},
 		{"hybrid across nodes", pl(deployment.DPLBHybrid, 16, 8), moe224Graph(), "", deployment.DPLBHybrid},
-		{"hybrid without dp_local", pl(deployment.DPLBHybrid, 16, 0), moe224Graph(), rules.SeverityError, deployment.DPLBHybrid},
-		{"hybrid with one rank per node", pl(deployment.DPLBHybrid, 8, 1), moe224Graph(), rules.SeverityWarning, deployment.DPLBExternal},
-		{"hybrid with one rank per node, dense", pl(deployment.DPLBHybrid, 8, 1), dense, rules.SeverityError, deployment.DPLBExternal},
-		{"hybrid on one node", pl(deployment.DPLBHybrid, 8, 8), moe224Graph(), rules.SeverityWarning, deployment.DPLBInternal},
+		{"hybrid without dp_local", pl(deployment.DPLBHybrid, 16, 0), moe224Graph(), validate.SeverityError, deployment.DPLBHybrid},
+		{"hybrid with one rank per node", pl(deployment.DPLBHybrid, 8, 1), moe224Graph(), validate.SeverityWarning, deployment.DPLBExternal},
+		{"hybrid with one rank per node, dense", pl(deployment.DPLBHybrid, 8, 1), dense, validate.SeverityError, deployment.DPLBExternal},
+		{"hybrid on one node", pl(deployment.DPLBHybrid, 8, 8), moe224Graph(), validate.SeverityWarning, deployment.DPLBInternal},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if got := Pack().ResolveDPLoadBalancing(c.pl); got != c.runs {
@@ -1302,9 +1302,9 @@ func TestDataParallelLoadBalancing(t *testing.T) {
 			pool := colocated(c.pl, engineconfig.Engine{})
 			pool.Nodes = max(1, c.pl.DP/max(1, c.pl.DPLocal))
 			p := run(t, dep(pool), c.g)
-			var got rules.Severity
+			var got validate.Severity
 			for _, it := range p.All() {
-				if it.Rule == "data-parallel-load-balancing" && (got == "" || it.Severity == rules.SeverityError) {
+				if it.Rule == "data-parallel-load-balancing" && (got == "" || it.Severity == validate.SeverityError) {
 					got = it.Severity
 				}
 			}
@@ -1386,7 +1386,7 @@ func TestDCPDividesTP(t *testing.T) {
 func boolPtr(b bool) *bool { return &b }
 
 // ruleErrors counts the error-severity problems a rule raised.
-func ruleErrors(p *rules.Problems, rule string) int {
+func ruleErrors(p *validate.Problems, rule string) int {
 	n := 0
 	for _, it := range p.All() {
 		if it.Rule == rule && it.Severity == validate.SeverityError {
@@ -1406,7 +1406,7 @@ func TestFlashinferMegaDeepGemmNeedsDeepSeekV4(t *testing.T) {
 	if p := run(t, d, g); !fired(p, "flashinfer-mega-deep-gemm-model") {
 		t.Errorf("a non-DeepSeek model was accepted with flashinfer_moe_ep_mega_deep_gemm:\n%s", p.Error())
 	}
-	for _, arch := range []string{"DeepseekV4ForCausalLM", "DeepSeekV4MTPModel", rules.ArchDeepseekV41} {
+	for _, arch := range []string{"DeepseekV4ForCausalLM", "DeepSeekV4MTPModel", enginefacts.ArchDeepseekV41} {
 		g := moe224Graph()
 		g.Global.Architecture = arch
 		if p := run(t, d, g); fired(p, "flashinfer-mega-deep-gemm-model") {

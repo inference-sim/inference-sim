@@ -7,22 +7,21 @@ package engineconfig
 
 import (
 	"fmt"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 	"math"
 	"sort"
 	"strings"
-
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 )
 
 // Validate is the release-independent field checks of one pool's engine block: the bounds
 // the block's own types declare, as blis-schemas ran them before it held the block unopened.
 // at is the pool's path, such as "pools[0]"; each finding is at at + ".engine.<field>". The
 // version-scoped checks are the rules packs'.
-func Validate(p *rules.Problems, at string, e Engine) {
+func Validate(p *validate.Problems, at string, e Engine) {
 	validateEngine(p, at, e)
 }
 
-func validateEngine(p *rules.Problems, at string, e Engine) {
+func validateEngine(p *validate.Problems, at string, e Engine) {
 	if !e.Frontend.Valid() {
 		p.Field(at+".engine.frontend", "%q is not one of %v", e.Frontend,
 			[]Frontend{FrontendPython, FrontendRust})
@@ -130,7 +129,7 @@ func validateEngine(p *rules.Problems, at string, e Engine) {
 // validateSchedulerKnobs checks the scheduler, cache, LoRA and pass-through knobs against the
 // bounds vLLM v0.32.0's own config types declare, so a value the engine would refuse at
 // launch is refused here. A zero integer means unset and takes the engine's default.
-func validateSchedulerKnobs(p *rules.Problems, at string, e Engine) {
+func validateSchedulerKnobs(p *validate.Problems, at string, e Engine) {
 	for field, v := range map[string]int{
 		// Field(ge=1) in vllm/config/scheduler.py:55, 69, 203, 216 and vllm/config/lora.py:36;
 		// gt=0 in vllm/config/cache.py:203. Zero is unset here.

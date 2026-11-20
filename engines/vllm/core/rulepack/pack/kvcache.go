@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
@@ -79,46 +79,46 @@ func (k KVCachePacking) String() string {
 // transcribed, several uniform types sharing one page size (the engine's
 // _get_kv_cache_groups_uniform_page_size), a state cache where the release stores it
 // as a spec the graph cannot state, and a page of zero bytes.
-func (p *Pack) KVCacheGroups(in rules.KVCacheGroupsInput) (rules.KVCacheGrouping, error) {
+func (p *Pack) KVCacheGroups(in enginefacts.KVCacheGroupsInput) (enginefacts.KVCacheGrouping, error) {
 	k := p.KVCachePacking
 	if !k.Modeled {
-		return rules.KVCacheGrouping{}, fmt.Errorf("engine %s: KV cache grouping is not transcribed in its rules pack", p.Version)
+		return enginefacts.KVCacheGrouping{}, fmt.Errorf("engine %s: KV cache grouping is not transcribed in its rules pack", p.Version)
 	}
 	if len(in.Layers) == 0 {
-		return rules.KVCacheGrouping{}, fmt.Errorf("no owned caches to group")
+		return enginefacts.KVCacheGrouping{}, fmt.Errorf("no owned caches to group")
 	}
 	layers := make([]packLayer, 0, len(in.Layers))
 	pages := map[string]int{}
 	for _, l := range in.Layers {
 		pl, err := p.packLayerOf(l, in)
 		if err != nil {
-			return rules.KVCacheGrouping{}, err
+			return enginefacts.KVCacheGrouping{}, err
 		}
 		if _, dup := pages[l.Name]; dup {
-			return rules.KVCacheGrouping{}, fmt.Errorf("layer %q is stated twice", l.Name)
+			return enginefacts.KVCacheGrouping{}, fmt.Errorf("layer %q is stated twice", l.Name)
 		}
 		pages[l.Name] = pl.page
 		layers = append(layers, pl)
 	}
 
-	var groups []rules.KVCacheGroup
+	var groups []enginefacts.KVCacheGroup
 	packed := false
 	switch {
 	case sameType(layers):
-		g := rules.KVCacheGroup{BlockSize: layers[0].block}
+		g := enginefacts.KVCacheGroup{BlockSize: layers[0].block}
 		for _, l := range layers {
 			g.Layers = append(g.Layers, l.name)
 			g.PageBytes += l.page
 		}
-		groups = []rules.KVCacheGroup{g}
+		groups = []enginefacts.KVCacheGroup{g}
 	case distinctPages(layers) > 1:
 		var err error
 		if groups, err = k.pack(layers); err != nil {
-			return rules.KVCacheGrouping{}, err
+			return enginefacts.KVCacheGrouping{}, err
 		}
 		packed = true
 	default:
-		return rules.KVCacheGrouping{}, fmt.Errorf("the caches are of several uniform types with one page size; " +
+		return enginefacts.KVCacheGrouping{}, fmt.Errorf("the caches are of several uniform types with one page size; " +
 			"the engine groups them by _get_kv_cache_groups_uniform_page_size, which is not modeled")
 	}
 
@@ -131,7 +131,7 @@ func (p *Pack) KVCacheGroups(in rules.KVCacheGroupsInput) (rules.KVCacheGrouping
 	if k.BlockStrideAlignment && in.BlockStrideAlignment > 1 {
 		bytes = roundUp(bytes, in.BlockStrideAlignment)
 	}
-	return rules.KVCacheGrouping{Packed: packed, Groups: groups, BytesPerBlock: bytes, PageBytes: pages}, nil
+	return enginefacts.KVCacheGrouping{Packed: packed, Groups: groups, BytesPerBlock: bytes, PageBytes: pages}, nil
 }
 
 // packLayer is one layer as the packer sees it: its uniform-type key and page.
@@ -144,7 +144,7 @@ type packLayer struct {
 	page  int
 }
 
-func (p *Pack) packLayerOf(l rules.KVCacheLayer, in rules.KVCacheGroupsInput) (packLayer, error) {
+func (p *Pack) packLayerOf(l enginefacts.KVCacheLayer, in enginefacts.KVCacheGroupsInput) (packLayer, error) {
 	c := l.Cache
 	pl := packLayer{name: l.Name}
 	entry := c.EntryBytes(in.CacheDType)
@@ -223,7 +223,7 @@ func (b *bucket) widest(n int) int {
 }
 
 // pack is _get_packed_kv_cache_groups.
-func (k KVCachePacking) pack(layers []packLayer) ([]rules.KVCacheGroup, error) {
+func (k KVCachePacking) pack(layers []packLayer) ([]enginefacts.KVCacheGroup, error) {
 	var buckets []*bucket
 	for _, l := range layers {
 		var into *bucket
@@ -287,7 +287,7 @@ func (k KVCachePacking) pack(layers []packLayer) ([]rules.KVCacheGroup, error) {
 		}
 	}
 
-	var groups []rules.KVCacheGroup
+	var groups []enginefacts.KVCacheGroup
 	for _, b := range buckets {
 		n := numGroupsFor(b)
 		if anchor > 0 && isState(b) {
@@ -305,7 +305,7 @@ func (k KVCachePacking) pack(layers []packLayer) ([]rules.KVCacheGroup, error) {
 			pageOf[l.name] = l.page
 		}
 		if n == 1 {
-			g := rules.KVCacheGroup{BlockSize: block}
+			g := enginefacts.KVCacheGroup{BlockSize: block}
 			for _, l := range b.layers {
 				g.Layers = append(g.Layers, l.name)
 				g.PageBytes += l.page
@@ -322,7 +322,7 @@ func (k KVCachePacking) pack(layers []packLayer) ([]rules.KVCacheGroup, error) {
 		}
 		patternRepeats := len(b.byPage[b.pages[0]])
 		for i := 0; i < n; i++ {
-			g := rules.KVCacheGroup{BlockSize: block}
+			g := enginefacts.KVCacheGroup{BlockSize: block}
 			for r := i; r < patternRepeats; r += n {
 				for _, pg := range b.pages {
 					name := b.byPage[pg][r]

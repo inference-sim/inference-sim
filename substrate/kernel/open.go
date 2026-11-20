@@ -7,7 +7,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/substrate/contracts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
@@ -32,7 +32,7 @@ type Repos struct {
 
 	// Rules returns the engine rules for a release, or nil for a release it has none for:
 	// for vLLM, the engine's rule packs (its Lookup, wrapped as RulesFrom does). Required: the kernel no longer looks rules up itself.
-	Rules func(version string) rules.EngineRules
+	Rules func(version string) enginefacts.EngineRules
 	// RulesKind is the engine kind the supplied Rules are for, as a scenario's engine block
 	// names it (engine: {kind, version}). Open refuses a scenario whose engine block names
 	// another kind, because a release number alone does not say whose rules answer it:
@@ -63,9 +63,9 @@ const legacyRulesKind = "vllm"
 // interface type whose value holds a nil pointer.
 func RulesFrom[R interface {
 	comparable
-	rules.EngineRules
-}](lookup func(version string) R) func(string) rules.EngineRules {
-	return func(version string) rules.EngineRules {
+	enginefacts.EngineRules
+}](lookup func(version string) R) func(string) enginefacts.EngineRules {
+	return func(version string) enginefacts.EngineRules {
 		r := lookup(version)
 		if isNil(r) {
 			return nil
@@ -78,7 +78,7 @@ func RulesFrom[R interface {
 // reports a value that cannot: a forwarding struct around a nil rules value is not nil, so
 // isNil passes it, but its first call dereferences nil. Asking once here turns that panic,
 // which would come from deep inside pricing, into a refusal at construction.
-func rulesAnswer(r rules.EngineRules) (err error) {
+func rulesAnswer(r enginefacts.EngineRules) (err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			err = fmt.Errorf("EngineVersion panicked: %v", p)

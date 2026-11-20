@@ -17,27 +17,27 @@ import (
 )
 
 // The engine that cmd/engine_build.go builds reads a release's rules only through blis-schemas'
-// rules.EngineRules (#2021 B4; PR BC-3). The test type-checks the pinned module's own source --
+// enginefacts.EngineRules (#2021 B4; PR BC-3). The test type-checks the pinned module's own source --
 // the versions go.mod names, not a copy -- so the claim is checked rather than taken on trust.
 //
 // The concrete pack type (the vLLM engine's rules/pack.Pack since https://github.com/inference-sim/blis-schemas/issues/102 2c38342) and
 // the vLLM engine's pack registry may appear in exactly one place: the adaptation that hands
 // engines/vllm/rules' lookup to the kernel's RulesFrom, which turns it into a function returning
-// rules.EngineRules, with the list of releases it answers for (allowedPackUses). Anywhere else,
+// enginefacts.EngineRules, with the list of releases it answers for (allowedPackUses). Anywhere else,
 // any use of *pack.Pack is a finding: a
 // type assertion or type-switch case, a conversion, a parameter, result, field or variable of
 // that type, a field read or write on a pack, or an alias of the type. So is any call to the
 // global registry (engines/vllm/rules' Lookup, Packs and Versions), which looks a pack up instead of
 // taking the caller's.
 //
-// blis-schemas' Validate takes the caller's rules too (Bundle.Rules); with none it refuses the
-// bundle since #102's switch, where it once applied blis-schemas' own registered packs. A call to
-// Validate in scope is still a finding unless the Bundle it is handed states Rules (code review
-// round 2, N1), so a validation that would only refuse is not mistaken for one that checks.
+// contracts.Validate takes the caller's engine checker (Bundle.Engine); with none it refuses the
+// bundle. A call to Validate in scope is still a finding unless the Bundle it is handed states
+// Engine (code review round 2, N1), so a validation that would only refuse is not mistaken for
+// one that checks.
 func TestPinnedEngineReadsRulesOnlyThroughEngineRules(t *testing.T) {
 	findings := packFindings(t, engineRulesScope)
 	if len(findings) > 0 {
-		t.Errorf("the pinned engine reads rules other than through rules.EngineRules:\n  %s",
+		t.Errorf("the pinned engine reads rules other than through enginefacts.EngineRules:\n  %s",
 			strings.Join(findings, "\n  "))
 	}
 }
@@ -68,7 +68,7 @@ const (
 )
 
 // validatorsReadingRules are blis-schemas' root functions that apply a release's rules, which they
-// take from the Bundle (Rules) and refuse without.
+// take from the Bundle (Engine) and refuse without.
 var validatorsReadingRules = map[string]bool{"Validate": true}
 
 // globalRegistry are the functions that look a pack up by version instead of taking the
@@ -194,7 +194,7 @@ func checkPackUse(t *testing.T, path string, fset *token.FileSet, imp types.Impo
 			case *ast.CallExpr:
 				if fn := calledFunc(info, x.Fun); fn != nil && fn.Pkg() != nil && fn.Pkg().Path() == schemasRootPath &&
 					validatorsReadingRules[fn.Name()] && !bundleStatesRules(x) {
-					report(x, "calls blis-schemas' "+fn.Name()+" with no Bundle.Rules, so it validates nothing (it refuses the bundle)")
+					report(x, "calls blis-schemas' "+fn.Name()+" with no Bundle.Engine, so it validates nothing (it refuses the bundle)")
 				}
 				if tv, ok := info.Types[x]; ok && tv.IsValue() && mentionsPack(tv.Type) {
 					report(x, "has the concrete type "+tv.Type.String())
@@ -224,9 +224,9 @@ func calledFunc(info *types.Info, fun ast.Expr) *types.Func {
 	return nil
 }
 
-// bundleStatesRules reports whether a call's argument is a Bundle literal that sets Rules. A
+// bundleStatesRules reports whether a call's argument is a Bundle literal that sets Engine. A
 // bundle built elsewhere and passed by name is not credited: the check cannot see that it
-// states Rules, so it reports the call.
+// states Engine, so it reports the call.
 func bundleStatesRules(call *ast.CallExpr) bool {
 	if len(call.Args) != 1 {
 		return false
@@ -237,7 +237,7 @@ func bundleStatesRules(call *ast.CallExpr) bool {
 	}
 	for _, el := range lit.Elts {
 		if kv, ok := el.(*ast.KeyValueExpr); ok {
-			if k, ok := kv.Key.(*ast.Ident); ok && k.Name == "Rules" {
+			if k, ok := kv.Key.(*ast.Ident); ok && k.Name == "Engine" {
 				return true
 			}
 		}
@@ -295,29 +295,29 @@ func TestPackUseCheckCatchesEachForm(t *testing.T) {
 
 import (
 	blisschemas "github.com/inference-sim/inference-sim/substrate/contracts"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 ` + imp + `	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
 )
 
 var (
 	_ = pack.NormalizeMoEBackend
 	_ = blisschemas.Validate
-	_ rules.EngineRules
+	_ enginefacts.EngineRules
 )
 `
 	}
-	clean := `func ok(r rules.EngineRules) string { return r.EngineVersion() }
+	clean := `func ok(r enginefacts.EngineRules) string { return r.EngineVersion() }
 
-func okValidate(r rules.EngineRules) bool {
-	return blisschemas.Validate(blisschemas.Bundle{Rules: func(string) rules.EngineRules { return r }}).OK()
+func okValidate(r enginefacts.EngineRules) bool {
+	return blisschemas.Validate(blisschemas.Bundle{Engine: func(string) blisschemas.EngineChecker { return r }}).OK()
 }`
 	forms := map[string]string{
-		"type assertion":                      `func f(r rules.EngineRules) bool { _, ok := r.(*pack.Pack); return ok }`,
-		"type switch case":                    `func f(r rules.EngineRules) int { switch r.(type) { case *pack.Pack: return 1 }; return 0 }`,
+		"type assertion":                      `func f(r enginefacts.EngineRules) bool { _, ok := r.(*pack.Pack); return ok }`,
+		"type switch case":                    `func f(r enginefacts.EngineRules) int { switch r.(type) { case *pack.Pack: return 1 }; return 0 }`,
 		"parameter":                           `func f(p *pack.Pack) {}`,
 		"result":                              `func f() *pack.Pack { return nil }`,
 		"struct field":                        `type s struct{ p *pack.Pack }`,
-		"field write":                         `func f(r rules.EngineRules) { if p, ok := r.(*pack.Pack); ok { p.Version = "x" } }`,
+		"field write":                         `func f(r enginefacts.EngineRules) { if p, ok := r.(*pack.Pack); ok { p.Version = "x" } }`,
 		"alias":                               `type myPack = pack.Pack`,
 		"conversion":                          `func f(r any) any { return (*pack.Pack)(r.(*pack.Pack)) }`,
 		"global lookup":                       `func f() bool { return vllmrules.Lookup("0.31.0") != nil }`,
@@ -339,7 +339,7 @@ func okValidate(r rules.EngineRules) bool {
 		return checkPackUse(t, "probe", fset, imp, []*ast.File{f})
 	}
 	if got := run(clean); len(got) != 0 {
-		t.Errorf("reading rules through rules.EngineRules is allowed, but got %v", got)
+		t.Errorf("reading rules through enginefacts.EngineRules is allowed, but got %v", got)
 	}
 	names := make([]string, 0, len(forms))
 	for name := range forms {

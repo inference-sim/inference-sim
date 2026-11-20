@@ -20,8 +20,8 @@
 //
 // It validates each set with (*coefficient.Set).Validate — the field layer, the same
 // choice validate-catalog makes with graph.Validate. That is the whole of coefficient
-// validation today: contracts.Validate would add only version-scoped rules, which run
-// solely against a Scenario and cannot read a coefficient (rules.Input carries none). The
+// validation today: contracts.Validate would add only the engine's checks, which run
+// solely against a Scenario's engine blocks and cannot read a coefficient. The
 // canary test TestCoefficientOnlyBundleRunsNoRules fails if that ever changes — the signal
 // to route this command through contracts.Validate(Bundle{Coefficients: ...}) so it
 // enforces coefficient-level rules.

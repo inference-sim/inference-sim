@@ -2,7 +2,7 @@
 
 package engineconfig
 
-import "github.com/inference-sim/inference-sim/substrate/contracts/rules"
+import "github.com/inference-sim/inference-sim/substrate/contracts/check"
 
 // engineOnly is what the moved tests validated: one pool's engine block, at pools[0], as
 // blis-schemas' deployment validation reported it for a one-pool deployment.
@@ -11,8 +11,8 @@ func engineOnly(e Engine) validated { return validated{e: e} }
 type validated struct{ e Engine }
 
 // Validate returns the block's field findings, as Deployment.Validate did for its engine.
-func (v validated) Validate() *rules.Problems {
-	p := &rules.Problems{}
+func (v validated) Validate() *validate.Problems {
+	p := &validate.Problems{}
 	Validate(p, "pools[0]", v.e)
 	return p
 }

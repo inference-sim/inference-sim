@@ -3,12 +3,13 @@
 package pack
 
 import (
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 	"sort"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 )
 
-var _ rules.EngineRules = (*Pack)(nil)
+var _ enginefacts.EngineRules = (*Pack)(nil)
 
 // EngineVersion implements EngineRules.
 func (p *Pack) EngineVersion() string { return p.Version }
@@ -16,8 +17,8 @@ func (p *Pack) EngineVersion() string { return p.Version }
 var _ RuleSet = (*Pack)(nil)
 
 // Check implements RuleSet: every rule of the pack, in order.
-func (p *Pack) Check(in Input) *rules.Problems {
-	out := &rules.Problems{}
+func (p *Pack) Check(in Input) *validate.Problems {
+	out := &validate.Problems{}
 	for _, r := range p.Rules {
 		r.Check(in, out)
 	}

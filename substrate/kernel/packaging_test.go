@@ -37,10 +37,10 @@ pools:
     nodes: 2
     parallel: {tp: 8, pp: 1, dp: 1}
 `
-	// The field layer validateDocuments runs, without the engine rules this test has none of.
+	// The field layer validateDocuments runs, with no engine (a lookup that answers none).
 	check := func(in Inputs) error {
 		rep := contracts.Validate(contracts.Bundle{Scenario: in.Scenario, Deployment: in.Deployment,
-			Chip: in.Chip, Fabric: in.Fabric})
+			Chip: in.Chip, Fabric: in.Fabric, Engine: func(string) contracts.EngineChecker { return nil }})
 		if !rep.Field.OK() {
 			return rep.Field
 		}

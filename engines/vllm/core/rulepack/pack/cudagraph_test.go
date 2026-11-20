@@ -12,7 +12,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/v0_33"
 	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 )
 
 func ip(n int) *int { return &n }
@@ -39,35 +39,35 @@ func TestCUDAGraphCaptureSizes(t *testing.T) {
 	p := v0_33.Pack()
 	for _, c := range []struct {
 		name     string
-		in       rules.CUDAGraphCaptureInput
+		in       enginefacts.CUDAGraphCaptureInput
 		resolved bool
-		want     rules.CUDAGraphCapture
+		want     enginefacts.CUDAGraphCapture
 		err      error
 	}{
-		{"unstated is the release default", rules.CUDAGraphCaptureInput{MaxNumBatchedTokens: 8192}, false, rules.CUDAGraphCapture{}, nil},
-		{"mode NONE captures nothing", rules.CUDAGraphCaptureInput{Mode: "NONE", MaxCaptureSize: ip(64)}, true,
-			rules.CUDAGraphCapture{Sizes: []int{}}, nil},
-		{"an internal deployment's 64", rules.CUDAGraphCaptureInput{MaxNumBatchedTokens: 8192, MaxCaptureSize: ip(64)}, true,
-			rules.CUDAGraphCapture{Sizes: stride(64), Max: 64}, nil},
-		{"above 256 on the 16 stride", rules.CUDAGraphCaptureInput{MaxNumBatchedTokens: 8192, MaxCaptureSize: ip(512)}, true,
-			rules.CUDAGraphCapture{Sizes: stride(512), Max: 512}, nil},
-		{"off the stride truncates", rules.CUDAGraphCaptureInput{MaxNumBatchedTokens: 8192, MaxCaptureSize: ip(100)}, true,
-			rules.CUDAGraphCapture{Sizes: stride(100), Max: 96, Truncated: true}, nil},
-		{"capped at max_num_batched_tokens, which is added", rules.CUDAGraphCaptureInput{MaxNumBatchedTokens: 100, MaxCaptureSize: ip(512)}, true,
-			rules.CUDAGraphCapture{Sizes: append(stride(100), 100), Max: 100, Capped: true}, nil},
-		{"max_num_batched_tokens inside the range is added", rules.CUDAGraphCaptureInput{MaxNumBatchedTokens: 100, MaxCaptureSize: ip(100)}, true,
-			rules.CUDAGraphCapture{Sizes: append(stride(100), 100), Max: 100}, nil},
-		{"stated sizes de-duplicated, sorted, filtered", rules.CUDAGraphCaptureInput{MaxNumBatchedTokens: 64,
+		{"unstated is the release default", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 8192}, false, enginefacts.CUDAGraphCapture{}, nil},
+		{"mode NONE captures nothing", enginefacts.CUDAGraphCaptureInput{Mode: "NONE", MaxCaptureSize: ip(64)}, true,
+			enginefacts.CUDAGraphCapture{Sizes: []int{}}, nil},
+		{"an internal deployment's 64", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 8192, MaxCaptureSize: ip(64)}, true,
+			enginefacts.CUDAGraphCapture{Sizes: stride(64), Max: 64}, nil},
+		{"above 256 on the 16 stride", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 8192, MaxCaptureSize: ip(512)}, true,
+			enginefacts.CUDAGraphCapture{Sizes: stride(512), Max: 512}, nil},
+		{"off the stride truncates", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 8192, MaxCaptureSize: ip(100)}, true,
+			enginefacts.CUDAGraphCapture{Sizes: stride(100), Max: 96, Truncated: true}, nil},
+		{"capped at max_num_batched_tokens, which is added", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 100, MaxCaptureSize: ip(512)}, true,
+			enginefacts.CUDAGraphCapture{Sizes: append(stride(100), 100), Max: 100, Capped: true}, nil},
+		{"max_num_batched_tokens inside the range is added", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 100, MaxCaptureSize: ip(100)}, true,
+			enginefacts.CUDAGraphCapture{Sizes: append(stride(100), 100), Max: 100}, nil},
+		{"stated sizes de-duplicated, sorted, filtered", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 64,
 			CaptureSizes: []int{32, 8, 128, 8, 1}}, true,
-			rules.CUDAGraphCapture{Sizes: []int{1, 8, 32}, Max: 32, Dropped: []int{128}}, nil},
-		{"consistent pair", rules.CUDAGraphCaptureInput{MaxNumBatchedTokens: 64, MaxCaptureSize: ip(32),
-			CaptureSizes: []int{8, 32}}, true, rules.CUDAGraphCapture{Sizes: []int{8, 32}, Max: 32}, nil},
-		{"inconsistent pair", rules.CUDAGraphCaptureInput{MaxNumBatchedTokens: 64, MaxCaptureSize: ip(64),
-			CaptureSizes: []int{8, 32}}, true, rules.CUDAGraphCapture{Sizes: []int{8, 32}, Max: 32},
-			rules.ErrCUDAGraphCaptureInconsistent},
-		{"pair made inconsistent by the filter", rules.CUDAGraphCaptureInput{MaxNumBatchedTokens: 16, MaxCaptureSize: ip(32),
-			CaptureSizes: []int{8, 32}}, true, rules.CUDAGraphCapture{Sizes: []int{8}, Max: 8, Dropped: []int{32}},
-			rules.ErrCUDAGraphCaptureInconsistent},
+			enginefacts.CUDAGraphCapture{Sizes: []int{1, 8, 32}, Max: 32, Dropped: []int{128}}, nil},
+		{"consistent pair", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 64, MaxCaptureSize: ip(32),
+			CaptureSizes: []int{8, 32}}, true, enginefacts.CUDAGraphCapture{Sizes: []int{8, 32}, Max: 32}, nil},
+		{"inconsistent pair", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 64, MaxCaptureSize: ip(64),
+			CaptureSizes: []int{8, 32}}, true, enginefacts.CUDAGraphCapture{Sizes: []int{8, 32}, Max: 32},
+			enginefacts.ErrCUDAGraphCaptureInconsistent},
+		{"pair made inconsistent by the filter", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 16, MaxCaptureSize: ip(32),
+			CaptureSizes: []int{8, 32}}, true, enginefacts.CUDAGraphCapture{Sizes: []int{8}, Max: 8, Dropped: []int{32}},
+			enginefacts.ErrCUDAGraphCaptureInconsistent},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got, resolved, err := p.CUDAGraphCaptureSizes(c.in)
@@ -79,7 +79,7 @@ func TestCUDAGraphCaptureSizes(t *testing.T) {
 			}
 		})
 	}
-	if _, resolved, err := p.CUDAGraphCaptureSizes(rules.CUDAGraphCaptureInput{MaxCaptureSize: ip(64)}); !resolved || err == nil {
+	if _, resolved, err := p.CUDAGraphCaptureSizes(enginefacts.CUDAGraphCaptureInput{MaxCaptureSize: ip(64)}); !resolved || err == nil {
 		t.Error("resolved a capture without max_num_batched_tokens")
 	}
 }
@@ -90,7 +90,7 @@ func TestCUDAGraphCaptureSizesProperties(t *testing.T) {
 	p := v0_33.Pack()
 	for m := 1; m <= 1100; m++ {
 		for _, mnbt := range []int{1, 7, 64, 100, 512, 8192} {
-			c, _, err := p.CUDAGraphCaptureSizes(rules.CUDAGraphCaptureInput{MaxNumBatchedTokens: mnbt, MaxCaptureSize: ip(m)})
+			c, _, err := p.CUDAGraphCaptureSizes(enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: mnbt, MaxCaptureSize: ip(m)})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -148,7 +148,7 @@ func TestCUDAGraphCaptureSizesAreVLLMs032(t *testing.T) {
 			continue // no schema field, or vLLM adds sizes the pack does not model
 		}
 		t.Run(k.Name, func(t *testing.T) {
-			got, resolved, err := p.CUDAGraphCaptureSizes(rules.CUDAGraphCaptureInput{Mode: k.Mode,
+			got, resolved, err := p.CUDAGraphCaptureSizes(enginefacts.CUDAGraphCaptureInput{Mode: k.Mode,
 				MaxNumBatchedTokens: k.MaxBatched, MaxCaptureSize: k.MaxCapture, CaptureSizes: k.Sizes})
 			if k.Mode != "NONE" && k.MaxCapture == nil && k.Sizes == nil {
 				if resolved {
@@ -160,7 +160,7 @@ func TestCUDAGraphCaptureSizesAreVLLMs032(t *testing.T) {
 			if c.Resolved.Error != nil {
 				// An empty stated list is refused by the engine block's validation
 				// (engineconfig), not by the pack; the disagreeing pair is the pack's.
-				if len(k.Sizes) > 0 && !errors.Is(err, rules.ErrCUDAGraphCaptureInconsistent) {
+				if len(k.Sizes) > 0 && !errors.Is(err, enginefacts.ErrCUDAGraphCaptureInconsistent) {
 					t.Errorf("vLLM refuses (%s); the pack gave %+v, %v", *c.Resolved.Error, got, err)
 				}
 				return

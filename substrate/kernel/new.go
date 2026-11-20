@@ -11,9 +11,10 @@ import (
 	"time"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
@@ -2022,22 +2023,18 @@ func (k *Kernel) fit(f price.Format, grouped bool) gemmFit {
 // cluster to them. Nothing ran it outside this repository's own fixture tests, so an
 // external caller could build a kernel for a deployment that does not fit its hardware.
 //
-// THE FIELD LAYER ONLY, and that boundary is deliberate. blis-schemas separates field
-// problems, which are version-independent and always the author's to fix, from
-// version-scoped RULE problems, where a finding may mean the document is right and the
-// engine version is wrong. Measured over the committed corpus: every one of the 687 bundles
-// and all 32 catalog model graphs pass the field layer, while the rules layer rejects 213 of
-// them — the 0.29.0 pack does not accept minimax_m3_mtp as a speculative method. Enforcing
-// rules here would refuse a quarter of the deployments this project scores against measured
-// data, for a reason that belongs in the catalog or the rules pack rather than in a
-// constructor.
+// DOCUMENT AND ENGINE-BLOCK FIELDS ONLY, and that boundary is deliberate. A report's errors
+// are of two kinds: field problems, always the author's to fix, and the bundle-level findings
+// about the engine itself (no checker given, a checker for another release), which carry a
+// rule name and where a finding may mean the document is right and the engine version is
+// wrong. Only the first are enforced: the kernel is handed the caller's rules whatever their
+// release, and refusing on the second would refuse deployments this project scores against
+// measured data, for a reason that belongs in the catalog or the engine rather than in a
+// constructor. The engine's own refusal of its blocks (CheckEngineBlock) is a field problem,
+// and is enforced when the checker is the scenario's release.
 //
-// Warnings are not failures: Problems.OK ignores them by design, so an out-of-tree
-// quantization name reported as "not in-tree for 0.29.0" still builds.
-//
-// The rule layer is still computed, so it is computed with the caller's rules (Bundle.Rules,
-// inference-sim#2021 B4), never the packs blis-schemas registers for itself: the kernel
-// consults no rules but its caller's, even in a layer it does not enforce.
+// The engine's block checks run with the caller's rules (Bundle.Engine), never an engine the
+// schema registers for itself: the kernel consults no engine but its caller's.
 func validateDocuments(in Inputs) error {
 	rep := contracts.Validate(contracts.Bundle{
 		Scenario: in.Scenario, Deployment: in.Deployment, Model: in.Model,
@@ -2045,8 +2042,14 @@ func validateDocuments(in Inputs) error {
 		Coefficients: in.Coefficients,
 		Engine:       func(string) contracts.EngineChecker { return in.Rules },
 	})
-	if !rep.Field.OK() {
-		return fmt.Errorf("the documents do not validate:\n%w", rep.Field)
+	enforced := &validate.Problems{}
+	for _, p := range rep.Field.Errors() {
+		if p.Rule == "" {
+			enforced.Field(p.Path, "%s", p.Message)
+		}
+	}
+	if !enforced.OK() {
+		return fmt.Errorf("the documents do not validate:\n%w", enforced)
 	}
 	return nil
 }
@@ -2257,7 +2260,7 @@ const (
 // MoE intermediates; and the indexer's logits stand-in is a transient that this adds to the
 // activation multiple's own transients rather than to their peak.
 func (k *Kernel) engineBufferBytes(g *model.Graph) float64 {
-	if g.Global.Architecture != rules.ArchDeepseekV41 {
+	if g.Global.Architecture != enginefacts.ArchDeepseekV41 {
 		return 0
 	}
 	tokens := float64(k.batchedTokens)

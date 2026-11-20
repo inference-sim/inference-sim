@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 	"github.com/inference-sim/inference-sim/substrate/load"
 )
@@ -275,7 +275,7 @@ pools:
     parallel: {tp: 2, pp: 2, dp: 1}
 `
 	r, name := openRepos(t, d, body)
-	r.Rules = func(string) rules.EngineRules { return inertRules{} }
+	r.Rules = func(string) enginefacts.EngineRules { return inertRules{} }
 	r.DraftModel, r.Lower = noDrafter, lowerTo(8192, 16, 0.92)
 	in, err := OpenInputs(name, r, 0)
 	if err != nil {

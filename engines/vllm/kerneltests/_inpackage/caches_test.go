@@ -7,7 +7,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 
 	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve"
 )
@@ -131,8 +131,8 @@ func TestKVCapacityIsTheEnginesOwnFigureOnH100(t *testing.T) {
 // ungroupedRules is a rules pack that cannot group stated caches.
 type ungroupedRules struct{ resolve.EngineRules }
 
-func (ungroupedRules) KVCacheGroups(rules.KVCacheGroupsInput) (rules.KVCacheGrouping, error) {
-	return rules.KVCacheGrouping{}, errors.New("not transcribed")
+func (ungroupedRules) KVCacheGroups(enginefacts.KVCacheGroupsInput) (enginefacts.KVCacheGrouping, error) {
+	return enginefacts.KVCacheGrouping{}, errors.New("not transcribed")
 }
 
 // Where the rules pack cannot group the stated caches, each is sized at its own page, and
