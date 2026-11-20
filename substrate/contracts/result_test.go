@@ -148,27 +148,24 @@ func TestBundleReportsAnInvalidResult(t *testing.T) {
 	t.Errorf("no finding at result.requests:\n%s", rep.Field.Error())
 }
 
-// TestBundleSaysAResultsInputWasNotRuleChecked: with rules given and only a Result, the
-// rule layer says the embedded input was not rule-checked rather than stay silent; given
-// the embedded documents too, the rules run on them.
-func TestBundleSaysAResultsInputWasNotRuleChecked(t *testing.T) {
+// TestBundleSaysAResultsInputWasNotEngineChecked: with an engine given and only a Result, the
+// report says the embedded input was not engine-checked rather than stay silent; given the
+// embedded documents too, the engine checks them.
+func TestBundleSaysAResultsInputWasNotEngineChecked(t *testing.T) {
 	r := exampleResult(t)
-	rep := Validate(Bundle{Result: r, Rules: openAnyEngine})
+	rep := Validate(Bundle{Result: r, Engine: openAnyEngine})
 	found := false
-	for _, p := range rep.Rule.All() {
-		found = found || p.Rule == "result-input-rules"
+	for _, p := range ruleFindings(rep) {
+		found = found || p.Rule == "result-input-engine"
 	}
 	if !found {
-		t.Errorf("rules given with only a result produced no result-input-rules finding:\n%s", rep.Rule.Error())
+		t.Errorf("an engine given with only a result produced no result-input-engine finding:\n%s", ruleText(rep))
 	}
-	rep = Validate(Bundle{Result: r, Rules: openAnyEngine,
+	rep = Validate(Bundle{Result: r, Engine: openAnyEngine,
 		Scenario: &r.Input.Scenario, Deployment: &r.Input.Deployment})
-	for _, p := range rep.Rule.All() {
-		if p.Rule == "result-input-rules" {
+	for _, p := range ruleFindings(rep) {
+		if p.Rule == "result-input-engine" {
 			t.Errorf("the embedded input was passed and still reported unchecked: %s", p)
 		}
-	}
-	if rep.RulesApplied == "" {
-		t.Error("no rules ran on the embedded input")
 	}
 }

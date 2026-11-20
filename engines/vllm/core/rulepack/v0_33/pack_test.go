@@ -12,6 +12,7 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
 )
 
 func moe224Graph() *model.Graph {
@@ -65,7 +66,7 @@ func run(t *testing.T, d *deployment.Deployment, g *model.Graph) *rules.Problems
 	}
 	p := &rules.Problems{}
 	for _, r := range Pack().Rules {
-		r.Check(rules.Input{Scenario: s, Deployment: d, Model: g, Packaging: &pk}, p)
+		r.Check(pack.Input{Scenario: s, Deployment: d, Model: g, Packaging: &pk}, p)
 	}
 	return p
 }

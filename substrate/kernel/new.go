@@ -2043,7 +2043,7 @@ func validateDocuments(in Inputs) error {
 		Scenario: in.Scenario, Deployment: in.Deployment, Model: in.Model,
 		Chip: in.Chip, Fabric: in.Fabric, Devices: in.Devices,
 		Coefficients: in.Coefficients,
-		Rules:        func(string) rules.EngineRules { return in.Rules },
+		Engine:       func(string) contracts.EngineChecker { return in.Rules },
 	})
 	if !rep.Field.OK() {
 		return fmt.Errorf("the documents do not validate:\n%w", rep.Field)

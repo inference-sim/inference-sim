@@ -46,14 +46,6 @@ var _ rules.EngineRules = (*Pack)(nil)
 // EngineVersion implements rules.EngineRules.
 func (p *Pack) EngineVersion() string { return p.Version }
 
-// Check implements rules.EngineRules. SGLang's cross-document rules are the resolution
-// config.Resolve runs on the pool's engine block, which needs the chip and the model and so runs
-// when the pool is lowered (lower.Pool); no rule here reads the document set alone.
-func (p *Pack) Check(rules.Input) *rules.Problems { return &rules.Problems{} }
-
-// RuleNames implements rules.EngineRules: this release has no document-set rule.
-func (p *Pack) RuleNames() []string { return nil }
-
 // CheckEngineBlock implements rules.EngineRules: the block decodes as a mapping, and every key in
 // it is a ServerArgs field of v0.5.23 by SGLang's own name (X1). A name that is not one is a
 // finding that names it.

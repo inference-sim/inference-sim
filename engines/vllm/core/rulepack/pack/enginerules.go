@@ -13,8 +13,10 @@ var _ rules.EngineRules = (*Pack)(nil)
 // EngineVersion implements EngineRules.
 func (p *Pack) EngineVersion() string { return p.Version }
 
-// Check implements EngineRules: every rule of the pack, in order.
-func (p *Pack) Check(in rules.Input) *rules.Problems {
+var _ RuleSet = (*Pack)(nil)
+
+// Check implements RuleSet: every rule of the pack, in order.
+func (p *Pack) Check(in Input) *rules.Problems {
 	out := &rules.Problems{}
 	for _, r := range p.Rules {
 		r.Check(in, out)
@@ -22,7 +24,7 @@ func (p *Pack) Check(in rules.Input) *rules.Problems {
 	return out
 }
 
-// RuleNames implements EngineRules.
+// RuleNames implements RuleSet.
 func (p *Pack) RuleNames() []string { return p.Names() }
 
 // SpeculativeMethodAccepted implements EngineRules.

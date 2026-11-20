@@ -16,42 +16,6 @@
 // (deployment.EngineBlock); the release's rules open it.
 package rules
 
-import (
-	"github.com/inference-sim/inference-sim/substrate/contracts/check"
-	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
-	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
-	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
-)
-
-// Input is everything a rule may read. A rule sees the whole resolved set of documents,
-// because the interesting rules are cross-document: expert divisibility needs the
-// deployment's layout and the model's expert count, and neither alone. The Scenario carries
-// the immutable problem (engine version, cluster inventory) and the Deployment the mutable
-// layout (pools, offload) a rule checks against it.
-type Input struct {
-	Scenario   *scenario.Scenario
-	Deployment *deployment.Deployment
-	Model      *model.Graph
-	// Packaging is the scenario cluster's resolved packaging (scenario.Cluster.Packaging):
-	// the GPUs per node and per rack, from the scenario or the chip's catalog entry. A rule
-	// that needs a node size reads it here, never from Scenario.Cluster, which is zero where
-	// the scenario leaves the value to the catalog. Nil when the caller could not resolve
-	// it; a rule then has no node size and checks nothing that needs one.
-	Packaging *scenario.Packaging
-}
-
-// Rule is one named, version-scoped check.
-//
-// Name is stable and mentioned in every finding, so a CI job can waive one rule without
-// waiving a whole layer, and a reader can tell which release's expectation fired. Because is
-// a short statement of why the rule exists, surfaced in documentation rather than in every
-// message.
-type Rule struct {
-	Name    string
-	Because string
-	Check   func(Input, *validate.Problems)
-}
-
 // ArchDeepseekV41 and ArchDeepseekV4 are DeepSeek-V4.1's and DeepSeek-V4's architecture
 // names, the values of their model configurations' architectures[0], which several releases'
 // rules key on.

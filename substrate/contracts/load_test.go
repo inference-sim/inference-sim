@@ -64,7 +64,7 @@ cluster:
 	if len(s.Cluster.Storage) != 2 || s.Cluster.Storage[0] != "cpu_dram" {
 		t.Errorf("cluster.storage did not parse: %v", s.Cluster.Storage)
 	}
-	if rep := Validate(Bundle{Scenario: s}); !rep.Field.OK() {
+	if rep := Validate(Bundle{Scenario: s, Engine: openAnyEngine}); !rep.Field.OK() {
 		t.Errorf("a loaded scenario failed field validation:\n%s", rep.Field.Error())
 	}
 }
@@ -127,7 +127,7 @@ cluster:
 	if !ok || crit.TTFTMs != 500 || crit.ITLMs != 50 || crit.E2EMs != 30000 {
 		t.Errorf("goodput_slo_targets did not parse: %+v", h.GoodputSLOTargets)
 	}
-	if rep := Validate(Bundle{Scenario: s}); !rep.Field.OK() {
+	if rep := Validate(Bundle{Scenario: s, Engine: openAnyEngine}); !rep.Field.OK() {
 		t.Errorf("a loaded trace-bound scenario failed field validation:\n%s", rep.Field.Error())
 	}
 }
@@ -1027,7 +1027,7 @@ func TestLoadCatalogFiles(t *testing.T) {
 // TestCoefficientOnlyBundleRunsNoRules is a canary for validate-registry. That command
 // validates each set with (*coefficient.Set).Validate alone, which is complete only while
 // a coefficient-only bundle runs no version-scoped rules: rules run solely against a
-// Scenario, and rules.Input carries no coefficient. If a future rules pack ever runs for a
+// Scenario, and the engine checker is given no coefficient. If a future rules pack ever runs for a
 // coefficient-only bundle, this test fails on purpose — the signal to route
 // validate-registry through blisschemas.Validate so it enforces those rules rather than
 // silently passing sets they would reject.
@@ -1049,13 +1049,9 @@ coefficients:
 		t.Fatalf("LoadCoefficientSet: %v", err)
 	}
 	rep := Validate(Bundle{Coefficients: []*coefficient.Set{s}})
-	if rep.RulesApplied != "" {
-		t.Errorf("a rules pack now runs for a coefficient-only bundle (RulesApplied=%q); "+
-			"route validate-registry through blisschemas.Validate so it enforces coefficient rules",
-			rep.RulesApplied)
-	}
-	if !rep.Rule.OK() {
-		t.Errorf("rule-layer findings on a coefficient-only bundle: %s", rep.Rule.Error())
+	if len(ruleFindings(rep)) != 0 {
+		t.Errorf("engine findings on a coefficient-only bundle (%s); route validate-registry "+
+			"through blisschemas.Validate so it enforces them", ruleText(rep))
 	}
 }
 
