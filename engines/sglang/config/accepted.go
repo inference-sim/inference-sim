@@ -131,8 +131,12 @@ var refusedValueIssue = map[string]map[string]string{
 		"mooncake": "inference-sim/blis-sglang#14", "aibrix": "inference-sim/blis-sglang#16", "eic": "inference-sim/blis-sglang#16",
 		"simm": "inference-sim/blis-sglang#16", "mori": "inference-sim/blis-sglang#16", "tensorcast": "inference-sim/blis-sglang#16",
 	},
-	"speculative_algorithm":           {"DSPARK": "inference-sim/blis-sglang#69"},
-	"disaggregation_transfer_backend": {"mooncake": "inference-sim/blis-sglang#18", "mooncake_tcp": "inference-sim/blis-sglang#18"},
+	"speculative_algorithm": {"DSPARK": "inference-sim/blis-sglang#69"},
+	"disaggregation_transfer_backend": {
+		"mooncake": "inference-sim/blis-sglang#18", "mooncake_tcp": "inference-sim/blis-sglang#18",
+		// The fake backend completes a transfer at the step a scenario names; the P/D queues that use it are S25.
+		"fake": "inference-sim/blis-sglang#64",
+	},
 }
 
 // refusalIssue is the open issue that models name at value v: the value's own, else the field's,
@@ -250,6 +254,11 @@ func RefusalIssue(name string) (string, bool) {
 	i, ok := refusedFieldIssue[name]
 	return i, ok
 }
+
+// ValueRefusalIssue is the open issue a refusal cites when the field is set to the value v, away
+// from its default and not modelled: the value's own issue, else the field's, else the general one.
+// It is what the start-up refusal prints, so the surface list (surface.json) can be held to it.
+func ValueRefusalIssue(name string, v any) string { return refusalIssue(name, v) }
 
 // AcceptsValue reports whether Resolve accepts the field set to the value: the field is accepted and
 // its value list, if it has one, holds the value.
