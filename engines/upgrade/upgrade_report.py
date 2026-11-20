@@ -9,7 +9,9 @@ source checkout with the engine's own generators, and prints the report as JSON.
 The report has five parts.
   surface       the items the new commit adds or removes, each added item with the status the
                 engine's status.json gives it, or "unstatused" (an item no one has decided on); the
-                transformers_fallback items are the Transformers-backed fallback paths
+                items present at both whose "value" (the fact an item records from source, such as a
+                default or a priority list) differs, each with its status; the transformers_fallback
+                items are the Transformers-backed fallback paths
   fields        the fields added, removed or changed in status, and for a demand (field -> value ->
                 points the dashboard could not run) which of it the engine models
   source        the ported files (every Go file's "Derived from" header, file level) whose upstream
@@ -45,10 +47,15 @@ HASH = re.compile(r"\bcode_hash:\s*([0-9a-f]{64})")
 ARCH = re.compile(r"^\s+architecture:\s*(\S+)\s*$", re.M)
 
 
+def _same(a, b):
+    return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+
+
 def surface_diff(old_items, new_items, statuses):
-    """The surface items a commit adds or removes. old_items are the committed surface.json items,
-    new_items the items derived at the commit ({id, category, site, ...}), statuses the engine's
-    status.json "items". Every added item carries its status, or "unstatused"."""
+    """The surface items a commit adds, removes or changes. old_items are the committed surface.json
+    items, new_items the items derived at the commit ({id, category, site, ...}), statuses the
+    engine's status.json "items". Every added item carries its status, or "unstatused". An item at
+    both whose "value" differs is changed: a status given for the old value does not carry over."""
     old = {i["id"]: i for i in old_items}
     new = {i["id"]: i for i in new_items}
     added = []
@@ -60,13 +67,17 @@ def surface_diff(old_items, new_items, statuses):
                 row[extra] = st[extra]
         added.append(row)
     removed = [{"id": k, "category": old[k]["category"], "status": old[k]["status"]} for k in sorted(set(old) - set(new))]
+    changed = [{"id": k, "category": new[k]["category"], "status": (statuses.get(k) or {}).get("status", "unstatused"),
+                "from": old[k].get("value"), "to": new[k].get("value")}
+               for k in sorted(set(old) & set(new)) if not _same(old[k].get("value"), new[k].get("value"))]
     by_status = {}
     for r in added:
         by_status[r["status"]] = by_status.get(r["status"], 0) + 1
     return {
         "added": added,
         "removed": removed,
-        "distance": {"added": len(added), "removed": len(removed), "unstatused": by_status.get("unstatused", 0),
+        "changed": changed,
+        "distance": {"added": len(added), "removed": len(removed), "changed": len(changed), "unstatused": by_status.get("unstatused", 0),
                      "added_by_status": dict(sorted(by_status.items()))},
         "transformers_fallback": [r["id"] for r in added if r["category"] == FALLBACK],
     }

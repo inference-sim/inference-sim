@@ -210,6 +210,186 @@ FILES = {
     """,
 }
 
+def config_class(name, fields, classvars=""):
+    body = "".join("    %s: object = %s\n" % (f, d) for f, d in fields)
+    return "class %s:\n%s%s" % (name, classvars, body)
+
+
+CACHE_FIELDS = [("block_size", "None"), ("gpu_memory_utilization", "0.9"), ("cache_dtype", '"auto"'),
+                ("enable_prefix_caching", "True"), ("prefix_caching_hash_algo", '"sha256"'),
+                ("num_gpu_blocks_override", "None"), ("kv_cache_memory_bytes", "None"), ("mamba_block_size", "None")]
+SCHED_FIELDS = [("max_num_batched_tokens", "DEFAULT_MAX_NUM_BATCHED_TOKENS"), ("max_num_seqs", "128"),
+                ("enable_chunked_prefill", "True"), ("policy", '"fcfs"'), ("long_prefill_token_threshold", "0"),
+                ("prefill_schedule_interval", "1"), ("async_scheduling", "None"), ("stream_interval", "1")]
+KVEV_FIELDS = [("enable_kv_cache_events", "False"), ("publisher", "None"), ("endpoint", '"tcp://*:5557"'),
+                ("replay_endpoint", "None"), ("buffer_steps", "10000"), ("hwm", "100000"),
+                ("max_queue_size", "100000"), ("topic", '""')]
+
+ROW4_FILES = {
+    "vllm/model_executor/layers/fused_moe/fused_moe.py": """
+        def get_config_file_name(E, N, dtype):
+            device_name = current_platform.get_device_name().replace(" ", "_")
+            dtype_selector = "" if not dtype else f",dtype={dtype}"
+            if "H200" in device_name.split("_"):
+                device_name = "NVIDIA_H200"
+            return f"E={E},N={N},device_name={device_name}{dtype_selector}.json"
+        def get_moe_configs(E, N, dtype, M, down_moe=False):
+            if envs.VLLM_BATCH_INVARIANT:
+                return None
+            json_file_name = get_config_file_name(E, N, dtype)
+            if down_moe:
+                json_file_name = json_file_name.removesuffix(".json") + "_down.json"
+            user_defined_config_folder = envs.VLLM_TUNED_CONFIG_FOLDER
+            default_config_file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs", json_file_name)
+            return {k: v for k, v in configs.items()}
+        def try_get_optimal_moe_config(w1_shape, M, override_config=None):
+            override_config = get_config()
+            nearest = min(configs.keys(), key=lambda x: abs(x - M))
+            return get_default_config(M, E)
+    """,
+    "vllm/utils/platform_utils.py": """
+        def get_device_name_as_file_name(device_id=0):
+            name = current_platform.get_device_name(device_id)
+            name = re.sub(r"[\\s/]+", "_", name)
+            return name
+    """,
+    "vllm/model_executor/layers/fused_moe/configs/E=1,N=2,device_name=NVIDIA_H200.json": "{}",
+    "vllm/model_executor/layers/fused_moe/configs/E=1,N=2,device_name=NVIDIA_H200,dtype=fp8_w8a8_down.json": "{}",
+    "vllm/model_executor/layers/fused_moe/configs/E=1,N=2,device_name=AMD_MI350X,dtype=int4,backend=flydsl.json": "{}",
+    "vllm/config/cache.py": "KVOffloadingBackend = Literal['native']\n" + config_class(
+        "CacheConfig", CACHE_FIELDS, "    DEFAULT_BLOCK_SIZE: ClassVar[int] = 16\n"),
+    "vllm/config/scheduler.py": "SchedulerPolicy = Literal['fcfs']\n" + config_class(
+        "SchedulerConfig", SCHED_FIELDS, "    DEFAULT_MAX_NUM_BATCHED_TOKENS: ClassVar[int] = 2048\n") + """
+    def get_scheduler_cls(self):
+        return resolve_obj_by_qualname(self.scheduler_cls)
+""",
+    "vllm/config/kv_events.py": config_class("KVEventsConfig", KVEV_FIELDS),
+    "vllm/config/vllm.py": """
+        class VllmConfig:
+            def max_concurrent_batches(self):
+                pp_size = self.parallel_config.pipeline_parallel_size
+                if self.scheduler_config.async_scheduling:
+                    return pp_size + 1
+                return pp_size
+            def _set_defaults(self):
+                if self.scheduler_config.async_scheduling is None:
+                    if self.model_config is not None and self.model_config.runner_type == "pooling":
+                        self.scheduler_config.async_scheduling = False
+                    elif not executor_supports_async_sched:
+                        self.scheduler_config.async_scheduling = False
+                    else:
+                        self.scheduler_config.async_scheduling = True
+    """,
+    "vllm/v1/engine/__init__.py": """
+        class EngineCoreRequestType:
+            ADD = b"\\x00"
+            ABORT = b"\\x01"
+            WAKEUP = b"\\x02"
+    """,
+    "vllm/v1/engine/core.py": """
+        _INPUTS_HANDLED_DURING_STEP = (EngineCoreRequestType.ADD, EngineCoreRequestType.ABORT)
+        class EngineCore:
+            def __init__(self):
+                if self.batch_queue_size > 1:
+                    self.batch_queue = deque()
+                self.step_fn = self.step if self.batch_queue is None else self.step_with_batch_queue
+            def step_with_batch_queue(self):
+                batch_queue = self.batch_queue
+                if self.deferred_step is None and self.scheduler.has_requests():
+                    scheduler_output = self.scheduler.schedule()
+                    future = self.model_executor.execute_model(scheduler_output)
+                    if not scheduler_output.pending_structured_output_tokens:
+                        self.model_executor.sample_tokens(grammar_output)
+                    batch_queue.appendleft(future)
+                batch_queue.pop()
+                self._wait_for_output()
+                self._process_aborts_queue()
+                self.scheduler.update_from_output()
+        class EngineCoreProc(EngineCore):
+            def _process_input_queue(self):
+                req = self.input_queue.get()
+    """,
+    "vllm/v1/core/block_pool.py": """
+        class BlockPool:
+            def cache_full_blocks(self, request, num_cached_blocks, num_full_blocks):
+                if num_cached_blocks >= num_full_blocks:
+                    return
+                if self.enable_kv_cache_events:
+                    self.kv_event_queue.append(BlockStored(hashes=[]))
+            def _emit_block_removed_events(self, hashes):
+                if not self.enable_kv_cache_events:
+                    return
+                self.kv_event_queue.append(BlockRemoved(hashes=hashes))
+    """,
+    "vllm/v1/core/kv_cache_manager.py": """
+        class KVCacheManager:
+            def get_computed_blocks(self, request, num_new_computed_tokens):
+                if num_new_computed_tokens > 0 and self.enable_kv_cache_events and request.kv_cache_report_mode == "full":
+                    self.coordinator.emit_cached_block_events(request)
+            def allocate_slots(self, request):
+                self.block_pool.cache_full_blocks(request, 0, 1)
+                self.block_pool._emit_block_removed_events([])
+    """,
+    "vllm/v1/request.py": """
+        class Request:
+            def __init__(self, params):
+                self.kv_cache_report_mode = "incremental"
+    """,
+    "vllm/v1/core/sched/async_scheduler.py": """
+        class AsyncScheduler:
+            def _update_after_schedule(self, scheduler_output):
+                scheduler_output.pending_structured_output_tokens = x
+                request.num_output_placeholders += 1
+    """,
+    "vllm/platforms/cuda.py": """
+        def _get_backend_priorities(use_mla, device_capability):
+            if use_mla:
+                return [AttentionBackendEnum.FLASHMLA]
+            return [AttentionBackendEnum.FLASH_ATTN, AttentionBackendEnum.TRITON_ATTN]
+        class CudaPlatformBase:
+            @classmethod
+            def get_valid_backends(cls, device_capability):
+                priorities = _get_backend_priorities(False, device_capability)
+                return priorities, {}
+    """,
+    "vllm/platforms/interface.py": """
+        class Platform:
+            @classmethod
+            def _preferred_block_size_for_backends(cls, backend_classes, default_block_size, vllm_config):
+                if len(backend_classes) == 1:
+                    return backend_classes[0].get_preferred_block_size(default_block_size)
+                return default_block_size
+    """,
+}
+FILES.update(ROW4_FILES)
+BLOCKSIZE_ORACLE_TEXT = "platform.get_valid_backends(c)\nplatform._preferred_block_size_for_backends(b, 16, cfg)\n"
+
+ROW4_IDS = [
+    "moe_tuned_rule:config_file_name", "moe_tuned_rule:device_alias", "moe_tuned_rule:batch_invariant_bypass",
+    "moe_tuned_rule:down_projection_suffix", "moe_tuned_rule:user_folder", "moe_tuned_rule:default_folder",
+    "moe_tuned_rule:closest_batch", "moe_tuned_rule:override", "moe_tuned_rule:default_heuristic",
+    "moe_tuned_rule:device_name_source", "moe_tuned_device:AMD_MI350X", "moe_tuned_device:NVIDIA_H200",
+    "kv_event_emitter:cache_full_blocks", "kv_event_emitter:_emit_block_removed_events",
+    "kv_report_mode:incremental", "kv_report_mode:full",
+    "step_input_kind:ADD", "step_input_kind:ABORT", "step_input_kind:WAKEUP",
+    "step_input_read:EngineCoreProc._process_input_queue:get#1",
+    "async_depth:max_concurrent_batches", "async_depth:batch_queue_enabled", "async_depth:step_function",
+    "async_default:async_scheduling=False if self.model_config is not None and self.model_config.runner_type == 'pooling'",
+    "async_default:async_scheduling=False if not executor_supports_async_sched",
+    "async_default:async_scheduling=True otherwise",
+    "async_placeholder:scheduler_output.pending_structured_output_tokens",
+    "async_placeholder:request.num_output_placeholders",
+    "step_order:self.scheduler.schedule#1", "step_order:self.model_executor.execute_model#1",
+    "step_order:self.model_executor.sample_tokens#1", "step_order:batch_queue.appendleft#1",
+    "step_order:batch_queue.pop#1", "step_order:self._wait_for_output#1",
+    "step_order:self._process_aborts_queue#1", "step_order:self.scheduler.update_from_output#1",
+    "platform_preference:_get_backend_priorities", "platform_preference:CudaPlatformBase.get_valid_backends",
+    "platform_preference:Platform._preferred_block_size_for_backends",
+] + ["engine_default:%s.%s" % (c, f) for c, fs in (("CacheConfig", CACHE_FIELDS), ("SchedulerConfig", SCHED_FIELDS),
+                                                   ("KVEventsConfig", KVEV_FIELDS)) for f, _ in fs] + [
+    "engine_default:CacheConfig.DEFAULT_BLOCK_SIZE", "engine_default:SchedulerConfig.DEFAULT_MAX_NUM_BATCHED_TOKENS",
+]
+
 MANIFEST = {"generator": "test", "vllm": "0.32.0", "families": [
     {"name": "vllm:num_requests_running", "defined": "vllm/v1/metrics/loggers.py:10", "class": "exact"}]}
 
@@ -284,6 +464,8 @@ def good_status():
     }
     for name, *_ in gen_surface.PATH_LOADERS:
         s["path_loader:" + name] = refused()
+    for iid in ROW4_IDS:
+        s[iid] = refused()
     return {"items": s}
 
 
@@ -297,6 +479,7 @@ class Tree:
         self.write(self.repo, "oracle/metrics/manifest.json", json.dumps(MANIFEST))
         self.write(self.repo, GOLDEN, "{}")
         self.write(self.repo, "oracle/run_x.py", "")
+        self.write(self.repo, "oracle/blocksize/oracle.py", BLOCKSIZE_ORACLE_TEXT)
         self.write(self.repo, "provenance.go", PROVENANCE)
 
     @staticmethod
@@ -611,6 +794,176 @@ class GenSurfaceTest(unittest.TestCase):
         self.tree.write(self.tree.repo, "internal/upstream/upstream.go", UPSTREAM_GO.replace("4ba787ec", "4ba787"))
         with self.assertRaisesRegex(gen_surface.GenError, "40-hex"):
             gen_surface.provenance_upstream(self.tree.repo)
+
+    def edit(self, rel, old, new):
+        path = os.path.join(self.tree.src, rel)
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn(old, text)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text.replace(old, new))
+
+    def test_the_tuned_moe_selection_is_listed_by_rule_and_device(self):
+        got = self.items()
+        self.assertEqual(got["moe_tuned_rule:device_alias"]["value"]["sets"], ["device_name = 'NVIDIA_H200'"])
+        self.assertEqual(got["moe_tuned_rule:batch_invariant_bypass"]["value"]["then"], ["return None"])
+        self.assertEqual(got["moe_tuned_rule:closest_batch"]["value"], "min(configs.keys(), key=lambda x: abs(x - M))")
+        self.assertEqual(got["moe_tuned_device:NVIDIA_H200"]["value"], {"files": 2, "down_files": 1})
+
+    def test_a_backend_selector_in_a_tuned_file_name_is_not_part_of_the_device(self):
+        got = self.items()
+        self.assertEqual(got["moe_tuned_device:AMD_MI350X"]["value"], {"files": 1, "down_files": 0})
+        self.assertFalse([k for k in got if k.startswith("moe_tuned_device:") and "backend=" in k])
+
+    def test_the_tuned_moe_rules_fail_when_a_rule_is_dropped(self):
+        moe = "vllm/model_executor/layers/fused_moe/fused_moe.py"
+        self.tearDown()
+        for old, new, msg in (
+                ('if "H200" in device_name.split("_"):', "if False:", "device-name aliases"),
+                ("envs.VLLM_BATCH_INVARIANT", "envs.OTHER", "batch-invariant bypasses"),
+                ("default_config_file_path =", "other_path =", "assigns default_config_file_path 0 times"),
+                ("return get_default_config(M, E)", "return None", "calls get_default_config 0 times"),
+                ("min(configs.keys()", "max(configs.keys()", "closest-batch lookups")):
+            with self.subTest(old=old):
+                self.setUp()
+                try:
+                    self.edit(moe, old, new)
+                    self.assertIn(msg, self.refusal(good_status()))
+                finally:
+                    self.tearDown()
+        self.setUp()
+
+    def test_a_commit_before_the_down_projection_suffix_lists_no_such_rule(self):
+        self.edit("vllm/model_executor/layers/fused_moe/fused_moe.py", "if down_moe:", "if False:")
+        s = good_status()
+        del s["items"]["moe_tuned_rule:down_projection_suffix"]
+        self.assertNotIn("moe_tuned_rule:down_projection_suffix", self.items(s))
+
+    def test_a_tuned_file_with_an_unparsable_name_fails(self):
+        self.tree.write(self.tree.src, "vllm/model_executor/layers/fused_moe/configs/other.json", "{}")
+        self.assertIn("not a tuned-config file name", self.refusal(good_status()))
+
+    def test_a_new_tuned_device_needs_a_status(self):
+        self.tree.write(self.tree.src, "vllm/model_executor/layers/fused_moe/configs/E=1,N=2,device_name=NEW_GPU.json", "{}")
+        self.assertIn("moe_tuned_device:NEW_GPU: no status", self.refusal(good_status()))
+
+    def test_a_setting_a_commit_added_later_is_listed_only_where_it_exists(self):
+        self.assertNotIn("engine_default:SchedulerConfig.async_scheduling_depth", self.items())
+        self.edit("vllm/config/scheduler.py", "    stream_interval: object = 1\n",
+                  "    stream_interval: object = 1\n    async_scheduling_depth: object = 2\n")
+        s = good_status()
+        s["items"]["engine_default:SchedulerConfig.async_scheduling_depth"] = refused()
+        self.assertEqual(self.items(s)["engine_default:SchedulerConfig.async_scheduling_depth"]["value"], 2)
+
+    def test_a_default_is_the_value_the_source_gives_and_follows_a_constant(self):
+        got = self.items()
+        self.assertEqual(got["engine_default:CacheConfig.DEFAULT_BLOCK_SIZE"]["value"], 16)
+        self.assertEqual(got["engine_default:CacheConfig.gpu_memory_utilization"]["value"], 0.9)
+        self.assertEqual(got["engine_default:CacheConfig.block_size"]["value"], None)
+        self.assertEqual(got["engine_default:SchedulerConfig.max_num_batched_tokens"]["value"], 2048)
+
+    def test_a_default_that_changes_is_a_different_item_value(self):
+        before = self.items()["engine_default:CacheConfig.DEFAULT_BLOCK_SIZE"]
+        self.edit("vllm/config/cache.py", "DEFAULT_BLOCK_SIZE: ClassVar[int] = 16", "DEFAULT_BLOCK_SIZE: ClassVar[int] = 64")
+        after = self.items()["engine_default:CacheConfig.DEFAULT_BLOCK_SIZE"]
+        self.assertNotEqual(before["value"], after["value"])
+
+    def test_a_missing_default_setting_fails_unless_a_commit_added_it_later(self):
+        self.edit("vllm/config/cache.py", "    cache_dtype: object = \"auto\"\n", "")
+        self.assertIn("no field CacheConfig.cache_dtype", self.refusal(good_status()))
+
+    def test_the_kv_event_emitters_are_listed_with_their_guards_and_callers(self):
+        got = self.items()
+        full = got["kv_event_emitter:cache_full_blocks"]["value"]
+        self.assertEqual(full["event"], "BlockStored")
+        self.assertEqual(full["when"], ["self.enable_kv_cache_events", "not (num_cached_blocks >= num_full_blocks)"])
+        self.assertEqual(full["called_from"], ["vllm/v1/core/kv_cache_manager.py::KVCacheManager.allocate_slots"])
+        self.assertEqual(got["kv_event_emitter:_emit_block_removed_events"]["value"]["event"], "BlockRemoved")
+
+    def test_a_new_event_emission_site_needs_a_status(self):
+        self.edit("vllm/v1/core/block_pool.py", "    def _emit_block_removed_events",
+                  "    def cache_partial_block(self, block):\n"
+                  "        if self.enable_kv_cache_events:\n"
+                  "            self.kv_event_queue.append(BlockStored(hashes=[]))\n"
+                  "    def _emit_block_removed_events")
+        self.assertIn("kv_event_emitter:cache_partial_block: no status", self.refusal(good_status()))
+
+    def test_a_pool_with_no_event_emission_fails(self):
+        self.tree.write(self.tree.src, "vllm/v1/core/block_pool.py", "class BlockPool:\n    def f(self):\n        pass\n")
+        self.assertIn("appends no event to kv_event_queue", self.refusal(good_status()))
+
+    def test_the_report_modes_are_the_default_and_the_cache_hit_branch(self):
+        got = self.items()
+        self.assertEqual(got["kv_report_mode:incremental"]["value"], {"default": True, "on_cache_hit": []})
+        self.assertEqual(got["kv_report_mode:full"]["value"]["on_cache_hit"], ["self.coordinator.emit_cached_block_events"])
+        self.assertIn("kv_cache_report_mode", got["kv_report_mode:full"]["value"]["when"].replace("request.", "kv_cache_report_mode"))
+
+    def test_a_report_mode_without_a_default_fails(self):
+        self.edit("vllm/v1/request.py", 'self.kv_cache_report_mode = "incremental"', "self.kv_cache_report_mode = mode")
+        self.assertIn("kv_cache_report_mode is not set from a string default", self.refusal(good_status()))
+
+    def test_step_inputs_are_split_by_whether_vllm_handles_them_during_a_step(self):
+        got = self.items()
+        self.assertEqual(got["step_input_kind:ADD"]["value"], "during_step")
+        self.assertEqual(got["step_input_kind:WAKEUP"]["value"], "after_step")
+        self.assertFalse(got["step_input_read:EngineCoreProc._process_input_queue:get#1"]["value"]["filtered_by_step_kind"])
+
+    def test_a_new_step_input_kind_needs_a_status(self):
+        self.edit("vllm/v1/engine/__init__.py", "    WAKEUP =", "    NEW_INPUT = b'x'\n    WAKEUP =")
+        self.assertIn("step_input_kind:NEW_INPUT: no status", self.refusal(good_status()))
+
+    def test_a_during_step_kind_the_types_lack_fails(self):
+        self.edit("vllm/v1/engine/core.py", "EngineCoreRequestType.ABORT)", "EngineCoreRequestType.GONE)")
+        self.assertIn("names ['GONE']", self.refusal(good_status()))
+
+    def test_the_step_n_plus_2_order_is_recorded_with_its_conditions(self):
+        got = self.items()
+        order = sorted((v["value"]["position"], k) for k, v in got.items() if k.startswith("step_order:"))
+        self.assertEqual([k for _, k in order], [
+            "step_order:self.scheduler.schedule#1", "step_order:self.model_executor.execute_model#1",
+            "step_order:self.model_executor.sample_tokens#1", "step_order:batch_queue.appendleft#1",
+            "step_order:batch_queue.pop#1", "step_order:self._wait_for_output#1",
+            "step_order:self._process_aborts_queue#1", "step_order:self.scheduler.update_from_output#1"])
+        self.assertEqual(got["step_order:batch_queue.appendleft#1"]["value"]["when"],
+                         ["self.deferred_step is None and self.scheduler.has_requests()"])
+
+    def test_a_step_that_stops_calling_a_stage_fails(self):
+        self.edit("vllm/v1/engine/core.py", "self._process_aborts_queue()", "pass")
+        self.assertIn("no longer calls ['self._process_aborts_queue']", self.refusal(good_status()))
+
+    def test_the_async_defaults_and_placeholders_are_listed(self):
+        got = self.items()
+        self.assertEqual(got["async_default:async_scheduling=True otherwise"]["value"]["when"], [
+            "not (self.model_config is not None and self.model_config.runner_type == 'pooling')",
+            "not (not executor_supports_async_sched)"])
+        self.assertEqual(got["async_placeholder:request.num_output_placeholders"]["value"], {"op": "+=", "expr": "1"})
+        self.assertEqual(got["async_depth:max_concurrent_batches"]["value"][0],
+                         {"when": ["self.scheduler_config.async_scheduling"], "returns": "pp_size + 1"})
+
+    def test_a_new_async_default_branch_needs_a_status(self):
+        self.edit("vllm/config/vllm.py", "            else:\n                self.scheduler_config.async_scheduling = True",
+                  "            elif new_condition:\n                self.scheduler_config.async_scheduling = False\n"
+                  "            else:\n                self.scheduler_config.async_scheduling = True")
+        self.assertIn("async_default:async_scheduling=False if new_condition: no status", self.refusal(good_status()))
+
+    def test_the_batch_queue_selection_is_read_not_assumed(self):
+        self.edit("vllm/v1/engine/core.py", "if self.batch_queue_size > 1:", "if True:")
+        self.assertIn("EngineCore.__init__ has 0 batch-queue tests", self.refusal(good_status()))
+
+    def test_the_platform_preferences_are_the_lists_the_faked_platform_returns(self):
+        got = self.items()
+        self.assertEqual(got["platform_preference:_get_backend_priorities"]["value"], [
+            {"when": ["use_mla"], "returns": "[AttentionBackendEnum.FLASHMLA]"},
+            {"when": [], "returns": "[AttentionBackendEnum.FLASH_ATTN, AttentionBackendEnum.TRITON_ATTN]"}])
+
+    def test_a_platform_function_the_oracle_does_not_run_fails(self):
+        self.tree.write(self.tree.repo, "oracle/blocksize/oracle.py", "platform.get_valid_backends(c)\n")
+        self.assertIn("no longer calls _preferred_block_size_for_backends", self.refusal(good_status()))
+
+    def test_a_changed_priority_is_a_different_item_value(self):
+        before = self.items()["platform_preference:_get_backend_priorities"]["value"]
+        self.edit("vllm/platforms/cuda.py", "FLASH_ATTN, AttentionBackendEnum.TRITON_ATTN", "TRITON_ATTN, AttentionBackendEnum.FLASH_ATTN")
+        self.assertNotEqual(before, self.items()["platform_preference:_get_backend_priorities"]["value"])
 
     def test_check_fails_on_drift_and_passes_when_current(self):
         code, out, err = run(self.tree, good_status())

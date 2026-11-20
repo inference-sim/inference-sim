@@ -67,6 +67,38 @@ What is read, by category (each item's "site" is the file and line it was read a
                        architecture the registry sends to one (route architecture, with its
                        backend), and the fallback for an unregistered architecture
                        (_try_resolve_transformers, route unregistered_architecture).
+  moe_tuned_rule       each rule by which fused_moe.py picks the tuned kernel configuration: the file
+                       name (get_config_file_name), the device name's spelling, the H200 family alias,
+                       the down-projection suffix, the user folder (VLLM_TUNED_CONFIG_FOLDER), the
+                       default folder, the batch-invariant bypass, the override, the closest-batch rule
+                       and the default heuristic the lookup falls back to. The value is what the
+                       source says.
+  moe_tuned_device     each device the configs/ directory has tuned files for, with its file count: the
+                       tables the kernel's CodeHash covers (kernel_impls.json).
+  engine_default       the default of each setting the Table DC names (CacheConfig, SchedulerConfig,
+                       KVEventsConfig), a constant it resolves to, and the properties that resolve an
+                       unset one. The value is the default at this commit, so two commits' lists show
+                       a default that moved (upgrade_report.py "changed").
+  kv_event_emitter     each BlockPool.kv_event_queue.append: the method, the event it builds, the
+                       tests that guard it and the early returns before it. cache_full_blocks emits
+                       full blocks, cache_partial_block a partial one.
+  kv_report_mode       each value of a request's kv_cache_report_mode: the default
+                       ("incremental", request.py) and the one KVCacheManager compares it with, with
+                       what that mode emits.
+  step_input_kind      each EngineCoreRequestType, with whether EngineCoreProc takes it while a step is
+                       in flight (_INPUTS_HANDLED_DURING_STEP) or after it (DEV-3).
+  step_input_read      each read of EngineCoreProc's input_queue, with whether its method filters by
+                       that tuple (DEV-3).
+  async_depth          max_concurrent_batches, the batch queue's creation test and the step function
+                       it selects: how many steps are in flight under async scheduling.
+  async_default        each branch that sets async_scheduling when the user left it unset.
+  async_placeholder    each request field AsyncScheduler._update_after_schedule sets for the step
+                       after one in flight.
+  step_order           each call of step_with_batch_queue that orders a step against the next, in
+                       source order (schedule, execute, sample, queue, wait, update).
+  platform_preference  the CudaPlatform and Platform methods that state an attention backend or block
+                       size preference, each run by oracle/blocksize/oracle.py with the device faked
+                       and not transcribed (FID-1); the generator fails when the oracle stops naming one.
   metric_family        every family of oracle/metrics/manifest.json, which cmd/metricsmanifest
                        generates from every Prometheus constructor in the pinned source and CI checks
                        current in the same job.
@@ -704,6 +736,472 @@ def transformers_fallback(src):
     return out
 
 
+VLLM_CONFIG = "vllm/config/vllm.py"
+CACHE_CONFIG = "vllm/config/cache.py"
+SCHEDULER_CONFIG = "vllm/config/scheduler.py"
+KV_EVENTS_CONFIG = "vllm/config/kv_events.py"
+ENGINE_CORE = "vllm/v1/engine/core.py"
+ENGINE_TYPES = "vllm/v1/engine/__init__.py"
+BLOCK_POOL = "vllm/v1/core/block_pool.py"
+KV_CACHE_MANAGER = "vllm/v1/core/kv_cache_manager.py"
+ASYNC_SCHEDULER = "vllm/v1/core/sched/async_scheduler.py"
+REQUEST = "vllm/v1/request.py"
+FUSED_MOE = "vllm/model_executor/layers/fused_moe/fused_moe.py"
+MOE_CONFIGS = "vllm/model_executor/layers/fused_moe/configs"
+PLATFORM_UTILS = "vllm/utils/platform_utils.py"
+BLOCKSIZE_ORACLE = "oracle/blocksize/oracle.py"
+
+
+def value_of(node):
+    """What the source says, as a JSON value: the literal when it is one, else its text."""
+    try:
+        v = ast.literal_eval(node)
+        return json.loads(json.dumps(v))
+    except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+        return ast.unparse(node)
+
+
+def find_class(tree, rel, name):
+    for c in classes(tree):
+        if c.name == name:
+            return c
+    raise GenError("%s: no class %s" % (rel, name))
+
+
+def function(scope, rel, name, cls=None):
+    body = scope.body if cls is None else find_class(scope, rel, cls).body
+    for n in body:
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == name:
+            return n
+    raise GenError("%s: no %s%s" % (rel, cls + "." if cls else "", name))
+
+
+def parents(root):
+    out = {}
+    for p in ast.walk(root):
+        for c in ast.iter_child_nodes(p):
+            out[c] = p
+    return out
+
+
+def guards(node, up, stop):
+    """The tests of the ifs a node sits under, outermost first; an else branch's test is negated."""
+    out = []
+    child, p = node, up.get(node)
+    while p is not None and p is not stop:
+        if isinstance(p, ast.If):
+            if any(child is s for s in p.body):
+                out.append(ast.unparse(p.test))
+            elif any(child is s for s in p.orelse):
+                out.append("not (%s)" % ast.unparse(p.test))
+        child, p = p, up.get(p)
+    return out[::-1]
+
+
+def ends_in_return(stmts):
+    return bool(stmts) and isinstance(stmts[-1], ast.Return)
+
+
+def return_paths(stmts, when=()):
+    """Each return of a function body with the conditions that reach it."""
+    out = []
+    when = list(when)
+    for st in stmts:
+        if isinstance(st, ast.Return):
+            out.append({"when": list(when), "returns": ast.unparse(st.value) if st.value else None})
+        elif isinstance(st, ast.If):
+            t = ast.unparse(st.test)
+            out += return_paths(st.body, when + [t])
+            out += return_paths(st.orelse, when + ["not (%s)" % t])
+            if ends_in_return(st.body) and not st.orelse:
+                when.append("not (%s)" % t)
+    return out
+
+
+def methods(cls):
+    return [n for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+
+
+def moe_tuned_rules(src):
+    cat = "moe_tuned_rule"
+    tree = parse(src, FUSED_MOE)
+    name_fn = function(tree, FUSED_MOE, "get_config_file_name")
+    configs_fn = function(tree, FUSED_MOE, "get_moe_configs")
+    out = []
+    rets = [n for n in ast.walk(name_fn) if isinstance(n, ast.Return)]
+    if len(rets) != 1:
+        raise GenError("%s: get_config_file_name has %d returns, not one" % (FUSED_MOE, len(rets)))
+    out.append(item(cat, "config_file_name", FUSED_MOE, rets[0].lineno, value=ast.unparse(rets[0].value)))
+    alias = [n for n in name_fn.body if isinstance(n, ast.If) and "device_name" in ast.unparse(n.test)]
+    if len(alias) != 1:
+        raise GenError("%s: get_config_file_name has %d device-name aliases, not one" % (FUSED_MOE, len(alias)))
+    out.append(item(cat, "device_alias", FUSED_MOE, alias[0].lineno,
+                    value={"when": ast.unparse(alias[0].test), "sets": [ast.unparse(s) for s in alias[0].body]}))
+    bypass = [n for n in configs_fn.body if isinstance(n, ast.If) and "VLLM_BATCH_INVARIANT" in ast.unparse(n.test)]
+    if len(bypass) != 1:
+        raise GenError("%s: get_moe_configs has %d batch-invariant bypasses, not one" % (FUSED_MOE, len(bypass)))
+    out.append(item(cat, "batch_invariant_bypass", FUSED_MOE, bypass[0].lineno,
+                    value={"when": ast.unparse(bypass[0].test), "then": [ast.unparse(s) for s in bypass[0].body]}))
+    down = [n for n in configs_fn.body if isinstance(n, ast.If) and ast.unparse(n.test) == "down_moe"]
+    if down:
+        out.append(item(cat, "down_projection_suffix", FUSED_MOE, down[0].lineno,
+                        value={"when": "down_moe", "then": [ast.unparse(s) for s in down[0].body]}))
+    for var, name in (("user_defined_config_folder", "user_folder"), ("default_config_file_path", "default_folder")):
+        asg = [n for n in ast.walk(configs_fn) if isinstance(n, ast.Assign) and ast.unparse(n.targets[0]) == var]
+        if len(asg) != 1:
+            raise GenError("%s: get_moe_configs assigns %s %d times, not once" % (FUSED_MOE, var, len(asg)))
+        out.append(item(cat, name, FUSED_MOE, asg[0].lineno, value=ast.unparse(asg[0].value)))
+    nearest = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and ast.unparse(n.func) == "min"
+               and n.args and ast.unparse(n.args[0]).endswith(".keys()")]
+    if len(nearest) != 1:
+        raise GenError("%s: %d closest-batch lookups, not one" % (FUSED_MOE, len(nearest)))
+    out.append(item(cat, "closest_batch", FUSED_MOE, nearest[0].lineno, value=ast.unparse(nearest[0])))
+    for fn in ast.walk(tree):
+        if isinstance(fn, ast.FunctionDef) and fn.name in ("_get_configured_moe_config", "try_get_optimal_moe_config"):
+            ov = [n for n in ast.walk(fn) if isinstance(n, ast.Assign) and ast.unparse(n.targets[0]) == "override_config"]
+            if ov:
+                out.append(item(cat, "override", FUSED_MOE, ov[0].lineno, value=ast.unparse(ov[0].value)))
+                break
+    else:
+        raise GenError("%s: no override_config assignment in the tuned-config lookup" % FUSED_MOE)
+    dflt = [n for n in ast.walk(function(tree, FUSED_MOE, "try_get_optimal_moe_config"))
+            if isinstance(n, ast.Call) and ast.unparse(n.func) == "get_default_config"]
+    if len(dflt) != 1:
+        raise GenError("%s: try_get_optimal_moe_config calls get_default_config %d times, not once" % (FUSED_MOE, len(dflt)))
+    out.append(item(cat, "default_heuristic", FUSED_MOE, dflt[0].lineno, value=ast.unparse(dflt[0])))
+    ptree = parse(src, PLATFORM_UTILS)
+    dev = function(ptree, PLATFORM_UTILS, "get_device_name_as_file_name")
+    out.append(item(cat, "device_name_source", PLATFORM_UTILS, dev.lineno,
+                    value=[ast.unparse(s) for s in dev.body if isinstance(s, ast.Assign)]))
+    return out
+
+
+DEVICE_FILE = re.compile(r"^E=[^,]+,N=[^,]+,device_name=(.+?)(?:,[^/]*?)?(_down)?\.json$")
+
+
+def moe_tuned_devices(src):
+    d = os.path.join(src, MOE_CONFIGS)
+    try:
+        names = sorted(n for n in os.listdir(d) if n.endswith(".json"))
+    except OSError as e:
+        raise GenError("cannot list %s: %s" % (MOE_CONFIGS, e))
+    devices = {}
+    for n in names:
+        m = DEVICE_FILE.match(n)
+        if not m:
+            raise GenError("%s/%s: not a tuned-config file name (get_config_file_name builds E=,N=,device_name=)" % (MOE_CONFIGS, n))
+        rec = devices.setdefault(m.group(1), {"first": n, "files": 0, "down_files": 0})
+        rec["files"] += 1
+        rec["down_files"] += 1 if m.group(2) else 0
+    return [item("moe_tuned_device", dev, "%s/%s" % (MOE_CONFIGS, r["first"]), 1,
+                 value={"files": r["files"], "down_files": r["down_files"]})
+            for dev, r in sorted(devices.items())]
+
+
+DEFAULT_FIELDS = (
+    (CACHE_CONFIG, "CacheConfig", ("block_size", "gpu_memory_utilization", "cache_dtype", "enable_prefix_caching",
+                                   "prefix_caching_hash_algo", "num_gpu_blocks_override", "kv_cache_memory_bytes",
+                                   "mamba_block_size")),
+    (SCHEDULER_CONFIG, "SchedulerConfig", ("max_num_batched_tokens", "max_num_seqs", "enable_chunked_prefill", "policy",
+                                           "long_prefill_token_threshold", "prefill_schedule_interval",
+                                           "async_scheduling", "async_scheduling_depth", "stream_interval")),
+    (KV_EVENTS_CONFIG, "KVEventsConfig", ("enable_kv_cache_events", "publisher", "endpoint", "replay_endpoint",
+                                          "buffer_steps", "hwm", "max_queue_size", "topic")),
+)
+# Settings a supported older commit lacks; every other setting named above must exist.
+DEFAULTS_ADDED_LATER = {"SchedulerConfig.async_scheduling_depth"}
+
+
+def is_classvar(n):
+    return isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name) and "ClassVar" in ast.unparse(n.annotation)
+
+
+def field_default(n, consts):
+    v = n.value
+    if isinstance(v, ast.Call) and ast.unparse(v.func) in ("Field", "field"):
+        kw = {k.arg: k.value for k in v.keywords}
+        if "default" in kw:
+            v = kw["default"]
+        elif "default_factory" in kw:
+            return "default_factory=" + ast.unparse(kw["default_factory"])
+        else:
+            return "required"
+    if v is None:
+        return "required"
+    if isinstance(v, ast.Name) and v.id in consts:
+        return value_of(consts[v.id])
+    return value_of(v)
+
+
+def engine_defaults(src):
+    out = []
+    for rel, cname, wanted in DEFAULT_FIELDS:
+        c = find_class(parse(src, rel), rel, cname)
+        cvars = {n.target.id: n for n in c.body if is_classvar(n) and n.value is not None}
+        consts = {k: n.value for k, n in cvars.items()}
+        fields = {n.target.id: n for n in c.body
+                  if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name) and not is_classvar(n)}
+        for f in wanted:
+            if f not in fields:
+                if "%s.%s" % (cname, f) in DEFAULTS_ADDED_LATER:
+                    continue
+                raise GenError("%s: no field %s.%s" % (rel, cname, f))
+            out.append(item("engine_default", "%s.%s" % (cname, f), rel, fields[f].lineno,
+                            value=field_default(fields[f], consts)))
+        for name, n in cvars.items():
+            if name.startswith("DEFAULT_"):
+                out.append(item("engine_default", "%s.%s" % (cname, name), rel, n.lineno, value=value_of(n.value)))
+        for fn in methods(c):
+            if fn.name.startswith("resolved_"):
+                out.append(item("engine_default", "%s.%s" % (cname, fn.name), rel, fn.lineno,
+                                value=return_paths(fn.body)))
+    return out
+
+
+def block_pool_callers(src, names):
+    """Who calls each block-pool method, as file::Class.method, from the v1 tree."""
+    calls = {n: set() for n in names}
+    root = os.path.join(src, "vllm/v1")
+    for dirpath, _, files in sorted(os.walk(root)):
+        for f in sorted(files):
+            if not f.endswith(".py"):
+                continue
+            rel = os.path.relpath(os.path.join(dirpath, f), src)
+            text = read(src, rel)
+            if "block_pool." not in text and "pool." not in text:
+                continue
+            tree = ast.parse(text, filename=rel)
+            for c in classes(tree):
+                for fn in methods(c):
+                    for call in ast.walk(fn):
+                        if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and \
+                                call.func.attr in calls and ast.unparse(call.func.value).endswith("pool"):
+                            calls[call.func.attr].add("%s::%s.%s" % (rel, c.name, fn.name))
+    return {k: sorted(v) for k, v in calls.items()}
+
+
+def kv_event_emitters(src):
+    tree = parse(src, BLOCK_POOL)
+    pool = find_class(tree, BLOCK_POOL, "BlockPool")
+    up = parents(pool)
+    found = []
+    for fn in methods(pool):
+        for call in ast.walk(fn):
+            if isinstance(call, ast.Call) and ast.unparse(call.func) == "self.kv_event_queue.append" and call.args:
+                found.append((fn, call))
+    if not found:
+        raise GenError("%s: BlockPool appends no event to kv_event_queue" % BLOCK_POOL)
+
+    def event(arg):
+        if isinstance(arg, ast.Call):
+            f = arg.func
+            if isinstance(f, ast.Name):
+                return f.id
+            if isinstance(f, ast.Attribute) and ast.unparse(f.value) == "self":
+                for r in ast.walk(function(pool, BLOCK_POOL, f.attr)):
+                    if isinstance(r, ast.Return) and isinstance(r.value, ast.Call) and isinstance(r.value.func, ast.Name):
+                        return r.value.func.id
+        raise GenError("%s:%d: cannot tell which event kv_event_queue.append takes" % (BLOCK_POOL, arg.lineno))
+
+    callers = block_pool_callers(src, sorted({fn.name for fn, _ in found}))
+    out = []
+    per = {}
+    for fn, call in found:
+        per[fn.name] = per.get(fn.name, 0) + 1
+        early = [ast.unparse(n.test) for n in ast.walk(fn)
+                 if isinstance(n, ast.If) and ends_in_return(n.body) and not n.orelse and n.lineno < call.lineno
+                 and n not in _ancestors(call, up)]
+        name = fn.name if sum(1 for f, _ in found if f is fn) == 1 else "%s#%d" % (fn.name, per[fn.name])
+        out.append(item("kv_event_emitter", name, BLOCK_POOL, call.lineno, value={
+            "event": event(call.args[0]),
+            "when": guards(call, up, fn) + ["not (%s)" % t for t in early],
+            "called_from": callers[fn.name]}))
+    return out
+
+
+def _ancestors(node, up):
+    out = []
+    p = up.get(node)
+    while p is not None:
+        out.append(p)
+        p = up.get(p)
+    return out
+
+
+def kv_report_modes(src):
+    cat = "kv_report_mode"
+    init = function(parse(src, REQUEST), REQUEST, "__init__", "Request")
+    defaults = set()
+    line = init.lineno
+    for n in ast.walk(init):
+        if isinstance(n, ast.Assign) and ast.unparse(n.targets[0]) == "self.kv_cache_report_mode":
+            line = n.lineno
+            v = n.value
+            if isinstance(v, ast.Call) and isinstance(v.func, ast.Attribute) and v.func.attr == "get" and len(v.args) == 2:
+                v = v.args[1]
+            if not (isinstance(v, ast.Constant) and isinstance(v.value, str)):
+                raise GenError("%s:%d: kv_cache_report_mode is not set from a string default" % (REQUEST, n.lineno))
+            defaults.add(v.value)
+    if len(defaults) != 1:
+        raise GenError("%s: kv_cache_report_mode has defaults %s, not one" % (REQUEST, sorted(defaults)))
+    default = defaults.pop()
+    modes = {default: (REQUEST, line, {"default": True, "on_cache_hit": []})}
+    for n in ast.walk(parse(src, KV_CACHE_MANAGER)):
+        if isinstance(n, ast.If) and "kv_cache_report_mode" in ast.unparse(n.test):
+            for cmp_ in ast.walk(n.test):
+                if isinstance(cmp_, ast.Compare) and "kv_cache_report_mode" in ast.unparse(cmp_.left):
+                    for c in cmp_.comparators:
+                        if isinstance(c, ast.Constant) and isinstance(c.value, str) and c.value != default:
+                            calls = sorted({ast.unparse(x.func) for s in n.body for x in ast.walk(s) if isinstance(x, ast.Call)})
+                            modes[c.value] = (KV_CACHE_MANAGER, n.lineno,
+                                              {"default": False, "when": ast.unparse(n.test), "on_cache_hit": calls})
+    return [item(cat, m, rel, ln, value=v) for m, (rel, ln, v) in sorted(modes.items())]
+
+
+def step_input_kinds(src):
+    during = set()
+    for stmt in parse(src, ENGINE_CORE).body:
+        if isinstance(stmt, ast.Assign) and ast.unparse(stmt.targets[0]) == "_INPUTS_HANDLED_DURING_STEP":
+            during = {e.attr for e in stmt.value.elts if isinstance(e, ast.Attribute)}
+            break
+    else:
+        raise GenError("%s: no _INPUTS_HANDLED_DURING_STEP" % ENGINE_CORE)
+    out = []
+    for s in find_class(parse(src, ENGINE_TYPES), ENGINE_TYPES, "EngineCoreRequestType").body:
+        if isinstance(s, ast.Assign) and isinstance(s.targets[0], ast.Name):
+            out.append(item("step_input_kind", s.targets[0].id, ENGINE_TYPES, s.lineno,
+                            value="during_step" if s.targets[0].id in during else "after_step"))
+    unknown = during - {i["name"] for i in out}
+    if unknown:
+        raise GenError("%s: _INPUTS_HANDLED_DURING_STEP names %s, which EngineCoreRequestType lacks" % (ENGINE_CORE, sorted(unknown)))
+    return out
+
+
+def step_input_reads(src):
+    tree = parse(src, ENGINE_CORE)
+    out = []
+    for c in classes(tree):
+        for fn in methods(c):
+            up = parents(fn)
+            filtered = "_INPUTS_HANDLED_DURING_STEP" in ast.unparse(fn)
+            seen = {}
+            for n in sorted((x for x in ast.walk(fn) if isinstance(x, ast.Attribute) and ast.unparse(x.value) == "self.input_queue"
+                             and x.attr in ("get", "get_nowait", "queue")), key=lambda x: (x.lineno, x.col_offset)):
+                k = seen[n.attr] = seen.get(n.attr, 0) + 1
+                out.append(item("step_input_read", "%s.%s:%s#%d" % (c.name, fn.name, n.attr, k), ENGINE_CORE, n.lineno,
+                                value={"filtered_by_step_kind": filtered, "when": guards(n, up, fn)}))
+    if not out:
+        raise GenError("%s: nothing reads self.input_queue" % ENGINE_CORE)
+    return out
+
+
+STEP_CALLS = ("self.scheduler.schedule", "self.model_executor.execute_model", "self.model_executor.sample_tokens",
+              "batch_queue.appendleft", "batch_queue.pop", "self._wait_for_output", "self._process_aborts_queue",
+              "self.scheduler.update_from_output")
+
+
+AUG_OPS = {ast.Add: "+", ast.Sub: "-", ast.Mult: "*", ast.BitOr: "|", ast.BitAnd: "&"}
+
+
+def async_steps(src):
+    out = []
+    vtree = parse(src, VLLM_CONFIG)
+    mcb = function(vtree, VLLM_CONFIG, "max_concurrent_batches", "VllmConfig")
+    out.append(item("async_depth", "max_concurrent_batches", VLLM_CONFIG, mcb.lineno, value=return_paths(mcb.body)))
+    ctree = parse(src, ENGINE_CORE)
+    init = function(ctree, ENGINE_CORE, "__init__", "EngineCore")
+    queue = [n for n in init.body if isinstance(n, ast.If) and ast.unparse(n.test).startswith("self.batch_queue_size")]
+    if len(queue) != 1:
+        raise GenError("%s: EngineCore.__init__ has %d batch-queue tests, not one" % (ENGINE_CORE, len(queue)))
+    out.append(item("async_depth", "batch_queue_enabled", ENGINE_CORE, queue[0].lineno, value={"when": ast.unparse(queue[0].test)}))
+    fn_sel = [n for n in init.body if isinstance(n, ast.Assign) and ast.unparse(n.targets[0]) == "self.step_fn"]
+    if len(fn_sel) != 1:
+        raise GenError("%s: EngineCore.__init__ sets step_fn %d times, not once" % (ENGINE_CORE, len(fn_sel)))
+    out.append(item("async_depth", "step_function", ENGINE_CORE, fn_sel[0].lineno, value=ast.unparse(fn_sel[0].value)))
+
+    chain = [n for n in ast.walk(vtree) if isinstance(n, ast.If)
+             and ast.unparse(n.test) == "self.scheduler_config.async_scheduling is None"]
+    if len(chain) != 1:
+        raise GenError("%s: %d places resolve an unset async_scheduling, not one" % (VLLM_CONFIG, len(chain)))
+
+    def branches(stmts, when):
+        found = []
+        for st in stmts:
+            if isinstance(st, ast.If):
+                t = ast.unparse(st.test)
+                found += branches(st.body, when + [t])
+                found += branches(st.orelse, when + ["not (%s)" % t])
+            elif isinstance(st, ast.Assign) and ast.unparse(st.targets[0]) == "self.scheduler_config.async_scheduling" \
+                    and isinstance(st.value, ast.Constant):
+                found.append((when, st.value.value, st.lineno))
+        return found
+
+    for when, val, line in branches(chain[0].body, []):
+        pos = when[-1] if when and not when[-1].startswith("not (") else None
+        name = "async_scheduling=%s%s" % (val, " if " + pos if pos else " otherwise")
+        out.append(item("async_default", name, VLLM_CONFIG, line, value={"when": when}))
+
+    upd = function(parse(src, ASYNC_SCHEDULER), ASYNC_SCHEDULER, "_update_after_schedule", "AsyncScheduler")
+    seen = set()
+    for n in ast.walk(upd):
+        if isinstance(n, (ast.Assign, ast.AugAssign)):
+            t = n.targets[0] if isinstance(n, ast.Assign) else n.target
+            if isinstance(t, ast.Attribute) and ast.unparse(t.value) in ("request", "scheduler_output"):
+                name = ast.unparse(t)
+                if name in seen:
+                    raise GenError("%s: %s is set twice in _update_after_schedule" % (ASYNC_SCHEDULER, name))
+                seen.add(name)
+                op = "=" if isinstance(n, ast.Assign) else AUG_OPS.get(type(n.op), type(n.op).__name__) + "="
+                out.append(item("async_placeholder", name, ASYNC_SCHEDULER, n.lineno, value={"op": op, "expr": ast.unparse(n.value)}))
+
+    step = function(ctree, ENGINE_CORE, "step_with_batch_queue", "EngineCore")
+    up = parents(step)
+    calls = sorted((n for n in ast.walk(step) if isinstance(n, ast.Call) and ast.unparse(n.func) in STEP_CALLS),
+                   key=lambda n: (n.lineno, n.col_offset))
+    seen = {}
+    for pos, n in enumerate(calls, 1):
+        f = ast.unparse(n.func)
+        seen[f] = seen.get(f, 0) + 1
+        out.append(item("step_order", "%s#%d" % (f, seen[f]), ENGINE_CORE, n.lineno,
+                        value={"position": pos, "when": guards(n, up, step)}))
+    missing = sorted(set(STEP_CALLS) - set(seen))
+    if missing:
+        raise GenError("%s: step_with_batch_queue no longer calls %s" % (ENGINE_CORE, missing))
+    return out
+
+
+# (file, function, class, the function the oracle calls to run it): the priority list is read by
+# get_valid_backends, which the oracle calls.
+PLATFORM_PREFERENCES = (
+    ("vllm/platforms/cuda.py", "_get_backend_priorities", None, "get_valid_backends"),
+    ("vllm/platforms/cuda.py", "get_valid_backends", "CudaPlatformBase", "get_valid_backends"),
+    ("vllm/platforms/interface.py", "_preferred_block_size_for_backends", "Platform", "_preferred_block_size_for_backends"),
+)
+
+
+def platform_preferences(src, repo):
+    try:
+        with open(os.path.join(repo, BLOCKSIZE_ORACLE), encoding="utf-8") as f:
+            oracle = f.read()
+    except OSError as e:
+        raise GenError("%s: %s" % (BLOCKSIZE_ORACLE, e))
+    out = []
+    for rel, name, cls, runner in PLATFORM_PREFERENCES:
+        tree = parse(src, rel)
+        fn = function(tree, rel, name, cls)
+        if ".%s(" % runner not in oracle:
+            raise GenError("%s no longer calls %s, which runs %s (FID-1: the oracle runs vLLM's own platform code)" % (BLOCKSIZE_ORACLE, runner, name))
+        if runner != name:
+            body = function(tree, rel, runner, "CudaPlatformBase")
+            if not any(isinstance(c, ast.Call) and ast.unparse(c.func).endswith(name) for c in ast.walk(body)):
+                raise GenError("%s: %s no longer calls %s" % (rel, runner, name))
+        up = parents(fn)
+        out.append(item("platform_preference", "%s%s" % (cls + "." if cls else "", name), rel, fn.lineno,
+                        value=[{"when": guards(r, up, fn), "returns": ast.unparse(r.value) if r.value else None}
+                               for r in sorted((x for x in ast.walk(fn) if isinstance(x, ast.Return)), key=lambda x: x.lineno)]))
+    return out
+
+
 def derive(src, repo, manifest=None):
     its = []
     its += connectors(src)
@@ -722,6 +1220,15 @@ def derive(src, repo, manifest=None):
     its += path_loaders(src)
     its += frameworks(src)
     its += transformers_fallback(src)
+    its += moe_tuned_rules(src)
+    its += moe_tuned_devices(src)
+    its += engine_defaults(src)
+    its += kv_event_emitters(src)
+    its += kv_report_modes(src)
+    its += step_input_kinds(src)
+    its += step_input_reads(src)
+    its += async_steps(src)
+    its += platform_preferences(src, repo)
     its += metric_families(repo, manifest)
     ids = [i["id"] for i in its]
     dup = sorted({i for i in ids if ids.count(i) > 1})
