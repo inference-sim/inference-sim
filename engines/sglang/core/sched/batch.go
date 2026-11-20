@@ -192,6 +192,9 @@ func (b *Batch) PrepareForExtend(s *Scheduler) {
 // newTokensRequiredNextDecode is new_tokens_required_next_decode (:3403-3419) without
 // speculation: a page for each request about to start one.
 func (b *Batch) newTokensRequiredNextDecode(s *Scheduler, idx []int) int {
+	if s.cfg.speculative() {
+		return b.newTokensRequiredNextSpecDecode(s, idx)
+	}
 	pages := 0
 	for _, i := range idx {
 		if b.Reqs[i].C.KV.KVCommittedLen%s.cfg.PageSize == 0 {
@@ -199,6 +202,19 @@ func (b *Batch) newTokensRequiredNextDecode(s *Scheduler, idx []int) int {
 		}
 	}
 	return pages * s.cfg.PageSize
+}
+
+// newTokensRequiredNextSpecDecode is _new_tokens_required_next_decode_spec_v2 (:3421-3430): the
+// pages a request needs to bring its allocation to the committed length plus the reserve.
+func (b *Batch) newTokensRequiredNextSpecDecode(s *Scheduler, idx []int) int {
+	ps, reserve, total := s.cfg.PageSize, s.cfg.specAllocReserve(), 0
+	for _, i := range idx {
+		kv := b.Reqs[i].C.KV
+		cur := kv.KVAllocatedLen
+		nxt := cur + max(0, kv.KVCommittedLen+reserve-cur)
+		total += ceilTo(nxt, ps) - ceilTo(cur, ps)
+	}
+	return total
 }
 
 // CheckDecodeMem is check_decode_mem (:3432-3449): whether the next decode step of the selected
@@ -217,6 +233,10 @@ func (b *Batch) CheckDecodeMem(s *Scheduler, idx []int) bool {
 // each request's next token, written into its row, and every sequence one token longer.
 func (b *Batch) PrepareForDecode(s *Scheduler) {
 	b.Mode = Decode
+	if s.cfg.speculative() {
+		b.prepareForSpecDecode(s)
+		return
+	}
 	bs := len(b.Reqs)
 	var out []int64
 	if s.cfg.PageSize == 1 {
@@ -240,6 +260,50 @@ func (b *Batch) PrepareForDecode(s *Scheduler) {
 		r.C.KV.KVAllocatedLen++
 		r.C.KV.KVCommittedLen++
 		b.SeqLens[i]++
+	}
+}
+
+// prepareForSpecDecode is eagle_prepare_for_decode (speculative/eagle_utils.py@297e54fd) with
+// page_aligned_decode_alloc_lens and alloc_for_spec_decode (speculative/allocation_sizing.py:73-93,
+// mem_cache/allocation.py:780@297e54fd): each request's allocation grows to its committed length
+// plus the reserve, rounded up to a page, and never shrinks. Neither the committed length nor the
+// sequence moves: the verify pass's result commits the accepted tokens. The sequence length the
+// pass is priced at is the committed context and the one pending token.
+func (b *Batch) prepareForSpecDecode(s *Scheduler) {
+	ps, reserve := s.cfg.PageSize, s.cfg.specAllocReserve()
+	bs := len(b.Reqs)
+	cur, nxt, need := make([]int, bs), make([]int, bs), 0
+	for i, r := range b.Reqs {
+		cur[i] = r.C.KV.KVAllocatedLen
+		nxt[i] = max(cur[i], ceilTo(r.C.KV.KVCommittedLen+reserve, ps))
+		need += nxt[i] - cur[i]
+	}
+	if need > 0 {
+		var out []int64
+		if ps == 1 {
+			out = s.allocTokenSlots(need)
+		} else {
+			last := make([]int64, bs)
+			for i := range b.Reqs {
+				last[i] = s.pool.Row(b.ReqPoolIndices[i])[cur[i]-1]
+			}
+			s.evictFromTreeCache(need + bs*ps)
+			var ok bool
+			out, ok = s.alloc.AllocExtend(cur, nxt, last, need)
+			if !ok {
+				panic(fmt.Sprintf("Decode out of memory. Try to lower your batch size. Try to allocate %d tokens.", need))
+			}
+		}
+		at := 0
+		for i := range b.Reqs {
+			n := nxt[i] - cur[i]
+			s.pool.Write(b.ReqPoolIndices[i], cur[i], out[at:at+n])
+			at += n
+		}
+	}
+	for i, r := range b.Reqs {
+		r.C.KV.KVAllocatedLen = nxt[i]
+		b.SeqLens[i] = r.C.KV.KVCommittedLen + 1
 	}
 }
 

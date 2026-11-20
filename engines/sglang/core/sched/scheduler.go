@@ -91,7 +91,24 @@ type Config struct {
 	MaxQueuedRequests *int `json:"max_queued_requests"`
 	// PrefillMaxRequests bounds the requests one prefill batch admits; nil is unbounded.
 	PrefillMaxRequests *int `json:"prefill_max_requests"`
+	// SpecNumSteps and SpecNumDraftTokens are speculative_num_steps and speculative_num_draft_tokens
+	// of the EAGLE family at top-k 1 (a chain: num_draft_tokens is steps+1). Zero draft tokens is
+	// no speculation. A verify pass feeds the request's pending token and SpecNumDraftTokens-1
+	// drafts.
+	SpecNumSteps       int `json:"speculative_num_steps,omitempty"`
+	SpecNumDraftTokens int `json:"speculative_num_draft_tokens,omitempty"`
 }
+
+// SpecRefusal is the open issue the speculation the port does not model cites (X28).
+const SpecRefusal = "inference-sim/blis-sglang#68"
+
+// speculative reports whether decode passes verify drafts.
+func (c Config) speculative() bool { return c.SpecNumDraftTokens > 0 }
+
+// specAllocReserve is get_alloc_reserve_per_decode (speculative/allocation_sizing.py:64-70@297e54fd):
+// twice the KV one request may allocate in a decode step, max(topk*num_steps, num_draft_tokens) =
+// num_draft_tokens at top-k 1. The doubling absorbs the committed length's lag under overlap.
+func (c Config) specAllocReserve() int { return 2 * max(c.SpecNumSteps, c.SpecNumDraftTokens) }
 
 func (c Config) radixEvictionPolicy() string {
 	if c.RadixEvictionPolicy == "" {
@@ -154,6 +171,9 @@ type Scheduler struct {
 	numRetracted       int
 	forwardCtDecode    int
 
+	// accepted is the drafts the verify of the result being processed accepted, by request.
+	accepted map[string]int
+
 	processedTokens  int
 	forwardCt        int
 	step             int
@@ -181,6 +201,9 @@ func New(cfg Config, tree cache.PrefixCache, alloc cache.Allocator, pool cache.R
 	case cfg.ChunkedPrefillSize != nil && *cfg.ChunkedPrefillSize <= 0:
 		return nil, fmt.Errorf("sched: a non-positive chunked prefill size is chunked prefill off, which SGLang spells None")
 	}
+	if err := validateSpec(cfg); err != nil {
+		return nil, err
+	}
 	p, err := validatePolicy(cfg.Policy, cfg.Disable)
 	if err != nil {
 		return nil, err
@@ -190,6 +213,23 @@ func New(cfg Config, tree cache.PrefixCache, alloc cache.Allocator, pool cache.R
 	s.newTokenRatio.current = cfg.NewTokenRatio.Init
 	s.stream = NewStream(int64(cfg.RandomSeed), "sched/random-policy/waiting-queue")
 	return s, nil
+}
+
+// validateSpec refuses the speculation the port does not model. The chain the port models is the
+// EAGLE family at top-k 1: a verify pass of SpecNumSteps+1 tokens whose accepted prefix is the
+// scenario's. A wider verify is tree verification, and a mixed chunked-prefill batch would decode
+// speculating requests inside an extend.
+func validateSpec(cfg Config) error {
+	switch {
+	case cfg.SpecNumSteps == 0 && cfg.SpecNumDraftTokens == 0:
+		return nil
+	case cfg.SpecNumSteps < 1 || cfg.SpecNumDraftTokens != cfg.SpecNumSteps+1:
+		return fmt.Errorf("sched: speculative_num_steps %d with speculative_num_draft_tokens %d is not a top-k 1 chain (num_draft_tokens = num_steps + 1): tree verification is not modelled (%s)",
+			cfg.SpecNumSteps, cfg.SpecNumDraftTokens, SpecRefusal)
+	case cfg.IsMixedChunk:
+		return fmt.Errorf("sched: mixed chunked prefill with speculative decoding is not modelled (%s)", SpecRefusal)
+	}
+	return nil
 }
 
 // matchKVCache is match_kv_cache (mem_cache/common.py:221-268): match tokenIDs, up to maxPrefix,
@@ -695,6 +735,10 @@ func (s *Scheduler) processPrefill(b *Batch) {
 
 // processDecode is process_batch_result_decode (batch_result_processor.py:952-1109).
 func (s *Scheduler) processDecode(b *Batch) {
+	if s.cfg.speculative() {
+		s.processSpecDecode(b)
+		return
+	}
 	s.alloc.FreeGroupBegin()
 	for _, r := range b.Reqs {
 		if r.Finished() || r.IsRetracted {
@@ -705,6 +749,36 @@ func (s *Scheduler) processDecode(b *Batch) {
 		}
 		r.C.OutputIDs = append(r.C.OutputIDs, s.tokenFor(r))
 		r.UpdateFinishState(s.cfg.EOSTokenIDs)
+		if r.Finished() {
+			s.noteFinished(r)
+			s.releaseKVCache(r, true)
+		}
+	}
+	s.alloc.FreeGroupEnd()
+	if s.cfg.EnableMetrics || s.cfg.EnableKVEvents {
+		s.reportDecode(b)
+	}
+}
+
+// processSpecDecode is the result of a verify pass (process_batch_result_decode with spec-v2
+// results, batch_result_processor.py:952-1109, and _resolve_spec_v2_tokens, eagle_worker_v2.py@297e54fd):
+// a request takes the drafts the verify accepted and the token the target samples after them, and
+// commits that many positions. update_finish_state then ends it at the first stop token or at its
+// length budget; the tokens past that are not its output, and their KV is released with the rest
+// that lies past the owned length.
+func (s *Scheduler) processSpecDecode(b *Batch) {
+	s.alloc.FreeGroupBegin()
+	drafts := s.cfg.SpecNumDraftTokens - 1
+	for _, r := range b.Reqs {
+		if r.Finished() || r.IsRetracted {
+			continue
+		}
+		acceptLen := min(max(s.accepted[r.RID()], 0), drafts) + 1
+		for i := 0; i < acceptLen && !r.Finished(); i++ {
+			r.C.OutputIDs = append(r.C.OutputIDs, s.tokenFor(r))
+			r.UpdateFinishState(s.cfg.EOSTokenIDs)
+		}
+		r.C.KV.KVCommittedLen += acceptLen
 		if r.Finished() {
 			s.noteFinished(r)
 			s.releaseKVCache(r, true)

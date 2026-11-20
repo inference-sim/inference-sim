@@ -18,7 +18,7 @@ func TestFinishOfAFinishedRequestKeepsItsReason(t *testing.T) {
 	if err != nil || l == nil {
 		t.Fatalf("no pass: %v", err)
 	}
-	c, err := s.Complete(l)
+	c, err := s.Complete(l, nil)
 	if err != nil || len(c.Finished) != 1 || c.Finished[0].Reason != "length" {
 		t.Fatalf("the request did not finish by length: %v %+v", err, c)
 	}
@@ -44,7 +44,7 @@ func TestFinishOfARunningRequestWhileAnotherPrefillIsInFlight(t *testing.T) {
 	if err != nil || l == nil {
 		t.Fatalf("no pass: %v", err)
 	}
-	if _, err := s.Complete(l); err != nil {
+	if _, err := s.Complete(l, nil); err != nil {
 		t.Fatal(err)
 	}
 	s.handleGenerateRequest(Arrival{RID: "y", Prompt: []int64{7, 8, 9, 10}, MaxNewTokens: 2})
@@ -52,7 +52,7 @@ func TestFinishOfARunningRequestWhileAnotherPrefillIsInFlight(t *testing.T) {
 		t.Fatalf("y's prefill is not the pass in flight: %v %+v", err, l)
 	}
 	s.Finish("x")
-	c, err := s.Complete(l)
+	c, err := s.Complete(l, nil)
 	if err != nil || len(c.Finished) != 0 {
 		t.Fatalf("completing y's prefill: %v %+v", err, c)
 	}
@@ -69,7 +69,7 @@ func TestFinishOfARunningRequestWhileAnotherPrefillIsInFlight(t *testing.T) {
 				t.Fatal("an ended request decoded again")
 			}
 		}
-		if _, err := s.Complete(l); err != nil {
+		if _, err := s.Complete(l, nil); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -136,9 +136,11 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 	// TokenizerManager._validate_one_request (managers/tokenizer_manager.py:1331-1372@297e54fd),
 	// the front of the server a client's request passes before the scheduler: an input at or past the
 	// context length, or an input and output budget past it, is an error to the client, or is cut
-	// under --allow-auto-truncate. (num_reserved_tokens is 0 without EAGLE, utils.py:484-499.)
+	// under --allow-auto-truncate. The EAGLE family counts the draft slots of the output in the
+	// input (compute_num_reserved_tokens, managers/utils.py:484-500@297e54fd); an input that is cut
+	// drops them from the count, as the source does.
 	if e.cfg.ContextLen > 0 {
-		in := len(prompt)
+		in := len(prompt) + e.numReservedTokens()
 		if in >= e.cfg.ContextLen {
 			if !e.cfg.AllowAutoTruncate {
 				return fmt.Errorf("sglang: The input (%d tokens) is longer than the model's context length (%d tokens)", in, e.cfg.ContextLen)
@@ -194,6 +196,12 @@ func widen(xs []int32) []int64 {
 	return out
 }
 
+// numReservedTokens is compute_num_reserved_tokens: max(topk*num_steps, num_draft_tokens) for the
+// EAGLE family, which is num_draft_tokens at top-k 1, and none without speculation.
+func (e *Engine) numReservedTokens() int {
+	return max(e.cfg.SpecNumSteps, e.cfg.SpecNumDraftTokens)
+}
+
 // InFlightLimit is 1 in the normal loop and 2 under overlap scheduling.
 func (e *Engine) InFlightLimit() int {
 	if e.cfg.EnableOverlap {
@@ -232,7 +240,10 @@ func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
 		case (f.Mode == sched.Extend || f.Mode == sched.Mixed) && i < len(f.ExtendSeqLens):
 			s.Tokens, s.Computed = f.ExtendSeqLens[i], f.ExtendPrefixLen[i]
 		default:
-			s.Tokens, s.Computed = 1, f.SeqLens[i]-1
+			// A verify pass feeds the pending token and the drafts after it, over the committed
+			// context.
+			s.Tokens, s.Computed = max(e.cfg.SpecNumDraftTokens, 1), f.SeqLens[i]-1
+			s.Drafts = max(e.cfg.SpecNumDraftTokens-1, 0)
 		}
 		s.PromptLen = e.scripts[rid].promptLen
 		if !e.seen[rid] {
@@ -251,8 +262,9 @@ func (e *Engine) StepTime(b engine.Batch) engine.Duration {
 	return max(e.pricer.StepTime(b), 1)
 }
 
-// Complete processes the result of the oldest launched pass.
-func (e *Engine) Complete(id engine.BatchID, _ engine.Outcome, end engine.Time) (engine.Result, error) {
+// Complete processes the result of the oldest launched pass. Outcome.Accepted is how many of the
+// drafts each request's verify accepted; the scheduler bounds it by the drafts the pass carried.
+func (e *Engine) Complete(id engine.BatchID, o engine.Outcome, end engine.Time) (engine.Result, error) {
 	e.clock(end)
 	if len(e.inFlight) == 0 {
 		return engine.Result{}, engine.ErrUnknownBatch
@@ -266,7 +278,7 @@ func (e *Engine) Complete(id engine.BatchID, _ engine.Outcome, end engine.Time) 
 		return engine.Result{}, engine.ErrUnknownBatch
 	}
 	f := e.inFlight[0]
-	c, err := e.sc.Complete(f.l)
+	c, err := e.sc.Complete(f.l, o.Accepted)
 	if err != nil {
 		return engine.Result{}, err
 	}
