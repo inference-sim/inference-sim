@@ -6521,7 +6521,7 @@ def test_minimax_m3_graphs_declare_the_mtp_speculator_their_config_states(name):
 def test_no_committed_speculator_names_an_engine_family():
     """SUB-15: the graph holds a checkpoint fact. A checkpoint's own MTP module is `mtp`; the
     per-family names (deepseek_mtp, qwen3_5_mtp, ...) are an engine's spelling and live in the
-    engine, which normalises them (engines/vllm/core/lowering specMethod)."""
+    engine, which normalises them."""
     seen = collections.Counter()
     for d in sorted(p for p in MODELS.iterdir() if p.is_dir()):
         sp = graph_of(d).get("speculator")
