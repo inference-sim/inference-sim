@@ -1,0 +1,88 @@
+{
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 256,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_consumer",
+   "kv_load_failure_policy": "recompute",
+   "extra_config": {
+    "kv_recompute_threshold": 0
+   }
+  }
+ },
+ "requests": [
+  {
+   "id": "d0",
+   "arrival_step": 0,
+   "prompt": [
+    4701,
+    661,
+    3974,
+    2144,
+    302,
+    4,
+    1193,
+    4805,
+    3853,
+    3057,
+    2617,
+    180
+   ],
+   "output": [
+    2234,
+    4005
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1,
+   "recv_failed": true
+  },
+  {
+   "id": "d1",
+   "arrival_step": 0,
+   "prompt": [
+    2653,
+    1236,
+    3235,
+    396,
+    594,
+    4390,
+    772,
+    2996,
+    4775,
+    476
+   ],
+   "output": [
+    4157,
+    1759,
+    308
+   ],
+   "remote_prefill": true,
+   "recv_delay": 2
+  },
+  {
+   "id": "l0",
+   "arrival_step": 1,
+   "prompt": [
+    1858,
+    3035,
+    3076,
+    1035,
+    1583,
+    359,
+    698,
+    1122
+   ],
+   "output": [
+    2028,
+    4149
+   ]
+  }
+ ],
+ "name": "nixl-d-fail-recompute"
+}

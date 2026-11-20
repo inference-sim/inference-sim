@@ -1,0 +1,1 @@
+{"architectures": ["Ernie4_5_MoeForCausalLM"], "model_type": "ernie4_5_moe", "hidden_size": 64, "intermediate_size": 128, "moe_intermediate_size": 32, "num_attention_heads": 2, "num_key_value_heads": 2, "num_hidden_layers": 1, "vocab_size": 50272, "num_nextn_predict_layers": 4, "max_position_embeddings": 2048, "rms_norm_eps": 1e-06, "torch_dtype": "float16", "head_dim": 32}

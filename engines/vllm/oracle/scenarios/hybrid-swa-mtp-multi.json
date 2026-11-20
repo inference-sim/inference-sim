@@ -1,0 +1,222 @@
+{
+ "name": "hybrid-swa-mtp-multi",
+ "description": "Hybrid full attention + sliding window (window 10) under a four-module MTP drafter (K=3): a launch tags the window with extra_retained_tokens = num_prefill_lookahead - 1 = 2 (get_kv_cache_configs), which keeps two more tokens below the window and widens the admission cap; prefix sharing and a tight pool exercise both.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 46,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_groups": [
+   {
+    "kind": "full"
+   },
+   {
+    "kind": "sliding_window",
+    "sliding_window": 10
+   }
+  ],
+  "speculative": {
+   "method": "mtp",
+   "num_speculative_tokens": 3,
+   "draft": "mtp-4"
+  }
+ },
+ "requests": [
+  {
+   "id": "m1",
+   "arrival_step": 0,
+   "prompt": [
+    15380,
+    3191,
+    8421,
+    7210,
+    38851,
+    12941,
+    2107,
+    7276,
+    38888,
+    33621,
+    25605,
+    27733,
+    23657,
+    40984,
+    46115,
+    39192,
+    42617,
+    21747,
+    39766,
+    25022,
+    33197,
+    23587,
+    22997,
+    21409,
+    38091,
+    3266,
+    8972,
+    45528,
+    6428,
+    43559
+   ],
+   "output": [
+    38237,
+    41810,
+    993,
+    19985,
+    38366,
+    39700,
+    36311,
+    31527,
+    50256
+   ],
+   "accepted": [
+    3,
+    2,
+    0,
+    1,
+    3,
+    1
+   ]
+  },
+  {
+   "id": "m2",
+   "arrival_step": 3,
+   "prompt": [
+    10464,
+    21869,
+    24410,
+    40595,
+    36478,
+    19088,
+    9781,
+    22236,
+    6531,
+    1165,
+    18179,
+    26471,
+    6390,
+    48784,
+    30585,
+    35302,
+    34777,
+    29519,
+    926,
+    48019,
+    35045,
+    975
+   ],
+   "output": [
+    6645,
+    38817,
+    17045,
+    43265,
+    2806,
+    14257,
+    18463,
+    50256
+   ],
+   "accepted": [
+    1,
+    3,
+    3,
+    0,
+    2
+   ]
+  },
+  {
+   "id": "m3",
+   "arrival_step": 7,
+   "prompt": [
+    15380,
+    3191,
+    8421,
+    7210,
+    38851,
+    12941,
+    2107,
+    7276,
+    38888,
+    33621,
+    25605,
+    27733,
+    23657,
+    40984,
+    46115,
+    39192,
+    42617,
+    21747,
+    39766,
+    25022,
+    49154,
+    13079,
+    40971,
+    6427,
+    46550,
+    32780,
+    5495
+   ],
+   "output": [
+    33868,
+    10157,
+    1556,
+    23211,
+    19806,
+    50256
+   ],
+   "accepted": [
+    0,
+    2,
+    3,
+    1
+   ]
+  },
+  {
+   "id": "m4",
+   "arrival_step": 9,
+   "prompt": [
+    34160,
+    45479,
+    37537,
+    40769,
+    3858,
+    22688,
+    45140,
+    20102,
+    37641,
+    18505,
+    9773,
+    1070,
+    29657,
+    5614,
+    36290,
+    682,
+    13509,
+    2597,
+    37649,
+    13883,
+    14822,
+    11099,
+    49154,
+    29671,
+    3851
+   ],
+   "output": [
+    37766,
+    33363,
+    19907,
+    5148,
+    50256
+   ],
+   "accepted": [
+    2,
+    0,
+    1,
+    3
+   ]
+  }
+ ],
+ "max_steps": 400
+}

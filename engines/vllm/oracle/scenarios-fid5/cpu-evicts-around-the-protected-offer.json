@@ -1,0 +1,78 @@
+{
+ "description": "Two chunks: an offer that holds a resident key protects it from eviction, so the other resident chunk is evicted; an offer whose keys fill the tier protects every evictable chunk and the store fails (None).",
+ "spec": {
+  "name": "CPUOffloadingSpec",
+  "cpu_bytes_to_use": 32768,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "a1",
+    "a2"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "a1",
+    "a2"
+   ],
+   "success": true
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  },
+  {
+   "m": "on_new_request",
+   "ctx": "b"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "b",
+   "keys": [
+    "a1",
+    "b1"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "b",
+   "keys": [
+    "b1"
+   ],
+   "success": true
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "b",
+   "keys": [
+    "a1",
+    "b1",
+    "b2"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "a2"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "b"
+  },
+  {
+   "m": "get_stats"
+  }
+ ]
+}

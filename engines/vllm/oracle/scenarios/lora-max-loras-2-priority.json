@@ -1,0 +1,152 @@
+{
+ "name": "lora-max-loras-2-priority",
+ "description": "max_loras 2 with three adapters under priority scheduling: the skipped requests return to the queue in priority order.",
+ "config": {
+  "max_num_seqs": 6,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 60,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "priority",
+  "max_loras": 2
+ },
+ "requests": [
+  {
+   "id": "a",
+   "arrival_step": 0,
+   "prompt": [
+    9200,
+    15901,
+    1548,
+    29304,
+    12076,
+    7904,
+    22653,
+    5221,
+    15188,
+    17647
+   ],
+   "output": [
+    3255,
+    20936,
+    39397,
+    11740,
+    36176
+   ],
+   "lora": "x",
+   "priority": 2
+  },
+  {
+   "id": "b",
+   "arrival_step": 0,
+   "prompt": [
+    28182,
+    3175,
+    37824,
+    1398,
+    38638,
+    17300,
+    20361,
+    27625
+   ],
+   "output": [
+    12461,
+    11832,
+    7312,
+    38196,
+    34790,
+    37114
+   ],
+   "lora": "y",
+   "priority": 1
+  },
+  {
+   "id": "c",
+   "arrival_step": 0,
+   "prompt": [
+    4009,
+    21394,
+    21943,
+    16936,
+    12089,
+    25768,
+    20479,
+    33771,
+    9321
+   ],
+   "output": [
+    18320,
+    17735,
+    12127,
+    28306
+   ],
+   "lora": "z",
+   "priority": 0
+  },
+  {
+   "id": "d",
+   "arrival_step": 1,
+   "prompt": [
+    3220,
+    22441,
+    34854,
+    2115,
+    27485,
+    16488,
+    33180
+   ],
+   "output": [
+    18631,
+    33903,
+    26834,
+    26036,
+    12115,
+    20140,
+    36915
+   ],
+   "lora": "x",
+   "priority": 0
+  },
+  {
+   "id": "e",
+   "arrival_step": 2,
+   "prompt": [
+    24496,
+    26032,
+    38181,
+    1652,
+    19486,
+    37719
+   ],
+   "output": [
+    39036,
+    36786,
+    35594
+   ],
+   "priority": 1
+  },
+  {
+   "id": "f",
+   "arrival_step": 2,
+   "prompt": [
+    34547,
+    28409,
+    34619,
+    28007,
+    5775
+   ],
+   "output": [
+    5936,
+    29081,
+    23312,
+    6460,
+    28296
+   ],
+   "lora": "z",
+   "priority": 3
+  }
+ ],
+ "max_steps": 400
+}

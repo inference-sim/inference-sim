@@ -1,0 +1,240 @@
+{
+ "config": {
+  "block_size": 4,
+  "connector": {
+   "extra_config": {
+    "connectors": [
+     {
+      "kv_connector": "NixlConnector",
+      "kv_role": "kv_both"
+     },
+     {
+      "kv_connector": "OffloadingConnector",
+      "kv_connector_extra_config": {
+       "cpu_bytes_to_use": 262144,
+       "offload_prompt_only": false
+      },
+      "kv_role": "kv_both"
+     }
+    ]
+   },
+   "kv_load_failure_policy": "fail",
+   "kv_role": "kv_both",
+   "name": "MultiConnector"
+  },
+  "enable_prefix_caching": true,
+  "kv_page": {
+   "head_size": 512,
+   "num_kv_heads": 1
+  },
+  "max_model_len": 256,
+  "max_num_batched_tokens": 32,
+  "max_num_seqs": 4,
+  "num_blocks": 16,
+  "scheduling_policy": "fcfs",
+  "transfer": {
+   "load_delay": 3,
+   "store_delay": 2
+  }
+ },
+ "max_steps": 200,
+ "name": "multi-abort-mid-load",
+ "requests": [
+  {
+   "arrival_step": 0,
+   "id": "a",
+   "output": [
+    1
+   ],
+   "prompt": [
+    3501,
+    20182,
+    23023,
+    24747,
+    21367,
+    17273,
+    8092,
+    8884,
+    24089,
+    8382,
+    9537,
+    24054,
+    2380,
+    21577,
+    14738,
+    9929,
+    15291,
+    22421,
+    28601,
+    12999
+   ]
+  },
+  {
+   "arrival_step": 0,
+   "id": "b",
+   "output": [
+    1
+   ],
+   "prompt": [
+    21805,
+    21758,
+    9023,
+    5406,
+    348,
+    21355,
+    2292,
+    4032,
+    19492,
+    11045,
+    911,
+    2727,
+    8981,
+    6699,
+    27987,
+    12514,
+    13228,
+    19114,
+    14374,
+    29374
+   ]
+  },
+  {
+   "arrival_step": 3,
+   "id": "x",
+   "output": [
+    1
+   ],
+   "prompt": [
+    22287,
+    10880,
+    9548,
+    23640,
+    24956,
+    29346,
+    12083,
+    1034,
+    18387,
+    19525,
+    24290,
+    25793,
+    24814,
+    5186,
+    16652,
+    21122,
+    27571,
+    6467,
+    12009,
+    16065,
+    12587,
+    8024,
+    12716,
+    17890,
+    18142,
+    25345,
+    29816,
+    10304,
+    15990,
+    29993,
+    20079,
+    1034,
+    8104,
+    21076,
+    14071,
+    15366
+   ]
+  },
+  {
+   "abort_step": 9,
+   "arrival_step": 8,
+   "id": "c",
+   "output": [
+    3,
+    4
+   ],
+   "prompt": [
+    3501,
+    20182,
+    23023,
+    24747,
+    21367,
+    17273,
+    8092,
+    8884,
+    24089,
+    8382,
+    9537,
+    24054,
+    2380,
+    21577,
+    14738,
+    9929,
+    15291,
+    22421,
+    28601,
+    12999,
+    2
+   ]
+  },
+  {
+   "arrival_step": 8,
+   "id": "d",
+   "output": [
+    3,
+    4
+   ],
+   "prompt": [
+    21805,
+    21758,
+    9023,
+    5406,
+    348,
+    21355,
+    2292,
+    4032,
+    19492,
+    11045,
+    911,
+    2727,
+    8981,
+    6699,
+    27987,
+    12514,
+    13228,
+    19114,
+    14374,
+    29374,
+    2
+   ],
+   "recv_delay": 2,
+   "remote_prefill": true
+  },
+  {
+   "abort_step": 16,
+   "arrival_step": 14,
+   "id": "e",
+   "output": [
+    2
+   ],
+   "prompt": [
+    21259,
+    11611,
+    6638,
+    20078,
+    3553,
+    14480,
+    9985,
+    17999,
+    22488,
+    3175,
+    10235,
+    19027,
+    116,
+    13186,
+    9181,
+    20335
+   ],
+   "recv_delay": 6,
+   "remote_prefill": true
+  }
+ ]
+}

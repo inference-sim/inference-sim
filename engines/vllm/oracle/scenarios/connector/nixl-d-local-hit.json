@@ -1,0 +1,89 @@
+{
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 256,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_consumer",
+   "kv_load_failure_policy": "recompute",
+   "extra_config": {
+    "kv_recompute_threshold": 0
+   }
+  }
+ },
+ "requests": [
+  {
+   "id": "l0",
+   "arrival_step": 0,
+   "prompt": [
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    1,
+    2,
+    3,
+    4
+   ],
+   "output": [
+    3925,
+    1770
+   ]
+  },
+  {
+   "id": "d0",
+   "arrival_step": 2,
+   "prompt": [
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    5,
+    6,
+    7,
+    8,
+    9
+   ],
+   "output": [
+    1510,
+    988
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1
+  },
+  {
+   "id": "d1",
+   "arrival_step": 3,
+   "prompt": [
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "output": [
+    2513,
+    3472
+   ],
+   "remote_prefill": true,
+   "recv_delay": 0
+  }
+ ],
+ "name": "nixl-d-local-hit"
+}

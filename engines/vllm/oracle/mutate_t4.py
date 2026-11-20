@@ -1,0 +1,252 @@
+# Original to blis-vllm.
+"""Mutation sweep for blis-vllm's tier 4 (the connector paths of core/sched and core/kv,
+core/connector/nixl, and the connector registry): apply one mutant at a time to a scratch copy
+of the module, run the suite that guards it (the NIXL scenarios and the connector fuzz corpus,
+or the registry's tests), and report whether each is caught.
+
+Usage: python3 oracle/mutate_t4.py <blis-vllm checkout> <connector fuzz dir> <scratch dir> [N1,...]
+Exits non-zero if a mutant outside EQUIVALENT survives, if an EQUIVALENT one is caught (so the
+list stays true), or if a mutant breaks the build without a divergence.
+"""
+import os
+import shutil
+import subprocess
+import sys
+
+# (id, behaviour it guards, file, exact old text, new text)
+MUTANTS = [
+    ("N1", "a pull covers the prompt past the local hit", "core/connector/nixl/nixl.go",
+     "if n := s.remoteTokenCount(len(r.Prompt)) - localComputed; n > 0 {",
+     "if n := s.remoteTokenCount(len(r.Prompt)); n > 0 {"),
+    ("N2", "the prefiller holds a finished request's blocks", "core/connector/nixl/nixl.go",
+     "\tif delay {\n\t\ts.send[r.ID] = true\n", "\tif false {\n\t\ts.send[r.ID] = true\n"),
+    ("N3", "an aborted prefiller request frees at once", "core/connector/nixl/nixl.go",
+     "\tif r.Status != sched.FinishedLength && r.Status != sched.FinishedStopped {\n\t\ts.notProcessed[r.ID] = true\n\t\treturn false\n\t}",
+     "\tif r.Status != sched.FinishedLength && r.Status != sched.FinishedStopped {\n\t\ts.notProcessed[r.ID] = true\n\t}"),
+    ("N4", "a full-prompt landing recomputes its last token", "core/sched/connector.go",
+     "\t} else if r.NumComputed == r.NumTokens() {\n\t\tr.NumComputed = r.NumTokens() - 1\n\t}", "\t}"),
+    ("N5", "a failed load with nothing valid frees its blocks", "core/sched/connector.go",
+     "\t\t} else {\n\t\t\ts.KV.Free(r.ID)\n\t\t}", "\t\t}"),
+    ("N6", "a landed load's blocks are cached at promotion", "core/sched/connector.go",
+     "\t} else {\n\t\ts.KV.CacheBlocks(r.ID, r.hashes, r.NumComputed, s.run(r))\n\t}", "\t}"),
+    ("N7", "a promoted preempted request resumes as PREEMPTED", "core/sched/connector.go",
+     "\tif r.NumPreemptions > 0 {\n\t\tr.Status = Preempted\n\t} else {\n\t\tr.Status = Waiting\n\t}",
+     "\tr.Status = Waiting"),
+    ("N8", "recompute skips the sync-load failures only", "core/sched/connector.go",
+     "\tfor _, id := range asyncFailed {\n\t\ts.recvFailed[id] = true\n\t}\n\treturn syncFailed",
+     "\tfor _, id := range asyncFailed {\n\t\ts.recvFailed[id] = true\n\t}\n\treturn append(asyncFailed, syncFailed...)"),
+    ("N9", "computed tokens cut at the first invalid block", "core/sched/connector.go",
+     "\t\t\tr.NumComputed = idx * s.cfg.BlockSize", "\t\t\tr.NumComputed = (idx + 1) * s.cfg.BlockSize"),
+    ("N10", "kv_holding_waiting drains first", "core/sched/scheduler.go",
+     "\t\t\tq := &s.holding\n\t\t\tif q.len() == 0 {\n\t\t\t\tq = &s.waiting\n\t\t\t}",
+     "\t\t\tq := &s.waiting\n\t\t\tif q.len() == 0 {\n\t\t\t\tq = &s.holding\n\t\t\t}"),
+    ("N11", "an async load leaves the in-flight reservation", "core/sched/scheduler.go",
+     "\t\t\t\tlookahead, reserved = 0, s.inflightReserved()", "\t\t\t\tlookahead, reserved = 0, 0"),
+    ("N12", "an async load's blocks are not cached yet", "core/sched/scheduler.go",
+     "Reserved: reserved, DelayCache: async,", "Reserved: reserved, DelayCache: false,"),
+    ("N13", "a P/D request counts as waiting to start on arrival", "core/sched/scheduler.go",
+     "\t\tif r.Transfer != nil && r.Transfer.DoRemotePrefill {\n\t\t\ts.setFetchStage(r, FetchWaitingToStart)\n\t\t}",
+     "\t\t_ = r.Transfer"),
+    ("N14", "finished_sending frees the held blocks", "core/sched/connector.go",
+     "\tfor _, id := range o.FinishedSending {\n\t\tif r := s.requests[id]; r != nil {\n\t\t\ts.freeBlocks(r)\n\t\t}\n\t}",
+     "\tfor range o.FinishedSending {\n\t}"),
+    ("N15", "an abort mid-pull holds the blocks until it lands", "core/sched/connector.go",
+     "\t\t\tdelayFree = !s.recvDone[r.ID]", "\t\t\tdelayFree = false"),
+    ("N16", "external blocks are allocated after the local hit", "core/kv/manager.go",
+     "\t\t\t\tif need := cdiv(total, g.blockSize) - len(g.reqBlocks[id]); need > 0 {\n\t\t\t\t\tg.reqBlocks[id] = append(g.reqBlocks[id], m.Pool.New(need)...)\n\t\t\t\t}\n",
+     ""),
+    ("N17", "the connector sees the block-aligned local hit", "core/sched/scheduler.go",
+     "s.connector.MatchedTokens(r, newLocal-newLocal%s.KV.BlockSize())", "s.connector.MatchedTokens(r, newLocal)"),
+    ("N18", "skipped holding requests return in order", "core/sched/scheduler.go",
+     "\t\tfor i := len(skippedHolding) - 1; i >= 0; i-- {\n\t\t\ts.holding.prepend(skippedHolding[i])\n\t\t}",
+     "\t\tfor _, r := range skippedHolding {\n\t\t\ts.holding.prepend(r)\n\t\t}"),
+    ("N19", "the fail policy errors the failed loads", "core/sched/connector.go",
+     "\tif !s.conf.RecomputeLoadFailures {\n\t\tfor id := range skip {", "\tif false {\n\t\tfor id := range skip {"),
+    ("N20", "a landed pull for a finished request frees it", "core/sched/connector.go",
+     "\t\t} else {\n\t\t\ts.freeBlocks(r)\n\t\t}\n\t}\n\tfor _, id := range o.FinishedSending {",
+     "\t\t}\n\t}\n\tfor _, id := range o.FinishedSending {"),
+    ("N21", "a decoder request frees at finish", "core/connector/nixl/nixl.go",
+     "\tif !isPrefiller && !s.cfg.Bidirectional {\n\t\treturn false\n\t}",
+     "\tif !isPrefiller && !s.cfg.Bidirectional && false {\n\t\treturn false\n\t}"),
+    ("N22", "a load in flight is not admitted before it lands", "core/sched/connector.go",
+     "\tif !s.recvDone[r.ID] {\n\t\treturn false\n\t}", ""),
+    ("N23", "the waiting count includes kv_holding_waiting", "core/sched/scheduler.go",
+     "func (s *Scheduler) Counts() (int, int) { return len(s.running), s.waiting.len() + s.holding.len() }",
+     "func (s *Scheduler) Counts() (int, int) { return len(s.running), s.waiting.len() }"),
+    ("N24", "the engine runs while a connector holds blocks", "core/sched/scheduler.go",
+     "\treturn s.connector != nil && len(s.requests) > len(s.running)+s.waiting.len()+s.holding.len()",
+     "\treturn false"),
+    # Hybrid KV cache groups, drafters and the batch queue (blis-vllm#34).
+    ("N25", "each window frees its below-window blocks before the connector sees them", "core/sched/connector.go",
+     "\ts.KV.RemoveSkipped(r.ID, max(0, r.NumComputed-r.numInFlight))\n", ""),
+    ("N26", "a prefiller truncates a remote-decode prompt by the backoff", "core/connector/nixl/nixl.go",
+     "\tif p := r.Transfer; p != nil && p.DoRemoteDecode {\n\t\ts.truncateForPrefill(r)\n\t}", "\t_ = r"),
+    ("N27", "the backoff is the drafter's prefill lookahead less one", "core/connector/nixl/nixl.go",
+     "\treturn max(floor, spec.PrefillLookahead-1)", "\treturn floor"),
+    ("N28", "the window trim is on the processed-token basis", "core/sched/connector.go",
+     "s.KV.RemoveSkipped(r.ID, max(0, r.NumComputed-r.numInFlight))", "s.KV.RemoveSkipped(r.ID, r.NumComputed)"),
+    ("N29", "a KV consumer with batches in flight defers block frees", "core/sched/scheduler.go",
+     "\ts.deferBlockFree = max(s.cfg.MaxConcurrentBatches, 1) > 1 && conf.Consumer",
+     "\ts.deferBlockFree = false && conf.Consumer"),
+    ("N30", "a producer requires KV delivery", "core/sched/scheduler.go",
+     "\ts.requiresKVDelivery = conf.Producer\n", "\ts.requiresKVDelivery = false\n"),
+    ("N31", "no preemption victim whose free would be deferred", "core/sched/scheduler.go",
+     "\t\t\tif !s.canFreeBlocks(victim) {", "\t\t\tif false && !s.canFreeBlocks(victim) {"),
+    ("N32", "drop-mode stale output does not hold a request back", "core/sched/scheduler.go",
+     "\t\t\tif r.numStale > 0 && !r.dropStale {", "\t\t\tif r.numStale > 0 {"),
+    ("N33", "drop-mode stale output is discarded", "core/sched/scheduler.go",
+     "\t\tif stale && r.dropStale {", "\t\tif false && stale && r.dropStale {"),
+    ("N34", "the fence advances only on steps that write KV", "core/sched/scheduler.go",
+     "\tif s.deferBlockFree && len(out.Scheduled) > 0 {\n\t\ts.schedSeq++",
+     "\tif s.deferBlockFree {\n\t\ts.schedSeq++"),
+    ("N35", "a client abort waits for the next applied output", "core/engine/engine.go",
+     "func (c *Core) Abort(ids []string) { c.aborts = append(c.aborts, ids...) }",
+     "func (c *Core) Abort(ids []string) { c.Sched.Abort(ids) }"),
+    ("N36", "deferred blocks return once their fence is processed", "core/sched/connector.go",
+     "\tfor len(s.deferredFrees) > 0 && s.deferredFrees[0].fence <= s.processedSeq {",
+     "\tfor len(s.deferredFrees) > 0 && s.deferredFrees[0].fence < s.processedSeq {"),
+    ("N37", "a deferred entry is freed tail first", "core/sched/connector.go",
+     "\t\t\trev[len(bs)-1-i] = b\n", "\t\t\trev[i] = b\n"),
+    ("N38", "an HMA connector's blocks are held if any group holds one", "core/connector/nixl/nixl.go",
+     "\tfor _, g := range blockIDs {\n\t\tdelay = delay || len(g) > 0\n\t}", "\tdelay = len(blockIDs[0]) > 0"),
+    ("N39", "a truncated prefiller request samples one token", "core/connector/nixl/nixl.go",
+     "\tr.MaxTokens = 1\n\tr.Transfer.PSideTruncated = true", "\tr.Transfer.PSideTruncated = true"),
+    # NIXL beside DeepSeek V4.1's layout (bounded-replay windows, rings, groups of their own block size).
+    ("N40", "a load that restores the replay window replays nothing", "core/sched/scheduler.go",
+     "\tif len(replay) == 0 || !ok {", "\tif len(replay) == 0 || !ok || true {"),
+    ("N41", "a load without the window is cut to a block boundary", "core/sched/scheduler.go",
+     "\t\t\t\t\texternal -= external % s.KV.BlockSize()\n", ""),
+    ("N42", "the prefill backoff is at least one beside a replay window", "core/connector/nixl/nixl.go",
+     "\t\tfloor = 1\n", "\t\tfloor = 0\n"),
+    ("N43", "a pull and a handoff keep a sliding window's last blocks only", "core/connector/nixl/nixl.go",
+     "\t\t\tblocks = blocks[len(blocks)-n:]\n", ""),
+    ("N44", "a landed load replays the window it did not carry", "core/sched/connector.go",
+     "!loadFailed && s.loadRestoresReplayWindow(r)", "true"),
+    ("N45", "a load whose hit is no longer than the window is kept when it carries the window", "core/sched/scheduler.go",
+     "!windowLoaded && 0 < numComputed && numComputed <= replay", "0 < numComputed && numComputed <= replay"),
+    # The connector registry (#2021 B10): an entry is earned only by a diff test.
+    ("R1", "an entry's model is one a diff test checks", "registry/connectors.yaml",
+     "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-pull\n",
+     "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-push\n"),
+    ("R2", "every diff-tested model has an entry", "registry/doc.go",
+     "\t\"nixl-pull\": {pkg: \"core/connector/nixl\", scenarios: \"oracle/scenarios/connector/nixl-*.json\",\n",
+     "\t\"offloading\": {pkg: \"core/connector/nixl\", scenarios: \"oracle/scenarios/connector/nixl-*.json\",\n\t\tconnectors: []string{\"NixlConnector\"}, tier: 4},\n\t\"nixl-pull\": {pkg: \"core/connector/nixl\", scenarios: \"oracle/scenarios/connector/nixl-*.json\",\n"),
+    ("R3", "an entry's evidence names the release", "registry/connectors.yaml",
+     "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-pull\n    roles: [pd_transfer]\n    evidence: \"diff-test @ vLLM v0.32.0:",
+     "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-pull\n    roles: [pd_transfer]\n    evidence: \"diff-test:"),
+    ("R4", "NIXL is served for P/D transfer only", "registry/connectors.yaml",
+     "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-pull\n    roles: [pd_transfer]\n",
+     "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-pull\n    roles: [pd_transfer, offload]\n"),
+    ("R5", "Load refuses a registry the schema rejects", "registry/doc.go",
+     "if p := r.Validate(); !p.OK() {", "if p := r.Validate(); false && !p.OK() {"),
+    ("R6", "Load refuses fields the schema does not declare", "registry/doc.go",
+     "dec.KnownFields(true)", "dec.KnownFields(false)"),
+    # An entry's evidence is the traces themselves (blis-vllm#20 review I16).
+    ("R7", "a scenario runs one of the model's connectors", "registry/connector_test.go",
+     "|| !contains(m.connectors, sc.Config.Connector.Name) {", "|| false {"),
+    ("R8", "a golden that records no steps is no evidence", "registry/connector_test.go",
+     "\t\tcase len(g.Steps) == 0:", "\t\tcase false:"),
+    ("R9", "a golden is vLLM v0.32.0's own trace", "registry/connector_test.go",
+     "\t\tcase g.Provenance.VLLMVersion != blisvllm.Upstream.Version || g.Provenance.VLLMCommit != blisvllm.Upstream.Commit:",
+     "\t\tcase false:"),
+    ("R10", "a golden was made from the committed scenario", "registry/connector_test.go",
+     "\t\tcase g.Provenance.ScenarioSHA256 != hex.EncodeToString(sum[:]):", "\t\tcase false && sum[0] == 0:"),
+]
+
+# The suite that guards each mutant, by its id's letter: the test pattern, the package, and
+# the output that shows the suite caught it (a divergence from vLLM, or a failed check).
+SUITES = {
+    "N": ("TestNIXLAgainstVLLM|TestNIXLFuzzCorpusAgainstVLLM", "./core/connector/nixl/", ("divergence", "panic")),
+    "R": ("TestTheRegistryValidates|TestEveryEntryIsEarnedByADiffTest|TestEvidenceRefusesWhatIsNotATrace|TestLoad",
+          "./registry/", ("--- FAIL",)),
+}
+
+# Mutants no input can tell apart from the code, for vLLM's NIXL pull connector on one
+# full-attention KV cache group (oracle/README.md, "Tier 4"). Each reason is why, from vLLM's
+# own code; a connector or layout that makes one observable must add a scenario and remove it.
+EQUIVALENT = {
+    # A NIXL pull is planned once (update_state_after_alloc clears do_remote_prefill,
+    # pull_scheduler.py:188-189), so a preempted request is never matched for a pull again
+    # and never re-enters WAITING_FOR_REMOTE_KVS with num_preemptions > 0. An offloading
+    # connector, which loads on every admission, can.
+    "N7": "a preempted request never waits for a NIXL pull",
+    # Under "recompute" the async failures are retried when they land and are never in
+    # num_scheduled_tokens (they are not running), so skipping them in update_from_output's
+    # loop changes nothing; only a sync load (load_kv_async False), which NIXL never makes,
+    # puts a running request among the failures.
+    "N8": "NIXL makes no sync loads, so the async failures are never scheduled",
+    # With one KV cache group, allocate_new_blocks (kv_cache_coordinator.py:312-345) tops the
+    # table up to num_tokens_need_slot, which covers the external tokens' blocks (a prompt is
+    # at most max_model_len), from the same free-queue head, so allocating the external
+    # blocks first gives the same blocks in the same order. With several groups the order
+    # across groups differs (vllm-project/vllm#33775), but a NIXL load reporting invalid blocks refuses
+    # several groups (scheduler.py:3365-3374).
+    "N16": "the slot allocation covers the external blocks with the same pool pops",
+    # A full-attention hit is whole blocks (find_longest_cache_hit,
+    # single_type_kv_cache_manager.py:733-827) when the hash block size is the block size,
+    # as it is for one group, so the block-aligned hit is the hit.
+    "N17": "a full-attention local hit is always block-aligned",
+    # Every KV cache group holds at least one block of a request whose group 0 does: the NIXL
+    # delay decision reads any group (pull_scheduler.py:248), and group 0 is non-empty whenever
+    # another is (allocate_slots gives every group the request's slots).
+    "N38": "group 0 holds a block whenever any group does",
+    # NIXL restores every group, so a landed load carries the window; only a failed load with
+    # tokens left valid would replay, and a NIXL failure is reported for the whole request, which
+    # leaves none (nixl/base_worker.py:2880-2889, 2910-2914).
+    # The block trim applies to a load that carries no window; NIXL restores every group, so the trim
+    # is never reached beside NIXL and core/connector/nixl's TestALoadWithoutTheWindowIsTrimmedAndReplayed
+    # holds it with a connector that restores none.
+    "N41": "a NIXL load always carries the window, so the trim is not reached",
+    "N44": "a NIXL load that lands carries the window, and a failed one keeps no tokens",
+}
+
+
+def main() -> int:
+    src, scratch = sys.argv[1], sys.argv[3]
+    fuzz = os.path.abspath(sys.argv[2])
+    if not any(f.endswith(".trace.json") for f in os.listdir(fuzz)):
+        print(f"no connector fuzz traces in {fuzz}")
+        return 1
+    only = set(sys.argv[4].split(",")) if len(sys.argv) > 4 else None
+    env = dict(os.environ, BLIS_VLLM_CONNECTOR_FUZZ_DIR=fuzz)
+    bad = 0
+    for mid, row, path, old, new in MUTANTS:
+        if only and mid not in only:
+            continue
+        if os.path.exists(scratch):
+            shutil.rmtree(scratch)
+        shutil.copytree(src, scratch, ignore=shutil.ignore_patterns(".git", "vllm-source", "oracle-model", "out"))
+        target = os.path.join(scratch, path)
+        text = open(target).read()
+        if text.count(old) != 1:
+            print(f"BROKEN   {mid:4} {row}: pattern found {text.count(old)} times in {path}")
+            bad += 1
+            continue
+        open(target, "w").write(text.replace(old, new))
+        run, pkg, markers = SUITES[mid[0]]
+        r = subprocess.run(["go", "test", "-count=1", "-run", run, pkg],
+                           cwd=scratch, env=env, capture_output=True, text=True, timeout=900)
+        if r.returncode == 0:
+            if mid in EQUIVALENT:
+                print(f"EQUIV    {mid:4} {row}: {EQUIVALENT[mid]}")
+            else:
+                print(f"SURVIVED {mid:4} {row}")
+                bad += 1
+        elif mid in EQUIVALENT:
+            print(f"NOW CAUGHT {mid} {row}: remove it from EQUIVALENT")
+            bad += 1
+        elif "panic: test timed out" in r.stdout:
+            print(f"BROKEN   {mid:4} {row}: the tests timed out")
+            unexpected += 1
+        elif any(m in r.stdout for m in markers):
+            print(f"CAUGHT   {mid:4} {row}")
+        else:
+            tail = (r.stdout + r.stderr).strip().splitlines()[-3:]
+            print(f"BROKEN   {mid:4} {row}: failed without a divergence: {' | '.join(tail)[:200]}")
+            bad += 1
+    shutil.rmtree(scratch, ignore_errors=True)
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

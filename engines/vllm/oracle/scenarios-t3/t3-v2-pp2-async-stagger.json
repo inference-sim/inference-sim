@@ -1,0 +1,104 @@
+{
+ "name": "t3-v2-pp2-async-stagger",
+ "description": "V2 runner, PP 2, async: a batch queue of 3 and decodes spaced 2 steps apart.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 24,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 128,
+  "enable_prefix_caching": false,
+  "scheduling_policy": "fcfs",
+  "pipeline_parallel_size": 2,
+  "async_scheduling": true,
+  "use_v2_model_runner": true
+ },
+ "requests": [
+  {
+   "id": "s0",
+   "arrival_step": 0,
+   "prompt": [
+    11400,
+    18082,
+    11138,
+    47602,
+    11641
+   ],
+   "output": [
+    21498,
+    48463,
+    8779,
+    3512,
+    24981,
+    23970
+   ],
+   "priority": 0
+  },
+  {
+   "id": "s1",
+   "arrival_step": 1,
+   "prompt": [
+    21697,
+    48565,
+    36063,
+    47316,
+    11358,
+    556
+   ],
+   "output": [
+    42375,
+    43467,
+    34573,
+    43851,
+    29445,
+    41841
+   ],
+   "priority": 0
+  },
+  {
+   "id": "s2",
+   "arrival_step": 2,
+   "prompt": [
+    11477,
+    8169,
+    33925,
+    42762,
+    40183,
+    1262,
+    42120
+   ],
+   "output": [
+    46835,
+    22371,
+    20315,
+    46,
+    48891,
+    22029
+   ],
+   "priority": 0
+  },
+  {
+   "id": "s3",
+   "arrival_step": 3,
+   "prompt": [
+    18835,
+    18859,
+    42601,
+    38611,
+    17710,
+    12437,
+    25156,
+    21137
+   ],
+   "output": [
+    28956,
+    3204,
+    47085,
+    3929,
+    5631,
+    10256
+   ],
+   "priority": 0
+  }
+ ]
+}

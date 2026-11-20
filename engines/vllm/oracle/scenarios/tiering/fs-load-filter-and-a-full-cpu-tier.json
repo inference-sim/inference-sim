@@ -1,0 +1,126 @@
+{
+ "description": "A request whose load filter allows only CPU tiers never asks the fs tier. Another request's hit on disk cannot be promoted while every CPU chunk is pinned, so it is a MISS.",
+ "spec": {
+  "name": "TieringOffloadingSpec",
+  "cpu_bytes_to_use": 16384,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1,
+  "extra": {
+   "secondary_tiers": [
+    {
+     "type": "fs",
+     "root_dir": "@root",
+     "n_read_threads": 1,
+     "n_write_threads": 0
+    }
+   ]
+  }
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "ctx": "a",
+   "filter": [
+    {
+     "medium": "cpu"
+    }
+   ]
+  },
+  {
+   "m": "put",
+   "tier": 0,
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "a"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "on_new_request",
+   "ctx": "b"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "b",
+   "keys": [
+    "k2"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "b",
+   "keys": [
+    "k2"
+   ]
+  },
+  {
+   "m": "prepare_load",
+   "ctx": "b",
+   "keys": [
+    "k2"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "b"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "complete_load",
+   "ctx": "b",
+   "keys": [
+    "k2"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "b"
+  }
+ ]
+}

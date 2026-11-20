@@ -1,0 +1,160 @@
+{
+ "name": "spec-eagle3",
+ "description": "EAGLE3 K=3 with a config-only draft: verify widths, rejection rollback, lookahead slots and the EAGLE block drop on a prefix hit.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 60,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "speculative": {
+   "method": "eagle3",
+   "num_speculative_tokens": 3,
+   "draft": "llama-eagle"
+  }
+ },
+ "requests": [
+  {
+   "id": "a",
+   "arrival_step": 0,
+   "prompt": [
+    29648,
+    36686,
+    30517,
+    29612,
+    33282,
+    38495,
+    12446,
+    12102,
+    33549,
+    31180,
+    12202,
+    6169,
+    29268,
+    19884,
+    9293,
+    5943,
+    35304,
+    2745,
+    39023
+   ],
+   "output": [
+    25963,
+    29688,
+    10322,
+    984,
+    34628,
+    4140,
+    3903,
+    2337,
+    12466,
+    15856,
+    39297,
+    1972,
+    30405,
+    21384
+   ],
+   "accepted": [
+    3,
+    0,
+    2,
+    1,
+    3,
+    3,
+    0,
+    1
+   ]
+  },
+  {
+   "id": "b",
+   "arrival_step": 1,
+   "prompt": [
+    28871,
+    38730,
+    12801,
+    34022,
+    15313,
+    19278,
+    32754,
+    302,
+    5570,
+    29972,
+    18230,
+    26659,
+    36128,
+    5453,
+    16646,
+    20663,
+    15052,
+    33613,
+    18943,
+    1950,
+    4603
+   ],
+   "output": [
+    36907,
+    7074,
+    26241,
+    7065,
+    19065,
+    25331,
+    4380,
+    1107,
+    36
+   ],
+   "accepted": [
+    1,
+    1,
+    1,
+    2,
+    0
+   ]
+  },
+  {
+   "id": "c",
+   "arrival_step": 6,
+   "prompt": [
+    29648,
+    36686,
+    30517,
+    29612,
+    33282,
+    38495,
+    12446,
+    12102,
+    33549,
+    31180,
+    12202,
+    6169,
+    13993,
+    13745,
+    3430
+   ],
+   "output": [
+    30802,
+    24607,
+    26046,
+    27512,
+    4787,
+    37110,
+    13009,
+    17681,
+    22079,
+    5712,
+    20396
+   ],
+   "accepted": [
+    2,
+    3,
+    0,
+    0,
+    1,
+    3
+   ]
+  }
+ ],
+ "max_steps": 400
+}

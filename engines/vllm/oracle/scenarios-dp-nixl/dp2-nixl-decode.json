@@ -1,0 +1,122 @@
+{
+ "name": "dp2-nixl-decode",
+ "description": "DP 2, both ranks kv_consumer. Rank 0 waits for its pull (4 steps) with nothing else to run while rank 1 decodes a local request and lands two pulls; rank 0 runs dummy batches and the wave stays running.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "data_parallel_size": 2,
+  "prefill_schedule_interval": 1,
+  "dp_sync_interval": 4,
+  "stats_interval": 1,
+  "connector": {
+   "name": "NixlConnector",
+   "kv_roles": [
+    "kv_consumer",
+    "kv_consumer"
+   ],
+   "kv_load_failure_policy": "fail",
+   "extra_config": {}
+  }
+ },
+ "requests": [
+  {
+   "id": "d0",
+   "arrival_step": 0,
+   "prompt": [
+    954,
+    2121,
+    4018,
+    4287,
+    4292,
+    2615,
+    1063,
+    626,
+    2480,
+    1332,
+    1989,
+    1981
+   ],
+   "output": [
+    1305,
+    2536,
+    3303
+   ],
+   "remote_prefill": true,
+   "recv_delay": 4,
+   "rank": 0
+  },
+  {
+   "id": "l0",
+   "arrival_step": 0,
+   "prompt": [
+    2763,
+    3789,
+    1203,
+    3909,
+    1792,
+    4476
+   ],
+   "output": [
+    2665,
+    971,
+    1997,
+    2441,
+    562,
+    521,
+    777,
+    1973
+   ],
+   "rank": 1
+  },
+  {
+   "id": "d1",
+   "arrival_step": 1,
+   "prompt": [
+    4780,
+    233,
+    764,
+    2038,
+    4762,
+    4616,
+    4008,
+    1782,
+    3026,
+    1517
+   ],
+   "output": [
+    727,
+    2830,
+    1850
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1,
+   "rank": 1
+  },
+  {
+   "id": "d2",
+   "arrival_step": 2,
+   "prompt": [
+    3105,
+    3061,
+    440,
+    1362,
+    4649,
+    693,
+    1568,
+    2992
+   ],
+   "output": [
+    1709,
+    1189
+   ],
+   "remote_prefill": true,
+   "recv_delay": 0,
+   "rank": 1
+  }
+ ]
+}

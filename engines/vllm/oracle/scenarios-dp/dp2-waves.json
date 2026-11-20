@@ -1,0 +1,129 @@
+{
+ "name": "dp2-waves",
+ "description": "DP 2: two waves separated by idle steps; dummy batches keep the idle rank in step until the sync interval ends the wave.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 128,
+  "enable_prefix_caching": false,
+  "scheduling_policy": "fcfs",
+  "data_parallel_size": 2,
+  "prefill_schedule_interval": 1,
+  "dp_sync_interval": 4,
+  "stats_interval": 1
+ },
+ "requests": [
+  {
+   "id": "a0",
+   "arrival_step": 0,
+   "prompt": [
+    2453,
+    33647,
+    25287,
+    35327,
+    35751,
+    19423
+   ],
+   "output": [
+    1212,
+    19039,
+    10042
+   ],
+   "priority": 0
+  },
+  {
+   "id": "a1",
+   "arrival_step": 0,
+   "prompt": [
+    15130,
+    42563,
+    15778,
+    31473,
+    34597,
+    7334,
+    24376
+   ],
+   "output": [
+    35611,
+    18666,
+    8364,
+    920
+   ],
+   "priority": 0
+  },
+  {
+   "id": "a2",
+   "arrival_step": 0,
+   "prompt": [
+    22196,
+    43356,
+    30457,
+    47970,
+    44612,
+    18558,
+    16945,
+    33413
+   ],
+   "output": [
+    19337,
+    45547,
+    41229,
+    48287,
+    24353
+   ],
+   "priority": 0
+  },
+  {
+   "id": "a3",
+   "arrival_step": 40,
+   "prompt": [
+    44222,
+    42936,
+    7784,
+    22848,
+    42482,
+    14766,
+    35431,
+    33771,
+    13190
+   ],
+   "output": [
+    32705,
+    7443,
+    43614,
+    5641,
+    41673,
+    1588
+   ],
+   "priority": 0
+  },
+  {
+   "id": "a4",
+   "arrival_step": 40,
+   "prompt": [
+    42922,
+    2792,
+    15154,
+    47749,
+    31773,
+    3127,
+    10837,
+    48194,
+    28678,
+    25321
+   ],
+   "output": [
+    6094,
+    33219,
+    20456,
+    3781,
+    16205,
+    13347,
+    48061
+   ],
+   "priority": 0
+  }
+ ]
+}

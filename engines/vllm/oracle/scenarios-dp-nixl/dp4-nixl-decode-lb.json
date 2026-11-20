@@ -1,0 +1,181 @@
+{
+ "name": "dp4-nixl-decode-lb",
+ "description": "DP 4, all ranks kv_consumer, no explicit rank: the internal load balancer spreads a burst of remote-prefill requests, with different pull delays, and a local request, over the ranks.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "data_parallel_size": 4,
+  "prefill_schedule_interval": 1,
+  "dp_sync_interval": 4,
+  "stats_interval": 1,
+  "connector": {
+   "name": "NixlConnector",
+   "kv_roles": [
+    "kv_consumer",
+    "kv_consumer",
+    "kv_consumer",
+    "kv_consumer"
+   ],
+   "kv_load_failure_policy": "fail",
+   "extra_config": {}
+  }
+ },
+ "requests": [
+  {
+   "id": "d0",
+   "arrival_step": 0,
+   "prompt": [
+    2635,
+    4373,
+    3454,
+    4061,
+    3487,
+    2038,
+    1185,
+    4475,
+    4578,
+    902
+   ],
+   "output": [
+    2601,
+    1162
+   ],
+   "remote_prefill": true,
+   "recv_delay": 3
+  },
+  {
+   "id": "d1",
+   "arrival_step": 0,
+   "prompt": [
+    4169,
+    4007,
+    434,
+    1885,
+    1253,
+    1170,
+    701,
+    1406,
+    163
+   ],
+   "output": [
+    395,
+    1106,
+    3271
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1
+  },
+  {
+   "id": "d2",
+   "arrival_step": 0,
+   "prompt": [
+    4858,
+    2598,
+    1998,
+    1866,
+    4047,
+    2171,
+    3347,
+    521,
+    2024,
+    4299,
+    1225,
+    606,
+    3302,
+    187
+   ],
+   "output": [
+    4729,
+    4537
+   ],
+   "remote_prefill": true,
+   "recv_delay": 2
+  },
+  {
+   "id": "d3",
+   "arrival_step": 0,
+   "prompt": [
+    4625,
+    3939,
+    853,
+    3945,
+    2075,
+    4534
+   ],
+   "output": [
+    4125,
+    1262,
+    1660
+   ],
+   "remote_prefill": true,
+   "recv_delay": 0
+  },
+  {
+   "id": "d4",
+   "arrival_step": 0,
+   "prompt": [
+    3945,
+    4499,
+    3705,
+    2148,
+    4166,
+    4681,
+    665,
+    634,
+    2300,
+    2306,
+    1228,
+    2882
+   ],
+   "output": [
+    216,
+    4503
+   ],
+   "remote_prefill": true,
+   "recv_delay": 4
+  },
+  {
+   "id": "d5",
+   "arrival_step": 1,
+   "prompt": [
+    2594,
+    4791,
+    4952,
+    2967,
+    761,
+    1887,
+    1128,
+    2763
+   ],
+   "output": [
+    4943,
+    3396
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1
+  },
+  {
+   "id": "l0",
+   "arrival_step": 1,
+   "prompt": [
+    644,
+    116,
+    3044,
+    4034,
+    620,
+    926,
+    2620
+   ],
+   "output": [
+    4069,
+    4869,
+    2432
+   ]
+  }
+ ]
+}

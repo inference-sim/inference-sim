@@ -1,0 +1,180 @@
+{
+ "name": "nixl-d-async-defer-free",
+ "description": "Decoder under async scheduling (AsyncScheduler, two batches in flight): defer_block_free (scheduler.py:184-192) holds a finished, aborted or preempted request's blocks until the step that may still write them is processed, and a preemption picks no victim whose free would be deferred (:803-806); a tight pool makes pulls wait for those frees.",
+ "config": {
+  "max_num_seqs": 3,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "async_scheduling": true,
+  "num_blocks": 20,
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_consumer",
+   "kv_load_failure_policy": "recompute",
+   "extra_config": {
+    "kv_recompute_threshold": 0
+   }
+  }
+ },
+ "requests": [
+  {
+   "id": "d0",
+   "arrival_step": 0,
+   "prompt": [
+    2151,
+    3370,
+    2101,
+    106,
+    1073,
+    3875,
+    3088,
+    2733,
+    4550,
+    3540,
+    3719,
+    676,
+    590,
+    3944,
+    4722,
+    2624,
+    3080,
+    1853
+   ],
+   "output": [
+    1215,
+    4414,
+    2825,
+    3001,
+    3024,
+    3224
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1
+  },
+  {
+   "id": "l0",
+   "arrival_step": 0,
+   "prompt": [
+    2151,
+    3370,
+    2101,
+    106,
+    1073,
+    3875,
+    3088,
+    2733,
+    236,
+    2606,
+    3218,
+    4668,
+    1796
+   ],
+   "output": [
+    3505,
+    3879,
+    4517,
+    4198,
+    4946,
+    3446,
+    1298,
+    4679,
+    1588
+   ]
+  },
+  {
+   "id": "d1",
+   "arrival_step": 1,
+   "prompt": [
+    2033,
+    418,
+    785,
+    4652,
+    2158,
+    3472,
+    3943,
+    4836,
+    3216,
+    2366,
+    3484,
+    3463,
+    848,
+    4163,
+    4239,
+    645,
+    3340,
+    3330,
+    2303,
+    2324
+   ],
+   "output": [
+    3692,
+    4091,
+    1865,
+    1120
+   ],
+   "remote_prefill": true,
+   "recv_delay": 0,
+   "abort_step": 5
+  },
+  {
+   "id": "l1",
+   "arrival_step": 2,
+   "prompt": [
+    3511,
+    856,
+    1738,
+    2937,
+    768,
+    1044,
+    4083,
+    3854,
+    4899,
+    4311,
+    1200,
+    4907
+   ],
+   "output": [
+    3340,
+    652,
+    2073,
+    2585,
+    3512,
+    4620,
+    3332,
+    774
+   ]
+  },
+  {
+   "id": "d2",
+   "arrival_step": 3,
+   "prompt": [
+    4115,
+    2741,
+    247,
+    2535,
+    935,
+    714,
+    3113,
+    761,
+    3725,
+    2265,
+    4468,
+    4346,
+    964,
+    4298
+   ],
+   "output": [
+    393,
+    790,
+    224,
+    805,
+    941
+   ],
+   "remote_prefill": true,
+   "recv_delay": 2
+  }
+ ]
+}

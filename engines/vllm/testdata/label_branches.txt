@@ -1,0 +1,16 @@
+# Comparisons of, and string searches over, a documentation-only field, found by
+# TestNoDecisionDependsOnAFreeTextLabel (design SUB-20). The list may only shrink: a new site
+# fails the test, and a listed site that is gone fails it, so a fix deletes its line.
+#
+# cmd/metricsmanifest: a classification must state a reason. The test is that the words are not
+# empty, not what they say, and decides no price or engine decision.
+cmd/metricsmanifest/main.go: strings.TrimSpace(c.Reason)
+cmd/metricsmanifest/main.go: strings.TrimSpace(c.Reason) == ""
+#
+# core/vllm/config.go (engine block checks): a start-up refusal of vLLM's rules pack is kept when
+# the same finding, matched by the TEXT of its message, was reported for every parallel layout the
+# block could have, and the pool prefix is stripped from the text by string. Whether the engine
+# refuses a block therefore depends on a message's wording. The fix is for the rules pack to give
+# each finding a stable code (a typed field), and for the engine to match on it.
+core/vllm/config.go: len(in[p.Rule+"\x00"+p.Message]) == len(blockShapes)
+core/vllm/config.go: strings.TrimPrefix(p.Message, "pools[0].")

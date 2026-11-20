@@ -1,0 +1,4 @@
+/oracle/.venv/
+/oracle/out/
+__pycache__/
+*.pyc

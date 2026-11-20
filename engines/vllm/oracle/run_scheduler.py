@@ -1,0 +1,925 @@
+# Original to blis-vllm.
+"""Tier-2 oracle: drive vLLM's real Scheduler through a scenario and record every step.
+
+The scenario (JSON, schema in oracle/README.md) fixes the scheduler configuration, a fixed KV
+capacity and the requests with their prompts, arrival steps and assigned outputs. This runs
+vLLM's own Scheduler (built by vLLM's own test helper, tests/v1/core/utils.py create_scheduler)
+and replaces only the GPU: each step's ModelRunnerOutput is built from the scenario's assigned
+output tokens, the "shared GPU mock". It patches no scheduler, KV-cache or connector code;
+oracle/mocks.json lists exactly what is replaced, and check_mocks.py fails CI if that list
+names decision code.
+
+Output (JSON on stdout): provenance, then one record per step with what the Go side must
+reproduce: tokens scheduled per request, preempted and finished ids, the free block count,
+every running request's blocks by content (block hash and ref count, never block ids), prefix
+hits, and the waiting/running counts.
+
+Usage: python -I oracle/run_scheduler.py <vllm checkout> <scenario.json>
+"""
+
+import dataclasses
+import hashlib
+import importlib.metadata
+import json
+import os
+import platform
+import subprocess
+import sys
+import traceback
+
+
+def layer_specs(cfg: dict) -> dict:
+    """A model's KV cache layers as its attention modules build them, from the scenario's
+    "kv_layers": runs of {"count", "spec", ...}. "full" is Attention's FullAttentionSpec and
+    "sliding_window" its SlidingWindowSpec (vllm/model_executor/layers/attention/attention.py:
+    606-677@5df63a72); "indexer" is a key-only MLAAttentionSpec with the INDEXER role, as
+    MiniMax-M3's lightning indexer builds it (vllm/models/minimax_m3/common/indexer.py:145-154).
+    Heads and head size are each run's own, so page sizes are the model's own ratios.
+
+    DeepSeek V4's caches are the spec classes its modules build, with each run's own block size,
+    tokens per state, state bytes and alignment: "mla" is the compressed MLAAttentionSpec of its
+    attention and indexer key caches (vllm/models/deepseek_v4/attention.py:856-925,
+    vllm/models/deepseek_v41/attention.py:1138-1240), "sliding_window_mla" SlidingWindowMLASpec
+    (vllm/v1/attention/backends/mla/sparse_swa.py:116-140, vllm/models/deepseek_v4/compressor.py:
+    179-193) and "circular_buffer" CircularBufferSpec (vllm/models/deepseek_v41/compressor.py:
+    159-167). Their uint8 caches are uint8 here; a float32 cache states "elem_bytes": 4. The
+    attention specs' caches are float32 unless a run states "elem_bytes" (2 is bfloat16).
+
+    "mamba" is MambaSpec (vllm/v1/kv_cache_interface.py:1035-1127@5df63a72), the recurrent state of
+    a Mamba-2, GDN or KDA layer: one uint8 tensor of the run's "state_bytes" (so the state's
+    content size is state_bytes), the run's "block_size" (mamba_block_size, in tokens), and its
+    "page_size_padded", "mamba_cache_mode" ("none" unless stated), "num_speculative_blocks",
+    "num_prefill_checkpoint_blocks" and "prefill_checkpoint_alignment" as the spec states them.
+
+    A run stating "draft": true is the drafter's layers, whose specs are is_draft."""
+    import torch  # noqa: E402
+    from vllm.v1.kv_cache_interface import (  # noqa: E402
+        CircularBufferSpec,
+        FullAttentionSpec,
+        MambaSpec,
+        MLAAttentionSpec,
+        SlidingWindowMLASpec,
+        SlidingWindowSpec,
+        SparseCacheRole,
+    )
+
+    dtypes = {1: torch.uint8, 2: torch.bfloat16, 4: torch.float32}
+    out = {}
+    for r, run in enumerate(cfg["kv_layers"]):
+        for i in range(run["count"]):
+            common = {"block_size": cfg["block_size"], "num_kv_heads": run.get("num_kv_heads", 1),
+                      "head_size": run.get("head_size", 1), "dtype": dtypes[run.get("elem_bytes", 4)]}
+            kind = run["spec"]
+            deepseek = {"block_size": run.get("block_size", cfg["block_size"]), "num_kv_heads": 1,
+                        "head_size": run["head_size"] if "head_size" in run else 1,
+                        "dtype": dtypes[run.get("elem_bytes", 1)]}
+            if run.get("alignment"):
+                deepseek["alignment"] = run["alignment"]
+            if run.get("state_bytes"):
+                deepseek["state_content_bytes"] = run["state_bytes"]
+            if kind == "full":
+                spec = FullAttentionSpec(**common)
+            elif kind == "sliding_window":
+                spec = SlidingWindowSpec(sliding_window=run["sliding_window"], **common)
+            elif kind == "indexer":
+                spec = MLAAttentionSpec(cache_role=SparseCacheRole.INDEXER, **common)
+            elif kind == "mla":
+                spec = MLAAttentionSpec(tokens_per_state=run.get("tokens_per_state", 1), **deepseek)
+            elif kind == "sliding_window_mla":
+                spec = SlidingWindowMLASpec(sliding_window=run["sliding_window"],
+                                            bounded_replay=bool(run.get("bounded_replay")), **deepseek)
+            elif kind == "circular_buffer":
+                deepseek.pop("alignment", None)
+                spec = CircularBufferSpec(head_size_v=0, **deepseek)
+            elif kind == "mamba":
+                spec = MambaSpec(
+                    block_size=run["block_size"],
+                    shapes=((run["state_bytes"],),),
+                    dtypes=(torch.uint8,),
+                    page_size_padded=run.get("page_size_padded") or None,
+                    mamba_cache_mode=run.get("mamba_cache_mode", "none"),
+                    num_speculative_blocks=run.get("num_speculative_blocks", 0),
+                    num_prefill_checkpoint_blocks=run.get("num_prefill_checkpoint_blocks", 0),
+                    prefill_checkpoint_alignment=run.get("prefill_checkpoint_alignment") or None,
+                )
+            else:
+                raise ValueError(f"unknown KV layer spec {kind!r}")
+            if run.get("draft"):
+                # A drafter's layer: the model runner marks every attention layer the drafter
+                # registers, and its spec is_draft (vllm/v1/worker/gpu/spec_decode/speculator.py:
+                # 225-242, vllm/v1/worker/gpu/attn_utils.py:150-151@4ba787ec).
+                spec = dataclasses.replace(spec, is_draft=True)
+            out[f"run{r}.layer{i}"] = spec
+    return out
+
+
+def has_mamba(cfg: dict) -> bool:
+    """Whether the scenario's kv_layers hold a Mamba run."""
+    return any(run["spec"] == "mamba" for run in cfg.get("kv_layers", []))
+
+
+def layer_groups(cfg: dict, vllm_config) -> list:
+    """vLLM's own grouping of the layers as the engine core groups them (get_global_kv_cache_groups,
+    vllm/v1/core/kv_cache_planning.py:1607-1657@4ba787ec; vllm/v1/engine/core.py:292): every
+    sliding window tagged with extra_retained_tokens, get_kv_cache_groups (:1113-1200), and under
+    use_eagle_block_drop the groups holding a draft layer flagged is_eagle_group. With the spec registry the engine registers before it groups
+    (register_all_kvcache_specs, vllm/v1/core/single_type_kv_cache_manager.py:2633). The
+    layers are named in run order. vLLM buckets layers by spec in order of first appearance and
+    splits each bucket by stride, so only which spec comes first matters: a run order that
+    starts with the model's first layer's spec (gpt-oss's layer 0 is windowed) groups as the
+    model does."""
+    from vllm.v1.core.kv_cache_planning import get_global_kv_cache_groups  # noqa: E402
+    from vllm.v1.core.single_type_kv_cache_manager import register_all_kvcache_specs  # noqa: E402
+
+    from vllm.v1.attention.backends.utils import (  # noqa: E402
+        _DEFAULT_LAYOUT_PREFERENCE,
+        resolve_kv_cache_layout,
+    )
+    from vllm.v1.core.kv_cache_utils import generate_scheduler_kv_cache_config  # noqa: E402
+    from vllm.v1.kv_cache_interface import KVCacheConfig  # noqa: E402
+
+    register_all_kvcache_specs(vllm_config)
+    layers = layer_specs(cfg)
+    # The engine core resolves the KV cache layout from the backends' supported layouts before
+    # it groups (vllm/v1/engine/core.py:292-301@5df63a72), and resolve_kv_cache_layout records it
+    # on the cache config (vllm/v1/attention/backends/utils.py:348). These layers' backends state
+    # no preference, so the workers report vLLM's default preference; DeepSeek V4's indexer
+    # backend states block-outermost layouts (DeepseekV4IndexerBackend.supported_kv_cache_layouts,
+    # vllm/v1/attention/backends/mla/indexer.py:347-351), which its workers report.
+    supported = [m.name for m in _DEFAULT_LAYOUT_PREFERENCE]
+    # A hybrid Mamba model keeps the default preference: its attention backends state no
+    # block-outermost layout, so the page sizes unify by padding the Mamba page.
+    if not has_mamba(cfg) and any(run["spec"] in ("mla", "sliding_window_mla", "circular_buffer")
+                                  for run in cfg["kv_layers"]):
+        from vllm.v1.attention.backends.mla.indexer import DeepseekV4IndexerBackend  # noqa: E402
+        from vllm.v1.attention.backends.utils import get_supported_kv_cache_layouts  # noqa: E402
+
+        supported = [m.name for m in get_supported_kv_cache_layouts([DeepseekV4IndexerBackend])]
+    resolve_kv_cache_layout(vllm_config, [supported], layers.values())
+    groups = get_global_kv_cache_groups(vllm_config, [layers])
+    if cfg.get("kv_available_bytes"):
+        # The pool vLLM sizes from that much KV memory over these groups: its own
+        # get_kv_cache_config_from_groups (vllm/v1/core/kv_cache_planning.py:642-741@4ba787ec) on the
+        # groups it just built, as the engine core's default builder calls it per worker
+        # (get_kv_cache_configs, :1574-1577; DefaultKVCacheConfigBuilder, :1698-1719). Recorded beside the trace; the scenario's num_blocks still runs the
+        # scheduler, so no decision moves.
+        from vllm.v1.core.kv_cache_planning import get_kv_cache_config_from_groups  # noqa: E402
+
+        sized = get_kv_cache_config_from_groups(vllm_config, groups, cfg["kv_available_bytes"])
+        pool = {"available_bytes": cfg["kv_available_bytes"], "num_blocks": sized.num_blocks,
+                "kv_cache_layout": vllm_config.cache_config.kv_cache_layout}
+        if cfg.get("kv_startup_check"):
+            # The engine core's start-up check on the same layers and memory: vLLM's own
+            # get_kv_cache_configs (vllm/v1/core/kv_cache_planning.py:1461-1604@4ba787ec), whose
+            # _check_enough_kv_cache_memory (:1550-1559) refuses a worker whose KV cache cannot hold
+            # one max_model_len request across every group. The verdict, vLLM's message and the
+            # max_concurrent_batches its sliding windows' admission caps were counted at
+            # (max_in_flight_tokens, vllm/config/vllm.py:577-598) are recorded; the scenario's
+            # num_blocks still runs the scheduler. The engine core groups every worker's layers
+            # first and passes those global groups in (get_global_kv_cache_groups, :1607-1657;
+            # vllm/v1/engine/core.py:292 and 321-323@4ba787ec).
+            from vllm.v1.core.kv_cache_planning import (  # noqa: E402
+                get_global_kv_cache_groups,
+                get_kv_cache_configs,
+            )
+
+            try:
+                specs = [layer_specs(cfg)]
+                get_kv_cache_configs(vllm_config, specs, [cfg["kv_available_bytes"]],
+                                     get_global_kv_cache_groups(vllm_config, specs))
+                pool["startup"] = {"refused": False}
+            except ValueError as e:
+                pool["startup"] = {"refused": True, "message": str(e)}
+            pool["startup"]["max_concurrent_batches"] = vllm_config.max_concurrent_batches
+        pool_sizes.append(pool)
+    # The scheduler's view: a uniform-type group is represented by one of its layers' specs
+    # (generate_scheduler_kv_cache_config, vllm/v1/core/kv_cache_utils.py:1096-1117@4ba787ec).
+    projected = generate_scheduler_kv_cache_config(
+        [KVCacheConfig(num_blocks=cfg["num_blocks"], kv_cache_tensors=[], kv_cache_groups=groups)])
+    return projected.kv_cache_groups
+
+
+# What layer_groups sized for a scenario stating kv_available_bytes, for run_one's trace.
+pool_sizes: list = []
+# What a scenario stating "expect_groups_error" got from layer_groups: {"error", "groups"}.
+groups_outcome: dict = {}
+
+
+def group_record(g) -> dict:
+    """One KV cache group as the scheduler sees it: the spec class, its block size and page size
+    in bytes, and how many layers share it."""
+    return {"spec": type(g.kv_cache_spec).__name__, "block_size": g.kv_cache_spec.block_size,
+            "page_size_bytes": g.kv_cache_spec.page_size_bytes, "layers": len(g.layer_names)}
+
+
+def main() -> None:
+    vllm_root, scenario_path = sys.argv[1], sys.argv[2]
+    if os.path.isdir(scenario_path):
+        # Batch mode: every *.json scenario in the directory, each trace written beside it as
+        # <name>.trace.json. One interpreter for many scenarios, which a fuzz corpus needs.
+        out_dir = sys.argv[3] if len(sys.argv) > 3 else scenario_path
+        # Golden traces are never overwritten without review (docs/testing.md).
+        if "testdata/golden" in os.path.abspath(out_dir).replace(os.sep, "/") and \
+                os.environ.get("BLIS_VLLM_ALLOW_GOLDEN_UPDATE") != "1":
+            sys.exit("refusing to write golden traces: set BLIS_VLLM_ALLOW_GOLDEN_UPDATE=1, and add "
+                     "a golden-reviewed: <trace>: <reason> trailer for each trace the commit changes")
+        names = sorted(f for f in os.listdir(scenario_path)
+                       if f.endswith(".json") and not f.endswith(".trace.json"))
+        failed = []
+        for name in names:
+            path = os.path.join(scenario_path, name)
+            try:
+                trace = run_one(vllm_root, path)
+            except Exception:  # every scenario's failure is reported, not only the first
+                traceback.print_exc()
+                print(f"scenario {name} failed", file=sys.stderr)
+                pool_sizes.clear()
+                failed.append(name)
+                continue
+            with open(os.path.join(out_dir, name[:-5] + ".trace.json"), "w") as f:
+                json.dump(trace, f, indent=1, sort_keys=True)
+        if failed:
+            sys.exit(f"{len(failed)} of {len(names)} scenarios failed: {', '.join(failed)}")
+        return
+    print(json.dumps(run_one(vllm_root, scenario_path), indent=1, sort_keys=True))
+
+
+def run_one(vllm_root: str, scenario_path: str) -> dict:
+    # vLLM's test helpers are imported from the pinned checkout itself, never copied; vLLM itself
+    # from the installed distribution (the release wheel in CI, the editable build of this same
+    # checkout locally). The checkout is appended, not prepended, so its vllm/ source tree (no
+    # compiled ops, no generated version) cannot shadow the installed package.
+    if vllm_root not in sys.path:
+        sys.path.append(vllm_root)
+    os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
+    # ModelConfig reads a model's config.json even though no weights are loaded. ORACLE_MODEL
+    # names a local snapshot of the helper's default model at a pinned revision (see
+    # oracle/README.md); its configuration does not reach any scheduling decision, which the
+    # scenario's fixed num_blocks and block_size govern.
+    model = os.environ.get("ORACLE_MODEL", "facebook/opt-125m")
+
+    import tests.v1.core.utils as helpers  # noqa: E402
+    from tests.v1.core.utils import EOS_TOKEN_ID, create_scheduler  # noqa: E402
+
+    if not os.path.abspath(helpers.__file__).startswith(os.path.abspath(vllm_root) + os.sep):
+        sys.exit("tests.v1.core.utils did not resolve into the vLLM checkout")
+    from vllm.sampling_params import SamplingParams  # noqa: E402
+    from vllm.utils.hashing import sha256  # noqa: E402
+    from vllm.v1.core.kv_cache_utils import (  # noqa: E402
+        get_request_block_hasher,
+        init_none_hash,
+    )
+    from vllm.v1.outputs import ModelRunnerOutput  # noqa: E402
+    from vllm.v1.request import Request  # noqa: E402
+
+    with open(scenario_path) as f:
+        sc = json.load(f)
+    cfg = sc["config"]
+    block_size = cfg["block_size"]
+
+    scheduler = build_scheduler(helpers, create_scheduler, model, cfg)
+    if cfg.get("expect_groups_error"):
+        # Grouping only. groups_error is null when vLLM grouped the layers, so a surprise is
+        # recorded and not hidden; groups then holds what it built.
+        trace = {"provenance": provenance(vllm_root, scenario_path), "scenario": sc["name"],
+                 "steps": [], "finished": {}, "groups_error": groups_outcome["error"]}
+        if groups_outcome["groups"] is not None:
+            trace["groups"] = groups_outcome["groups"]
+        if pool_sizes:
+            trace["kv_pool"] = pool_sizes[-1]
+        pool_sizes.clear()
+        return trace
+    spec = cfg.get("speculative")
+    # Draft tokens the mock proposes: K placeholder ids (any non-negative value works; only the
+    # count reaches a scheduling decision, and acceptance is the scenario's input).
+    num_spec = scheduler.num_spec_tokens
+
+    init_none_hash(sha256)
+    # Request block hashes are computed at the scheduler's hash_block_size, as the engine core
+    # builds the hasher (vllm/v1/engine/core.py:233-240@5df63a72): the block size, or for groups
+    # of several block sizes the one vLLM resolved for them.
+    # The engine core builds the hasher with vllm_config.num_hash_lookahead_tokens
+    # (vllm/v1/engine/core.py:220-230@4ba787ec), so an EAGLE-family drafter with prefix caching
+    # and no KV connector hashes the tokens past each block; the harness does the same.
+    hasher = get_request_block_hasher(scheduler.hash_block_size, sha256,
+                                      scheduler.vllm_config.num_hash_lookahead_tokens)
+    pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
+    # LoRA adapter ids, numbered from 1 in name order (vllm/lora/request.py:37-39 refuses 0).
+    lora_ids = {n: i + 1 for i, n in enumerate(sorted({r["lora"] for r in sc["requests"] if r.get("lora")}))}
+    accepted_plan = {r["id"]: list(r.get("accepted", [])) for r in sc["requests"]}
+    verify_steps = {r["id"]: 0 for r in sc["requests"]}
+    by_id = {r["id"]: r for r in sc["requests"]}
+    sampled_so_far = {r["id"]: 0 for r in sc["requests"]}
+    finished = {}
+    steps = []
+    step = 0
+    max_steps = sc.get("max_steps", 10000)
+
+    def add_arrivals(upto: int) -> None:
+        while pending and pending[0]["arrival_step"] <= upto:
+            r = pending.pop(0)
+            # The assigned output ends where the model samples EOS (the mock below); a
+            # client budget, when the scenario states one, is max_tokens.
+            params = SamplingParams(max_tokens=r.get("max_tokens", 1 << 20))
+            params.update_from_generation_config({}, EOS_TOKEN_ID)
+            lora = None
+            if r.get("lora"):
+                from vllm.lora.request import LoRARequest  # noqa: E402
+
+                lora = LoRARequest(lora_name=r["lora"], lora_int_id=lora_ids[r["lora"]],
+                                   lora_path="/adapters/" + r["lora"])
+            req = Request(
+                request_id=r["id"],
+                prompt_token_ids=list(r["prompt"]),
+                sampling_params=params,
+                pooling_params=None,
+                arrival_time=float(r["arrival_step"]),
+                priority=r.get("priority", 0),
+                lora_request=lora,
+                cache_salt=r.get("cache_salt"),
+                block_hasher=hasher,
+            )
+            scheduler.add_request(req)
+
+    kv_events = KVEventTap(scheduler) if cfg.get("kv_events") else None
+    while step < max_steps:
+        add_arrivals(step)
+        # An abort at this step, before the step runs: the scheduler finishes the request
+        # (finish_requests, EngineCore.abort_requests, core.py:564-569@4ba787ec). Tier 5 tells a
+        # client's abort from one the engine sends; the scheduler's decisions are the same.
+        aborts = sorted(rid for rid, r in by_id.items() if r.get("abort_step") == step)
+        if aborts:
+            from vllm.v1.request import RequestStatus  # noqa: E402
+
+            scheduler.finish_requests(aborts, RequestStatus.FINISHED_ABORTED)
+        if not scheduler.has_unfinished_requests() and not pending:
+            break
+        out = scheduler.schedule()
+        # The prefix hit of each request whose first prefill this step scheduled: schedule() sets
+        # the request's PrefillStats (scheduler.py:1071-1080@5df63a72) and update_from_output
+        # takes them away, so they are read here.
+        first_hits = {}
+        if scheduler.has_mamba_layers:
+            for rid in sorted(out.num_scheduled_tokens):
+                stats = scheduler.requests[rid].prefill_stats
+                if stats is not None and stats.num_prompt_tokens > 0:
+                    first_hits[rid] = stats.num_cached_tokens
+        record = {
+            "step": step,
+            "scheduled": dict(sorted(out.num_scheduled_tokens.items())),
+            "preempted": sorted(out.preempted_req_ids or []),
+        }
+        # The shared GPU mock: a request whose step completes its known tokens samples its
+        # next assigned output token. Whether it does is read from the scheduler's own state
+        # (is_prefill_chunk, set in _update_after_schedule after schedule() advanced
+        # num_computed_tokens), never decided here.
+        req_ids, sampled = [], []
+        record["spec_scheduled"] = {}
+        for rid in out.num_scheduled_tokens:
+            req = scheduler.requests[rid]
+            req_ids.append(rid)
+            if not req.is_prefill_chunk:
+                drafts = out.scheduled_spec_decode_tokens.get(rid, [])
+                n = 1
+                if drafts:
+                    record["spec_scheduled"][rid] = len(drafts)
+                    plan = accepted_plan[rid]
+                    i = verify_steps[rid]
+                    verify_steps[rid] = i + 1
+                    # A placeholder draft (-1, first-decode padding) is always rejected
+                    # (vllm/v1/sample/rejection_sampler.py:762-763).
+                    real = len([d for d in drafts if d >= 0])
+                    n = 1 + min(plan[i] if i < len(plan) else 0, real)
+                toks = []
+                outp = by_id[rid]["output"]
+                for _ in range(n):
+                    k = sampled_so_far[rid]
+                    if k >= len(outp):
+                        break
+                    # The last assigned token is sampled as EOS: that is how the assigned
+                    # output length reaches the engine, which stops on it as on a real EOS.
+                    toks.append(EOS_TOKEN_ID if k == len(outp) - 1 else outp[k])
+                    sampled_so_far[rid] = k + 1
+                sampled.append(toks)
+            else:
+                sampled.append([])
+        if not record["spec_scheduled"]:
+            del record["spec_scheduled"]
+        mro = ModelRunnerOutput(
+            req_ids=req_ids,
+            req_id_to_index={rid: i for i, rid in enumerate(req_ids)},
+            sampled_token_ids=sampled,
+            logprobs=None,
+            prompt_logprobs_dict={},
+            pooler_output=[],
+        )
+        engine_outputs = scheduler.update_from_output(out, mro)
+        if spec and out.total_num_scheduled_tokens > 0:
+            # The drafter proposes for every request the step ran (the input batch); the
+            # scheduler ignores proposals for prefill chunks (scheduler.py:2560-2564).
+            from vllm.v1.outputs import DraftTokenIds  # noqa: E402
+
+            ids = [rid for rid in out.num_scheduled_tokens if rid in scheduler.requests]
+            scheduler.update_draft_token_ids(DraftTokenIds(ids, [[0] * num_spec for _ in ids]))
+        done = []
+        for eco in engine_outputs.values():
+            for o in eco.outputs:
+                if o.finish_reason is not None:
+                    done.append(o.request_id)
+                    finished[o.request_id] = {
+                        "reason": str(o.finish_reason),
+                        "output_tokens": sampled_so_far[o.request_id],
+                        "step": step,
+                    }
+        record["finished"] = sorted(done)
+        record.update(kv_state(scheduler))
+        if scheduler.has_mamba_layers:
+            record.update(mamba_state(scheduler, first_hits))
+        if kv_events is not None:
+            record["kv_events"] = kv_events.drain()
+        steps.append(record)
+        step += 1
+
+    out = {
+        "provenance": provenance(vllm_root, scenario_path),
+        "steps": steps,
+        "finished": dict(sorted(finished.items())),
+    }
+    if scheduler.has_mamba_layers:
+        out["kv_config"] = mamba_config(scheduler)
+    if cfg.get("engine_core_block_sizes"):
+        out["kv_blocks"] = block_config(scheduler)
+    if pool_sizes:
+        out["kv_pool"] = pool_sizes[-1]
+        pool_sizes.clear()
+    return out
+
+
+def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dict | None = None):
+    """vLLM's real Scheduler for the scenario's configuration.
+
+    vLLM's CPU test helper (tests/v1/core/utils.py:54 create_scheduler) builds the Scheduler;
+    the configuration objects it does not expose (a speculative config other than ngram, a
+    LoRA config, and the scheduler knobs it fixes or omits: watermark, max_num_active_seqs,
+    max_num_scheduled_tokens, long_prefill_token_threshold_adaptive, KV events) are built from
+    vLLM's own config classes and handed to the same constructors the helper calls. That is
+    environment set-up, listed in oracle/mocks.json; no scheduler, KV-cache or config logic is
+    replaced or edited, and every derived value (draft slots, lookahead, prefill lookahead,
+    EAGLE block drop, the scheduled-token budget) is computed by vLLM itself.
+
+    extra are create_scheduler's arguments a caller adds, such as the tier-3 oracle's
+    async_scheduling, pipeline_parallel_size, use_v2_model_runner and scheduler_cls
+    (oracle/run_enginecore.py); they override what this function would pass.
+    """
+    from vllm.config import KVEventsConfig, LoRAConfig, SpeculativeConfig  # noqa: E402
+
+    spec = cfg.get("speculative")
+    sched_extra = {k: cfg[k] for k in ("watermark", "max_num_active_seqs", "max_num_scheduled_tokens",
+                                       "long_prefill_token_threshold_adaptive", "enable_chunked_prefill") if k in cfg}
+    # SchedulerConfig fields the scenario states by name (the inertness proofs, oracle/inertness.py,
+    # vary a field this way); vLLM's own class validates them.
+    sched_extra.update(cfg.get("scheduler_config", {}))
+    if cfg.get("kv_layers") and "disable_hybrid_kv_cache_manager" in cfg:
+        # vLLM's own field, which get_kv_cache_groups reads (kv_cache_planning.py:1127@4ba787ec). A
+        # "kv_groups" scenario states it too, but there the promotion is called directly below.
+        sched_extra["disable_hybrid_kv_cache_manager"] = cfg["disable_hybrid_kv_cache_manager"]
+    real_vllm_config, real_scheduler_config = helpers.VllmConfig, helpers.SchedulerConfig
+    real_cache_config = helpers.CacheConfig
+
+    built = {}
+    groups_outcome.clear()
+
+    def cache_config(**kw):
+        # A hybrid Mamba model's cache settings: the Mamba runs' mode and block size, and the
+        # CacheConfig fields the scenario names in "cache_config" (prefix_cache_retention_interval,
+        # prefix_match_unit, enable_mamba_shared_prefix_checkpoint). They go to vLLM's own
+        # CacheConfig, so VllmConfig's validators (validate_mamba_block_size, validate_block_size)
+        # run on them as at launch. Nothing is set on a built object.
+        if has_mamba(cfg):
+            runs = [r for r in cfg["kv_layers"] if r["spec"] == "mamba"]
+            modes = {r.get("mamba_cache_mode", "none") for r in runs}
+            sizes = {r["block_size"] for r in runs}
+            if len(modes) != 1 or len(sizes) != 1:
+                sys.exit("a scenario's mamba runs state one mamba_cache_mode and one block_size")
+            kw["mamba_cache_mode"] = modes.pop()
+            kw["mamba_block_size"] = sizes.pop()
+            kw.update(cfg.get("cache_config", {}))
+        return real_cache_config(**kw)
+
+    def vllm_config(**kw):
+        if spec:
+            args = {"method": spec["method"], "num_speculative_tokens": spec["num_speculative_tokens"]}
+            if spec.get("draft"):
+                # A configuration-only draft checkpoint (oracle/drafts/<name>/config.json): it
+                # names the drafter's architecture, never weights.
+                args["model"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "drafts", spec["draft"])
+            if spec.get("parallel_drafting"):
+                args["parallel_drafting"] = True
+            kw["speculative_config"] = SpeculativeConfig(
+                target_model_config=kw["model_config"], target_parallel_config=kw["parallel_config"], **args)
+        if cfg.get("max_loras"):
+            kw["lora_config"] = LoRAConfig(max_loras=cfg["max_loras"], max_cpu_loras=cfg.get("max_cpu_loras"))
+        if cfg.get("kv_events"):
+            kw["kv_events_config"] = KVEventsConfig(enable_kv_cache_events=True, publisher="null")
+        built["config"] = real_vllm_config(**kw)
+        return built["config"]
+
+    def scheduler_config(**kw):
+        kw.update(sched_extra)
+        return real_scheduler_config(**kw)
+
+    real_kv_cache_config = helpers.KVCacheConfig
+    groups = cfg.get("kv_groups")
+
+    def kv_cache_config(num_blocks, kv_cache_tensors, kv_cache_groups):
+        # A hybrid model's KV cache groups, from vLLM's own spec classes, one 1-head, 1-dim
+        # float32 layer each, as the helper builds its single full-attention group; vLLM's
+        # KVCacheManager picks the coordinator and per-group managers from them.
+        if cfg.get("kv_layers"):
+            # A dashboard model's attention layers, each with its own spec as the model builds it
+            # (layer_specs), grouped by vLLM's own get_kv_cache_groups.
+            if cfg.get("expect_groups_error"):
+                # The scenario asks what grouping does, not how the scheduler runs on it: the
+                # outcome (groups, or the exception) goes to groups_outcome, and the Scheduler is
+                # built on the helper's own group so that construction does not decide anything.
+                try:
+                    got = layer_groups(cfg, built["config"])
+                    groups_outcome.update(error=None, groups=[group_record(g) for g in got])
+                except Exception as e:  # noqa: BLE001 - the exception is what is recorded
+                    groups_outcome.update(error={"type": type(e).__name__, "message": str(e)}, groups=None)
+                return real_kv_cache_config(num_blocks=num_blocks, kv_cache_tensors=kv_cache_tensors,
+                                            kv_cache_groups=kv_cache_groups)
+            retention = {}
+            if has_mamba(cfg):
+                # The engine's KVCacheConfig carries the retention policy the CacheConfig states
+                # (get_kv_cache_config_from_groups, vllm/v1/core/kv_cache_planning.py:665-667 and
+                # 738-740@4ba787ec): vLLM's default 0 keeps only semantic checkpoints of Mamba
+                # states, where the dataclass's own default (None) keeps every one.
+                retention = {"prefix_cache_retention_interval":
+                             built["config"].cache_config.prefix_cache_retention_interval}
+            return real_kv_cache_config(num_blocks=num_blocks, kv_cache_tensors=kv_cache_tensors,
+                                        kv_cache_groups=layer_groups(cfg, built["config"]), **retention)
+        if not groups:
+            return real_kv_cache_config(num_blocks=num_blocks, kv_cache_tensors=kv_cache_tensors,
+                                        kv_cache_groups=kv_cache_groups)
+        import torch  # noqa: E402
+        from vllm.v1.kv_cache_interface import (  # noqa: E402
+            FullAttentionSpec,
+            KVCacheGroupSpec,
+            SlidingWindowSpec,
+        )
+
+        layers = {}
+        for i, g in enumerate(groups):
+            common = {"block_size": cfg["block_size"], "num_kv_heads": 1, "head_size": 1, "dtype": torch.float32}
+            if g["kind"] == "full":
+                layers[f"layer{i}"] = FullAttentionSpec(**common)
+            elif g["kind"] == "sliding_window":
+                layers[f"layer{i}"] = SlidingWindowSpec(sliding_window=g["sliding_window"], **common)
+            else:
+                raise ValueError(f"unknown KV cache group kind {g['kind']!r}")
+        # A launch tags every sliding-window spec with extra_retained_tokens, the tokens a
+        # multi-module MTP drafter may re-prefill (get_kv_cache_configs,
+        # vllm/v1/core/kv_cache_utils.py:2582-2589@5df63a72), before it groups them; the count is
+        # vLLM's own num_prefill_lookahead_tokens on the config the helper just built.
+        extra_retained = max(0, built["config"].num_prefill_lookahead_tokens - 1)
+        for name, layer in layers.items():
+            if isinstance(layer, SlidingWindowSpec):
+                layers[name] = dataclasses.replace(layer, extra_retained_tokens=extra_retained)
+        if cfg.get("disable_hybrid_kv_cache_manager"):
+            # disable_hybrid_kv_cache_manager (vllm/config/scheduler.py:182@5df63a72): vLLM
+            # promotes every sliding-window layer to full attention before grouping
+            # (get_kv_cache_groups, kv_cache_utils.py:2173-2174, unify_hybrid_kv_cache_specs,
+            # :1799-1822), so all layers form one uniform group (:2185-2189). Both calls are
+            # vLLM's own.
+            from vllm.v1.core.kv_cache_planning import (  # noqa: E402
+                _get_kv_cache_groups_uniform_spec,
+                is_kv_cache_spec_uniform,
+                unify_hybrid_kv_cache_specs,
+            )
+
+            unify_hybrid_kv_cache_specs(layers)
+            assert is_kv_cache_spec_uniform(layers)
+            specs = _get_kv_cache_groups_uniform_spec(layers)
+        else:
+            from vllm.v1.core.kv_cache_planning import (  # noqa: E402
+                _get_kv_cache_groups_uniform_spec,
+                is_kv_cache_spec_uniform,
+            )
+
+            # Layers that share one spec form one group, as get_kv_cache_groups gives them
+            # (kv_cache_planning.py:1139-1143@4ba787ec); otherwise each layer is its own group.
+            if is_kv_cache_spec_uniform(layers):
+                specs = _get_kv_cache_groups_uniform_spec(layers)
+            else:
+                specs = [KVCacheGroupSpec([name], spec) for name, spec in layers.items()]
+        return real_kv_cache_config(num_blocks=num_blocks, kv_cache_tensors=kv_cache_tensors, kv_cache_groups=specs)
+
+    v2 = (bool(spec) and spec["method"] == "dspark") or bool((extra or {}).get("use_v2_model_runner"))
+    restore_env = v2_runner_env(v2)
+    helpers.VllmConfig, helpers.SchedulerConfig = vllm_config, scheduler_config
+    helpers.CacheConfig = cache_config
+    helpers.KVCacheConfig = kv_cache_config
+    real_scheduler_cls = (extra or {}).get("scheduler_cls")
+    if cfg.get("kv_layers") and (cfg.get("engine_core_block_sizes") or
+                                 any(r["spec"] in ("mla", "sliding_window_mla", "circular_buffer", "mamba")
+                                     for r in cfg["kv_layers"])):
+        # Groups of several block sizes (the layers' own, or, for "engine_core_block_sizes", the block sizes
+        # unify_kv_cache_spec_page_size gives layers of unequal pages): the engine core hands the Scheduler the block sizes
+        # vLLM's own resolve_kv_cache_block_sizes resolves from the groups, the scheduler block
+        # size (their LCM) as block_size and hash_block_size beside it (vllm/v1/engine/core.py:
+        # 170-182, 361-374@5df63a72), where the helper passes its one block_size. The class is
+        # the one the helper would build; only those two arguments are the engine core's.
+        from vllm.v1.core.kv_cache_utils import resolve_kv_cache_block_sizes  # noqa: E402
+        from vllm.v1.core.sched.async_scheduler import AsyncScheduler  # noqa: E402
+        from vllm.v1.core.sched.scheduler import Scheduler  # noqa: E402
+
+        base = real_scheduler_cls or (AsyncScheduler if (extra or {}).get("async_scheduling") else Scheduler)
+
+        def engine_core_scheduler(*, vllm_config, kv_cache_config, block_size, **kw):
+            sched_bs, hash_bs = resolve_kv_cache_block_sizes(kv_cache_config, vllm_config)
+            return base(vllm_config=vllm_config, kv_cache_config=kv_cache_config, block_size=sched_bs,
+                        hash_block_size=hash_bs, **kw)
+
+        extra = {**(extra or {}), "scheduler_cls": engine_core_scheduler}
+    try:
+        return create_scheduler(
+            model=model,
+            max_num_seqs=cfg["max_num_seqs"],
+            max_num_batched_tokens=cfg["max_num_batched_tokens"],
+            long_prefill_token_threshold=cfg.get("long_prefill_token_threshold", 0),
+            enable_prefix_caching=cfg.get("enable_prefix_caching", False),
+            num_blocks=cfg["num_blocks"],
+            block_size=cfg["block_size"],
+            max_model_len=cfg.get("max_model_len"),
+            scheduling_policy=cfg.get("scheduling_policy", "fcfs"),
+            **{"use_v2_model_runner": v2 or None, **(extra or {})},
+        )
+    finally:
+        helpers.VllmConfig, helpers.SchedulerConfig = real_vllm_config, real_scheduler_config
+        helpers.CacheConfig = real_cache_config
+        helpers.KVCacheConfig = real_kv_cache_config
+        restore_env()
+
+
+def v2_runner_env(v2: bool):
+    """The environment of a GPU host that selects vLLM's V2 model runner, which DSpark needs
+    (vllm/config/vllm.py:2976-2979@5df63a72) and which needs Triton on the host (:724, 3189): with
+    v2, HAS_TRITON is set True and VLLM_USE_V2_MODEL_RUNNER=1 (oracle/mocks.json). The scheduler
+    is the same class either way; selecting the V2 runner is the environment, not a decision
+    (docs/testing.md). Returns the function that restores both. oracle/run_connector.py's
+    drafter scenarios use it too."""
+    import vllm.config.vllm as vllm_config_module  # noqa: E402
+
+    saved_triton, saved_env = vllm_config_module.HAS_TRITON, os.environ.get("VLLM_USE_V2_MODEL_RUNNER")
+    if v2:
+        vllm_config_module.HAS_TRITON = True
+        os.environ["VLLM_USE_V2_MODEL_RUNNER"] = "1"
+
+    def restore():
+        vllm_config_module.HAS_TRITON = saved_triton
+        if saved_env is None:
+            os.environ.pop("VLLM_USE_V2_MODEL_RUNNER", None)
+        else:
+            os.environ["VLLM_USE_V2_MODEL_RUNNER"] = saved_env
+
+    return restore
+
+
+class KVEventTap:
+    """The KV events vLLM's scheduler publishes each step, by content.
+
+    The scheduler hands each step's events to its publisher (scheduler.py:2371-2385@5df63a72);
+    with the "null" publisher configured they are dropped there. The tap wraps that publisher
+    object's publish method to keep a copy (a transport, listed in oracle/mocks.json), so the
+    events are exactly what vLLM would put on the wire.
+    """
+
+    def __init__(self, scheduler):
+        self.batches = []
+        pub = scheduler.kv_event_publisher
+        original = pub.publish
+
+        def publish(batch):
+            self.batches.append(batch)
+            return original(batch)
+
+        pub.publish = publish
+
+    def drain(self) -> list:
+        """The events since the last drain, in publish order. A block hash is the integer
+        vLLM puts on the wire by default (the low 64 bits of the hash, big-endian:
+        VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES, vllm/envs.py:2033-2035, applied in
+        kv_cache_utils.py:96-99), written as a decimal string so JSON keeps all 64 bits."""
+        def h(v):
+            return str(v) if isinstance(v, int) else v.hex()
+
+        out = []
+        for batch in self.batches:
+            for ev in batch.events:
+                name = type(ev).__name__
+                if name == "BlockStored":
+                    row = ["stored", [h(x) for x in ev.block_hashes],
+                           h(ev.parent_block_hash) if ev.parent_block_hash is not None else None,
+                           list(ev.token_ids), ev.block_size, ev.lora_name]
+                    # v0.33.0's lookahead_token_ids (vllm/distributed/kv_events.py:95-98), one list
+                    # per stored block, is None unless the pool hashes lookahead tokens; only then
+                    # does the row carry it, so no other scenario's trace gains a field.
+                    if ev.lookahead_token_ids is not None:
+                        row.append([list(t) for t in ev.lookahead_token_ids])
+                    out.append(row)
+                elif name == "BlockRemoved":
+                    out.append(["removed", [h(x) for x in ev.block_hashes]])
+                else:
+                    out.append(["cleared"])
+        self.batches = []
+        return out
+
+
+def kv_state(scheduler) -> dict:
+    """The KV state compared by content: free blocks, and per running request the hash and
+    reference count of each of its blocks, never the block id (block ids are an allocator
+    detail two correct implementations may number differently)."""
+    mgr = scheduler.kv_cache_manager
+    pool = mgr.block_pool
+    per_request = {}
+    managers = mgr.coordinator.single_type_managers
+    for rid in sorted(r.request_id for r in scheduler.running):
+        rows = []
+        for gi, m in enumerate(managers):
+            blocks = m.req_to_blocks.get(rid, [])
+            row = [[b.block_hash.hex() if b.block_hash is not None else None, b.ref_cnt] for b in blocks]
+            if len(managers) == 1:
+                rows = row
+            else:
+                # One list per group; the null block (a sliding window's freed slot) as "null".
+                rows.append([["null", 0] if b.is_null else r for b, r in zip(blocks, row)])
+        per_request[rid] = rows
+    num_running, num_waiting = scheduler.get_request_counts()
+    return {
+        "free_blocks": pool.get_num_free_blocks(),
+        "running": sorted(r.request_id for r in scheduler.running),
+        "num_running": num_running,
+        "num_waiting": num_waiting,
+        "kv_usage": scheduler.get_kv_cache_usage(),
+        "blocks": per_request,
+    }
+
+
+def mamba_state(scheduler, first_hits: dict) -> dict:
+    """What a hybrid Mamba model's step adds, recorded only when the scheduler has Mamba layers
+    (so no other scenario's trace gains a field). "num_computed" and "num_tokens" are per running
+    request, after the step: num_computed_tokens (the Mamba state's position; with the step's
+    "scheduled" it gives each aligned chunk and each resumed request's replay) and num_tokens,
+    prompt plus outputs so far (prefill_end is max(prompt length, num_tokens - 1),
+    scheduler.py:_mamba_block_aligned_split). "prefix_hit" is, for each request whose first prefill
+    this step scheduled, the tokens that schedule took from the prefix cache (PrefillStats.
+    num_cached_tokens). The Mamba group's blocks are already in "blocks": one list per KV cache
+    group, a null slot as ["null", 0], every other block as [hash, ref_cnt]."""
+    running = sorted(scheduler.running, key=lambda r: r.request_id)
+    return {
+        "num_computed": {r.request_id: r.num_computed_tokens for r in running},
+        "num_tokens": {r.request_id: r.num_tokens for r in running},
+        "prefix_hit": first_hits,
+    }
+
+
+def mamba_config(scheduler) -> dict:
+    """The configuration the Scheduler resolved for a hybrid Mamba model, which the Go side must
+    resolve to the same values: the scheduler and hash block sizes, whether it splits chunks at
+    Mamba boundaries, and each KV cache group's spec (its type, block size, Mamba mode and
+    counts). Group order is the order of the "blocks" lists."""
+    groups = []
+    for g in scheduler.kv_cache_manager.kv_cache_config.kv_cache_groups:
+        s = g.kv_cache_spec
+        row = {"type": type(s).__name__, "block_size": s.block_size, "page_size_bytes": s.page_size_bytes}
+        if type(s).__name__ == "MambaSpec":
+            row.update({"mamba_cache_mode": s.mamba_cache_mode,
+                        "num_speculative_blocks": s.num_speculative_blocks,
+                        "num_prefill_checkpoint_blocks": s.num_prefill_checkpoint_blocks,
+                        "prefill_checkpoint_alignment": s.prefill_checkpoint_alignment})
+        groups.append(row)
+    return {
+        "scheduler_block_size": scheduler.block_size,
+        "hash_block_size": scheduler.hash_block_size,
+        "need_mamba_block_aligned_split": scheduler.need_mamba_block_aligned_split,
+        "mamba_partial_cache_hit": scheduler.mamba_partial_cache_hit,
+        "mamba_has_prefill_checkpoint_blocks": scheduler.mamba_has_prefill_checkpoint_blocks,
+        "num_blocks": scheduler.kv_cache_manager.block_pool.num_gpu_blocks,
+        "groups": groups,
+    }
+
+
+def block_config(scheduler) -> dict:
+    """The block sizes the Scheduler resolved for groups of layers of unequal pages: the scheduler and hash
+    block sizes (resolve_kv_cache_block_sizes) and each KV cache group's spec type, block size and page, in the
+    order of the "blocks" lists. Recorded for scenarios that ask for it ("engine_core_block_sizes")."""
+    groups = []
+    for g in scheduler.kv_cache_manager.kv_cache_config.kv_cache_groups:
+        s = g.kv_cache_spec
+        groups.append({"type": type(s).__name__, "block_size": s.block_size, "page_size_bytes": s.page_size_bytes,
+                       "layers": len(g.layer_names)})
+    return {"scheduler_block_size": scheduler.block_size, "hash_block_size": scheduler.hash_block_size,
+            "num_blocks": scheduler.kv_cache_manager.block_pool.num_gpu_blocks, "groups": groups}
+
+
+def blis_vllm_commit() -> str:
+    """The blis-vllm commit a run checks: CI's GITHUB_SHA, else this checkout's HEAD (with
+    "+dirty" when it has uncommitted changes), else "unknown"."""
+    if os.environ.get("GITHUB_SHA"):
+        return os.environ["GITHUB_SHA"]
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        head = subprocess.check_output(["git", "-C", here, "rev-parse", "HEAD"], text=True,
+                                       stderr=subprocess.DEVNULL).strip()
+        dirty = subprocess.check_output(["git", "-C", here, "status", "--porcelain"], text=True,
+                                        stderr=subprocess.DEVNULL).strip()
+        return head + ("+dirty" if dirty else "")
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def committed_lock_sha256() -> str:
+    """The sha256 of the committed oracle/requirements.lock: the environment CI installs and
+    check_lock.py proves was installed exactly, so a trace names a lock in the repository."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        with open(os.path.join(here, "requirements.lock"), "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except OSError:
+        return "unknown"
+
+
+def oracle_inputs(scenario_path) -> dict:
+    """What this run executed or read from the repository, as {path: sha256}: every module of
+    oracle/ loaded into this process (the runner, the helpers it imports), the scenario,
+    oracle/mocks.json and oracle/requirements.lock. A golden records it so that
+    oracle/check_goldens.py can hold it against any later head: the golden stands for that head
+    when every one of these files is byte-identical there, whatever commits lie between."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.dirname(here)
+    files = {os.path.abspath(m.__file__) for m in list(sys.modules.values())
+             if getattr(m, "__file__", None) and os.path.abspath(m.__file__).startswith(here + os.sep)}
+    files |= {os.path.join(here, "mocks.json"), os.path.join(here, "requirements.lock")}
+    if scenario_path:
+        files.add(os.path.abspath(scenario_path))
+    out = {}
+    for path in sorted(files):
+        if not path.startswith(root + os.sep):
+            continue  # a scenario outside the repository: scenario_sha256 covers it
+        with open(path, "rb") as f:
+            out[os.path.relpath(path, root).replace(os.sep, "/")] = hashlib.sha256(f.read()).hexdigest()
+    return out
+
+
+def scenario_seed(scenario_path: str):
+    """The seed a generated (fuzz) scenario was made from, or None for a hand-written one."""
+    with open(scenario_path) as f:
+        return json.load(f).get("seed")
+
+
+def provenance(vllm_root: str, scenario_path: str) -> dict:
+    def git(*args):
+        try:
+            return subprocess.check_output(["git", "-C", vllm_root, *args], text=True).strip()
+        except (OSError, subprocess.CalledProcessError):
+            return "unknown"
+
+    import vllm  # noqa: E402
+
+    with open(scenario_path, "rb") as f:
+        digest = hashlib.sha256(f.read()).hexdigest()
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, "mocks.json"), "rb") as f:
+        mocks = json.load(f)
+    # ORACLE_LOCKFILE names the frozen package list of the Python environment that ran vLLM
+    # (CI writes it with pip freeze); its hash pins every package the run imported.
+    lockfile = os.environ.get("ORACLE_LOCKFILE")
+    lock_digest = "unrecorded"
+    if lockfile:
+        with open(lockfile, "rb") as f:
+            lock_digest = hashlib.sha256(f.read()).hexdigest()
+    return {
+        "tier": 2,
+        "vllm_version": vllm.__version__,
+        # The installed distribution's version, e.g. "0.32.0+cpu" for the release CPU wheel.
+        "vllm_distribution": importlib.metadata.version("vllm"),
+        "vllm_commit": git("rev-parse", "HEAD"),
+        "scenario_sha256": digest,
+        "mock_version": mocks["version"],
+        # The model's identity, never the local path ORACLE_MODEL points at.
+        "model": "facebook/opt-125m",
+        "model_revision": os.environ.get("ORACLE_MODEL_REVISION", "unpinned"),
+        "mocks": [m["symbol"] for m in mocks["mocks"]],
+        "python": sys.version.split()[0],
+        "platform": platform.system().lower() + "-" + platform.machine(),
+        "lockfile_sha256": lock_digest,
+        "requirements_lock_sha256": committed_lock_sha256(),
+        "blis_vllm_commit": blis_vllm_commit(),
+        "oracle_inputs": oracle_inputs(scenario_path),
+        "seed": scenario_seed(scenario_path),
+    }
+
+
+if __name__ == "__main__":
+    main()

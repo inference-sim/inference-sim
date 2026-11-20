@@ -1,0 +1,94 @@
+{
+ "name": "mamba-none-pool-refused",
+ "description": "None mode, 4096 bytes: refused.",
+ "config": {
+  "max_num_seqs": 2,
+  "max_num_batched_tokens": 32,
+  "block_size": 8,
+  "num_blocks": 200,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": false,
+  "scheduling_policy": "fcfs",
+  "kv_layers": [
+   {
+    "count": 1,
+    "spec": "full",
+    "num_kv_heads": 1,
+    "head_size": 4
+   },
+   {
+    "count": 1,
+    "spec": "mamba",
+    "state_bytes": 192,
+    "page_size_padded": 256,
+    "block_size": 128,
+    "mamba_cache_mode": "none",
+    "num_speculative_blocks": 0,
+    "num_prefill_checkpoint_blocks": 0
+   }
+  ],
+  "kv_available_bytes": 4096,
+  "kv_startup_check": true
+ },
+ "requests": [
+  {
+   "id": "A",
+   "arrival_step": 0,
+   "prompt": [
+    20118,
+    42775,
+    30884,
+    20350,
+    725,
+    30971,
+    30702,
+    25408,
+    16924,
+    1010,
+    41292,
+    47720,
+    23407,
+    21385,
+    9412,
+    7721,
+    5463,
+    9887,
+    40285,
+    38221
+   ],
+   "output": [
+    3124,
+    8448,
+    19902,
+    9499
+   ]
+  },
+  {
+   "id": "B",
+   "arrival_step": 2,
+   "prompt": [
+    41808,
+    29932,
+    13067,
+    45884,
+    6042,
+    42298,
+    41922,
+    11293,
+    26370,
+    17605,
+    40895,
+    14346,
+    41513,
+    37271
+   ],
+   "output": [
+    48868,
+    7059,
+    32273
+   ]
+  }
+ ],
+ "max_steps": 60
+}

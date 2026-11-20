@@ -1,0 +1,155 @@
+{
+ "name": "t3-async-mtp-preempt",
+ "description": "Async scheduling with an MTP drafter under KV pressure: a preemption rolls back placeholders and drafts.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 64,
+  "block_size": 4,
+  "num_blocks": 14,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "async_scheduling": true,
+  "speculative": {
+   "method": "mtp",
+   "num_speculative_tokens": 2,
+   "draft": "mtp-1"
+  }
+ },
+ "requests": [
+  {
+   "id": "a",
+   "arrival_step": 0,
+   "prompt": [
+    7528,
+    12237,
+    12400,
+    4239,
+    6428,
+    23195,
+    1534,
+    2891,
+    4584,
+    8208,
+    26683,
+    16692,
+    6961,
+    13230
+   ],
+   "output": [
+    21132,
+    1092,
+    15144,
+    16071,
+    14948,
+    12895,
+    16319,
+    18880,
+    6399,
+    29504,
+    27314,
+    13295
+   ],
+   "accepted": [
+    0,
+    1,
+    0,
+    0,
+    2,
+    1,
+    2,
+    1,
+    1,
+    1,
+    2,
+    0
+   ]
+  },
+  {
+   "id": "b",
+   "arrival_step": 0,
+   "prompt": [
+    15271,
+    20193,
+    12332,
+    8853,
+    4639,
+    6199,
+    28495,
+    22272,
+    310,
+    11186,
+    16575,
+    15295
+   ],
+   "output": [
+    29535,
+    19914,
+    2748,
+    11045,
+    18262,
+    20306,
+    23040,
+    1440,
+    23961,
+    12519,
+    5651,
+    23151
+   ],
+   "accepted": [
+    1,
+    2,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    2,
+    0
+   ]
+  },
+  {
+   "id": "c",
+   "arrival_step": 1,
+   "prompt": [
+    18823,
+    1167,
+    14153,
+    15912,
+    19042,
+    586,
+    6853,
+    15257,
+    26750,
+    16198
+   ],
+   "output": [
+    27087,
+    9193,
+    21512,
+    26662,
+    5350,
+    1227,
+    17161,
+    16159,
+    10840,
+    2593
+   ],
+   "accepted": [
+    0,
+    2,
+    1,
+    0,
+    1,
+    0,
+    2,
+    1,
+    1,
+    1
+   ]
+  }
+ ]
+}
