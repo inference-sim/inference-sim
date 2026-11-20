@@ -73,6 +73,22 @@ sources:
           - {id: 447787, sha256: c4ebfd91805bc6c3e9806e0a3ffce0f5e2b8a5def0ecfc654df042c7680f38cf}
           - {id: 447788, sha256: 00f1ad17e3a923e52b17a2784f71b5b865af0f0439ac4046d34039c22fd6dcc7}
           - {id: 447789, sha256: 59f12344295e7667f7fdc9529b3d66c6d2e67941361f3375ec342121f59275f8}
+    # How InferenceX's client sizes a run: per unit of concurrency it sends 10 measured requests
+    # and 2 warm-up requests, so a run logs 12 (measurement_contaminated, G5). Both quotes are
+    # from SemiAnalysisAI/InferenceX at f4a002ef1ef9a063ea021ac95dd001f6d052e327.
+    client:
+      measured_per_concurrency: 10
+      warmup_per_concurrency: 2
+      logged_per_concurrency: 12
+      evidence:
+        - url: https://github.com/SemiAnalysisAI/InferenceX/blob/f4a002ef1ef9a063ea021ac95dd001f6d052e327/benchmarks/single_node/gptoss_fp4_h200.sh
+          sha256: 9cf12ed78ef9b1ca9e5cb6e419424a518437d6a09e709707375c6145f6594156
+          lines: "72"
+          quote: "--num-prompts $(( $CONC * 10 )) \\"
+        - url: https://github.com/SemiAnalysisAI/InferenceX/blob/f4a002ef1ef9a063ea021ac95dd001f6d052e327/benchmarks/benchmark_lib.sh
+          sha256: 5cc5785e672de73884a75e03ac8115cafcab6bbae98da068fe0663ddf13d8d1d
+          lines: "367"
+          quote: '--num-warmups "$((2 * max_concurrency))" \'
     licence:
       # The benchmarks are run by SemiAnalysisAI/InferenceX, whose licence file is Apache-2.0.
       # The dump is published by SemiAnalysisAI/InferenceX-app, whose licence file is GPL-3.0.
