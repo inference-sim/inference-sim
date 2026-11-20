@@ -1035,7 +1035,7 @@ func textRequestBody(model string, prompt []uint32, stream bool, maxTokens int) 
 			if i > 0 {
 				b = append(b, ',')
 			}
-			b = strconv.AppendUint(b, uint64(t), 10)
+			b = appendDec(b, t)
 		}
 		b = append(b, ']')
 	}

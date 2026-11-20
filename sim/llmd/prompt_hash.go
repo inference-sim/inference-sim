@@ -22,7 +22,11 @@ func hashBlock(prevHash string, tokens []sim.TokenID) string {
 	buf := make([]byte, 0, len(prevHash)+len(tokens)*8)
 	buf = append(buf, prevHash...)
 	for _, t := range tokens {
-		buf = strconv.AppendInt(buf, int64(t), 10)
+		if t >= 0 {
+			buf = appendDec(buf, uint32(t))
+		} else {
+			buf = strconv.AppendInt(buf, int64(t), 10)
+		}
 		buf = append(buf, '|')
 	}
 	sum := sha256.Sum256(buf)
