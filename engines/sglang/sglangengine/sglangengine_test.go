@@ -132,6 +132,25 @@ func TestTheFactoryRefusesWhatSGLangRefusesOfThePrioritySettings(t *testing.T) {
 	}
 }
 
+// The settings the plan's section 3A.4 lists for the vLLM engine that no SGLang field carries are
+// refused by name, not read as another field's: they are not ServerArgs fields (fields.json holds none
+// of them), and an NCCL or FlashInfer variable in the env map is one the engine does not model.
+func TestASettingNoSGLangFieldCarriesIsRefusedByItsName(t *testing.T) {
+	h := newHost()
+	for _, name := range []string{"data_parallel_rpc_port", "moe_backend", "use_trtllm_attention", "mm_encoder_tp"} {
+		_, err := FactoryFor(h).New(specOf(t, "model_path: m\n"+name+": 1\n"))
+		if err == nil || !strings.Contains(err.Error(), name) {
+			t.Errorf("%s: got %v, want a refusal naming it", name, err)
+		}
+	}
+	for _, name := range []string{"NCCL_ALGO", "FLASHINFER_DISABLE_VERSION_CHECK"} {
+		_, err := FactoryFor(h).New(specOf(t, "model_path: m\nenv: {"+name+": '1'}\n"))
+		if err == nil || !strings.Contains(err.Error(), name) {
+			t.Errorf("env %s: got %v, want a refusal naming it", name, err)
+		}
+	}
+}
+
 // classifyingKernel prices a batch the way the substrate kernel's step model splits it: a request
 // schedules a prefill chunk when it schedules more tokens than the batch's DecodeThreshold
 // (kernel/step.go), and each such request costs a millisecond more than a decode pass's base 5.
