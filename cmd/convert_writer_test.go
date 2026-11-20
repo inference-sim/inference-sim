@@ -28,7 +28,7 @@ func convertTestSpec(t *testing.T) *workload.WorkloadSpec {
 	return spec
 }
 
-// SIM-2, #661: blis convert and blis compose print the spec on stdout; a write that fails
+// SIM-2, #661: blis convert prints the spec on stdout; a write that fails
 // (a closed pipe) is the command's error, not a silent truncation.
 func TestConvert_AFailingSpecWriteIsReturned(t *testing.T) {
 	if err := writeSpec(refusingWriter{}, convertTestSpec(t)); !errors.Is(err, errRefusedWrite) {
