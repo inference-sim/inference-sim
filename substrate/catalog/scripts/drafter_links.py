@@ -50,12 +50,11 @@ def _source_repo(text: str) -> str:
 
 
 def _speculator_method(graph: str) -> str:
-    """The method a graph's speculator states, as a deployment states it: every model-specific
-    MTP name is mtp (derive_graph.vllm_speculative_method)."""
+    """The method a graph's speculator states."""
     m = re.search(r"^speculator:\s*\n(?:  .*\n)*?  method:\s*(\S+)\s*$", graph, re.M)
     if not m:
         return ""
-    return "mtp" if m.group(1).endswith("_mtp") else m.group(1)
+    return m.group(1)
 
 
 @dataclass

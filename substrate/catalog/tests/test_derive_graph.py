@@ -832,7 +832,7 @@ def test_a_family_that_launches_its_index_norm_separately_keeps_the_node():
 
 
 def test_the_glm_dsa_speculative_method_is_the_one_vllm_rewrites_to():
-    """model_type glm_moe_dsa resolves to deepseek_mtp, not glm4_moe_mtp.
+    """model_type glm_moe_dsa is an MTP checkpoint; the graph states `mtp`, not an engine's family name.
 
     vLLM lists it in one branch with the DeepSeek types --
     `if hf_config.model_type in ("deepseek_v3", "deepseek_v32", "glm_moe_dsa"):
@@ -851,9 +851,10 @@ def test_the_glm_dsa_speculative_method_is_the_one_vllm_rewrites_to():
         spec = g.get("speculator")
         if spec is None:
             continue
-        assert spec["method"] == "deepseek_mtp", (
+        assert spec["method"] == "mtp", (
             f"{d.name}: declares model_type glm_moe_dsa and draft method "
-            f"{spec['method']!r}; vLLM rewrites that model_type to deepseek_mtp")
+            f"{spec['method']!r}; the graph states the engine-neutral mtp and vLLM's "
+            f"deepseek_mtp rewrite is the engine's, not the graph's")
         checked += 1
     assert checked, "no glm_moe_dsa model with a speculator in the catalog"
 
@@ -2914,7 +2915,7 @@ def test_minimax_m3_takes_its_draft_length_from_num_mtp_modules():
         "this test is about a config whose two draft-length fields disagree; they now "
         "agree, so it no longer pins the distinction it was written for")
     spec = g["speculator"]
-    assert spec["method"] == "minimax_m3_mtp"
+    assert spec["method"] == "mtp"
     assert spec["num_spec_tokens"] == t["num_mtp_modules"], (
         f"draft length is {spec['num_spec_tokens']}, and num_mtp_modules is "
         f"{t['num_mtp_modules']}; num_nextn_predict_layers is "
@@ -2932,7 +2933,7 @@ def test_deepseek_v3_takes_its_draft_length_from_num_nextn_predict_layers():
         pytest.skip("deepseek-v3 is not in the catalog")
     g, t = graph_of(d), text_config(config_of(d))
     spec = g["speculator"]
-    assert spec["method"] == "deepseek_mtp"
+    assert spec["method"] == "mtp"
     assert spec["num_spec_tokens"] == t["num_nextn_predict_layers"]
     assert "num_mtp_modules" not in t, (
         "this config states num_mtp_modules too, so the assertion above no longer "
@@ -2947,7 +2948,7 @@ def test_qwen3_5_takes_its_draft_length_from_mtp_num_hidden_layers():
         pytest.skip("qwen3.5-397b-a17b is not in the catalog")
     g, t = graph_of(d), text_config(config_of(d))
     spec = g["speculator"]
-    assert spec["method"] == "qwen3_5_mtp"
+    assert spec["method"] == "mtp"
     assert spec["num_spec_tokens"] == t["mtp_num_hidden_layers"]
 
 
@@ -3341,7 +3342,7 @@ def test_glm5_3_flash_mtp_module_prices_its_own_prefix():
 @pytest.mark.parametrize("mutate,description", [
     (lambda g: g["speculator"].update(num_spec_tokens=g["speculator"]["num_spec_tokens"] + 6),
      "lengthening the draft stack"),
-    (lambda g: g["speculator"].update(method="some_other_mtp"),
+    (lambda g: g["speculator"].update(method="eagle3"),
      "changing the speculative method"),
     (lambda g: g["speculator"]["stack"].update(repeat=2),
      "running the draft stack twice"),
@@ -6509,34 +6510,26 @@ MINIMAX_M3_ENTRIES = ("minimax-m3", "minimax-m3-mxfp8")
 def test_minimax_m3_graphs_declare_the_mtp_speculator_their_config_states(name):
     """Both MiniMax-M3 entries state a speculator derived from num_mtp_modules, the field vLLM
     reads as n_predict for this family (config/speculative.py:1043-1046@v0.32.0), at the pinned
-    config. A deployment's `method: mtp` resolves to it through vllm_speculative_method."""
-    sys.path.insert(0, str(DERIVER.parent))
-    import derive_graph  # noqa: E402
+    config."""
     t = text_config(config_of(MODELS / name))
     sp = graph_of(MODELS / name)["speculator"]
-    assert sp["method"] == "minimax_m3_mtp"
+    assert sp["method"] == "mtp"
     assert sp["num_spec_tokens"] == t["num_mtp_modules"] >= 1
-    assert derive_graph.vllm_speculative_method(sp["method"]) == "mtp"
     assert "speculator" in yaml.safe_load((MODELS / name / "model.yaml").read_text())["drafters"]
 
 
-def test_every_committed_mtp_speculator_resolves_for_a_deployment_that_states_mtp():
-    """The rule, over the whole catalog: a graph speculator named <family>_mtp is what a
-    deployment calls mtp, and the methods of separate drafters keep their own names."""
-    sys.path.insert(0, str(DERIVER.parent))
-    import derive_graph  # noqa: E402
+def test_no_committed_speculator_names_an_engine_family():
+    """SUB-15: the graph holds a checkpoint fact. A checkpoint's own MTP module is `mtp`; the
+    per-family names (deepseek_mtp, qwen3_5_mtp, ...) are an engine's spelling and live in the
+    engine, which normalises them (engines/vllm/core/lowering specMethod)."""
     seen = collections.Counter()
     for d in sorted(p for p in MODELS.iterdir() if p.is_dir()):
         sp = graph_of(d).get("speculator")
         if not sp:
             continue
-        m = sp["method"]
-        want = "mtp" if m.endswith("_mtp") else m
-        assert derive_graph.vllm_speculative_method(m) == want
-        seen[want] += 1
+        assert not sp["method"].endswith("_mtp"), (d.name, sp["method"])
+        seen[sp["method"]] += 1
     assert seen["mtp"] >= 10 and set(seen) >= {"mtp", "eagle3", "dspark"}, seen
-    assert derive_graph.vllm_speculative_method("eagle3") == "eagle3"
-    assert derive_graph.vllm_speculative_method("mtp") == "mtp"
 
 
 def test_mtp_is_not_declared_for_a_model_whose_config_declares_no_mtp_layers(tmp_path):
@@ -9011,7 +9004,7 @@ def test_dsr1_fp4_widths_come_from_its_shard_headers(tmp_path):
     assert {dense[r][0] for r in ("qkv_a_proj", "q_b_proj", "kv_b_proj")} == {"bf16"}
     moe = _widths(g, "attn_moe")
     assert moe["experts"][0] == "nvfp4" and "shared_experts" not in moe   # shared at the same width
-    assert g["speculator"]["method"] == "deepseek_mtp"
+    assert g["speculator"]["method"] == "mtp"
     assert g["speculator"]["stack"]["pattern"] == ["mtp_moe"]
     assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
     plain = _derive_dsr1_fp4(None, tmp_path)
@@ -9067,7 +9060,7 @@ def test_dense_qwen35_prices_a_dense_mlp_on_gdn_and_full_attention_layers(tmp_pa
     nodes = {n["role"]: n for k in g["layer_kinds"] if k["id"] == "attn_dense" for n in k["nodes"] if n.get("role")}
     assert (nodes["mlp_gate_up"]["n"], nodes["mlp_down"]["k"]) == (2 * inter, inter)
     assert layer_sequence(g["stack"]).count("attn_dense") == 16
-    assert g["speculator"]["method"] == "qwen3_5_mtp"
+    assert g["speculator"]["method"] == "mtp"
     # The draft layer's MLP is dense, so it is not the MoE draft layer "mtp_moe" that other
     # families' graphs carry: it has its own id, and the speculator's stack names it.
     assert g["speculator"]["stack"]["pattern"] == ["mtp_dense"]
@@ -9128,7 +9121,7 @@ def test_glm51_nvfp4_quantizes_the_routed_experts_and_nothing_else():
     assert moe["shared_gate_up"][0] == moe["shared_down"][0] == "bf16"
     assert {w for r, (w, _) in moe.items() if r != "experts"} == {"bf16"}
     assert {w for w, _ in _widths(g, "attn_dense").values()} == {"bf16"}
-    assert g["speculator"]["method"] == "deepseek_mtp"
+    assert g["speculator"]["method"] == "mtp"
     assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
 
 
@@ -9773,7 +9766,7 @@ def test_qwen4_exp_the_embedding_table_size_comes_from_the_headers_or_the_deriva
 
 def test_qwen4_exp_mtp_module_is_one_qsa_layer_behind_an_embedding_mix(tmp_path):
     g = _qwen4_derive(tmp_path)
-    assert g["speculator"]["method"] == "qwen4_exp_mtp" and g["speculator"]["num_spec_tokens"] == 1
+    assert g["speculator"]["method"] == "mtp" and g["speculator"]["num_spec_tokens"] == 1
     draft = {k["id"]: k for k in g["layer_kinds"]}[g["speculator"]["stack"]["pattern"][0]]
     roles = [n.get("role") for n in draft["nodes"]]
     assert "mtp_fc_embedding" in roles and "mtp_fc_hidden" in roles

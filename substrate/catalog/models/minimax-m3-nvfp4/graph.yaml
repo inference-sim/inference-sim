@@ -301,7 +301,7 @@ head:
   k: 6144
   weight_dtype: bf16
 speculator:
-  method: minimax_m3_mtp
+  method: mtp
   num_spec_tokens: 1
   stack:
     pattern:

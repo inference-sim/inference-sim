@@ -282,9 +282,12 @@ func (s Stack) Expand() []string {
 // token count. For an MoE target the draft pass is a second MoE, and a scalar
 // draft length hides that cost entirely.
 type Speculator struct {
-	// Method is the engine's speculative method name. It is carried as a string
-	// because the set of methods is engine-version data, not a schema invariant;
-	// a rules pack validates it against a declared engine version.
+	// Method is the kind of draft the checkpoint carries: mtp for the checkpoint's own
+	// MTP module, or the name of a separate drafter (eagle3, dspark, ...). An engine's
+	// per-family spelling of mtp (deepseek_mtp, qwen3_5_mtp, ...) is that engine's
+	// lowering and is not stored here (SUB-15). It is carried as a string because the
+	// set of methods is engine-version data, not a schema invariant; an engine's rule
+	// pack validates it against a declared engine version.
 	Method string `yaml:"method"`
 	// NumSpec is the draft length the checkpoint defaults to: the value vLLM gives
 	// num_speculative_tokens when a deployment states none (n_predict for an MTP draft,
