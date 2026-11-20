@@ -93,6 +93,8 @@ type Capabilities struct {
 	// bounded replay, rings, and groups of their own block size; the connector must also be a
 	// GroupLoader.
 	PackedGroups bool
+	// MambaGroups: Mamba (SSM) groups; the connector must also be a GroupLoader.
+	MambaGroups bool
 }
 
 // ConnectorCapabilities is a connector that states its Capabilities; one that does not is

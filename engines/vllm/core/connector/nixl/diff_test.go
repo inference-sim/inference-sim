@@ -205,7 +205,7 @@ func run(t *testing.T, sc scenario) trace {
 		t.Fatal(err)
 	}
 	ncfg := Default()
-	ncfg.PrefillBackoff = Backoff(spec, s.KV.PrefixReplayTokens() > 0)
+	ncfg.PrefillBackoff = Backoff(spec, false, s.KV.PrefixReplayTokens() > 0)
 	for g := 0; g < s.KV.NumGroups(); g++ {
 		grp := Group{BlockSize: s.KV.GroupBlockSize(g)}
 		if gs := s.KV.GroupSpec(g); gs.Kind == kv.SlidingWindow || gs.Kind == kv.SlidingWindowMLA {

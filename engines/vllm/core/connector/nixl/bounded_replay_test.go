@@ -50,7 +50,7 @@ func flashSched(t *testing.T, consumer bool, wrap func(*Scheduler) sched.Connect
 		t.Fatal(err)
 	}
 	cfg := Default()
-	cfg.PrefillBackoff = Backoff(sched.Spec{}, s.KV.PrefixReplayTokens() > 0)
+	cfg.PrefillBackoff = Backoff(sched.Spec{}, false, s.KV.PrefixReplayTokens() > 0)
 	for g := 0; g < s.KV.NumGroups(); g++ {
 		grp := Group{BlockSize: s.KV.GroupBlockSize(g)}
 		if gs := s.KV.GroupSpec(g); gs.Kind == kv.SlidingWindow || gs.Kind == kv.SlidingWindowMLA {
@@ -136,14 +136,20 @@ func TestALoadWithoutTheWindowIsTrimmedAndReplayed(t *testing.T) {
 // The prefiller computes one prompt token fewer than it was sent when any group replays, and the
 // decoder pulls that many fewer: a model with no bounded-replay group keeps the whole prompt.
 func TestPrefillBackoffFloorsAtOneBesideBoundedReplay(t *testing.T) {
-	if got := Backoff(sched.Spec{}, true); got != 1 {
+	if got := Backoff(sched.Spec{}, false, true); got != 1 {
 		t.Errorf("backoff beside a replay window is %d, want 1", got)
 	}
-	if got := Backoff(sched.Spec{}, false); got != 0 {
+	if got := Backoff(sched.Spec{}, false, false); got != 0 {
 		t.Errorf("backoff with no replay window is %d, want 0", got)
 	}
-	if got := Backoff(sched.Spec{PrefillLookahead: 4}, true); got != 3 {
+	if got := Backoff(sched.Spec{PrefillLookahead: 4}, false, true); got != 3 {
 		t.Errorf("backoff with a 4-token lookahead is %d, want 3", got)
+	}
+	if got := Backoff(sched.Spec{}, true, false); got != 1 {
+		t.Errorf("backoff beside a Mamba group is %d, want 1 (the decoder derives h(N) from h(N-1))", got)
+	}
+	if got := Backoff(sched.Spec{PrefillLookahead: 4}, true, false); got != 3 {
+		t.Errorf("backoff beside a Mamba group and a 4-token lookahead is %d, want 3", got)
 	}
 	s, conn := flashSched(t, false, nil)
 	r := &sched.Request{ID: "p", Prompt: promptOf(456), MaxTokens: 1, EOS: eosToken,
@@ -261,3 +267,29 @@ func (n noLoadedGroups) FinishedAllGroups(r *sched.Request, ids [][]int) bool {
 	return n.s.FinishedAllGroups(r, ids)
 }
 func (n noLoadedGroups) ConnectorModels() sched.Capabilities { return n.s.ConnectorModels() }
+
+// A Mamba group's exchange keeps the one running-state block: the speculative scratch slots behind
+// it are dropped (clip_ssm_state_blocks, kv_connector/utils.py:89-96), and a table holding fewer
+// blocks than the scratch count still keeps its last. Other groups clip as before.
+func TestAMambaGroupExchangesItsOneStateBlock(t *testing.T) {
+	cfg := Config{Groups: []Group{{BlockSize: 16}, {BlockSize: 16, SSM: true, SpecBlocks: 2}}}
+	for _, c := range []struct {
+		name string
+		in   []int
+		want []int
+	}{
+		{"scratch behind the state", []int{1, 2, 3, 4}, []int{2}},
+		{"state and scratch only", []int{7, 8, 9}, []int{7}},
+		{"state alone", []int{5}, []int{5}},
+		{"fewer than the scratch count", []int{5, 6}, []int{5}},
+		{"empty", nil, nil},
+	} {
+		got := cfg.ClipBlocks([][]int{{10, 11, 12}, c.in})
+		if !reflect.DeepEqual(got[0], []int{10, 11, 12}) {
+			t.Errorf("%s: the attention group clipped to %v, want it whole", c.name, got[0])
+		}
+		if !reflect.DeepEqual(got[1], c.want) {
+			t.Errorf("%s: the Mamba group clipped %v to %v, want %v", c.name, c.in, got[1], c.want)
+		}
+	}
+}

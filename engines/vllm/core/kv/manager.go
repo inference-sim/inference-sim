@@ -733,7 +733,7 @@ func (m *Manager) Allocate(id string, a Alloc) bool {
 	}
 	if a.FullSequenceMustFit {
 		full := min(a.NumTokens, m.maxModelLen)
-		if m.toAllocateMain(id, full, full, newComputed, totalComputed, true, a.PrefillEnd)+watermark > m.Pool.NumFree() {
+		if m.toAllocateMain(id, full, full, newComputed, totalComputed, localComputed, true, a.PrefillEnd)+watermark > m.Pool.NumFree() {
 			return false
 		}
 	}
@@ -742,7 +742,7 @@ func (m *Manager) Allocate(id string, a Alloc) bool {
 	// Out-of-window blocks are freed first, even if the allocation then fails, on the
 	// processed-token basis (:545-557).
 	m.removeSkipped(id, max(0, totalComputed-a.InFlight))
-	if m.toAllocateMain(id, needSlots, mainModel, newComputed, localComputed+a.External, false, a.PrefillEnd)+watermark > m.Pool.NumFree()-a.Reserved {
+	if m.toAllocateMain(id, needSlots, mainModel, newComputed, localComputed+a.External, localComputed, false, a.PrefillEnd)+watermark > m.Pool.NumFree()-a.Reserved {
 		return false
 	}
 	// Adopt the prefix hit in every group before allocating any new block, then allocate
@@ -779,7 +779,8 @@ func (m *Manager) Allocate(id string, a Alloc) bool {
 			total := localComputed + a.External
 			for _, g := range m.groups {
 				if g.align != nil {
-					panic("kv: external computed tokens are not modelled for a Mamba align group")
+					g.align.allocateExternalComputedBlocks(id, localComputed, a.External)
+					continue
 				}
 				if g.spec.Kind == CircularBuffer {
 					// The ring's one block (allocate_external_computed_blocks, :1209-1216).
@@ -840,7 +841,7 @@ func (m *Manager) RemainingBlocks(id string, numTokens, numComputed int) int {
 // RemainingBlocksFor is RemainingBlocks with the main model's token count and the request's
 // prefill_end, which a Mamba align group reads (scheduler.py:3066-3075@5df63a72).
 func (m *Manager) RemainingBlocksFor(id string, numTokens, main, numComputed, prefillEnd int) int {
-	return m.toAllocateMain(id, numTokens, main, make([][]*Block, len(m.groups)), numComputed, true, prefillEnd)
+	return m.toAllocateMain(id, numTokens, main, make([][]*Block, len(m.groups)), numComputed, numComputed, true, prefillEnd)
 }
 
 func (m *Manager) isRunning(id string) bool {
@@ -922,13 +923,13 @@ func (m *Manager) removeSkipped(id string, processed int) {
 // recycling-aware cap, as the full-sequence gate does. A running request may need fewer
 // blocks than it holds, after rejected drafts (:220-223); it then needs none.
 func (m *Manager) toAllocate(id string, numTokens int, newComputed [][]*Block, totalComputed int, admission bool) int {
-	return m.toAllocateMain(id, numTokens, numTokens, newComputed, totalComputed, admission, 0)
+	return m.toAllocateMain(id, numTokens, numTokens, newComputed, totalComputed, totalComputed, admission, 0)
 }
 
 // toAllocateMain is toAllocate with num_tokens_main_model, the tokens of the main model without
 // a drafter's lookahead slots, which a Mamba align group counts instead of numTokens.
-func (m *Manager) toAllocateMain(id string, numTokens, main int, newComputed [][]*Block, totalComputed int, admission bool,
-	prefillEnd int) int {
+func (m *Manager) toAllocateMain(id string, numTokens, main int, newComputed [][]*Block, totalComputed, localComputed int,
+	admission bool, prefillEnd int) int {
 	total := 0
 	for i, g := range m.groups {
 		have := len(g.reqBlocks[id])
@@ -941,12 +942,11 @@ func (m *Manager) toAllocateMain(id string, numTokens, main int, newComputed [][
 			continue
 		}
 		if g.align != nil {
-			// prefill_end is 0 under dense retention (kv_cache_coordinator.py:227-228@5df63a72);
-			// external computed tokens are not modelled for Mamba align.
+			// prefill_end is 0 under dense retention (kv_cache_coordinator.py:227-228@5df63a72).
 			if r := m.retention; r == nil || *r != 0 {
 				prefillEnd = 0 // kv_cache_coordinator.py:233-234
 			}
-			total += g.align.numBlocksToAllocate(id, newComputed[i], totalComputed, totalComputed, main, admission, prefillEnd)
+			total += g.align.numBlocksToAllocate(id, newComputed[i], totalComputed, localComputed, main, admission, prefillEnd)
 			continue
 		}
 		required := g.slotBlocks(numTokens)

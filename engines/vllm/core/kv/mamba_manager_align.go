@@ -33,7 +33,7 @@ import (
 //   - enable_mamba_shared_prefix_checkpoint is false (kv_cache_manager.py:186-195), so the
 //     junction branch of _cache_partial_tail_block never runs; request.shared_prefix_boundary
 //     itself is still read where vLLM reads it.
-//   - No external KV connector and no boundary-state offload, so _pending_boundary_state_offloads,
+//   - No boundary-state offload, so _pending_boundary_state_offloads,
 //     _producer_partial_tail_reqs and finalize_partial_tail_offload (:1912-1925, :1935-1953,
 //     :2002-2012) are dropped: they feed a connector and change no block table.
 //   - DCP = PCP = 1 (:1458-1459).
@@ -311,6 +311,26 @@ func (a *mambaAlign) addLocalComputedBlocks(id string, newComputed []*Block, num
 	reqBlocks = append(reqBlocks, newComputed...)
 	a.g.reqBlocks[id] = reqBlocks
 	a.g.numCached[id] = len(reqBlocks)
+}
+
+// allocateExternalComputedBlocks is SingleTypeKVCacheManager.allocate_external_computed_blocks
+// (single_type_kv_cache_manager.py:438-487@0fda86a35419), which MambaManager does not override: a
+// Mamba request keeps only the state of its last computed token (get_num_skipped_tokens), so the
+// external tokens it must hold are the last one's, and the call takes the one real block that
+// ends the table behind the nulls addLocalComputedBlocks laid down.
+func (a *mambaAlign) allocateExternalComputedBlocks(id string, numLocal, numExternal int) {
+	total := numLocal + numExternal
+	if skipped := a.skippedTokens(total); skipped > 0 {
+		numExternal = min(total-skipped, numExternal)
+	}
+	if numExternal <= 0 {
+		return
+	}
+	req := a.g.reqBlocks[id]
+	if need := cdiv(total, a.blockSize) - len(req); need > 0 {
+		req = append(req, a.pool.New(need)...)
+	}
+	a.g.reqBlocks[id] = req
 }
 
 // needsInternalCheckpoint is _needs_internal_checkpoint (:1627-1667).
