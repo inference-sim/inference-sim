@@ -107,6 +107,7 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 		Data:            in.Data,
 		SelectedEntries: in.Selected,
 		Revisions:       in.Revisions,
+		Estimate:        result.Estimate{Replications: 1, NoInterval: result.NoIntervalStatement},
 		Requests:        out.Ledger,
 		RequestRows:     out.Rows,
 		Reports:         result.Reports{Engine: out.Engine, Router: out.Router, Kernel: out.Kernel},

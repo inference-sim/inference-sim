@@ -1485,3 +1485,24 @@ cohorts:
 		t.Fatalf("replay in the default mode: err %v, stderr %q; want a refusal naming fixed-accumulate", err, lastLines(stderr, 3))
 	}
 }
+
+// DEV-11, design 8.8: one replication is the default for every run and replay, and its Result
+// says its figures are point estimates with no interval.
+func TestResult_OneReplicationByDefaultStatesItHasNoInterval(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "trace")
+	runOut, stderr, err := runKernelCLI(t, resultRunArgs("--trace-output", prefix)...)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	repOut, stderr, err := runKernelCLI(t, "replay", "--scenario", kernelTestScenario, "--seed", "7",
+		"--horizon", "600000000", "--trace-header", prefix+".yaml", "--trace-data", prefix+".csv")
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
+	}
+	for name, out := range map[string]string{"run": runOut, "replay": repOut} {
+		e := parseResult(t, out).Estimate
+		if e.Replications != 1 || e.NoInterval != result.NoIntervalStatement {
+			t.Errorf("%s: estimate %+v, want one replication stating it has no interval", name, e)
+		}
+	}
+}

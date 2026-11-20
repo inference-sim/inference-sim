@@ -1,6 +1,6 @@
 {
   "kind": "Result",
-  "schema_version": 3,
+  "schema_version": 4,
   "name": "muse-h200-ib-tep8-dspark.r4-s2",
   "engine": {
     "kind": "vllm",
@@ -922,6 +922,10 @@
     "router": "v1.0.0-blis.5.0.20261120000708-4b04f777213f",
     "llm_d": "b9393d1a9f1d5a72ecd86f8d2b643ab54c2a9b92",
     "engine_module": "(devel)"
+  },
+  "estimate": {
+    "replications": 1,
+    "no_interval": "one replication: the figures are point estimates with no interval, so the randomness of the workload is not covered"
   },
   "window": {
     "start_us": 250000,
