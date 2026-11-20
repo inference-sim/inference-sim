@@ -21,6 +21,13 @@ type stepShape struct {
 	// without it, the rows attention runs.
 	tokens, raw          int
 	tokensF, attnTokensF float64
+	// funnel is how many times this rank's tokens the shared expert pool runs over: the
+	// data-parallel width when the ranks run alike, the group's tokens over this rank's when
+	// the batch states them (Batch.GroupTokens).
+	funnel float64
+	// moeRows is the tokens per rank the grouped GEMM's efficiency ramp is read at: the
+	// group's tokens over the data-parallel width, which is this rank's own when the ranks run alike.
+	moeRows float64
 	// spRows is the rows a token-sharded node sees under the model's own sequence
 	// parallelism: ceil(tokens / tp), since sp_shard pads the count to a multiple of tp.
 	spRows float64
@@ -230,8 +237,14 @@ func (k *Kernel) shapeOf(b kernel.Batch) stepShape {
 	}
 
 	tokensF := float64(tokens)
+	funnel := k.moeDPFunnel()
+	moeRows := tokensF
+	if funnel > 1 && b.GroupTokens > 0 && tokens > 0 {
+		moeRows = float64(b.GroupTokens) / funnel
+		funnel = float64(b.GroupTokens) / tokensF
+	}
 	return stepShape{
-		tokens: tokens, raw: b.Tokens(), tokensF: tokensF, attnTokensF: attnTokensF,
+		tokens: tokens, raw: b.Tokens(), tokensF: tokensF, attnTokensF: attnTokensF, funnel: funnel, moeRows: moeRows,
 		spRows:      math.Ceil(tokensF / k.tp),
 		causalFLOPs: causalFLOPs, decodeKVTokens: decodeKVTokens,
 		decodeQueryCtx: decodeQueryCtx,
@@ -527,7 +540,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 			// Omitting it under-prices the routed term by the DP width, which is what
 			// FPM's mixed rows measure: on MiniMax-M2.7 h200 the signed error runs
 			// -14.9% at dp=1 tep2, -34.0% at dp=2 and -46.7% at dp=4, ordering by dp.
-			routedTokens := tokensF * k.moeDPFunnel()
+			routedTokens := tokensF * s.funnel
 			eg := k.geom(l)
 			routedPerRank := routedTokens * float64(l.TopK) * eg.share
 			// With expert parallelism off, the MoE is flattened over dp x tp (see expertTensorShards),
@@ -915,7 +928,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 		var routedSM float64
 		if routedFLOPs > 0 {
 			fit := k.fit(l.RoutedFormat, true)
-			if eff := price.Efficiency(tokensF, fit.epsMax, fit.mHalf); eff > 0 {
+			if eff := price.Efficiency(s.moeRows, fit.epsMax, fit.mHalf); eff > 0 {
 				routedSM = routedFLOPs / (fit.peak * eff) * smDerate
 			}
 			// The grouped kernel's own floor, where the registry measured one: the time a
@@ -963,7 +976,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 			key := collKey{Op: c.Op, Group: c.Group}
 			elapsed := 0.0
 			if k.denseDispatch(key) {
-				elapsed = k.agrsDispatchSeconds(bytes)
+				elapsed = k.agrsDispatchSeconds(bytes, s.funnel)
 				if k.crossesNodes(key) {
 					crossNode += elapsed
 				} else {

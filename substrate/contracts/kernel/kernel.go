@@ -294,6 +294,17 @@ type Batch struct {
 	// Zero means none. It must not be negative (Validate).
 	PadTokens int
 
+	// GroupTokens is the tokens the whole data-parallel group hands the shared expert pool this
+	// step: the sum of every rank's PaddedTokens. With attention data parallelism every rank's
+	// tokens are gathered before the expert GEMM (allgather_reducescatter), so each rank's
+	// experts and its dispatch and combine run over this count, not over dp times its own. The two
+	// agree when the ranks run alike (a padded decode step) and differ when they do not (one rank
+	// prefills a long chunk while the others decode).
+	//
+	// Zero means the ranks run alike: dp times this rank's PaddedTokens. It must not be negative
+	// or below this rank's own PaddedTokens (Validate).
+	GroupTokens int
+
 	// DraftPaddedTokens is the token count this rank's drafter launches, after its own graph
 	// bucket and the width its data-parallel group agreed (the drafter coordinates its padding
 	// apart from the target's: vllm/v1/worker/gpu/spec_decode/dflash/speculator.py:455-471). The
@@ -514,7 +525,7 @@ func (b Batch) Validate() error {
 	for field, v := range map[string]int{
 		"PadTokens": b.PadTokens, "SMBudget": b.SMBudget, "DecodeThreshold": b.DecodeThreshold,
 		"DraftPaddedTokens": b.DraftPaddedTokens, "TailFrom": b.TailFrom,
-		"TailPadTokens": b.TailPadTokens,
+		"TailPadTokens": b.TailPadTokens, "GroupTokens": b.GroupTokens,
 	} {
 		if v < 0 {
 			bad = append(bad, fmt.Sprintf("%s %d", field, v))
@@ -546,6 +557,9 @@ func (b Batch) Validate() error {
 	if len(bad) > 0 {
 		sort.Strings(bad)
 		return fmt.Errorf("batch: must not be negative: %s", strings.Join(bad, ", "))
+	}
+	if b.GroupTokens > 0 && b.GroupTokens < b.PaddedTokens() {
+		return fmt.Errorf("batch: GroupTokens %d is below this rank's own %d padded tokens", b.GroupTokens, b.PaddedTokens())
 	}
 	if len(over) > 0 {
 		sort.Strings(over)

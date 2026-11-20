@@ -75,6 +75,7 @@ func (k *Kernel) tailBatchOf(b kernel.Batch) (kernel.Batch, bool) {
 	}
 	t := b
 	t.PadTokens, t.TailFrom, t.TailPadTokens = max(b.TailPadTokens, 0), 0, 0
+	t.GroupTokens = 0
 	t.Reqs = make([]kernel.ReqShape, len(b.Reqs))
 	for i, r := range b.Reqs {
 		rows := r.Scheduled

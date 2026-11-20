@@ -18,6 +18,13 @@ import (
 
 const dpLockstepScenario = "minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml"
 
+// priceInGroup prices batch as a rank whose group hands the experts groupTokens tokens in all.
+func priceInGroup(m *Model, batch []*sim.Request, groupTokens int) int64 {
+	b := m.batchOf(batch)
+	b.GroupTokens = groupTokens
+	return max(1, ticks(m.k.StepTime(b).NoOverlap))
+}
+
 func decodes(n int, ctx int64) []*sim.Request {
 	out := make([]*sim.Request, n)
 	for i := range out {
@@ -52,9 +59,13 @@ func TestStepTimesAcrossDP_PadsToTheLargestRank(t *testing.T) {
 
 	prefill := []*sim.Request{{InputTokens: make([]sim.TokenID, 4*m.pad.ceiling), NumNewTokens: 2 * m.pad.ceiling}}
 	eager := m.StepTimesAcrossDP([][]*sim.Request{light, prefill})
-	if eager[0] != m.StepTime(light) || eager[1] != m.StepTime(prefill) {
-		t.Errorf("past the capture ceiling each rank must cost its own batch: got %v, own %d/%d",
+	if eager[0] <= m.StepTime(light) || eager[1] >= m.StepTime(prefill) {
+		t.Errorf("past the capture ceiling a rank keeps its own attention but shares the experts' tokens with the group: got %v, own %d/%d",
 			eager, m.StepTime(light), m.StepTime(prefill))
+	}
+	alike := m.StepTimesAcrossDP([][]*sim.Request{prefill, prefill})
+	if alike[0] != m.StepTime(prefill) || alike[1] != m.StepTime(prefill) {
+		t.Errorf("ranks running alike must cost one rank's price: got %v, own %d", alike, m.StepTime(prefill))
 	}
 	// Unpadded, an idle rank still runs the dummy batch -- one uniform decode, all of it pad --
 	// which costs more than a step with no forward at all.
@@ -119,8 +130,9 @@ func TestDPPadding_CeilingIffGraphs(t *testing.T) {
 	}
 	light := decodes(2, 4096)
 	mixed := []*sim.Request{{InputTokens: make([]sim.TokenID, 256), NumNewTokens: 64}}
-	if got := fdo.StepTimesAcrossDP([][]*sim.Request{light, mixed}); got[0] != fdo.StepTime(light) {
-		t.Errorf("FULL_DECODE_ONLY pads a mixed group step: rank 0 priced %d, own %d", got[0], fdo.StepTime(light))
+	unpadded := priceInGroup(fdo, light, fdo.batchOf(light).PaddedTokens()+fdo.batchOf(mixed).PaddedTokens())
+	if got := fdo.StepTimesAcrossDP([][]*sim.Request{light, mixed}); got[0] != unpadded {
+		t.Errorf("FULL_DECODE_ONLY pads a mixed group step: rank 0 priced %d, unpadded %d", got[0], unpadded)
 	}
 }
 
@@ -139,8 +151,8 @@ func drawRankBatch(t *rapid.T, label string, ceiling int) []*sim.Request {
 	return out
 }
 
-// Laws of a lockstep group's pricing: no rank costs less than its own batch alone (an idle
-// rank no less than an empty step); a rank that only runs the dummy batch never lowers the
+// Laws of a lockstep group's pricing: no rank costs less than its own batch beside idle ranks
+// (an idle rank no less than an empty step); a rank that only runs the dummy batch never lowers the
 // group's step; and the price is equivariant under permuting the ranks.
 func TestStepTimesAcrossDP_Laws(t *testing.T) {
 	m := open(t, dpLockstepScenario)
@@ -159,8 +171,8 @@ func TestStepTimesAcrossDP_Laws(t *testing.T) {
 			return best
 		}
 		for i, b := range batches {
-			if own := m.StepTime(b); out[i] < own {
-				rt.Fatalf("rank %d priced %d below its own batch %d", i, out[i], own)
+			if alone := priceInGroup(m, b, m.batchOf(b).PaddedTokens()); out[i] < alone {
+				rt.Fatalf("rank %d priced %d below its own batch %d", i, out[i], alone)
 			}
 		}
 		withIdle := m.StepTimesAcrossDP(append(append([][]*sim.Request{}, batches...), nil))
@@ -185,4 +197,31 @@ func TestStepTimesAcrossDP_Laws(t *testing.T) {
 			}
 		}
 	})
+}
+
+// The routed experts see the sum of every rank's tokens, not dp times the rank's own: a rank
+// that prefills beside light ranks hands the experts far fewer tokens than dp copies of itself,
+// and each light rank still pays for the prefill rank's tokens. So a rank's price is monotone
+// in the others' load, and the same unpadded step costs less than one where every rank runs the
+// prefill.
+func TestStepTimesAcrossDP_ExpertsSeeTheGroupsSummedTokens(t *testing.T) {
+	m := open(t, dpLockstepScenario)
+	light := decodes(2, 4096)
+	prefill := []*sim.Request{{InputTokens: make([]sim.TokenID, 4*m.pad.ceiling), NumNewTokens: 2 * m.pad.ceiling}}
+	longer := []*sim.Request{{InputTokens: make([]sim.TokenID, 4*m.pad.ceiling), NumNewTokens: 3 * m.pad.ceiling / 2}}
+
+	mixed := m.StepTimesAcrossDP([][]*sim.Request{light, prefill})
+	both := m.StepTimesAcrossDP([][]*sim.Request{prefill, prefill})
+	if mixed[1] >= both[1] {
+		t.Errorf("the prefill rank beside a light rank priced %d, no less than beside an equal prefill %d", mixed[1], both[1])
+	}
+	beside := m.StepTimesAcrossDP([][]*sim.Request{longer, prefill})
+	if mixed[1] >= beside[1] || beside[1] >= both[1] {
+		t.Errorf("a rank's price must rise with the other rank's tokens: %d beside light, %d beside a smaller prefill, %d beside an equal one",
+			mixed[1], beside[1], both[1])
+	}
+	if mixed[0] > mixed[1] {
+		t.Errorf("a light rank priced %d, above the prefill rank %d in the same step: the experts' work does not depend on which rank sent the tokens",
+			mixed[0], mixed[1])
+	}
 }
