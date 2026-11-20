@@ -21,18 +21,18 @@ type KVCachePacking struct {
 	// is not transcribed is refused rather than guessed.
 	Modeled bool
 	// StateCacheBuckets is whether a kind: state cache is its own bucket, a
-	// CircularBufferSpec the packer may split down to one state per group to fit the
-	// block the other buckets need (v0.33.0 kv_cache_planning.py:995-1020).
+	// CircularBufferManager layer the packer may split down to one state per group to fit the
+	// block the other buckets need (vLLM head 0fda86a35419 kv_cache_planning.py:965-1013).
 	StateCacheBuckets bool
 	// LoneWindowIsState is whether a sliding-window bucket splits like a state bucket
-	// when no balanced mixed-page bucket fixes a repeat pattern (v0.33.0 is_state_bucket, kv_cache_planning.py:995-1007).
+	// when no balanced mixed-page bucket fixes a repeat pattern (head is_state_bucket, kv_cache_planning.py:971-977).
 	LoneWindowIsState bool
 	// BlockStrideAlignment is whether the block's bytes round up to the least common
-	// multiple of every layer's block_stride_alignment (v0.33.0 kv_cache_planning.py:574-605).
+	// multiple of every layer's block_stride_alignment (head _get_kv_cache_bytes_per_block, kv_cache_planning.py:542-561).
 	BlockStrideAlignment bool
 	// StateRingFromSpecTokens is whether a state cache's ring holds
 	// CompressorRingRows(K) rows, derived from the deployment's K rather than stated
-	// (v0.33.0 vllm/models/deepseek_v41/compressor.py:222-223).
+	// (head vllm/models/deepseek_v41/compressor.py:253-254).
 	StateRingFromSpecTokens bool
 }
 
@@ -63,11 +63,12 @@ func (k KVCachePacking) String() string {
 //
 // It follows vLLM's get_kv_cache_groups for the paths stated caches take. Every layer of
 // one uniform type is one group (_get_kv_cache_groups_uniform_type). Layers with more than
-// one page size are packed by _get_packed_kv_cache_groups (v0.33.0
-// vllm/v1/core/kv_cache_planning.py:914-1043): bucketed by uniform type, balanced buckets
+// one page size are packed by _get_packed_kv_cache_groups (vLLM head
+// 0fda86a35419 vllm/v1/core/kv_cache_planning.py:896-1017): bucketed by _bucket_layers
+// (same manager config, block size and dcp sharding), balanced buckets
 // split into groups of the same number of pattern repeats, chosen by _approximate_gcd to
 // minimise padding, and state buckets split to fit the block the others need. The block
-// is the widest group (_get_kv_cache_bytes_per_block, kv_cache_planning.py:574-605).
+// is the widest group (_get_kv_cache_bytes_per_block, kv_cache_planning.py:542-561).
 //
 // A cache's uniform type follows the spec the engine gives it: kv and index caches are
 // full-attention specs at their block size, window caches sliding-window specs keyed by
@@ -170,14 +171,14 @@ func (p *Pack) packLayerOf(l enginefacts.KVCacheLayer, in enginefacts.KVCacheGro
 		if !p.KVCachePacking.StateCacheBuckets {
 			return pl, fmt.Errorf("layer %q: engine %s stores a state cache as a spec the graph does not state", l.Name, p.Version)
 		}
-		// CircularBufferSpec is never padded: it has no alignment and is not one of the
-		// specs _apply_alignment_padding touches, so a stated alignment would describe a
-		// page the engine does not allocate.
+		// A circular buffer's spec is a plain AttentionSpec: it has no alignment and only
+		// MLAAttentionSpec pads its page, so a stated alignment would describe a page the
+		// engine does not allocate.
 		if c.PageAlignment > 1 {
-			return pl, fmt.Errorf("layer %q: a state cache is a CircularBufferSpec, which engine %s never pads; page_alignment %d has no engine meaning",
+			return pl, fmt.Errorf("layer %q: a state cache is a circular-buffer ring, which engine %s never pads; page_alignment %d has no engine meaning",
 				l.Name, p.Version, c.PageAlignment)
 		}
-		// CircularBufferSpec: block_size is the ring's row count, one row per state.
+		// CircularBufferManager.layer_config(AttentionSpec): block_size is the ring's row count, one row per state.
 		rows := c.Entries
 		if k := in.NumSpecTokens; k != nil && p.KVCachePacking.StateRingFromSpecTokens {
 			rows = CompressorRingRows(*k)
@@ -388,8 +389,8 @@ func roundUp(x, m int) int { return cdiv(x, m) * m }
 
 // CompressorRingRows is DeepSeek-V4.1's compressor ring capacity at K speculative tokens:
 // the drafts, the bonus token and the previous row, rounded up to a power of two of at
-// least 8, max(8, 1 << (K+1).bit_length()) (v0.33.0 vllm/models/deepseek_v41/
-// compressor.py:222-223). K=5 is 8 rows; K=7 is 16.
+// least 8, max(8, 1 << (K+1).bit_length()) (vLLM head vllm/models/deepseek_v41/
+// compressor.py:253-254). K=5 is 8 rows; K=7 is 16.
 func CompressorRingRows(k int) int {
 	n := k + 1 // rows_per_step - 1
 	bits := 0
