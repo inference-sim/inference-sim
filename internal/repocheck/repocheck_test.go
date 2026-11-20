@@ -220,8 +220,16 @@ func TestNoNestedModule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 0 {
-		t.Fatalf("SUB-13: one Go module, no nested go.mod; found %v", got)
+	// Row 2.5a imports the history of blis-substrate with its go.mod; row 2.5b deletes it together
+	// with the import rewrite, and this exemption.
+	var nested []string
+	for _, g := range got {
+		if g != "substrate/go.mod" {
+			nested = append(nested, g)
+		}
+	}
+	if len(nested) != 0 {
+		t.Fatalf("SUB-13: one Go module, no nested go.mod; found %v", nested)
 	}
 }
 
