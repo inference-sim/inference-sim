@@ -281,7 +281,7 @@
   "config:attn_dp_size": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#70"
    },
    "estimation": {
     "rule": "none"
@@ -724,7 +724,7 @@
   "config:deepep_config": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -733,7 +733,7 @@
   "config:deepep_dispatcher_output_dtype": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -742,7 +742,7 @@
   "config:deepep_mode": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -751,7 +751,7 @@
   "config:deepep_v2_mode": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -904,7 +904,7 @@
   "config:disable_hybrid_swa_memory": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "issue": "inference-sim/blis-sglang#73"
    },
    "estimation": {
     "rule": "none"
@@ -980,7 +980,7 @@
   "config:disaggregation_bootstrap_port": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#7"
+    "issue": "inference-sim/blis-sglang#64"
    },
    "estimation": {
     "rule": "none"
@@ -989,7 +989,7 @@
   "config:disaggregation_decode_allocation_policy": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#7"
+    "issue": "inference-sim/blis-sglang#64"
    },
    "estimation": {
     "rule": "none"
@@ -998,7 +998,7 @@
   "config:disaggregation_decode_enable_offload_kvcache": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#7"
+    "issue": "inference-sim/blis-sglang#65"
    },
    "estimation": {
     "rule": "none"
@@ -1007,7 +1007,7 @@
   "config:disaggregation_decode_enable_radix_cache": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#7"
+    "issue": "inference-sim/blis-sglang#65"
    },
    "estimation": {
     "rule": "none"
@@ -1016,7 +1016,7 @@
   "config:disaggregation_decode_extra_slots": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#7"
+    "issue": "inference-sim/blis-sglang#64"
    },
    "estimation": {
     "rule": "none"
@@ -1025,7 +1025,7 @@
   "config:disaggregation_decode_host_receive_threshold": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#7"
+    "issue": "inference-sim/blis-sglang#65"
    },
    "estimation": {
     "rule": "none"
@@ -1034,7 +1034,7 @@
   "config:disaggregation_decode_polling_interval": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#7"
+    "issue": "inference-sim/blis-sglang#64"
    },
    "estimation": {
     "rule": "none"
@@ -1043,7 +1043,7 @@
   "config:disaggregation_decode_retraction_backup": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#7"
+    "issue": "inference-sim/blis-sglang#65"
    },
    "estimation": {
     "rule": "none"
@@ -1052,7 +1052,7 @@
   "config:disaggregation_enable_kv_checksum": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#7"
+    "issue": "inference-sim/blis-sglang#64"
    },
    "estimation": {
     "rule": "none"
@@ -1061,7 +1061,7 @@
   "config:disaggregation_ib_device": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#7"
+    "issue": "inference-sim/blis-sglang#66"
    },
    "estimation": {
     "rule": "none"
@@ -1070,7 +1070,7 @@
   "config:disaggregation_mode": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#7"
+    "issue": "inference-sim/blis-sglang#64"
    },
    "estimation": {
     "rule": "none"
@@ -1079,7 +1079,7 @@
   "config:disaggregation_transfer_backend": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#7"
+    "issue": "inference-sim/blis-sglang#66"
    },
    "estimation": {
     "rule": "none"
@@ -1448,7 +1448,7 @@
   "config:enable_dp_attention": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#70"
    },
    "estimation": {
     "rule": "none"
@@ -1457,7 +1457,7 @@
   "config:enable_dp_attention_local_control_broadcast": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#70"
    },
    "estimation": {
     "rule": "none"
@@ -1466,7 +1466,7 @@
   "config:enable_dp_lm_head": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#70"
    },
    "estimation": {
     "rule": "none"
@@ -1538,7 +1538,7 @@
   "config:enable_eplb": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -1604,7 +1604,7 @@
   "config:enable_hierarchical_cache": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#3"
+    "issue": "inference-sim/blis-sglang#38"
    },
    "estimation": {
     "rule": "none"
@@ -2162,7 +2162,7 @@
   "config:enable_two_batch_overlap": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -2297,7 +2297,7 @@
   "config:ep_dispatch_algorithm": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -2324,7 +2324,7 @@
   "config:ep_num_redundant_experts": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -2342,7 +2342,7 @@
   "config:eplb_algorithm": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -2351,7 +2351,7 @@
   "config:eplb_min_rebalancing_utilization_threshold": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -2360,7 +2360,7 @@
   "config:eplb_rebalance_layers_per_chunk": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -2369,7 +2369,7 @@
   "config:eplb_rebalance_num_iterations": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -2378,7 +2378,7 @@
   "config:expert_balancedness_report_mode": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -2387,7 +2387,7 @@
   "config:expert_distribution_recorder_buffer_size": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -2396,7 +2396,7 @@
   "config:expert_distribution_recorder_mode": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -2450,7 +2450,7 @@
   "config:file_storage_path": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#9"
+    "issue": "inference-sim/blis-sglang#40"
    },
    "estimation": {
     "rule": "none"
@@ -2558,7 +2558,7 @@
   "config:fuseep_mode": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -2666,7 +2666,7 @@
   "config:hicache_host_memory_fraction": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#6"
+    "issue": "inference-sim/blis-sglang#38"
    },
    "estimation": {
     "rule": "none"
@@ -2675,7 +2675,7 @@
   "config:hicache_host_memory_mode": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#6"
+    "issue": "inference-sim/blis-sglang#38"
    },
    "estimation": {
     "rule": "none"
@@ -2684,7 +2684,7 @@
   "config:hicache_io_backend": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#6"
+    "issue": "inference-sim/blis-sglang#38"
    },
    "estimation": {
     "rule": "none"
@@ -2693,7 +2693,7 @@
   "config:hicache_mem_layout": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#6"
+    "issue": "inference-sim/blis-sglang#38"
    },
    "estimation": {
     "rule": "none"
@@ -2702,7 +2702,7 @@
   "config:hicache_ratio": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#6"
+    "issue": "inference-sim/blis-sglang#38"
    },
    "estimation": {
     "rule": "none"
@@ -2711,7 +2711,7 @@
   "config:hicache_size": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#6"
+    "issue": "inference-sim/blis-sglang#38"
    },
    "estimation": {
     "rule": "none"
@@ -2720,7 +2720,7 @@
   "config:hicache_storage_backend": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#6"
+    "issue": "inference-sim/blis-sglang#40"
    },
    "estimation": {
     "rule": "none"
@@ -2729,7 +2729,7 @@
   "config:hicache_storage_backend_extra_config": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#6"
+    "issue": "inference-sim/blis-sglang#87"
    },
    "estimation": {
     "rule": "none"
@@ -2738,7 +2738,7 @@
   "config:hicache_storage_prefetch_policy": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#6"
+    "issue": "inference-sim/blis-sglang#40"
    },
    "estimation": {
     "rule": "none"
@@ -2747,7 +2747,7 @@
   "config:hicache_storage_prefetch_retry_max_attempts": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#6"
+    "issue": "inference-sim/blis-sglang#40"
    },
    "estimation": {
     "rule": "none"
@@ -2756,7 +2756,7 @@
   "config:hicache_storage_prefetch_retry_poll_interval": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#6"
+    "issue": "inference-sim/blis-sglang#40"
    },
    "estimation": {
     "rule": "none"
@@ -2765,7 +2765,7 @@
   "config:hicache_write_policy": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#6"
+    "issue": "inference-sim/blis-sglang#38"
    },
    "estimation": {
     "rule": "none"
@@ -2828,7 +2828,7 @@
   "config:init_expert_location": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -3047,7 +3047,7 @@
   "config:load_balance_method": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#70"
    },
    "estimation": {
     "rule": "none"
@@ -3200,7 +3200,7 @@
   "config:mamba_backend": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#9"
+    "issue": "inference-sim/blis-sglang#94"
    },
    "estimation": {
     "rule": "none"
@@ -3218,7 +3218,7 @@
   "config:mamba_full_memory_ratio": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "issue": "inference-sim/blis-sglang#94"
    },
    "estimation": {
     "rule": "none"
@@ -3227,7 +3227,7 @@
   "config:mamba_max_states_per_path": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#9"
+    "issue": "inference-sim/blis-sglang#94"
    },
    "estimation": {
     "rule": "none"
@@ -3254,7 +3254,7 @@
   "config:mamba_track_interval": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#9"
+    "issue": "inference-sim/blis-sglang#94"
    },
    "estimation": {
     "rule": "none"
@@ -3308,7 +3308,7 @@
   "config:max_mamba_cache_size": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "issue": "inference-sim/blis-sglang#94"
    },
    "estimation": {
     "rule": "none"
@@ -3562,7 +3562,7 @@
   "config:moe_a2a_backend": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
@@ -3580,7 +3580,7 @@
   "config:moe_dp_size": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#70"
    },
    "estimation": {
     "rule": "none"
@@ -3796,7 +3796,7 @@
   "config:pp_async_batch_depth": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#72"
    },
    "estimation": {
     "rule": "none"
@@ -3805,7 +3805,7 @@
   "config:pp_max_micro_batch_size": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#72"
    },
    "estimation": {
     "rule": "none"
@@ -4351,7 +4351,7 @@
   "config:speculative_accept_threshold_acc": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4360,7 +4360,7 @@
   "config:speculative_accept_threshold_single": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4369,7 +4369,7 @@
   "config:speculative_adaptive": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4378,7 +4378,7 @@
   "config:speculative_adaptive_config": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4387,7 +4387,7 @@
   "config:speculative_algorithm": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4396,7 +4396,7 @@
   "config:speculative_attention_mode": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4405,7 +4405,7 @@
   "config:speculative_boundary_reduction": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4414,7 +4414,7 @@
   "config:speculative_dflash_block_size": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4423,7 +4423,7 @@
   "config:speculative_domino_candidate_pool_size": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4432,7 +4432,7 @@
   "config:speculative_draft_attention_backend": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4441,7 +4441,7 @@
   "config:speculative_draft_kv_cache_dtype": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4450,7 +4450,7 @@
   "config:speculative_draft_load_format": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4459,7 +4459,7 @@
   "config:speculative_draft_model_path": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4468,7 +4468,7 @@
   "config:speculative_draft_model_quantization": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4477,7 +4477,7 @@
   "config:speculative_draft_model_revision": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4486,7 +4486,7 @@
   "config:speculative_draft_sink_size": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4495,7 +4495,7 @@
   "config:speculative_draft_window_size": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4504,7 +4504,7 @@
   "config:speculative_dsa_topk_backend": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4513,7 +4513,7 @@
   "config:speculative_dspark_align_verify_tokens_to_graph_tier": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#69"
    },
    "estimation": {
     "rule": "none"
@@ -4522,7 +4522,7 @@
   "config:speculative_dspark_block_size": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#69"
    },
    "estimation": {
     "rule": "none"
@@ -4531,7 +4531,7 @@
   "config:speculative_dspark_confidence_sts_path": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#69"
    },
    "estimation": {
     "rule": "none"
@@ -4540,7 +4540,7 @@
   "config:speculative_dspark_sps_table_path": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#69"
    },
    "estimation": {
     "rule": "none"
@@ -4549,7 +4549,7 @@
   "config:speculative_eagle_topk": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4558,7 +4558,7 @@
   "config:speculative_enable_w4a4_mxfp4_megamoe": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4567,7 +4567,7 @@
   "config:speculative_moe_a2a_backend": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4576,7 +4576,7 @@
   "config:speculative_moe_runner_backend": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4585,7 +4585,7 @@
   "config:speculative_ngram_capacity": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4594,7 +4594,7 @@
   "config:speculative_ngram_external_corpus_max_tokens": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4603,7 +4603,7 @@
   "config:speculative_ngram_external_corpus_path": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4612,7 +4612,7 @@
   "config:speculative_ngram_external_sam_budget": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4621,7 +4621,7 @@
   "config:speculative_ngram_match_type": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4630,7 +4630,7 @@
   "config:speculative_ngram_max_bfs_breadth": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4639,7 +4639,7 @@
   "config:speculative_ngram_max_trie_depth": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4648,7 +4648,7 @@
   "config:speculative_ngram_min_bfs_breadth": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4657,7 +4657,7 @@
   "config:speculative_num_draft_tokens": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4666,7 +4666,7 @@
   "config:speculative_num_steps": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4675,7 +4675,7 @@
   "config:speculative_token_map": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4684,7 +4684,7 @@
   "config:speculative_use_block_verification": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4693,7 +4693,7 @@
   "config:speculative_use_rejection_sampling": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "issue": "inference-sim/blis-sglang#68"
    },
    "estimation": {
     "rule": "none"
@@ -4783,7 +4783,7 @@
   "config:swa_full_tokens_ratio": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "issue": "inference-sim/blis-sglang#73"
    },
    "estimation": {
     "rule": "none"
@@ -4792,7 +4792,7 @@
   "config:swa_prefix_tails": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "issue": "inference-sim/blis-sglang#73"
    },
    "estimation": {
     "rule": "none"
@@ -4801,7 +4801,7 @@
   "config:tbo_token_distribution_threshold": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "issue": "inference-sim/blis-sglang#71"
    },
    "estimation": {
     "rule": "none"
