@@ -137,7 +137,7 @@ func TestAdopt_ReadsTheScenariosEngineKind(t *testing.T) {
 		refusal      string
 	}{
 		{"kind only", old, ""},
-		{"a version stated", "engine: {kind: vllm, version: \"0.33.0\"}\n", "field version not found"},
+		{"a version stated", "engine: {kind: vllm, version: \"0.34.0+0fda86a35419\"}\n", "field version not found"},
 		{"another kind", "engine: {kind: sglang}\n", `engine.kind is "sglang"`},
 	} {
 		t.Run(c.name, func(t *testing.T) {

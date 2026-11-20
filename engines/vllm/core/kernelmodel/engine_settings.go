@@ -140,6 +140,11 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 	return r
 }
 
+// blockSizeResolver is core/vllm.ResolveBlockSize, which refuses while the block-size oracle's table
+// was recorded at another commit than the pin. A test replaces it to run the plumbing over the table
+// as recorded.
+var blockSizeResolver = vllm.ResolveBlockSize
+
 // resolveBlockSize resolves an unstated block_size as vLLM v0.32.0 does, for the models, GPUs
 // and KV dtypes the block-size oracle resolves (core/vllm.ResolveBlockSize).
 func resolveBlockSize(in latencykernel.Inputs, e engineconfig.Engine, pool deployment.Pool) (vllm.BlockSize, error) {
@@ -153,7 +158,7 @@ func resolveBlockSize(in latencykernel.Inputs, e engineconfig.Engine, pool deplo
 		fam, _ := in.Chip.CapabilityMajor()
 		kv = in.Rules.ResolveCacheDType(architectureOf(in.Model), fam, max(pool.Parallel.TP, 1), kv)
 	}
-	return vllm.ResolveBlockSize(vllm.BlockSizeInput{
+	return blockSizeResolver(vllm.BlockSizeInput{
 		Model:        in.Scenario.Model,
 		Capability:   in.Chip.ComputeCapability,
 		TP:           max(pool.Parallel.TP, 1),

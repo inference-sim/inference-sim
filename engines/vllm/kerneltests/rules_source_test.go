@@ -3,6 +3,7 @@
 package latencykernel_test
 
 import (
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 	. "github.com/inference-sim/inference-sim/substrate/kernel"
 
@@ -72,7 +73,7 @@ func TestNewValidatesWithTheCallersRules(t *testing.T) {
 // the kind finds its rules.
 func TestAFixtureStatingOnlyTheEngineBlockFindsItsRules(t *testing.T) {
 	in := fixtureInputsAt(t, filepath.Join("testdata", "glm5-h200-tp8.yaml"))
-	if got := in.Rules.EngineVersion(); got != "0.33.0" {
-		t.Errorf("rules are for %q, want 0.33.0", got)
+	if got := in.Rules.EngineVersion(); got != upstream.Version {
+		t.Errorf("rules are for %q, want %s", got, upstream.Version)
 	}
 }

@@ -4,6 +4,7 @@ package lowering
 
 import (
 	"fmt"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 	"os"
 	"path/filepath"
 	"slices"
@@ -30,7 +31,7 @@ import (
 var data = mustData()
 
 // rulesVersion is the engine release whose rules a case lowers under.
-const rulesVersion = "0.33.0"
+const rulesVersion = upstream.Version
 
 func mustData() *load.Data {
 	d, err := load.Embedded()

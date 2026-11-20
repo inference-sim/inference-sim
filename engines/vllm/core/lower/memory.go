@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/config/engram.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
+// Derived from vllm/config/engram.py at vLLM v0.34.0+0fda86a35419 (0fda86a35419c9c70dbfada224c838c10fbb62ad):
 // EngramConfig._validate_shared_memory, resolve_dp_shared_memory, verify_parallel_config and
 // get_parallel_size (:56-117).
 // Also vllm/models/deepseek_v41/common/engram.py (ParallelEngramEmbedding, :942-1060, whose cpu_offload decides where the table lives, :1045-1052) and

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
+// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.34.0+0fda86a35419 (0fda86a35419c9c70dbfada224c838c10fbb62ad):
 // get_kv_cache_groups (:2159-2253) and _get_kv_cache_groups_uniform_page_size (:1362-1502),
 // with UniformTypeKVCacheSpecs.is_uniform_type (vllm/v1/kv_cache_interface.py:1282-1295), and
 // the DeepSeek V4 specs: MLAAttentionSpec with tokens_per_state (:686-760),

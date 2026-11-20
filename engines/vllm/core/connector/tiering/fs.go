@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/kv_offload/tiering/fs/manager.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
+// Derived from vllm/v1/kv_offload/tiering/fs/manager.py at vLLM v0.34.0+0fda86a35419 (0fda86a35419c9c70dbfada224c838c10fbb62ad).
 // Also vllm/v1/kv_offload/file_mapper.py (FileMapper), tiering/fs/io.py (the existence and
 // short-file rules of batch_store_block and batch_load_block) and tiering/fs/thread_pool.py
 // (DualQueueThreadPool's queues, whose timing is the host's).

@@ -34,7 +34,7 @@ type preparedKV struct {
 
 func prepareKV(t *testing.T, roots map[string]string, pool int) (preparedKV, kvOffload) {
 	t.Helper()
-	done, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots, Pool: pool}, nil)
+	done, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: roots, Pool: pool}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,11 +67,11 @@ func TestAMultiConnectorScenarioBuildsBothPoolsAndRunsItsPair(t *testing.T) {
 		if off.CPUBytes != 0 || off.BytesPerBlock == 0 {
 			t.Errorf("pool %d: kv_offload %+v, want only what vLLM derives from the model", i, off)
 		}
-		if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r, Pool: i}); err != nil {
+		if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: r, Pool: i}); err != nil {
 			t.Fatalf("pool %d: %v", i, err)
 		}
 	}
-	p, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r, Pool: 0})
+	p, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: r, Pool: 0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestAHostStatesTheMultiConnectorOrderInItsEngineBlock(t *testing.T) {
 	given = *given.Content[0]
 	engineBlock := poolEngine(t, multiScenario)
 	given.Content = append(given.Content, engineBlock.Content...)
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, multiScenario), Pool: 1, Config: given}
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: roots(t, multiScenario), Pool: 1, Config: given}
 	done, err := prepare(spec, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -162,11 +162,11 @@ func TestTheShippedMultiConnectorScenarioBuildsAndOffloadsItsCacheableGroup(t *t
 	Register()
 	r := roots(t, shippedScenario)
 	for pool := range 2 {
-		if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r, Pool: pool}); err != nil {
+		if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: r, Pool: pool}); err != nil {
 			t.Fatalf("pool %d: %v", pool, err)
 		}
 	}
-	p, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r, Pool: 0})
+	p, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: r, Pool: 0})
 	if err != nil {
 		t.Fatal(err)
 	}

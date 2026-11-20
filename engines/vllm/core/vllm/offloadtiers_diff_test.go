@@ -501,15 +501,15 @@ func TestFSTierEngineAgainstVLLM(t *testing.T) {
 			}
 			sum := sha256.Sum256(raw)
 			p := want.Provenance
-			if p.ScenarioSHA256 != hex.EncodeToString(sum[:]) || p.VLLMCommit != upstream.Commit ||
-				strings.SplitN(p.VLLMVersion, "+", 2)[0] != upstream.Version || p.MockVersion != mocks.Version ||
+			if p.ScenarioSHA256 != hex.EncodeToString(sum[:]) || p.VLLMCommit != upstream.OracleCommit ||
+				strings.SplitN(p.VLLMVersion, "+", 2)[0] != upstream.OracleVersion || p.MockVersion != mocks.Version ||
 				p.Tier != 4 || p.Kind != "tiered" {
 				t.Fatalf("golden provenance %+v does not match this scenario, vLLM %s and mock %s",
-					p, upstream.Version, mocks.Version)
+					p, upstream.OracleVersion, mocks.Version)
 			}
 			got := tierRun(t, &sc, len(want.Steps))
 			if d := tierDivergence(want.Steps, got); d != "" {
-				t.Fatalf("earliest divergence from vLLM %s: %s", upstream.Version, d)
+				t.Fatalf("earliest divergence from vLLM %s: %s", upstream.OracleVersion, d)
 			}
 			// What each request finished with.
 			for id := range want.Finished {

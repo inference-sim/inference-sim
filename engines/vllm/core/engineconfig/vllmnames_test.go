@@ -20,6 +20,7 @@ import (
 var notVLLMNames = map[string]string{
 	"env":               "a container of environment variables, named as vLLM reads them",
 	"allreduce_backend": "the resolved choice; EngineArgs has no such field",
+	"mamba_cache_mode":  "removed from vllm/config/cache.py by vllm-project/vllm#63830 (absent at 0fda86a3); the key stays so a stated value is refused naming the release (rule mamba-cache-mode-matches-model)",
 	"enable_scale_out":  "a front-end argument of vllm serve (BaseFrontendArgs, entrypoints/common/cli_args.py:216@4ba787ec), not an EngineArgs field",
 }
 

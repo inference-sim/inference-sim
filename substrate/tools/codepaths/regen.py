@@ -25,15 +25,21 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gen_code_paths as gen  # noqa: E402
 
 
-def fetch(repo, tag, into):
-    """One commit of repo at the release tag into the new directory into."""
+def fetch(repo, tag, into, commit=None):
+    """One commit of repo at the release tag into the new directory into. An engine pinned at a
+    commit no release names has no tag to fetch: its spec's tag is then not a release tag, and the
+    commit (40 hexadecimal digits) is fetched instead."""
     if os.path.exists(into) and os.listdir(into):
         raise gen.Refused(f"{into} is not empty; regen.py fetches into an empty directory")
     os.makedirs(into, exist_ok=True)
-    if not re.fullmatch(r"v[0-9][0-9A-Za-z.\-]*", tag):
-        raise gen.Refused(f"the spec's tag {tag!r} is not a release tag")
-    for args in (["init", "-q"], ["fetch", "-q", "--depth", "1", repo, f"+refs/tags/{tag}:refs/tags/{tag}"],
-                 ["checkout", "-q", tag]):
+    if re.fullmatch(r"v[0-9][0-9A-Za-z.\-]*", tag):
+        steps = (["init", "-q"], ["fetch", "-q", "--depth", "1", repo, f"+refs/tags/{tag}:refs/tags/{tag}"],
+                 ["checkout", "-q", tag])
+    elif commit is not None and re.fullmatch(r"[0-9a-f]{40}", commit):
+        steps = (["init", "-q"], ["fetch", "-q", "--depth", "1", repo, commit], ["checkout", "-q", "FETCH_HEAD"])
+    else:
+        raise gen.Refused(f"the spec's tag {tag!r} is not a release tag and its commit is not a full commit")
+    for args in steps:
         r = subprocess.run(["git", "-C", into, *args], capture_output=True, text=True)
         if r.returncode != 0:
             raise gen.Refused(f"fetching {repo} at {tag}: {r.stderr.strip()}")
@@ -55,7 +61,7 @@ def main(argv):
                 raise gen.Refused(f"{args.spec} names no engine.{key}")
         work = args.keep or tempfile.mkdtemp(prefix="code-paths-")
         try:
-            src = fetch(engine["repo"], engine["tag"], os.path.join(work, engine["kind"]))
+            src = fetch(engine["repo"], engine["tag"], os.path.join(work, engine["kind"]), engine.get("commit"))
             out = gen.render(gen.generate(src, spec))
         finally:
             if not args.keep:

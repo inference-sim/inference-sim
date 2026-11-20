@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/models/muse_spark/nvidia/model.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
+// Derived from vllm/models/muse_spark/nvidia/model.py at vLLM v0.34.0+0fda86a35419 (0fda86a35419c9c70dbfada224c838c10fbb62ad):
 // MuseSpark1xAttention (:1138-1146, :1167-1238), MuseSpark1xMoE (:505-539, :613-617, :638-644),
 // MuseSpark1xDecoderLayer (:1456-1497), MuseSpark1xModel (:1533, :1577-1610), gather_columns
 // (:158-167), _all_gather_norm_residual_then_norm (:214-252) and norm_residual_then_norm (:255-271). Also

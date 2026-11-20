@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
+// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.34.0+0fda86a35419 (0fda86a35419c9c70dbfada224c838c10fbb62ad):
 // _get_layer_block_stride (:1516-1518), _get_kv_cache_bytes_per_block (:1521-1553) and the
 // num_blocks of get_kv_cache_config_from_groups (:1622-1628).
 

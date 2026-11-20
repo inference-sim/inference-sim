@@ -1,6 +1,7 @@
 package kernelmodel
 
 import (
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,8 +23,8 @@ func TestTheEngineFieldNamesTheKind(t *testing.T) {
 	for _, c := range []struct {
 		name, stated, release, refusal string
 	}{
-		{"kind only", old, "0.33.0", ""},
-		{"a version stated", "engine: {kind: vllm, version: \"0.33.0\"}\n", "", "field version not found"},
+		{"kind only", old, upstream.Version, ""},
+		{"a version stated", "engine: {kind: vllm, version: \"0.34.0+0fda86a35419\"}\n", "", "field version not found"},
 		{"another kind", "engine: {kind: sglang}\n", "", `engine.kind is "sglang"`},
 	} {
 		t.Run(c.name, func(t *testing.T) {

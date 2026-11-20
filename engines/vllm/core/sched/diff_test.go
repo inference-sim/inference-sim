@@ -677,11 +677,6 @@ func checkGroupsRefusal(t *testing.T, sc scenario, want trace) {
 	}
 }
 
-// derivedAtCommit is the vLLM main head the engine's rules were ported to (row 3d): a trace marked
-// derived_from_source was read from that source, not recorded from it. A maintainer re-record on
-// Linux x86_64 replaces such a trace with a recorded one.
-const derivedAtCommit = "0fda86a35419c9c70dbfada224c838c10fbb62ad"
-
 // checkProvenance refuses a golden trace that was not produced from this exact scenario file
 // by the pinned vLLM release under the current GPU mock: a trace is only evidence for the
 // scenario it was run on.
@@ -693,15 +688,15 @@ func checkProvenance(t *testing.T, scenarioPath string, tr trace) {
 	}
 	sum := sha256.Sum256(raw)
 	p := tr.Provenance
-	vllmVersion, vllmCommit := upstream.Version, upstream.Commit
+	vllmVersion, vllmCommit := upstream.OracleVersion, upstream.OracleCommit
 	if p.DerivedFromSource != "" {
 		// A derived trace is evidence of the source it was read from, never of an oracle run: it
-		// must say so, and it names the head commit its rule was read from (the pin moves to it
-		// with the re-record), which stands in for the pin until then.
+		// must say so, and it is held to the pinned commit it was read from, not the release the
+		// recorded traces came from (a maintainer re-record replaces it with a recorded one).
 		if p.OracleRun == nil || *p.OracleRun {
 			t.Fatalf("golden trace for %s is derived from source and must record oracle_run false", filepath.Base(scenarioPath))
 		}
-		vllmVersion, vllmCommit = derivedAtCommit[:12], derivedAtCommit
+		vllmVersion, vllmCommit = upstream.Commit[:12], upstream.Commit
 	}
 	for _, c := range []struct{ field, got, want string }{
 		{"scenario_sha256", p.ScenarioSHA256, hex.EncodeToString(sum[:])},

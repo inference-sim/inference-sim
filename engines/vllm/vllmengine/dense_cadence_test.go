@@ -41,7 +41,7 @@ func TestDenseDataParallelLocalCadenceIsRefusedByName(t *testing.T) {
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: map[string]string{RootScenario: path}})
+		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: map[string]string{RootScenario: path}})
 		return err
 	}
 	for _, c := range []struct {

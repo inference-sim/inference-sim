@@ -70,7 +70,7 @@
   "long_prefill_token_threshold": true,
   "long_prefill_token_threshold_adaptive": true,
   "mamba_cache_dtype": true,
-  "mamba_cache_mode": true,
+  "mamba_cache_mode": false,
   "mamba_ssm_cache_dtype": true,
   "max_cpu_loras": true,
   "max_cudagraph_capture_size": true,

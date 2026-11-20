@@ -980,10 +980,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [h200], model: [glm-5.3, glm-5.3-flash]}
-      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 41b979880fad7ba3abaf663002c4df3ea9fa28d96737e2e328c3f584d4fbf1a3}]
-      measured_on: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 840aef008c31014671ebe5e9ead68ea293387e50ff46bc2f7177764bbda95e28}]
+      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: a504c1db15b2833828e351340653762df80de846664326a65a1f5d7b6729aaa0}]
+      measured_on: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: fc2bef0af0d223704a0529db9dbec114b039a41e0ed3c4fdc8d5a01754b3a9d1}]
       transferred_from: "hardware=h200"
-      transfer_rule: "measured on FlashInfer 0.7.0.post1's BatchMLAPagedAttentionWrapper[fa3] build (840aef008c31), which the run's image ran, and used for the pinned FlashInfer 0.7.2.post1's build (41b979880fad) on the same chip; the two builds' hashes differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.7.0.post1's BatchMLAPagedAttentionWrapper[fa3] build (840aef008c31), which the run's image ran, and used for the pinned FlashInfer 0.7.2.post1's build (41b979880fad) on the same chip; the two builds' hashes differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [81.15, 86.48]
       fit_range:
         - {dim: tokens, low: 16.0, high: 8192.0}
@@ -1003,10 +1003,10 @@ coefficients:
       fitted: false
       rate_basis: work
       scope: {hardware: [h200], model: [glm-5.3, glm-5.3-flash]}
-      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 41b979880fad7ba3abaf663002c4df3ea9fa28d96737e2e328c3f584d4fbf1a3}]
-      measured_on: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 840aef008c31014671ebe5e9ead68ea293387e50ff46bc2f7177764bbda95e28}]
+      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: a504c1db15b2833828e351340653762df80de846664326a65a1f5d7b6729aaa0}]
+      measured_on: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: fc2bef0af0d223704a0529db9dbec114b039a41e0ed3c4fdc8d5a01754b3a9d1}]
       transferred_from: "hardware=h200"
-      transfer_rule: "measured on FlashInfer 0.7.0.post1's BatchMLAPagedAttentionWrapper[fa3] build (840aef008c31), which the run's image ran, and used for the pinned FlashInfer 0.7.2.post1's build (41b979880fad) on the same chip; the two builds' hashes differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.7.0.post1's BatchMLAPagedAttentionWrapper[fa3] build (840aef008c31), which the run's image ran, and used for the pinned FlashInfer 0.7.2.post1's build (41b979880fad) on the same chip; the two builds' hashes differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [485125.0, 492608.0]
       fit_range:
         - {dim: tokens, low: 16.0, high: 8192.0}
@@ -1041,7 +1041,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [h200], model: [glm-5.3, glm-5.3-flash]}
-      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 840aef008c31014671ebe5e9ead68ea293387e50ff46bc2f7177764bbda95e28}]
+      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: fc2bef0af0d223704a0529db9dbec114b039a41e0ed3c4fdc8d5a01754b3a9d1}]
       measures:
         time: device
         execution: captured
@@ -1065,7 +1065,7 @@ coefficients:
       fitted: true
       rate_basis: work
       scope: {hardware: [h200], model: [glm-5.3, glm-5.3-flash]}
-      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 840aef008c31014671ebe5e9ead68ea293387e50ff46bc2f7177764bbda95e28}]
+      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: fc2bef0af0d223704a0529db9dbec114b039a41e0ed3c4fdc8d5a01754b3a9d1}]
       measures:
         time: device
         execution: captured
@@ -1088,7 +1088,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [h200], model: [glm-5.3, glm-5.3-flash]}
-      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 840aef008c31014671ebe5e9ead68ea293387e50ff46bc2f7177764bbda95e28}]
+      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: fc2bef0af0d223704a0529db9dbec114b039a41e0ed3c4fdc8d5a01754b3a9d1}]
       measures:
         time: device
         execution: captured
@@ -1111,10 +1111,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [h200], model: [glm-5.3, glm-5.3-flash]}
-      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 41b979880fad7ba3abaf663002c4df3ea9fa28d96737e2e328c3f584d4fbf1a3}]
-      measured_on: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 840aef008c31014671ebe5e9ead68ea293387e50ff46bc2f7177764bbda95e28}]
+      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: a504c1db15b2833828e351340653762df80de846664326a65a1f5d7b6729aaa0}]
+      measured_on: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: fc2bef0af0d223704a0529db9dbec114b039a41e0ed3c4fdc8d5a01754b3a9d1}]
       transferred_from: "hardware=h200"
-      transfer_rule: "measured on FlashInfer 0.7.0.post1's BatchMLAPagedAttentionWrapper[fa3] decode build (840aef008c31), which the run's image ran, and used for the pinned FlashInfer 0.7.2.post1's build (41b979880fad) on the same chip; the two builds' hashes differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.7.0.post1's BatchMLAPagedAttentionWrapper[fa3] decode build (840aef008c31), which the run's image ran, and used for the pinned FlashInfer 0.7.2.post1's build (41b979880fad) on the same chip; the two builds' hashes differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [25.74, 30.01]
       fit_range:
         - {dim: tokens, low: 1.0, high: 32.0}
@@ -1133,7 +1133,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [h200], model: [glm-5.3, glm-5.3-flash]}
-      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 840aef008c31014671ebe5e9ead68ea293387e50ff46bc2f7177764bbda95e28}]
+      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: fc2bef0af0d223704a0529db9dbec114b039a41e0ed3c4fdc8d5a01754b3a9d1}]
       measures:
         time: device
         execution: captured
@@ -1156,10 +1156,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [h200], model: [glm-5.3, glm-5.3-flash]}
-      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 41b979880fad7ba3abaf663002c4df3ea9fa28d96737e2e328c3f584d4fbf1a3}]
-      measured_on: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: 840aef008c31014671ebe5e9ead68ea293387e50ff46bc2f7177764bbda95e28}]
+      kernel_impls: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: a504c1db15b2833828e351340653762df80de846664326a65a1f5d7b6729aaa0}]
+      measured_on: [{library: flashinfer, variant: "BatchMLAPagedAttentionWrapper[fa3]", code_hash: fc2bef0af0d223704a0529db9dbec114b039a41e0ed3c4fdc8d5a01754b3a9d1}]
       transferred_from: "hardware=h200"
-      transfer_rule: "measured on FlashInfer 0.7.0.post1's BatchMLAPagedAttentionWrapper[fa3] decode build (840aef008c31), which the run's image ran, and used for the pinned FlashInfer 0.7.2.post1's build (41b979880fad) on the same chip; the two builds' hashes differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.7.0.post1's BatchMLAPagedAttentionWrapper[fa3] decode build (840aef008c31), which the run's image ran, and used for the pinned FlashInfer 0.7.2.post1's build (41b979880fad) on the same chip; the two builds' hashes differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [2982954.0, 4403963.0]
       fit_range:
         - {dim: tokens, low: 1.0, high: 32.0}
@@ -1265,7 +1265,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [b300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       measures:
         time: device
         execution: captured
@@ -1286,10 +1286,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [b300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
-      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 21456cf0dbe7b20b1f233422c3d97802aef4bb236f4cc308b5f2852db18a59b8}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       transferred_from: "hardware=b300"
-      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [16.75, 18.25]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1306,7 +1306,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [b300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       measures:
         time: device
         execution: captured
@@ -1327,10 +1327,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [b300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
-      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 21456cf0dbe7b20b1f233422c3d97802aef4bb236f4cc308b5f2852db18a59b8}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       transferred_from: "hardware=b300"
-      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [0.37, 0.41]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1347,7 +1347,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [b300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       measures:
         time: device
         execution: captured
@@ -1368,10 +1368,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [b300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
-      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 21456cf0dbe7b20b1f233422c3d97802aef4bb236f4cc308b5f2852db18a59b8}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       transferred_from: "hardware=b300"
-      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [18.25, 20.25]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1388,7 +1388,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [b300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       measures:
         time: device
         execution: captured
@@ -1409,10 +1409,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [b300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
-      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 21456cf0dbe7b20b1f233422c3d97802aef4bb236f4cc308b5f2852db18a59b8}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       transferred_from: "hardware=b300"
-      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [0.41, 0.45]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1429,7 +1429,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [gb200-nvl72]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 8dfe0ce1f6c39308e882f93740ba412d12a1483362bcec43b675248469db596a}]
       measures:
         time: device
         execution: captured
@@ -1450,10 +1450,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [gb200-nvl72]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 58d337700d637b103917fcc1f19b74d6d011b001fe9b3cd956a3d6dbf1d37c20}]
-      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 20b772f141e1821d4627f61db1f33e8d30f0ae4e2e0954bd35b635108fa55721}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 8dfe0ce1f6c39308e882f93740ba412d12a1483362bcec43b675248469db596a}]
       transferred_from: "hardware=gb200-nvl72"
-      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (ba8a7415fda9) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (58d337700d63) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (ba8a7415fda9) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (58d337700d63) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [18.25, 19.75]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1470,7 +1470,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [gb200-nvl72]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 8dfe0ce1f6c39308e882f93740ba412d12a1483362bcec43b675248469db596a}]
       measures:
         time: device
         execution: captured
@@ -1491,10 +1491,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [gb200-nvl72]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 58d337700d637b103917fcc1f19b74d6d011b001fe9b3cd956a3d6dbf1d37c20}]
-      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 20b772f141e1821d4627f61db1f33e8d30f0ae4e2e0954bd35b635108fa55721}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 8dfe0ce1f6c39308e882f93740ba412d12a1483362bcec43b675248469db596a}]
       transferred_from: "hardware=gb200-nvl72"
-      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (ba8a7415fda9) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (58d337700d63) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (ba8a7415fda9) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (58d337700d63) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [0.29, 0.33]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1511,7 +1511,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [gb200-nvl72]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 8dfe0ce1f6c39308e882f93740ba412d12a1483362bcec43b675248469db596a}]
       measures:
         time: device
         execution: captured
@@ -1532,10 +1532,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [gb200-nvl72]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 58d337700d637b103917fcc1f19b74d6d011b001fe9b3cd956a3d6dbf1d37c20}]
-      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 20b772f141e1821d4627f61db1f33e8d30f0ae4e2e0954bd35b635108fa55721}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 8dfe0ce1f6c39308e882f93740ba412d12a1483362bcec43b675248469db596a}]
       transferred_from: "hardware=gb200-nvl72"
-      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (ba8a7415fda9) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (58d337700d63) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (ba8a7415fda9) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (58d337700d63) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [20.25, 21.75]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1552,7 +1552,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [gb200-nvl72]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 8dfe0ce1f6c39308e882f93740ba412d12a1483362bcec43b675248469db596a}]
       measures:
         time: device
         execution: captured
@@ -1573,10 +1573,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [gb200-nvl72]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 58d337700d637b103917fcc1f19b74d6d011b001fe9b3cd956a3d6dbf1d37c20}]
-      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 20b772f141e1821d4627f61db1f33e8d30f0ae4e2e0954bd35b635108fa55721}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 8dfe0ce1f6c39308e882f93740ba412d12a1483362bcec43b675248469db596a}]
       transferred_from: "hardware=gb200-nvl72"
-      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (ba8a7415fda9) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (58d337700d63) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (ba8a7415fda9) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (58d337700d63) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [0.31, 0.35]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1593,7 +1593,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [gb300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       measures:
         time: device
         execution: captured
@@ -1614,10 +1614,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [gb300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
-      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 21456cf0dbe7b20b1f233422c3d97802aef4bb236f4cc308b5f2852db18a59b8}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       transferred_from: "hardware=gb300"
-      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [17.25, 18.7625]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1634,7 +1634,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [gb300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       measures:
         time: device
         execution: captured
@@ -1655,10 +1655,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [gb300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
-      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 21456cf0dbe7b20b1f233422c3d97802aef4bb236f4cc308b5f2852db18a59b8}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       transferred_from: "hardware=gb300"
-      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [0.37, 0.41]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1675,7 +1675,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [gb300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       measures:
         time: device
         execution: captured
@@ -1696,10 +1696,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [gb300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
-      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 21456cf0dbe7b20b1f233422c3d97802aef4bb236f4cc308b5f2852db18a59b8}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       transferred_from: "hardware=gb300"
-      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [18.75, 20.75]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1716,7 +1716,7 @@ coefficients:
       method: measured
       fitted: true
       scope: {hardware: [gb300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       measures:
         time: device
         execution: captured
@@ -1737,10 +1737,10 @@ coefficients:
       method: transferred
       fitted: false
       scope: {hardware: [gb300]}
-      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
-      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 21456cf0dbe7b20b1f233422c3d97802aef4bb236f4cc308b5f2852db18a59b8}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 9be0f76701ed318b1e2d52a5662f7df33e9597a80445452d57a78c99bc29fbca}]
       transferred_from: "hardware=gb300"
-      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips At vLLM 0fda86a35419 the pinned build is the one kernel_impls.json lists for that commit (hash above); the value is carried to it by re-keying the engine pin, the two builds not compared (assumed until an audit or a re-measurement)."
       ci95: [0.39, 0.43]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
