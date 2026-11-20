@@ -1,0 +1,11 @@
+{
+ "procedure": "diagnosis/frontend/bench_frontend.py (sha256 338a7feffa10): median of 5 timings per step of json.loads of the chat request body, vLLM v0.31.0 deepseek_v41_encoding.encode_messages (verbatim, thinking_mode=thinking), HF tokenizers encode with the DeepSeek-V4.1 tokenizer.json @5254448, sha256 over pickled (parent, 64-token block); synthetic conversations of random vocabulary ids (seed 42)",
+ "host": "the diagnosis workstation, an Apple M1 Max (10 cores, 64 GB, macOS 27.0.1), one Python thread, run 2026-10-15 -- not an H200 or H100 serving node's CPU",
+ "units": {"tokens": "prompt tokens", "*_ms": "ms"},
+ "rows": [
+  {"target": 8000, "tokens": 8232, "json_ms": 0.1, "encode_ms": 0.0, "tokenize_ms": 15.5, "hash_ms": 0.2, "total_ms": 15.9},
+  {"target": 30000, "tokens": 23782, "json_ms": 0.4, "encode_ms": 0.1, "tokenize_ms": 56.9, "hash_ms": 0.7, "total_ms": 58.2},
+  {"target": 90000, "tokens": 68442, "json_ms": 1.2, "encode_ms": 0.3, "tokenize_ms": 179.1, "hash_ms": 2.1, "total_ms": 182.7},
+  {"target": 180000, "tokens": 136524, "json_ms": 2.6, "encode_ms": 0.7, "tokenize_ms": 366.2, "hash_ms": 4.5, "total_ms": 374.0}
+ ]
+}

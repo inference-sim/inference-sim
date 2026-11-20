@@ -1,0 +1,12 @@
+# expect: requires at least one source
+kind: CoefficientSet
+name: parity-literature-without-source
+coefficients:
+  - gemm_eps_max_bf16:
+      value: 0.72
+      units: dimensionless
+      method: literature
+      fitted: false
+      scope:
+        hardware: [h200]
+      rationale: literature with no citation

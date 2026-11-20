@@ -1,0 +1,10 @@
+name: deepseek-v4-pro-0813
+source:
+  provider: huggingface
+  repo: deepseek-ai/DeepSeek-V4-Pro-0813
+  revision: 72e1d3230f6c080a530b0a1d46f8eb4602340597
+  retrieved: 2026-11-10
+licence:
+  id: MIT
+  evidence: https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro-0813/raw/72e1d3230f6c080a530b0a1d46f8eb4602340597/README.md
+drafters: [speculator]

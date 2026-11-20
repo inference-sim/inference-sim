@@ -1,0 +1,177 @@
+package kernel
+
+import (
+	"fmt"
+	"math"
+	"time"
+)
+
+// LinkID names one shared resource a transfer occupies: a node's NIC egress or ingress,
+// an on-node NVLink domain, a rack-scale NVLink domain. Two demands that name the same
+// LinkID share that link's bandwidth while both are in flight.
+//
+// An ID is opaque. Its only contract is identity: within one Kernel, and across the
+// kernels built from one deployment, the same physical link always has the same ID and
+// different links have different IDs. IDs derive from Placement, which is what makes
+// them comparable across the prefill and decode kernels of a disaggregated deployment,
+// since both price handoffs over the same fabric.
+type LinkID string
+
+// LinkUse is one link a transfer crosses, and the full rate that link offers: the physical
+// capacity of the link, which is the same number in every kernel that names it.
+type LinkUse struct {
+	Link           LinkID
+	BytesPerSecond float64
+	// Streams is how many equal flows of the transfer cross this link at once, each carrying
+	// the demand's Bytes. Zero means one. A transfer that moves one rank's payload over each
+	// of an instance's ranks at once, on rails of their own, names a link that every rail
+	// feeds with the number of ranks, and a link only one rail uses with one. The link's
+	// capacity is divided among every stream that crosses it, so a transfer alone on it gets
+	// BytesPerSecond / Streams for each flow. Streams belongs to the transfer, not to the link:
+	// two kernels name one link with one BytesPerSecond and may state different Streams.
+	Streams int
+}
+
+// streams is the number of flows the link carries for the demand, at least one.
+func (l LinkUse) streams() float64 {
+	if l.Streams < 1 {
+		return 1
+	}
+	return float64(l.Streams)
+}
+
+// PerStreamRate is the rate one flow of the transfer gets on the link when the transfer is
+// alone on it: the capacity divided among the transfer's own streams.
+func (l LinkUse) PerStreamRate() float64 { return l.BytesPerSecond / l.streams() }
+
+// TransferDemand is the work one transfer asks of the fabric: its payload, the fixed
+// floor no amount of bandwidth removes, and every link it crosses.
+//
+// It separates what concurrency changes from what it does not. Sharing a link divides
+// the rate a transfer sees on it, so the bandwidth-bound part stretches. The floor is the
+// least time a transfer takes however much bandwidth it has, and it is not added to the
+// bandwidth-bound part: alone a transfer costs the larger of the two, so the floor
+// overlaps the transfer rather than preceding it, and a second transfer on the same link
+// does not lengthen it. A duration alone cannot be split back into the two, which is why
+// a simulator arbitrating concurrent handoffs needs this rather than PDTransferTime.
+//
+// Which links a transfer crosses is a pricing fact, derived from the placements and the
+// fabric, so the kernel states it. How a link shared by several in-flight transfers is
+// divided among them (fair share, re-rating as transfers start and finish) is
+// simulation, so the simulator decides it and this type does not prescribe it.
+type TransferDemand struct {
+	// Bytes is the payload, rounded up to a whole byte.
+	Bytes int64
+	// Floor is the time the transfer takes however much bandwidth it is given.
+	Floor time.Duration
+	// Links are the links the payload crosses, each named once. A payload crosses at
+	// least one, so Links is empty only for a demand with no payload, which costs its
+	// floor alone.
+	Links []LinkUse
+}
+
+// AloneTime is the time the demand takes with every link to itself:
+//
+//	max(Floor, Bytes / min_i Links[i].PerStreamRate())
+//
+// or Floor when Links is empty. The slowest link binds because the payload crosses all
+// of them in series.
+//
+// It is the definition PDTransferTime is held to (see Kernel.PDTransferDemand), so the
+// conversion to a Duration is fixed here rather than left to each implementation: the
+// seconds are truncated to whole nanoseconds, and a time too long for a Duration
+// saturates at the largest one. An implementation that computes PDTransferTime as
+// PDTransferDemand(...).AloneTime() satisfies the law by construction.
+func (d TransferDemand) AloneTime() time.Duration {
+	if len(d.Links) == 0 {
+		return d.Floor
+	}
+	rate := math.Inf(1)
+	for _, l := range d.Links {
+		rate = math.Min(rate, l.PerStreamRate())
+	}
+	if d.Bytes <= 0 {
+		return d.Floor
+	}
+	if !(rate > 0) {
+		return time.Duration(math.MaxInt64)
+	}
+	ns := float64(d.Bytes) / rate * float64(time.Second)
+	if ns >= math.MaxInt64 {
+		return time.Duration(math.MaxInt64)
+	}
+	if t := time.Duration(ns); t > d.Floor {
+		return t
+	}
+	return d.Floor
+}
+
+// Check reports the first way the demand is malformed, or nil: a negative payload or
+// floor, a payload that crosses no link, a link with no ID, a link named twice, a negative stream count, or a rate
+// that is not a positive finite number. A payload on no link leaves an arbiter nothing to
+// share, so a kernel could pass every concurrent transfer at its solo price; a link named
+// twice would be counted twice by an arbiter dividing its bandwidth; and a zero rate
+// describes a link nothing can cross.
+func (d TransferDemand) Check() error {
+	if d.Bytes < 0 {
+		return fmt.Errorf("bytes %d is negative", d.Bytes)
+	}
+	if d.Floor < 0 {
+		return fmt.Errorf("floor %v is negative", d.Floor)
+	}
+	if d.Bytes > 0 && len(d.Links) == 0 {
+		return fmt.Errorf("%d bytes cross no link", d.Bytes)
+	}
+	seen := make(map[LinkID]bool, len(d.Links))
+	for i, l := range d.Links {
+		if l.Link == "" {
+			return fmt.Errorf("links[%d] has no id", i)
+		}
+		if seen[l.Link] {
+			return fmt.Errorf("links[%d]: %q is named twice", i, l.Link)
+		}
+		seen[l.Link] = true
+		if l.Streams < 0 {
+			return fmt.Errorf("links[%d] %q: streams %d is negative", i, l.Link, l.Streams)
+		}
+		if !(l.BytesPerSecond > 0) || math.IsInf(l.BytesPerSecond, 1) {
+			return fmt.Errorf("links[%d] %q: rate %v must be positive and finite",
+				i, l.Link, l.BytesPerSecond)
+		}
+	}
+	return nil
+}
+
+// Concurrent adds the demands of moves that run at the same time into one demand: the move of every
+// node of a pool whose workers each move their own share (plan.Transfer.Nodes, design 6.3).
+//
+// Each entry crosses its own links, so a link that two entries name carries both: its Streams
+// are the sum of the entries' streams there, and a link only one entry uses keeps that entry's
+// streams. The payload is the largest entry's, because the move ends when its slowest node ends,
+// and the floor is the largest floor, because the entries run together. The links are in the
+// order they first appear. Every entry that names a link states the same rate for it (a link has
+// one capacity); the smallest stated is kept. Empty demands (a node with nothing to move) add
+// nothing, and Concurrent of no demand is the empty demand.
+func Concurrent(ds ...TransferDemand) TransferDemand {
+	var out TransferDemand
+	at := map[LinkID]int{}
+	for _, d := range ds {
+		if d.Bytes <= 0 && len(d.Links) == 0 {
+			out.Floor = max(out.Floor, d.Floor)
+			continue
+		}
+		out.Bytes = max(out.Bytes, d.Bytes)
+		out.Floor = max(out.Floor, d.Floor)
+		for _, l := range d.Links {
+			i, ok := at[l.Link]
+			if !ok {
+				at[l.Link] = len(out.Links)
+				out.Links = append(out.Links, LinkUse{Link: l.Link, BytesPerSecond: l.BytesPerSecond, Streams: int(l.streams())})
+				continue
+			}
+			out.Links[i].Streams += int(l.streams())
+			out.Links[i].BytesPerSecond = math.Min(out.Links[i].BytesPerSecond, l.BytesPerSecond)
+		}
+	}
+	return out
+}

@@ -1,0 +1,9 @@
+name: codellama-34b-instruct-hf
+source:
+  provider: huggingface
+  repo: codellama/CodeLlama-34b-Instruct-hf
+  revision: d4c1c474abcacd32d2a6eda45f9811d38c83e93d
+  retrieved: 2026-09-16
+licence:
+  id: LicenseRef-llama2
+  evidence: https://huggingface.co/codellama/CodeLlama-34b-Instruct-hf/raw/d4c1c474abcacd32d2a6eda45f9811d38c83e93d/README.md

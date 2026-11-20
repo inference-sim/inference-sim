@@ -1,0 +1,21 @@
+# Compiled command binaries. `go build ./cmd/...` drops them in the working directory, and two
+# were once committed by accident at 4 MB each; they are rebuildable and platform-specific.
+/baseline
+/shape
+/score
+/worked-table
+/kernelscore
+/overlap-probe
+/bandprobe
+
+# Go test and coverage output
+*.test
+*.out
+
+# Python bytecode is build output, never source
+__pycache__/
+*.pyc
+
+# Measurement corpora extracted from third-party publications by scripts/extract_*, which
+# this repository does not distribute.
+/testdata/measurements/

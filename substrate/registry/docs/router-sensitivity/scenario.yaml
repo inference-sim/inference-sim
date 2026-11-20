@@ -1,0 +1,45 @@
+# The scenario the router sensitivity sweep runs (sweep.py fills the @ fields).
+# MiniMax-M2.5 served by vLLM 0.32.0 behind a prefill/decode split on GB200: a prefill pool of
+# one-GPU instances (TP1) and a decode pool of four-GPU instances (TP4 with expert parallelism),
+# joined by NIXL over 400 Gb InfiniBand. The router is the llm-d profile pair in router/<name>.yaml.
+kind: Scenario
+name: mm25-gb200-@TOPO@-@ROUTER@
+engine_version: "0.32.0"
+model: minimax-m2.5
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
+cluster:
+  hardware: gb200-nvl72
+  fabric: ib-400g
+  nodes: @NODES@
+---
+kind: Deployment
+name: mm25-gb200-@TOPO@-@ROUTER@
+pools:
+  - role: prefill
+    nodes: 1
+    parallel: {tp: 1, pp: 1, dp: 1, enable_expert_parallel: false}
+    engine:
+      quantization: nvfp4
+      kv_cache_dtype: fp8
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      gpu_memory_utilization: 0.9
+      compilation_config: {cudagraph_mode: PIECEWISE}
+  - role: decode
+    nodes: @DECODE@
+    parallel: {tp: 4, pp: 1, dp: 1, enable_expert_parallel: true}
+    engine:
+      quantization: nvfp4
+      kv_cache_dtype: fp8
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      gpu_memory_utilization: 0.9
+      compilation_config: {cudagraph_mode: PIECEWISE}
+pd_transfer:
+  connector: NixlConnector
+router:
+  endpoint_picker_config: router/@ROUTER@.yaml

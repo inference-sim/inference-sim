@@ -1,0 +1,24 @@
+kind: Scenario
+name: agentic-replay-on-h200
+model: deepseek-v3
+coefficients:
+  - cost-model-primitives
+engine:
+  kind: vllm
+  version: "0.29.0"
+# --8<-- [start:workload]
+workload:
+  trace:
+    data: traces/agentic-run.csv
+    rows: 1048576
+    header:
+      trace_version: 4
+      time_unit: microseconds
+      mode: converted
+      goodput_slo_targets:
+        critical: {ttft_ms: 500, itl_ms: 50, e2e_ms: 30000}
+# --8<-- [end:workload]
+cluster:
+  hardware: h200
+  nodes: 1
+  gpus_per_node: 8

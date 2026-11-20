@@ -1,0 +1,16 @@
+name: qwen3.5-397b-a17b-nvfp4-v2
+# A different checkpoint from nvidia/Qwen3.5-397B-A17B-NVFP4 (qwen3.5-397b-a17b-nvfp4): its
+# config.json states quant_method modelopt_mixed, quant_algo MIXED_PRECISION, and a
+# quantized_layers map that stores attention q/k/v/o, the Gated DeltaNet in_proj_qkv, in_proj_z
+# and out_proj and the shared experts at FP8 and the routed experts at NVFP4 (group 16). The
+# DeltaNet in_proj_a/in_proj_b, conv1d and the MTP module are left unquantized. The shards'
+# safetensors headers, read by range request and not committed, state the same layout.
+source:
+  provider: huggingface
+  repo: nvidia/Qwen3.5-397B-A17B-NVFP4-V2
+  revision: 8f590eae8f10bf55d9a46f79ea0280bde435c9f8
+  retrieved: 2026-11-17
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/nvidia/Qwen3.5-397B-A17B-NVFP4-V2/raw/8f590eae8f10bf55d9a46f79ea0280bde435c9f8/README.md
+drafters: [speculator]

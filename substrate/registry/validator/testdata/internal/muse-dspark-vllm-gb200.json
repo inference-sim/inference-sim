@@ -1,0 +1,46 @@
+{
+ "description": "Derived values of internal deployment measurements: the engine's speculative-decoding counters (drafts verified, and drafts accepted at each draft position), summed over each sweep.",
+ "model": "muse-spark-open-816b-a42b-nvfp4",
+ "drafter": "muse-spark-open-dspark",
+ "speculative_method": "dspark",
+ "num_spec_tokens": 7,
+ "engine": "vllm",
+ "engine_image": "vllm/vllm-openai:nightly-dd4e40142a3280ef404493e5117bde0c60c6e389 (v0.33.0rc1.dev711+gdd4e40142)",
+ "hardware": "gb200-nvl72",
+ "settings": {
+  "draft_sample_method": "probabilistic",
+  "rejection_sample_method": "block",
+  "enable_adaptive_verification": "true"
+ },
+ "workload": "agentic coding replay",
+ "sweeps": [
+  {
+   "id": "a",
+   "drafts": 247761.0,
+   "accepted_at_position": [
+    160135.0,
+    100192.5,
+    65139.0,
+    37765.5,
+    23858.5,
+    14398.5,
+    9458.5
+   ]
+  },
+  {
+   "id": "b",
+   "drafts": 275045.5,
+   "accepted_at_position": [
+    182984.0,
+    118958.5,
+    78980.5,
+    48525.0,
+    30647.5,
+    17222.5,
+    10876.5
+   ]
+  }
+ ],
+ "thinking": "on",
+ "category": "coding"
+}

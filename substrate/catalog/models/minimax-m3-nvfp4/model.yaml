@@ -1,0 +1,10 @@
+name: minimax-m3-nvfp4
+source:
+  provider: huggingface
+  repo: nvidia/MiniMax-M3-NVFP4
+  revision: 901464083161bf8612a29ff7ad29914cd4ab4a85
+  retrieved: 2026-11-11
+licence:
+  id: LicenseRef-minimax-community
+  evidence: https://huggingface.co/nvidia/MiniMax-M3-NVFP4/raw/901464083161bf8612a29ff7ad29914cd4ab4a85/README.md
+drafters: [speculator, minimax-m3-eagle3, minimax-m3-eagle3-gqa]

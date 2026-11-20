@@ -1,0 +1,3 @@
+# Validator dependencies. Pinned to major versions to keep CI reproducible.
+PyYAML>=6.0,<7.0
+pytest>=7.0,<9.0

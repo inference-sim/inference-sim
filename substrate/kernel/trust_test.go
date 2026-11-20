@@ -1,0 +1,276 @@
+package latencykernel
+
+import (
+	"github.com/inference-sim/blis-substrate/contracts/conformance/kerneltest"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/load"
+	"testing"
+
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
+)
+
+func res(name string, m vocab.Method, value float64, ci *coefficient.Interval, fit ...coefficient.Bound) resolve.Resolved {
+	return resolve.Resolved{Set: "s", Entry: coefficient.Entry{Name: name, Method: m, Value: value, CI95: ci, FitRange: fit}}
+}
+
+// VAL-3: a price records the least trusted effective rank among the coefficients it used,
+// names the method and entry that set it, and says why when the rank is not the method's own.
+func TestTrustIsTheLeastTrustedEffectiveRank(t *testing.T) {
+	tokens := func(lo, hi float64) coefficient.Bound {
+		return coefficient.Bound{Dim: string(vocab.FitTokens), Low: lo, High: hi}
+	}
+	wide := &coefficient.Interval{Low: 0, High: 100}
+	in := func(tok float64) map[string]float64 {
+		return map[string]float64{"tokens": tok, "requests": 1, "context_tokens": 10}
+	}
+	cases := []struct {
+		name     string
+		selected []resolve.Resolved
+		in       map[string]float64
+		rank     int
+		method   vocab.Method
+		flag     string
+		entry    string
+	}{
+		{"all measured, inside every range",
+			[]resolve.Resolved{res("a", vocab.MethodMeasured, 10, nil, tokens(1, 100)), res("b", vocab.MethodMeasured, 10, nil)},
+			in(50), 1, vocab.MethodMeasured, "", "a"},
+		{"one assumed entry sets the rank",
+			[]resolve.Resolved{res("a", vocab.MethodMeasured, 10, nil), res("z", vocab.MethodAssumed, 10, nil)},
+			in(50), 7, vocab.MethodAssumed, "", "z"},
+		{"a measured entry read outside its range counts as transferred",
+			[]resolve.Resolved{res("a", vocab.MethodMeasured, 10, nil, tokens(1, 100))},
+			in(500), 3, vocab.MethodMeasured, "extrapolated", "a"},
+		{"a measured entry with an unbounded-width interval counts as assumed",
+			[]resolve.Resolved{res("a", vocab.MethodMeasured, 10, wide)},
+			in(50), 7, vocab.MethodMeasured, "unidentified", "a"},
+		{"literature is below transferred, so extrapolation does not lower it",
+			[]resolve.Resolved{res("a", vocab.MethodLiterature, 10, nil, tokens(1, 100))},
+			in(500), 4, vocab.MethodLiterature, "", "a"},
+		{"not_charged has no rank and is ignored",
+			[]resolve.Resolved{res("a", vocab.MethodNotCharged, 0, nil), res("b", vocab.MethodCalibrated, 10, nil)},
+			in(50), 2, vocab.MethodCalibrated, "", "b"},
+		{"a tie goes to the name that sorts first, whatever the lookup order",
+			[]resolve.Resolved{res("y", vocab.MethodAssumed, 10, nil), res("x", vocab.MethodAssumed, 10, nil)},
+			in(50), 7, vocab.MethodAssumed, "", "x"},
+	}
+	for _, c := range cases {
+		for _, order := range [][]resolve.Resolved{c.selected, reversed(c.selected)} {
+			got := trustOf(buildTrust(order), c.in)
+			if got.Rank != c.rank || got.Method != string(c.method) || got.Flag != c.flag || got.Entry != c.entry {
+				t.Errorf("%s: got %+v, want rank %d method %s flag %q entry %s", c.name, got, c.rank, c.method, c.flag, c.entry)
+			}
+		}
+	}
+	if got := trustOf(nil, in(1)); got.Rank != 0 {
+		t.Errorf("a price that used no ranked coefficient reports the zero value, got %+v", got)
+	}
+}
+
+func reversed(in []resolve.Resolved) []resolve.Resolved {
+	out := make([]resolve.Resolved, len(in))
+	for i, r := range in {
+		out[len(in)-1-i] = r
+	}
+	return out
+}
+
+// VAL-3 end to end: a step priced by a kernel built from the committed registry reports the
+// least trusted effective rank of what it used. Muse Spark on a GB200 pool reads measured
+// GEMM, attention and collective entries and assumed host and memory ones, so the least
+// trusted is assumed; the entry named is the first by name among the assumed ones read.
+func TestAStepOnTheCommittedRegistryReportsItsTrust(t *testing.T) {
+	est, k := priceOnGB200(t, 8, fewTokens, false)
+	if est.Trust.Rank != 7 || est.Trust.Method != string(vocab.MethodAssumed) || est.Trust.Entry == "" {
+		t.Fatalf("Trust = %+v, want the assumed rank 7 with the entry named", est.Trust)
+	}
+	// The named entry is one the kernel actually selected, and it is assumed.
+	found := false
+	for _, r := range k.selected {
+		if r.Entry.Name == est.Trust.Entry && r.Entry.Method == vocab.MethodAssumed {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Trust names %q, which is not an assumed entry the kernel selected", est.Trust.Entry)
+	}
+	// An empty step prices only the host's cost and still reports a trust.
+	if empty := k.StepTime(kernel.Batch{}); empty.Trust.Rank == 0 {
+		t.Errorf("an empty step reports no trust: %+v", empty.Trust)
+	}
+	// The same step priced twice reports the same trust.
+	if again := k.StepTime(kernel.Batch{Reqs: []kernel.ReqShape{{Scheduled: 1, Computed: 4095, PromptLen: 4096}}}); again.Trust.Rank != 7 {
+		t.Errorf("a repeated step changed its trust: %+v", again.Trust)
+	}
+}
+
+// The real kernel meets the conformance suite's trust and stage laws (design VAL-3): over
+// decode-only, prefill-only and mixed batches, and the empty batch.
+func TestTheKernelMeetsTheTrustAndStageLaws(t *testing.T) {
+	_, k := priceOnGB200(t, 8, fewTokens, false)
+	decode := kernel.ReqShape{Scheduled: 1, Computed: 4095, PromptLen: 4096}
+	prefill := kernel.ReqShape{Scheduled: 512, Computed: 0, PromptLen: 512}
+	batches := []kernel.Batch{
+		{},
+		{DecodeThreshold: 1, Reqs: []kernel.ReqShape{decode}},
+		{DecodeThreshold: 1, Reqs: []kernel.ReqShape{prefill}},
+		{DecodeThreshold: 1, Reqs: []kernel.ReqShape{decode, prefill, decode}},
+	}
+	kerneltest.TestTrust(t, k, batches)
+	kerneltest.TestStages(t, k, batches)
+}
+
+// A Result reports a coefficient as extrapolated when any step the run priced read it outside
+// its fit range (design §11.3). The flag is the same verdict trustOf reports per step, kept
+// for the run: it is false until a step leaves the range, stays true after a later step is
+// inside, and is set on the entry that left the range and no other.
+func TestTrustKeepsWhichEntriesAnyStepExtrapolated(t *testing.T) {
+	tokens := func(lo, hi float64) coefficient.Bound {
+		return coefficient.Bound{Dim: string(vocab.FitTokens), Low: lo, High: hi}
+	}
+	in := func(tok float64) map[string]float64 {
+		return map[string]float64{"tokens": tok, "requests": 1, "context_tokens": 10}
+	}
+	selected := []resolve.Resolved{
+		res("a", vocab.MethodMeasured, 10, nil, tokens(1, 100)),
+		res("b", vocab.MethodMeasured, 10, nil, tokens(1, 1000)),
+		res("c", vocab.MethodMeasured, 10, nil),
+	}
+	terms := buildTrust(selected)
+	if got := extrapolatedEntries(terms); len(got) != 0 {
+		t.Fatalf("before any step, extrapolated = %v", got)
+	}
+	trustOf(terms, in(50))
+	if got := extrapolatedEntries(terms); len(got) != 0 {
+		t.Fatalf("a step inside every range extrapolated %v", got)
+	}
+	trustOf(terms, in(500))
+	got := extrapolatedEntries(terms)
+	if len(got) != 1 || !got[0] {
+		t.Fatalf("a step at 500 tokens left a's range (1-100) and not b's: extrapolated = %v, want only entry 0", got)
+	}
+	trustOf(terms, in(50))
+	if got := extrapolatedEntries(terms); !got[0] {
+		t.Errorf("a later step inside the range cleared the flag: %v", got)
+	}
+	trustOf(terms, in(5000))
+	if got := extrapolatedEntries(terms); !got[0] || !got[1] || got[2] {
+		t.Errorf("after 5000 tokens, extrapolated = %v, want entries 0 and 1 and not 2", got)
+	}
+}
+
+// The selected-entry report says which entries the steps priced so far read outside their fit
+// range: RecordSelected is called once, as OpenPool calls it, and a step priced after it
+// reaches the report.
+func TestTheReportReadsExtrapolationOfTheStepsPricedSoFar(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, k := priceOnGB200(t, 8, fewTokens, false)
+	// Replace the committed entries by one with a narrow fit range, so the test does not
+	// depend on what the registry records.
+	narrow := resolve.Resolved{Set: "cost-model-primitives", Entry: coefficient.Entry{
+		Name: "narrow", Method: vocab.MethodMeasured, Value: 1,
+		FitRange: []coefficient.Bound{{Dim: string(vocab.FitTokens), Low: 1, High: 4}}}}
+	k.selected = []resolve.Resolved{narrow}
+	k.trust = buildTrust(k.selected)
+	k.RecordSelected(d)
+	k.RecordSelected(d) // once more: the kernel is registered once and the report is unchanged
+	flag := func() bool {
+		cs := d.Report().Result().Coefficients
+		for _, c := range cs {
+			if c.Name == "narrow" {
+				return c.Extrapolated
+			}
+		}
+		t.Fatal("the entry was not recorded")
+		return false
+	}
+	if flag() {
+		t.Fatal("extrapolated before any step")
+	}
+	k.StepTime(kernel.Batch{DecodeThreshold: 1, Reqs: []kernel.ReqShape{{Scheduled: 1, Computed: 99, PromptLen: 100}}})
+	if flag() {
+		t.Fatal("one token is inside 1 to 4, but the entry is reported extrapolated")
+	}
+	k.StepTime(kernel.Batch{DecodeThreshold: 1, Reqs: []kernel.ReqShape{{Scheduled: 512, Computed: 0, PromptLen: 512}}})
+	if !flag() {
+		t.Fatal("a 512-token step is outside 1 to 4, but the report does not say the entry is extrapolated")
+	}
+}
+
+// Two kernels record into one Data, as two engine instances or a prefill and a decode pool
+// do. Only one of them leaves the range of the entry both selected; the report says so, in
+// either order, and the kernel that did not does not clear it.
+func TestTwoKernelsRecordingIntoOneDataKeepAnExtrapolation(t *testing.T) {
+	narrow := resolve.Resolved{Set: "cost-model-primitives", Entry: coefficient.Entry{
+		Name: "narrow", Method: vocab.MethodMeasured, Value: 1,
+		FitRange: []coefficient.Bound{{Dim: string(vocab.FitTokens), Low: 1, High: 4}}}}
+	small := kernel.Batch{DecodeThreshold: 1, Reqs: []kernel.ReqShape{{Scheduled: 1, Computed: 99, PromptLen: 100}}}
+	big := kernel.Batch{DecodeThreshold: 1, Reqs: []kernel.ReqShape{{Scheduled: 512, Computed: 0, PromptLen: 512}}}
+	for name, c := range map[string]struct{ first, second kernel.Batch }{
+		"only the second extrapolated": {small, big},
+		"only the first extrapolated":  {big, small},
+	} {
+		d, err := load.Embedded()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ks [2]*Kernel
+		for i, b := range []kernel.Batch{c.first, c.second} {
+			_, ks[i] = priceOnGB200(t, 8, fewTokens, false)
+			ks[i].selected = []resolve.Resolved{narrow}
+			ks[i].trust = buildTrust(ks[i].selected)
+			ks[i].RecordSelected(d)
+			ks[i].StepTime(b)
+		}
+		// A later call by the clean kernel, after the other recorded, changes nothing.
+		for _, k := range ks {
+			k.RecordSelected(d)
+		}
+		cs := d.Report().Result().Coefficients
+		if len(cs) != 1 || !cs[0].Extrapolated {
+			t.Errorf("%s: %+v, want one entry extrapolated", name, cs)
+		}
+	}
+}
+
+// The observer answers for the entry asked about and no other: two entries of one name that
+// differ in scope, or in method, are told apart.
+func TestTheKernelAnswersExtrapolatedPerEntry(t *testing.T) {
+	_, k := priceOnGB200(t, 8, fewTokens, false)
+	tokens := func(hi float64) []coefficient.Bound {
+		return []coefficient.Bound{{Dim: string(vocab.FitTokens), Low: 1, High: hi}}
+	}
+	scopeA := coefficient.Scope{Hardware: []string{"h100"}}
+	scopeB := coefficient.Scope{Hardware: []string{"h200"}}
+	mk := func(scope coefficient.Scope, m vocab.Method, hi float64) resolve.Resolved {
+		return resolve.Resolved{Set: "s", Entry: coefficient.Entry{Name: "n", Method: m, Value: 1, Scope: scope, FitRange: tokens(hi)}}
+	}
+	k.selected = []resolve.Resolved{
+		mk(scopeA, vocab.MethodMeasured, 4),      // left by a 512-token step
+		mk(scopeB, vocab.MethodMeasured, 1000),   // not left
+		mk(scopeA, vocab.MethodCalibrated, 1000), // same scope as the first, another method, not left
+	}
+	k.trust = buildTrust(k.selected)
+	k.StepTime(kernel.Batch{DecodeThreshold: 1, Reqs: []kernel.ReqShape{{Scheduled: 512, Computed: 0, PromptLen: 512}}})
+	for _, c := range []struct {
+		scope  coefficient.Scope
+		method vocab.Method
+		want   bool
+	}{
+		{scopeA, vocab.MethodMeasured, true},
+		{scopeB, vocab.MethodMeasured, false},
+		{scopeA, vocab.MethodCalibrated, false},
+	} {
+		if got := k.Extrapolated("s", "n", c.scope, string(c.method), nil); got != c.want {
+			t.Errorf("Extrapolated(s, n, %s, %s) = %v, want %v", c.scope.Key(), c.method, got, c.want)
+		}
+	}
+	if k.Extrapolated("other", "n", scopeA, string(vocab.MethodMeasured), nil) || k.Extrapolated("s", "m", scopeA, string(vocab.MethodMeasured), nil) {
+		t.Error("an entry of another set or name is reported extrapolated")
+	}
+}

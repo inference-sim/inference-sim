@@ -1,0 +1,7 @@
+# Vendor configs are committed byte-for-byte. Never normalise them, or
+# the diff against upstream stops meaning anything.
+models/*/config.json -text
+
+# Keep authored YAML diffs readable and stable across platforms
+*.yaml text eol=lf
+*.yml  text eol=lf

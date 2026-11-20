@@ -1,0 +1,10 @@
+name: qwen3.8-27b
+source:
+  provider: huggingface
+  repo: Qwen/Qwen3.8-27B
+  revision: 37561816e66b5b9153b1b64c10968c18c1e6f4a0
+  retrieved: 2026-11-17
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/Qwen/Qwen3.8-27B/raw/37561816e66b5b9153b1b64c10968c18c1e6f4a0/README.md
+drafters: [speculator]

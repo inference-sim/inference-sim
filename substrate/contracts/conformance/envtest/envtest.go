@@ -1,0 +1,190 @@
+// Package envtest is a small reference implementation of env.Environment that prices from
+// fixed test values, and the checks every implementation of the Environment contract runs
+// against itself (design §6.3). Engine tests use the reference; inference-sim's own
+// implementation runs the checks.
+//
+// The reference is not a cost model. It prices a step as a base plus a rate per launched token,
+// so a test can predict every figure it asserts, and it knows no engine.
+package envtest
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/env"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/units"
+)
+
+// Reference prices from fixed values. The zero value is not usable: set the maps and rates.
+type Reference struct {
+	Graphs   map[string]*model.Graph
+	Chips    map[string]*hardware.Chip
+	Profiles map[[3]string]acceptance.Profile
+	// StepBase and PerToken price a step: StepBase plus PerToken for each launched token on the
+	// busiest rank.
+	StepBase time.Duration
+	PerToken time.Duration
+	// ActivationPerToken sizes activations per token of the plan's profiling shape, the cost
+	// model's share of Memory.
+	ActivationPerToken units.Bytes
+	// BytesPerSecond is the one link every transfer crosses.
+	BytesPerSecond float64
+	// BytesPerToken is the KV bytes a transferred token carries.
+	BytesPerToken units.Bytes
+	// AdmissionPerToken and AdmissionDelay price a request's admission: it holds a server of
+	// the plan's admission queue for AdmissionPerToken per prompt token and waits AdmissionDelay
+	// besides.
+	AdmissionPerToken time.Duration
+	AdmissionDelay    time.Duration
+}
+
+var _ env.Environment = (*Reference)(nil)
+
+// Boundary returns the simulator's side of the transfer boundary for enginetest.Options: each
+// transfer an engine starts goes through env.DemandFor against e, and the demand must carry a
+// payload over at least one link (zero bytes for a move of no tokens), the same laws Check holds
+// an Environment to. It is what a
+// simulator does for every entry of Batch.TransfersStarted.
+func Boundary(e env.Environment) func(plan.PoolPlan, engine.Transfer) error {
+	return func(p plan.PoolPlan, t engine.Transfer) error {
+		d, err := env.DemandFor(e, p, t)
+		if err != nil {
+			return err
+		}
+		if t.Move.Tokens == 0 {
+			if d.Bytes != 0 {
+				return fmt.Errorf("transfer %d moves no tokens and has demand %+v; it demands zero bytes", t.ID, d)
+			}
+			return nil
+		}
+		if d.Bytes <= 0 || len(d.Links) == 0 {
+			return fmt.Errorf("transfer %d of %d tokens has demand %+v; it carries a payload over at least one link", t.ID, t.Tokens, d)
+		}
+		return nil
+	}
+}
+
+// Graph implements env.Environment.
+func (r *Reference) Graph(name string) (*model.Graph, error) {
+	if g, ok := r.Graphs[name]; ok {
+		return g, nil
+	}
+	return nil, fmt.Errorf("envtest: no model %q", name)
+}
+
+// Chip implements env.Environment.
+func (r *Reference) Chip(name string) (*hardware.Chip, error) {
+	if c, ok := r.Chips[name]; ok {
+		return c, nil
+	}
+	return nil, fmt.Errorf("envtest: no chip %q", name)
+}
+
+// Memory implements env.Environment: the plan's GPU weights and buffers, plus activations for
+// one launched token count. A partial plan has no KV budget yet and needs none.
+func (r *Reference) Memory(partial plan.PoolPlan) (kernel.MemoryBreakdown, error) {
+	if err := partial.Validate(); err != nil {
+		return kernel.MemoryBreakdown{}, err
+	}
+	m, err := plan.MemoryOf(partial, max(1, partial.Layout.RanksPerNode))
+	if err != nil {
+		return kernel.MemoryBreakdown{}, err
+	}
+	return kernel.MemoryBreakdown{
+		Weights:        int64(m.WeightsGPU.Value()),
+		ActivationPeak: int64(r.ActivationPerToken) * int64(max(1, partial.Layout.Tensor)),
+		CommBuffers:    int64(m.BuffersGPU.Value()),
+	}, nil
+}
+
+// Price implements env.Environment.
+func (r *Reference) Price(p plan.PoolPlan, step plan.StepShape) (kernel.StepEstimate, error) {
+	if err := p.Validate(); err != nil {
+		return kernel.StepEstimate{}, err
+	}
+	if err := step.Validate(max(1, p.Layout.Data), p.Layout.Stages()); err != nil {
+		return kernel.StepEstimate{}, err
+	}
+	if step.Mode == plan.StepIdle || step.Mode == plan.StepPrebuilt {
+		return kernel.StepEstimate{Bottleneck: kernel.ResourceHost}, nil
+	}
+	var busiest units.Tokens
+	for i := range step.Ranks {
+		n := step.Padded[i].Tokens
+		busiest = max(busiest, n)
+	}
+	d := r.StepBase + time.Duration(busiest)*r.PerToken
+	return kernel.StepEstimate{Overlap: d, NoOverlap: d, Bottleneck: kernel.ResourceSM}, nil
+}
+
+// TransferDemand implements env.Environment. A move with one endpoint crosses the one link "ref". A
+// move that every node makes (Transfer.Nodes) names a link for each end of each entry: a peer pull
+// leaves "ref/egress/<node>" and lands on "ref/ingress/<node>", and an offload copy uses
+// "ref/tier/<node>". The entries are priced one by one and added with kernel.Concurrent, so two
+// nodes that land on one node's ingress load it twice. A move that states Groups has the bytes of
+// those groups' pages (PoolPlan.GroupMoveBytes).
+func (r *Reference) TransferDemand(p plan.PoolPlan, t plan.Transfer) (kernel.TransferDemand, error) {
+	if err := p.CheckTransfer(t); err != nil {
+		return kernel.TransferDemand{}, err
+	}
+	if t.Tokens == 0 {
+		// A pull that finds its KV already here: no payload, no link, and no floor, because the
+		// reference charges no handshake. The design prices none (section 6.2).
+		return kernel.TransferDemand{}, nil
+	}
+	if r.BytesPerSecond <= 0 {
+		return kernel.TransferDemand{}, fmt.Errorf("envtest: no link rate")
+	}
+	bytes := int64(t.Tokens) * int64(r.BytesPerToken)
+	if b, ok := p.GroupMoveBytes(t); ok {
+		bytes = int64(b)
+	}
+	one := func(from, to plan.Endpoint) kernel.TransferDemand {
+		links := []kernel.LinkUse{{Link: "ref", BytesPerSecond: r.BytesPerSecond}}
+		if len(t.NodeList()) == 0 {
+			return kernel.TransferDemand{Bytes: bytes, Links: links}
+		}
+		if t.Kind == plan.TransferPeer {
+			links = []kernel.LinkUse{
+				{Link: kernel.LinkID(fmt.Sprintf("ref/egress/%d", from.Node)), BytesPerSecond: r.BytesPerSecond},
+				{Link: kernel.LinkID(fmt.Sprintf("ref/ingress/%d", to.Node)), BytesPerSecond: r.BytesPerSecond},
+			}
+		} else {
+			links = []kernel.LinkUse{{Link: kernel.LinkID(fmt.Sprintf("ref/tier/%d", from.Node)), BytesPerSecond: r.BytesPerSecond}}
+		}
+		return kernel.TransferDemand{Bytes: bytes, Links: links}
+	}
+	if len(t.NodeList()) == 0 {
+		return one(t.From, t.To), nil
+	}
+	ds := make([]kernel.TransferDemand, len(t.NodeList()))
+	for i, n := range t.NodeList() {
+		ds[i] = one(n.From, n.To)
+	}
+	return kernel.Concurrent(ds...), nil
+}
+
+// HostDemand implements env.Environment.
+func (r *Reference) HostDemand(p plan.PoolPlan, promptTokens int) (kernel.HostDemand, error) {
+	if err := p.Validate(); err != nil {
+		return kernel.HostDemand{}, err
+	}
+	if promptTokens <= 0 {
+		return kernel.HostDemand{}, nil
+	}
+	return kernel.HostDemand{Service: time.Duration(promptTokens) * r.AdmissionPerToken, Delay: r.AdmissionDelay}, nil
+}
+
+// Acceptance implements env.Environment.
+func (r *Reference) Acceptance(modelName, drafter, workload string) (acceptance.Profile, error) {
+	if pr, ok := r.Profiles[[3]string{modelName, drafter, workload}]; ok {
+		return pr, nil
+	}
+	return acceptance.Profile{}, fmt.Errorf("envtest: no acceptance profile for %s / %s / %s", modelName, drafter, workload)
+}
