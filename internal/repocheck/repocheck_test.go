@@ -70,7 +70,15 @@ func TestCheckImportsCatchesEachBrokenRule(t *testing.T) {
 		{"an sglang package imports vllm",
 			[]Package{pkg("engines/sglang", "engines/vllm/core")}, "an engine module imports no other", "engines/sglang"},
 		{"an engine imports a substrate component beyond contracts",
-			[]Package{pkg("engines/vllm/core", "substrate/kernel")}, "X7, Table 1", "engines/vllm/core"},
+			[]Package{pkg("engines/vllm/core", "substrate/catalog")}, "X7, Table 1", "engines/vllm/core"},
+		{"an engine imports the simulator",
+			[]Package{pkg("engines/sglang", "sim/cluster")}, "X7, Table 1", "engines/sglang"},
+		{"the substrate imports the simulator",
+			[]Package{pkg("substrate/kernel", "sim/cluster")}, "X7, Table 1", "substrate/kernel"},
+		{"the substrate tools import an engine",
+			[]Package{pkg("substrate/tools/prcheck", "engines/vllm/core")}, "X2", "substrate/tools/prcheck"},
+		{"the sglang engine imports the cost model",
+			[]Package{pkg("engines/sglang", "substrate/kernel")}, "X7, Table 1", "engines/sglang"},
 		{"a directory no row owns",
 			[]Package{pkg("substrate/newthing")}, "X7, Table 1", "substrate/newthing"},
 		{"an engine directory no row owns",
@@ -220,16 +228,46 @@ func TestNoNestedModule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Rows 2.5a, 2.6a and 2.7a import the history of blis-substrate, blis-vllm and blis-sglang with
-	// their go.mod; the combined import-rewrite PR deletes all three together with this exemption.
-	var nested []string
-	for _, g := range got {
-		if g != "substrate/go.mod" && g != "engines/vllm/go.mod" && g != "engines/sglang/go.mod" {
-			nested = append(nested, g)
+	if len(got) != 0 {
+		t.Fatalf("SUB-13: one Go module, no nested go.mod; found %v", got)
+	}
+}
+
+func TestEngineImportSitesFixtures(t *testing.T) {
+	const imp = "package x\nimport _ \"" + mod + "/engines/vllm/core\"\n"
+	root := t.TempDir()
+	if got, err := EngineImportSites(root, mod, EngineSites); err != nil || len(got) != 0 {
+		t.Fatalf("a tree without sim/ and cmd/: %v, %v", got, err)
+	}
+	write(t, root, "cmd/engine_build.go", imp)
+	write(t, root, "cmd/sglang_engine.go", strings.ReplaceAll(imp, "vllm/core", "sglang"))
+	write(t, root, "cmd/x_test.go", imp)
+	write(t, root, "sim/cluster/x_test.go", imp)
+	write(t, root, "sim/y.go", "package sim\nimport _ \"fmt\"\nimport _ \""+mod+"/substrate/contracts/engine\"\n")
+	if got, err := EngineImportSites(root, mod, EngineSites); err != nil || len(got) != 0 {
+		t.Fatalf("the two build sites, tests, and substrate imports are allowed: %v, %v", got, err)
+	}
+	for _, rel := range []string{"cmd/other.go", "sim/cluster/z.go", "sim/z.go"} {
+		r := t.TempDir()
+		write(t, r, rel, imp)
+		got, err := EngineImportSites(r, mod, EngineSites)
+		if err != nil || len(got) != 1 || got[0].Where != rel {
+			t.Errorf("%s: got %v, %v", rel, got, err)
 		}
 	}
-	if len(nested) != 0 {
-		t.Fatalf("SUB-13: one Go module, no nested go.mod; found %v", nested)
+	// With the sites list emptied the real build sites are caught: the check does bite.
+	if got, _ := EngineImportSites(root, mod, nil); len(got) != 2 {
+		t.Errorf("without the allowed sites both build files are findings, got %v", got)
+	}
+}
+
+func TestEnginesAreImportedOnlyAtTheirBuildSites(t *testing.T) {
+	got, err := EngineImportSites(repoRoot(t), mod, EngineSites)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range got {
+		t.Error(v)
 	}
 }
 
