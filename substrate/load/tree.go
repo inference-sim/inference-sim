@@ -29,28 +29,12 @@ type rules struct {
 	ignored  func(rel string) bool
 	// refused names top-level directories whose every file is refused, with the reason.
 	refused map[string]string
-	// extraDirs are data directories deeper than the top level that no pattern names yet:
-	// every file in one must match a pattern, so a file there before its pattern exists is
-	// refused rather than skipped.
-	extraDirs []string
 }
 
-// inData reports whether rel is in a data directory, and whether it is an ancestor of one
-// (a directory the walk must enter to reach an extra data directory).
-func (r rules) inData(dirs map[string]bool, rel string) (in, ancestor bool) {
+// inData reports whether rel is in a data directory.
+func (r rules) inData(dirs map[string]bool, rel string) bool {
 	first, _, _ := strings.Cut(rel, "/")
-	if dirs[first] {
-		return true, false
-	}
-	for _, e := range r.extraDirs {
-		if rel == e || strings.HasPrefix(rel, e+"/") {
-			return true, false
-		}
-		if strings.HasPrefix(e, rel+"/") {
-			ancestor = true
-		}
-	}
-	return false, ancestor
+	return dirs[first]
 }
 
 // dataDirs returns the data directories the patterns name: each pattern's first segment.
@@ -96,9 +80,8 @@ func readTree(label string, fsys fs.FS, r rules) (*tree, error) {
 			}
 			return nil
 		}
-		in, ancestor := r.inData(dirs, rel)
-		if !in {
-			if d.IsDir() && !ancestor {
+		if !r.inData(dirs, rel) {
+			if d.IsDir() {
 				return fs.SkipDir
 			}
 			return nil
