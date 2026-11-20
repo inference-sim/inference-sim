@@ -88,6 +88,33 @@ func TestEveryNotModelledFieldCitesAnIssueOfThisRepository(t *testing.T) {
 	}
 }
 
+// A field Resolve refuses by the issue of its feature (config.RefusalIssue) is listed in the field
+// list under the same issue, so the dashboard's reason and the refusal a run meets name one issue.
+// A field Resolve accepts is exempt: the engine refuses what it sets, with its own message.
+func TestTheFieldListCitesTheIssueResolveRefusesTheFieldWith(t *testing.T) {
+	l, err := fields.Load("fields.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, f := range l.Fields {
+		if f.Source != "config" || f.Status != fields.StatusNotModelled {
+			continue
+		}
+		issue, ok := config.RefusalIssue(f.Name)
+		if !ok {
+			continue
+		}
+		checked++
+		if f.Evidence.Issue != issue {
+			t.Errorf("%s is listed under %s, and Resolve refuses it citing %s", f.Name, f.Evidence.Issue, issue)
+		}
+	}
+	if checked < 50 {
+		t.Errorf("only %d fields checked; the families of config/accepted.go name more", checked)
+	}
+}
+
 // fields/README.md names every not_modelled field whose estimation rule is leave_unset, and only
 // those. The list drifts the moment a field gains or loses the rule, so this test fails either way.
 func TestReadmeNamesEveryLeaveUnsetField(t *testing.T) {

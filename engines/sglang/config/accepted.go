@@ -5,6 +5,7 @@ package config
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // The input space Resolve models: the inputs the oracle's cases cover (oracle/serverargs/cases.json).
@@ -70,13 +71,71 @@ var acceptedFields = map[string][]any{
 }
 
 // refusedFieldIssue names, for a field another open issue covers, that issue instead of the
-// general one.
-var refusedFieldIssue = map[string]string{
-	"attn_cp_size":      "inference-sim/blis-sglang#26",
-	"dcp_size":          "inference-sim/blis-sglang#26",
-	"enable_prefill_cp": "inference-sim/blis-sglang#26",
-	"cp_strategy":       "inference-sim/blis-sglang#26",
-	"dcp_comm_backend":  "inference-sim/blis-sglang#26",
+// general one. A family is the settings of one feature the engine does not model: the issue that
+// models the feature is the one a user waits on.
+var refusedFieldIssue = func() map[string]string {
+	const repo = "inference-sim/blis-sglang#"
+	m := map[string]string{}
+	put := func(issue string, names ...string) {
+		for _, n := range names {
+			m[n] = repo + issue
+		}
+	}
+	put("26", "attn_cp_size", "dcp_size", "enable_prefill_cp", "cp_strategy", "dcp_comm_backend")
+	put("64", "disaggregation_mode", "disaggregation_bootstrap_port", "disaggregation_decode_allocation_policy",
+		"disaggregation_decode_extra_slots", "disaggregation_decode_polling_interval", "disaggregation_enable_kv_checksum")
+	put("65", "disaggregation_decode_enable_offload_kvcache", "disaggregation_decode_enable_radix_cache",
+		"disaggregation_decode_host_receive_threshold", "disaggregation_decode_retraction_backup")
+	put("66", "disaggregation_ib_device", "disaggregation_transfer_backend")
+	put("38", "enable_hierarchical_cache", "hicache_ratio", "hicache_host_memory_fraction", "hicache_host_memory_mode", "hicache_io_backend",
+		"hicache_mem_layout", "hicache_size", "hicache_write_policy")
+	put("40", "hicache_storage_backend", "hicache_storage_prefetch_policy", "hicache_storage_prefetch_retry_max_attempts",
+		"hicache_storage_prefetch_retry_poll_interval", "file_storage_path")
+	put("87", "hicache_storage_backend_extra_config")
+	put("70", "enable_dp_attention", "load_balance_method", "attn_dp_size", "moe_dp_size", "enable_dp_lm_head", "enable_dp_attention_local_control_broadcast")
+	put("71", "deepep_config", "deepep_dispatcher_output_dtype", "deepep_mode", "deepep_v2_mode", "fuseep_mode",
+		"enable_eplb", "eplb_algorithm", "eplb_min_rebalancing_utilization_threshold", "eplb_rebalance_layers_per_chunk",
+		"eplb_rebalance_num_iterations", "ep_dispatch_algorithm", "ep_num_redundant_experts", "init_expert_location",
+		"enable_two_batch_overlap", "tbo_token_distribution_threshold", "expert_distribution_recorder_buffer_size",
+		"expert_distribution_recorder_mode", "expert_balancedness_report_mode", "moe_a2a_backend")
+	put("72", "pp_size", "pp_max_micro_batch_size", "pp_async_batch_depth")
+	put("73", "swa_full_tokens_ratio", "disable_hybrid_swa_memory", "swa_prefix_tails")
+	put("94", "mamba_backend", "mamba_full_memory_ratio", "mamba_max_states_per_path", "mamba_track_interval", "max_mamba_cache_size")
+	for _, n := range FieldNames() {
+		switch {
+		case strings.HasPrefix(n, "speculative_dspark_"):
+			put("69", n)
+		case strings.HasPrefix(n, "speculative_"):
+			put("68", n)
+		}
+	}
+	return m
+}()
+
+// refusedValueIssue names, for a field Resolve models at some values only, the open issue that
+// models one value it refuses; a value absent here takes the field's issue.
+var refusedValueIssue = map[string]map[string]string{
+	"moe_a2a_backend": {"mooncake": "inference-sim/blis-sglang#30"},
+	"hicache_storage_backend": {
+		"mooncake": "inference-sim/blis-sglang#14", "aibrix": "inference-sim/blis-sglang#16", "eic": "inference-sim/blis-sglang#16",
+		"simm": "inference-sim/blis-sglang#16", "mori": "inference-sim/blis-sglang#16", "tensorcast": "inference-sim/blis-sglang#16",
+	},
+	"speculative_algorithm":           {"DSPARK": "inference-sim/blis-sglang#69"},
+	"disaggregation_transfer_backend": {"mooncake": "inference-sim/blis-sglang#18", "mooncake_tcp": "inference-sim/blis-sglang#18"},
+}
+
+// refusalIssue is the open issue that models name at value v: the value's own, else the field's,
+// else the general one.
+func refusalIssue(name string, v any) string {
+	if sv, isString := v.(string); isString {
+		if i, ok := refusedValueIssue[name][sv]; ok {
+			return i
+		}
+	}
+	if i, ok := refusedFieldIssue[name]; ok {
+		return i
+	}
+	return issueRest
 }
 
 // acceptedModels are the architectures (after SGLang's config translation) and the chips each
@@ -111,16 +170,12 @@ func checkAccepted(args *ServerArgs, in Input) error {
 		v := args.value(name)
 		allowed, ok := acceptedFields[name]
 		if !ok {
-			issue := refusedFieldIssue[name]
-			if issue == "" {
-				issue = issueRest
-			}
 			return &NotModelled{Name: name, Value: v,
-				Reason: "Resolve does not model this field away from its default", Issue: issue}
+				Reason: "Resolve does not model this field away from its default", Issue: refusalIssue(name, v)}
 		}
 		if allowed != nil && !contains(allowed, v) {
 			return &NotModelled{Name: name, Value: v,
-				Reason: fmt.Sprintf("Resolve models only %v for this field", allowed), Issue: issueRest}
+				Reason: fmt.Sprintf("Resolve models only %v for this field", allowed), Issue: refusalIssue(name, v)}
 		}
 	}
 	if args.SpeculativeAlgorithm != nil &&
@@ -130,12 +185,8 @@ func checkAccepted(args *ServerArgs, in Input) error {
 			Issue:  issueRest}
 	}
 	if args.DisaggregationMode != "null" && args.DisaggregationTransferBackend != "nixl" {
-		issue := issueRest
-		if args.DisaggregationTransferBackend == "mooncake" {
-			issue = "inference-sim/blis-sglang#18"
-		}
 		return &NotModelled{Name: "disaggregation_transfer_backend", Value: args.DisaggregationTransferBackend,
-			Reason: "Resolve models P/D disaggregation over nixl", Issue: issue}
+			Reason: "Resolve models P/D disaggregation over nixl", Issue: refusalIssue("disaggregation_transfer_backend", args.DisaggregationTransferBackend)}
 	}
 	if args.SpeculativeAlgorithm != nil && !eagleDraftInTarget[in.Model.Architecture] {
 		return &NotModelled{Name: "speculative_algorithm", Value: *args.SpeculativeAlgorithm,
@@ -180,6 +231,13 @@ func containsInt(l []int, v int) bool {
 		}
 	}
 	return false
+}
+
+// RefusalIssue is the open issue a refusal of the field by name cites when the field is set away
+// from its default and Resolve does not model it, and false when the field has no issue of its own.
+func RefusalIssue(name string) (string, bool) {
+	i, ok := refusedFieldIssue[name]
+	return i, ok
 }
 
 // AcceptsValue reports whether Resolve accepts the field set to the value: the field is accepted and
