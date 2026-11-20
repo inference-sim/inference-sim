@@ -977,7 +977,7 @@ head:
   k: 2560
   weight_dtype: bf16
 speculator:
-  method: qwen4_exp_mtp
+  method: mtp
   num_spec_tokens: 1
   stack:
     pattern:

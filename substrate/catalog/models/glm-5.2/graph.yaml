@@ -504,7 +504,7 @@ head:
   n: 154880
   k: 6144
 speculator:
-  method: deepseek_mtp
+  method: mtp
   num_spec_tokens: 1
   stack:
     pattern:

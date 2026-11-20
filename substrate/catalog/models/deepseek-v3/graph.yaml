@@ -342,7 +342,7 @@ head:
   k: 7168
   weight_dtype: bf16
 speculator:
-  method: deepseek_mtp
+  method: mtp
   num_spec_tokens: 1
   stack:
     pattern:

@@ -242,7 +242,7 @@ head:
   k: 2688
   weight_dtype: bf16
 speculator:
-  method: nemotron_h_mtp
+  method: mtp
   num_spec_tokens: 1
   stack:
     pattern:

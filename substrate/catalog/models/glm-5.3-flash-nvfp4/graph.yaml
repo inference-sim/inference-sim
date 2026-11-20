@@ -699,7 +699,7 @@ head:
   k: 4096
   weight_dtype: bf16
 speculator:
-  method: glm5_next_mtp
+  method: mtp
   num_spec_tokens: 1
   stack:
     pattern:

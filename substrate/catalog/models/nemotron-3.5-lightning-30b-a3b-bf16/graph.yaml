@@ -179,7 +179,7 @@ head:
   n: 131072
   k: 2688
 speculator:
-  method: nemotron_h_mtp
+  method: mtp
   num_spec_tokens: 1
   stack:
     pattern:
