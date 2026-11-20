@@ -15,9 +15,9 @@ import (
 // An edit of a pull request's title or body starts no CI run. The ruleset reads the newest CI run
 // on the head commit, so a run that skips every job leaves the required checks "expected" and
 // blocks the merge (#2261). A retarget is also an edit; a push or a close and reopen runs CI.
-// The checks that read the text (blis.yml, private-names.yml, golden-change.yml) still run on
-// an edit. The text checks' conditions are evaluated for an edit, so the tests check what a run
-// does and not how the files are written.
+// No check reads the text of a pull request or runs on a schedule (design §4.2): blis.yml,
+// private-names.yml and golden-change.yml do not run on an edit either, and none of the four
+// reads the title or the body.
 
 type ghEvent struct{ action string }
 
@@ -179,8 +179,19 @@ func editCIFindings(t *testing.T, files map[string]string) []string {
 	t.Helper()
 	var bad []string
 	add := func(f, s string) { bad = append(bad, f+": "+s) }
-	for _, f := range []string{"ci.yml"} {
+	for _, f := range []string{"ci.yml", "blis.yml", "private-names.yml", "golden-change.yml"} {
 		w := readWf(t, files[f])
+		if _, ok := w.On["schedule"]; ok && f == "blis.yml" {
+			add(f, "runs on a schedule; no BLIS check does (design §4.2)")
+		}
+		for _, line := range strings.Split(files[f], "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "#") {
+				continue
+			}
+			if strings.Contains(line, "github.event.pull_request.body") || strings.Contains(line, "github.event.pull_request.title") {
+				add(f, "reads the title or body of the pull request: "+strings.TrimSpace(line))
+			}
+		}
 		pr, _ := w.On["pull_request"].(map[string]any)
 		types, _ := pr["types"].([]any)
 		if slices.Contains(types, any("edited")) {
@@ -198,19 +209,6 @@ func editCIFindings(t *testing.T, files map[string]string) []string {
 			}
 			if evalExpr(t, name, eventEdit) != evalExpr(t, name, eventPush) {
 				add(f, "job "+id+" has a name that depends on the event, so the ruleset may not find the required name")
-			}
-		}
-	}
-	for _, f := range []string{"blis.yml", "private-names.yml", "golden-change.yml"} {
-		w := readWf(t, files[f])
-		pr, _ := w.On["pull_request"].(map[string]any)
-		types, _ := pr["types"].([]any)
-		if !slices.Contains(types, any("edited")) {
-			add(f, "does not run for an edited pull request, but its check reads the title and body")
-		}
-		for id, j := range w.Jobs {
-			if j.If != "" && !editTruthy(evalExpr(t, j.If, eventEdit)) && strings.Contains(j.If, "edited") {
-				add(f, "job "+id+" is skipped on an edit")
 			}
 		}
 	}
@@ -258,7 +256,16 @@ func TestAnEditOfThePullRequestTextStartsNoCIRun(t *testing.T) {
 	t.Run("a required check changes its name on an edit", func(t *testing.T) {
 		has(t, mutate("ci.yml", `name: "lint"`, `name: "lint${{ github.event.action == 'edited' && ' (edit)' || '' }}"`), "job lint has a name that depends on the event")
 	})
-	t.Run("the text checks must run on an edit", func(t *testing.T) {
-		has(t, mutate("private-names.yml", "[opened, edited, synchronize, reopened]", "[opened, synchronize, reopened]"), "does not run for an edited pull request")
+	t.Run("a text check runs on an edit", func(t *testing.T) {
+		has(t, mutate("private-names.yml", "[opened, synchronize, reopened]", "[opened, edited, synchronize, reopened]"), "private-names.yml: runs for an edited pull request")
+		has(t, mutate("golden-change.yml", "[opened, synchronize, reopened]", "[opened, edited, synchronize, reopened]"), "golden-change.yml: runs for an edited pull request")
+		has(t, mutate("blis.yml", "[opened, synchronize, reopened, ready_for_review]", "[opened, edited, synchronize, reopened, ready_for_review]"), "blis.yml: runs for an edited pull request")
+	})
+	t.Run("a check reads the body or the title", func(t *testing.T) {
+		has(t, mutate("golden-change.yml", "          BASE:", "          BODY: ${{ github.event.pull_request.body }}\n          BASE:"), "golden-change.yml: reads the title or body")
+		has(t, mutate("private-names.yml", "          BASE:", "          TITLE: ${{ github.event.pull_request.title }}\n          BASE:"), "private-names.yml: reads the title or body")
+	})
+	t.Run("blis.yml runs on a schedule", func(t *testing.T) {
+		has(t, mutate("blis.yml", "  pull_request:\n", "  schedule:\n    - cron: \"17 5 * * *\"\n  pull_request:\n"), "blis.yml: runs on a schedule")
 	})
 }

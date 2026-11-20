@@ -1,45 +1,29 @@
 name: blis
 
-# The BLIS checks (design §13.2, §13.4), run from this repository's own tree (X21): the
-# pull-request checks (description, review questions, commit policy, workflow lint, version
-# literals, documentation references, cited issues, quarantine, the generated AGENTS.md section and
-# pull-request template, the selected-version lint), and the nightly checks (cited issues stay
-# open, X28). Both are local reusable workflows, so they run at the commit of this workflow.
+# The BLIS pull-request checks (design §13.2), run from this repository's own tree (X21): the
+# commit policy, workflow lint, version literals, documentation references, licence and notice
+# files, the generated AGENTS.md section and pull-request template, and the selected-version
+# lint. They are a local reusable workflow, so they run at the commit of this workflow. No check
+# reads the text of a pull request or an issue, and none runs on a schedule (design §4.2).
 
 on:
   pull_request:
-    # edited: retargeting the next pull request of a squash stack to main starts the checks (ci.yml
-    # runs for a retarget through ci-retarget.yml).
-    types: [opened, edited, synchronize, reopened, ready_for_review]
-  schedule:
-    - cron: "17 5 * * *"
-  workflow_dispatch:
+    # No edited: an edit of the title or body starts nothing here (ci-retarget.yml runs ci.yml
+    # for a retarget).
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
 
-# A pull request has one run at a time: a body edit or a push supersedes the run in progress.
-# The nightly and dispatched runs are never cancelled.
+# A pull request has one run at a time: a push supersedes the run in progress.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   pr:
-    if: github.event_name == 'pull_request'
     uses: ./.github/workflows/shared-pr-checks.yml
     permissions:
       contents: read
-      pull-requests: write
-      checks: write
     with:
       repo: inference-sim
-
-  nightly:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    uses: ./.github/workflows/shared-nightly.yml
-    permissions:
-      contents: read
-      issues: read
-    secrets:
-      INTERNAL_NAME_PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}

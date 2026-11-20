@@ -1,13 +1,13 @@
 name: private-names
 
 # Fails if a private name appears in tracked files, file paths, the commit messages being
-# merged, or the pull request title and body. The patterns (one Perl regex per line, matched
+# merged. The title and body of a pull request are not read (design §4.2). The patterns (one Perl regex per line, matched
 # case-insensitively) come from the INTERNAL_NAME_PATTERNS repository secret, so they are
 # never in the repository; matches print as location only, never the matched text.
 
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened]
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
 
@@ -29,8 +29,6 @@ jobs:
       - name: Scan
         env:
           PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}
-          TITLE: ${{ github.event.pull_request.title }}
-          BODY: ${{ github.event.pull_request.body }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
@@ -57,7 +55,5 @@ jobs:
           for c in $(git rev-list $range); do
             git log -1 --format=%B "$c" | match "commit message $c" || fail=1
           done
-          printf '%s\n' "${TITLE:-}" | match "pull request title" || fail=1
-          printf '%s\n' "${BODY:-}" | match "pull request body" || fail=1
           if [ "$fail" -ne 0 ]; then echo "private names found at the locations above"; exit 1; fi
           echo "private-names: clean"

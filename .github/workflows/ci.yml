@@ -33,7 +33,7 @@ on:
 # the newest CI run on the head commit, so a run that skips every job blocks the merge (#2261).
 # A retarget (a change of the base) is also an edit: ci-retarget.yml dispatches this workflow on the
 # head branch for it. A fork's pull request needs a push, or a close and reopen, after its retarget.
-# blis.yml, golden-change.yml and private-names.yml read the text and still run on an edit.
+# No other workflow runs on an edit (scripts/ci_edit_test.go).
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

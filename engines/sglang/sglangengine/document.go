@@ -143,7 +143,7 @@ func refuseUnmodelled(a *config.ServerArgs) error {
 	case a.DisaggregationMode != "null":
 		return fmt.Errorf("sglangengine: P/D disaggregation is not modelled by the engine (inference-sim/blis-sglang#64)")
 	case a.EnableHierarchicalCache:
-		return fmt.Errorf("sglangengine: HiCache is not modelled by the engine (inference-sim/blis-sglang#37)")
+		return fmt.Errorf("sglangengine: HiCache is not modelled by the engine (inference-sim/blis-sglang#38)")
 	}
 	return nil
 }

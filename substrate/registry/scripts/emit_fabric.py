@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Write coefficients/cost-model-fabric.yaml: each inter-node fabric's effective / nominal
-bandwidth (inference-sim/blis-registry#60, gap 3).
+bandwidth.
 
     python scripts/emit_fabric.py            # rewrite the file
     python scripts/emit_fabric.py --check    # exit 1 if the file would change

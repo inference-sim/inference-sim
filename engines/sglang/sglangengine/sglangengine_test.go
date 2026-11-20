@@ -104,7 +104,7 @@ func TestTheFactoryRefusesAnotherReleaseAndWhatTheEngineDoesNotModel(t *testing.
 	}
 	for block, issue := range map[string]string{
 		"model_path: m\ntp_size: 8\ndp_size: 8\nenable_dp_attention: true\n": "#70",
-		"model_path: m\nenable_hierarchical_cache: true\n":                   "#37",
+		"model_path: m\nenable_hierarchical_cache: true\n":                   "#38",
 		"model_path: m\nscheduler_recv_interval: 10\n":                       "#49",
 	} {
 		_, err := FactoryFor(h).New(specOf(t, block))
@@ -185,7 +185,7 @@ func TestEachUnmodelledSettingIsRefusedOnItsOwn(t *testing.T) {
 		{"a data-parallel size above one", func(a *config.ServerArgs) { a.DpSize = 2 }, "#70"},
 		{"pipeline parallelism", func(a *config.ServerArgs) { a.PpSize = 2 }, "#72"},
 		{"P/D disaggregation", func(a *config.ServerArgs) { a.DisaggregationMode = "prefill" }, "#64"},
-		{"HiCache", func(a *config.ServerArgs) { a.EnableHierarchicalCache = true }, "#37"},
+		{"HiCache", func(a *config.ServerArgs) { a.EnableHierarchicalCache = true }, "#38"},
 	} {
 		a := config.Defaults()
 		tc.set(&a)

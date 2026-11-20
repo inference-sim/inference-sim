@@ -1187,7 +1187,7 @@ MemorGiB: 999
 
 // TestStorageTiersStateNoNumber: a tier is a name and a description, and the loader refuses a
 // file that states what a transfer to it costs (SUB-18). The three keys the catalog used to
-// carry (#18 gave them their units) are each refused with the place the value goes; any other
+// carry are each refused with the place the value goes; any other
 // key, the unit-less spellings included, is an unknown field.
 func TestStorageTiersStateNoNumber(t *testing.T) {
 	okPath := write(t, "storage.yaml", `

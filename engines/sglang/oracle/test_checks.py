@@ -591,7 +591,7 @@ class ValueCoverage(unittest.TestCase):
 
     def test_a_subtree_is_held_by_one_entry_that_must_match_a_path(self):
         goldens = [{"calls": [{"fn": "a", "args": {"x": 1}}]}, {"calls": [{"fn": "a", "args": {"x": 1}}]}]
-        held = {"calls**": {"kind": "gap", "reason": "the calls are records (#33)"}}
+        held = {"calls**": {"kind": "gap", "reason": "the calls are records (#32)"}}
         r = self.check(self.tree(goldens, held))
         self.assertEqual(r.returncode, 0, r.stdout)
         r = self.check(self.tree(goldens, {"calls": held["calls**"]}))
