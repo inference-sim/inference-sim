@@ -51,6 +51,9 @@ type Provenance struct {
 	// Behaviour names the behaviour the engine executes: "vllm-0.33.0", or a compatibility
 	// behaviour a scenario selected (see Compat).
 	Behaviour string `json:"behaviour" yaml:"behaviour"`
+	// Backports are the vLLM commits, newer than UpstreamCommit, whose model code the build
+	// carries (upstream.Backport); empty when it carries none.
+	Backports []string `json:"backports,omitempty" yaml:"backports,omitempty"`
 }
 
 // ModulePath is the import path of the module this package is in: one module holds the substrate, both engines and the simulator, so a build records one revision for all.
@@ -78,13 +81,27 @@ func moduleVersion() string {
 
 // ProvenanceFor returns the provenance of an engine executing behaviour.
 func ProvenanceFor(behaviour string) Provenance {
+	return provenanceFor(behaviour, upstream.Backports())
+}
+
+func provenanceFor(behaviour string, bs []upstream.Backport) Provenance {
 	return Provenance{
 		EngineKind:      Kind,
 		UpstreamVersion: Upstream.Version,
 		UpstreamCommit:  Upstream.Commit,
 		Module:          moduleVersion(),
 		Behaviour:       behaviour,
+		Backports:       backportCommits(bs),
 	}
+}
+
+// backportCommits are the commits of a list of backports, nil for none.
+func backportCommits(bs []upstream.Backport) []string {
+	var out []string
+	for _, b := range bs {
+		out = append(out, b.Commit)
+	}
+	return out
 }
 
 // FieldListJSON is fields.json, the field list this build publishes (VLM-3): every
