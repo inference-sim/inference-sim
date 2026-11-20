@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -304,24 +305,37 @@ type SupplementReport struct {
 }
 
 // IngestWithSupplements ingests the dump's rows and every supplement's rows as one input, so
-// the ingest rules see all of them. A supplement's row must have an id above every earlier
-// row's: a record the dump already holds is refused, because the dump's copy and the API's
-// could differ in how numbers are printed and the record would become two measurements. When
-// a source revision comes to hold a supplement's records, the supplement is removed in the
-// pull request that moves the revision.
+// the ingest rules see all of them. The dump owns the record ids up to its last, and the
+// supplements own the ids above it: a supplement's row must have an id above the dump's last,
+// because the dump's copy and the API's could differ in how numbers are printed and the record
+// would become two measurements. A record pinned by two supplements is refused. When a source
+// revision comes to hold a supplement's records, the supplement is removed in the pull request
+// that moves the revision. A run the dump holds keeps the date its dump records give it.
 func IngestWithSupplements(dump []Row, supps []SupplementRows, revision, input string) ([]ledger.Unit, *Report, error) {
+	var cutoff int64
+	if n := len(dump); n > 0 {
+		cutoff = dump[n-1].ID
+	}
 	all := append([]Row(nil), dump...)
 	var reps []SupplementReport
+	var fed []Row
+	owner := map[int64]string{}
 	for _, s := range supps {
 		for _, r := range s.Rows {
-			if n := len(all); n > 0 && r.ID <= all[n-1].ID {
-				return nil, nil, fmt.Errorf("supplement %s: record %d is not above record %d; the ingest reads records in increasing id order, and a record the pinned revision holds is not a supplement", s.ID, r.ID, all[n-1].ID)
+			if r.ID <= cutoff {
+				return nil, nil, fmt.Errorf("supplement %s: record %d is not above record %d; the ingest reads records in increasing id order, and a record the pinned revision holds is not a supplement", s.ID, r.ID, cutoff)
 			}
-			all = append(all, r)
+			if o, dup := owner[r.ID]; dup {
+				return nil, nil, fmt.Errorf("supplement %s: record %d is also in supplement %s; a record is pinned once", s.ID, r.ID, o)
+			}
+			owner[r.ID] = s.ID
+			fed = append(fed, r)
 		}
 		reps = append(reps, SupplementReport{ID: s.ID, Records: len(s.Rows)})
 	}
-	units, rep, err := Ingest(all, revision, input)
+	sort.Slice(fed, func(i, j int) bool { return fed[i].ID < fed[j].ID })
+	all = append(all, fed...)
+	units, rep, err := ingestAt(all, cutoff, revision, input)
 	if err != nil {
 		return nil, nil, err
 	}

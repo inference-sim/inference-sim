@@ -108,12 +108,49 @@ Rules the tool enforces:
   supplement, because the dump's copy and the API's could print a number differently and become
   two measurements of one unit. When a new source revision holds a supplement's records, the
   pull request that moves the revision removes the supplement.
+- The dump owns the record ids up to its last (the cutoff) and the API those above it, so a run
+  whose records are on both sides is ingested as one run: it keeps the earliest date of its
+  dump records, and the API's records of it take that date. A supplement's records may be
+  pinned in any number of supplements; the ingest reads them in increasing id order.
 - The run's attempt is read from the record's `run_url`; a record with no run is refused. The
   API does not serve the run's conclusion, so the unit records `run_conclusion: null`.
 - The measured hash of an API record is the hash of the metrics as the API prints them. It is
   not compared with a dump's copy of the same record.
 - `ledger check-generated` fetches the supplements, so it needs the network as well as the dump.
   `TestEverySupplementRecordHasAUnit` checks offline that every pinned record has a unit.
+
+### Following the API (the feed)
+
+`ledger feed` reads the API as a whole, so every record InferenceX publishes joins the ledger
+once, and not only the records a ledger owner pinned by hand:
+
+```sh
+go run ./ledger/cmd/ledger feed -rows rows.jsonl -url '<API list URL>' -out feed catalog/ledger   # needs the network
+```
+
+It takes the dump's rows (as `ingest-inferencex` does) and one or more `-url` (the API's list
+endpoints, as a supplement's `url`). It splits what the API serves at the dump's last record id:
+a record at or below it is never pulled again, and is counted in `owned_by_dump`, and listed in
+`row_differs_from_dump` when the API prints it differently from the dump (the dump's copy
+stays); a record above it is ingested with the dump and with the committed supplements, which
+must still have the content they pin. A record the tool cannot read (a record with no run to
+take its attempt from) is left out and listed under `unreadable`. It writes two files to `-out`
+and changes nothing under the ledger:
+
+- `feed-report.yaml`: the ingest report with a `feed` section: the cutoff, the counts, the runs
+  on both sides of the cutoff (`straddling_runs`), and the units by source revision
+  (`units_by_source_revision`: `dump`, `api`, or `both`, from whether each measurement's record
+  id is at or below the cutoff). The report holds ids and counts, no value.
+- `proposed-supplements.yaml`: the records above the cutoff that no supplement pins yet, by
+  record id and content SHA-256, one supplement per upstream run and attempt. A ledger owner
+  reviews it and adds the supplements to `sources.yaml`, then runs `ingest-inferencex`, in a
+  pull request.
+
+`ledger.yml` runs it as the scheduled job `inferencex-feed`, from main: no seed, no environment,
+no secret, no commit. It uploads both files as the artifact `inferencex-feed`. The API's URLs
+are the repository variable `INFERENCEX_FEED_URLS` (space-separated), which a ledger owner
+sets; until then the job reports that it has no feed and succeeds. The job restores the dump
+(34 GB), as `gate-nightly` does.
 
 A unit's role is still drawn only by the seed-holding jobs. Until a ledger owner creates the
 seed, no supplement unit, like no other unit, is on the fit or anchor list, and so the dashboard

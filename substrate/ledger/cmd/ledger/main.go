@@ -41,6 +41,11 @@
 //	ledger pin-supplement -url U -ids A,B,...
 //	    Print the sources.yaml pins (record id and content SHA-256) of those records, for a
 //	    ledger owner who adds a supplement.
+//	ledger feed -rows R -url U [-url U...] -out DIR LEDGER   (needs the network)
+//	    Read the API's feed, reconcile it with the pinned dump's rows (the dump owns the record
+//	    ids up to its last, the feed those above; a run on both sides keeps the date its dump
+//	    records give it), and write the reconciliation report and the supplements to pin to DIR.
+//	    Changes nothing under LEDGER.
 //	ledger aggregate -job J -role R -predictions P -candidate SHA -measured M -out FILE LEDGER  (seed-holding)
 //	    Reduce a candidate's predictions on the units of role R to aggregates (D7).
 //
@@ -87,7 +92,7 @@ func (u usageError) Error() string { return u.msg }
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stderr, "usage: ledger <ingest-inferencex|ingest-configiq|configiq-assets|supplement-records|pin-supplement|check|check-generated|check-base|generate-aliases|scan-roles|lint-workflows|release|join|check-report|candidate-units|measured-inferencex|aggregate|method-error> ...")
+		_, _ = fmt.Fprintln(stderr, "usage: ledger <ingest-inferencex|ingest-configiq|configiq-assets|supplement-records|pin-supplement|feed|check|check-generated|check-base|generate-aliases|scan-roles|lint-workflows|release|join|check-report|candidate-units|measured-inferencex|aggregate|method-error> ...")
 		return 2
 	}
 	cmds := map[string]func([]string, io.Writer) error{
@@ -107,6 +112,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		"measured-inferencex": cmdMeasuredInferenceX,
 		"supplement-records":  cmdSupplementRecords,
 		"pin-supplement":      cmdPinSupplement,
+		"feed":                cmdFeed,
 		"aggregate":           cmdAggregate,
 		"method-error":        cmdMethodError,
 	}
