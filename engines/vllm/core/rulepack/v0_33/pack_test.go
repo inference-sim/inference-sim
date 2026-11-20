@@ -256,22 +256,25 @@ func TestCustomAllReduceReachability(t *testing.T) {
 	}
 }
 
-func TestMambaCacheModeMatchesModel(t *testing.T) {
-	// A mode on a model with no recurrent layer has no effect.
-	s := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1},
-		engineconfig.Engine{MambaCacheMode: "align"}))
-	if p := run(t, s, moe224Graph()); !fired(p, "mamba-cache-mode-matches-model") {
-		t.Error("rule did not fire for a mode on a non-hybrid model")
-	}
-	// A hybrid model with no mode leaves the state unsized.
+func TestMambaCacheModeIsRefused(t *testing.T) {
+	// The engine has no mamba_cache_mode: a stated value is refused whatever the model.
 	hybrid := moe224Graph()
 	hybrid.LayerKinds[0].Nodes = append(hybrid.LayerKinds[0].Nodes, model.Node{
 		Op: model.OpRecurrentUpdate, RecurrentKind: model.RecurrentMamba2,
 		NumHeads: 128, StateSize: 128, NumGroups: 8, ConvKernel: 4,
 		IntermediateSize: 8192})
-	s2 := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1}, engineconfig.Engine{}))
-	if p := run(t, s2, hybrid); !fired(p, "mamba-cache-mode-matches-model") {
-		t.Error("rule did not fire for a hybrid model with no mode")
+	for name, g := range map[string]*model.Graph{"non-hybrid": moe224Graph(), "hybrid": hybrid} {
+		for _, mode := range []string{"align", "none"} {
+			s := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1},
+				engineconfig.Engine{MambaCacheMode: mode}))
+			if p := run(t, s, g); !fired(p, "mamba-cache-mode-matches-model") {
+				t.Errorf("%s model, mode %q: the rule did not refuse a stated mamba_cache_mode", name, mode)
+			}
+		}
+		s := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1}, engineconfig.Engine{}))
+		if p := run(t, s, g); fired(p, "mamba-cache-mode-matches-model") {
+			t.Errorf("%s model: the rule fired with no mamba_cache_mode stated:\n%s", name, p.Error())
+		}
 	}
 }
 

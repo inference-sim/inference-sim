@@ -375,8 +375,8 @@ func TestEngineRefusesAnUnstatedBlockSizeOnAPoolWiderThanTheOracleRan(t *testing
 }
 
 // The kernel prices the engine Engine reports and the scheduler runs, for all four resolved
-// settings. Under a batched data-parallel MoE (DeepEP low-latency, expert parallel, DP > 1)
-// vLLM 0.32.0 caps an unstated max_num_seqs and max_num_batched_tokens at 256; the kernel's own
+// settings. Under a batched data-parallel MoE (DeepEP low-latency, nixl_ep or alltoall_batched,
+// expert parallel, DP > 1) vLLM caps an unstated max_num_seqs and max_num_batched_tokens at 256; the kernel's own
 // fallback is v0.31.0's, which skips that cap.
 func TestKernelPricesTheEngineSettingsEngineReportsInBatchedDP(t *testing.T) {
 	const fixture = "minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml"
@@ -391,7 +391,15 @@ func TestKernelPricesTheEngineSettingsEngineReportsInBatchedDP(t *testing.T) {
 		}
 		body = strings.Replace(body, d, "", 1)
 	}
-	body = strings.Replace(body, "      block_size: 16\n", "      block_size: 16\n      all2all_backend: deepep_low_latency\n", 1)
+	for _, backend := range []string{"deepep_low_latency", "nixl_ep", "alltoall_batched"} {
+		t.Run(backend, func(t *testing.T) {
+			checkBatchedDPSettings(t, fixture, strings.Replace(body, "      block_size: 16\n", "      block_size: 16\n      all2all_backend: "+backend+"\n", 1))
+		})
+	}
+}
+
+func checkBatchedDPSettings(t *testing.T, fixture, body string) {
+	t.Helper()
 	r := repos()
 	r.Scenarios = t.TempDir()
 	if err := os.WriteFile(filepath.Join(r.Scenarios, "v.yaml"), []byte(body), 0o644); err != nil {

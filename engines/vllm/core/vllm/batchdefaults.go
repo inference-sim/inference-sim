@@ -20,9 +20,9 @@ type BatchInput struct {
 	// :2958-2960).
 	DeviceMemoryBytes int64
 	DeviceName        string
-	// BatchedDPMoE is ParallelConfig.use_batched_dp_moe: all2all_backend deepep_low_latency or
-	// nixl_ep, with expert parallelism, at data_parallel_size above 1
-	// (vllm/config/parallel.py:796-805@4ba787ec).
+	// BatchedDPMoE is ParallelConfig.use_batched_dp_moe: all2all_backend deepep_low_latency,
+	// nixl_ep or alltoall_batched, with expert parallelism, at data_parallel_size above 1
+	// (vllm/config/parallel.py use_batched_dp_moe).
 	BatchedDPMoE bool
 	// ThroughputMode is performance_mode "throughput" (vllm/config/vllm.py:441@4ba787ec,
 	// default "balanced"). The deployment schema has no field for it, so a deployment always

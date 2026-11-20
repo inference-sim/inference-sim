@@ -167,11 +167,16 @@ func TestCacheDTypesMatchSource(t *testing.T) {
 		literalMembers(t, src, "CacheDType"))
 }
 
-func TestMambaCacheModesMatchSource(t *testing.T) {
+// The pack has no mamba_cache_mode vocabulary and the mamba-cache-mode-matches-model rule
+// refuses any stated value, so the engine must have neither the cache field nor the
+// --mamba-cache-mode argument (#63830).
+func TestMambaCacheModeIsGoneFromSource(t *testing.T) {
 	root := vllmSource(t)
-	src := readSource(t, root, "vllm", "config", "cache.py")
-	assertSameSet(t, "MambaCacheModes", Pack().MambaCacheModes,
-		literalMembers(t, src, "MambaCacheMode"))
+	for _, f := range [][]string{{"vllm", "config", "cache.py"}, {"vllm", "engine", "arg_utils.py"}} {
+		if src := readSource(t, root, f...); strings.Contains(src, "mamba_cache_mode") || strings.Contains(src, "MambaCacheMode") {
+			t.Errorf("%s names mamba_cache_mode again; the mamba-cache-mode-matches-model rule must be re-derived", strings.Join(f, "/"))
+		}
+	}
 }
 
 func TestSchedulerPoliciesMatchSource(t *testing.T) {
@@ -476,42 +481,31 @@ func TestSpeculativeMethodsMatchSource(t *testing.T) {
 		literalTree(t, src, "SpeculativeMethod"))
 }
 
-// The async-compatible set is what vllm/config/vllm.py admits when async scheduling is
-// requested: the EAGLE and n-gram-GPU literals plus three methods named one by one. The
-// test reads the condition's text, so a method added to or dropped from it fails here.
+// With the V1 model runner removed, vllm/config/vllm.py has no speculative-method or
+// pipeline-parallel incompatibility with async scheduling, so every accepted method keeps
+// it. The test reads that the V1 runner's incompatibility block and its use_v2_model_runner
+// switch are gone, and that async_scheduling is resolved without reading the speculative
+// config; a release that brings a method-based incompatibility back fails here.
 func TestAsyncCompatibleSpecMatchSource(t *testing.T) {
 	root := vllmSource(t)
-	spec := readSource(t, root, "vllm", "config", "speculative.py")
 	cfg := readSource(t, root, "vllm", "config", "vllm.py")
-	// At v0.33.0 the method list is one of the V1 model runner's async-scheduling
-	// incompatibilities (vllm/config/vllm.py:1651-1666@4ba787ec): the V2 runner takes any method,
-	// and the V1 runner refuses an explicit async_scheduling with any other.
-	i := strings.Index(cfg, "v1_async_sched_incompat: str | None = None")
+	for _, gone := range []string{"v1_async_sched_incompat", "use_v2_model_runner"} {
+		if strings.Contains(cfg, gone) {
+			t.Errorf("vllm/config/vllm.py mentions %q again; AsyncCompatibleSpec must be re-derived", gone)
+		}
+	}
+	i := strings.Index(cfg, "if self.scheduler_config.async_scheduling:\n            # Async scheduling explicitly enabled")
 	if i < 0 {
-		t.Fatal("the V1 runner's async-scheduling incompatibilities were not found; they may have moved")
+		t.Fatal("the async-scheduling resolution was not found; it may have moved")
 	}
-	body := cfg[i:]
-	if j := strings.Index(body, "v1_async_sched_incompat = ("); j > 0 {
-		body = body[:j]
-	} else {
-		t.Fatal("the V1 runner's async-scheduling check no longer names the speculative method")
+	j := strings.Index(cfg[i:], "disable_nccl_for_dp_synchronization")
+	if j < 0 {
+		t.Fatal("the end of the async-scheduling resolution was not found")
 	}
-	if !strings.Contains(body, "if not self.use_v2_model_runner:") {
-		t.Fatal("the speculative-method incompatibility no longer applies to the V1 runner only")
+	if strings.Contains(cfg[i:i+j], "speculative_config") {
+		t.Error("the async-scheduling resolution reads the speculative config again; AsyncCompatibleSpec must be re-derived")
 	}
-	var names []string
-	for _, m := range regexp.MustCompile(`get_args\((\w+)\)`).FindAllStringSubmatch(body, -1) {
-		names = append(names, literalTree(t, spec, m[1])...)
-	}
-	tuple := regexp.MustCompile(`method not in \(([^)]*)\)`).FindStringSubmatch(body)
-	if tuple == nil {
-		t.Fatal("the literal methods the V1 runner allows were not found")
-	}
-	for _, m := range regexp.MustCompile(`"([a-z_0-9]+)"`).FindAllStringSubmatch(tuple[1], -1) {
-		names = append(names, m[1])
-	}
-	sort.Strings(names)
-	assertSameSet(t, "AsyncCompatibleSpec", Pack().AsyncCompatibleSpec, names)
+	assertSameSet(t, "AsyncCompatibleSpec", Pack().AsyncCompatibleSpec, keysOf(Pack().SpeculativeMethods))
 }
 
 // Each startup refusal a 0.31.0 rule encodes is asserted present by its message text, and

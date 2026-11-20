@@ -127,13 +127,15 @@ func TestMambaSpecFieldsAsLayersBuildThem(t *testing.T) {
 	}
 }
 
-// With prefix caching on the hook runs "align" whatever mode is stated (a stated "none" cannot be told
-// from the initializer); with it off the mode is "none" and a state covers max_model_len tokens
-// (MambaModelConfig, vllm/model_executor/models/config.py:685-709@5df63a72). The engine's block size
-// is then the aligned one in align mode only.
+// With prefix caching on a recurrent layer's state is cached in align mode; with it off the mode is
+// "none" and a state covers max_model_len tokens. The engine's block size is then the aligned one in
+// align mode only. A stated mamba_cache_mode is refused: the release has none (#63830).
 func TestMambaCacheModeAsTheHookRunsIt(t *testing.T) {
 	off, on := false, true
 	g := hybridGraph(mamba2, &gqa)
+	if _, err := planMamba(g, engineconfig.Engine{BlockSize: 16, MambaCacheMode: "align"}, mambaEnv{tp: 8, dcp: 1, pcp: 1, capability: 9}); err == nil || !strings.Contains(err.Error(), "mamba_cache_mode") {
+		t.Errorf("a stated mamba_cache_mode: %v, want it refused by name", err)
+	}
 	for _, c := range []struct {
 		name       string
 		e          engineconfig.Engine
@@ -141,10 +143,8 @@ func TestMambaCacheModeAsTheHookRunsIt(t *testing.T) {
 		mambaBlock int
 	}{
 		{"default", engineconfig.Engine{BlockSize: 16}, "align", 2080},
-		{"stated none, prefix caching on", engineconfig.Engine{BlockSize: 16, MambaCacheMode: "none", EnablePrefixCaching: &on}, "align", 2080},
-		{"stated align", engineconfig.Engine{BlockSize: 16, MambaCacheMode: "align"}, "align", 2080},
+		{"prefix caching on", engineconfig.Engine{BlockSize: 16, EnablePrefixCaching: &on}, "align", 2080},
 		{"prefix caching off", engineconfig.Engine{BlockSize: 16, EnablePrefixCaching: &off}, "none", 131072},
-		{"stated align, prefix caching off", engineconfig.Engine{BlockSize: 16, MambaCacheMode: "align", EnablePrefixCaching: &off}, "none", 131072},
 	} {
 		p := mustPlan(t, g, c.e, 8)
 		if p.run.MambaCacheMode != c.mode || p.run.BlockSize != c.mambaBlock || p.blockSize != 2080 {
@@ -409,9 +409,9 @@ func TestNemotronUltraKVLayersAreVLLMs(t *testing.T) {
 	}
 }
 
-// Settings vLLM v0.32.0 reads that change a recurrent layer's spec and that the engine block cannot
-// state are refused where the block is read, naming the key; mamba_cache_mode all, which v0.32.0 does
-// not accept (vllm/config/cache.py:63@5df63a72), is refused by KVLayers with its name.
+// Settings vLLM reads that change a recurrent layer's spec and that the engine block cannot state
+// are refused where the block is read, naming the key; so is mamba_cache_mode, whatever its value,
+// which the release no longer has (#63830).
 func TestUnmatchedRecurrentSettingsStayRefusals(t *testing.T) {
 	const fixture = "nemotron3-ultra-h100-agg.yaml"
 	src, err := os.ReadFile(filepath.Join(ownRoot(), "kerneltests", "testdata", fixture))
@@ -429,12 +429,16 @@ func TestUnmatchedRecurrentSettingsStayRefusals(t *testing.T) {
 			t.Errorf("%s stated: %v, want the engine block refused naming it", key, err)
 		}
 	}
-	m := ownScenario(t, fixture, func(s string) string { return strings.Replace(s, "mamba_cache_mode: none", "mamba_cache_mode: all", 1) })
-	if _, err := m.KVLayers(); err == nil || !strings.HasPrefix(err.Error(), "recurrent layers: mamba_cache_mode \"all\"") {
-		t.Errorf("mamba_cache_mode all: %v, want the refusal naming it", err)
-	}
-	if pieces := m.V032Pieces(); len(pieces) != 1 || !strings.Contains(pieces[0], `mamba_cache_mode "all"`) {
-		t.Errorf("V032Pieces %v, want the one hybrid KV groups piece naming mamba_cache_mode", pieces)
+	for _, mode := range []string{"none", "align", "all"} {
+		m := ownScenario(t, fixture, func(s string) string {
+			return strings.Replace(s, "      block_size: 16\n", "      block_size: 16\n      mamba_cache_mode: "+mode+"\n", 1)
+		})
+		if _, err := m.KVLayers(); err == nil || !strings.HasPrefix(err.Error(), "recurrent layers: mamba_cache_mode \""+mode+"\"") {
+			t.Errorf("mamba_cache_mode %s: %v, want the refusal naming it", mode, err)
+		}
+		if pieces := m.V032Pieces(); len(pieces) != 1 || !strings.Contains(pieces[0], `mamba_cache_mode "`+mode+`"`) {
+			t.Errorf("mamba_cache_mode %s: V032Pieces %v, want the one hybrid KV groups piece naming it", mode, pieces)
+		}
 	}
 }
 
