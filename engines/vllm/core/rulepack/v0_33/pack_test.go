@@ -502,9 +502,10 @@ func hybridGraph() *model.Graph {
 	return g
 }
 
-// TestCPKVCacheInterleaveFitsBlock: with DCP on and no NixlConnector, this release asserts
-// at startup that block_size is at least, and divisible by, the interleave size. The rule
-// fires only where that assert is certain to run on the values stated.
+// TestCPKVCacheInterleaveFitsBlock: with DCP on and a stated interleave size, this release
+// asserts at startup that block_size is at least, and divisible by, the size, under every
+// connector (a stated size turns the NIXL auto-resolution off). The rule fires only where
+// that assert is certain to run on the values stated.
 func TestCPKVCacheInterleaveFitsBlock(t *testing.T) {
 	pool := func(dcp, size, block int) deployment.Pool {
 		return colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1, DCP: dcp},
@@ -526,18 +527,25 @@ func TestCPKVCacheInterleaveFitsBlock(t *testing.T) {
 		{"block size unstated", dep(pool(8, 128, 0)), moe224Graph(), false},
 		{"model unknown", dep(pool(8, 128, 64)), nil, false},
 		{"hybrid model", dep(pool(8, 128, 64)), hybridGraph(), false},
-		// Only NIXL skips the assert in this release; a MultiConnector may hide one.
+		// A stated size disables the NIXL auto-resolution, so NIXL, directly or beside
+		// a MultiConnector, leaves the assert in force (v0.29.0 skipped it under NIXL).
 		{"nixl pd transfer", func() *deployment.Deployment {
 			d := dep(pool(8, 128, 64))
 			d.PDTransfer = &deployment.PDTransfer{Connector: "NixlConnector"}
 			return d
-		}(), moe224Graph(), false},
+		}(), moe224Graph(), true},
 		{"multi connector", func() *deployment.Deployment {
 			d := dep(pool(8, 128, 64))
 			d.PDTransfer = &deployment.PDTransfer{Connector: "MultiConnector"}
 			return d
+		}(), moe224Graph(), true},
+		// The auto-resolution acts only on an unstated size, which the rule never checks.
+		{"nixl, interleave unstated", func() *deployment.Deployment {
+			d := dep(pool(8, 0, 64))
+			d.PDTransfer = &deployment.PDTransfer{Connector: "NixlConnector"}
+			return d
 		}(), moe224Graph(), false},
-		// Unlike v0.29.0, any other connector leaves the assert in force.
+		// Any other connector leaves the assert in force.
 		{"mooncake pd transfer", func() *deployment.Deployment {
 			d := dep(pool(8, 128, 64))
 			d.PDTransfer = &deployment.PDTransfer{Connector: "MooncakeConnector"}
@@ -930,13 +938,14 @@ func TestEngramResidencyDefault(t *testing.T) {
 	}
 }
 
-// An offload connector reaches the NIXL skip the same way a PD-transfer one does.
-func TestNixlOffloadSkipsInterleaveAssert(t *testing.T) {
+// A stated interleave size meets the assert beside a NIXL offload connector too: the
+// auto-resolution NIXL performs is off for a stated size.
+func TestNixlOffloadKeepsInterleaveAssert(t *testing.T) {
 	d := dep(colocated(deployment.Parallelism{TP: 8, PP: 1, DP: 1, DCP: 8},
 		engineconfig.Engine{CPKVCacheInterleaveSize: 128, BlockSize: 64}))
 	d.Offload = &deployment.Offload{Connector: "NixlConnector", Tiers: []deployment.Tier{{Device: "cpu_dram", Bytes: 1}}}
-	if p := run(t, d, moe224Graph()); fired(p, "cp-kv-cache-interleave-fits-block") {
-		t.Errorf("a NIXL offload connector should skip the assert:\n%s", p.Error())
+	if p := run(t, d, moe224Graph()); !fired(p, "cp-kv-cache-interleave-fits-block") {
+		t.Errorf("a stated size beside a NIXL offload connector should meet the assert:\n%s", p.Error())
 	}
 }
 
