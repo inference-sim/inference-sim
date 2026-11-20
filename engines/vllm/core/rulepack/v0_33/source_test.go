@@ -1,9 +1,12 @@
 package v0_33
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -1113,21 +1116,22 @@ func pyFunction(t *testing.T, src, name string) string {
 	return b.String()
 }
 
-// KVCacheGroups transcribes these three functions, and its goldens were computed by
+// KVCacheGroups transcribes these four functions, and its goldens were computed by
 // running them (core/rulepack/pack/testdata/kvgroups/golden.py). A changed body is a changed grouping,
 // so each is pinned by digest; re-derive the transcription and the goldens when one moves.
-// The specs it maps caches to are pinned too: a state cache is a CircularBufferSpec.
+// The specs it maps caches to are pinned too: a state cache is a CircularBufferManager layer.
 func TestKVCachePackingMatchSource(t *testing.T) {
 	root := vllmSource(t)
-	// v0.33.0 moved these functions to kv_cache_planning.py. Three are byte-identical to
-	// v0.32.0's; _get_packed_kv_cache_groups lost only its EAGLE-group annotation
-	// (_annotate_eagle_groups, now explicit draft-layer tags), which names groups and does
-	// not change how pages are packed, so KVCacheGroups and its goldens stand.
+	// At the head these functions live in kv_cache_planning.py and work on KVCacheLayerConfig
+	// and KVCacheGroup (a layer's allocation policy is its ManagerConfig, no longer a spec
+	// subclass), so _get_per_layer_spec is gone and a group's specs are read directly. The
+	// bucketing is _bucket_layers / can_share_block_table: layers share a bucket when their
+	// manager configs, block sizes and dcp sharding agree, which is what KVCacheGroups keys on.
 	src := readSource(t, root, "vllm", "v1", "core", "kv_cache_planning.py")
 	for fn, want := range map[string]string{
 		"_approximate_gcd":              "22370757cf8c20dba515cf9452594dfc484f3057a709c704214ebb68328b4f1c",
-		"_get_packed_kv_cache_groups":   "aa889da59900ae8eacb0697c17a7cd8a568372f6a34c57e063e0c49c0ccb565f",
-		"_get_kv_cache_bytes_per_block": "f44c4f0014e78fef2301b4b59cd06c1d731775536230f2e575f19b353399fb42",
+		"_get_packed_kv_cache_groups":   "372c117d1374f56879a55122e8d65e909fc0a7951c366f2330df736a5e80a670",
+		"_get_kv_cache_bytes_per_block": "1d35d64c125a8308eb0c840f7f2110657d03d2607dab8a9008fc9e6a77216a7d",
 		"_get_layer_block_stride":       "9e48b4392643091d0523484199262265fa7458556a825afc928f05578a37c471",
 	} {
 		sum := sha256.Sum256([]byte(pyFunction(t, src, fn)))
@@ -1135,19 +1139,18 @@ func TestKVCachePackingMatchSource(t *testing.T) {
 			t.Errorf("%s changed (sha256 %s); re-derive KVCacheGroups and its goldens", fn, got)
 		}
 	}
-	// v0.32.0's _get_kv_cache_bytes_per_block takes the resolved layout
-	// (vllm/v1/core/kv_cache_utils.py:1520-1551@5df63a72). Under a layer-outermost layout each
-	// layer's page rounds to its own block-stride alignment and the widest group's sum is the
-	// block; under a block-outermost one the widest group's sum rounds to the lcm of every
-	// alignment, which is v0.31.0's form and the one Pack.KVCacheGroups applies. With no
-	// alignment above one the two agree, and KVCacheGroups gives that answer when its caller
-	// passes no alignment, as the kernel does. These are the facts the agreement rests on.
+	// _get_kv_cache_bytes_per_block takes the resolved layout. Under a layer-outermost layout
+	// each layer's page rounds to its own block-stride alignment and the widest group's sum is
+	// the block; under a block-outermost one the widest group's sum rounds to the lcm of every
+	// alignment, which is the form Pack.KVCacheGroups applies. With no alignment above one the
+	// two agree, and KVCacheGroups gives that answer when its caller passes no alignment, as
+	// the kernel does. These are the facts the agreement rests on.
 	bytesFn := pyFunction(t, src, "_get_kv_cache_bytes_per_block")
 	for _, want := range []string{
 		"    if not layout.is_block_outermost:\n",
-		"_get_layer_block_stride(_get_per_layer_spec(group, layer_name))",
+		"sum(_get_layer_block_stride(spec) for spec in group.kv_cache_specs.values())",
 		"    return round_up(bytes_per_block, math.lcm(*alignments))\n",
-		"_get_per_layer_spec(group, layer_name).get_block_stride_alignment()",
+		"spec.get_block_stride_alignment()",
 	} {
 		if !strings.Contains(bytesFn, want) {
 			t.Errorf("_get_kv_cache_bytes_per_block no longer has %q; re-derive KVCacheGroups", want)
@@ -1158,17 +1161,31 @@ func TestKVCachePackingMatchSource(t *testing.T) {
 		t.Error("_get_layer_block_stride no longer rounds a page to its own alignment")
 	}
 	// Packing a model's mixed page sizes into shared blocks happens only under a
-	// block-outermost layout (_get_packed_kv_cache_groups returns None otherwise,
-	// kv_cache_utils.py:1875-1878@5df63a72), and the DeepSeek-V4 family's indexer, which
-	// shares a block with the MLA latent pages, supports only block-outermost layouts
-	// (vllm/v1/attention/backends/mla/indexer.py:347-351@5df63a72). So the models whose
-	// caches these packs group run the block-outermost branch: v0.31.0's form, which
-	// KVCacheGroups transcribes. v0.32.0's own functions return the v0.31.0 goldens for every
-	// golden case under that layout (checked by running them, core/rulepack/pack/testdata/kvgroups/golden.py
-	// with the layout argument).
+	// block-outermost layout (_get_packed_kv_cache_groups returns None otherwise), and the
+	// DeepSeek-V4 family's indexer, which shares a block with the MLA latent pages, supports
+	// only block-outermost layouts. So the models whose caches these packs group run the
+	// block-outermost branch, which KVCacheGroups transcribes; the head's functions return the
+	// recorded goldens for every golden case under that layout (checked by running them,
+	// core/rulepack/pack/testdata/kvgroups/golden.py).
 	if !strings.Contains(pyFunction(t, src, "_get_packed_kv_cache_groups"),
 		"    if not layout.is_block_outermost or len(page_sizes) <= 1:\n        return None\n") {
 		t.Error("_get_packed_kv_cache_groups no longer packs only under a block-outermost layout")
+	}
+	// The bucket key: same manager config, block size and dcp sharding, and the manager's own
+	// say (can_share_block_table).
+	planSrc := pyFunction(t, src, "can_share_block_table")
+	for _, want := range []string{
+		"manager_config",
+		"block_size",
+		"dcp_sharded",
+		"can_share_block_table(",
+	} {
+		if !strings.Contains(planSrc, want) {
+			t.Errorf("can_share_block_table no longer keys on %q; re-derive the bucket key of KVCacheGroups", want)
+		}
+	}
+	if !strings.Contains(src, "def _bucket_layers(") {
+		t.Error("_bucket_layers is gone; re-derive the bucketing of KVCacheGroups")
 	}
 	indexer := readSource(t, root, "vllm", "v1", "attention", "backends", "mla", "indexer.py")
 	if i := strings.Index(indexer, "class DeepseekV4IndexerBackend("); i < 0 ||
@@ -1179,29 +1196,28 @@ func TestKVCachePackingMatchSource(t *testing.T) {
 	if !strings.Contains(ifaceSrc, "        if not isinstance(alignment, MultipleOf):\n            return alignment or 1\n") {
 		t.Error("get_block_stride_alignment no longer treats an unset alignment as one")
 	}
+	// A DeepSeek-V4.1 compressor's state cache is a ring of rows allocated by the
+	// CircularBufferManager over a plain AttentionSpec (head_size_v=0, one KV head).
 	comp := readSource(t, root, "vllm", "models", "deepseek_v41", "compressor.py")
-	if !strings.Contains(comp, "return CircularBufferSpec(") {
-		t.Error("DeepSeek-V4.1's compressor state is no longer a CircularBufferSpec")
-	}
 	for _, want := range []string{
+		"return CircularBufferManager.layer_config(spec)",
+		"head_size_v=0,",
+		"num_kv_heads=1,",
 		"rows_per_step = get_current_vllm_config().num_speculative_tokens + 2",
 		"self.block_size = max(8, 1 << (rows_per_step - 1).bit_length())",
 	} {
 		if !strings.Contains(comp, want) {
-			t.Errorf("the compressor ring size changed: %q is gone; re-derive CompressorRingRows", want)
+			t.Errorf("the compressor state cache changed: %q is gone; re-derive the state-cache page and CompressorRingRows", want)
 		}
 	}
-	// Only the MLA specs pad a page to an alignment; a circular buffer never does, which
-	// is why a state cache's page_alignment is refused.
+	// Only the MLA spec pads a page to an alignment; the circular buffer's spec is a plain
+	// AttentionSpec that never does, which is why a state cache's page_alignment is refused.
 	iface := readSource(t, root, "vllm", "v1", "kv_cache_interface.py")
-	for _, class := range []string{"class MLAAttentionSpec(", "class SlidingWindowMLASpec("} {
-		body := classBody(iface, class)
-		if !strings.Contains(body, "_apply_alignment_padding(self)") {
-			t.Errorf("%s no longer pads its page", class)
-		}
+	if body := classBody(iface, "class MLAAttentionSpec("); !strings.Contains(body, "round_up(self.real_page_size_bytes, self.alignment)") {
+		t.Error("MLAAttentionSpec no longer pads its page to its alignment")
 	}
-	if body := classBody(iface, "class CircularBufferSpec("); body == "" || strings.Contains(body, "_apply_alignment_padding") || strings.Contains(body, "    alignment:") {
-		t.Error("CircularBufferSpec now carries an alignment; re-derive the state-cache page")
+	if body := classBody(iface, "class AttentionSpec("); strings.Contains(body, "alignment:") || strings.Contains(body, "round_up(self.real_page_size_bytes") {
+		t.Error("AttentionSpec now carries an alignment; re-derive the state-cache page")
 	}
 }
 
@@ -1212,7 +1228,8 @@ func TestCUDAGraphCaptureSizesMatchSource(t *testing.T) {
 	root := vllmSource(t)
 	src := readSource(t, root, "vllm", "config", "vllm.py")
 	for _, want := range []string{
-		"1024 if current_platform.is_device_capability_family(100) else 512",
+		"defaults = current_platform.get_cudagraph_capture_defaults(self)",
+		"default_max_graph_size = defaults.legacy_max_tokens",
 		"max_num_seqs * decode_query_len * 2, default_max_graph_size",
 		"max_cudagraph_capture_size = min(max_num_tokens, max_cudagraph_capture_size)",
 		"dedup_sizes = list(set(self.compilation_config.cudagraph_capture_sizes))",
@@ -1233,6 +1250,105 @@ func TestCUDAGraphCaptureSizesMatchSource(t *testing.T) {
 	// the default is computed.
 	if !strings.Contains(src, "uniform_decode_sizes: list[int] = []") {
 		t.Error("the uniform decode sizes are no longer empty for a stated maximum")
+	}
+	// The platform split the default capture applies (pack.DefaultCUDAGraphCapture).
+	cuda := readSource(t, root, "vllm", "platforms", "cuda.py")
+	for _, want := range []string{
+		"if self.is_device_capability_family(100):",
+		"legacy_max_tokens=1024,",
+		"max_prefill_tokens=8192,",
+		"max_decode_requests=vllm_config.scheduler_config.max_num_seqs,",
+		"max_decode_tokens=8192,",
+	} {
+		if !strings.Contains(cuda, want) {
+			t.Errorf("the CUDA platform's capture defaults changed: %q is gone", want)
+		}
+	}
+	comp := readSource(t, root, "vllm", "config", "compilation.py")
+	for _, want := range []string{
+		"legacy_max_tokens: int = 512",
+		"lambda t: min(t, max(8, t / 4), 0.07 * max(t, 4096))",
+		"lambda n: 0.65 * n ** (2 / 3)",
+		"stride = 1 << max(0, math.floor(math.log2(max(1.0, step(size)))))",
+		"size = (size // stride + 1) * stride",
+	} {
+		if !strings.Contains(comp, want) {
+			t.Errorf("the capture grids changed: %q is gone", want)
+		}
+	}
+}
+
+// pack.DefaultCUDAGraphCapture must give the sizes vLLM's own resolver does. The Python
+// side is the checkout's _set_cudagraph_sizes and _split_cudagraph_capture_sizes, cut out
+// of its source and run on the same inputs (core/rulepack/pack/testdata/cudagraph/harness.py).
+func TestDefaultCUDAGraphCaptureMatchesSource(t *testing.T) {
+	root := vllmSource(t)
+	type in struct {
+		Seqs      int    `json:"seqs"`
+		MNBT      int    `json:"mnbt"`
+		Spec      int    `json:"spec"`
+		Family100 bool   `json:"family100"`
+		Mode      string `json:"mode"`
+		Method    string `json:"method"`
+		NPredict  int    `json:"npredict"`
+	}
+	type out struct {
+		Sizes   []int `json:"sizes"`
+		Max     int   `json:"max"`
+		Prefill []int `json:"prefill"`
+		Decode  []int `json:"decode"`
+	}
+	var cases []in
+	for _, seqs := range []int{1, 8, 64, 256, 512, 1024} {
+		for _, mnbt := range []int{256, 2048, 8192, 16384} {
+			for _, spec := range []int{0, 1, 3, 7} {
+				for _, f100 := range []bool{false, true} {
+					for _, mode := range []string{"FULL_AND_PIECEWISE", "FULL_DECODE_ONLY", "FULL", "PIECEWISE"} {
+						cases = append(cases, in{seqs, mnbt, spec, f100, mode, "", 0})
+						if spec > 0 {
+							// A draft model's one-token steps, a single-module MTP, and a
+							// multi-module one (three modules; two when it drafts one token).
+							cases = append(cases, in{seqs, mnbt, spec, f100, mode, "eagle", 0},
+								in{seqs, mnbt, spec, f100, mode, "mtp", 1},
+								in{seqs, mnbt, spec, f100, mode, "mtp", 3})
+						}
+					}
+				}
+			}
+		}
+	}
+	payload, err := json.Marshal(cases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("python3", "../pack/testdata/cudagraph/harness.py", root)
+	cmd.Stdin = bytes.NewReader(payload)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	raw, err := cmd.Output()
+	if err != nil {
+		if os.Getenv("VLLM_SOURCE_REQUIRED") == "" {
+			t.Skipf("the Python harness did not run (%v: %s); the default capture was NOT checked", err, stderr.String())
+		}
+		t.Fatalf("the Python harness failed: %v: %s", err, stderr.String())
+	}
+	var want []out
+	if err := json.Unmarshal(raw, &want); err != nil || len(want) != len(cases) {
+		t.Fatalf("harness output: %d results for %d cases, err %v", len(want), len(cases), err)
+	}
+	for i, c := range cases {
+		got := pack.DefaultCUDAGraphCapture(pack.DefaultCaptureInput{
+			MaxNumSeqs: c.Seqs, MaxNumBatchedTokens: c.MNBT, DecodeQueryLen: 1 + c.Spec,
+			Family100: c.Family100, MixedGraphs: c.Mode != "FULL_DECODE_ONLY",
+			DraftDecode: c.Spec >= 2 && (c.Method == "eagle" || (c.Method == "mtp" && min(c.NPredict, c.Spec) <= 1)),
+		})
+		w := want[i]
+		if !reflect.DeepEqual(got.Sizes, w.Sizes) || got.Max != w.Max ||
+			!reflect.DeepEqual(got.PrefillSizes, w.Prefill) || !reflect.DeepEqual(got.DecodeRequestSizes, w.Decode) {
+			t.Errorf("%+v:\n  got  sizes %v max %d prefill %v decode %v\n  want sizes %v max %d prefill %v decode %v",
+				c, got.Sizes, got.Max, got.PrefillSizes, got.DecodeRequestSizes, w.Sizes, w.Max, w.Prefill, w.Decode)
+			return
+		}
 	}
 }
 
@@ -1256,7 +1372,8 @@ func classBody(src, header string) string {
 }
 
 // long_prefill_token_threshold: its default and floor, the startup refusal above
-// max_model_len, the per-step cap, and this release's waiver for a lone request.
+// max_model_len, the per-step cap, and the scheduler's rule for when it applies: only with
+// chunked prefill on, and not for a lone request.
 func TestLongPrefillTokenThresholdMatchSource(t *testing.T) {
 	root := vllmSource(t)
 	cfg := readSource(t, root, "vllm", "config", "scheduler.py")
@@ -1271,7 +1388,7 @@ func TestLongPrefillTokenThresholdMatchSource(t *testing.T) {
 	sched := readSource(t, root, "vllm", "v1", "core", "sched", "scheduler.py")
 	for _, want := range []string{
 		"if 0 < long_prefill_token_threshold < num_new_tokens:",
-		"if num_eligible_reqs > 1\n            else 0",
+		"if self.scheduler_config.enable_chunked_prefill and num_eligible_reqs > 1\n            else 0",
 	} {
 		if !strings.Contains(sched, want) {
 			t.Errorf("the scheduler's cap changed: %q is gone", want)

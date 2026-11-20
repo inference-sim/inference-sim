@@ -114,34 +114,55 @@ func openCapture(t *testing.T, c captureOracleCase, hardware string) *latencyker
 	return k
 }
 
-// knownCaptureDivergences are the oracle cases on which the kernel does not give vLLM's maximum,
-// each with the reason. The test fails if a listed case now agrees, so the entry is removed with
-// the fix. None is in the value class the dashboard's points state, because those state
-// max_cudagraph_capture_size, which the kernel resolves through the rules pack.
-var knownCaptureDivergences = map[string]string{
-	"batched-tokens-off-stride":           unstatedMaxAboveBatchedTokens,
-	"batched-tokens-off-stride-blackwell": unstatedMaxAboveBatchedTokens,
+// headDerivedCapture is testdata/capture_head_derived.json: the maximum vLLM main head
+// (0fda86a) resolves for the oracle cases that state neither max_cudagraph_capture_size nor
+// cudagraph_capture_sizes. The oracle was recorded at v0.33.0, where that default is one shared
+// token ladder; at the head it is a prefill token grid plus a decode request grid per platform,
+// so the recorded maximum is stale for the cases listed. The file is derived from the head's
+// source by running its own resolver (testdata/derive_capture_head.py, which names the harness),
+// and the oracle was not re-run: a maintainer re-records the oracle at the head and deletes it.
+func headDerivedCapture(t *testing.T) map[string]int {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("testdata", "capture_head_derived.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Derivation string `json:"derivation"`
+		Commit     string `json:"vllm_commit"`
+		Cases      map[string]struct {
+			Max int `json:"max"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	if f.Derivation != "derived from source, oracle not re-run" || f.Commit != "0fda86a35419c9c70dbfada224c838c10fbb62ad" {
+		t.Fatalf("capture_head_derived.json is %q at %s", f.Derivation, f.Commit)
+	}
+	out := map[string]int{}
+	for n, c := range f.Cases {
+		out[n] = c.Max
+	}
+	return out
 }
-
-const unstatedMaxAboveBatchedTokens = "max_cudagraph_capture_size unstated and max_num_batched_tokens below the default ceiling: " +
-	"vLLM caps the default at max_num_batched_tokens (vllm/config/vllm.py:2445-2446@5df63a72), " +
-	"the kernel's unstated branch (kernel/new.go, min(seqs x width x 2, 512 or 1024)) does not, " +
-	"so it prices the capture memory and the graph ceiling at 512 where vLLM has 300"
 
 // The kernel's CUDA graph capture ceiling is vLLM's own for every configuration the oracle holds
 // that an engine block can state, on a Hopper part (h200) and a data-center Blackwell part
 // (b200). The value class: max_cudagraph_capture_size stated as 2048, as 2, off the stride
 // (1000, which vLLM truncates to 992), equal to max_num_batched_tokens, and in [8, 256), where
 // vLLM's capture stride is 8 (64, 100 which it truncates to 96, and 128), and cudagraph_mode
-// and cudagraph_capture_sizes as stated; or neither stated, where the ceiling is
-// min(max_num_seqs x decode width x 2, 512 or 1024 on Blackwell).
+// and cudagraph_capture_sizes as stated; or neither stated, where the expectation is
+// headDerivedCapture's, the head's platform split (a prefill token grid and a decode request
+// grid, 8192 and max_num_seqs on Blackwell, one shared ladder to 512 elsewhere).
 func TestKernelCaptureTokensAreVLLMs(t *testing.T) {
 	cases := loadCaptureOracle(t)
 	if len(cases) < 40 {
 		t.Fatalf("only %d oracle capture cases", len(cases))
 	}
 	var checked, stated2048, stated2, off, small int
-	listed := map[string]bool{}
+	derived := headDerivedCapture(t)
+	usedDerived := 0
 	for _, c := range cases {
 		switch {
 		case c.Resolved.Error != nil:
@@ -164,16 +185,13 @@ func TestKernelCaptureTokensAreVLLMs(t *testing.T) {
 		t.Run(c.Case.Name, func(t *testing.T) {
 			k := openCapture(t, c, hw)
 			got := k.CaptureTokens()
-			why, known := knownCaptureDivergences[c.Case.Name]
-			if known {
-				listed[c.Case.Name] = true
-				if got == c.Resolved.Max {
-					t.Errorf("CaptureTokens %d now equals vLLM's; remove the known divergence (%s)", got, why)
-				}
-				return
+			want := c.Resolved.Max
+			if d, ok := derived[c.Case.Name]; ok {
+				want = d
+				usedDerived++
 			}
-			if got != c.Resolved.Max {
-				t.Errorf("CaptureTokens %d, vLLM resolves max_cudagraph_capture_size %d", got, c.Resolved.Max)
+			if got != want {
+				t.Errorf("CaptureTokens %d, vLLM resolves max_cudagraph_capture_size %d", got, want)
 			}
 			// The sizes behind the maximum, through the rules pack the kernel calls, for a
 			// deployment that states the maximum or the sizes. Where it states neither, vLLM
@@ -207,10 +225,8 @@ func TestKernelCaptureTokensAreVLLMs(t *testing.T) {
 			}
 		}
 	}
-	for name := range knownCaptureDivergences {
-		if !listed[name] {
-			t.Errorf("known divergence %q matches no oracle case", name)
-		}
+	if usedDerived != len(derived) {
+		t.Errorf("%d head-derived cases, %d used: the derived file names a case the oracle no longer holds", len(derived), usedDerived)
 	}
 	// 64, 100 and 128 are three values on two parts.
 	if checked < 40 || stated2048 < 2 || stated2 < 2 || off < 2 || small < 6 {

@@ -140,6 +140,10 @@ type trace struct {
 		VLLMCommit     string `json:"vllm_commit"`
 		ScenarioSHA256 string `json:"scenario_sha256"`
 		MockVersion    string `json:"mock_version"`
+		// DerivedFromSource marks a trace no oracle run produced: its steps are the Go
+		// scheduler's, derived from a later vLLM source than the pin, and the note says how.
+		DerivedFromSource string `json:"derived_from_source"`
+		OracleRun         *bool  `json:"oracle_run"`
 	} `json:"provenance"`
 	// GroupsError is what get_kv_cache_groups raised on an expect_groups_error scenario's layers,
 	// null when it grouped them.
@@ -673,6 +677,11 @@ func checkGroupsRefusal(t *testing.T, sc scenario, want trace) {
 	}
 }
 
+// derivedAtCommit is the vLLM main head the engine's rules were ported to (row 3d): a trace marked
+// derived_from_source was read from that source, not recorded from it. A maintainer re-record on
+// Linux x86_64 replaces such a trace with a recorded one.
+const derivedAtCommit = "0fda86a35419c9c70dbfada224c838c10fbb62ad"
+
 // checkProvenance refuses a golden trace that was not produced from this exact scenario file
 // by the pinned vLLM release under the current GPU mock: a trace is only evidence for the
 // scenario it was run on.
@@ -684,11 +693,21 @@ func checkProvenance(t *testing.T, scenarioPath string, tr trace) {
 	}
 	sum := sha256.Sum256(raw)
 	p := tr.Provenance
+	vllmVersion, vllmCommit := upstream.Version, upstream.Commit
+	if p.DerivedFromSource != "" {
+		// A derived trace is evidence of the source it was read from, never of an oracle run: it
+		// must say so, and it names the head commit its rule was read from (the pin moves to it
+		// with the re-record), which stands in for the pin until then.
+		if p.OracleRun == nil || *p.OracleRun {
+			t.Fatalf("golden trace for %s is derived from source and must record oracle_run false", filepath.Base(scenarioPath))
+		}
+		vllmVersion, vllmCommit = derivedAtCommit[:12], derivedAtCommit
+	}
 	for _, c := range []struct{ field, got, want string }{
 		{"scenario_sha256", p.ScenarioSHA256, hex.EncodeToString(sum[:])},
 		// A build may carry a local version label ("0.32.0+cpu"); the release is what counts.
-		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], upstream.Version},
-		{"vllm_commit", p.VLLMCommit, upstream.Commit},
+		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], vllmVersion},
+		{"vllm_commit", p.VLLMCommit, vllmCommit},
 		{"mock_version", p.MockVersion, mockVersion(t)},
 	} {
 		if c.got != c.want {

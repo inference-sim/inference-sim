@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -273,13 +274,16 @@ func TestTheLoweringResolvesEverySettingTheKernelPrices(t *testing.T) {
 					t.Errorf("Graphs.Ceiling %d, want 16", l.Plan.Graphs.Ceiling)
 				}
 			}},
-		{"an unstated capture ceiling is 1024 on SM100", denseB, vllmsettings.Settings{},
+		{"an unstated capture on SM100 splits into a prefill token grid and a decode request grid", denseB, vllmsettings.Settings{},
 			func(t *testing.T, l *plan.Lowered) {
-				if l.Plan.Graphs.Ceiling != 1024 {
-					t.Errorf("Graphs.Ceiling %d, want 1024", l.Plan.Graphs.Ceiling)
+				// Head's CUDA family-100 defaults: prefill tokens to 8192, decode requests to
+				// max_num_seqs (here 1024), recorded as the union of the two.
+				b := l.Plan.Graphs.Buckets
+				if len(b) == 0 || int(l.Plan.Graphs.Ceiling) != b[len(b)-1] || l.Plan.Graphs.Ceiling != 8192 {
+					t.Errorf("Graphs.Ceiling %d over %v, want the largest captured size, 8192", l.Plan.Graphs.Ceiling, b)
 				}
-				if len(l.Plan.Graphs.Buckets) == 0 || l.Plan.Graphs.Buckets[len(l.Plan.Graphs.Buckets)-1] != 1024 {
-					t.Errorf("Graphs.Buckets %v, want the ladder up to 1024", l.Plan.Graphs.Buckets)
+				if !slices.Contains(b, 1024) || !slices.Contains(b, 992) || slices.Contains(b, 8000) {
+					t.Errorf("Graphs.Buckets %v, want the decode request counts (992, 1024) and the prefill grid, not an 8-token ladder", b)
 				}
 			}},
 		{"an unstated context bound is the model's window", v4pro, vllmsettings.Settings{},

@@ -643,11 +643,13 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 	canSkipDrafts := s.cfg.Spec.Lookahead > 0 && s.cfg.UseV2ModelRunner
 	draftsNeeded := !canSkipDrafts
 
-	// The long-prefill cap is waived when one request is all there is (:640-655).
+	// The long-prefill cap applies only with chunked prefill on, and is waived when one
+	// request is all there is (vLLM head 0fda86a35419 scheduler.py:762-778): with chunked prefill
+	// off a prompt is scheduled whole or not at all, so the cap would only starve it.
 	nr, nw := s.Counts()
 	eligible := nr + nw
 	threshold := 0
-	if eligible > 1 {
+	if s.cfg.EnableChunkedPrefill && eligible > 1 {
 		threshold = s.cfg.LongPrefillTokenThreshold
 	}
 	if threshold > 0 && s.cfg.LongPrefillAdaptive {
