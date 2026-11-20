@@ -38,6 +38,8 @@ func requestRows(cs *cluster.ClusterSimulator, m *sim.Metrics) []result.RequestR
 			Model: f.Model, Adapter: f.Adapter, SLOClass: f.SLOClass, TenantID: f.TenantID,
 			SessionID: f.SessionID, RoundIndex: f.RoundIndex, Phase: result.Phase(f.Phase),
 		}
+		endedUs := rec.At
+		row.EndedUs = &endedUs
 		if rec.Fate == sim.FateDropped {
 			row.DropReason = result.DropReason(rec.Reason)
 		}
