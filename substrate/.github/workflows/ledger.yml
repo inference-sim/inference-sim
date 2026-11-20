@@ -320,6 +320,46 @@ jobs:
             exit 1
           fi
 
+  # The InferenceX feed read together with the pinned dump (requirements 3A.1, 3A.9; design D3):
+  # the dump owns the record ids up to its last, the feed those above, and a run on both sides
+  # keeps one measured date. It writes the reconciliation report and the supplements to pin as
+  # an artifact. It holds no seed, runs in no environment, reads no secret and commits nothing:
+  # a ledger owner reviews the proposal and adds the pins to sources.yaml in a pull request. The
+  # feed's URLs are the repository variable INFERENCEX_FEED_URLS (space-separated; not a
+  # secret); until a ledger owner sets it the job reports that and succeeds.
+  inferencex-feed:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: ./.github/actions/go-toolchain
+      - name: Reconcile the feed with the pinned dump
+        env:
+          FEED_URLS: ${{ vars.INFERENCEX_FEED_URLS }}
+        run: |
+          set -euo pipefail
+          if [ -z "${FEED_URLS// /}" ]; then
+            echo "::notice::INFERENCEX_FEED_URLS is not set; there is no feed to reconcile"
+            exit 0
+          fi
+          ./ledger/inferencex/restore.sh ix
+          psql -d ix -At -f ledger/inferencex/export.sql -o "$RUNNER_TEMP/rows.jsonl"
+          args=()
+          for u in $FEED_URLS; do args+=(-url "$u"); done
+          go run ./ledger/cmd/ledger feed -rows "$RUNNER_TEMP/rows.jsonl" "${args[@]}" -out "$RUNNER_TEMP/feed" catalog/ledger
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: inferencex-feed
+          path: ${{ runner.temp }}/feed
+          if-no-files-found: ignore
+          retention-days: 14
+
   # The configiq unit list regenerated from the pinned Hugging Face revision, byte for byte
   # (D4). It holds no seed and runs in no environment: the export reads third-party Parquet
   # files with pyarrow, which a seed-holding job does not run. The download is public and needs

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"regexp"
 	"sort"
 	"strconv"
@@ -269,11 +270,20 @@ type Report struct {
 	ByFramework map[string]int `yaml:"units_by_framework"`
 	// Supplements counts the records each supplement added to the pinned revision's.
 	Supplements []SupplementReport `yaml:"supplements,omitempty"`
+	// Feed reconciles the API's rows with the dump's. It is present only in the report of a
+	// feed run (ledger feed), never in the committed report.
+	Feed *FeedReport `yaml:"feed,omitempty"`
 }
 
 // Ingest turns rows into units and the ingest report. revision names the pinned source
 // revision and input the SHA-256 of the exported rows.
 func Ingest(rows []Row, revision, input string) ([]ledger.Unit, *Report, error) {
+	return ingestAt(rows, math.MaxInt64, revision, input)
+}
+
+// ingestAt is Ingest for rows of two owners: the dump owns every id up to cutoff and the feed
+// owns the ids above it (design D3, requirements 3A.9).
+func ingestAt(rows []Row, cutoff int64, revision, input string) ([]ledger.Unit, *Report, error) {
 	rep := &Report{Kind: "IngestReport", Source: SourceID, Revision: revision, Input: input,
 		Records: len(rows), LeftOut: map[string][]int64{}, ByFramework: map[string]int{}}
 
@@ -286,10 +296,23 @@ func Ingest(rows []Row, revision, input string) ([]ledger.Unit, *Report, error) 
 	}
 	// The measured date of a record with a run id is the earliest date among all records of
 	// its benchmark run, so every attempt of a run has one date; a record with no run id keeps
-	// its own date (design §10.2). Every record counts, measurements or not.
+	// its own date (design §10.2). Every record counts, measurements or not. The dump is frozen,
+	// so a run the dump holds keeps the earliest date of its dump records: a record the feed adds
+	// to that run takes it and cannot move the date of a unit the dump already made.
 	runDate := map[int64]string{}
-	for i := range rows {
-		if run := BenchmarkRun(rows[i].RunURL); run != nil {
+	for _, owned := range []bool{true, false} {
+		fixed := map[int64]bool{}
+		for run := range runDate {
+			fixed[run] = true
+		}
+		for i := range rows {
+			if (rows[i].ID <= cutoff) != owned {
+				continue
+			}
+			run := BenchmarkRun(rows[i].RunURL)
+			if run == nil || fixed[*run] {
+				continue
+			}
 			if d, ok := runDate[*run]; !ok || rows[i].Date < d {
 				runDate[*run] = rows[i].Date
 			}
