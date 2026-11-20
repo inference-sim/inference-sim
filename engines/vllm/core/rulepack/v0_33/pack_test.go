@@ -634,7 +634,7 @@ func TestEngramExcludesDBO(t *testing.T) {
 
 func TestModelSequenceParallel(t *testing.T) {
 	p := Pack()
-	v41 := enginefacts.ArchDeepseekV41
+	v41, v4 := enginefacts.ArchDeepseekV41, enginefacts.ArchDeepseekV4
 	for _, c := range []struct {
 		name string
 		arch string
@@ -647,7 +647,13 @@ func TestModelSequenceParallel(t *testing.T) {
 		{"auto at dp one", v41, deployment.Parallelism{TP: 8, PP: 1, DP: 1, EnableExpertParallel: true}, "", false},
 		{"no expert parallelism", v41, deployment.Parallelism{TP: 4, PP: 1, DP: 2}, "", false},
 		{"tp one", v41, deployment.Parallelism{TP: 1, PP: 1, DP: 8, EnableExpertParallel: true}, "", false},
-		{"pipeline", v41, deployment.Parallelism{TP: 4, PP: 2, DP: 2, EnableExpertParallel: true}, "", false},
+		// The head dropped DeepSeek-V4.1's pipeline_parallel_size == 1 term.
+		{"pipeline, dp above one", v41, deployment.Parallelism{TP: 4, PP: 2, DP: 2, EnableExpertParallel: true}, "", true},
+		{"pipeline, mega-MoE", v41, deployment.Parallelism{TP: 4, PP: 2, DP: 1, EnableExpertParallel: true}, "deep_gemm_mega_moe", true},
+		// DeepSeek-V4 keeps pp 1 for the data-parallel route only.
+		{"v4 dp above one", v4, deployment.Parallelism{TP: 4, PP: 1, DP: 2, EnableExpertParallel: true}, "", true},
+		{"v4 pipeline, dp above one", v4, deployment.Parallelism{TP: 4, PP: 2, DP: 2, EnableExpertParallel: true}, "", false},
+		{"v4 pipeline, mega-MoE", v4, deployment.Parallelism{TP: 4, PP: 2, DP: 1, EnableExpertParallel: true}, "deep_gemm_mega_moe", true},
 		{"other architecture", "DeepseekV3ForCausalLM", deployment.Parallelism{TP: 4, PP: 1, DP: 2, EnableExpertParallel: true}, "", false},
 	} {
 		if got := p.ModelSequenceParallel(c.arch, c.pl, c.moe); got != c.want {
@@ -825,10 +831,11 @@ func TestSequenceParallelMoEAgreesWithItsRule(t *testing.T) {
 }
 
 // The properties DeepSeek-V4.1's own rule must have, checked over every layout and MoE
-// backend: it needs pipeline parallelism of one, expert parallelism and more than one
-// tensor-parallel rank; with those, more than one data-parallel rank turns it on whatever
-// the backend, and at one rank only a mega-MoE backend does; and raising dp never turns it
-// off. An architecture without a rule is never on.
+// backend: it needs expert parallelism and more than one tensor-parallel rank; with those,
+// more than one data-parallel rank turns it on whatever the backend, and at one rank only a
+// mega-MoE backend does; and raising dp never turns it off. DeepSeek-V4's differs in one
+// term: its data-parallel route needs pipeline parallelism of one, a mega-MoE backend
+// counts at any width. An architecture without a rule is never on.
 func TestModelSequenceParallelProperties(t *testing.T) {
 	p := Pack()
 	v41 := enginefacts.ArchDeepseekV41
@@ -836,10 +843,15 @@ func TestModelSequenceParallelProperties(t *testing.T) {
 	for _, pl := range layoutGrid() {
 		for _, moe := range moes {
 			on := p.ModelSequenceParallel(v41, pl, moe)
-			base := pl.PP <= 1 && pl.EnableExpertParallel && pl.TP > 1
+			base := pl.EnableExpertParallel && pl.TP > 1
+			// DeepSeek-V4: dp counts only at pp 1; a mega-MoE backend at any width.
+			wantV4 := base && (p.MegaMoEBackends[moe] || (pl.DP > 1 && pl.PP <= 1))
+			if got := p.ModelSequenceParallel(enginefacts.ArchDeepseekV4, pl, moe); got != wantV4 {
+				t.Fatalf("v4 %+v %q: on=%v, want %v", pl, moe, got, wantV4)
+			}
 			switch {
 			case !base && on:
-				t.Fatalf("%+v %q: on without pp 1, expert parallelism and tp above 1", pl, moe)
+				t.Fatalf("%+v %q: on without expert parallelism and tp above 1", pl, moe)
 			case base && pl.DP > 1 && !on:
 				t.Fatalf("%+v %q: off with dp above 1", pl, moe)
 			case base && pl.DP <= 1 && on != p.MegaMoEBackends[moe]:

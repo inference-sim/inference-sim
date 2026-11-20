@@ -79,13 +79,14 @@ MUTANTS = [
     # The parser: MEGA_MOE_BACKENDS' module constants, and the sequence-parallel variable.
     ("C17", "the source check resolves FLASHINFER_MOE_EP_BACKENDS through its module constants", SOURCE,
      "\t\tconstants[m[1]] = m[2]\n", "\t\tconstants[m[1]] = m[1]\n", "TestMoEBackendsMatchSource"),
-    ("C18", "DeepSeek-V4 folds data_parallel_size > 1 into moe_needs_token_sharded_input", SOURCE,
-     'case clause == "moe_needs_token_sharded_input" && folded:',
-     'case clause == "moe_needs_token_sharded_input" && !folded:', "TestModelSequenceParallelRulesMatchSource"),
+    ("C18", "DeepSeek-V4 narrows the data-parallel route of sequence parallelism to pp 1", SOURCE,
+     "c.DataParallelRouteNeedsPipelineParallelOne = dpOnlyAtPP1",
+     "c.DataParallelRouteNeedsPipelineParallelOne = dpOnlyAtPP1 && false", "TestModelSequenceParallelRulesMatchSource"),
     ("C19", "both DeepSeek-V4 releases keep the mega-MoE-or-dp clause", PACK,
-     "rules.ArchDeepseekV4: pack.SequenceParallelCondition{PipelineParallelOne: true, ExpertParallel: true,\n"
-     "\t\t\t\tTensorParallelAboveOne: true, MegaMoEOrDataParallelAboveOne: true},",
-     "rules.ArchDeepseekV4: pack.SequenceParallelCondition{PipelineParallelOne: true, ExpertParallel: true,\n"
+     "enginefacts.ArchDeepseekV4: pack.SequenceParallelCondition{ExpertParallel: true,\n"
+     "\t\t\t\tTensorParallelAboveOne: true, MegaMoEOrDataParallelAboveOne: true,\n"
+     "\t\t\t\tDataParallelRouteNeedsPipelineParallelOne: true},",
+     "enginefacts.ArchDeepseekV4: pack.SequenceParallelCondition{ExpertParallel: true,\n"
      "\t\t\t\tTensorParallelAboveOne: true},", "TestModelSequenceParallelRulesMatchSource"),
     # mla-prefill-backend-known (vllm/config/attention.py:195-201@5df63a72; the members are
     # MLAPrefillBackendEnum's, vllm/v1/attention/backends/mla/prefill/registry.py:37-65).

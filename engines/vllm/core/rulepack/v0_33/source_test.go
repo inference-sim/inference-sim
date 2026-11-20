@@ -710,43 +710,45 @@ func spCondition(t *testing.T, src string) pack.SequenceParallelCondition {
 	prelude := body[:r]
 	body = body[r+len("return ("):]
 	body = body[:strings.Index(body, "\n    )")]
-	// v0.32.0 names the mega-MoE test moe_needs_token_sharded_input. DeepSeek-V4.1 keeps
-	// "(moe_needs_token_sharded_input or parallel_config.data_parallel_size > 1)" in the
-	// return; DeepSeek-V4 folds "or parallel_config.data_parallel_size > 1" into the
-	// variable (vllm/models/deepseek_v41/nvidia/model.py:246-256@5df63a72,
-	// vllm/models/deepseek_v4/nvidia/model.py:1047-1059@5df63a72). Either spelling is the
-	// same condition; the variable's definition is checked, not assumed.
-	shardedVar := regexp.MustCompile(`(?s)moe_needs_token_sharded_input = \(\s*(.*?)\s*\)\n`).FindStringSubmatch(prelude)
-	if shardedVar == nil {
-		t.Fatal("_use_sequence_parallel no longer defines moe_needs_token_sharded_input")
-	}
-	definition := strings.Join(strings.Fields(shardedVar[1]), " ")
-	var folded bool
-	switch definition {
-	case "vllm_config.kernel_config.moe_backend in MEGA_MOE_BACKENDS":
-	case "moe_backend in MEGA_MOE_BACKENDS or parallel_config.data_parallel_size > 1":
-		if !strings.Contains(prelude, "moe_backend = vllm_config.kernel_config.moe_backend") {
-			t.Fatal("moe_needs_token_sharded_input reads a moe_backend that is not the kernel config's")
+	// The head spells the condition in two shapes. DeepSeek-V4.1 names the mega-MoE test
+	// moe_needs_token_sharded_input and keeps "(moe_needs_token_sharded_input or
+	// parallel_config.data_parallel_size > 1)" in the return. DeepSeek-V4 names it use_mega_moe,
+	// defines dp_sp as data parallelism above one with pipeline parallelism one ("SP from DP
+	// alone is not validated with PP"), and returns "(use_mega_moe or dp_sp)", so a mega-MoE
+	// backend counts at any pipeline width and the data-parallel route only at pp 1. The
+	// variables' definitions are checked, not assumed.
+	var dpOnlyAtPP1 bool
+	megaClause := ""
+	if m := regexp.MustCompile(`(?s)moe_needs_token_sharded_input = \(\s*(.*?)\s*\)\n`).FindStringSubmatch(prelude); m != nil {
+		if def := strings.Join(strings.Fields(m[1]), " "); def != "vllm_config.kernel_config.moe_backend in MEGA_MOE_BACKENDS" {
+			t.Fatalf("moe_needs_token_sharded_input is %q, which the pack cannot encode", def)
 		}
-		folded = true
-	default:
-		t.Fatalf("moe_needs_token_sharded_input is %q, which the pack cannot encode", definition)
+		megaClause = "(moe_needs_token_sharded_input or parallel_config.data_parallel_size > 1)"
+	} else if m := regexp.MustCompile(`(?s)use_mega_moe = (.*?)\n.*?dp_sp = \(\s*(.*?)\s*\)\n`).FindStringSubmatch(prelude); m != nil {
+		if def := strings.Join(strings.Fields(m[1]), " "); def != "vllm_config.kernel_config.moe_backend in MEGA_MOE_BACKENDS" {
+			t.Fatalf("use_mega_moe is %q, which the pack cannot encode", def)
+		}
+		if def := strings.Join(strings.Fields(m[2]), " "); def != "parallel_config.data_parallel_size > 1 and parallel_config.pipeline_parallel_size == 1" {
+			t.Fatalf("dp_sp is %q, which the pack cannot encode", def)
+		}
+		megaClause, dpOnlyAtPP1 = "(use_mega_moe or dp_sp)", true
+	} else {
+		t.Fatal("_use_sequence_parallel defines neither moe_needs_token_sharded_input nor use_mega_moe and dp_sp")
 	}
 	var c pack.SequenceParallelCondition
 	for _, clause := range strings.Split(body, "\n") {
 		clause = strings.TrimPrefix(strings.TrimSpace(clause), "and ")
-		switch {
-		case clause == "":
-		case clause == "parallel_config.pipeline_parallel_size == 1":
+		switch clause {
+		case "":
+		case "parallel_config.pipeline_parallel_size == 1":
 			c.PipelineParallelOne = true
-		case clause == "parallel_config.enable_expert_parallel":
+		case "parallel_config.enable_expert_parallel":
 			c.ExpertParallel = true
-		case clause == "parallel_config.tensor_parallel_size > 1":
+		case "parallel_config.tensor_parallel_size > 1":
 			c.TensorParallelAboveOne = true
-		case clause == "(moe_needs_token_sharded_input or parallel_config.data_parallel_size > 1)" && !folded:
+		case megaClause:
 			c.MegaMoEOrDataParallelAboveOne = true
-		case clause == "moe_needs_token_sharded_input" && folded:
-			c.MegaMoEOrDataParallelAboveOne = true
+			c.DataParallelRouteNeedsPipelineParallelOne = dpOnlyAtPP1
 		default:
 			t.Fatalf("_use_sequence_parallel has a clause the pack cannot encode: %q", clause)
 		}
@@ -905,12 +907,21 @@ func TestSequenceParallelSplitsMatchSource(t *testing.T) {
 		}
 	}
 	engram := readSource(t, root, "vllm", "models", "deepseek_v41", "common", "engram.py")
-	at := strings.Index(engram, "self.wkv = ColumnParallelLinear(")
-	if at < 0 {
-		t.Fatal("Engram's wkv is no longer a ColumnParallelLinear")
+	// The head builds wkv in _create_wkv, from the layer's use_sequence_parallel flag
+	// (self.wkv = self._create_wkv(...) in __init__).
+	if !strings.Contains(engram, "self.use_sequence_parallel = use_sequence_parallel") ||
+		!strings.Contains(engram, "self.wkv = self._create_wkv(") {
+		t.Error("Engram's wkv is no longer built from the layer's sequence-parallel flag")
 	}
-	if end := strings.Index(engram[at:], "\n        )"); end < 0 ||
-		!strings.Contains(engram[at:at+end], "disable_tp=use_sequence_parallel,") {
+	at := strings.Index(engram, "def _create_wkv(")
+	if at < 0 {
+		t.Fatal("Engram's _create_wkv is gone")
+	}
+	body := engram[at:]
+	if ctor := strings.Index(body, "return ColumnParallelLinear("); ctor < 0 {
+		t.Fatal("Engram's wkv is no longer a ColumnParallelLinear")
+	} else if end := strings.Index(body[ctor:], "\n        )"); end < 0 ||
+		!strings.Contains(body[ctor:ctor+end], "disable_tp=self.use_sequence_parallel,") {
 		t.Error("Engram's wkv no longer turns its split off under sequence parallelism")
 	}
 	dspark := readSource(t, root, "vllm", "models", "deepseek_v41", "nvidia", "dspark.py")
@@ -948,13 +959,18 @@ func TestSequenceParallelSplitsMatchSource(t *testing.T) {
 	}
 }
 
-// pplx and naive run as allgather_reducescatter (the validator renames them), and flashinfer_all2allv as
+// pplx and naive run as allgather_reducescatter (the validator renames them through
+// _resolve_all2all_backend, which also resolves "auto"), and flashinfer_all2allv as
 // flashinfer_nvlink_two_sided (the communicator treats it as that backend).
 func TestAll2AllBackendRenamesMatchSource(t *testing.T) {
 	root := vllmSource(t)
 	src := readSource(t, root, "vllm", "config", "parallel.py")
-	if !strings.Contains(src, `if self.all2all_backend in ["pplx", "naive"]:`) ||
-		!strings.Contains(src, `self.all2all_backend = "allgather_reducescatter"`) {
+	// The head resolves it in _resolve_all2all_backend (which also resolves "auto").
+	resolveAt := strings.Index(src, "def _resolve_all2all_backend(")
+	renameAt := strings.Index(src, `if requested in ("pplx", "naive"):`)
+	if resolveAt < 0 || renameAt < resolveAt ||
+		!strings.Contains(src[renameAt:], "return \"allgather_reducescatter\"") ||
+		strings.Contains(src[resolveAt:renameAt], "\ndef ") {
 		t.Error("the engine no longer replaces pplx and naive with allgather_reducescatter")
 	}
 	// moe-ep-backend-binds-passthrough reads the renamed backend: the rename runs in
@@ -962,7 +978,7 @@ func TestAll2AllBackendRenamesMatchSource(t *testing.T) {
 	// parallel_config.all2all_backend from VllmConfig's post-init.
 	const validatorHead = "@model_validator(mode=\"after\")\n    def _validate_parallel_config(self) -> Self:"
 	validator := strings.Index(src, validatorHead)
-	rename := strings.Index(src, `if self.all2all_backend in ["pplx", "naive"]:`)
+	rename := strings.Index(src, "self.all2all_backend = _resolve_all2all_backend(self)")
 	if validator < 0 || rename < validator+len(validatorHead) ||
 		strings.Contains(src[validator+len(validatorHead):rename], "\n    def ") {
 		t.Error("pplx and naive are no longer renamed in ParallelConfig's validator, so the " +
