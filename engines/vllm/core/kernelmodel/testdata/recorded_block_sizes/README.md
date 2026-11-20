@@ -1,7 +1,7 @@
 # Recorded block sizes
 
 `recorded_block_sizes.json` holds the KV block size that InferenceX runs used, read from each run's
-vLLM server log, to check `core/vllm.ResolveBlockSize` against runs (design X19, VLM-1). It holds
+vLLM server log, to check `core/vllm.ResolveBlockSizeAsRecorded` (the v0.33.0 table; the logs predate the pin's default of 64) against runs (design X19, VLM-1). It holds
 derived values only: no log text. `rows.json` is the list of rows it was built from, and `fetch.py`
 writes both.
 

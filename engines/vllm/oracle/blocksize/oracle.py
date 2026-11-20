@@ -1,14 +1,20 @@
 # Original to blis-vllm.
-"""Block-size oracle: what vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5) resolves block_size to when a deployment states none.
+"""Block-size oracle: what the vLLM checkout it is given resolves block_size to when a deployment states none.
+
+The checkout is the commit internal/upstream pins (core/vllm/blocksize_table.json) or, for the as-recorded
+table the committed run evidence is compared with, the release it was recorded against
+(core/vllm/blocksize_table_recorded.json, v0.33.0 4ba787ec9959e566d3b587a796dff07673324da5). The table records
+the checkout's commit. Line numbers below are the pin's, 0fda86a35419c9c70dbfada224c838c10fbb62ad.
 
 For each combination of model, GPU compute capability and KV dtype, this builds the inputs each
 attention layer hands vLLM's selector (the values come from the model's code, cited in LAYERS),
 and runs vLLM's own selection and block-size code on a CPU:
 
-  CudaPlatform.get_valid_backends       platforms/cuda.py:375-415   (priority list :83-180)
+  CudaPlatform.get_valid_backends       platforms/cuda.py:419-452   (priority list from :82)
   Platform._preferred_block_size_for_backends
-                                        platforms/interface.py:699-745
-  update_block_size_for_backend phase 1 platforms/interface.py:757-781
+                                        platforms/interface.py:710-776
+  update_block_size_for_backend phase 1 platforms/interface.py:796-810, starting from
+                                        CacheConfig.DEFAULT_BLOCK_SIZE (config/cache.py:185: 64 at the pin, 16 at v0.33.0)
 
 Only the GPU, the compiled wheels and the facts a CPU cannot discover are replaced (stubs.py,
 design FID-1). Each combination is run under every setting of those facts. It RESOLVES if the
@@ -17,7 +23,7 @@ finds no valid backend. Where ASSUMED_FACTS states a fact for a compute capabili
 evidence, the size must be the same only over the settings that agree with it, and the
 combination records the assumption it rests on (assumed_facts).
 
-The model's hybrid and heterogeneous-dtype phases (interface.py:783-790 and :791-796) do not
+The model's hybrid and heterogeneous-dtype phases (interface.py:812-816 and :818-822) do not
 apply to the models here: none is a hybrid model, and none sets kv_cache_dtype_skip_layers.
 
 Usage:
@@ -30,6 +36,7 @@ Usage:
 import itertools
 import json
 import os
+import subprocess
 import sys
 import types
 import warnings
@@ -37,12 +44,15 @@ import warnings
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-# A layer of a model: what get_attn_backend receives (v1/attention/selector.py:105-120).
+# A layer of a model: what get_attn_backend receives (v1/attention/selector.py:111-123).
 #   head_size, num_heads, has_sink, has_sliding_window, use_mla, use_sparse
-# cited at the model code that builds the layer, at 5df63a7203.
+# cited at the model code that builds the layer, at the pin. Read against 5df63a7203 and 4ba787ec before, the
+# attention-building code of every modelled model is unchanged at the pin (gpt_oss, minimax_m2, llama, gemma4,
+# mla_attention); the only new line on this path is Attention's checkpoint KV dtype (attention.py:308-311), which
+# the base quantization config answers None for (quantization/base_config.py:273-275).
 LAYERS = {
     # vllm/model_executor/models/gpt_oss.py: Attention(num_local_attention_heads, head_dim, ...,
-    # per_layer_sliding_window=config.sliding_window on even layers, sinks=self.sinks) :176-188.
+    # per_layer_sliding_window=config.sliding_window on even layers, sinks=self.sinks) :174-189.
     # head_dim 64 and 64 query heads: config.json (catalog/models/gpt-oss-120b).
     "gpt-oss-120b": [
         dict(head_size=64, num_heads=64, num_kv_heads=8, has_sink=True, has_sliding_window=True),
@@ -59,7 +69,7 @@ LAYERS = {
     # 128 and no sliding_window, layer_types or attn_window_size, as minimax-m2.5's does. Its
     # quantization_config excludes every model.layers.N.self_attn* module and declares
     # kv_cache_scheme {type: float, num_bits: 8}, which vLLM reads as kv_cache_quant_algo FP8
-    # (modelopt.py:344-352), so the KV cache may be fp8 where the deployment states auto. The
+    # (modelopt.py:374-392), so the KV cache may be fp8 where the deployment states auto. The
     # selector's inputs are the layer's shape, bfloat16 and the KV dtype name, and the table runs
     # every KV dtype name: it is the same size under auto and fp8, so the checkpoint's KV scheme
     # changes no size.
@@ -87,14 +97,14 @@ LAYERS = {
     "llama-3.3-70b-instruct-fp4": [
         dict(head_size=128, num_heads=64, num_kv_heads=8, has_sink=False, has_sliding_window=False),
     ],
-    # vllm/model_executor/layers/attention/mla_attention.py:479, 513-520:
+    # vllm/model_executor/layers/attention/mla_attention.py:497, 540-547:
     # head_size = kv_lora_rank + qk_rope_head_dim; get_attn_backend(..., use_mla=True,
     # use_sparse=False, num_heads=num_heads). DeepseekV3: 128 heads, kimi-k2.5: 64 (config.json).
     "deepseek-v3": [dict(head_size=576, num_heads=128, num_kv_heads=1, use_mla=True)],
     "kimi-k2.5": [dict(head_size=576, num_heads=64, num_kv_heads=1, use_mla=True)],
-    # vllm/model_executor/models/gemma4.py:365-517, 575-590: each layer is built with its own
+    # vllm/model_executor/models/gemma4.py:422-569, 638-647: each layer is built with its own
     # per_layer_config head_dim and num_key_value_heads, and the sliding layers pass the window
-    # (per_layer_sliding_window, :509). config.json (catalog/models/gemma-4-*): the sliding layers
+    # (per_layer_sliding_window, :569). config.json (catalog/models/gemma-4-*): the sliding layers
     # (layer_types sliding_attention) have head_dim 256 and num_key_value_heads, and the full layers
     # global_head_dim 512 and num_global_key_value_heads; num_kv_shared_layers is 0 and no layer
     # has a sink. The two layer kinds can select different backends (a backend may not take a head
@@ -111,11 +121,11 @@ LAYERS = {
     # config.json (catalog/models/gemma-4-26b-a4b-it-fp8-dynamic, read from the catalog) differs from the
     # BF16 model's in two keys only: transformers_version, and a quantization_config (compressed-tensors,
     # FP8 weights, dynamic FP8 per-token activations, targets Linear, kv_cache_scheme null). Every attention
-    # field above is equal. The layer builds its attention from per_layer_config (gemma4.py:365-517) and
+    # field above is equal. The layer builds its attention from per_layer_config (gemma4.py:422-569) and
     # never reads the quantization config, and get_attn_backend takes no weight-quantization argument
-    # (v1/attention/selector.py:105-120): the linear layers' quantization changes the weights, not the
+    # (v1/attention/selector.py:111-185): the linear layers' quantization changes the weights, not the
     # backend or block size. The KV dtype is not changed by it: Attention takes the quantization config's
-    # kv_cache_scheme only when it is not None (layers/attention/attention.py:287-289), and it is null here,
+    # kv_cache_scheme only when it is not None (layers/attention/attention.py:320-321), and it is null here,
     # so the table's KV dtype names are run as for every model.
     "gemma-4-26b-a4b-it-fp8-dynamic": [
         dict(head_size=256, num_heads=16, num_kv_heads=8, has_sink=False, has_sliding_window=True),
@@ -123,45 +133,45 @@ LAYERS = {
     ],
 }
 
-# Model-level facts the selection reads from the model config (config/model.py:1649-1654, from
+# Model-level facts the selection reads from the model config (config/model.py:1826-1830, from
 # transformers_utils/model_arch_config_convertor.py): is_mm_prefix_lm is true for a Gemma-4 model
 # whose text config has use_bidirectional_attention "vision" (Gemma4ModelArchConfigConvertor,
-# :781-788) unless the deployment is configuration-disabled for multimodal inputs
-# (ModelConfig._supports_multimodal_for_mm_prefix, :999-1021: language_model_only, or every
+# :789-796) unless the deployment is configuration-disabled for multimodal inputs
+# (ModelConfig._supports_multimodal_for_mm_prefix, :1047-1072: language_model_only, or every
 # modality's limit 0 without enable_mm_embeds). The table is for the default, multimodal on;
 # core/vllm.ResolveBlockSize refuses a pool that states either. rswa_window is None unless the
-# config states it (:1653, ModelArchConfigConvertorBase.rswa_window): no catalog model does.
+# config states it (:374-378, ModelArchConfigConvertorBase.rswa_window): no catalog model does.
 MM_PREFIX_LM = {"gemma-4-31b-it": True, "gemma-4-26b-a4b-it": True, "gemma-4-26b-a4b-it-fp8-dynamic": True}
 
 # DeepSeek-V4 (vllm/models/deepseek_v4) does not go through the selector. Its layers hand the platform
-# their own backend classes (DeepseekV4Attention.get_attn_backend, attention.py:857 returns backend_cls;
-# the SWA cache layer's swa_backend_cls, :355; the compressor, compressor.py:196; the indexer cache,
-# :928), and update_block_size_for_backend takes the smallest size they all accept
-# (Platform._preferred_block_size_for_backends, interface.py:699-745). The sizes the classes declare
+# their own backend classes (DeepseekV4Attention.get_attn_backend, attention.py:815 returns backend_cls;
+# the SWA cache layer's swa_backend_cls, :351; the compressor, compressor.py:197; the indexer cache,
+# :888), and update_block_size_for_backend takes the smallest size they all accept
+# (Platform._preferred_block_size_for_backends, interface.py:710-776). The sizes the classes declare
 # are read from the classes' source (the package cannot be imported on a CPU: it pulls in compiled
 # ops), and the selection itself is vLLM's own code on vLLM's AttentionBackend. The FlashInfer sparse
-# class declares the same sizes as the FlashMLA one beside it (nvidia/flashinfer_sparse.py:119-121
-# versus sparse_mla.py:59-61); the oracle fails if they differ. The sparse MLA
-# class takes compute capability major 9 or 10 (sparse_mla.py:93-95); the size is independent of the
+# class declares the same sizes as the FlashMLA one beside it (nvidia/flashinfer_sparse.py:119-120
+# versus sparse_mla.py:60-61); the oracle fails if they differ. The sparse MLA
+# class takes compute capability major 9 or 10 (sparse_mla.py:95-96); the size is independent of the
 # KV dtype and of the facts a CPU cannot discover, which enter the selector and not this path.
 DSV4_MODELS = ["deepseek-v4-pro", "deepseek-v4-pro-0813", "deepseek-v4-pro-nvfp4"]
 
 # Models not resolved, with the reason. A fixture of one of these keeps its block_size refused.
 NOT_RESOLVED = {
-    # vllm/models/minimax_m3/nvidia/model.py:392-567: layers listed in sparse_attention_config
-    # select MiniMaxM3SparseBackend by their own get_attn_backend (:559-567), not the selector;
-    # the dense layers use Attention (:356). Two backends share one block pool, and the sparse
-    # backend's block size is 128 (common/sparse_attention.py:163-165). The oracle runs the
+    # vllm/models/minimax_m3/nvidia/model.py: the sparse-attention layers (MiniMaxM3SparseAttention,
+    # :843) return their own MiniMaxM3SparseBackend from get_attn_backend (:1043), not the selector's;
+    # the dense layers use Attention. Two backends share one block pool, and the sparse
+    # backend's block size is 128 (common/sparse_attention.py:193-195). The oracle runs the
     # dense layers' selection only, so it cannot say which layers are sparse.
     "minimax-m3": "its sparse-attention layers pick MiniMaxM3SparseBackend directly "
-                  "(vllm/models/minimax_m3/nvidia/model.py:559), outside the selector",
+                  "(vllm/models/minimax_m3/nvidia/model.py:1043), outside the selector",
     # DeepSeek-V4.1 (vllm/models/deepseek_v41) has its own backends (a 64- or 128-row indexer by
-    # capability family, deepseek_v41/sparse_mla.py:115, :301); only DeepSeek-V4 is run (DSV4_MODELS).
+    # capability family, vllm/v1/attention/backends/mla/indexer.py:318-324, deepseek_v41/sparse_mla.py:116/:312); only DeepSeek-V4 is run (DSV4_MODELS).
     "deepseek-v4.1-flash": "DeepSeek-V4.1 layers use their own sparse MLA and indexer backends "
                            "(vllm/models/deepseek_v41), which the oracle does not run",
     "glm-5": "its sparse MLA layers need the indexer backends' sizes (use_sparse); not modelled here",
     "qwen3.5-397b-a17b": "a hybrid model: its block size is aligned to the recurrent page "
-                         "(platforms/interface.py:783-790, _align_hybrid_block_size)",
+                         "(platforms/interface.py:812-816, _align_hybrid_block_size :969)",
 }
 
 # The catalog's model directories, whose config.json files are the models' own. Set by
@@ -175,7 +185,7 @@ COMPUTE_CAPABILITY = {"h100": (9, 0), "h200": (9, 0), "b200": (10, 0), "b300": (
                       "gb200-nvl72": (10, 0), "gb300": (10, 3)}
 # fp8_e4m3, bfloat16 and float16 are names a deployment may state for the same KV cache as fp8 and
 # auto (CacheDType, vllm/config/cache.py:39-59). Backends test the name against their own
-# supported_kv_cache_dtypes (v1/attention/backend.py:110-116), and a few list one name of a pair and
+# supported_kv_cache_dtypes (v1/attention/backend.py:61, :130-131), and a few list one name of a pair and
 # not the other, so the oracle runs each name and the table says which resolve alike, rather than Go
 # assuming an alias (blis-vllm#68).
 KV_DTYPES = ["auto", "fp8", "fp8_e4m3", "bfloat16", "float16"]
@@ -189,10 +199,11 @@ KV_DTYPES = ["auto", "fp8", "fp8_e4m3", "bfloat16", "float16"]
 ASSUMED_FACTS = {
     (9, 0): {
         "fa3_available": (True, (
-            "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds "
-            "for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 "
+            "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:282 builds "
+            "for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.2.1 (:25), CMakeLists.txt:1919 "
             "includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports "
-            "(vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the "
+            "(vllm_flash_attn/flash_attn_interface.py:23-29; at v0.33.0 the same facts are Dockerfile:273, CUDA 13.0.3, "
+            "CMakeLists.txt:1576-1585, flash_attn_interface.py:20-28). The condition that builds _vllm_fa3_C is in the "
             "external flash-attention repository, which is not in the pinned tree, so this is an assumption about the "
             "images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, "
             "block_size 16; core/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only "
@@ -209,6 +220,8 @@ TP_WIDTHS = list(range(1, 17))
 
 def load_vllm(vllm_dir):
     warnings.simplefilter("ignore")
+    commit = subprocess.run(["git", "-C", vllm_dir, "rev-parse", "HEAD"], check=True, capture_output=True,
+                            text=True).stdout.strip()
     sys.path.insert(0, vllm_dir)
     import stubs
 
@@ -237,8 +250,13 @@ def load_vllm(vllm_dir):
     fb.can_use_trtllm_attention = fi.can_use_trtllm_attention
     fb.supports_trtllm_attention = fi.supports_trtllm_attention
     stubs.patch_flashmla()
+    from vllm.config.cache import CacheConfig
+
+    # update_block_size_for_backend starts the selection from CacheConfig.DEFAULT_BLOCK_SIZE
+    # (platforms/interface.py), which the checkout states: 16 at v0.33.0, 64 at the pin.
     return types.SimpleNamespace(torch=torch, Sim=Sim, DeviceCapability=DeviceCapability, VllmConfig=VllmConfig,
-                                 set_current_vllm_config=set_current_vllm_config, stubs=stubs)
+                                 set_current_vllm_config=set_current_vllm_config, stubs=stubs,
+                                 default_block_size=CacheConfig.DEFAULT_BLOCK_SIZE, commit=commit)
 
 
 def hf_text_config(model):
@@ -291,7 +309,7 @@ def resolve_once(v, model, cap, kv_dtype, facts, tp=1):
             if sel.backend_class not in backends:
                 backends.append(sel.backend_class)
                 names.append(sel.backend.name)
-        size = v.Sim._preferred_block_size_for_backends(backends, 16, vc)
+        size = v.Sim._preferred_block_size_for_backends(backends, v.default_block_size, vc)
     return (size, "/".join(names)), None
 
 
@@ -432,11 +450,11 @@ def dsv4_rows(v, fact_names, caps, vllm_dir):
         if cap[0] not in (9, 10):
             rows.append(dict(model=model, gpu=gpu, capability=f"{cap[0]}.{cap[1]}", kv_cache_dtype=kv, status="refused",
                              path="layer_backends", block_size=None, backends=[], assumed_facts={}, by_facts=by,
-                             note="DeepSeek-V4's sparse MLA backend takes compute capability major 9 or 10 only (sparse_mla.py:93-95)"))
+                             note="DeepSeek-V4's sparse MLA backend takes compute capability major 9 or 10 only (sparse_mla.py:95-96)"))
             continue
         vc = VllmConfig()
         with v.set_current_vllm_config(vc):
-            size = v.Sim._preferred_block_size_for_backends(backends, 16, vc)
+            size = v.Sim._preferred_block_size_for_backends(backends, v.default_block_size, vc)
         rows.append(dict(model=model, gpu=gpu, capability=f"{cap[0]}.{cap[1]}", kv_cache_dtype=kv, status="resolved",
                          path="layer_backends", block_size=size, backends=sorted(b.get_name() for b in backends),
                          assumed_facts={}, by_facts={k: size for k in by},
@@ -447,7 +465,7 @@ def dsv4_rows(v, fact_names, caps, vllm_dir):
 
 def render_table(v, fact_names, rows):
     out = []
-    out.append("# Block-size resolution oracle: vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5)")
+    out.append(f"# Block-size resolution oracle: vLLM {v.commit}, CacheConfig.DEFAULT_BLOCK_SIZE {v.default_block_size}")
     out.append("#")
     out.append("# Runs vLLM's own CudaPlatform.get_valid_backends and _preferred_block_size_for_backends on a CPU.")
     out.append("# Facts the CPU cannot discover. Each combination is run under every setting of them; it resolves")
@@ -483,7 +501,8 @@ def render_table(v, fact_names, rows):
 
 def as_json(v, fact_names, rows):
     return json.dumps({
-        "vllm": "4ba787ec9959e566d3b587a796dff07673324da5",
+        "vllm": v.commit,
+        "default_block_size": v.default_block_size,
         "facts": {f: v.stubs.FACT_DOC[f] for f in fact_names},
         "replacements": [{"what": a, "why": b} for a, b in v.stubs.REPLACEMENTS],
         "assumptions": {f"{cap[0]}.{cap[1]}": {f: {"value": want, "evidence": ev} for f, (want, ev) in facts.items()}

@@ -58,6 +58,67 @@ func (a tally) String() string {
 	return fmt.Sprintf("reproduced %d, refused %d, differs %d", a.reproduced, a.refused, a.differs)
 }
 
+func recordedCapabilityOf() func(string) (string, error) {
+	data := repos().Data
+	return func(name string) (string, error) {
+		chip, err := data.Chip(name)
+		if err != nil {
+			return "", err
+		}
+		return chip.ComputeCapability, nil
+	}
+}
+
+type recordedRuns struct {
+	Unobtainable []struct {
+		Row    int    `json:"row"`
+		Reason string `json:"reason"`
+	} `json:"unobtainable"`
+	Runs []recordedRun `json:"runs"`
+}
+
+func readRecordedRuns(t *testing.T) recordedRuns {
+	t.Helper()
+	raw, err := testgz.ReadFile("testdata/recorded_block_sizes/recorded_block_sizes.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f recordedRuns
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+// recordedRunInput is the catalog model and the resolver input a recorded run's log determines: the
+// tensor-parallel width and KV cache dtype of its engine configuration, the chip, and whether the
+// run speculates with a method that builds draft layers. The rows do not record num_spec_tokens, so
+// one token stands for any positive count.
+func recordedRunInput(t *testing.T, capabilityOf func(chip string) (string, error), r recordedRun) (string, vllm.BlockSizeInput) {
+	t.Helper()
+	chipOf := map[string]string{"gb200": "gb200-nvl72"}
+	name := r.Hardware
+	if c, ok := chipOf[name]; ok {
+		name = c
+	}
+	capability, err := capabilityOf(name)
+	if err != nil {
+		t.Fatalf("row %d: %v", r.Row, err)
+	}
+	model, ok := catalogModel[r.Model]
+	if !ok {
+		t.Fatalf("row %d: no catalog model for slug %q", r.Row, r.Model)
+	}
+	method := r.SpeculativeMethod
+	if method == "none" {
+		method = ""
+	}
+	return model, vllm.BlockSizeInput{
+		Model: model, Capability: capability, TP: r.LogTP, KVCacheDType: r.CacheDType,
+		Speculative: vllm.SpeculationAddsAttentionLayers(method, 1),
+	}
+}
+
 // TestResolutionAgainstTheRecordedRuns resolves each recorded run's block size as the engine would
 // had the run stated none, and compares. The classes are kept apart because only some can validate
 // the resolution:
@@ -73,45 +134,13 @@ func (a tally) String() string {
 // with a method that builds draft layers; the rows do not record num_spec_tokens, so one token
 // stands for any positive count. The coverage by model is logged.
 func TestResolutionAgainstTheRecordedRuns(t *testing.T) {
-	raw, err := testgz.ReadFile("testdata/recorded_block_sizes/recorded_block_sizes.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var f struct {
-		Unobtainable []struct {
-			Row    int    `json:"row"`
-			Reason string `json:"reason"`
-		} `json:"unobtainable"`
-		Runs []recordedRun `json:"runs"`
-	}
-	if err := json.Unmarshal(raw, &f); err != nil {
-		t.Fatal(err)
-	}
-	data := repos().Data
-	chipOf := map[string]string{"gb200": "gb200-nvl72"}
+	f := readRecordedRuns(t)
+	capabilityOf := recordedCapabilityOf()
 	byClass := map[string]*tally{"engine_line": {}, "silent": {}, "args": {}}
 	byModel := map[string]map[string]*tally{}
 	for _, r := range f.Runs {
-		name := r.Hardware
-		if c, ok := chipOf[name]; ok {
-			name = c
-		}
-		chip, err := data.Chip(name)
-		if err != nil {
-			t.Fatalf("row %d: %v", r.Row, err)
-		}
-		model, ok := catalogModel[r.Model]
-		if !ok {
-			t.Fatalf("row %d: no catalog model for slug %q", r.Row, r.Model)
-		}
-		method := r.SpeculativeMethod
-		if method == "none" {
-			method = ""
-		}
-		bs, err := vllm.ResolveBlockSizeFromTable(vllm.BlockSizeInput{
-			Model: model, Capability: chip.ComputeCapability, TP: r.LogTP, KVCacheDType: r.CacheDType,
-			Speculative: vllm.SpeculationAddsAttentionLayers(method, 1),
-		})
+		model, in := recordedRunInput(t, capabilityOf, r)
+		bs, err := vllm.ResolveBlockSizeAsRecorded(in)
 		c := byClass[r.Evidence]
 		if c == nil {
 			t.Fatalf("row %d: evidence %q", r.Row, r.Evidence)
@@ -179,6 +208,53 @@ func TestResolutionAgainstTheRecordedRuns(t *testing.T) {
 	}
 	if len(f.Unobtainable) != 44 || len(f.Runs) != 108 {
 		t.Errorf("%d runs and %d unobtainable rows; want 108 and 44", len(f.Runs), len(f.Unobtainable))
+	}
+}
+
+// TestRecordedRunsAtThePin is the same 108 recorded runs resolved by the pin's table. The logs come
+// from vLLM 0.18 to 0.22, whose default block size is 16 where the pin's is 64 (commit 732e49d44), so
+// the pin cannot equal a logged 16 or 32 by construction; TestResolutionAgainstTheRecordedRuns holds the
+// oracle to the logs with the default they were produced under. What the pin's table must satisfy is
+// the law relating the two: for each run the pin resolves, the as-recorded table either refuses
+// (a case the default change newly decides) or gives a size the pin's is a multiple of, and the pin's
+// size equals the logged one where the logged size does not depend on the default (the 256 of
+// DeepSeek-V4, which its backends state as their smallest accepted size). Every refusal cites #68.
+// Counts are of all 108 runs: resolved at the pin and equal to the log, resolved and different because
+// the default changed (the 52 include the 7 operator-flag rows), refused (minimax-m3 and the speculative
+// DeepSeek-V4 runs, as recorded).
+func TestRecordedRunsAtThePin(t *testing.T) {
+	f := readRecordedRuns(t)
+	capabilityOf := recordedCapabilityOf()
+	var equal, defaultChanged, refused int
+	for _, r := range f.Runs {
+		model, in := recordedRunInput(t, capabilityOf, r)
+		pin, perr := vllm.ResolveBlockSize(in)
+		rec, rerr := vllm.ResolveBlockSizeAsRecorded(in)
+		if perr != nil {
+			refused++
+			if !strings.Contains(perr.Error(), "blis-vllm/issues/68") {
+				t.Errorf("row %d: refused at the pin, but not citing #68: %v", r.Row, perr)
+			}
+			if rerr == nil {
+				t.Errorf("row %d (%s %s): the as-recorded table resolves %d and the pin refuses; the default change cannot remove a resolution", r.Row, model, r.Hardware, rec.Size)
+			}
+			continue
+		}
+		if rerr == nil && (pin.Size < rec.Size || pin.Size%rec.Size != 0) {
+			t.Errorf("row %d (%s %s): the pin resolves %d and the as-recorded table %d, want a multiple", r.Row, model, r.Hardware, pin.Size, rec.Size)
+		}
+		if pin.Size == r.BlockSize {
+			equal++
+			continue
+		}
+		defaultChanged++
+		if rerr == nil && rec.Size == pin.Size {
+			t.Errorf("row %d (%s %s): the log shows %d and both tables resolve %d: the difference is not the default change", r.Row, model, r.Hardware, r.BlockSize, pin.Size)
+		}
+	}
+	t.Logf("%d runs at the pin: equal to the log %d, different because the default changed %d, refused %d", len(f.Runs), equal, defaultChanged, refused)
+	if equal != 5 || defaultChanged != 52 || refused != 51 {
+		t.Errorf("equal %d, default changed %d, refused %d; want 5, 52, 51", equal, defaultChanged, refused)
 	}
 }
 
