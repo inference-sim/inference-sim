@@ -3,8 +3,8 @@ package latencykernel
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 )
 
 // BatchOf is the kernel.Batch one data-parallel rank of a step shape prices: its requests' token

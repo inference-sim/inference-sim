@@ -122,7 +122,7 @@ jobs:
 
       - name: Setup Go
         if: needs.changes.outputs.build == 'true'
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
+        uses: ./.github/actions/go-toolchain
 
       - name: Restore the Go build cache
         if: needs.changes.outputs.build == 'true'
@@ -164,10 +164,10 @@ jobs:
             timeout: "10m"
             flag: core
           # The latency kernel's scoring harness and the offline scoring tools. Hermetic: scenarios
-          # come from blis-vllm's kernel fixtures, the catalog and registry from the blis-substrate
-          # module go.mod pins (internal/substratedata). The measurement-corpus tests are behind -tags scoring and do not run here.
+          # come from the kernel fixtures (testdata/kernel), the catalog and registry from substrate/
+          # (internal/substratedata). The measurement-corpus tests are behind -tags scoring and do not run here.
           # The harness and the tools moved from sim/kernelmodel and cmd/ to tools/ (phase 2c of
-          # #2021), so that sim/ and cmd/ link blis-vllm only through cmd/engine_build.go. Only
+          # #2021), so that sim/ and cmd/ link the engines only through cmd/engine_build.go. Only
           # the package list moved: the entry's name is a required check, so it still names the
           # harness's old path.
           - name: "kernel backend"
@@ -219,6 +219,21 @@ jobs:
             packages: "./internal/repocheck"
             timeout: "10m"
             flag: structure
+          # The merged trees (M3.2 row 2.R): each is one module's former test suite, run as its own
+          # entry so a change under one directory runs its tests and the jobs that link it (the
+          # path classes in scripts/ci-changes.sh). New entries, so no existing required name moves.
+          - name: "substrate"
+            packages: "./substrate/..."
+            timeout: "30m"
+            flag: substrate
+          - name: "engine vllm"
+            packages: "./engines/vllm/..."
+            timeout: "25m"
+            flag: vllm
+          - name: "engine sglang"
+            packages: "./engines/sglang/..."
+            timeout: "15m"
+            flag: sglang
 
     steps:
       - name: The change filter ran, and whether this entry's group is on
@@ -236,7 +251,7 @@ jobs:
 
       - name: Setup Go
         if: steps.gate.outputs.run == 'true'
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
+        uses: ./.github/actions/go-toolchain
 
       - name: Restore the Go build cache
         if: steps.gate.outputs.run == 'true'
@@ -306,7 +321,7 @@ jobs:
 
       - name: Setup Go
         if: steps.gate.outputs.run == 'true'
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
+        uses: ./.github/actions/go-toolchain
 
       - name: Restore the Go build cache
         if: steps.gate.outputs.run == 'true'
@@ -380,7 +395,7 @@ jobs:
 
       - name: Setup Go
         if: steps.gate.outputs.run == 'true'
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
+        uses: ./.github/actions/go-toolchain
 
       - name: Restore the Go build cache
         if: steps.gate.outputs.run == 'true'
@@ -506,6 +521,8 @@ jobs:
       - name: Checkout code
         if: needs.changes.outputs.lint == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
 
       # The module targets the Go release that go.mod names (the llm-d router requires it). golangci-lint refuses a module
       # newer than the Go that built it and the published binaries are built with an older Go,
@@ -513,7 +530,7 @@ jobs:
       # version, so only the first run after a Go bump compiles it.
       - name: Setup Go
         if: needs.changes.outputs.lint == 'true'
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
+        uses: ./.github/actions/go-toolchain
 
       - name: Restore the Go build cache
         if: needs.changes.outputs.lint == 'true'
@@ -550,13 +567,28 @@ jobs:
           path: ~/go/bin/golangci-lint
           key: ${{ steps.linter.outputs.key }}
 
+      # substrate/ came in with a lint baseline (34 findings at the merge: 23 errcheck, 7 staticcheck,
+      # 4 unused; see substrate/.golangci.yml), which its repository held by linting changed code
+      # only. Everything else is linted whole; substrate/ is linted for findings a change adds.
       - name: Lint
         if: needs.changes.outputs.lint == 'true'
-        run: ~/go/bin/golangci-lint run
+        run: ~/go/bin/golangci-lint run $(go list ./... | grep -v '/substrate/\|/substrate$' | sed 's#^github.com/inference-sim/inference-sim#.#')
+
+      - name: Lint substrate (new findings only)
+        if: needs.changes.outputs.lint == 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -n "$BASE_SHA" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            ~/go/bin/golangci-lint run --new-from-rev="$BASE_SHA" ./substrate/...
+          else
+            echo "no base revision to compare with; linting the changed files of the last commit"
+            ~/go/bin/golangci-lint run --new-from-rev=HEAD~1 ./substrate/...
+          fi
 
   # The stack record and the version rules (design SIM-3, LIF-2, X11, X23): stack.json equals
   # what the build selects; go.mod has one replace and only engine excludes; the toolchain is
-  # contracts/toolchain at the selected substrate, installed exactly (GOTOOLCHAIN=local, so no
+  # substrate/contracts/toolchain, installed exactly (GOTOOLCHAIN=local, so no
   # build downloads one); and the documents that state versions are the ones rendered from
   # stack.json. internal/stack's tests hold the first three; versions-doc --check the last.
   stack:
@@ -571,7 +603,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Go
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
+        uses: ./.github/actions/go-toolchain
 
       - name: Restore the Go build cache
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
@@ -583,17 +615,12 @@ jobs:
             go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
             go-build-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: The toolchain is contracts/toolchain
+      - name: The toolchain is substrate/contracts/toolchain
         run: |
-          dir="$(go mod download -json "github.com/inference-sim/blis-substrate@$(go list -m -f '{{.Version}}' github.com/inference-sim/blis-substrate)" | jq -r .Dir)"
-          if [ -z "$dir" ] || [ "$dir" = null ] || [ ! -f "$dir/contracts/toolchain" ]; then
-            echo "cannot find contracts/toolchain: go mod download reported directory '$dir' for blis-substrate" >&2
-            exit 1
-          fi
-          want="$(cat "$dir/contracts/toolchain")"
+          want="$(tr -d '[:space:]' < substrate/contracts/toolchain)"
           got="$(go env GOVERSION)"
           if [ "$got" != "$want" ]; then
-            echo "go is $got; contracts/toolchain at the selected substrate is $want" >&2
+            echo "go is $got; substrate/contracts/toolchain is $want" >&2
             exit 1
           fi
 
@@ -603,12 +630,163 @@ jobs:
       - name: Rendered version strings
         run: go run ./internal/stack/cmd/versions-doc -check
 
-  # Before a release: every blis-vllm and llm-d router package the binary links, tested at the
-  # versions inference-sim selects (design §3.2, LIF-2). Also on pull requests that change go.mod.
-  # The packages are split into parallel shards: blis-vllm's compat/kernelmodel is most of the
-  # time (one test of it takes two minutes), so its tests are split by name; every other package
-  # is split by import path. The job named selected-deps, after the shards, fails unless they
-  # ran every test of kernelmodel and every other package once.
+  # The checks of the substrate/ directory that no Go test of the simulator runs (the substrate's own
+  # Go tests run in the jobs above, which a substrate/ change always turns on). Ported from the
+  # former blis-substrate repository's ci.yml (jobs contracts-checks, catalog, registry, ledger, mutants); each runs from
+  # substrate/ as its repository root, so a path in a command is the one it had there. The jobs that
+  # hold a token or the ledger seed (ledger.yml, nightly-fetch-configs.yml, acceptance-refresh.yml)
+  # and the sharded and gate workflows are not ported yet.
+  substrate-checks:
+    needs: changes
+    if: ${{ needs.changes.outputs.substrate == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Go
+        uses: ./.github/actions/go-toolchain
+
+      # Python code that restates a Go rule (X15).
+      - name: Python rule lint (X15)
+        working-directory: substrate
+        run: |
+          set -euo pipefail
+          go run ./tools/prcheck vocab > "$RUNNER_TEMP/vocab.json"
+          python3 -I tools/pyrules/pyrules.py "$RUNNER_TEMP/vocab.json"
+
+      # The AGENTS.md block, the pull-request template and the rendered index match the invariant
+      # registry (design section 13.1).
+      - name: Invariant copies match the registry
+        working-directory: substrate
+        run: go run ./tools/invariants render -check
+
+      - name: The ledger files load and pass their checks (D3, D4)
+        working-directory: substrate
+        run: |
+          set -euo pipefail
+          go run ./ledger/cmd/ledger check catalog/ledger
+          go run ./ledger/cmd/ledger scan-roles .
+
+  substrate-mutants:
+    needs: changes
+    if: ${{ needs.changes.outputs.substrate == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Go
+        uses: ./.github/actions/go-toolchain
+
+      # Breaks each guarded property of the cost model in turn and requires its test to fail (X13).
+      - name: Mutation check of the cost model
+        run: go test -count=1 -v -run '^TestGuardedPropertiesKillTheirMutants$' ./substrate/kernel/
+
+  substrate-catalog:
+    needs: changes
+    if: ${{ needs.changes.outputs.substrate == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Go
+        uses: ./.github/actions/go-toolchain
+
+      - name: Every catalog entry validates
+        working-directory: substrate
+        run: go run ./validate/cmd/validate-catalog catalog
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: substrate/catalog/scripts/requirements-dev.txt
+
+      - run: pip install --require-hashes -r substrate/catalog/scripts/requirements-dev.txt
+
+      - name: Every graph re-derives from its vendor configuration
+        working-directory: substrate/catalog
+        run: python3 scripts/derive_graph.py --check
+
+      # Public repositories are fetched with no token and hash-checked; a gated one is left for
+      # the nightly token job.
+      - name: Hash-pinned graphs re-derive from their public configs
+        working-directory: substrate/catalog
+        run: |
+          set -euo pipefail
+          python3 scripts/fetch_pinned_configs.py "$RUNNER_TEMP/fetched"
+          python3 scripts/derive_graph.py --check --fetched "$RUNNER_TEMP/fetched" --allow-unfetched
+
+      - name: The deriver's tests
+        working-directory: substrate/catalog
+        run: python3 -m pytest tests -q
+
+  substrate-registry:
+    needs: changes
+    if: ${{ needs.changes.outputs.substrate == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Go
+        uses: ./.github/actions/go-toolchain
+
+      - name: Every coefficient set validates
+        working-directory: substrate
+        run: go run ./validate/cmd/validate-registry registry
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            substrate/registry/scripts/requirements.txt
+            substrate/registry/scripts/requirements-fit.txt
+
+      - run: pip install --require-hashes -r substrate/registry/scripts/requirements.txt
+      - run: pip install --require-hashes -r substrate/registry/scripts/requirements-fit.txt
+
+      # The acceptance emitter's inputs are not committed (X12): fetched at the pinned commit, each by hash.
+      - name: Fetch the pinned InferenceX golden curves
+        working-directory: substrate
+        run: python -I registry/scripts/fetch_inferencex_curves.py
+
+      # The tests that re-derive a value from third-party sweeps skip when the data is absent;
+      # every other skip fails this job (X16).
+      - name: The derivation and value-preservation tests
+        working-directory: substrate/registry
+        run: |
+          set -euo pipefail
+          python -m pytest validator/ -q -rs | tee "$RUNNER_TEMP/pytest.log"
+          unexpected=$(awk '/^SKIPPED/ && !/AISimulate data not present|CollectiveX run bodies not present|OperatorX MoE response not present|could not import .pyarrow./' "$RUNNER_TEMP/pytest.log")
+          if [ -n "$unexpected" ]; then
+            echo "skips that rederive.yml does not cover (X16):" >&2
+            echo "$unexpected" >&2
+            exit 1
+          fi
+
+  # Before a release: every llm-d router package the binary links, tested at the versions
+  # inference-sim selects (design §3.2, LIF-2). Also on pull requests that change go.mod. The
+  # engines and the substrate are directories of this module, so `go test ./...` covers them. The
+  # packages are split by import path into parallel shards; the job named selected-deps, after the
+  # shards, fails unless they ran every package once.
   selected-deps-shards:
     needs: changes
     name: selected-deps (${{ matrix.kind }} ${{ matrix.shard }}/${{ matrix.shards }})
@@ -621,10 +799,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { kind: kernelmodel, salt: "s224:", shard: 1, shards: 4 }
-          - { kind: kernelmodel, salt: "s224:", shard: 2, shards: 4 }
-          - { kind: kernelmodel, salt: "s224:", shard: 3, shards: 4 }
-          - { kind: kernelmodel, salt: "s224:", shard: 4, shards: 4 }
           - { kind: rest, shard: 1, shards: 2 }
           - { kind: rest, shard: 2, shards: 2 }
     steps:
@@ -632,7 +806,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Go
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
+        uses: ./.github/actions/go-toolchain
 
       - name: Restore the Go build cache
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
@@ -644,10 +818,9 @@ jobs:
             go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
             go-build-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Test engine and router packages at the selected versions
+      - name: Test router packages at the selected versions
         env:
           SELECTED_DEPS_SHARD: ${{ matrix.kind }}:${{ matrix.shard }}/${{ matrix.shards }}
-          CI_SHARD_SALT: ${{ matrix.salt }}
           CI_SHARD_OUT: ${{ runner.temp }}/evidence
         run: scripts/test-selected-deps.sh -count=1 -timeout 20m
 
@@ -678,23 +851,12 @@ jobs:
         if: needs.changes.outputs.selected == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - name: Fetch the kernelmodel evidence
-        if: needs.changes.outputs.selected == 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          pattern: evidence-selected-kernelmodel-*
-          path: gathered/kernelmodel
-
       - name: Fetch the other packages' evidence
         if: needs.changes.outputs.selected == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: evidence-selected-rest-*
           path: gathered/rest
-
-      - name: Every kernelmodel test ran in exactly one shard
-        if: needs.changes.outputs.selected == 'true'
-        run: scripts/ci-shard-verify.sh 4 gathered/kernelmodel
 
       - name: Every other package ran in exactly one shard
         if: needs.changes.outputs.selected == 'true'
@@ -720,7 +882,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Go
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
+        uses: ./.github/actions/go-toolchain
 
       - name: Lint the workflows
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 -shellcheck= -pyflakes=
@@ -755,7 +917,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Go
-        uses: inference-sim/blis-substrate/.github/actions/go-toolchain@b6748ca9d757f149ba760cf821f96feed3bbf5bf # blis-substrate commit this build pins (stack.json)
+        uses: ./.github/actions/go-toolchain
 
       - name: Restore the previous cache
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
@@ -791,7 +953,7 @@ jobs:
   # succeeds when none failed or was cancelled and the change filter itself ran, so a skipped job
   # (its group off) is a success and a job skipped because the filter broke is not.
   required:
-    needs: [changes, build, test, test-shards, test-workload-cmd, test-llmd-shards, test-llmd, lint, stack, selected-deps-shards, selected-deps, actionlint, claude-md-size]
+    needs: [changes, build, test, test-shards, test-workload-cmd, test-llmd-shards, test-llmd, lint, stack, substrate-checks, substrate-mutants, substrate-catalog, substrate-registry, selected-deps-shards, selected-deps, actionlint, claude-md-size]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5

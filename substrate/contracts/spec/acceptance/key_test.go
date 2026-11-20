@@ -8,7 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 )
 
 // kimi is three measurements of one target, drafter and method that differ only in the draft

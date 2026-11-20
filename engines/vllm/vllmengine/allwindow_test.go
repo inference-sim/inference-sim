@@ -5,10 +5,10 @@ package vllmengine
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
-	"github.com/inference-sim/blis-vllm/core/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
 )
 
 // A model whose every KV layer is bounded -- muse-spark-open-dspark's five attention layers are

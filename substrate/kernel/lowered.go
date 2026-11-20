@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // cloneLowered is a deep copy of the parts the kernel keeps: a caller editing the plan it passed does

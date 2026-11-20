@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
-	"github.com/inference-sim/blis-substrate/validate/dataset"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/validate/dataset"
 )
 
 // VAL-8: a lookup matches a coefficient only for the exact kernel implementation that executes

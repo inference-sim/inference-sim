@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 )
 
 // Validate reports a plan no pool can have. It refuses what the cost model would otherwise

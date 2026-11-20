@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 )
 
 // Validate performs field-level validation of a profile set: the required fields are

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // The MoE router and the shared expert's MLP are launches vLLM v0.33.0 runs on NVIDIA parts

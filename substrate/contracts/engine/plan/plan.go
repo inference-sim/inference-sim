@@ -22,7 +22,7 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/inference-sim/blis-substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 )
 
 // PoolPlan is fixed for the life of one engine pool.

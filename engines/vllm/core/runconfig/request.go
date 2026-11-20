@@ -10,7 +10,7 @@ import (
 	"math"
 	"math/rand"
 
-	"github.com/inference-sim/blis-vllm/core/tokenid"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/tokenid"
 )
 
 const MaxTokenID = 128000 // Max token ID in request input/output

@@ -11,10 +11,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
-	"github.com/inference-sim/blis-sglang/config"
+	"github.com/inference-sim/inference-sim/engines/sglang/config"
 )
 
 // fakeKernel is a cost model with fixed resident bytes and a fixed step time; it records the

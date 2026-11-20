@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/compat/build"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/build"
 )
 
 // Unit-level contracts for #1770: the KV-offload storage-device physics table is read

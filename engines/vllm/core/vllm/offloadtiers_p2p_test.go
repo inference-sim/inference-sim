@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 
-	kvtier "github.com/inference-sim/blis-vllm/core/connector/tiering"
+	kvtier "github.com/inference-sim/inference-sim/engines/vllm/core/connector/tiering"
 )
 
 // p2pTier is TieringOffloadingSpec beside the base block's GPU blocks: a CPU tier of 200 one-block

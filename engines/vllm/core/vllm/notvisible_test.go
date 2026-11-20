@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/pointrecord"
 )
 
 // offloadWith is an OffloadingConnector block with the given extra kv_offload keys.

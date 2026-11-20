@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	blissglang "github.com/inference-sim/blis-sglang"
+	blissglang "github.com/inference-sim/inference-sim/engines/sglang"
 )
 
 // The Go interface that ports each framework interface.

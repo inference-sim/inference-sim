@@ -14,7 +14,7 @@
 package cluster
 
 import (
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 	"math"
 	"testing"
 
@@ -169,6 +169,7 @@ func TestClusterMetrics_CacheHitRate_Bounded(t *testing.T) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 func TestClusterMetrics_ZeroOutput_NoPollution(t *testing.T) {
+	skipRetiredEngine(t, "zero-output requests are refused by the engine")
 	cfg := msClusterConfig(2)
 
 	// Inject a mix of zero-output and normal requests directly

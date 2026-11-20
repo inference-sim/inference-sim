@@ -10,9 +10,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	validate "github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	validate "github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/workload"
 )
 
 // Write-then-read of every field a writer can emit (SUB-12, SUB-19, X13, issue 28). The

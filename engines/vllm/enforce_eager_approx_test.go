@@ -5,7 +5,7 @@ package blisvllm
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
 )
 
 // enforce_eager makes vLLM run every step with no CUDA graph, which the lowering prices (a stated

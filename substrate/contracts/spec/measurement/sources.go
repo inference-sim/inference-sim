@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 )
 
 // Registry is the catalog's licence registry, measurements/sources.yaml: one entry per

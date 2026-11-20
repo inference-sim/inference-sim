@@ -3,7 +3,7 @@ package engine
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // max_concurrent_batches for every configuration vLLM v0.32.0 starts with

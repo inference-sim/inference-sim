@@ -14,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // kvStartupTiers are the tolerances a group of recorded runs is held to, in order: the tightest

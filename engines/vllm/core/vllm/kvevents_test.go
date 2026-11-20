@@ -3,7 +3,7 @@ package vllm
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // kvEventsOf runs requests a and then b (b sharing a's prompt) through an engine built from extra

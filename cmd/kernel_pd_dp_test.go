@@ -9,13 +9,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/env"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/units"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/env"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 	"pgregory.net/rapid"
 )
 

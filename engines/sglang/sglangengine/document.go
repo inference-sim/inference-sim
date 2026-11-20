@@ -5,13 +5,13 @@ package sglangengine
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
-	blissglang "github.com/inference-sim/blis-sglang"
-	"github.com/inference-sim/blis-sglang/config"
-	"github.com/inference-sim/blis-sglang/core/sglang"
-	"github.com/inference-sim/blis-sglang/lower"
+	blissglang "github.com/inference-sim/inference-sim/engines/sglang"
+	"github.com/inference-sim/inference-sim/engines/sglang/config"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/sglang"
+	"github.com/inference-sim/inference-sim/engines/sglang/lower"
 )
 
 // Pool is what a host holds for the pool a spec selects and an engine cannot read through the

@@ -1,7 +1,7 @@
 package cluster
 
 import (
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 	"testing"
 
 	sim "github.com/inference-sim/inference-sim/sim"
@@ -24,6 +24,7 @@ func cpuTier() *cengine.KVOffloadConfig {
 // CPU tier: the pool reports CPU-tier hits, and the turn prefills faster than with no tier
 // because it computes only the new tokens.
 func TestPDOffload_PrefillTierServesALaterTurnsPrefix(t *testing.T) {
+	skipRetiredEngine(t, "no CPU tier in the test engine")
 	turn1 := holdTestRequest("t1", 1, 0, 160, 4)
 	reqs := []*sim.Request{turn1}
 	for i := 0; i < 4; i++ { // fillers that evict turn 1 from the prefill GPU

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	kvtier "github.com/inference-sim/blis-vllm/core/connector/tiering"
+	kvtier "github.com/inference-sim/inference-sim/engines/vllm/core/connector/tiering"
 )
 
 // The obj secondary tier through engine.Engine, as the fs tier is (offloadtiers.go): each job is

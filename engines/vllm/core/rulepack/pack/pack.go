@@ -13,9 +13,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // Pack is the rule set for one engine version, plus the version-specific data those

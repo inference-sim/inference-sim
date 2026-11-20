@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // DeepSeek V4's 0.32.0 deployments keep their packed full-attention group at the engine's block

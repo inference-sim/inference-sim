@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 )
 
 // A pool whose plan states the sparse-MLA kernel for the prefill prices every prefill step from the family keyed

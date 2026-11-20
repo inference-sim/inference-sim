@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // A prefill pool runs NIXL beside a CPU tier (the deployment's MultiConnector) while the decode pool

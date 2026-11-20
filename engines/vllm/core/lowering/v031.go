@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // attentionKinds is every attention kind a layer of the target stack reads the engine's

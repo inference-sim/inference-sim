@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 )
 
 // The RTX PRO 6000 Blackwell Server Edition is a PCIe card. Its entry resolves from the

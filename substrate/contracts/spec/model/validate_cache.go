@@ -5,7 +5,7 @@ import (
 	"maps"
 	"sort"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 // validateNodeCaches checks the caches one attention node states, in isolation: each is

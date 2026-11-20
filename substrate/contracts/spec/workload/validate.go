@@ -1,8 +1,8 @@
 package workload
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
 )
 
 // isHex reports whether every character of s is a hex digit. Used to reject a sha256 of

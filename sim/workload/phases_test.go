@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
 )
 
 // The loader refuses a trace whose phases and phase column disagree, and a phased trace

@@ -7,11 +7,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/load"
 
-	"github.com/inference-sim/blis-vllm/core/kernelmodel"
-	vllm "github.com/inference-sim/blis-vllm/core/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	vllm "github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
 )
 
 // AdoptInputs name a run's scenario and the data it reads, as the command line gave them

@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/inference-sim/blis-sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 )
 
 // Behavioural tests of the host tier (the mutation sweep of the M3.1 train): each fails on one

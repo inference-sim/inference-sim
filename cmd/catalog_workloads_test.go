@@ -134,7 +134,7 @@ func withTestCatalogPath(t *testing.T, catalog string) func() {
 // ---------------------------------------------------------------------------
 
 // TestCatalogPresets_BundledCatalogMatchesRetiredDefaults is BC-2. It reads each preset
-// through the production reader out of the catalog of the blis-substrate
+// through the production reader out of the catalog of the substrate
 // module go.mod selects and compares every field to the
 // values the deleted defaults.yaml block declared. Since the downstream path (PresetConfig →
 // SynthesizeFromPreset) is untouched by this PR, equal inputs there mean an equal workload,
@@ -530,7 +530,7 @@ func TestCatalogPresets_DuplicateSourceIsGone(t *testing.T) {
 			if !ok || skip[id] {
 				return true
 			}
-			// A method call on a value (data.Workload(name), blis-substrate's catalog reader) is
+			// A method call on a value (data.Workload(name), substrate/catalog reader) is
 			// not the retired type: the ban is on the identifier as a type or a field.
 			if call, isSel := selectorOf[id]; isSel && call {
 				return true

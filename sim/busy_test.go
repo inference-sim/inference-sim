@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 func batchOf(reqs ...engine.Scheduled) engine.Batch { return engine.Batch{Reqs: reqs} }

@@ -9,12 +9,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 	"github.com/inference-sim/inference-sim/tools/harness/internal/artifacts"
 )
 
 // testRepos is the artifact roots the harness tests run against: this repository's
-// testdata/kernel/aisimulate and the catalog and registry embedded in the pinned blis-substrate.
+// testdata/kernel/aisimulate and the catalog and registry embedded in the pinned the substrate.
 func testRepos() kernelmodel.Repos {
 	r, err := OpenRepos(testScenarios(), "", "")
 	if err != nil {

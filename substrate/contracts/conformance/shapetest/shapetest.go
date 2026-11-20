@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // Shape is one unusual model.

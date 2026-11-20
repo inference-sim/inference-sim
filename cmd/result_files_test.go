@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 )
 
 // A Result holds the small files its run read (input.files): the router file the deployment

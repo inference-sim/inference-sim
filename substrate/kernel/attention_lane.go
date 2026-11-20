@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve"
 )
 
 // The prefill coefficients measured on the trtllm-gen kernel alone, one pair per data-center

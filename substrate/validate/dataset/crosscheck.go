@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
 )
 
 // CheckFits checks a registry against the catalog it runs with (design §3.3): every chip,

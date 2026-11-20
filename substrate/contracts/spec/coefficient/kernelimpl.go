@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 )
 
 // The exact kernel-implementation lookup (design D5, VAL-8). An entry names two things about

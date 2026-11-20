@@ -6,14 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
-	"github.com/inference-sim/blis-substrate/contracts/units"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
-	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // VAL-8 at the pricing boundary: a coefficient that lists kernel implementations prices a

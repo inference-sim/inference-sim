@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/sched"
-	"github.com/inference-sim/blis-vllm/internal/upstream"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
 // eosToken is tests/v1/core/utils.py:49@4ba787ec, which the GPU mock samples last.

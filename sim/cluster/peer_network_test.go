@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -131,7 +131,7 @@ func TestPeersArePlacedBothWaysBeforeTheRun(t *testing.T) {
 	}
 }
 
-// addressed is a talker that takes an address (SetPeerAddr), as blis-vllm's engine does.
+// addressed is a talker that takes an address (SetPeerAddr), as the vLLM engine's engine does.
 type addressed struct {
 	*talker
 	scheduled bool

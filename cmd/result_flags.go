@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 )

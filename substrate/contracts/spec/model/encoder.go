@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"regexp"
 
-	validate "github.com/inference-sim/blis-substrate/contracts/check"
+	validate "github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 var issueRef = regexp.MustCompile(`^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#[1-9][0-9]*$`)

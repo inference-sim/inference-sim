@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/ledger"
+	"github.com/inference-sim/inference-sim/substrate/ledger"
 )
 
 // A supplement is a set of records InferenceX published after the pinned dump (design §10.2:

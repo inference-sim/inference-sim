@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/tools/internal/bot"
+	"github.com/inference-sim/inference-sim/substrate/tools/internal/bot"
 )
 
 // Commit is what the commit-policy check reads of one commit.

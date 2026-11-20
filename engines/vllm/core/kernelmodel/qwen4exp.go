@@ -8,9 +8,9 @@ package kernelmodel
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 )
 
 // sparseGQA is model.AttentionSparseGQA (blis-substrate#253). It is spelled here until this module

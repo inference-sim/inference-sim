@@ -12,8 +12,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	blisschemas "github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	blisschemas "github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 )
 
 // Every committed fixture is a Scenario and the Deployment applied to it, two YAML

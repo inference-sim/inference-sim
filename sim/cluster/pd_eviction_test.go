@@ -1,8 +1,8 @@
 package cluster
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 	"math"
 	"math/rand"
 	"testing"
@@ -15,6 +15,7 @@ import (
 // releases what that stage held (no KV remains allocated, no transfer is left to promote), and
 // keeps INV-1 and INV-PD-3 (every transfer started also completes).
 func TestEvict_DisaggregatedAtEachStage(t *testing.T) {
+	skipRetiredEngine(t, "queued/running split differs")
 	for _, tc := range []struct {
 		stage string
 		after int64 // eviction delay after dispatch (µs)

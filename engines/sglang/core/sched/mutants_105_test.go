@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 )
 
 // Tests that fail on the generated mutants of batch.go, budget.go, overlap.go and report.go that

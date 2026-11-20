@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-vllm/core/rulepack/v0_33"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/v0_33"
 )
 
 // CheckConnectorOptions reports an offload's connector options at the paths and in the words

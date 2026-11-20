@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/rules"
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 
-	"github.com/inference-sim/blis-vllm/core/rulepack/v0_33"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/v0_33"
 )
 
 // captureOracleCase is one row of core/lower/testdata/vllm_lower.json "capture": a deployment's

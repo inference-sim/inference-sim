@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 )
 
 // These tests pin the msgpack width boundaries of the KV-event encoder (M3.1, blis-sglang#106).

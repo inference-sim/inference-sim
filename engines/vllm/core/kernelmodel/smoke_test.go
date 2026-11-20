@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
-	sim "github.com/inference-sim/blis-vllm/core/runconfig"
+	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // The artifact roots, which TestMain has already checked resolve.

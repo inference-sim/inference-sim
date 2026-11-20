@@ -13,10 +13,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
+	"github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/measurement"
 )
 
 // SourcesFile is the licence registry's file name within a measurements directory.

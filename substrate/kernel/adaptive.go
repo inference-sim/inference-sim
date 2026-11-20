@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // Adaptive verification (speculative_config.enable_adaptive_verification, vLLM v0.32.0,

@@ -52,10 +52,18 @@ var Table1 = []Component{
 	{"contracts", []string{"substrate/contracts/..."}, nil},
 	{"catalog", []string{"substrate/catalog/..."}, []string{"substrate/contracts/..."}},
 	{"coefficient registry", []string{"substrate/registry/..."}, []string{"substrate/contracts/..."}},
-	{"cost model", []string{"substrate/kernel/..."}, []string{"substrate/contracts/...", "substrate/load/..."}},
+	{"cost model", []string{"substrate/kernel/..."}, []string{"substrate/contracts/...", "substrate/load/...", "substrate/validate/dataset"}},
 	{"validators and loader", []string{"substrate", "substrate/validate/...", "substrate/load/..."}, []string{"substrate/contracts/..."}},
-	{"engine module vllm", []string{"engines/vllm/..."}, []string{"substrate/contracts/..."}},
+	// The vLLM engine still prices through the cost model: core/kernelmodel and the kerneltests
+	// harness import substrate/kernel, and core/vllm's RecordSelected imports substrate/load. The
+	// exact package list is held in both directions by engines/vllm/imports_test.go
+	// (declaredSubstrateExceptions); this row only keeps the edge from reaching any other component.
+	{"engine module vllm", []string{"engines/vllm/..."}, []string{"substrate/contracts/...", "substrate/kernel", "substrate/load/..."}},
 	{"engine module sglang", []string{"engines/sglang/..."}, []string{"substrate/contracts/..."}},
+	// The ledger and the substrate's own tools are substrate code: they may read any substrate
+	// package, and (by having no row for them) nothing of the simulator or an engine.
+	{"ledger", []string{"substrate/ledger/..."}, []string{"substrate/contracts/...", "substrate/catalog/...", "substrate/load/...", "substrate/validate/..."}},
+	{"substrate tools", []string{"substrate/tools/..."}, []string{"substrate/..."}},
 }
 
 func matches(pattern, dir string) bool {

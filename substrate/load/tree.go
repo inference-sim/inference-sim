@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	validate "github.com/inference-sim/blis-substrate/contracts/check"
+	validate "github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 // tree is the data files of one catalog, registry or overlay directory: each file's path

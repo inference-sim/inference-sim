@@ -60,15 +60,9 @@ func versionsFrom(info *debug.BuildInfo) *sim.BuildVersions {
 	} else if buildRevision != "" {
 		v.BLIS += "+" + buildRevision
 	}
-	for _, dep := range info.Deps {
-		switch dep.Path { // the module's own path; a replacement keeps it here
-		case "github.com/inference-sim/blis-substrate":
-			// One module holds the cost model and the contracts (design §3.2), so the
-			// kernel and the schemas are built at the same version.
-			v.Kernel = depVersion(dep)
-			v.Schemas = v.Kernel
-		}
-	}
+	// The cost model and the contracts are packages of this module (M3.2), so the kernel and
+	// the schemas are built at the simulator's own version.
+	v.Kernel, v.Schemas = v.BLIS, v.BLIS
 	return v
 }
 

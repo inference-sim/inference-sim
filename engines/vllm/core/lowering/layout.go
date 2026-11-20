@@ -8,12 +8,12 @@ package lowering
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	subrules "github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	subrules "github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
 
-	"github.com/inference-sim/blis-vllm/core/vllmsettings"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
 )
 
 // layout is the part of a pool's layout the settings resolution reads: the parallel widths and

@@ -5,7 +5,7 @@ package sched
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 )
 
 // What PrefillAdder admits, refuses and preempts, read through the adder's own results and lists

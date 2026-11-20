@@ -11,8 +11,8 @@ package lower
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 )
 
 // EngramShared is EngramConfig's _validate_shared_memory on the stated values, then

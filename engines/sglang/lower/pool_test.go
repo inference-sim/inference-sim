@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-sglang/config"
+	"github.com/inference-sim/inference-sim/engines/sglang/config"
 )
 
 func readYAML(t *testing.T, path string, v any) {

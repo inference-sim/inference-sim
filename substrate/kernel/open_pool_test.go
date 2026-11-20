@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // poolScenario states a cluster of the given chip, optionally with node pools of other chips.

@@ -5,13 +5,13 @@ package kernelmodel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 
-	sim "github.com/inference-sim/blis-vllm/core/runconfig"
+	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 )
 
 func boolPtr(b bool) *bool { return &b }

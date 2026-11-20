@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/harness"
+	"github.com/inference-sim/inference-sim/substrate/contracts/harness"
 )
 
 // provenanceRules: a file translated from vLLM names the upstream file and commit and keeps
@@ -61,7 +61,7 @@ func TestNoClockNoGoroutines(t *testing.T) {
 
 // TestHarnessCopiesAreCurrent: .golangci.yml and the oracle's guard scripts are copies of
 // blis-substrate's contracts/harness at the substrate version go.mod selects (X7). Regenerate
-// them with `go run github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles`.
+// them with `go run github.com/inference-sim/inference-sim/substrate/contracts/harness/cmd/harnessfiles`.
 func TestHarnessCopiesAreCurrent(t *testing.T) {
 	bad, err := harness.StaleCopies(".")
 	if err != nil {

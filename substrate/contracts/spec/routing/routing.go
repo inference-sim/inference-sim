@@ -32,7 +32,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 // Kind is the kind key of a routing-profile set.

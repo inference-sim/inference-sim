@@ -5,7 +5,7 @@ package vllm
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 )
 
 // Frontend is vLLM's API-server settings that decide how requests queue before the engine admits

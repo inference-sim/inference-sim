@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // A lane coefficient can have one entry per build: one keyed to the build a run measured and one

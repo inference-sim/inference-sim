@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 )
 
 // A KV move that every node of a prefill pool makes at once (plan.Transfer.Nodes) is the sum of

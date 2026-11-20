@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 )
 
 // Policy is SchedulerConfig.policy (vllm/config/scheduler.py:21,159).

@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
 )
 
 // stream_interval is proven inert for the engine (oracle/inertness/stream_interval.json): it sets how many

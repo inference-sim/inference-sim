@@ -3,9 +3,9 @@ package latencykernel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-substrate/kernel/internal/price"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/price"
 )
 
 // A sparse-MLA layer does not read its whole context, and these pin that behaviourally.

@@ -8,14 +8,14 @@ package latencykernel_test
 // longer computes. They read the catalog and registry blis-substrate embeds.
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-vllm/core/lowering"
-	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
-	"github.com/inference-sim/blis-vllm/core/vllmsettings"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/lowering"
+	vllmrules "github.com/inference-sim/inference-sim/engines/vllm/core/rulepack"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-	"github.com/inference-sim/blis-substrate/load"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // --8<-- [start:repos]

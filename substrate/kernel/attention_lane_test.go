@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/contracts/units"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // VAL-8: the trtllm-gen prefill lane is priced from the kernel implementation the caller reports

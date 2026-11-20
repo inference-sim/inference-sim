@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"strconv"
 
-	subrules "github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	subrules "github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
-	"github.com/inference-sim/blis-vllm/core/rulepack/v0_33"
-	"github.com/inference-sim/blis-vllm/core/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/v0_33"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
 )
 
 // resolvedEngine is a pool's engine block with the settings its release resolves filled in,

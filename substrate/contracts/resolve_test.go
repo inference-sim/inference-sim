@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
-	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/workload"
 )
 
 // scenarioRef builds a scenario naming references by identity. The values are the ones the

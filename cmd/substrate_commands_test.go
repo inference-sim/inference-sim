@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
 	"github.com/inference-sim/inference-sim/internal/substratedata"
+	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
 )
 
 // invariants --json prints every record of the registry the pinned substrate embeds, in its

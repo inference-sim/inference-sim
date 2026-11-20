@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 )
 
 // A run that prices the trtllm-gen prefill lane on a b200 (the lane an unstated setting selects there;

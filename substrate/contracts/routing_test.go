@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/routing"
 )
 
 // A routing profile set loads strictly, validates through the bundle, and a scenario that

@@ -29,17 +29,17 @@ import (
 // holds each import, not the file; test files are skipped, so a _test.go file may import any
 // substrate package.
 var declaredSubstrateExceptions = []string{
-	"github.com/inference-sim/blis-substrate/kernel core/kernelmodel",
-	"github.com/inference-sim/blis-substrate/kernel kerneltests/cmd/worked-table",
-	"github.com/inference-sim/blis-substrate/kernel kerneltests/internal/harness",
-	"github.com/inference-sim/blis-substrate/load core/build",
-	"github.com/inference-sim/blis-substrate/load core/kernelmodel",
-	"github.com/inference-sim/blis-substrate/load core/vllm",
-	"github.com/inference-sim/blis-substrate/load kerneltests/internal/harness",
-	"github.com/inference-sim/blis-substrate/load vllmengine",
+	"github.com/inference-sim/inference-sim/substrate/kernel core/kernelmodel",
+	"github.com/inference-sim/inference-sim/substrate/kernel kerneltests/cmd/worked-table",
+	"github.com/inference-sim/inference-sim/substrate/kernel kerneltests/internal/harness",
+	"github.com/inference-sim/inference-sim/substrate/load core/build",
+	"github.com/inference-sim/inference-sim/substrate/load core/kernelmodel",
+	"github.com/inference-sim/inference-sim/substrate/load core/vllm",
+	"github.com/inference-sim/inference-sim/substrate/load kerneltests/internal/harness",
+	"github.com/inference-sim/inference-sim/substrate/load vllmengine",
 }
 
-const substrateContracts = "github.com/inference-sim/blis-substrate/contracts"
+const substrateContracts = "github.com/inference-sim/inference-sim/substrate/contracts"
 
 // isContracts reports whether an import path is the substrate's contracts package or one under it.
 // A path that merely contains "/contracts", such as .../kernel/contracts, is not.
@@ -68,7 +68,7 @@ func substrateImportsOutsideContracts(t *testing.T, root string) []string {
 		}
 		for _, im := range f.Imports {
 			v := strings.Trim(im.Path.Value, `"`)
-			if strings.HasPrefix(v, "github.com/inference-sim/blis-substrate/") && !isContracts(v) {
+			if strings.HasPrefix(v, "github.com/inference-sim/inference-sim/substrate/") && !isContracts(v) {
 				rel, _ := filepath.Rel(root, filepath.Dir(p))
 				seen[v+" "+filepath.ToSlash(rel)] = true
 			}
@@ -104,13 +104,13 @@ func TestAnUndeclaredSubstrateImportIsFound(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("a/a.go", "package a\nimport _ \"github.com/inference-sim/blis-substrate/ledger\"\n")
-	write("b/b.go", "package b\nimport _ \"github.com/inference-sim/blis-substrate/contracts/engine\"\n")
-	write("c/c_test.go", "package c\nimport _ \"github.com/inference-sim/blis-substrate/registry\"\n")
-	write("d/d.go", "package d\nimport _ \"github.com/inference-sim/blis-substrate/contracts\"\n")
-	write("e/e.go", "package e\nimport _ \"github.com/inference-sim/blis-substrate/kernel/contracts\"\n")
+	write("a/a.go", "package a\nimport _ \"github.com/inference-sim/inference-sim/substrate/ledger\"\n")
+	write("b/b.go", "package b\nimport _ \"github.com/inference-sim/inference-sim/substrate/contracts/engine\"\n")
+	write("c/c_test.go", "package c\nimport _ \"github.com/inference-sim/inference-sim/substrate/registry\"\n")
+	write("d/d.go", "package d\nimport _ \"github.com/inference-sim/inference-sim/substrate/contracts\"\n")
+	write("e/e.go", "package e\nimport _ \"github.com/inference-sim/inference-sim/substrate/kernel/contracts\"\n")
 	got := substrateImportsOutsideContracts(t, dir)
-	want := "github.com/inference-sim/blis-substrate/kernel/contracts e,github.com/inference-sim/blis-substrate/ledger a"
+	want := "github.com/inference-sim/inference-sim/substrate/kernel/contracts e,github.com/inference-sim/inference-sim/substrate/ledger a"
 	if strings.Join(got, ",") != want {
 		t.Errorf("found %q, want %q (contracts and contracts/..., and test files, are not exceptions; kernel/contracts is)", got, want)
 	}

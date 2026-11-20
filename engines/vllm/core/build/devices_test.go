@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/load"
-	"github.com/inference-sim/blis-vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // catalogDeviceClasses are the tier classes the substrate catalog names. It states no rate for

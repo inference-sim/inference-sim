@@ -5,7 +5,7 @@ package blisvllm
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
 )
 
 // A stated use_trtllm_attention=true on SM10x forces FlashInfer's trtllm-gen kernels. The engine

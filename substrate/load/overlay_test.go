@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
 )
 
 const fabricOverlay = `kind: CoefficientSet

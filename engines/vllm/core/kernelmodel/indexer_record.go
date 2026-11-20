@@ -5,9 +5,9 @@ package kernelmodel
 import (
 	"slices"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
 )
 
 // lowerIndexerKV is the catalog graph as the deployment's attention_config.indexer_kv_dtype

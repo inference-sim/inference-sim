@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // Shared tier storage (#1698): vLLM instances that name one root_dir for a secondary tier (the fs
@@ -11,7 +11,7 @@ import (
 // different pair, since the block files of two models are not interchangeable.
 
 // tierFiles is the shape of a tier's block-file store as the engine declares it
-// (blis-vllm core/vllm TierFiles), written as the interface literal.
+// (the vLLM engine core/vllm TierFiles), written as the interface literal.
 type tierFiles = interface {
 	Exists(path string) bool
 	Publish(path string)
@@ -23,7 +23,7 @@ type memoryFiles map[string]bool
 func (m memoryFiles) Exists(path string) bool { return m[path] }
 func (m memoryFiles) Publish(path string)     { m[path] = true }
 
-// tierBucket is the shape of an obj tier's bucket as the engine declares it (blis-vllm core/vllm
+// tierBucket is the shape of an obj tier's bucket as the engine declares it (the vLLM engine core/vllm
 // TierBucket): a transfer writes or reads whole sets of objects, and ends in error when it cannot.
 type tierBucket = interface {
 	Exists(key string) bool

@@ -8,9 +8,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
 
-	"github.com/inference-sim/blis-sglang/config"
+	"github.com/inference-sim/inference-sim/engines/sglang/config"
 )
 
 func chipFile(t *testing.T, name string) *hardware.Chip {

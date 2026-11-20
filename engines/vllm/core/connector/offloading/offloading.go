@@ -31,7 +31,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // Issue tracks the OffloadingConnector configurations this package does not model yet: the

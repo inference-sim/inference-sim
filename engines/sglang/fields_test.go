@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
 
-	"github.com/inference-sim/blis-sglang/config"
+	"github.com/inference-sim/inference-sim/engines/sglang/config"
 )
 
 // fields.json is the field list SGL-3 asks for: every configuration field and environment

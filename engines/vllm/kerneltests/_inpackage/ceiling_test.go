@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 
-	"github.com/inference-sim/blis-substrate/kernel/internal/price"
-	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/price"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve"
 )
 
 // A DECODE STEP DOES NOT LAUNCH THE GRAPH'S PREFILL-ONLY NODES. DeepSeek-V4.1 dequantizes and

@@ -3,11 +3,11 @@
 package latencykernel_test
 
 import (
-	. "github.com/inference-sim/blis-substrate/kernel"
+	. "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 )
 
 // INSIDE ONE NVLINK RACK, A TRAY BOUNDARY IS NOT A FABRIC CROSSING. An NVL72-class part puts

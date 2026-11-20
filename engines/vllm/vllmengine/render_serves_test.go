@@ -5,7 +5,7 @@ package vllmengine
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // vLLM serves the router's render endpoints only when the frontend runs with --enable-scale-out

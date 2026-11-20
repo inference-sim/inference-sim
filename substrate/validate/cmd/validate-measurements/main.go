@@ -16,7 +16,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/inference-sim/blis-substrate/validate/measurements"
+	"github.com/inference-sim/inference-sim/substrate/validate/measurements"
 )
 
 func main() {

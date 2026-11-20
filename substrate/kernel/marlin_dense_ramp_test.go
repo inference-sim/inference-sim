@@ -3,9 +3,9 @@ package latencykernel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // On SM90 a dense MXFP8 linear runs vLLM's Marlin W8A16 kernel. The registry carries its ramp as a

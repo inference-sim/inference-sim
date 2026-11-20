@@ -12,8 +12,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
+	"github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
 
 	"github.com/inference-sim/inference-sim/sim"
 )

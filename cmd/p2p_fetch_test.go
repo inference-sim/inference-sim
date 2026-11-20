@@ -77,7 +77,7 @@ func keysWithPrefix(v any, prefix string, out map[string]bool) {
 	}
 }
 
-// A P/D run of real blis-vllm engines hands its requests off through vLLM's p2p KV tier
+// A P/D run of real the vLLM engine engines hands its requests off through vLLM's p2p KV tier
 // (blis-vllm#204): the decode engine loads each prompt from the prefill instance's CPU tier, whose
 // WRITEs cross the fabric from the prefill node to the decode node. Every request completes, the
 // engines' control messages are carried and none is dropped, and the WRITEs load the fabric's links

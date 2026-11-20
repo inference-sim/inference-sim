@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	validate "github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	validate "github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 )
 
 // The committed files under catalog/ledger/ (design §10.2). No other file may sit there.

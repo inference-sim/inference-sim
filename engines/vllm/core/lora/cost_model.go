@@ -7,7 +7,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/inference-sim/blis-vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // CostModel derives the three Digital-Twin adapter cost terms as pure,

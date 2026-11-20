@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // A deployment's env PYTHONHASHSEED roots every block-hash chain, so the hashes the engine

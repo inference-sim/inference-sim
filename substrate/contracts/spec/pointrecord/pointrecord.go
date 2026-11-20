@@ -15,8 +15,8 @@
 package pointrecord
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
-	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/routertable"
 )
 
 // Kind is the value of Record.Kind.

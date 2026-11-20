@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-substrate/kernel/internal/price"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/price"
 )
 
 // Per-layer KV caches, sized from what each layer states it owns.

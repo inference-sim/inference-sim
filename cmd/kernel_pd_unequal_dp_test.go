@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 )
 
 // P/D pools at different data-parallel widths (inference-sim/inference-sim#1952). The pools are separate engines with

@@ -10,14 +10,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 
-	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
-	"github.com/inference-sim/blis-vllm/core/vllmsettings"
+	vllmrules "github.com/inference-sim/inference-sim/engines/vllm/core/rulepack"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
 )
 
 // A model-specific MTP name is the method vLLM runs as mtp, so a deployment naming mtp

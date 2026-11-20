@@ -3,9 +3,9 @@ package latencykernel
 import (
 	"sync/atomic"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
-	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve"
 )
 
 // trustTerm is one selected coefficient's contribution to the trust of a price (design VAL-3).

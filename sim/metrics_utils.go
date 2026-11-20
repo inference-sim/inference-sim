@@ -168,8 +168,8 @@ type PrefixCacheRecord struct {
 	Note                 string      `json:"note,omitempty"`
 }
 
-// BuildVersions are the module versions a results file was produced by: BLIS itself and the
-// blis-latency-kernel and blis-schemas releases it was built against.
+// BuildVersions are the versions a results file was produced by: BLIS itself and the
+// cost-model kernel and schemas, which are packages of the same module and so carry its version.
 type BuildVersions struct {
 	BLIS    string `json:"blis_version"`
 	Kernel  string `json:"kernel_version"`
@@ -225,7 +225,7 @@ type AcceptanceEntry struct {
 	// whether they were derived from AL by vLLM's minimum-variance schedule rather than stated.
 	PerPositionRates []float64 `json:"per_position_rates"`
 	RatesDerived     bool      `json:"rates_derived"`
-	// The fields below are blis-substrate's record of the resolution
+	// The fields below are the substrate's record of the resolution
 	// (result.AcceptanceProperty), carried field for field so the results file and the Result
 	// agree.
 	//
@@ -246,7 +246,7 @@ type AcceptanceEntry struct {
 	RatesShape *AcceptanceRatesShape `json:"rates_shape,omitempty"`
 }
 
-// AcceptanceRatesShape is a fitted decay shape (blis-substrate's result.RatesShape): the profile
+// AcceptanceRatesShape is a fitted decay shape (the substrate's result.RatesShape): the profile
 // set that holds it, the speculative method it was fitted to ("" for every method's), its decay
 // exponent, and how the exponent was obtained.
 type AcceptanceRatesShape struct {
@@ -266,7 +266,7 @@ type ScenarioOverride struct {
 
 // CatalogProvenance attributes a --metrics-path file to the catalog that produced it (#1732).
 // Path is the catalog directory a path named, or "embedded" for the copy compiled into the
-// pinned blis-substrate release; Revision is the catalog's combined content hash (design §3.3);
+// pinned the substrate release; Revision is the catalog's combined content hash (design §3.3);
 // Dirty is true when an overlay changed the catalog.
 type CatalogProvenance struct {
 	Path     string `json:"path"`

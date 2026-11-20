@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 )
 
 // Realisation is how a run realised its acceptance, which decides how an acceptance length

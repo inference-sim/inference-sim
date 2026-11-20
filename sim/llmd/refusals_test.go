@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
-	_ "github.com/inference-sim/blis-vllm/compat/lora" // registers the adapter registry the engine builds
+	_ "github.com/inference-sim/inference-sim/engines/vllm/core/lora" // registers the adapter registry the engine builds
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )

@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 // EngineBlock is a block of a deployment that belongs to its engine, held unopened: a pool's

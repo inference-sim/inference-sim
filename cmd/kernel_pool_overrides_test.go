@@ -3,8 +3,8 @@ package cmd
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 )
 
 // Each role's overrides are its own pool's engine, answered by its own pool's kernel: the

@@ -7,13 +7,13 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // The data a run reads (design §3.3, SIM-6): the catalog and registry embedded in the
-// blis-substrate release this build pins, unless a path replaces either one. --catalog <dir>
+// the substrate release this build pins, unless a path replaces either one. --catalog <dir>
 // (or BLIS_CATALOG) and --registry <dir> (or BLIS_REGISTRY) each name a directory with the
-// layout of blis-substrate's catalog/ or registry/ and replace that half of the embedded copy;
+// layout of substrate/catalog/ or registry/ and replace that half of the embedded copy;
 // the two are independent. --catalog-overlay and --registry-overlay add or replace entries by
 // identity, and may be repeated. A path never overlays, and an overlay never replaces the
 // whole. The flag wins over the environment variable, and the choice is announced on stderr.
@@ -105,7 +105,7 @@ func mustRunData() *load.Data {
 // what data a run reads.
 func registerDataFlags(cmd *cobra.Command) {
 	registerCatalogFlag(cmd)
-	cmd.Flags().StringVar(&registryPath, "registry", "", "A directory with the layout of blis-substrate's registry/ that replaces the embedded registry (or "+registryEnvVar+"; the flag wins). Without either the run uses the registry embedded in the blis-substrate release this build pins (design §3.3)")
+	cmd.Flags().StringVar(&registryPath, "registry", "", "A directory with the layout of substrate/registry/ that replaces the embedded registry (or "+registryEnvVar+"; the flag wins). Without either the run uses the registry embedded in this build's substrate (design §3.3)")
 	cmd.Flags().StringArrayVar(&catalogOverlays, "catalog-overlay", nil, "A directory of catalog entries (whole models/<name>/ directories, or hardware, device, network or workload files) added to the catalog in use, replacing an entry of the same identity; repeatable, applied in order. It may hold no ledger files")
 	cmd.Flags().StringArrayVar(&registryOverlays, "registry-overlay", nil, "A directory of coefficient sets added to the registry in use: a coefficient with the same set, name, scope and method replaces the one there; repeatable, applied in order")
 }
@@ -113,5 +113,5 @@ func registerDataFlags(cmd *cobra.Command) {
 // registerCatalogFlag declares --catalog alone, for a command that reads only the catalog
 // (convert preset, catalog resolve).
 func registerCatalogFlag(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&catalogPath, "catalog", "", "A directory with the layout of blis-substrate's catalog/ that replaces the embedded catalog (or "+catalogEnvVar+"; the flag wins). Without either the command uses the catalog embedded in the blis-substrate release this build pins (design §3.3). A model is resolved from its models/<name>/graph.yaml; a model the catalog does not have is refused, naming the catalog's source and where the entry belongs. BLIS never fetches or writes a catalog file (NS-6)")
+	cmd.Flags().StringVar(&catalogPath, "catalog", "", "A directory with the layout of substrate/catalog/ that replaces the embedded catalog (or "+catalogEnvVar+"; the flag wins). Without either the command uses the catalog embedded in this build's substrate (design §3.3). A model is resolved from its models/<name>/graph.yaml; a model the catalog does not have is refused, naming the catalog's source and where the entry belongs. BLIS never fetches or writes a catalog file (NS-6)")
 }

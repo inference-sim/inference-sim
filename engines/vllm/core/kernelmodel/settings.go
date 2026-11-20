@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"math"
 
-	sim "github.com/inference-sim/blis-vllm/core/runconfig"
+	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 )
 
 // Settings is everything a simulator sizes one engine from, every value answered by the

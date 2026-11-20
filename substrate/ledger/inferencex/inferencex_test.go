@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/ledger"
+	"github.com/inference-sim/inference-sim/substrate/ledger"
 )
 
 // row returns a synthetic exported row. Its numbers are invented; no InferenceX measurement is

@@ -148,7 +148,7 @@ func newCatalogFixtureRepo(t *testing.T, stateDeploymentFact bool) (string, stri
 	t.Helper()
 	repo := t.TempDir()
 
-	// Every file is copied from the catalog of the blis-substrate module go.mod selects,
+	// Every file is copied from the catalog of this repository (substrate/catalog),
 	// because the gate parses each through the production readers,
 	// and a hand-written copy of a file's shape would drift from the format the release
 	// publishes.

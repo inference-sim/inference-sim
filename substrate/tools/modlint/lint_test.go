@@ -10,13 +10,7 @@ const simGoMod = `module github.com/inference-sim/inference-sim
 
 go 1.27.2
 
-require (
-	github.com/inference-sim/blis-substrate v0.11.0
-	github.com/inference-sim/blis-vllm v0.32.0-blis.2
-	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
-)
-
-exclude github.com/inference-sim/blis-vllm v0.32.0
+require github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 
 replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.2
 `
@@ -24,8 +18,6 @@ replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v
 func simModules() []Module {
 	return []Module{
 		{Path: "github.com/inference-sim/inference-sim", Main: true, GoVersion: "1.27.2"},
-		{Path: "github.com/inference-sim/blis-vllm", Version: "v0.32.0-blis.2", GoVersion: "1.27.2"},
-		{Path: "github.com/inference-sim/blis-substrate", Version: "v0.11.0", GoVersion: "1.24"},
 		{Path: "github.com/llm-d/llm-d-router", Version: "v0.0.0-00010101000000-000000000000",
 			Replace: &Module{Path: "github.com/inference-sim/llm-d-router", Version: "v1.0.0-blis.2", GoVersion: "1.27.2"}},
 		{Path: "gopkg.in/yaml.v3", Version: "v3.0.1"},
@@ -38,7 +30,6 @@ func simInput() Input {
 		Modules: simModules(),
 		Graph: [][2]string{
 			{"github.com/inference-sim/inference-sim", "github.com/llm-d/llm-d-router@v0.0.0-00010101000000-000000000000"},
-			{"github.com/inference-sim/blis-vllm@v0.32.0-blis.2", "github.com/inference-sim/blis-substrate@v0.11.0"},
 		},
 		Toolchain: "go1.27.2",
 		GoVersion: "go1.27.2",
@@ -75,40 +66,23 @@ func TestEachRuleHasAKnownBadInput(t *testing.T) {
 		{"no replace", func(in *Input) {
 			in.GoMod = []byte(strings.Split(simGoMod, "replace ")[0])
 		}, "has 0 replace directives"},
-		{"an exclude of a -blis.N tag", func(in *Input) {
-			in.GoMod = []byte(strings.Replace(simGoMod, "blis-vllm v0.32.0\n", "blis-vllm v0.32.0-blis.1\n", 1))
-		}, "an exclude may name only a plain tag"},
-		{"an exclude of a non-engine module", func(in *Input) {
-			in.GoMod = []byte(strings.Replace(simGoMod, "exclude github.com/inference-sim/blis-vllm v0.32.0", "exclude github.com/inference-sim/blis-substrate v0.10.0", 1))
-		}, "an exclude may name only an engine module"},
-		{"no direct substrate pin", func(in *Input) {
-			in.GoMod = []byte(strings.Replace(simGoMod, "\tgithub.com/inference-sim/blis-substrate v0.11.0\n", "", 1))
-		}, "no direct require of github.com/inference-sim/blis-substrate"},
-		{"a stale direct substrate pin", func(in *Input) {
-			in.Modules[2].Version = "v0.12.0"
-		}, "declared at v0.11.0 but the build selects v0.12.0"},
-		{"a duplicated direct substrate pin", func(in *Input) {
-			in.GoMod = append([]byte(simGoMod), "require github.com/inference-sim/blis-substrate v0.11.0\n"...)
-		}, "requires github.com/inference-sim/blis-substrate 2 times"},
-		{"an indirect-only substrate pin", func(in *Input) {
-			in.GoMod = []byte(strings.Replace(simGoMod, "blis-substrate v0.11.0\n", "blis-substrate v0.11.0 // indirect\n", 1))
-		}, "marked indirect"},
+		{"an exclude of the retired engine module", func(in *Input) {
+			in.GoMod = append([]byte(simGoMod), "exclude github.com/inference-sim/blis-vllm v0.32.0\n"...)
+		}, "has no module version to exclude"},
 		{"a committed go.work", func(in *Input) { in.GoWork = []string{"go.work"} }, "go.work is committed"},
 		{"another module requires the router", func(in *Input) {
-			in.Graph = append(in.Graph, [2]string{"github.com/inference-sim/blis-vllm@v0.32.0-blis.2", "github.com/llm-d/llm-d-router@v1.0.0"})
+			in.Graph = append(in.Graph, [2]string{"github.com/example/x@v1.0.0", "github.com/llm-d/llm-d-router@v1.0.0"})
 		}, "only inference-sim may require the router"},
-		{"a BLIS module at a pseudo-version", func(in *Input) {
-			in.Modules[1].Version = "v0.32.1-0.20261101000000-abcdefabcdef"
-		}, "is not a release tag"},
-		{"an engine at a plain upstream tag", func(in *Input) { in.Modules[1].Version = "v0.32.0" }, "must be a -blis.N tag"},
-		{"an engine at a release candidate", func(in *Input) { in.Modules[1].Version = "v0.32.0-rc.1" }, "must be a -blis.N tag"},
-		{"the substrate at a release candidate", func(in *Input) { in.Modules[2].Version = "v0.12.0-rc.1" }, "must be a plain vX.Y.Z tag"},
-		{"the substrate at a -blis.N tag", func(in *Input) { in.Modules[2].Version = "v0.12.0-blis.1" }, "must be a plain vX.Y.Z tag"},
-		{"the substrate with build metadata", func(in *Input) { in.Modules[2].Version = "v0.12.0+meta" }, "must be a plain vX.Y.Z tag"},
+		{"a retired substrate module in the build", func(in *Input) {
+			in.Modules = append(in.Modules, Module{Path: "github.com/inference-sim/blis-substrate", Version: "v0.11.0"})
+		}, "blis-substrate is selected"},
+		{"a retired engine module in the build", func(in *Input) {
+			in.Modules = append(in.Modules, Module{Path: "github.com/inference-sim/blis-vllm", Version: "v0.33.0-blis.1"})
+		}, "blis-vllm is selected"},
 		{"the router fork at a plain tag", func(in *Input) {
 			in.Modules = append(in.Modules, Module{Path: "github.com/inference-sim/llm-d-router", Version: "v1.0.0"})
 		}, "must be a -blis.N tag"},
-		{"the router selected without its replace", func(in *Input) { in.Modules[3].Replace = nil }, "without the router fork's replace"},
+		{"the router selected without its replace", func(in *Input) { in.Modules[1].Replace = nil }, "without the router fork's replace"},
 		{"a module above the toolchain", func(in *Input) { in.Modules[2].GoVersion = "1.28" }, "above contracts/toolchain"},
 		{"a go command other than the toolchain", func(in *Input) { in.GoVersion = "go1.27.3" }, "go version reports go1.27.3"},
 	}
@@ -125,24 +99,6 @@ func TestEachRuleHasAKnownBadInput(t *testing.T) {
 				t.Fatalf("lint did not report %q; it reported:\n%s", c.want, strings.Join(bad, "\n"))
 			}
 		})
-	}
-}
-
-func TestOutsideInferenceSimNoReplaceOrExclude(t *testing.T) {
-	gomod := "module github.com/inference-sim/blis-vllm\n\ngo 1.27.2\n\nreplace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.2\n\nexclude github.com/inference-sim/blis-sglang v0.5.23\n"
-	bad, err := Lint(Input{
-		GoMod:     []byte(gomod),
-		Modules:   []Module{{Path: "github.com/inference-sim/blis-vllm", Main: true, GoVersion: "1.27.2"}},
-		Toolchain: "go1.27.2",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := strings.Join(bad, "\n")
-	for _, want := range []string{"only inference-sim may carry a replace directive", "only inference-sim may carry exclude directives"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("missing %q in:\n%s", want, got)
-		}
 	}
 }
 
@@ -170,189 +126,91 @@ func TestTagForms(t *testing.T) {
 	}
 }
 
-// This repository, as committed, passes its own lint, and contracts/toolchain is a valid
-// version no lower than any go directive here.
+// This repository, as committed, passes its own lint, and substrate/contracts/toolchain is a
+// valid version no lower than any go directive here.
 func TestThisRepositoryIsClean(t *testing.T) {
-	bad, err := lintDir("../..", "")
+	bad, err := lintDir("../../..", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The go command running the tests may differ from contracts/toolchain on a developer
-	// machine; CI installs exactly that version and runs modlint itself.
+	// machine; CI installs exactly that version and runs modlint itself. The router fork may be
+	// pinned by commit while a draft is open, which the deferral file covers in CI.
 	var real []string
 	for _, b := range bad {
-		if !strings.HasPrefix(b, "go version reports") {
+		if !strings.HasPrefix(b, "go version reports") && !deferrable(b, []string{"llm-d-router"}) {
 			real = append(real, b)
 		}
 	}
 	if len(real) > 0 {
-		t.Fatalf("blis-substrate fails its own selected-version lint:\n%s", strings.Join(real, "\n"))
+		t.Fatalf("this module fails its own selected-version lint:\n%s", strings.Join(real, "\n"))
 	}
 }
 
-// blis-sglang is pinned by commit from M3.1 like the other lower repositories: a pseudo-version pin
-// of it is deferred when the deferral lists it, and fails when the list leaves it out.
-func TestApplyDeferralCoversBlisSglang(t *testing.T) {
-	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
-	const listed = "issue: inference-sim/blis-substrate#14\nadded: 2026-11-05\nexpires: 2026-12-05\nmodules: [blis-substrate, blis-vllm, blis-sglang, llm-d-router]\nreason: pinned by commit\n"
-	const unlisted = "issue: inference-sim/blis-substrate#14\nadded: 2026-11-05\nexpires: 2026-12-05\nmodules: [blis-substrate, blis-vllm, llm-d-router]\nreason: pinned by commit\n"
-	pin := "github.com/inference-sim/blis-sglang resolves to v0.0.0-20261118053822-9aba670214aa, which is not a release tag (X11, LIF-2)"
-	if fail, deferred := ApplyDeferral([]byte(listed), day("2026-11-18"), []string{pin}); len(fail) != 0 || len(deferred) != 1 {
-		t.Errorf("listed: fail=%v deferred=%v, want the pin deferred", fail, deferred)
-	}
-	if fail, deferred := ApplyDeferral([]byte(unlisted), day("2026-11-18"), []string{pin}); len(fail) != 1 || len(deferred) != 0 {
-		t.Errorf("unlisted: fail=%v deferred=%v, want the pin to fail", fail, deferred)
-	}
-}
+func day(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
 
-// The pin-by-commit deferral: a pseudo-version pin is deferred while the file holds; every
-// other finding fails; an expired, unowned or malformed file defers nothing.
+// The pin-by-commit deferral covers the router fork at a commit and nothing else; an expired,
+// unowned, over-long, future-dated or malformed file defers nothing and adds a finding.
 func TestApplyDeferral(t *testing.T) {
-	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
-	const file = "issue: inference-sim/blis-substrate#14\nadded: 2026-11-05\nexpires: 2026-12-05\nmodules: [blis-substrate, blis-vllm, llm-d-router]\nreason: tags follow review\n"
-	pin := "github.com/inference-sim/blis-substrate resolves to v0.0.0-20261105193227-4a3becf2d09a, which is not a release tag (X11, LIF-2)"
+	file := func(added, expires, modules string) []byte {
+		return []byte("issue: inference-sim/inference-sim#2137\nadded: " + added + "\nexpires: " + expires + "\nmodules: " + modules + "\nreason: tags follow review\n")
+	}
+	finding := func(path, version string) string {
+		return "github.com/llm-d/llm-d-router resolves to " + path + " " + version + "; it must resolve to github.com/inference-sim/llm-d-router at a -blis.N tag (LIF-2)"
+	}
+	rep := func(v string) string {
+		return `go.mod:132: replace target version "` + v + `" is not a -blis.N tag (X11, LIF-5)`
+	}
+	const pv = "v1.0.1-0.20261105040605-fd1830412b30"
+	pin := finding("github.com/inference-sim/llm-d-router", pv)
 	other := "go version reports go1.24.0; contracts/toolchain names go1.27.2 (LIF-2)"
-	fail, deferred := ApplyDeferral([]byte(file), day("2026-11-05"), []string{pin, other})
-	if len(deferred) != 1 || len(fail) != 1 || fail[0] != other {
-		t.Fatalf("held: fail=%v deferred=%v", fail, deferred)
+	today := day("2026-11-06")
+	held := file("2026-11-05", "2026-12-05", "[llm-d-router]")
+
+	if fail, def := ApplyDeferral(held, today, []string{pin, rep(pv), other}); len(def) != 2 || len(fail) != 1 || fail[0] != other {
+		t.Errorf("held: fail=%v deferred=%v", fail, def)
 	}
-	if fail, deferred = ApplyDeferral(nil, day("2026-11-05"), []string{pin}); len(fail) != 1 || len(deferred) != 0 {
-		t.Fatalf("no file: fail=%v deferred=%v", fail, deferred)
+	for name, f := range map[string]string{
+		"a replace to another module":      finding("github.com/someone/llm-d-router", pv),
+		"a branch name, not a commit":      finding("github.com/inference-sim/llm-d-router", "llm-d-r"),
+		"a tag-shaped version":             finding("github.com/inference-sim/llm-d-router", "v1.0.0-blis.4"),
+		"a replace target at a plain tag":  rep("v1.0.1"),
+		"a retired module at a pseudo-tag": "github.com/inference-sim/blis-vllm resolves to " + pv + ", which is not a release tag (X11, LIF-2)",
+	} {
+		if fail, def := ApplyDeferral(held, today, []string{f}); len(def) != 0 || len(fail) != 1 {
+			t.Errorf("%s: fail=%v deferred=%v, want it to fail", name, fail, def)
+		}
 	}
-	// The last day before the expiry date still defers, at any time of day; the date itself
-	// does not, from its first instant.
+	for name, c := range map[string]struct {
+		src   []byte
+		on    time.Time
+		extra string
+	}{
+		"no file":                {nil, today, ""},
+		"an empty file":          {[]byte{}, today, ""},
+		"expired":                {held, day("2026-12-05"), "expired"},
+		"more than 30 days":      {file("2026-11-05", "2026-12-06", "[llm-d-router]"), today, "30 days"},
+		"added in the future":    {file("2026-11-07", "2026-11-20", "[llm-d-router]"), today, "future"},
+		"no modules":             {file("2026-11-05", "2026-12-05", "[]"), today, "modules"},
+		"a retired module named": {file("2026-11-05", "2026-12-05", "[blis-substrate]"), today, "modules"},
+		"no owning issue":        {[]byte("issue: x\nadded: 2026-11-05\nexpires: 2026-12-05\nmodules: [llm-d-router]\nreason: y\n"), today, "owning issue"},
+	} {
+		fail, def := ApplyDeferral(c.src, c.on, []string{pin})
+		if len(def) != 0 || len(fail) == 0 || (c.extra != "" && !strings.Contains(strings.Join(fail, "\n"), c.extra)) {
+			t.Errorf("%s: fail=%v deferred=%v", name, fail, def)
+		}
+	}
+	// The last day before the expiry date still defers, at any time of day; the date itself does not.
 	for _, at := range []string{"2026-12-04T00:00:00Z", "2026-12-04T23:59:59Z"} {
 		now, err := time.Parse(time.RFC3339, at)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if fail, deferred = ApplyDeferral([]byte(file), now, []string{pin}); len(deferred) != 1 || len(fail) != 0 {
-			t.Fatalf("%s: fail=%v deferred=%v, want 1 deferred", at, fail, deferred)
+		if fail, def := ApplyDeferral(held, now, []string{pin}); len(def) != 1 || len(fail) != 0 {
+			t.Errorf("%s: fail=%v deferred=%v, want 1 deferred", at, fail, def)
 		}
 	}
-	if fail, deferred = ApplyDeferral([]byte(file), day("2026-12-04"), []string{pin}); len(deferred) != 1 || len(fail) != 0 {
-		t.Fatalf("2026-12-04: fail=%v deferred=%v, want 1 deferred", fail, deferred)
-	}
-	if now, _ := time.Parse(time.RFC3339, "2026-12-05T00:00:01Z"); !now.IsZero() {
-		if fail, deferred = ApplyDeferral([]byte(file), now, []string{pin}); len(deferred) != 0 || len(fail) != 2 {
-			t.Fatalf("2026-12-05T00:00:01Z: fail=%v deferred=%v, want expired", fail, deferred)
-		}
-	}
-	// A deferral file that is missing is no file: nothing is deferred and every finding fails.
-	if fail, deferred = ApplyDeferral([]byte{}, day("2026-11-05"), []string{pin}); len(fail) != 1 || len(deferred) != 0 {
-		t.Fatalf("empty file: fail=%v deferred=%v", fail, deferred)
-	}
-	if fail, deferred = ApplyDeferral([]byte(file), day("2026-12-05"), []string{pin}); len(deferred) != 0 || len(fail) != 2 || !strings.Contains(fail[1], "expired") {
-		t.Fatalf("expired: fail=%v deferred=%v", fail, deferred)
-	}
-	if fail, _ = ApplyDeferral([]byte("issue: x\nadded: 2026-11-05\nexpires: 2026-12-05\nmodules: [blis-substrate]\nreason: y\n"), day("2026-11-05"), []string{pin}); len(fail) != 2 || !strings.Contains(fail[1], "owning issue") {
-		t.Fatalf("bad issue: %v", fail)
-	}
-}
-
-// The deferral lasts at most 30 days from the day the file was added (plan §3.3), covers
-// only the BLIS modules the file lists, and is not dated in the future.
-func TestDeferralBounds(t *testing.T) {
-	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
-	file := func(added, expires, modules string) []byte {
-		return []byte("issue: inference-sim/blis-substrate#14\nadded: " + added + "\nexpires: " + expires + "\nmodules: " + modules + "\nreason: r\n")
-	}
-	pin := func(m string) string {
-		return "github.com/inference-sim/" + m + " resolves to v0.0.0-20261105193227-4a3becf2d09a, which is not a release tag (X11, LIF-2)"
-	}
-	today := day("2026-11-06")
-	if fail, def := ApplyDeferral(file("2026-11-05", "2099-01-01", "[blis-substrate]"), today, []string{pin("blis-substrate")}); len(def) != 0 || len(fail) != 2 || !strings.Contains(fail[1], "30 days") {
-		t.Errorf("expires 2099: fail=%v deferred=%v", fail, def)
-	}
-	if fail, def := ApplyDeferral(file("2026-11-05", "2026-12-05", "[blis-substrate]"), today, []string{pin("blis-substrate")}); len(def) != 1 || len(fail) != 0 {
-		t.Errorf("exactly 30 days: fail=%v deferred=%v", fail, def)
-	}
-	if fail, def := ApplyDeferral(file("2026-11-05", "2026-12-06", "[blis-substrate]"), today, []string{pin("blis-substrate")}); len(def) != 0 || len(fail) != 2 {
-		t.Errorf("31 days: fail=%v deferred=%v", fail, def)
-	}
-	if fail, def := ApplyDeferral(file("2026-11-07", "2026-11-20", "[blis-substrate]"), today, []string{pin("blis-substrate")}); len(def) != 0 || len(fail) != 2 || !strings.Contains(fail[1], "future") {
-		t.Errorf("added in the future: fail=%v deferred=%v", fail, def)
-	}
-	// A module the file does not list, or one outside BLIS, is not deferred.
-	f := file("2026-11-05", "2026-12-05", "[blis-substrate]")
-	other := "github.com/inference-sim/blis-vllm resolves to v0.0.0-20261105193227-4a3becf2d09a, which is not a release tag (X11, LIF-2)"
-	foreign := "github.com/example/blis-substrate resolves to v0.0.0-20261105193227-4a3becf2d09a, which is not a release tag (X11, LIF-2)"
-	if fail, def := ApplyDeferral(f, today, []string{other, foreign}); len(def) != 0 || len(fail) != 2 {
-		t.Errorf("unlisted module: fail=%v deferred=%v", fail, def)
-	}
-	// The router fork is pinned by a replace to a commit while drafts are open. That is covered
-	// only when the file lists llm-d-router and the version is a pseudo-version.
-	rep := func(v string) string {
-		return `go.mod:132: replace target version "` + v + `" is not a -blis.N tag (X11, LIF-5)`
-	}
-	const pv = "v1.0.1-0.20261105040605-fd1830412b30"
-	if fail, def := ApplyDeferral(file("2026-11-05", "2026-12-05", "[llm-d-router]"), today, []string{rep(pv)}); len(def) != 1 || len(fail) != 0 {
-		t.Errorf("router fork pinned by commit, listed: fail=%v deferred=%v", fail, def)
-	}
-	if fail, def := ApplyDeferral(file("2026-11-05", "2026-12-05", "[blis-substrate]"), today, []string{rep(pv)}); len(def) != 0 || len(fail) != 1 {
-		t.Errorf("router fork pinned by commit, not listed: fail=%v deferred=%v", fail, def)
-	}
-	if fail, def := ApplyDeferral(file("2026-11-05", "2026-12-05", "[llm-d-router]"), today, []string{rep("v1.0.1")}); len(def) != 0 || len(fail) != 1 {
-		t.Errorf("router fork at a plain tag is not a pin: fail=%v deferred=%v", fail, def)
-	}
-	if fail, _ := ApplyDeferral(file("2026-11-05", "2026-12-05", "[]"), today, []string{pin("blis-substrate")}); len(fail) != 2 || !strings.Contains(fail[1], "modules") {
-		t.Errorf("empty modules: %v", fail)
-	}
-	if fail, _ := ApplyDeferral(file("2026-11-05", "2026-12-05", "[inference-sim]"), today, []string{pin("blis-substrate")}); len(fail) != 2 || !strings.Contains(fail[1], "modules") {
-		t.Errorf("unknown module name: %v", fail)
-	}
-}
-
-// A pseudo-version direct pin equal to the selected version raises only the deferrable
-// release-tag finding, and nothing about the pin itself.
-func TestPseudoDirectPinEqualToSelectedOnlyDefers(t *testing.T) {
-	const pv = "v0.0.0-20261105193227-4a3becf2d09a"
-	in := simInput()
-	in.Modules = simModules()
-	in.GoMod = []byte(strings.Replace(simGoMod, "blis-substrate v0.11.0", "blis-substrate "+pv, 1))
-	in.Modules[2].Version = pv
-	bad, err := Lint(in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(bad) != 1 || !strings.Contains(bad[0], "is not a release tag") {
-		t.Fatalf("want the one release-tag finding, got:\n%s", strings.Join(bad, "\n"))
-	}
-}
-
-// The router fork pinned by a pseudo-version is covered by the deferral when it lists the router
-// (inference-sim#2137 pins the fork's commit); a replace to another module, a version that is no
-// pseudo-version, an unlisted router and an ended deferral still fail.
-func TestDeferralCoversTheRouterForkPinnedByCommit(t *testing.T) {
-	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
-	const listed = "issue: inference-sim/blis-substrate#14\nadded: 2026-11-05\nexpires: 2026-12-05\nmodules: [blis-substrate, blis-vllm, llm-d-router]\nreason: tags follow review\n"
-	const unlisted = "issue: inference-sim/blis-substrate#14\nadded: 2026-11-05\nexpires: 2026-12-05\nmodules: [blis-substrate, blis-vllm]\nreason: tags follow review\n"
-	finding := func(path, version string) string {
-		return "github.com/llm-d/llm-d-router resolves to " + path + " " + version + "; it must resolve to github.com/inference-sim/llm-d-router at a -blis.N tag (LIF-2)"
-	}
-	pin := finding("github.com/inference-sim/llm-d-router", "v1.0.0-blis.4.0.20261117140125-6acd0a87e875")
-	for _, c := range []struct {
-		name, file, finding string
-		on                  time.Time
-		deferred            bool
-	}{
-		{"a listed router at a pseudo-version of the fork is deferred", listed, pin, day("2026-11-17"), true},
-		{"an unlisted router is refused", unlisted, pin, day("2026-11-17"), false},
-		{"a listed router replaced by another module is refused", listed, finding("github.com/someone/llm-d-router", "v1.0.0-blis.4.0.20261117140125-6acd0a87e875"), day("2026-11-17"), false},
-		{"a listed router at a branch name, not a pseudo-version, is refused", listed, finding("github.com/inference-sim/llm-d-router", "llm-d-r"), day("2026-11-17"), false},
-		{"a listed router at a tag-shaped version is not this finding's case and is refused", listed, finding("github.com/inference-sim/llm-d-router", "v1.0.0-blis.4"), day("2026-11-17"), false},
-		{"the deferral has ended, so the pin fails again", listed, pin, day("2026-12-05"), false},
-	} {
-		fail, deferred := ApplyDeferral([]byte(c.file), c.on, []string{c.finding})
-		if c.deferred && (len(deferred) != 1 || len(fail) != 0) {
-			t.Errorf("%s: fail=%v deferred=%v, want one deferred", c.name, fail, deferred)
-		}
-		if !c.deferred && len(deferred) != 0 {
-			t.Errorf("%s: deferred %v, want it to fail", c.name, deferred)
-		}
-	}
-	// With the file deleted (blis-substrate#283), nothing is deferred.
-	if fail, deferred := ApplyDeferral(nil, day("2026-11-17"), []string{pin}); len(fail) != 1 || len(deferred) != 0 {
-		t.Errorf("no file: fail=%v deferred=%v, want the pin to fail", fail, deferred)
+	if fail, def := ApplyDeferral(held, day("2026-12-05"), []string{pin}); len(def) != 0 || len(fail) != 2 {
+		t.Errorf("2026-12-05: fail=%v deferred=%v", fail, def)
 	}
 }

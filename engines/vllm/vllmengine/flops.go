@@ -2,7 +2,7 @@
 
 package vllmengine
 
-import "github.com/inference-sim/blis-substrate/contracts/engine"
+import "github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
 // StepFLOPs implements core/vllm.FLOPsPricer: the model FLOPs of the batch, from the same
 // shapes StepTime priced.

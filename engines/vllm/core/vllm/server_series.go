@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/inference-sim/blis-vllm/core/metrics"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/metrics"
 )
 
 // The server time series (a simulator's --server-series-interval-s) is the vllm:* series a

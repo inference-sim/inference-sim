@@ -3,8 +3,8 @@ package enginetest
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 )
 
 // PullerFabric is the catalog network a Puller's plan names when its pool spans nodes.

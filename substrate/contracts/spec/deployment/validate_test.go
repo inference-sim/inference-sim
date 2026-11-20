@@ -8,7 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 // pdDeployment is a prefill/decode-disaggregated deployment of the kind the design

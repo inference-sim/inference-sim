@@ -22,9 +22,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
-	"github.com/inference-sim/blis-substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 )
 
 // Time is a simulated instant in microseconds since the start of a run. It is a value,

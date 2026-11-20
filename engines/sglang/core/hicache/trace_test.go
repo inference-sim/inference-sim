@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	blissglang "github.com/inference-sim/blis-sglang"
-	"github.com/inference-sim/blis-sglang/core/cache"
+	blissglang "github.com/inference-sim/inference-sim/engines/sglang"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 )
 
 // goldenDir is where the HiCache framework's traces are committed: recorded/ from SGLang's

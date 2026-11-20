@@ -6,10 +6,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-sglang/config"
+	"github.com/inference-sim/inference-sim/engines/sglang/config"
 )
 
 func r1Args(t *testing.T) config.ServerArgs {

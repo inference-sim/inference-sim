@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"sort"
 
-	validate "github.com/inference-sim/blis-substrate/contracts/check"
+	validate "github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 // StackLock describes one review set (design §13.6): the change it makes, the plan

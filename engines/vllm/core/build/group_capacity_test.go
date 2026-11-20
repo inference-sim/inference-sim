@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 )
 
 // A host that runs a data-parallel group as one instance counts groups: a pool of 16 GPUs at dp 8 holds two, so

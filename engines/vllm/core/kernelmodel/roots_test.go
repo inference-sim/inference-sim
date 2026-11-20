@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // With neither BLIS_CATALOG nor BLIS_REGISTRY set, the data is the pinned blis-substrate's

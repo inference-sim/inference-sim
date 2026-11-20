@@ -60,24 +60,24 @@ import (
 	"strings"
 	"time"
 
-	blisschemas "github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
-	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-	"github.com/inference-sim/blis-substrate/load"
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
-	"github.com/inference-sim/blis-vllm/core/lowering"
-	"github.com/inference-sim/blis-vllm/core/placement"
-	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
-	"github.com/inference-sim/blis-vllm/core/vllmsettings"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/lowering"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/placement"
+	vllmrules "github.com/inference-sim/inference-sim/engines/vllm/core/rulepack"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
+	blisschemas "github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/workload"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
+	"github.com/inference-sim/inference-sim/substrate/load"
 
-	sim "github.com/inference-sim/blis-vllm/core/runconfig"
+	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // Repos is blis-latency-kernel's Repos.
@@ -134,7 +134,7 @@ func LowerPool(in latencykernel.Inputs) (*plan.Lowered, error) {
 }
 
 // withEngineRules returns r with the vLLM engine rules filled in where r states none: the
-// packs of github.com/inference-sim/blis-vllm/core/rulepack, which the kernel takes from its caller
+// packs of github.com/inference-sim/inference-sim/engines/vllm/core/rulepack, which the kernel takes from its caller
 // rather than looking up itself (inference-sim#2021 B4). It is the one place this repository
 // chooses the rules a scenario's engine_version selects, so a run, a replay and every scoring
 // tool price a release against the same pack.

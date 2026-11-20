@@ -3,7 +3,7 @@ package vllmengine
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // The engine states the model FLOPs of the step it scheduled, and one GPU's peak, so a host can

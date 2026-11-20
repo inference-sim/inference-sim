@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-vllm/internal/substratedata"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/substratedata"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // openGLM opens a committed GLM-5 fixture with its cache_dtype line replaced by line ("" removes

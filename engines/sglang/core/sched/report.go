@@ -4,7 +4,7 @@
 
 package sched
 
-import "github.com/inference-sim/blis-sglang/core/cache"
+import "github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 
 // What the scheduler tells its metrics reporter. SGLang's SchedulerMetricsReporter reads these
 // values off the scheduler as a batch's result is processed (report_prefill_stats :719-899 and

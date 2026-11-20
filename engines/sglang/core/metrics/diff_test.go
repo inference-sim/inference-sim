@@ -14,8 +14,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/inference-sim/blis-sglang/core/cache"
-	"github.com/inference-sim/blis-sglang/core/sched"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/sched"
 )
 
 // The metrics replay (T6, FID-4): the scenario's requests arrive on the scheduling port, and after

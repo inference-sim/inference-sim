@@ -6,8 +6,8 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/inference-sim/blis-vllm/core/connector/multi"
-	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/multi"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 	"gopkg.in/yaml.v3"
 )
 

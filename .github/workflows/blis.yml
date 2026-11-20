@@ -1,14 +1,10 @@
 name: blis
 
-# The shared BLIS checks (design §13.2, §13.4), called from blis-substrate by commit (X21):
-# the pull-request checks (description, review questions, commit policy, workflow lint,
-# version literals, documentation references, cited issues, quarantine, the generated
-# AGENTS.md section and pull-request template, the selected-version lint), and the nightly
-# checks (cited issues stay open, X28).
-#
-# The commit is the blis-substrate commit this build pins (stack.json states it; TestTheSharedChecksRunAtTheSubstratePin keeps them
-# together): it carries the generated invariant sections the check compares (SIM-16, SIM-17, SIM-18) and the module-lint deferral
-# the selected-version lint reads.
+# The BLIS checks (design §13.2, §13.4), run from this repository's own tree (X21): the
+# pull-request checks (description, review questions, commit policy, workflow lint, version
+# literals, documentation references, cited issues, quarantine, the generated AGENTS.md section and
+# pull-request template, the selected-version lint), and the nightly checks (cited issues stay
+# open, X28). Both are local reusable workflows, so they run at the commit of this workflow.
 
 on:
   pull_request:
@@ -31,22 +27,19 @@ concurrency:
 jobs:
   pr:
     if: github.event_name == 'pull_request'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-pr-checks.yml@b6748ca9d757f149ba760cf821f96feed3bbf5bf
+    uses: ./.github/workflows/shared-pr-checks.yml
     permissions:
       contents: read
       pull-requests: write
       checks: write
     with:
       repo: inference-sim
-      substrate-ref: b6748ca9d757f149ba760cf821f96feed3bbf5bf
 
   nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-nightly.yml@b6748ca9d757f149ba760cf821f96feed3bbf5bf
+    uses: ./.github/workflows/shared-nightly.yml
     permissions:
       contents: read
       issues: read
-    with:
-      substrate-ref: b6748ca9d757f149ba760cf821f96feed3bbf5bf
     secrets:
       INTERNAL_NAME_PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}

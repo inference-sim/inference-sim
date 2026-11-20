@@ -7,20 +7,20 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/kernel/internal/artifacttest"
-	"github.com/inference-sim/blis-substrate/load"
-	"github.com/inference-sim/blis-vllm/core/lowering"
-	"github.com/inference-sim/blis-vllm/core/vllm"
-	"github.com/inference-sim/blis-vllm/core/vllmsettings"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/lowering"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/artifacttest"
+	"github.com/inference-sim/inference-sim/substrate/load"
 
-	schemas "github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
-	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
-	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	vllmrules "github.com/inference-sim/inference-sim/engines/vllm/core/rulepack"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
+	schemas "github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
 )
 
 // catalogRoot, registryRoot and envOr are the kernel package's own (loader_test.go there):

@@ -1,4 +1,4 @@
-# Generated from blis-substrate contracts/harness/oracle/check_lock.py by `go run github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles`; do not edit.
+# Generated from blis-substrate contracts/harness/oracle/check_lock.py by `go run github.com/inference-sim/inference-sim/substrate/contracts/harness/cmd/harnessfiles`; do not edit.
 """Fail unless the installed oracle environment is exactly the committed lock (FID-2).
 
 oracle/requirements.lock pins every package of an engine repository's oracle environment. CI

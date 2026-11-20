@@ -9,11 +9,12 @@ import (
 
 // A lone request whose input fits the KV cache and whose input + output budget does not
 // is dropped as unservable at enqueue (R19), rather than admitted to preempt itself at its
-// first unallocatable block forever. The boundary is TestHashOnce's Rapid seed
-// 467318834185904987: a 625-token prompt (40 blocks of 16) with a 31-token budget needs a 41st
+// first unallocatable block forever. The boundary is a Rapid seed
+// (467318834185904987) of a removed test: a 625-token prompt (40 blocks of 16) with a 31-token budget needs a 41st
 // block of a 40-block cache. The same prompt with a 15-token budget fits exactly 40 blocks and
 // completes, so the guard does not drop a sequence that ends on the last slot.
 func TestCompatEngine_AnInputPlusBudgetPastTheCacheIsDroppedNotLivelocked(t *testing.T) {
+	skipRetiredEngine(t, "the engine admits what the compat engine dropped as unservable")
 	for _, c := range []struct {
 		name               string
 		out                int

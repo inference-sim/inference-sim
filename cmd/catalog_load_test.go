@@ -18,7 +18,7 @@ import (
 // Three layers:
 //
 //  1. TestCatalogStrictLoad_CommittedFixtureCatalog — unconditional, over the catalog of the
-//     blis-substrate module go.mod selects. Proves every committed model graph loads and validates through the
+//     the substrate module go.mod selects. Proves every committed model graph loads and validates through the
 //     loader a run uses, every committed preset loads through the production preset reader, and the
 //     committed storage-device table loads — on real data, in every `go test ./cmd/...` run.
 //  2. TestCatalogStrictLoad_CompleteCatalogLoadsClean and the contract tables — a fully
@@ -30,7 +30,7 @@ import (
 //     test skips when the variable is unset, so a local `go test ./...` needs no catalog
 //     checkout.
 
-// fixtureCatalog is the catalog/ of the blis-substrate module go.mod selects.
+// fixtureCatalog is the catalog/ of the substrate module go.mod selects.
 var fixtureCatalog = substratedata.MustCatalog()
 
 // The well-formed bodies every temp catalog is built from are the substrate catalog's own
@@ -584,7 +584,7 @@ func TestCatalogStrictLoad_DevicesNamespaceWithNothingReadableIsReported(t *test
 // TestCatalogStrictLoad_EmptyTrailingDocumentIsNotCountedByTheHostGate is the precision control
 // on the one-document rule: a file ending in a bare `---` carries no second document (yaml.v3
 // decodes it as nil), so this gate does not count it, and refusing it here would reject a
-// harmless separator rather than hidden content. blis-substrate v0.13.0's own typed loader is
+// harmless separator rather than hidden content. the substrate v0.13.0's own typed loader is
 // stricter (SUB-12: a file is one document, and a bare trailing `---` is a second one), so the
 // catalog load refuses such a file, naming it, in the substrate's words; the gate's verdict and
 // the substrate's are both stated, so neither moves unnoticed.

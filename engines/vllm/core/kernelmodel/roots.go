@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // What a kernel-path test or tool reads: the scenario+deployment fixtures, and the catalog and

@@ -8,13 +8,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 
-	"github.com/inference-sim/blis-vllm/core/connector/offloading"
-	kvtier "github.com/inference-sim/blis-vllm/core/connector/tiering"
-	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/offloading"
+	kvtier "github.com/inference-sim/inference-sim/engines/vllm/core/connector/tiering"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // modelledTiers are the secondary tier types TieringOffloadingSpec registers

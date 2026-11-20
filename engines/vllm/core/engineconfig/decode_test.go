@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"gopkg.in/yaml.v3"
 )
 
@@ -103,7 +103,7 @@ func TestEngineconfigImportsOnlyContractsAndYAML(t *testing.T) {
 		if !strings.Contains(imp, ".") {
 			continue // the standard library
 		}
-		if !strings.HasPrefix(imp, "github.com/inference-sim/blis-substrate/contracts/") && imp != "gopkg.in/yaml.v3" {
+		if !strings.HasPrefix(imp, "github.com/inference-sim/inference-sim/substrate/contracts/") && imp != "gopkg.in/yaml.v3" {
 			t.Errorf("engineconfig imports %s", imp)
 		}
 	}

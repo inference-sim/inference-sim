@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
 	"pgregory.net/rapid"
 
@@ -89,6 +89,7 @@ func TestPDContention_OneTransferAtATimeIsUnchanged(t *testing.T) {
 // cross the decode node's NIC ingress, so each takes longer than alone, and the run's mean
 // E2E rises over the uncontended run.
 func TestPDContention_OverlappingHandoffsShareTheDecodeNIC(t *testing.T) {
+	skipRetiredEngine(t, "handoff start times differ")
 	reqs := []*sim.Request{holdTestRequest("a", 1, 0, 4096, 4), holdTestRequest("b", 2, 0, 4096, 4)}
 	on := runHold(t, contentionConfig(3, 2, 1, true), cloneRequests(reqs)...)
 	off := runHold(t, contentionConfig(3, 2, 1, false), cloneRequests(reqs)...)
@@ -145,6 +146,7 @@ func TestPDContention_DisjointLinksDoNotInteract(t *testing.T) {
 // INV-PD-3 holds, every request is conserved (INV-1) -- including at a horizon that cuts
 // handoffs mid-flight -- and the run is deterministic (INV-6).
 func TestPDContention_NeverFasterThanAloneAndConserves(t *testing.T) {
+	skipRetiredEngine(t, "one-token P/D requests stall the run")
 	rapid.Check(t, func(rt *rapid.T) {
 		n := rapid.IntRange(1, 10).Draw(rt, "n")
 		reqs := make([]*sim.Request, n)

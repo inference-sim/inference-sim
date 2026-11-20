@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // bpTier is fsTier with store backpressure on the fs tier: one completed store is a sample (warmup 1),

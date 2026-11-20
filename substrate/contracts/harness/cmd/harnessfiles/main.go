@@ -3,8 +3,8 @@
 // scripts. Run it from the engine repository's root, so the copies come from the substrate
 // version its go.mod selects:
 //
-//	go run github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles          # write
-//	go run github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles -check   # fail if stale
+//	go run github.com/inference-sim/inference-sim/substrate/contracts/harness/cmd/harnessfiles          # write
+//	go run github.com/inference-sim/inference-sim/substrate/contracts/harness/cmd/harnessfiles -check   # fail if stale
 package main
 
 import (
@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/inference-sim/blis-substrate/contracts/harness"
+	"github.com/inference-sim/inference-sim/substrate/contracts/harness"
 )
 
 func main() {

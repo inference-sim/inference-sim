@@ -4,9 +4,6 @@ go 1.27.2
 
 require (
 	github.com/go-logr/logr v1.4.4
-	github.com/inference-sim/blis-sglang v0.5.23-blis.1.0.20261118162946-03d72d6fc3bf
-	github.com/inference-sim/blis-substrate v0.15.1-0.20261118162118-b6748ca9d757
-	github.com/inference-sim/blis-vllm v0.33.0-blis.1.0.20261118171935-af87ac53acaf
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
@@ -131,8 +128,3 @@ require (
 // a replace is the only way to substitute it (.github/agent-prompts/llm-d-router-fork.md). A release
 // names a -blis.N tag, and this one names router fork commit 4b04f777 (inference-sim/llm-d-router#24, built on v1.0.0-blis.5), to move to v1.0.0-blis.6 once that PR is merged and tagged.
 replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.5.0.20261120000708-4b04f777213f
-
-// blis-vllm's plain tag v0.32.0 predates the -blis.N rule (design §14.1) and would outrank every
-// -blis.N tag in version selection; the main module's exclude keeps any requirement from
-// selecting it (release plan §3.3).
-exclude github.com/inference-sim/blis-vllm v0.32.0

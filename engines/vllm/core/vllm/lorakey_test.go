@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // vLLM keys a block's hash on the LoRA adapter's name and path (_gen_lora_extra_hash_keys,

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"gopkg.in/yaml.v3"
 )
 

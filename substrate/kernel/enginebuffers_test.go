@@ -3,9 +3,9 @@ package latencykernel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/units"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // An engine that states a per-rank GPU buffer in its plan has it come out of the KV budget: the

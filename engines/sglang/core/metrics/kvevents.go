@@ -8,7 +8,7 @@ import (
 	"encoding/binary"
 	"math"
 
-	"github.com/inference-sim/blis-sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 )
 
 // EncodeKVEventBatch is the payload ZmqEventPublisher's thread sends for one batch:

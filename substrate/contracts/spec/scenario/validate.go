@@ -3,7 +3,7 @@ package scenario
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 // Validate performs FIELD-LEVEL validation: required fields, positive counts, and the

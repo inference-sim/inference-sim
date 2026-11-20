@@ -41,7 +41,7 @@ import (
 	"math"
 	"strings"
 
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 )
 
 // KVBudget is the KV-block budget derived from a kernel, with the terms that produced it.

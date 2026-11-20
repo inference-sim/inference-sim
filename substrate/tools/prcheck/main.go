@@ -71,8 +71,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 )
 
 var errFindings = errors.New("findings")
@@ -331,6 +331,11 @@ func run(args []string, w io.Writer) error {
 		here, err := os.Getwd()
 		if err != nil {
 			return err
+		}
+		if _, err := os.Stat(filepath.Join(old, "substrate", "contracts")); os.IsNotExist(err) {
+			// The substrate joined this module after the last tag, so there is nothing to compare with yet.
+			_, _ = fmt.Fprintf(w, "contracts-api: no baseline: %s has no substrate/contracts; the first release that does becomes the baseline\n", prev)
+			return nil
 		}
 		findings, err := CheckContractsAPI(goTool{}, old, here, scratch)
 		if err != nil {

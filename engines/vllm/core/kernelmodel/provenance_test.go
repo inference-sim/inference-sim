@@ -6,11 +6,11 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-	vllmrules "github.com/inference-sim/blis-vllm/core/rulepack"
+	vllmrules "github.com/inference-sim/inference-sim/engines/vllm/core/rulepack"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 
-	sim "github.com/inference-sim/blis-vllm/core/runconfig"
+	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // A pool's provenance restates the kernel's own records without losing or inventing one

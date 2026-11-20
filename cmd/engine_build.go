@@ -12,41 +12,36 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/env"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
-	"github.com/inference-sim/blis-substrate/contracts/units"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/env"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/load"
 
-	blisvllm "github.com/inference-sim/blis-vllm"
-	"github.com/inference-sim/blis-vllm/compat/build"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	coreengine "github.com/inference-sim/blis-vllm/vllmengine"
+	blisvllm "github.com/inference-sim/inference-sim/engines/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/build"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
+	coreengine "github.com/inference-sim/inference-sim/engines/vllm/vllmengine"
 
-	// Linking these registers the compatibility engine's constructors: compat/kv the KV store
-	// sim.NewEngine builds (sim.NewKVStoreFromConfig), compat/lora the adapter registry
-	// (sim.NewAdapterRegistryFunc). The build site is the one place that links them.
 	"math"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	specmodel "github.com/inference-sim/blis-substrate/contracts/spec/model"
-	_ "github.com/inference-sim/blis-vllm/compat/kv"
-	_ "github.com/inference-sim/blis-vllm/compat/lora"
 	"github.com/inference-sim/inference-sim/internal/stack"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
+	specmodel "github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
-// The one place inference-sim builds blis-vllm (#2021 B2). The engine's configuration -- the
+// The one place inference-sim builds the vLLM engine (#2021 B2). The engine's configuration -- the
 // scenario's engine-side blocks -- is decoded and resolved by blis-vllm's compat/build, which cmd
 // calls only from here, handing the inputs over unread. A refusal comes back as an error; the CLI boundary turns it into the fatal exit.
 
@@ -95,7 +90,7 @@ func runOffloads(sh scenarioShapeT) (first, decode *deployment.Offload) {
 // openEngineData opens the catalog and registry the options name: a fresh load.Data with an
 // empty selected-entry report (kernelmodel.OpenData keeps no cache). runData calls it once for
 // a run and hands that Data to the simulator and to every engine (newContractEngine). It is the
-// build site's, as every use of blis-vllm is.
+// build site's, as every use of the vLLM engine is.
 var openEngineData = func(o load.Options) (*load.Data, error) { return kernelmodel.OpenData(o) }
 
 func loadCatalogStorageDevices(data *load.Data) (map[string]build.KVOffloadDevice, error) {
@@ -378,7 +373,7 @@ func setEngineFrontend(eng engine.Engine, version string) error {
 	// An unstated count is vLLM's default for the balancing mode (serve.py:113-129): the ranks
 	// behind one endpoint, which is every rank of an internal balancer, a node's under hybrid, and
 	// one under external. The engine takes an unstated count as one client, so the host states it
-	// (blis-vllm api_server_count: "a caller states the count it ran").
+	// (the vLLM engine api_server_count: "a caller states the count it ran").
 	count := apiServerCount
 	if g, ok := eng.(interface{ EndpointRanks(int) (int, int) }); ok && count == 0 {
 		if _, n := g.EndpointRanks(0); n > 1 {
@@ -446,7 +441,7 @@ func (p *kernelPools) environmentOf(c sim.InstanceConfig, colocated *kernelmodel
 var wrapEnvironment = func(e env.Environment) env.Environment { return e }
 
 // defaultDPLoadBalancing is vLLM's default DP load-balancing mode, which a pool that states no
-// parallel.data_parallel_load_balancing runs (sim.DPLoadBalancingInternal, from blis-vllm
+// parallel.data_parallel_load_balancing runs (sim.DPLoadBalancingInternal, from the vLLM engine
 // compat/dplb).
 const defaultDPLoadBalancing = sim.DPLoadBalancingInternal
 
@@ -522,7 +517,7 @@ func (p *kernelPools) overrides() (prefill, decode poolOverrides) {
 	return poolOverridesOf(p.prefill), poolOverridesOf(p.decode)
 }
 
-// poolOverridesOf is a P/D pool's engine as the cluster takes it: the settings blis-vllm
+// poolOverridesOf is a P/D pool's engine as the cluster takes it: the settings the vLLM engine
 // resolves for the pool (build.PoolSettingsOf), copied into the cluster's per-pool overrides.
 // The pool runs its own engine's scheduling policy.
 func poolOverridesOf(m *engineModel) poolOverrides {
@@ -612,12 +607,8 @@ func takePDTopologyFromPools(cmd *cobra.Command, a build.Adopted) (bool, error) 
 		if err != nil {
 			return 0, fmt.Errorf("the scenario's %s pool: %w", role, err)
 		}
-		// A group is one instance for the v0.33.0 engine; the compatibility engine runs one
-		// instance per rank (build.RequireGroupCapacity, build.RequireCapacity).
-		n := m.RankCapacity()
-		if a.CoreEngine {
-			n = m.GroupCapacity()
-		}
+		// A group is one instance (build.RequireGroupCapacity).
+		n := m.GroupCapacity()
 		if n < 1 {
 			return 0, fmt.Errorf("the scenario's %s pool holds no instance at its layout (%v); give it the nodes its layout needs",
 				role, m.GroupLayoutError())
@@ -1081,7 +1072,7 @@ func frontendConfigFromCLI() cengine.FrontendConfig {
 }
 
 // registerContractEngines registers the engine kind a contract-built release is built by:
-// blis-vllm's translated v0.33.0 engine, with the latency kernel's step pricing and KV sizing
+// the vLLM engine's translated v0.33.0 engine, with the latency kernel's step pricing and KV sizing
 // (its Register). It is the one place this binary links an engine the contract reaches;
 // later calls are no-ops.
 func registerContractEngines() { coreengine.Register() }
@@ -1676,7 +1667,7 @@ func requireWeightSource(tier string, def *engineModel, variants map[string]*poo
 }
 
 // Peer endpoints: where each instance sits, for the engines that send it KV (blis-vllm#204). They are
-// here, with every other use of blis-vllm, because only this file reaches it.
+// here, with every other use of the vLLM engine, because only this file reaches it.
 
 // peerEndpoint is where each instance's workers sit, in the numbering of its own pool, for an
 // engine that sends it KV directly (engine.PeerPlaced; a p2p tier's WRITE ends there). A

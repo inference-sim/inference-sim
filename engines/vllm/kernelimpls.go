@@ -6,8 +6,8 @@ import (
 	_ "embed"
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/kernelimpls"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/kernelimpls"
 )
 
 // KernelImplsJSON is kernel_impls.json, the kernel-implementation table this build publishes

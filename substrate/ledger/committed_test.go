@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/ledger"
-	"github.com/inference-sim/blis-substrate/ledger/configiq"
-	"github.com/inference-sim/blis-substrate/ledger/inferencex"
+	"github.com/inference-sim/inference-sim/substrate/ledger"
+	"github.com/inference-sim/inference-sim/substrate/ledger/configiq"
+	"github.com/inference-sim/inference-sim/substrate/ledger/inferencex"
 )
 
 // The committed ledger loads and passes every check that needs no source data: the layout,

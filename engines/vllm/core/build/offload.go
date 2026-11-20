@@ -11,12 +11,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/load"
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
-	"github.com/inference-sim/blis-vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // KVOffloadFile is the on-disk shape of a --kv-offload-config YAML file: a single

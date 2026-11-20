@@ -6,10 +6,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
 
-	blisvllm "github.com/inference-sim/blis-vllm"
+	blisvllm "github.com/inference-sim/inference-sim/engines/vllm"
 )
 
 // The engine reports the list its release publishes: the one fields.json holds, for the engine

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
+	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
 )
 
 func runIn(t *testing.T, args ...string) (string, string, error) {

@@ -13,9 +13,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	blisschemas "github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	schemamodel "github.com/inference-sim/blis-substrate/contracts/spec/model"
+	blisschemas "github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
+	schemamodel "github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // This file implements the strict WHOLE-CATALOG load behind the R1/C6 acceptance gate
@@ -349,7 +349,7 @@ func loadCatalogWorkloadEntries(root string) (int, []string) {
 			loaded++
 			continue
 		}
-		// A preset decodes through the contracts' strict loader (the same decoding blis-substrate's
+		// A preset decodes through the contracts' strict loader (the same decoding the substrate's
 		// loader applies), then meets the bounds a run's sampler needs (presetBoundsError).
 		shape, err := blisschemas.LoadWorkload(path)
 		if err != nil {

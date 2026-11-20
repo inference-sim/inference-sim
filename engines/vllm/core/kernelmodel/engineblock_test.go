@@ -5,11 +5,11 @@ package kernelmodel
 import (
 	"testing"
 
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 )
 
 // editPoolEngine changes a pool's engine block the way a caller changes a scenario: decoded as

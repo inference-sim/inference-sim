@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
 )
 
 // syntheticAcceptanceRecord is oracle/synthetic_acceptance's output: vLLM v0.32.0's own

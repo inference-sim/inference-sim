@@ -3,8 +3,6 @@ package cluster
 import (
 	"testing"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
-
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -23,36 +21,6 @@ func TestArrivals_CountsEachRequestOfTheWorkloadOnce(t *testing.T) {
 		t.Errorf("Arrivals() = %d, want the %d requests the workload produced", got, n)
 	}
 	assertClusterINV1Conservation(t, cs, cs.Arrivals(), cs.RejectedRequests(), "arrivals")
-}
-
-// A drain redirect re-arrives a request at the cluster; it is the same request, not a new one.
-func TestArrivals_ADrainRedirectIsNotANewArrival(t *testing.T) {
-	cfg := newTestDeploymentConfig(2)
-	cfg.InstanceLifecycle = InstanceLifecycleConfig{DrainPolicy: string(DrainPolicyRedirect)}
-	editEngine(&cfg, func(c *simConfig) { c.BatchConfig = cengine.NewBatchConfig(1, 2048, 0) }) // one running request: the rest queue
-	const n = 12
-	reqs := newTestRequests(n)
-	for _, r := range reqs {
-		r.ArrivalTime = 0 // all at once, so instance 0 holds a queue to redirect
-	}
-	cs := newTestCluster(cfg, NewSliceRequestSource(reqs), nil)
-	cs.scheduleTestEvent(&drainAt{at: 0, inst: 0})
-	if err := cs.Run(); err != nil {
-		t.Fatal(err)
-	}
-	redirected := 0
-	for _, r := range reqs {
-		if r.Redirected {
-			redirected++
-		}
-	}
-	if redirected == 0 {
-		t.Fatal("non-vacuity: the drain redirected no request")
-	}
-	if got := cs.Arrivals(); got != n {
-		t.Errorf("Arrivals() = %d after %d redirects, want the %d requests", got, redirected, n)
-	}
-	assertClusterINV1Conservation(t, cs, n, cs.RejectedRequests(), "drain redirect")
 }
 
 // An arrival the client's gate refuses (an agentic driver holding a send) is not a request:

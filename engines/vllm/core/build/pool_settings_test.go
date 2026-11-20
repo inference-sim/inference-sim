@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 
-	"github.com/inference-sim/blis-vllm/core/kernelmodel"
-	"github.com/inference-sim/blis-vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // A P/D pool's settings are its own kernel's and its own scenario pool's: the sizing the kernel

@@ -14,21 +14,21 @@ import (
 	"strconv"
 	"strings"
 
-	validate "github.com/inference-sim/blis-substrate/contracts/check"
-	"github.com/inference-sim/blis-substrate/contracts/metrics"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
-	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
-	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
-	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	validate "github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/metrics"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/pointrecord"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/workload"
 )
 
 // outDir is where the schemas are committed, relative to the repository root.
 const outDir = "contracts/schema"
 
-const modulePath = "github.com/inference-sim/blis-substrate/"
+const modulePath = "github.com/inference-sim/inference-sim/substrate/"
 
 // document is one published schema: its root type and the title and description it
 // carries.

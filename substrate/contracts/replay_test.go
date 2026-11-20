@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/workload"
 )
 
 const catalogReplay = `_comment: the 256k AgentX corpus

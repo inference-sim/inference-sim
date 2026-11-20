@@ -1,24 +1,21 @@
-// Command modlint is the selected-version lint (X11, LIF-2). Run from a BLIS module's root:
+// Command modlint is the selected-version lint (X11, LIF-2). Run from the module root:
 //
-//	go run github.com/inference-sim/blis-substrate/tools/modlint@<substrate version>
+//	go run ./substrate/tools/modlint
 //
 // It reads the versions Go selects (go list -m -json all) and the module graph (go mod
 // graph), not only the text of go.mod, and fails on any of these:
 //
-//   - a replace directive outside inference-sim; in inference-sim, anything but exactly
-//     one, from github.com/llm-d/llm-d-router to github.com/inference-sim/llm-d-router
+//   - any replace directive but exactly one, from github.com/llm-d/llm-d-router to github.com/inference-sim/llm-d-router
 //     at a -blis.N tag;
 //   - a module other than inference-sim that requires the router;
-//   - an exclude directive outside inference-sim, or one that names anything but a plain
-//     tag of an engine module;
+//   - an exclude directive (the one engine exclude went with the engine module);
 //   - a committed go.work or go.work.sum;
-//   - a BLIS module selected at a pseudo-version or through a replace;
+//   - a BLIS module selected besides the router fork (the substrate and the engines are in this module);
 //   - a selected module whose go directive is above contracts/toolchain;
 //   - a go command whose version differs from contracts/toolchain.
 //
-// contracts/toolchain is read from this repository in blis-substrate, and otherwise from
-// the blis-substrate version the build selects; -toolchain names it for a module that
-// does not yet select the substrate. Exit status: 0 clean, 1 violations,
+// substrate/contracts/toolchain is read from this module; -toolchain names another version.
+// Exit status: 0 clean, 1 violations,
 // 2 the lint could not run.
 package main
 
@@ -37,8 +34,6 @@ import (
 	"strings"
 	"time"
 )
-
-const substrate = "github.com/inference-sim/blis-substrate"
 
 func main() {
 	dir := flag.String("C", ".", "the module root")
@@ -110,7 +105,7 @@ func lintDir(dir, toolchain string) ([]string, error) {
 	in.GoWork = strings.Fields(string(files))
 	in.Toolchain = toolchain
 	if toolchain == "" {
-		if in.Toolchain, err = toolchainFile(dir, in.Modules); err != nil {
+		if in.Toolchain, err = toolchainFile(dir); err != nil {
 			return nil, err
 		}
 	}
@@ -154,26 +149,9 @@ func decodeModules(raw []byte) ([]Module, error) {
 	return mods, nil
 }
 
-// toolchainFile returns the version contracts/toolchain names: this repository's file in
-// blis-substrate, and the selected substrate version's file elsewhere.
-func toolchainFile(dir string, mods []Module) (string, error) {
-	for _, m := range mods {
-		if m.Main && m.Path == substrate {
-			raw, err := os.ReadFile(filepath.Join(dir, "contracts", "toolchain"))
-			return strings.TrimSpace(string(raw)), err
-		}
-	}
-	out, err := gocmd(dir, "list", "-m", "-f", "{{.Dir}}", substrate)
-	if err != nil {
-		return "", fmt.Errorf("this module does not select %s, so contracts/toolchain cannot be read: %w", substrate, err)
-	}
-	d := strings.TrimSpace(string(out))
-	if d == "" {
-		return "", fmt.Errorf("%s is not downloaded; run go mod download %s", substrate, substrate)
-	}
-	raw, err := os.ReadFile(filepath.Join(d, "contracts", "toolchain"))
-	if err != nil {
-		return "", fmt.Errorf("the selected %s has no contracts/toolchain: %w", substrate, err)
-	}
-	return strings.TrimSpace(string(raw)), nil
+// toolchainFile returns the version substrate/contracts/toolchain names: the file of this
+// module, which holds the substrate.
+func toolchainFile(dir string) (string, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, "substrate", "contracts", "toolchain"))
+	return strings.TrimSpace(string(raw)), err
 }

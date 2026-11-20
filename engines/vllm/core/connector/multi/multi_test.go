@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // stub is a child connector that records what the wrapper asks of it and answers from a script.

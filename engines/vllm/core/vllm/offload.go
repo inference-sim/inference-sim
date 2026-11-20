@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 
-	"github.com/inference-sim/blis-vllm/core/connector/multi"
-	"github.com/inference-sim/blis-vllm/core/connector/offloading"
-	"github.com/inference-sim/blis-vllm/core/placement"
-	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/multi"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/offloading"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/placement"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // KV offload through engine.Engine, with vLLM's OffloadingConnector (core/connector/offloading)

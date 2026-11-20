@@ -21,7 +21,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/inference-sim/blis-sglang/core/sched"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/sched"
 )
 
 // Series is one sample of the registry: a series name (a family's name, with _total for a counter),

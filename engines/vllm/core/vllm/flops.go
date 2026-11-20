@@ -2,7 +2,7 @@
 
 package vllm
 
-import "github.com/inference-sim/blis-substrate/contracts/engine"
+import "github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
 // FLOPsPricer is a Pricer that also states a batch's model FLOPs and one GPU's peak, for a
 // model-FLOPs-utilization figure (engine.Flopped).

@@ -9,11 +9,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
-	core "github.com/inference-sim/blis-vllm/core/engine"
-	"github.com/inference-sim/blis-vllm/core/metrics"
-	"github.com/inference-sim/blis-vllm/core/sched"
+	core "github.com/inference-sim/inference-sim/engines/vllm/core/engine"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/metrics"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // The engine records its metrics in two halves, as vLLM does: a batch's admissions are its

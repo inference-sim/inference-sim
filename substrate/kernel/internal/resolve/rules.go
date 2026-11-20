@@ -1,7 +1,7 @@
 package resolve
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 )
 
 // EngineRules is the version-specific behaviour a resolver needs: blis-schemas'

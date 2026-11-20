@@ -14,10 +14,10 @@
 package scenario
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
-	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/routing"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/workload"
 )
 
 // Scenario is the immutable problem: a model, the hardware it is available on, the

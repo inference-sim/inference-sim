@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/env"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/env"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 )
 
 // P/D handoffs through engine.Engine. A disaggregated prefill reaches its engine as
@@ -31,7 +31,7 @@ func (d *EngineDriver) AddRemote(req *Request, peer plan.Endpoint, now int64) {
 	er.RemotePrefill = true
 	er.Peer = &peer
 	// Whether the engine had other work is read before the handoff reaches it: an engine that
-	// queues the handoff as a waiting request (blis-vllm's v0.33.0 engine) would otherwise count
+	// queues the handoff as a waiting request (the vLLM engine's v0.33.0 engine) would otherwise count
 	// it as that work, and an idle engine would never be stepped to start the pull.
 	before := d.eng.Snapshot()
 	if err := d.eng.Add(er, now); err != nil {
@@ -231,7 +231,7 @@ func (d *EngineDriver) noteHandoffs(hs []engine.Handoff) {
 }
 
 // startTierTransfer runs an engine's load from or store to an offload tier (Transfer.Tier,
-// blis-vllm's OffloadingConnector) for as long as its demand takes alone, and reports it done
+// the vLLM engine's OffloadingConnector) for as long as its demand takes alone, and reports it done
 // when it lands. The tier's streams are the engine's (below), so a copy is never slowed by
 // another: its price is the demand with every link to itself.
 // vLLM's CPU offload worker has one handler a direction (store_handler, load_handler), each

@@ -4,21 +4,21 @@ package latencykernel
 
 import (
 	"fmt"
-	"github.com/inference-sim/blis-vllm/core/vllmsettings"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
 	"math"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	schemas "github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	schemas "github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 
-	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve"
 )
 
 // Fixed memory occupancy is the registry's magnitudes in NVIDIA's composition, with nothing

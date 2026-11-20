@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-vllm/core/lora"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/lora"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // loadsPerBatch runs one single-token request per adapter, one after another, and returns the

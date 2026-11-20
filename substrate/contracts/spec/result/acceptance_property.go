@@ -1,7 +1,7 @@
 package result
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
 )
 
 // SpeculativeAcceptance is the name of the workload property a run's speculative acceptance is

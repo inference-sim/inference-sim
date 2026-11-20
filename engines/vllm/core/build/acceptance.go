@@ -5,11 +5,11 @@ package build
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/inference-sim/substrate/load"
 
-	"github.com/inference-sim/blis-vllm/core/engineconfig"
-	"github.com/inference-sim/blis-vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 )
 
 // Speculative acceptance (#1939): how far a verification step advances a request is resolved

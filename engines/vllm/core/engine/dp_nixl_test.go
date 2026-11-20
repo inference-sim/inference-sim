@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/connector/nixl"
-	"github.com/inference-sim/blis-vllm/core/kv"
-	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/nixl"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // dpnScenario is a data-parallel connector scenario (oracle/README.md, "Data-parallel connector

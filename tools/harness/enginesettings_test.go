@@ -3,8 +3,8 @@ package harness
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/compat/build"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/build"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 	"github.com/inference-sim/inference-sim/tools/harness/internal/artifacts"
 )
 

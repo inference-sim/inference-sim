@@ -5,7 +5,7 @@ package lower
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-sglang/config"
+	"github.com/inference-sim/inference-sim/engines/sglang/config"
 )
 
 func strp(s string) *string { return &s }

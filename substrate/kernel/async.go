@@ -3,7 +3,7 @@ package latencykernel
 import (
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 )
 
 // schedulerHost is the engine-core CPU work one step carries for its requests --

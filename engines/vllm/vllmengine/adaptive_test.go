@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
-	"github.com/inference-sim/blis-vllm/core/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
 )
 
 // adaptiveScenario is the Muse Spark recipe's default deployment: GB200, TP8 x EP, DSpark K=7

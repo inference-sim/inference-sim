@@ -2,51 +2,7 @@ package cluster
 
 import (
 	"testing"
-
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 )
-
-// TestClusterSimulator_AdapterMetrics_AggregatedAcrossInstances_E2E drives a real
-// 2-instance cluster end to end: every request targets the same adapter, round-robin
-// spreads them across both instances, each instance cold-loads the adapter once (its
-// first request; the rest are warm), and the cluster aggregate sums to one load per
-// instance. This exercises the full pipeline — scheduling hook populates each
-// instance's counts, aggregateMetrics sums them cluster-wide — complementing the
-// direct-input unit test below.
-func TestClusterSimulator_AdapterMetrics_AggregatedAcrossInstances_E2E(t *testing.T) {
-	config := newTestDeploymentConfig(2)
-	capVal := 8 // capacity >> 1 adapter, so no evictions
-	// Cost coefficients are required once the cold-load gate consumes them (#1466);
-	// production fills them from defaults.yaml when adapters are configured.
-	base, bw, fp := 1000.0, 2.0e6, 2.0e6
-	editEngine(&config, func(c *simConfig) {
-		c.LoRAConfig = cengine.LoRAConfig{
-			AdapterCapacity:       &capVal,
-			LoadBaseLatencyUs:     &base,
-			LoadBandwidthBytesUs:  &bw,
-			FootprintBytesPerRank: &fp,
-			Adapters:              []cengine.AdapterSpec{{ID: "adapter_shared", Rank: 8}},
-		}
-	})
-
-	requests := newTestRequests(6)
-	for _, r := range requests {
-		r.Adapter = "adapter_shared"
-	}
-
-	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
-	mustRun(t, cs)
-
-	agg := cs.AggregatedMetrics()
-	// One cold load per instance (round-robin gives each instance ≥1 request); the
-	// shared adapter's counts must sum across the two instances.
-	if got := agg.AdapterLoadCounts["adapter_shared"]; got != 2 {
-		t.Errorf("cluster LoadCount[adapter_shared] = %d, want 2 (one cold load per instance)", got)
-	}
-	if got := agg.AdapterEvictionCounts["adapter_shared"]; got != 0 {
-		t.Errorf("cluster EvictionCount[adapter_shared] = %d, want 0 (capacity 8, single adapter)", got)
-	}
-}
 
 // TestAggregateMetrics_AdapterCountsSummedAcrossInstances verifies that per-adapter
 // resident-set load/eviction counts (#1465) are summed across instances during

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	validate "github.com/inference-sim/blis-substrate/contracts/check"
+	validate "github.com/inference-sim/inference-sim/substrate/contracts/check"
 )
 
 // The quarantine list (X25): tests that fail on the main branch, each with an owning issue

@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 )
 
 // #1871 review B1: every flag that can change what a run simulates is recorded in the Result,

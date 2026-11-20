@@ -15,8 +15,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/connector/offloading"
-	"github.com/inference-sim/blis-vllm/core/connector/tiering"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/offloading"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/tiering"
 )
 
 // The replay: each sequence of oracle/scenarios/tiering is run on the port as oracle/run_tiering.py

@@ -31,7 +31,7 @@ ENGINE_KEYS = ("cache_dtype", "block_size", "max_num_seqs", "max_num_batched_tok
                "cudagraph_mode", "gpu_memory_utilization")
 
 # What each unstated setting does to a price, from the engine's own resolution
-# (blis-vllm Model.EngineSources) and the kernel:
+# (the vLLM engine Model.EngineSources) and the kernel:
 CAUSES = {
     "cache_dtype": "the old files wrote fp8; the new ones leave it to the engine, which resolves a wider "
                    "dtype (`auto`): KV bytes per sequence x2, and a larger KV read per decode step at "

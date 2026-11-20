@@ -2,7 +2,7 @@ package cluster
 
 import (
 	"fmt"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 	"testing"
 
 	"pgregory.net/rapid"
@@ -137,6 +137,7 @@ func TestAggregateCacheHitRate_AddingIdleInstancesChangesNothing(t *testing.T) {
 // engine-side in-flight count never exceeds the parents sent (a parent is never counted on
 // both pools at once).
 func TestMeasuredAccountingClosesOverDisaggregatedRuns(t *testing.T) {
+	skipRetiredEngine(t, "one-token P/D requests stall the run")
 	seen := map[string]bool{}
 	defer func() {
 		for _, path := range []string{"timeout", "drop", "decode-kv drop", "pipeline at horizon"} {

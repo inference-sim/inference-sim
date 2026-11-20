@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
-	_ "github.com/inference-sim/blis-vllm/compat/lora" // links the LoRA subsystem, as the CLI does
+	_ "github.com/inference-sim/inference-sim/engines/vllm/core/lora" // links the LoRA subsystem, as the CLI does
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
 
@@ -102,6 +102,7 @@ schedulingProfiles:
 // tie-breaks draw from its own random streams, so one router seed is one sample: the claim is
 // checked on the total over several router seeds, each pair sharing the workload.
 func TestLoRAAffinity_FewerColdLoadsThanLoadOnly(t *testing.T) {
+	skipRetiredEngine(t, "the engine does not report adapter load counts to the driver")
 	adapters := []string{"a0", "a1", "a2", "a3", "a4", "a5"}
 	loads := func(config string, routerSeed int64) int64 {
 		reqs := testRequests(300, 13, 3000, 0)
@@ -150,6 +151,7 @@ func TestLoRAAffinity_FewerColdLoadsThanLoadOnly(t *testing.T) {
 // it, so a router configuration with that producer over engines serving adapters is refused at
 // startup, naming which engine's cache lacks the key.
 func TestPrecisePrefixRefusedOverLoRAEngines(t *testing.T) {
+	skipRetiredEngine(t, "the engine publishes KV events over LoRA, so the refusal no longer applies")
 	dep := testDeployment(2)
 	capacity, base, bw, fp := 2, 1000.0, 2.0e6, 2.0e6
 	editEngine(&dep, func(c *cengine.SimConfig) {

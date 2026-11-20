@@ -13,10 +13,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 
-	kvtier "github.com/inference-sim/blis-vllm/core/connector/tiering"
+	kvtier "github.com/inference-sim/inference-sim/engines/vllm/core/connector/tiering"
 )
 
 // The p2p secondary tier through engine.Engine (blis-vllm#204).

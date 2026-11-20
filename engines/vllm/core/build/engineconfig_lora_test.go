@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 func f64(v float64) *float64 { return &v }

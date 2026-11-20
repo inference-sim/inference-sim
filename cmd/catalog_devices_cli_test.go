@@ -110,7 +110,7 @@ func TestRunCmd_KVOffloadDeviceClass_MissingCatalogTableIsRefused(t *testing.T) 
 	if err == nil {
 		t.Fatalf("an offloading run with no catalog device table must be refused:\n%s", stdout)
 	}
-	// blis-substrate's loader opens the catalog whole when the run starts and names each
+	// the substrate's loader opens the catalog whole when the run starts and names each
 	// file relative to the catalog it was refused in.
 	for _, want := range []string{filepath.Base(noDevices), catalogStorageDevicesRelPath} {
 		if !strings.Contains(stderr, want) {

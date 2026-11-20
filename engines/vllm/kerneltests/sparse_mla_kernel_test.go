@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	. "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	. "github.com/inference-sim/inference-sim/substrate/kernel"
 
-	"github.com/inference-sim/blis-vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 )
 
 // GLM-5.3-Flash on an H200 runs its sparse-MLA layers on FlashInfer's SM90 backend, whose kernel is

@@ -19,7 +19,7 @@ var convertTraceCmd = &cobra.Command{
 	Use:   "trace",
 	Short: "Convert a trace in format version 3 (or 2) to version 4, the format blis replay reads",
 	Long: `Convert a trace written by v0.15.0 or earlier (trace format version 3 or 2) into trace
-format version 4, the format of blis-substrate's contracts/spec/trace, which blis replay reads
+format version 4, the format of substrate/contracts/spec/trace, which blis replay reads
 and blis run, blis replay and blis convert write.
 
 Version 4 is version 3 without what only the removed 'blis observe' command wrote or read.

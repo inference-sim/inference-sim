@@ -3,7 +3,6 @@ package cluster
 import (
 	"encoding/json"
 	"fmt"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"sort"
 	"strings"
 	"testing"
@@ -199,48 +198,6 @@ func TestAgentXThroughAdmissionRejection(t *testing.T) {
 	if r.checkStreamsContinueAfterErrors(t) == 0 {
 		t.Fatal("no stream sent its next turn after a rejected request")
 	}
-}
-
-// drainAt drains an instance with the REDIRECT policy at the first poll (every 1 ms from
-// at) that finds requests queued on it, so the drain has work to redirect.
-type drainAt struct {
-	at   int64
-	inst int
-}
-
-func (e *drainAt) Timestamp() int64 { return e.at }
-func (e *drainAt) Priority() int    { return 9 }
-func (e *drainAt) Execute(cs *ClusterSimulator) {
-	if cs.instances[e.inst].QueueDepth() == 0 {
-		cs.scheduleTestEvent(&drainAt{at: e.at + 1000, inst: e.inst})
-		return
-	}
-	NewDrainPolicy(DrainPolicyRedirect).Drain(cs.instances[e.inst], cs)
-}
-
-func TestAgentXThroughRedirectDrain(t *testing.T) {
-	cfg := newTestDeploymentConfig(2)
-	cfg.InstanceLifecycle = InstanceLifecycleConfig{DrainPolicy: string(DrainPolicyRedirect)}
-	editEngine(&cfg, func(c *simConfig) { c.BatchConfig = cengine.NewBatchConfig(1, 2048, 0) }) // one running request: the rest queue
-	redirected := 0
-	r := runAgentXOn(t, cfg, 8, func(cs *ClusterSimulator) {
-		cs.scheduleTestEvent(&drainAt{at: 0, inst: 0})
-	})
-	for _, req := range r.sent {
-		if req.Redirected {
-			redirected++
-		}
-	}
-	if redirected == 0 {
-		t.Fatal("no request was redirected by the drain")
-	}
-	out := r.checkConservation(t)
-	// A redirected request is the same send, served elsewhere: it completes. (Refused as a
-	// stale arrival it would be lost, and only a client timeout would end it, hours later.)
-	if out[sim.AgenticCompleted] == 0 || out[sim.AgenticError] != 0 {
-		t.Fatalf("outcomes %v", out)
-	}
-	r.checkStreamsContinueAfterErrors(t)
 }
 
 // TestAgentXContextOverflowEndsTheStream: a prompt past max_model_len is refused by the

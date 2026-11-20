@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
 )
 
 // streamRun drives three overlapping requests (output 25, 40 and 7 tokens) through the fake FIFO

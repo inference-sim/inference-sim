@@ -58,7 +58,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
+	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
 )
 
 type dirFlag map[string]string

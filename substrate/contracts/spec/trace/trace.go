@@ -15,7 +15,7 @@ package trace
 import (
 	"sort"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
 )
 
 // Version is the trace format this package reads and writes.

@@ -1,4 +1,4 @@
-# Generated from blis-substrate contracts/harness/oracle/check_mocks.py by `go run github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles`; do not edit.
+# Generated from blis-substrate contracts/harness/oracle/check_mocks.py by `go run github.com/inference-sim/inference-sim/substrate/contracts/harness/cmd/harnessfiles`; do not edit.
 """Fail if an oracle harness file replaces upstream code that oracle/mocks.json does not list, if
 mocks.json lists decision code, or if a harness file copies an upstream decision function that
 the manifest does not declare as a transcription (FID-1, FID-8).

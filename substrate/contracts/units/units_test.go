@@ -113,7 +113,7 @@ func TestMixedUnitsDoNotCompile(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			src := "package p\nimport \"github.com/inference-sim/blis-substrate/contracts/units\"\n" + c.body + "\n"
+			src := "package p\nimport \"github.com/inference-sim/inference-sim/substrate/contracts/units\"\n" + c.body + "\n"
 			err := typeCheck(t, dir, src)
 			switch {
 			case c.want == "" && err != nil:
@@ -127,22 +127,21 @@ func TestMixedUnitsDoNotCompile(t *testing.T) {
 	}
 }
 
-// typeCheck compiles one source file that imports this package, with go vet in a scratch module
-// that replaces the substrate with the working tree.
+// typeCheck compiles one source file that imports this package, with go vet in a scratch package
+// inside the module (a directory the "./..." pattern skips), so it builds against the working tree.
 func typeCheck(t *testing.T, pkgDir, src string) error {
 	t.Helper()
-	root := filepath.Join(pkgDir, "..", "..")
-	tmp := t.TempDir()
-	write := func(name, content string) {
-		if err := os.WriteFile(filepath.Join(tmp, name), []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	tmp, err := os.MkdirTemp(pkgDir, "_scratch")
+	if err != nil {
+		t.Fatal(err)
 	}
-	write("go.mod", "module scratch\ngo 1.24\nrequire github.com/inference-sim/blis-substrate v0.0.0\nreplace github.com/inference-sim/blis-substrate => "+root+"\n")
-	write("p.go", src)
-	cmd := exec.Command("go", "vet", "./...")
+	defer func() { _ = os.RemoveAll(tmp) }()
+	if err := os.WriteFile(filepath.Join(tmp, "p.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("go", "vet", ".")
 	cmd.Dir = tmp
-	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOWORK=off", "GOTOOLCHAIN=local")
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOTOOLCHAIN=local")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return &compileError{string(out)}

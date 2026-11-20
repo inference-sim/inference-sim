@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
 )
 
 func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {

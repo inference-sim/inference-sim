@@ -8,7 +8,7 @@ package sim
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 )
 
 // AdmissionStage is one endpoint's admission queue (INV-R1): q.Queues() independent FIFO queues,

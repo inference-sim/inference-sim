@@ -13,12 +13,12 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
-	blissglang "github.com/inference-sim/blis-sglang"
-	"github.com/inference-sim/blis-sglang/config"
+	blissglang "github.com/inference-sim/inference-sim/engines/sglang"
+	"github.com/inference-sim/inference-sim/engines/sglang/config"
 )
 
 // Kind is the engine kind these rules are for, as a scenario's engine block names it.

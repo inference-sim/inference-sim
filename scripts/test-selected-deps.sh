@@ -1,20 +1,18 @@
 #!/usr/bin/env bash
-# test-selected-deps.sh — the pre-release test of engine and router packages (design §3.2, LIF-2).
+# test-selected-deps.sh — the pre-release test of the router fork's packages (design §3.2, LIF-2).
 #
 # Go builds every module in a program at the newest version any of them requires, so the
-# blis-vllm and llm-d router packages this binary links run against the blis-substrate (and
-# every other module) that inference-sim selects, not the versions their own go.mod files
-# pin. This script runs their tests at exactly those versions: in a scratch copy of
-# inference-sim's module, with the test dependencies of those packages added, it runs
-# go test over each package the binary links from blis-vllm and from the router fork.
+# llm-d router packages this binary links run against the versions that inference-sim selects,
+# not the versions the fork's own go.mod pins. This script runs their tests at exactly those
+# versions: in a scratch copy of inference-sim's module, with the test dependencies of those
+# packages added, it runs go test over each router package the binary links. The engines and the
+# substrate are directories of this module and are tested by `go test ./...`.
 #
 # Usage: scripts/test-selected-deps.sh [go test flags...]
 # Run from anywhere; it works in a temporary directory and changes nothing in the checkout.
 #
 # Sharding (CI runs the packages as parallel jobs): set SELECTED_DEPS_SHARD and CI_SHARD_OUT.
-#   SELECTED_DEPS_SHARD=kernelmodel:I/N  tests of blis-vllm's compat/kernelmodel, test I of N by
-#                                        name (one package is most of the time; scripts/ci-shard.sh)
-#   SELECTED_DEPS_SHARD=rest:I/N         every other package, package I of N by import path
+#   SELECTED_DEPS_SHARD=rest:I/N         the router packages, package I of N by import path
 # CI_SHARD_OUT is the directory the evidence files go to (list.txt, assigned.txt, ran.txt), which
 # scripts/ci-shard-verify.sh reads after all shards finish. Unset, every package runs.
 set -euo pipefail
@@ -40,9 +38,9 @@ rm -f "$scratch/go.mod.bak"
 (cd "$scratch" && go mod edit -require="github.com/inference-sim/inference-sim@${placeholder_version}")
 
 cd "$scratch"
-pkgs="$(go list -deps ./selected | grep -E '^(github.com/inference-sim/blis-vllm|github.com/llm-d/llm-d-router)(/|$)' || true)"
+pkgs="$(go list -deps ./selected | grep -E '^github.com/llm-d/llm-d-router(/|$)' || true)"
 if [ -z "$pkgs" ]; then
-  echo "ERROR: the binary links no blis-vllm or llm-d router package; the scratch module is wrong" >&2
+  echo "ERROR: the binary links no llm-d router package; the scratch module is wrong" >&2
   exit 1
 fi
 # Test-only dependencies of those packages are added at whatever version their modules
@@ -63,18 +61,16 @@ if [ "$before" != "$after" ]; then
   exit 1
 fi
 echo "testing $(echo "$pkgs" | wc -l | tr -d ' ') packages at the versions inference-sim selects"
-# The engine and router tests that read the substrate's data (the catalog and the registry) find it
-# through `go list -m` in their own module, which names the substrate their own go.mod requires,
-# not the one the binary links. Point them at the selected substrate's data, so they test what the
-# binary runs (LIF-2). A value the caller sets wins.
-go mod download github.com/inference-sim/blis-substrate >/dev/null
-substrate_dir="$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)"
-if [ -z "$substrate_dir" ] || [ ! -d "$substrate_dir/catalog" ]; then
-  echo "ERROR: the selected blis-substrate has no catalog directory (got '$substrate_dir')" >&2
+# The router tests that read the substrate's data (the catalog and the registry) find it through
+# the checkout this script is run from: the substrate is a directory of this module, so the data is
+# the data the binary embeds. A value the caller sets wins.
+substrate_dir="$root/substrate"
+if [ ! -d "$substrate_dir/catalog" ]; then
+  echo "ERROR: the checkout has no substrate/catalog directory (got '$substrate_dir')" >&2
   exit 1
 fi
 export BLIS_CATALOG="${BLIS_CATALOG:-$substrate_dir/catalog}" BLIS_REGISTRY="${BLIS_REGISTRY:-$substrate_dir/registry}"
-echo "substrate data: $(go list -m -f '{{.Version}}' github.com/inference-sim/blis-substrate) at $substrate_dir"
+echo "substrate data: $substrate_dir"
 
 shard="${SELECTED_DEPS_SHARD:-}"
 if [ -z "$shard" ]; then
@@ -87,16 +83,11 @@ out="${CI_SHARD_OUT:?SELECTED_DEPS_SHARD needs CI_SHARD_OUT, the evidence direct
 mkdir -p "$out"
 case "$out" in /*) ;; *) out="$root/$out" ;; esac
 kind="${shard%%:*}"; frac="${shard#*:}"; index="${frac%/*}"; count="${frac#*/}"
-heavy=github.com/inference-sim/blis-vllm/compat/kernelmodel
 case "$kind" in
-  kernelmodel)
-    echo "$pkgs" | grep -qx "$heavy" || { echo "ERROR: the binary does not link $heavy" >&2; exit 1; }
-    "$root/scripts/ci-shard.sh" "$index" "$count" "$out" "$heavy" "$@"
-    ;;
   rest)
-    # Package-level partition of everything but the heavy package; same evidence files, with
-    # packages where ci-shard.sh has tests: list, assigned, and the ones go test reported on.
-    echo "$pkgs" | grep -vx "$heavy" | LC_ALL=C sort -u > "$out/list.txt"
+    # Package-level partition; the evidence files are the list, the assigned packages, and the ones
+    # go test reported on.
+    echo "$pkgs" | LC_ALL=C sort -u > "$out/list.txt"
     : > "$out/assigned.txt"
     while IFS= read -r pkg; do
       sum="$(printf '%s' "$pkg" | cksum | cut -d' ' -f1)"
@@ -114,7 +105,7 @@ case "$kind" in
       || { echo "ERROR: go test reported on a different set of packages than shard $index of $count owns" >&2; exit 1; }
     ;;
   *)
-    echo "ERROR: SELECTED_DEPS_SHARD '$shard' is not kernelmodel:I/N or rest:I/N" >&2
+    echo "ERROR: SELECTED_DEPS_SHARD '$shard' is not rest:I/N" >&2
     exit 2
     ;;
 esac

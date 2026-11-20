@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/pointrecord"
 )
 
 // Code BLIS does not have (design §11.4, code_not_visible). The vLLM release this build models (Version)

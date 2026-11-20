@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/inference-sim/blis-sglang/config"
+	"github.com/inference-sim/inference-sim/engines/sglang/config"
 )
 
 // issueLower is the issue that models a setting lowering refuses.

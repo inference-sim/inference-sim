@@ -1,4 +1,4 @@
-# Generated from blis-substrate contracts/harness/oracle/check_goldens.py by `go run github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles`; do not edit.
+# Generated from blis-substrate contracts/harness/oracle/check_goldens.py by `go run github.com/inference-sim/inference-sim/substrate/contracts/harness/cmd/harnessfiles`; do not edit.
 """Fail if a commit changes what a golden trace asserts without naming a reviewer (FID-3).
 
 A golden trace is the upstream's own output for a scenario, and what it records beside its

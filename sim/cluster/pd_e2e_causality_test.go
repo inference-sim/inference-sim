@@ -2,7 +2,7 @@ package cluster
 
 import (
 	"fmt"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 	"math"
 	"reflect"
 	"testing"
@@ -55,6 +55,17 @@ func pdDecodeOwnE2E(cs *ClusterSimulator, decodeSubReqID string) (e2e float64, s
 		}
 	}
 	return 0, 0, false
+}
+
+// pdWantE2E is the arrival-to-last-token span of a completed parent from its decode sub-request's
+// own measurements: the decode instance measures from the decode schedule instant, so the wait
+// before it is added, unless the engine stamped a first token on the sub-request, which makes the
+// span arrival-relative already.
+func pdWantE2E(parent *ParentRequest, decodeOwnE2E float64, decodeDelay int64) float64 {
+	if parent.DecodeSubReq != nil && parent.DecodeSubReq.FirstTokenTime != 0 {
+		return decodeOwnE2E
+	}
+	return float64(decodeDelay) + decodeOwnE2E
 }
 
 // runShortOutputPD runs a PD cluster with the given per-request output length and
@@ -116,6 +127,7 @@ func TestPDParentE2E_INV5_ShortOutputs(t *testing.T) {
 // single decode step (ITL[0]=300) — a physically impossible client-visible
 // latency for a request that emitted at least one token.
 func TestPDParentE2E_GeqSingleDecodeStep(t *testing.T) {
+	skipRetiredEngine(t, "no parent completes in the fixture")
 	m, cs := runShortOutputPD(t, 1, 5)
 	checked := 0
 	for _, parent := range cs.ParentRequests() {
@@ -182,6 +194,7 @@ func TestPDParentE2E_GeqDecodeOwnE2E(t *testing.T) {
 // caveat, and the INV-5 / non-PD-baseline tests for the physically-independent
 // laws). It is the E2E-analog of the #1512 TTFT reconstruction guard.
 func TestPDParentE2E_ReconstructsArrivalToCompletionSpan(t *testing.T) {
+	skipRetiredEngine(t, "no parent completes in the fixture")
 	for _, outTokens := range []int{1, 3, 10} {
 		outTokens := outTokens
 		t.Run(fmt.Sprintf("out=%d", outTokens), func(t *testing.T) {

@@ -3,8 +3,8 @@ package workload
 import (
 	"sort"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
 )
 
 // SLODimTargets holds per-dimension SLO thresholds for one class.

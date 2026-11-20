@@ -17,7 +17,7 @@ package multi
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // Child is one connector of the list, with the name vLLM's config states for it.

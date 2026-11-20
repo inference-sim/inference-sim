@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
 // startupFigure reads the engine's start-up KV figure, "GPU KV cache size: N tokens" and its

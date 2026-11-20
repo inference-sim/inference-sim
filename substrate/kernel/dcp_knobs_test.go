@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts"
 )
 
 // The three decode-context-parallel engine knobs blis-schemas v0.2.2 made expressible --

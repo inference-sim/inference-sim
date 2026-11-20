@@ -3,9 +3,9 @@ package lowering
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 
-	"github.com/inference-sim/blis-vllm/core/vllmsettings"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
 )
 
 // vLLM v0.33.0 runs 128-block FP8 routed experts on SM90 with Triton's fused experts at

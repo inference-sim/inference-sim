@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
-	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/pointrecord"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/routertable"
 )
 
 // A router_differs carries the entry's differences and bound as they stand, so a reader of the

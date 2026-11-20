@@ -3,8 +3,8 @@
 package latencykernel_test
 
 import (
-	schemas "github.com/inference-sim/blis-substrate/contracts"
-	. "github.com/inference-sim/blis-substrate/kernel"
+	schemas "github.com/inference-sim/inference-sim/substrate/contracts"
+	. "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"os"
 	"path/filepath"

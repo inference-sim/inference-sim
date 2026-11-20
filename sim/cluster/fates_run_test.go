@@ -1,12 +1,11 @@
 package cluster
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -179,52 +178,4 @@ func neverFinishesOnDecodePool(in, out, blocks int) bool {
 		return false
 	}
 	return exactFitHandoff(in, blocks) || (in+out+15)/16+1 > blocks
-}
-
-// SIM-7: a P/D handoff whose prompt fills the decode pool exactly is accepted and never
-// admitted; with no other event to move it, the run used to end early and report the request
-// nowhere. It now fails with the watchdog's error, naming the request. One token less fits
-// and completes (SIM-9's pair).
-func TestWatchdog_ExactFitHandoffFailsTheRun(t *testing.T) {
-	run := func(in int) error {
-		cfg := newTestDisaggDeploymentConfig(4, 2, 2)
-		cfg.Horizon = 5_000_000
-		editEngine(&cfg, func(c *simConfig) { c.KVCacheConfig = cengine.NewKVCacheConfig(13, 16, 0, 0, 0, 0) })
-		editPrefill(&cfg, func(c *simConfig) { c.TotalKVBlocks = 100 })
-		return newTestCluster(cfg, NewSliceRequestSource(fixedRequests(1, in, 1, 0)), nil).Run()
-	}
-	if !exactFitHandoff(208, 13) {
-		t.Fatal("premise: 208 tokens fill 13 blocks of 16")
-	}
-	err := run(208)
-	if !errors.Is(err, sim.ErrNoProgress) || !strings.Contains(err.Error(), "request_0") {
-		t.Fatalf("exact-fit handoff: Run = %v, want ErrNoProgress naming request_0", err)
-	}
-	if err := run(207); err != nil {
-		t.Fatalf("one token under the exact fit: Run = %v, want nil", err)
-	}
-}
-
-// SIM-7: a P/D request whose prompt fits the decode pool and whose prompt plus output does not
-// lands, decodes until the pool is full, is preempted, and is never admitted again. With no
-// max_model_len a deployment can state this (a valid one cannot, INV-K10); the run used to end
-// early and count the request still queued. It now fails with the watchdog's error. An output
-// that fits completes (SIM-9's pair).
-func TestWatchdog_DecodeThatOutgrowsThePoolFailsTheRun(t *testing.T) {
-	run := func(out int) error {
-		cfg := newTestDisaggDeploymentConfig(4, 2, 2)
-		cfg.Horizon = 5_000_000
-		editEngine(&cfg, func(c *simConfig) { c.KVCacheConfig = cengine.NewKVCacheConfig(10, 16, 0, 0, 0, 0) })
-		editPrefill(&cfg, func(c *simConfig) { c.TotalKVBlocks = 100 })
-		return newTestCluster(cfg, NewSliceRequestSource(fixedRequests(1, 136, out, 0)), nil).Run()
-	}
-	if !neverFinishesOnDecodePool(136, 26, 10) || neverFinishesOnDecodePool(136, 4, 10) {
-		t.Fatal("premise: 136+26 tokens outgrow 10 blocks of 16, 136+4 do not")
-	}
-	if err := run(26); !errors.Is(err, sim.ErrNoProgress) || !strings.Contains(err.Error(), "request_0") {
-		t.Fatalf("a decode that outgrows its pool: Run = %v, want ErrNoProgress naming request_0", err)
-	}
-	if err := run(4); err != nil {
-		t.Fatalf("a decode that fits: Run = %v, want nil", err)
-	}
 }

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 )
 
 // TestWritePriceReport is the generator of the figures in the price-change reports in pull-request bodies (design

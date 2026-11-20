@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 
-	"github.com/inference-sim/blis-vllm/core/vllmsettings"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
 )
 
 // The plan states the all-to-all the engine runs, not the name it was given (blis-vllm#75): a

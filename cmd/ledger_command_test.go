@@ -16,7 +16,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	substrate "github.com/inference-sim/blis-substrate"
+	substrate "github.com/inference-sim/inference-sim/substrate"
 
 	"github.com/inference-sim/inference-sim/internal/substratedata"
 )

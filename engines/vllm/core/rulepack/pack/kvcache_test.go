@@ -11,12 +11,12 @@ import (
 	"strings"
 	"testing"
 
-	blisschemas "github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	blisschemas "github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-vllm/core/rulepack/pack"
-	"github.com/inference-sim/blis-vllm/core/rulepack/v0_33"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/v0_33"
 )
 
 const kvDir = "testdata/kvgroups"

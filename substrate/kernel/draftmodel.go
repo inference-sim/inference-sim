@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
 // A drafter that is a checkpoint of its own -- Muse Spark's DSpark drafter, an EAGLE3 head --

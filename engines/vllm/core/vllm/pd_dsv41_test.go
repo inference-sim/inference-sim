@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
-	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 )
 
 // A DeepSeek V4.1-shaped layer stack: a 128-token bounded-replay window in 32-token blocks, the

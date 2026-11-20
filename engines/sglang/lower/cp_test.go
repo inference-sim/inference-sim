@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/inference-sim/blis-sglang/config"
+	"github.com/inference-sim/inference-sim/engines/sglang/config"
 )
 
 // TestContextParallelismIsRefusedByName: each context-parallel setting is refused by its SGLang

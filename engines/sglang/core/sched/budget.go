@@ -4,7 +4,7 @@
 
 package sched
 
-import "github.com/inference-sim/blis-sglang/core/cache"
+import "github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 
 // budget is PrefillBudget (prefill_budget.py:62-168@297e54fd) over a single token pool. Its
 // offsets are floats because the running requests' expected decode tokens are scaled by

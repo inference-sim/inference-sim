@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"golang.org/x/mod/modfile"
-	"golang.org/x/mod/semver"
 )
 
 // The module paths X11 names.
@@ -18,13 +17,6 @@ const (
 	simulator      = "github.com/inference-sim/inference-sim"
 	blisPrefix     = "github.com/inference-sim/"
 )
-
-// engineModules are the modules whose plain tags inference-sim may exclude (X11, design
-// §14.1): the engine modules, which never tag a plain v<upstream> under the current rule.
-var engineModules = map[string]bool{
-	"github.com/inference-sim/blis-vllm":   true,
-	"github.com/inference-sim/blis-sglang": true,
-}
 
 // blisTag matches the tag forms of LIF-5: v<upstream>-blis.N, v<upstream>-post.K.blis.N
 // and v<upstream>-rev.W.blis.N, with N, K and W from 1.
@@ -88,16 +80,10 @@ func Lint(in Input) ([]string, error) {
 		}
 	}
 
-	// exclude directives.
+	// exclude directives. The engine excludes (the retired engine module) went with the engine modules:
+	// the engines are directories of this module, so there is no module version left to exclude.
 	for _, e := range mf.Exclude {
-		switch {
-		case !isSim:
-			add("go.mod:%d: exclude %s %s; only inference-sim may carry exclude directives (X11)", e.Syntax.Start.Line, e.Mod.Path, e.Mod.Version)
-		case !engineModules[e.Mod.Path]:
-			add("go.mod:%d: exclude %s; an exclude may name only an engine module (X11)", e.Syntax.Start.Line, e.Mod.Path)
-		case semver.Prerelease(e.Mod.Version) != "" || semver.Build(e.Mod.Version) != "" || !semver.IsValid(e.Mod.Version):
-			add("go.mod:%d: exclude %s %s; an exclude may name only a plain tag (X11, design §14.1)", e.Syntax.Start.Line, e.Mod.Path, e.Mod.Version)
-		}
+		add("go.mod:%d: exclude %s %s; the one module has no module version to exclude (X11)", e.Syntax.Start.Line, e.Mod.Path, e.Mod.Version)
 	}
 
 	// No module other than inference-sim requires the router.
@@ -130,29 +116,17 @@ func Lint(in Input) ([]string, error) {
 			continue
 		}
 		if strings.HasPrefix(m.Path, blisPrefix) {
-			v := m.Version
-			if m.Replace != nil {
-				add("%s is replaced by %s %s; a BLIS module resolves to its own release tag (X11)", m.Path, m.Replace.Path, m.Replace.Version)
-				continue
-			}
 			switch {
-			case !semver.IsValid(v) || isPseudo(v):
-				add("%s resolves to %s, which is not a release tag (X11, LIF-2)", m.Path, v)
-			case engineModules[m.Path] || m.Path == forkRouter:
-				// Engines and the router fork never tag a plain v<upstream> (design §14.1).
-				if !blisTag.MatchString(v) {
-					add("%s resolves to %s; it must be a -blis.N tag (X11, LIF-5, design §14.1)", m.Path, v)
+			case m.Path == forkRouter && m.Replace == nil:
+				// The router fork is reached through the replace of the upstream path; selected under
+				// its own path it is the retired plain dependency, caught by the replace rule above.
+				if !blisTag.MatchString(m.Version) {
+					add("%s resolves to %s; it must be a -blis.N tag (X11, LIF-5, design §14.1)", m.Path, m.Version)
 				}
 			default:
-				// The substrate and the simulator tag plain vX.Y.Z.
-				if semver.Prerelease(v) != "" || semver.Build(v) != "" {
-					add("%s resolves to %s; it must be a plain vX.Y.Z tag (X11, LIF-2)", m.Path, v)
-				}
+				add("%s is selected; this module's code is in the tree and the router fork is the only other BLIS module (X11)", m.Path)
 			}
 		}
-	}
-	if isSim {
-		lintOwnSubstratePin(mf, in.Modules, add)
 	}
 	if in.GoVersion != "" && in.GoVersion != tc {
 		add("go version reports %s; contracts/toolchain names %s, and every CI job installs exactly it with GOTOOLCHAIN=local (LIF-2)", in.GoVersion, tc)
@@ -174,34 +148,4 @@ var pseudo = regexp.MustCompile(`-(?:0\.)?[0-9]{14}-[0-9a-f]{12}$|\.0\.[0-9]{14}
 // with no tag.
 func isPseudo(v string) bool {
 	return pseudo.MatchString(strings.TrimSuffix(v, "+incompatible"))
-}
-
-// lintOwnSubstratePin checks LIF-2's "inference-sim's own substrate requirement equals the
-// version its build selects": go.mod holds exactly one direct require of the substrate, and
-// it names the version the build selects. Without it an engine release could raise the
-// selected substrate, and with it the embedded data, while inference-sim still declares
-// the old version or none. A pseudo-version pin that equals the selected one passes here;
-// the release-tag finding for it is the deferrable one.
-func lintOwnSubstratePin(mf *modfile.File, mods []Module, add func(string, ...any)) {
-	var pins []*modfile.Require
-	for _, r := range mf.Require {
-		if r.Mod.Path == substrate {
-			pins = append(pins, r)
-		}
-	}
-	switch {
-	case len(pins) == 0:
-		add("go.mod has no direct require of %s; inference-sim pins the substrate itself, at the version its build selects (LIF-2)", substrate)
-		return
-	case len(pins) > 1:
-		add("go.mod requires %s %d times; inference-sim pins it exactly once (LIF-2)", substrate, len(pins))
-		return
-	case pins[0].Indirect:
-		add("go.mod:%d: the require of %s is marked indirect; inference-sim's own substrate requirement is direct (LIF-2)", pins[0].Syntax.Start.Line, substrate)
-	}
-	for _, m := range mods {
-		if m.Path == substrate && !m.Main && m.Version != pins[0].Mod.Version {
-			add("go.mod:%d: %s is declared at %s but the build selects %s; inference-sim's own requirement equals the selected version (LIF-2)", pins[0].Syntax.Start.Line, substrate, pins[0].Mod.Version, m.Version)
-		}
-	}
 }
