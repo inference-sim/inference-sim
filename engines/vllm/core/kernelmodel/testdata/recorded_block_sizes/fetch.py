@@ -36,7 +36,7 @@ only vLLM rows that are not disaggregated or multi-node. One row for each distin
 each (model, GPU, precision, tensor-parallel width, speculative method), the latest first, up to
 PER_KEY.
 
-The nightly job .github/workflows/recorded-logs.yml runs --check (blis-vllm issue 91).
+The nightly job .github/workflows/recorded-logs.yml runs --check.
 """
 import argparse
 import concurrent.futures as cf
