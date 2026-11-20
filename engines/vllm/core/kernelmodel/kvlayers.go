@@ -285,9 +285,7 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 			if n.AttentionKind == model.AttentionSWA && !indexed {
 				r.Spec, r.SlidingWindow = "sliding_window", n.Window
 			}
-			if hybridMLA && r.Spec == "full" && n.AttentionKind == model.AttentionMLA {
-				r.Spec, r.TokensPerState = "mla", 1
-			}
+			mlaLatent(&r, n, hybridMLA)
 			plain = plain && r.Spec == "full"
 			if l := len(runs) - 1; l >= 0 && runs[l].Spec == r.Spec && runs[l].SlidingWindow == r.SlidingWindow &&
 				runs[l].NumKVHeads == r.NumKVHeads && runs[l].HeadSize == r.HeadSize {
@@ -334,6 +332,7 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 				if n.AttentionKind == model.AttentionSWA {
 					r.Spec, r.SlidingWindow = "sliding_window", n.Window
 				}
+				mlaLatent(&r, n, hybridMLA)
 				plain = plain && r.Spec == "full"
 				if l := len(runs) - 1; l >= 0 && sameRun(runs[l], r) {
 					runs[l].Count++
@@ -353,6 +352,14 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 			"states no speculator to read them from", sp.Method)
 	}
 	return runs, nil
+}
+
+// mlaLatent turns a full-attention run of an MLA node, the target's or the drafter's, into the
+// latent page vLLM gives it (MLAAttentionSpec: one latent a token, no V), in a hybrid model.
+func mlaLatent(r *KVLayerRun, n model.Node, hybridMLA bool) {
+	if hybridMLA && r.Spec == "full" && n.AttentionKind == model.AttentionMLA {
+		r.Spec, r.TokensPerState = "mla", 1
+	}
 }
 
 // m3IndexerElemBytes is the element size of MiniMax-M3's indexer key cache, which has its own

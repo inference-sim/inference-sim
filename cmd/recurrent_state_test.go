@@ -21,6 +21,8 @@ func TestRecurrentStateModelsAreServed(t *testing.T) {
 		extra    []string
 	}{
 		{"recurrent-kimi-k3-h200-dep16.yaml", nil},
+		// A DSpark drafter needs an acceptance length too; its MLA layers are latents like the target's.
+		{"recurrent-kimi-k3-b200-dspark.yaml", []string{"--speculative-acceptance-length", "2.5"}},
 		// MTP needs an acceptance length; the scenario states none, so the run is given one.
 		{"recurrent-nemotron-3-ultra-h100-tp8.yaml", []string{"--speculative-acceptance-length", "1.5"}},
 	} {
