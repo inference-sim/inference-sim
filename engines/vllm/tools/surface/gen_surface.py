@@ -47,6 +47,9 @@ What is read, by category (each item's "site" is the file and line it was read a
                        with the manager each maps to. CUDA's register_custom_kv_cache_specs is the
                        platform base's, which registers nothing; a platform that overrides it fails
                        the generator.
+  kv_cache_manager     at a commit with no such registry, every concrete subclass of
+                       SingleTypeKVCacheManager in the same file, with the class it extends: the
+                       allocation policy a layer's KVCacheLayerConfig names.
   speculative_method   the SpeculativeMethod literal (vllm/config/speculative.py), with the literals
                        it names expanded. An MTPModelTypes name other than "mtp" is recorded with
                        alias_of "mtp", since SpeculativeConfig rewrites it to mtp.
@@ -190,7 +193,9 @@ FRAMEWORK_FILES = [
 ]
 
 # The places vLLM loads a class from a path a setting names: (item name, file, the call that loads
-# it, the first line of the function or block that makes the call).
+# it, the first line of the function or block that makes the call). A fifth element True marks a
+# loader that exists at only some commits: it is left out where its file is absent (the custom
+# proposer of Model Runner V1 and the speculator of Model Runner V2 are one such pair).
 PATH_LOADERS = [
     ("kv_transfer_config.kv_connector_module_path", FACTORY,
      r"importlib\.import_module\(connector_module_path\)", r"connector_module_path = kv_transfer_config\.kv_connector_module_path"),
@@ -210,7 +215,10 @@ PATH_LOADERS = [
      r"return resolve_obj_by_qualname\(self\.scheduler_cls\)", r"def get_scheduler_cls"),
     ("speculative_config.method custom_class (speculative_config.model as a module path)",
      "vllm/v1/spec_decode/custom_class_proposer.py",
-     r"importlib\.import_module\(module_path\)", r"module = importlib\.import_module\(module_path\)"),
+     r"importlib\.import_module\(module_path\)", r"module = importlib\.import_module\(module_path\)", True),
+    ("speculative_config.speculator_config.speculator_class (qualified name)",
+     "vllm/v1/worker/gpu/spec_decode/__init__.py",
+     r"speculator_cls = resolve_obj_by_qualname\(qualname\)", r"def init_speculator", True),
 ]
 
 
@@ -269,6 +277,16 @@ def module_file(src, module):
     raise GenError("module %s is not in the source tree" % module)
 
 
+def imported_module(module, rel, stmt):
+    """The dotted module a `from X import ...` statement of `module` (in file rel) names, a relative
+    one (`from .connector import X`) resolved against the package that holds the importing file."""
+    if not stmt.level:
+        return stmt.module
+    package = module.split(".") if rel.endswith("/__init__.py") else module.split(".")[:-1]
+    package = package[:len(package) - (stmt.level - 1)]
+    return ".".join(package + ([stmt.module] if stmt.module else []))
+
+
 def resolve_class(src, module, name, depth=0):
     """The (file, class name) a registered module and class name resolve to, following
     `from X import Name` and a top-level `Name = Other`."""
@@ -287,10 +305,10 @@ def resolve_class(src, module, name, depth=0):
             # Bound at import by a call (LMCacheMPConnector = _resolve_lmcache_mp_connector()): its
             # own class, shared with no other name.
             return rel, name
-        if isinstance(stmt, ast.ImportFrom) and stmt.module:
+        if isinstance(stmt, ast.ImportFrom) and (stmt.module or stmt.level):
             for a in stmt.names:
                 if (a.asname or a.name) == name:
-                    return resolve_class(src, stmt.module, a.name, depth + 1)
+                    return resolve_class(src, imported_module(module, rel, stmt), a.name, depth + 1)
     raise GenError("%s: no class %s" % (rel, name))
 
 
@@ -463,11 +481,35 @@ def event_sources(src):
     return out
 
 
+def kv_cache_managers(src, tree):
+    """Where a commit has no KVCacheSpecRegistry (the allocation policy moved out of the specs into
+    the SingleTypeKVCacheManager subclasses, vLLM RFC 42449): every concrete subclass of
+    SingleTypeKVCacheManager in KV_SPECS, with the class it extends. A class whose name starts with
+    an underscore is an internal base, not a manager a layer can name."""
+    classes = {s.name: s for s in tree.body if isinstance(s, ast.ClassDef)}
+
+    def bases(c):
+        return [b.id for b in c.bases if isinstance(b, ast.Name)]
+
+    def is_manager(name, seen=()):
+        if name == "SingleTypeKVCacheManager":
+            return True
+        c = classes.get(name)
+        return c is not None and name not in seen and any(is_manager(b, seen + (name,)) for b in bases(c))
+
+    out = [item("kv_cache_manager", c.name, KV_SPECS, c.lineno, extends=bases(c)[0])
+           for c in classes.values() if c.name != "SingleTypeKVCacheManager" and not c.name.startswith("_") and is_manager(c.name)]
+    if not out:
+        raise GenError("%s: no SingleTypeKVCacheManager subclass" % KV_SPECS)
+    out.sort(key=lambda i: int(i["site"].rsplit(":", 1)[1]))
+    return out
+
+
 def kv_cache_specs(src):
     tree = parse(src, KV_SPECS)
     fn = [s for s in tree.body if isinstance(s, ast.FunctionDef) and s.name == "register_all_kvcache_specs"]
     if not fn:
-        raise GenError("%s: no register_all_kvcache_specs" % KV_SPECS)
+        return kv_cache_managers(src, tree)
     out = []
     for node in ast.walk(fn[0]):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
@@ -522,7 +564,9 @@ def registry_loads(src, rel):
 
 def path_loaders(src):
     out = []
-    for name, rel, call, start in PATH_LOADERS:
+    for name, rel, call, start, *optional in PATH_LOADERS:
+        if optional and not os.path.isfile(os.path.join(src, rel)):
+            continue
         s = line_of(src, rel, start)
         out.append(item("path_loader", name, rel, line_of(src, rel, call, s)))
     known = {i["site"] for i in out}
