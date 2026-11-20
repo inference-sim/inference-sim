@@ -118,6 +118,8 @@ var requiredKeys = map[string][]string{
 	"result.DrainPhase":           {"rule"},
 	"result.Engine":               {"kind", "version"},
 	"result.Estimate":             {"replications"},
+	"result.FigureInterval":       {"high", "low"},
+	"result.IntervalEstimate":     {"covers", "level", "max_replications", "method", "min_replications", "relative_width_reached", "seeds", "stopped_by", "target_relative_width"},
 	"result.Figure":               {"samples", "scope", "value"},
 	"result.File":                 {"content", "path", "sha256"},
 	"result.Frame":                {"generator", "initial_state", "kind", "metrics", "phases", "stop"},
