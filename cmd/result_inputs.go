@@ -539,14 +539,22 @@ func routerSection(req embed.Requirements, shed map[string]int, anomalies *clust
 	return r
 }
 
-// kernelSection is the latency kernel's per-pool coefficient provenance.
-func kernelSection(p map[string]sim.KernelPoolProvenance) map[string]any {
+// kernelSection is the latency kernel's per-pool report: the coefficient provenance and, under
+// "memory", the memory breakdown the pool's KV capacity was derived from (memorySection). A
+// pool with no breakdown reports its provenance alone.
+func kernelSection(p map[string]sim.KernelPoolProvenance, mem map[string]poolMemory) map[string]any {
 	if len(p) == 0 {
 		return nil
 	}
 	out := map[string]any{}
 	for role, prov := range p {
-		out[role] = toGeneric(prov)
+		section := toGeneric(prov)
+		if pm, ok := mem[role]; ok {
+			if m, isMap := section.(map[string]any); isMap {
+				m["memory"] = toGeneric(pm)
+			}
+		}
+		out[role] = section
 	}
 	return out
 }

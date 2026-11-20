@@ -157,7 +157,7 @@ func emitRunResult(p postRun) {
 		Peer:            cs.PeerStats(),
 		Engine:          eng,
 		Router:          routerSection(routerReq, raw.ShedByTier, raw),
-		Kernel:          kernelSection(kernelProvenance(kernelOpened, kernelPDOpened)),
+		Kernel:          kernelSection(kernelProvenance(kernelOpened, kernelPDOpened), memorySection(pooled(kernelOpened, kernelPDOpened), cs)),
 		InjectedByClass: cs.InjectedByClass(),
 		Rows:            requestRows(cs, aggregated),
 		ClockUs:         cs.Clock(),
