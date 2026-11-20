@@ -468,19 +468,17 @@ func ruleList(p *pack.Pack) []pack.Rule {
 		},
 		{
 			Name:    "cp-kv-cache-interleave-fits-block",
-			Because: "with decode-context parallelism on and no NixlConnector configured, this release asserts at startup that block_size is at least, and divisible by, cp_kv_cache_interleave_size (vllm/config/vllm.py validate_block_size), so a layout breaking it does not start; unlike v0.29.0, any other connector leaves the assert in force. The block size it checks is the smallest prefix-cacheable KV cache group's, which can be a model's own window-cache page size rather than the stated one",
+			Because: "with decode-context parallelism on and a stated cp_kv_cache_interleave_size, this release asserts at startup that block_size is at least, and divisible by, the size (vllm/config/vllm.py validate_block_size), so a layout breaking it does not start. A NIXL pull connector resolves the size to the block size itself only where the size is left unstated (adjust_dcp_kv_cache_interleave_size, _allow_auto_resolve_cp_interleave_size), so a stated size meets the assert under every connector; v0.29.0 skipped it under NIXL. The block size it checks is the smallest prefix-cacheable KV cache group's, which can be a model's own window-cache page size rather than the stated one",
 			Check: func(in pack.Input, out *validate.Problems) {
 				// Only where the assert is certain to run on the values stated:
-				//   - a NixlConnector, directly or as a MultiConnector child, skips the
-				//     assert, and the schema cannot see a MultiConnector's children, so
-				//     either skips the check. Any other connector does not: this release
-				//     pins the size to the block size only under NIXL;
+				//   - a stated size turns the NIXL auto-resolution off, so no connector,
+				//     NIXL or a MultiConnector hiding one included, changes the size the
+				//     assert reads (an unstated size, which NIXL may resolve, returns below);
 				//   - a hybrid model may have its block size re-aligned by the platform,
 				//     and an unknown model may be hybrid, so the stated size is final only
 				//     for a known model with no recurrent layer;
 				//   - an unstated block size is chosen by the platform.
-				if in.Deployment == nil || mayUseNixl(in.Deployment) || in.Model == nil ||
-					modelHasRecurrent(in) {
+				if in.Model == nil || modelHasRecurrent(in) {
 					return
 				}
 				forEachPool(in, func(at string, pool engineconfig.Pool) {
@@ -910,7 +908,7 @@ func ruleList(p *pack.Pack) []pack.Rule {
 		},
 		{
 			Name:    "deepseek-v41-refuses-mtp",
-			Because: "this release refuses a multi-token-prediction draft for DeepSeek-V4.1 at startup: it rewrites every MTP-family method name to mtp, rewrites the V4.1 draft config to deepseek_mtp, and then raises \"DeepSeek V4.1 has no classic-MTP draft\" (vllm/config/speculative.py); dspark is the method it serves. A launch escapes only where the draft model's path (containing eagle-, eagle3, dflash or dspark) or its own configuration (a DSpark, DFlash, Medusa or MLP-speculator draft) selects another method first, which a deployment does not record",
+			Because: "this release refuses a multi-token-prediction draft for DeepSeek-V4.1 at startup: it rewrites every MTP-family method name to mtp, rewrites the V4.1 draft config to deepseek_mtp, and the MTP speculator then raises \"DeepSeek V4.1 has no classic-MTP draft\" (vllm/config/speculative.py, vllm/v1/worker/gpu/spec_decode/mtp/config.py adapt_draft_model_config); dspark is the method it serves. A launch escapes only where the draft model's path (containing eagle-, eagle3, dflash or dspark) or its own configuration (a DSpark, DFlash, Medusa or MLP-speculator draft) selects another method first, which a deployment does not record",
 			Check: func(in pack.Input, out *validate.Problems) {
 				if in.Model == nil || in.Model.Global.Architecture != enginefacts.ArchDeepseekV41 {
 					return
@@ -1057,7 +1055,7 @@ func ruleList(p *pack.Pack) []pack.Rule {
 		},
 		{
 			Name:    "eplb-needs-expert-parallelism",
-			Because: "this release refuses expert-parallel load balancing at startup without enable_expert_parallel, and with tensor, prefill-context and data parallelism all 1, because the expert-parallel group spans their product (vllm/config/parallel.py:559-581@5df63a72), so such a pool does not run; it also refuses num_redundant_experts without EPLB (:583-589)",
+			Because: "this release refuses expert-parallel load balancing at startup without enable_expert_parallel, and with tensor, prefill-context and data parallelism all 1, because the expert-parallel group spans their product (vllm/config/parallel.py, the EPLB checks before the DCP size check), so such a pool does not run; it also refuses a num_redundant_experts other than None or 0 without EPLB",
 			Check: func(in pack.Input, out *validate.Problems) {
 				forEachPool(in, func(at string, pool engineconfig.Pool) {
 					e, pl := pool.Engine, pool.Parallel
@@ -1296,25 +1294,6 @@ func totalExperts(in pack.Input) int {
 	return best
 }
 
-// mayUseNixl reports whether the engine's KV transfer config may contain a
-// NixlConnector: one is named directly, or a MultiConnector is, whose children the
-// deployment does not record.
-func mayUseNixl(d *deployment.Deployment) bool {
-	var names []string
-	for _, o := range d.Offloads() {
-		names = append(names, connectorOf(o.Offload))
-	}
-	for _, t := range d.PDTransfers() {
-		names = append(names, pdConnectorOf(t.PDTransfer))
-	}
-	for _, c := range names {
-		if c == "NixlConnector" || c == "MultiConnector" {
-			return true
-		}
-	}
-	return false
-}
-
 func sortedIntKeys(m map[string]int) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
@@ -1331,20 +1310,6 @@ func ruleArchitectures(p *pack.Pack) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func connectorOf(o *deployment.Offload) string {
-	if o == nil {
-		return ""
-	}
-	return o.Connector
-}
-
-func pdConnectorOf(t *deployment.PDTransfer) string {
-	if t == nil {
-		return ""
-	}
-	return t.Connector
 }
 
 // modelHasEngram reports whether the graph carries an Engram lookup: a gather whose

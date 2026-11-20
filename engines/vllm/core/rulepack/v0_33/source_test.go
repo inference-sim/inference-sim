@@ -381,15 +381,25 @@ func TestNumericConstantsMatchSource(t *testing.T) {
 		}
 	}
 
-	// Cascade attention was removed in this release: disable_cascade_attn is kept only as a
-	// deprecated no-op, and the runner hard-sets it off. Both are read here, so the pack's
-	// CascadeAttnOptIn, false, cannot pass while the engine still runs cascade attention. The
-	// field's own default, "= True", is still in the source and says nothing either way.
+	// Cascade attention was removed: disable_cascade_attn is kept only as a deprecated no-op,
+	// and no GPU runner file names cascade attention any more (the V1 runner that hard-set it
+	// off is gone). Both are read here, so the pack's CascadeAttnOptIn, false, cannot pass
+	// while the engine still runs cascade attention. The field's own default, "= True", is
+	// still in the source and says nothing either way.
 	modelCfg := readSource(t, root, "vllm", "config", "model.py")
-	runner := readSource(t, root, "vllm", "v1", "worker", "gpu_model_runner.py")
-	removed := strings.Contains(modelCfg, `"""Deprecated: cascade attention has been removed, so this has no effect.`) &&
-		strings.Contains(runner, "self.cascade_attn_enabled = False") &&
-		!strings.Contains(runner, "self.cascade_attn_enabled = not ")
+	namesCascade := false
+	err := filepath.WalkDir(filepath.Join(root, "vllm", "v1", "worker", "gpu"), func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".py") {
+			return err
+		}
+		b, err := os.ReadFile(path)
+		namesCascade = namesCascade || strings.Contains(string(b), "cascade_attn")
+		return err
+	})
+	if err != nil {
+		t.Fatalf("reading the GPU runner: %v", err)
+	}
+	removed := strings.Contains(modelCfg, `"""Deprecated: cascade attention has been removed, so this has no effect.`) && !namesCascade
 	if removed == p.CascadeAttnOptIn {
 		t.Errorf("CascadeAttnOptIn: pack has %v, but the engine has cascade attention removed = %v",
 			p.CascadeAttnOptIn, removed)
@@ -520,10 +530,14 @@ func TestRefusalMessagesMatchSource(t *testing.T) {
 	engram := readSource(t, root, "vllm", "config", "engram.py")
 	spec := readSource(t, root, "vllm", "config", "speculative.py")
 	modelCfg := readSource(t, root, "vllm", "config", "model.py")
+	// The V4.1 refusal moved out of SpeculativeConfig into the MTP speculator's
+	// adapt_draft_model_config (the V1 runner it shared a file with is removed).
+	mtpCfg := readSource(t, root, "vllm", "v1", "worker", "gpu", "spec_decode", "mtp", "config.py")
 	for _, c := range []struct{ rule, src, text string }{
 		{"engram-config-valid", engram, "EngramConfig requires a model with supported Engram"},
 		{"engram-config-valid", engram, "use_thp requires cpu_offload=True and dp_shared_memory=False"},
-		{"deepseek-v41-refuses-mtp", spec, "DeepSeek V4.1 has no classic-MTP draft"},
+		{"deepseek-v41-refuses-mtp", mtpCfg, "DeepSeek V4.1 has no classic-MTP draft"},
+		{"deepseek-v41-refuses-mtp", mtpCfg, `target.hf_config.model_type == "deepseek_v41"`},
 		{"deepseek-v41-refuses-mtp", spec, `if hf_config.model_type in ("deepseek_v4", "deepseek_v41"):`},
 		{"deepseek-v41-refuses-mtp", spec, `if self.method in get_args(MTPModelTypes) and self.method != "mtp":`},
 		{"moonep-requirements", cfg, "The moonep all2all backend currently supports BF16 models"},
@@ -534,7 +548,9 @@ func TestRefusalMessagesMatchSource(t *testing.T) {
 		{"engram-excludes-dbo", cfg, "DeepSeek V4.1 Engram does not support DBO or microbatching"},
 		{"moonep-requirements", cfg, "The moonep all2all backend currently supports unquantized"},
 		{"moonep-requirements", cfg, "The moonep all2all backend does not support EPLB yet"},
-		{"cp-kv-cache-interleave-fits-block", cfg, `has_connector("NixlConnector")`},
+		{"cp-kv-cache-interleave-fits-block", cfg, `has_connector("NixlPullConnector")`},
+		{"cp-kv-cache-interleave-fits-block", cfg, "self.parallel_config._allow_auto_resolve_cp_interleave_size"},
+		{"cp-kv-cache-interleave-fits-block", cfg, "Runs after adjust_dcp_kv_cache_interleave_size"},
 	} {
 		if !strings.Contains(c.src, c.text) {
 			t.Errorf("%s: the engine no longer contains %q", c.rule, c.text)
@@ -568,7 +584,7 @@ func TestRefusalMessagesMatchSource(t *testing.T) {
 		`raise ValueError("enable_expert_parallel must be True to use EPLB.")`,
 		"EPLB requires tensor, prefill-context, or data parallelism, ",
 		"self.tensor_parallel_size\n                * self.prefill_context_parallel_size\n                * self.data_parallel_size\n                <= 1",
-		"if self.eplb_config.num_redundant_experts != 0:",
+		"if self.eplb_config.num_redundant_experts not in (None, 0):",
 	} {
 		if !strings.Contains(parallel, want) {
 			t.Errorf("eplb-needs-expert-parallelism: the engine no longer contains %q", want)
