@@ -52,37 +52,3 @@ var tpLayoutsByOp = map[Op]map[TPLayout]bool{
 func (l TPLayout) ValidFor(o Op) bool {
 	return l == TPDefault || tpLayoutsByOp[o][l]
 }
-
-// SequenceParallelSplit is how a node divides across the tensor-parallel ranks when the
-// model's own sequence parallelism is on (see EmitSequenceParallel).
-//
-// TP alone cannot say it. Under DeepSeek-V4.1's sequence parallelism the residual stream
-// is sharded by token (sp_shard, the engine's models/common/ops/sequence_parallel.py),
-// and only attention runs on the gathered stream, between its all-gather and its
-// reduce-scatter (models/deepseek_v41/nvidia/model.py). mHC, before the gather, and
-// the fused q/kv A-projection, after it, are both replicated, yet under the mode the first
-// sees 1/tp of the step's tokens and the second all of them. A node whose split the mode
-// changes is still one node: Engram's wkv is column-split without the mode and replicated
-// with it (ColumnParallelLinear(..., disable_tp=use_sequence_parallel),
-// models/deepseek_v41/common/engram.py), and it also runs at tp 1, where the mode is
-// off and there is nothing to split.
-type SequenceParallelSplit string
-
-const (
-	// SPAsTP is the zero value: under the mode the node runs as TP states, over every
-	// token the step schedules.
-	SPAsTP SequenceParallelSplit = ""
-	// SPTokenSharded: under the mode the node runs on its rank's shard of the step's
-	// tokens, ceil(tokens / tp) rows, because sp_shard pads the count to a multiple of
-	// tp. A GEMM, Elementwise or Attention node then holds its whole weight, whatever TP
-	// states for the other layouts: a column or row split needs every rank to hold the
-	// same rows, and the ranks of a token-sharded node hold different ones. A
-	// GroupedGEMM's experts stay divided as the expert-parallel layout decides, and a
-	// Gather's table as its shard states; only the rows they see are sharded.
-	SPTokenSharded SequenceParallelSplit = "token_sharded"
-)
-
-var sequenceParallelSplits = map[SequenceParallelSplit]bool{SPAsTP: true, SPTokenSharded: true}
-
-// Valid reports whether s is a recognized split.
-func (s SequenceParallelSplit) Valid() bool { return sequenceParallelSplits[s] }

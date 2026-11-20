@@ -181,7 +181,12 @@ func withModel(t testing.TB, in *Inputs, name string) {
 // newKernel is New on inputs a test has edited, with the plan lowered from the edited pool's
 // engine block, as a caller lowers the block it hands the kernel (package lowering): a test that
 // rewrites in.Deployment.Pools[i].Engine prices what it wrote.
-func newKernel(in Inputs) (*Kernel, error) {
+func newKernel(in Inputs) (*Kernel, error) { return newKernelEditing(in, nil) }
+
+// newKernelEditing is newKernel with the lowered plan handed to edit before the kernel prices it,
+// for a test that asks what a different plan would price (SUB-15: the plan, not the graph,
+// carries how the engine divides the model).
+func newKernelEditing(in Inputs, edit func(*plan.Lowered)) (*Kernel, error) {
 	if in.Deployment != nil && in.PoolIndex >= 0 && in.PoolIndex < len(in.Deployment.Pools) {
 		eng, err := vllmsettings.OfPool(in.Deployment, in.PoolIndex)
 		if err != nil {
@@ -193,6 +198,9 @@ func newKernel(in Inputs) (*Kernel, error) {
 			Settings: eng}); err != nil {
 			return nil, err
 		}
+		if edit != nil {
+			edit(in.Lowered)
+		}
 		in.Implementations = kernelmodel.PlanImplementations(in.Implementations, in.Lowered.Plan)
 		// A test that edits the drafter states the passes itself; otherwise they are the engine block's.
 		if rows, reqs := draftPasses(in.Deployment, in.PoolIndex); in.DraftFirstPassRows == "" && in.DraftPassRequests == "" {
@@ -200,6 +208,16 @@ func newKernel(in Inputs) (*Kernel, error) {
 		}
 	}
 	return New(in)
+}
+
+// buildEditingPlan is build with the lowered plan edited before it is priced.
+func buildEditingPlan(t testing.TB, in Inputs, edit func(*plan.Lowered)) *Kernel {
+	t.Helper()
+	k, err := newKernelEditing(in, edit)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return k
 }
 
 // build is New on inputs a test has edited, failing the test on a refusal.

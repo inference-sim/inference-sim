@@ -103,11 +103,8 @@ func (g *Graph) validateGlobal(p *validate.Problems) {
 	// about it asks a question only a named architecture lets a rules pack answer.
 	if g.Global.Architecture == "" {
 		g.EachNode(func(at string, n Node) {
-			switch n.SequenceParallelField() {
-			case "emit":
+			if n.SequenceParallelField() == "emit" {
 				p.Field(at+".emit", "%q needs global.architecture, whose model code decides it", n.Emit)
-			case "under_sequence_parallel":
-				p.Field(at+".under_sequence_parallel", "%q needs global.architecture, whose model code decides it", n.UnderSequenceParallel)
 			}
 		})
 	}
@@ -400,20 +397,13 @@ func (n Node) validate(p *validate.Problems, at string) {
 	case !n.Op.Collective() && n.Emit.SequenceParallelOnly():
 		// Work runs in every layout. At tp 1 neither sequence-parallel condition holds,
 		// so work stated twice, once under each, vanishes there.
-		p.Warnf("%s: emit %q on a %s, which is work rather than a collective; at tp 1 neither sequence-parallel condition holds, so state the node once, with under_sequence_parallel for how the mode divides it",
+		p.Warnf("%s: emit %q on a %s, which is work rather than a collective; at tp 1 neither sequence-parallel condition holds, so state the node once; the engine decides how the mode divides it",
 			at, n.Emit, n.Op)
 	case !n.Op.Collective() && n.Emit != EmitAlways:
 		// Allowed, but unusual enough to flag: a non-collective conditional node
 		// usually means the graph is encoding a deployment rather than a model.
 		p.Warnf("%s: a condition on a non-collective node encodes deployment in the model graph", at)
 	}
-	if !n.UnderSequenceParallel.Valid() {
-		p.Field(at+".under_sequence_parallel", "%q is not a recognized split", n.UnderSequenceParallel)
-	} else if n.UnderSequenceParallel != SPAsTP && n.Op.Collective() {
-		p.Field(at+".under_sequence_parallel",
-			"a collective is defined by its group and its emit condition; only work is token-sharded")
-	}
-
 	if !n.TP.ValidFor(n.Op) {
 		p.Field(at+".tp", "%q is not a layout a %s node accepts", n.TP, n.Op)
 	}

@@ -646,13 +646,11 @@ func TestModelSequenceParallel(t *testing.T) {
 }
 
 // A graph asks about the model's sequence parallelism through a collective's emit
-// condition or a node's split under the mode. Either one, on an architecture with no rule,
-// is a question nothing answers.
+// condition. On an architecture with no rule, that is a question nothing answers.
 func TestSequenceParallelArchitectureKnown(t *testing.T) {
 	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1}
 	for name, n := range map[string]model.Node{
-		"emit":                    {Op: model.OpAllGather, Emit: model.EmitSequenceParallel},
-		"under_sequence_parallel": {Op: model.OpElementwise, Role: "mhc_pre", TP: model.TPReplicated, UnderSequenceParallel: model.SPTokenSharded},
+		"emit": {Op: model.OpAllGather, Emit: model.EmitSequenceParallel},
 	} {
 		g := moe224Graph()
 		g.LayerKinds[0].Nodes = append(g.LayerKinds[0].Nodes, n)

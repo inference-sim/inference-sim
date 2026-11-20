@@ -4806,46 +4806,24 @@ def test_deepseek_v41_splits_across_tensor_parallel_ranks_where_vllm_does():
     assert set(split) <= seen
 
 
-def test_deepseek_v41_residual_stream_work_runs_on_the_token_shard_under_its_sp():
-    """Under V4.1's own sequence parallelism the residual stream is sharded by token
-    (sp_shard, nvidia/model.py:898-905), and only attention runs on the gathered rows,
-    between its all-gather and its reduce-scatter (:579-586). So exactly the work on the
-    stream is token-sharded: every mHC launch and projection, the engram injection's
-    wkv and gate (common/engram.py:999-1016), the router and the experts, and the head's
-    post, collapse and final norm before it gathers (:976-990; dspark.py:229-248).
+def keys_of(o):
+    """Every mapping key anywhere under o."""
+    if isinstance(o, dict):
+        for k, v in o.items():
+            yield k
+            yield from keys_of(v)
+    elif isinstance(o, list):
+        for v in o:
+            yield from keys_of(v)
 
-    Attention's own work, the compressor and the indexer are not: they run on every
-    token. Nor is the engram lookup, which covers every token before the shard
-    (nvidia/model.py:890-895), nor anything in the draft's context stack, which reads the
-    gathered target states, nor any collective. Stated anywhere else, a node is priced
-    at 1/tp of the rows it runs on, or tp times the rows it does."""
-    g = v41_graph()
-    spec = g["speculator"]
-    stream = re.compile(r"mhc_|hc_|engram_gate$|engram_wkv$|router$|experts$|"
-                        r"shared_gate_up$|shared_down$|final_norm$")
-    def check(nodes, where, expect_head_norm=True):
-        for n in nodes:
-            sharded = n.get("under_sequence_parallel") == "token_sharded"
-            role = n.get("role") or ""
-            if n["op"] in ("AllReduce", "AllGather", "ReduceScatter", "All2All"):
-                assert not sharded, (where, role)
-            elif role == "dspark_final_norm":
-                # applied by compute_logits, after the drafter gathers
-                assert not sharded, where
-            else:
-                assert sharded == bool(stream.match(role)), (where, role, sharded)
-    for i, nodes in enumerate(expanded_layers(g)):
-        check(nodes, i)
-        assert sum(n.get("under_sequence_parallel") == "token_sharded"
-                   for n in nodes if n["op"] == "GroupedGEMM") == 1, i
-    for d, nodes in enumerate(expanded_layers(g, spec["stack"])):
-        check(nodes, f"draft {d}")
-    check(g["head"], "head")
-    check(spec["head"], "draft head")
-    for nodes in expanded_layers(g, spec["context_stack"]):
-        assert not [n for n in nodes if n.get("under_sequence_parallel")]
-    for n in g["embedding"] + spec["embedding"] + spec["sequential_head"]:
-        assert "under_sequence_parallel" not in n, n.get("role")
+
+def test_the_graph_states_no_sequence_parallel_split():
+    """Which nodes a model's own sequence parallelism runs on a rank's shard of the
+    step's tokens (DeepSeek-V4 and V4.1's residual stream, Qwen's hyper-connections) is
+    how an engine lowers the model, not a fact of the checkpoint (design SUB-15), so the
+    deriver writes none of it; the engine's lowering names those nodes."""
+    for name, g in (("v4", v4_graph()), ("v4.1", v41_graph())):
+        assert "under_sequence_parallel" not in set(keys_of(g)), name
 
 
 def v41_collectives(nodes: list[dict], sequence_parallel: bool) -> collections.Counter:
@@ -5357,29 +5335,6 @@ def test_deepseek_v4_each_layer_reduces_and_gathers_what_vllm_does():
     for embedding in (g["embedding"], spec["embedding"]):
         assert [(n["op"], n["emit"]) for n in embedding if n.get("emit")] == [
             ("AllReduce", "tensor_parallel")]
-
-
-def test_deepseek_v4_residual_stream_work_runs_on_the_token_shard():
-    """Under V4's sequence parallelism the stream is sharded before the first layer
-    (nvidia/model.py:1571-1578) and attention alone runs on the gathered rows. So the
-    mHC launches and projections, the router, the hash lookup and the experts are
-    token-sharded; attention, its compressor and indexer, the head after its gather and
-    the MTP input norm (before the draft's shard, nvidia/mtp.py:168-184) are not."""
-    g = v4_graph()
-    spec = g["speculator"]
-    stream = re.compile(r"mhc_|hc_attn_fn|hc_ffn_fn|router$|hash_route$|experts$|"
-                        r"shared_gate_up$|shared_down$|mtp_e_proj$|mtp_h_proj$|"
-                        r"mtp_input_add$|mtp_mhc_post$")
-    for where, nodes in ([(i, n) for i, n in enumerate(expanded_layers(g))]
-                         + [("mtp", n) for n in expanded_layers(g, spec["stack"])]
-                         + [("head", g["head"]), ("mtp head", spec["head"])]):
-        for n in nodes:
-            role = n.get("role") or ""
-            sharded = n.get("under_sequence_parallel") == "token_sharded"
-            if n["op"] in ("AllReduce", "AllGather", "ReduceScatter", "All2All"):
-                assert not sharded, (where, role)
-            else:
-                assert sharded == bool(stream.match(role)), (where, role, sharded)
 
 
 def test_deepseek_v4_splits_across_tensor_parallel_ranks_where_vllm_does():

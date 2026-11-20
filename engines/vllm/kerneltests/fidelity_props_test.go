@@ -181,8 +181,7 @@ func TestTokenShardingStrictlyHelpsUnderSP(t *testing.T) {
 		pl := &in.Deployment.Pools[0].Parallel
 		pl.TP, pl.DP, pl.EnableExpertParallel = 4, 2, true
 		if clear {
-			editNodes(in.Model, func(n model.Node) bool { return n.UnderSequenceParallel != "" },
-				func(n *model.Node) { n.UnderSequenceParallel = "" })
+			return buildEditingPlan(t, in, func(l *plan.Lowered) { l.Plan.TokenShardedRoles = nil })
 		}
 		return build(t, in)
 	}
@@ -291,12 +290,31 @@ func TestTokenShardedGEMMsRunFewerRows(t *testing.T) {
 		in := fixtureInputs(t, v41)
 		pl := &in.Deployment.Pools[0].Parallel
 		pl.TP, pl.DP, pl.EnableExpertParallel = 4, 2, true
-		if clear && editNodes(in.Model, func(n model.Node) bool {
-			return n.Op == model.OpGEMM && n.UnderSequenceParallel != ""
-		}, func(n *model.Node) { n.UnderSequenceParallel = "" }) == 0 {
-			t.Fatal("no token-sharded GEMM in the graph")
+		if !clear {
+			return build(t, in)
 		}
-		return build(t, in)
+		// Clearing GEMMs alone: keep the roles of every node that is not a GEMM.
+		gemm := map[string]bool{}
+		in.Model.EachNode(func(_ string, n model.Node) {
+			if n.Op == model.OpGEMM {
+				gemm[n.Role] = true
+			}
+		})
+		return buildEditingPlan(t, in, func(l *plan.Lowered) {
+			if len(l.Plan.TokenShardedRoles) == 0 {
+				t.Fatal("the lowering states no token-sharded role")
+			}
+			var kept []string
+			for _, r := range l.Plan.TokenShardedRoles {
+				if !gemm[r] {
+					kept = append(kept, r)
+				}
+			}
+			if len(kept) == len(l.Plan.TokenShardedRoles) {
+				t.Fatal("no token-sharded GEMM role in the plan")
+			}
+			l.Plan.TokenShardedRoles = kept
+		})
 	}
 	b := kernel.Batch{Reqs: []kernel.ReqShape{{Scheduled: 4096, PromptLen: 4096}}}
 	if on, off := sp(false).StepTime(b).PerResource[kernel.ResourceSM],

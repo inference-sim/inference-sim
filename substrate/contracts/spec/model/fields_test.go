@@ -68,14 +68,15 @@ func v41Graph() *Graph {
 }
 
 // Engram's wkv is column-split without the model's sequence parallelism and replicated
-// over a token shard with it, and it runs at tp 1 too. Stated once, with the mode's split,
-// it draws nothing. Stated twice under the two sequence-parallel conditions, it would be
-// absent at tp 1, where neither holds, so the pair draws a warning naming that layout.
+// over a token shard with it, and it runs at tp 1 too. Stated once, it draws nothing (how the
+// mode divides it is the engine's lowering). Stated twice under the two sequence-parallel
+// conditions, it would be absent at tp 1, where neither holds, so the pair draws a warning
+// naming that layout.
 func TestWorkUnderSequenceParallelIsStatedOnce(t *testing.T) {
 	once := v41Graph()
 	once.Global.Architecture = "DeepseekV41ForCausalLM"
 	once.LayerKinds[1].Nodes = append(once.LayerKinds[1].Nodes,
-		Node{Op: OpGEMM, Role: "wkv", N: 25600, K: 6144, TP: TPColumn, UnderSequenceParallel: SPTokenSharded})
+		Node{Op: OpGEMM, Role: "wkv", N: 25600, K: 6144, TP: TPColumn})
 	if p := once.Validate(); len(p.All()) != 0 {
 		t.Fatalf("work stated once drew findings:\n%s", p.Error())
 	}
@@ -261,17 +262,6 @@ func TestV41FieldRejects(t *testing.T) {
 		// Sequence parallelism is the model's code, so its conditions need the architecture.
 		{"sequence-parallel condition without an architecture", "needs global.architecture", func(g *Graph) {
 			g.LayerKinds[1].Nodes = append(g.LayerKinds[1].Nodes, Node{Op: OpAllGather, Emit: EmitSequenceParallel})
-		}},
-		{"sequence-parallel split without an architecture", "under_sequence_parallel: \"token_sharded\" needs global.architecture", func(g *Graph) {
-			g.LayerKinds[0].Nodes[0].UnderSequenceParallel = SPTokenSharded
-		}},
-		{"unknown sequence-parallel split", "not a recognized split", func(g *Graph) {
-			g.Global.Architecture = "DeepseekV41ForCausalLM"
-			g.LayerKinds[0].Nodes[0].UnderSequenceParallel = "rows"
-		}},
-		{"token-sharded collective", "only work is token-sharded", func(g *Graph) {
-			g.Global.Architecture = "DeepseekV41ForCausalLM"
-			g.LayerKinds[0].Nodes[3].UnderSequenceParallel = SPTokenSharded
 		}},
 		// The draft's embedding is outside every layer.
 		{"cache insert in the draft's embedding", "speculator.embedding[0].writes_cache", func(g *Graph) {
