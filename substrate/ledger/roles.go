@@ -20,6 +20,10 @@ const (
 	RoleReport   Role = "report"
 )
 
+// RoleNone is the absence of a role: a unit its source's rule leaves out has none. It is not
+// one of Roles, so no cut-point may assign it.
+const RoleNone Role = ""
+
 // Roles lists every role, in the order the design's table gives them.
 var Roles = []Role{RoleFit, RoleSelect, RoleValidate, RoleHeld, RoleAnchor, RoleReport}
 

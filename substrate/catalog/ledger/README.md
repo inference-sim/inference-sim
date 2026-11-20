@@ -258,7 +258,7 @@ so that anyone can check the split against the committed hash.
 code with no secret, no environment and a read-only token. It predicts every unit not on the
 published lists with no network, and uploads `predictions.json`, nothing else.
 
-`.github/workflows/ledger.yml` holds the seed-holding jobs: release, select, error, gate and
+`.github/workflows/ledger.yml` holds the seed-holding jobs: release, select, error and
 gate-nightly. Each runs only from main, in the environment `ledger`. Each checks out main and
 reads the predictions as untrusted input with a strict loader (`ledger.ReadPredictions`). Each
 reduces its own role's units to aggregates over at least 10 units, and checks that its report
@@ -271,18 +271,43 @@ it covers are fixed by the seed and the measured data, not by the candidate: the
 predictions that omit a handed unit, and an absent prediction scores as a full error. Select
 and error reports exist only for main-branch candidates, so differencing across a pull
 request's pushes is not possible; a candidate on main is a merged change, so the number of
-evaluations is the number of merges. Held stays pre-registered and counted.
+evaluations is the number of merges. The operator level reports method error on validate units
+(the `error` job); no operator-level job reads held units, and only InferenceX has a held
+cut-point from partition version 2.
 
 What is not in place yet:
 
 - The operator-level predictor. The candidate job records every unit as not predicted, so
   the seed-holding jobs report nothing.
-- The pre-registration check. Anyone with write access starts the gate job by dispatch on main,
-  for a change whose pre-registration the review agent has checked, and records the evaluation
-  count on the pull request (design §10.2).
 - The consumers' records of units read. The nightly join (D2) fails until at least one
   consumer uploads an artifact named `unit-reads-<consumer>` in the format of `ledger.Reads`. The join reads only artifacts uploaded by a run on main of
   this repository; an artifact from a pull request run or a fork is ignored.
+
+## Moving to partition version 2
+
+From version 2 the roles have holders: only InferenceX has a held
+cut-point, only InferenceX and configiq have an anchor cut-point, AISimulate's units take the
+training roles (fit 0-69, select 70-84, validate 85-99), and configiq's units are anchor 0 to 99
+except those a consumer read under fit, select or validate, which `left_out` lists and which get
+no role. InferenceX's rule is carried over byte for byte, so no InferenceX unit changes role. The
+version keeps the seed: `ledger check-base` accepts a version bump with the same seed record
+only when InferenceX's rule is unchanged.
+
+`ledger partition-prep` is the D2 join report. It reads no seed: it works from the consumers'
+`unit-reads-<consumer>` records, and writes the report and, with `-propose`, the next
+`ledger.yaml`. Maintainer steps (A3; the agent does not run them):
+
+1. Download the `unit-reads-*` artifacts of the latest nightly join on main.
+2. `ledger partition-prep -require <each consumer> -out report.yaml -propose ledger.yaml catalog/ledger unit-reads-*.json`.
+   Read the report: the `conflicts` count must be 0, and every consumer must be listed.
+3. In a pull request, replace `catalog/ledger/ledger.yaml` with the proposal and delete
+   `catalog/ledger/published/*.yaml` (version 1; `Published.Check` refuses a list of another version).
+4. `ledger check-base` against main passes (seed kept, InferenceX unchanged); CI is green. A
+   pre-registration that pins the cut-points of configiq or AISimulate is stale after the move
+   (`prereg verify` says so) and is registered again before its family fits; InferenceX's pin is unchanged.
+5. Merge, then dispatch the release job on main. It writes the version 2 lists.
+6. In accuracy-dashboard, add a `partitions["2"]` entry with a budget to `state/gate/ledger.json`
+   (A5); until then the whole-run gate refuses partition version 2.
 
 ## The AISimulate end-to-end artifact
 
