@@ -331,6 +331,42 @@ deployment cannot price two pools or a drafter. To move to a newer artifact, cha
 entry and the pin file in one pull request. The artifact has no unit list yet: it holds
 relatives, not InferenceX units, so no role is drawn for it.
 
+## The calibration sources (training only)
+
+Three sources are calibration data for the kernel and are never held out: `vllm-ci-perf`,
+`sglang-nightly` and `sglang-traces`. Their rules in `ledger.yaml` assign fit (0 to 69), select
+(70 to 84) and validate (85 to 99) only, and have no legacy side; `ledger check` refuses a
+held, anchor or report role, or a legacy side, for any of them. Their licence is NOASSERTION, so
+only identifiers and hashes are committed (X12, D6) and each input is pinned by hash (D3).
+
+| source | unit | role key |
+| --- | --- | --- |
+| `vllm-ci-perf` | a benchmark configuration at one commit | commit, model, hardware, benchmark name, configuration hash |
+| `sglang-nightly` | a test case in one nightly run | commit, test name, model, hardware |
+| `sglang-traces` | one trace file | the file |
+
+```bash
+# vllm-ci-perf: rows of https://ci.vllm.ai/api/perf up to the cutoff day, joined with the
+# perf-eval recipes at the commit sources.yaml pins (rows and recipes are not committed)
+python3 ledger/vllmperf/export.py --api perf.json --cutoff 2026-11-19 --perf-eval perf-eval --out vexp
+go run ./ledger/cmd/ledger ingest-vllm-perf -rows vexp/rows.jsonl -recipes vexp/recipes.jsonl catalog/ledger
+
+# sglang-nightly: the pinned artifacts, downloaded as <artifact id>.zip into one directory
+go run ./ledger/cmd/ledger sglang-nightly-assets catalog/ledger
+go run ./ledger/cmd/ledger ingest-sglang-nightly -artifacts DIR catalog/ledger
+
+# sglang-traces: a listing of the pinned ci-data commit (git blob ids and sizes, never a trace)
+python3 ledger/sglangtraces/export.py --repo sgl-project/ci-data --commit SHA > listing.jsonl
+go run ./ledger/cmd/ledger ingest-sglang-traces -listing listing.jsonl catalog/ledger
+```
+
+Each `ingest-*` command takes `-check` to regenerate and compare byte for byte (D4). Rows that
+cannot be placed are left out under a stated reason and counted in the report
+(`catalog/ledger/reports/<source>.yaml`): for `vllm-ci-perf` an image tag that is not a full
+commit, no unique recipe, or an empty metric; for `sglang-traces` an empty file or one that is
+not rank zero. GitHub expires workflow artifacts, so `sglang-nightly` can be regenerated only
+while its pinned artifacts are still downloadable.
+
 ## Other sources
 
 AISimulate (`ai-dynamo/aisimulate` at `2f0f4cd8`, since renamed `ai-dynamo/aisim`) and the forward-pass dataset
