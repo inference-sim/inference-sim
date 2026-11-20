@@ -289,6 +289,12 @@ func TestKernelCLILeg(t *testing.T) {
 		t.Skip("re-exec target only; driven by runKernelCLI")
 	}
 	installTransferLog()
+	// A replication the driver starts is this same leg, handed the replication's command line.
+	replicationCommand = func(args []string) (*exec.Cmd, error) {
+		c := exec.Command(os.Args[0], "-test.run=^TestKernelCLILeg$")
+		c.Env = append(os.Environ(), kernelCLIArgsEnv+"="+strings.Join(args, "\x1f"))
+		return c, nil
+	}
 	rootCmd.SetArgs(strings.Split(raw, "\x1f"))
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

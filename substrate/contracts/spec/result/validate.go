@@ -625,6 +625,7 @@ func (r *Result) validateMetrics(p *validate.Problems) {
 		if f.Samples < 0 {
 			p.Field(at+".samples", "must not be negative")
 		}
+		f.validateInterval(p, at, r.Estimate.Interval != nil)
 		if d.Unfinished == metrics.UnfinishedExcluded && f.Samples == 0 {
 			p.Field(at+".samples", "is 0: a statistic over no sample is not reported")
 		}
@@ -1046,11 +1047,84 @@ func (c SelectedCoefficient) validatePriced(p *validate.Problems, at string, mar
 var phaseSlug = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 func (e Estimate) validate(p *validate.Problems) {
-	if e.Replications != 1 {
-		p.Field("estimate.replications", "must be 1, got %d: only a single replication is described so far", e.Replications)
-		return
+	switch {
+	case e.Replications == 1:
+		if e.NoInterval == "" {
+			p.Field("estimate.no_interval", "required for one replication: the statement that the figures carry no interval (DEV-11)")
+		}
+		if e.Interval != nil {
+			p.Field("estimate.interval", "one replication has no interval")
+		}
+	case e.Replications >= MinIntervalReplications:
+		if e.NoInterval != "" {
+			p.Field("estimate.no_interval", "an estimate with an interval does not state that it has none")
+		}
+		if e.Interval == nil {
+			p.Field("estimate.interval", "required for %d replications: the interval's level, method, seeds and stopping rule (DEV-11)", e.Replications)
+			return
+		}
+		e.Interval.validate(p, e.Replications)
+	default:
+		p.Field("estimate.replications", "must be 1 (a point estimate) or at least %d (an interval), got %d (design §8.8)", MinIntervalReplications, e.Replications)
 	}
-	if e.NoInterval == "" {
-		p.Field("estimate.no_interval", "required for one replication: the statement that the figures carry no interval (DEV-11)")
+}
+
+func (iv *IntervalEstimate) validate(p *validate.Problems, replications int) {
+	const at = "estimate.interval"
+	if !(iv.Level > 0 && iv.Level < 1) {
+		p.Field(at+".level", "must be strictly between 0 and 1, got %v", iv.Level)
+	}
+	if iv.Method == "" {
+		p.Field(at+".method", "required")
+	}
+	if iv.Covers == "" {
+		p.Field(at+".covers", "required: the interval states which uncertainty it covers (design §8.8)")
+	}
+	if len(iv.Seeds) != replications {
+		p.Field(at+".seeds", "has %d seeds for %d replications: one per replication", len(iv.Seeds), replications)
+	}
+	if iv.MinReplications < MinIntervalReplications {
+		p.Field(at+".min_replications", "must be at least %d, got %d", MinIntervalReplications, iv.MinReplications)
+	}
+	if iv.MaxReplications < iv.MinReplications {
+		p.Field(at+".max_replications", "is %d, below min_replications %d", iv.MaxReplications, iv.MinReplications)
+	}
+	if replications < iv.MinReplications || replications > iv.MaxReplications {
+		p.Field("estimate.replications", "is %d, outside the stopping rule's %d to %d", replications, iv.MinReplications, iv.MaxReplications)
+	}
+	if !(iv.TargetRelativeWidth > 0) || math.IsInf(iv.TargetRelativeWidth, 0) {
+		p.Field(at+".target_relative_width", "must be positive and finite, got %v", iv.TargetRelativeWidth)
+	}
+	if p.FiniteField(at+".relative_width_reached", iv.RelativeWidthReached) && iv.RelativeWidthReached < 0 {
+		p.Field(at+".relative_width_reached", "must not be negative")
+	}
+	switch iv.StoppedBy {
+	case StoppedByWidth:
+		if iv.RelativeWidthReached > iv.TargetRelativeWidth {
+			p.Field(at+".stopped_by", "is %q but the width reached %v exceeds the target %v", iv.StoppedBy, iv.RelativeWidthReached, iv.TargetRelativeWidth)
+		}
+	case StoppedByLimit:
+		if replications != iv.MaxReplications {
+			p.Field(at+".stopped_by", "is %q but %d replications ran against a limit of %d", iv.StoppedBy, replications, iv.MaxReplications)
+		}
+	default:
+		p.Field(at+".stopped_by", "%q is neither %q nor %q", iv.StoppedBy, StoppedByWidth, StoppedByLimit)
+	}
+}
+
+// validateInterval checks that a figure carries an interval exactly when the estimate has one,
+// and that the interval is finite and contains the figure's value.
+func (f Figure) validateInterval(p *validate.Problems, at string, want bool) {
+	switch {
+	case f.Interval == nil && want:
+		p.Field(at+".interval", "required: the estimate states an interval, so every figure carries one (DEV-11)")
+	case f.Interval != nil && !want:
+		p.Field(at+".interval", "present but estimate.interval is not: a point estimate has no interval (DEV-11)")
+	case f.Interval != nil:
+		lowOK := p.FiniteField(at+".interval.low", f.Interval.Low)
+		highOK := p.FiniteField(at+".interval.high", f.Interval.High)
+		if lowOK && highOK && !(f.Interval.Low <= f.Value && f.Value <= f.Interval.High) {
+			p.Field(at+".interval", "[%v, %v] does not contain the value %v", f.Interval.Low, f.Interval.High, f.Value)
+		}
 	}
 }

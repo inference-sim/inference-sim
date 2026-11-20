@@ -796,6 +796,9 @@
     "result.Estimate": {
       "additionalProperties": false,
       "properties": {
+        "interval": {
+          "$ref": "#/$defs/result.IntervalEstimate"
+        },
         "no_interval": {
           "type": "string"
         },
@@ -817,6 +820,9 @@
             "min"
           ],
           "type": "string"
+        },
+        "interval": {
+          "$ref": "#/$defs/result.FigureInterval"
         },
         "member": {
           "type": "string"
@@ -848,6 +854,22 @@
         "samples",
         "scope",
         "value"
+      ],
+      "type": "object"
+    },
+    "result.FigureInterval": {
+      "additionalProperties": false,
+      "properties": {
+        "high": {
+          "type": "number"
+        },
+        "low": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "high",
+        "low"
       ],
       "type": "object"
     },
@@ -1075,6 +1097,57 @@
       "required": [
         "deployment",
         "scenario"
+      ],
+      "type": "object"
+    },
+    "result.IntervalEstimate": {
+      "additionalProperties": false,
+      "properties": {
+        "covers": {
+          "type": "string"
+        },
+        "level": {
+          "type": "number"
+        },
+        "max_replications": {
+          "type": "integer"
+        },
+        "method": {
+          "type": "string"
+        },
+        "min_replications": {
+          "type": "integer"
+        },
+        "relative_width_reached": {
+          "type": "number"
+        },
+        "seeds": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "stopped_by": {
+          "enum": [
+            "width",
+            "limit"
+          ],
+          "type": "string"
+        },
+        "target_relative_width": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "covers",
+        "level",
+        "max_replications",
+        "method",
+        "min_replications",
+        "relative_width_reached",
+        "seeds",
+        "stopped_by",
+        "target_relative_width"
       ],
       "type": "object"
     },

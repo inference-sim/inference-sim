@@ -577,6 +577,11 @@ var runCmd = &cobra.Command{
 		logrus.SetLevel(level)
 		validateRouterFlags()
 		checkResultFlags()
+		checkReplicationFlags(cmd)
+		if replications != 1 {
+			runReplications(cmd)
+			return
+		}
 		defer applyFromResult("run", cmd)()
 		snapshotResultFlags("run", cmd)
 
@@ -1482,6 +1487,7 @@ func init() {
 	// Workload generation flags (run-only)
 	runCmd.Flags().StringVar(&workloadType, "workload", "distribution", "Workload type (chatbot, summarization, contentgen, multidoc, distribution)")
 
+	registerIntervalFlags(runCmd)
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
 	runCmd.Flags().IntVar(&numRequests, "num-requests", 100, "Number of requests to generate")
 	runCmd.Flags().IntVar(&concurrency, "concurrency", 0, "Number of concurrent virtual users (closed-loop, mutually exclusive with --rate)")
