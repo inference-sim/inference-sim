@@ -1,0 +1,145 @@
+{
+ "budgets": [],
+ "calls": [],
+ "facts": {
+  "conv": [
+   [
+    3072,
+    3
+   ]
+  ],
+  "conv_dtype": "torch.bfloat16",
+  "conv_kernel": 4,
+  "full_attention_layer_ids": [
+   3,
+   7,
+   11,
+   15,
+   19,
+   23,
+   27,
+   31,
+   35,
+   39,
+   43,
+   47,
+   51,
+   55,
+   59
+  ],
+  "layers": [
+   0,
+   1,
+   2,
+   4,
+   5,
+   6,
+   8,
+   9,
+   10,
+   12,
+   13,
+   14,
+   16,
+   17,
+   18,
+   20,
+   21,
+   22,
+   24,
+   25,
+   26,
+   28,
+   29,
+   30,
+   32,
+   33,
+   34,
+   36,
+   37,
+   38,
+   40,
+   41,
+   42,
+   44,
+   45,
+   46,
+   48,
+   49,
+   50,
+   52,
+   53,
+   54,
+   56,
+   57,
+   58
+  ],
+  "mamba_cache_per_req": 48015360,
+  "num_k_heads_per_tp": 4,
+  "replayssm_ring_bytes_per_req_16": 7418880,
+  "temporal": [
+   16,
+   128,
+   128
+  ],
+  "temporal_dtype": "torch.float32"
+ },
+ "kind": "direct",
+ "provenance": {
+  "blis_sglang_commit": "4202caaac4804470e1eeb2a5f82d6d82970720c0",
+  "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
+  "mock_version": "gpu-mock/9+f7e50518d4b2",
+  "model": "qwen2.5-0.5b",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "oracle_inputs": {
+   "oracle/harness.json": "dad4a88c3b69c528ce64aea735f7de22c97eaf086b72a3876fc72fa853d4b268",
+   "oracle/mocks.json": "9782b21a0b9428d105a51cde9983b1554f456ef4e7f7ac11c73992f202104173",
+   "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+   "oracle/run_mamba_pools.py": "8deea3b0828e40e543df1342344a5f00ca043e26166a19699f4958d9eb24da01",
+   "oracle/scenarios-mamba-pools/sizing.json": "a5fd5324ebeee495f790e5bdf886b7948714080826e2b8555686396e4534e7a6",
+   "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "scenario_sha256": "a5fd5324ebeee495f790e5bdf886b7948714080826e2b8555686396e4534e7a6",
+  "seed": 0,
+  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "tier": 2
+ },
+ "sizing": [
+  {
+   "bytes": 432138240,
+   "class": "MambaPool",
+   "pool": "plain"
+  },
+  {
+   "bytes": 1384151040,
+   "class": "MambaPool",
+   "pool": "spec_dedup"
+  },
+  {
+   "bytes": 1392445440,
+   "class": "MambaPool",
+   "pool": "spec_dense"
+  },
+  {
+   "bytes": 498908160,
+   "class": "MambaPool",
+   "pool": "replay_decode"
+  },
+  {
+   "bytes": 477527040,
+   "class": "MambaPool",
+   "pool": "replay_spec"
+  },
+  {
+   "class": "HybridLinearKVPool",
+   "kv_size_bytes": [
+    499200,
+    499200
+   ],
+   "pool": "kv"
+  }
+ ]
+}

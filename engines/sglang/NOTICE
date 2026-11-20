@@ -1,0 +1,16 @@
+blis-sglang
+Copyright 2026 The BLIS authors
+
+This product includes software derived from SGLang (https://github.com/sgl-project/sglang),
+Copyright 2023-2024 SGLang Team, licensed under the Apache License, Version 2.0.
+
+The derived files are Go translations of SGLang's Python engine logic at the release named in
+each file's header (SGLang v0.5.23, commit 297e54fd105e974cdf401e5b4d20253a22c16f90, unless the
+file says otherwise). Each such file starts with:
+
+    // SPDX-License-Identifier: Apache-2.0
+    // SPDX-FileCopyrightText: Copyright 2023-2024 SGLang Team
+    // Derived from python/sglang/<path> at SGLang <tag> (<commit>).
+
+so the upstream file and commit of every ported function can be found and diffed when SGLang
+moves. A file with no such header is original to this repository.

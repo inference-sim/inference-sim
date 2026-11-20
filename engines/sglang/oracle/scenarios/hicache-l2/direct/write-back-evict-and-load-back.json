@@ -1,0 +1,178 @@
+{
+ "description": "Write-back, page size 1. Inserts back nothing up. An eviction backs each device leaf up, waits for the copy (the blocking writing_check) and only then demotes it. A match finds the prefix on host; load_back copies it to device, and loading_check releases it once the boundary completes the copy. The nodes are then on both tiers, so evict_host reclaims their host copies first, before any host leaf.",
+ "model": "Qwen/Qwen2.5-0.5B-Instruct",
+ "seed": 0,
+ "cache": {
+  "page_size": 1,
+  "kv_size": 32,
+  "max_num_reqs": 4,
+  "max_context_len": 64,
+  "layer_num": 2,
+  "head_num": 2,
+  "head_dim": 4
+ },
+ "hicache": {
+  "write_policy": "write_back",
+  "io_backend": "direct",
+  "mem_layout": "layer_first",
+  "ratio": 2.0
+ },
+ "calls": [
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 8,
+   "as": "a"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "value": "a"
+  },
+  {
+   "on": "cache",
+   "m": "check_hicache_events"
+  },
+  {
+   "on": "controller",
+   "m": "has_inflight_device_transfers"
+  },
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 4,
+   "as": "b"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+   ],
+   "values": [
+    "a",
+    "b"
+   ],
+   "prev_prefix_len": 8
+  },
+  {
+   "on": "cache",
+   "m": "evict",
+   "num_tokens": 12
+  },
+  {
+   "on": "cache",
+   "m": "evictable_size"
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+   ],
+   "as": "m"
+  },
+  {
+   "on": "cache",
+   "m": "load_back",
+   "node": "m"
+  },
+  {
+   "on": "cache",
+   "m": "ready_to_load_host_cache"
+  },
+  {
+   "on": "cache",
+   "m": "loading_check"
+  },
+  {
+   "boundary": true
+  },
+  {
+   "on": "cache",
+   "m": "loading_check"
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+   ]
+  },
+  {
+   "on": "cache",
+   "m": "evict_host",
+   "num_tokens": 4
+  },
+  {
+   "on": "cache",
+   "m": "evictable_size"
+  },
+  {
+   "on": "cache",
+   "m": "evict",
+   "num_tokens": 12
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+   ]
+  }
+ ]
+}

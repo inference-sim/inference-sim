@@ -1,0 +1,322 @@
+{
+ "description": "HiCache's MHA, MLA and DSA host pools built over SGLang's own device pools as its assembler builds them, on every host layout each supports on CPU: the MHA pool at each of the five layouts and with a narrower V row, the MLA pool at bfloat16 and FP8, and each DSA pool's KV host pool and the indexer host pool anchored on it (an FP8 packed row, shared-top-k layers that own no index buffer, and index_kpool 2). Three layouts SGLang refuses are refused: layer_first for the narrower-V pool, page_head for MLA, and page_unified for a DSA indexer.",
+ "model": "none: the driver builds SGLang's device and host pools from the sequence's blocks",
+ "seed": 0,
+ "pools": [
+  {
+   "as": "mha",
+   "class": "MHATokenToKVPool",
+   "args": {
+    "size": 96,
+    "page_size": 16,
+    "dtype": {
+     "dtype": "bfloat16"
+    },
+    "head_num": 2,
+    "head_dim": 64,
+    "layer_num": 3,
+    "enable_memory_saver": false
+   }
+  },
+  {
+   "as": "mha_v32",
+   "class": "MHATokenToKVPool",
+   "args": {
+    "size": 96,
+    "page_size": 16,
+    "dtype": {
+     "dtype": "bfloat16"
+    },
+    "head_num": 2,
+    "head_dim": 64,
+    "v_head_dim": 32,
+    "layer_num": 2,
+    "enable_memory_saver": false
+   }
+  },
+  {
+   "as": "mla",
+   "class": "MLATokenToKVPool",
+   "args": {
+    "size": 128,
+    "page_size": 64,
+    "dtype": {
+     "dtype": "bfloat16"
+    },
+    "kv_lora_rank": 512,
+    "qk_rope_head_dim": 64,
+    "layer_num": 3,
+    "enable_memory_saver": false
+   }
+  },
+  {
+   "as": "mla_fp8",
+   "class": "MLATokenToKVPool",
+   "args": {
+    "size": 128,
+    "page_size": 64,
+    "dtype": {
+     "dtype": "float8_e4m3fn"
+    },
+    "kv_lora_rank": 512,
+    "qk_rope_head_dim": 64,
+    "layer_num": 2,
+    "enable_memory_saver": false
+   }
+  },
+  {
+   "as": "dsa_fp8",
+   "class": "DSATokenToKVPool",
+   "args": {
+    "size": 128,
+    "page_size": 64,
+    "kv_lora_rank": 512,
+    "dtype": {
+     "dtype": "float8_e4m3fn"
+    },
+    "qk_rope_head_dim": 64,
+    "layer_num": 3,
+    "index_head_dim": 128,
+    "enable_memory_saver": false,
+    "kv_cache_dim": 656
+   }
+  },
+  {
+   "as": "dsa_skip",
+   "class": "DSATokenToKVPool",
+   "args": {
+    "size": 192,
+    "page_size": 64,
+    "kv_lora_rank": 512,
+    "dtype": {
+     "dtype": "bfloat16"
+    },
+    "qk_rope_head_dim": 64,
+    "layer_num": 4,
+    "index_head_dim": 128,
+    "enable_memory_saver": false,
+    "kv_cache_dim": 576,
+    "skip_topk_layers": [
+     false,
+     true,
+     false,
+     true
+    ]
+   }
+  },
+  {
+   "as": "dsa_kpool2",
+   "class": "DSATokenToKVPool",
+   "args": {
+    "size": 256,
+    "page_size": 128,
+    "kv_lora_rank": 512,
+    "dtype": {
+     "dtype": "float8_e4m3fn"
+    },
+    "qk_rope_head_dim": 64,
+    "layer_num": 2,
+    "index_head_dim": 128,
+    "enable_memory_saver": false,
+    "kv_cache_dim": 576,
+    "index_kpool": 2,
+    "index_buf_size": 300
+   }
+  },
+  {
+   "as": "mha_odd",
+   "class": "MHATokenToKVPool",
+   "args": {
+    "size": 96,
+    "page_size": 16,
+    "dtype": {
+     "dtype": "bfloat16"
+    },
+    "head_num": 1,
+    "head_dim": 20,
+    "layer_num": 2,
+    "enable_memory_saver": false
+   }
+  }
+ ],
+ "hosts": [
+  {
+   "as": "mha_layer_first",
+   "pool": "mha",
+   "layout": "layer_first",
+   "ratio": 2.0,
+   "page_size": 16
+  },
+  {
+   "as": "mha_page_first",
+   "pool": "mha",
+   "layout": "page_first",
+   "ratio": 2.0,
+   "page_size": 16
+  },
+  {
+   "as": "mha_page_first_direct",
+   "pool": "mha",
+   "layout": "page_first_direct",
+   "ratio": 2.0,
+   "page_size": 16
+  },
+  {
+   "as": "mha_page_head",
+   "pool": "mha",
+   "layout": "page_head",
+   "ratio": 2.0,
+   "page_size": 16
+  },
+  {
+   "as": "mha_page_unified",
+   "pool": "mha",
+   "layout": "page_unified",
+   "ratio": 2.0,
+   "page_size": 16
+  },
+  {
+   "as": "mha_v32_layer_first",
+   "pool": "mha_v32",
+   "layout": "layer_first",
+   "ratio": 1.5,
+   "page_size": 16,
+   "raises": "ValueError"
+  },
+  {
+   "as": "mha_v32_page_first",
+   "pool": "mha_v32",
+   "layout": "page_first",
+   "ratio": 1.5,
+   "page_size": 16
+  },
+  {
+   "as": "mha_v32_page_first_direct",
+   "pool": "mha_v32",
+   "layout": "page_first_direct",
+   "ratio": 1.5,
+   "page_size": 16
+  },
+  {
+   "as": "mla_layer_first",
+   "pool": "mla",
+   "layout": "layer_first",
+   "ratio": 2.0,
+   "page_size": 64
+  },
+  {
+   "as": "mla_page_first",
+   "pool": "mla",
+   "layout": "page_first",
+   "ratio": 2.0,
+   "page_size": 64
+  },
+  {
+   "as": "mla_page_first_direct",
+   "pool": "mla",
+   "layout": "page_first_direct",
+   "ratio": 2.0,
+   "page_size": 64
+  },
+  {
+   "as": "mla_page_unified",
+   "pool": "mla",
+   "layout": "page_unified",
+   "ratio": 2.0,
+   "page_size": 64
+  },
+  {
+   "as": "mla_fp8_layer_first",
+   "pool": "mla_fp8",
+   "layout": "layer_first",
+   "ratio": 3.0,
+   "page_size": 64
+  },
+  {
+   "as": "dsa_fp8_host",
+   "pool": "dsa_fp8",
+   "layout": "layer_first",
+   "ratio": 2.0,
+   "page_size": 64
+  },
+  {
+   "as": "dsa_skip_host",
+   "pool": "dsa_skip",
+   "layout": "layer_first",
+   "ratio": 2.0,
+   "page_size": 64
+  },
+  {
+   "as": "dsa_kpool2_host",
+   "pool": "dsa_kpool2",
+   "layout": "layer_first",
+   "ratio": 2.0,
+   "page_size": 128
+  },
+  {
+   "as": "dsa_fp8_page_first",
+   "pool": "dsa_fp8",
+   "layout": "page_first",
+   "ratio": 2.0,
+   "page_size": 64
+  },
+  {
+   "as": "mla_page_head",
+   "pool": "mla",
+   "layout": "page_head",
+   "ratio": 2.0,
+   "page_size": 64,
+   "raises": "ValueError"
+  },
+  {
+   "as": "dsa_skip_page_unified",
+   "pool": "dsa_skip",
+   "layout": "page_unified",
+   "ratio": 2.0,
+   "page_size": 64
+  },
+  {
+   "as": "mha_odd_layer_first",
+   "pool": "mha_odd",
+   "layout": "layer_first",
+   "ratio": 2.0,
+   "page_size": 16
+  },
+  {
+   "as": "mha_odd_page_unified",
+   "pool": "mha_odd",
+   "layout": "page_unified",
+   "ratio": 2.0,
+   "page_size": 16,
+   "raises": "ValueError"
+  }
+ ],
+ "indexers": [
+  {
+   "as": "dsa_fp8_indexer",
+   "pool": "dsa_fp8",
+   "anchor": "dsa_fp8_host"
+  },
+  {
+   "as": "dsa_skip_indexer",
+   "pool": "dsa_skip",
+   "anchor": "dsa_skip_host"
+  },
+  {
+   "as": "dsa_kpool2_indexer",
+   "pool": "dsa_kpool2",
+   "anchor": "dsa_kpool2_host"
+  },
+  {
+   "as": "dsa_fp8_indexer_page_first",
+   "pool": "dsa_fp8",
+   "anchor": "dsa_fp8_page_first"
+  },
+  {
+   "as": "dsa_skip_indexer_page_unified",
+   "pool": "dsa_skip",
+   "anchor": "dsa_skip_page_unified",
+   "raises": "ValueError"
+  }
+ ]
+}

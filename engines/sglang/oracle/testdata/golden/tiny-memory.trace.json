@@ -1,0 +1,244 @@
+{
+ "classes": {
+  "allocator": "TokenToKVPoolAllocator",
+  "tree_cache": "UnifiedRadixCache",
+  "tree_core": "UnifiedTreeCore"
+ },
+ "finished": {
+  "r0": {
+   "reason": {
+    "length": 4,
+    "type": "length"
+   },
+   "step": 4
+  },
+  "r1": {
+   "reason": {
+    "length": 3,
+    "type": "length"
+   },
+   "step": 2
+  },
+  "r2": {
+   "reason": {
+    "length": 2,
+    "type": "length"
+   },
+   "step": 4
+  }
+ },
+ "harness_problems": [],
+ "pool": {
+  "max_req_input_len": 32762,
+  "max_total_num_tokens": 120149
+ },
+ "provenance": {
+  "blis_sglang_commit": "9531e8d4266a63187092d17b18e8d02611188c3b",
+  "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
+  "mock_version": "gpu-mock/9+f7e50518d4b2",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "oracle_inputs": {
+   "oracle/harness.json": "dad4a88c3b69c528ce64aea735f7de22c97eaf086b72a3876fc72fa853d4b268",
+   "oracle/harness.py": "a3b5bfbc5670969a78dff5d50e24a5e17bbb8d50ed70e1d77825013608c10ac5",
+   "oracle/mocks.json": "9782b21a0b9428d105a51cde9983b1554f456ef4e7f7ac11c73992f202104173",
+   "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+   "oracle/run_scheduler.py": "7d624d8c7cf66f9daf849d6029f7e5af71bc9ed06fca712f0c1b5b7aa9a96ceb",
+   "oracle/scenarios/tiny-memory.json": "f8f32a4dbc5f04238ea18fae710f14d15e275fd7447bc7f6e31d0d8f52265043",
+   "oracle/stubs.py": "e30a3a770e3a4f91008449145089328ba8fbb83b35bda7082e1c77e323eb1692",
+   "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "scenario_sha256": "f8f32a4dbc5f04238ea18fae710f14d15e275fd7447bc7f6e31d0d8f52265043",
+  "seed": 0,
+  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "tier": 2
+ },
+ "receive": {
+  "max_recv_per_poll": -1,
+  "scheduler_recv_interval": 1
+ },
+ "resolved": {
+  "attention_backend": "torch_native",
+  "chunked_prefill_size": 512,
+  "device": "cpu",
+  "disable_overlap_schedule": true,
+  "max_running_requests": 8,
+  "max_total_tokens": null,
+  "page_size": 1,
+  "schedule_policy": "fcfs"
+ },
+ "sglang_env": {
+  "SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND": "python"
+ },
+ "shutdown_sent": true,
+ "steps": [
+  {
+   "arrivals": [
+    "r0",
+    "r1"
+   ],
+   "forwards": [
+    {
+     "available_tokens": 120135,
+     "batch_size": 2,
+     "extend_prefix_lens": [
+      0,
+      0
+     ],
+     "extend_seq_lens": [
+      8,
+      6
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "seq_lens": [
+      8,
+      6
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 0
+  },
+  {
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 120133,
+     "batch_size": 2,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "seq_lens": [
+      9,
+      7
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 1
+  },
+  {
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 120131,
+     "batch_size": 2,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "seq_lens": [
+      10,
+      8
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "finished": [
+      "r1"
+     ],
+     "output_lens": [
+      3
+     ],
+     "rids": [
+      "r1"
+     ],
+     "type": "BatchTokenIDOutput"
+    }
+   ],
+   "step": 2
+  },
+  {
+   "arrivals": [
+    "r2"
+   ],
+   "forwards": [
+    {
+     "available_tokens": 120127,
+     "batch_size": 1,
+     "extend_prefix_lens": [
+      6
+     ],
+     "extend_seq_lens": [
+      4
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "seq_lens": [
+      10
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 3
+  },
+  {
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 120125,
+     "batch_size": 2,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "seq_lens": [
+      11,
+      11
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "finished": [
+      "r0",
+      "r2"
+     ],
+     "output_lens": [
+      4,
+      2
+     ],
+     "rids": [
+      "r0",
+      "r2"
+     ],
+     "type": "BatchTokenIDOutput"
+    }
+   ],
+   "step": 4
+  },
+  {
+   "arrivals": [],
+   "forwards": [],
+   "outputs": [],
+   "shutdown": true,
+   "step": 5
+  }
+ ],
+ "truncated": false
+}

@@ -1,0 +1,31 @@
+{
+  "description": "Write-through, page size 1. An insert queues its node's backup; check_hicache_events submits it, and its ack waits for the next step boundary. A second insert extends the prefix and is backed up too. Once both are acked, an eviction demotes them to host; a match then finds them on host, load_back reserves device slots, ready_to_load_host_cache starts the load on a layer-counter event, and loading_check releases the nodes only after the boundary completes the load.",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "seed": 0,
+  "cache": {"page_size": 1, "kv_size": 32, "max_num_reqs": 4, "max_context_len": 64, "layer_num": 2, "head_num": 2, "head_dim": 4},
+  "hicache": {"write_policy": "write_through", "io_backend": "direct", "mem_layout": "layer_first", "ratio": 2.0},
+  "calls": [
+    {"on": "allocator", "m": "alloc", "n": 8, "as": "a"},
+    {"on": "cache", "m": "insert", "tokens": [1, 2, 3, 4, 5, 6, 7, 8], "value": "a"},
+    {"on": "cache", "m": "check_hicache_events"},
+    {"on": "controller", "m": "has_inflight_device_transfers"},
+    {"on": "cache", "m": "check_hicache_events"},
+    {"boundary": true},
+    {"on": "cache", "m": "check_hicache_events"},
+    {"on": "allocator", "m": "alloc", "n": 4, "as": "b"},
+    {"on": "cache", "m": "insert", "tokens": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "values": ["a", "b"], "prev_prefix_len": 8},
+    {"on": "cache", "m": "check_hicache_events"},
+    {"boundary": true},
+    {"on": "cache", "m": "check_hicache_events"},
+    {"on": "controller", "m": "has_inflight_device_transfers"},
+    {"on": "cache", "m": "evict", "num_tokens": 12},
+    {"on": "cache", "m": "evictable_size"},
+    {"on": "cache", "m": "match_prefix", "tokens": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "as": "m"},
+    {"on": "cache", "m": "load_back", "node": "m"},
+    {"on": "cache", "m": "ready_to_load_host_cache"},
+    {"on": "cache", "m": "loading_check"},
+    {"boundary": true},
+    {"on": "cache", "m": "loading_check"},
+    {"on": "cache", "m": "match_prefix", "tokens": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]}
+  ]
+}
