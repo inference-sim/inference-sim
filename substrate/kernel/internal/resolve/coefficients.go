@@ -38,6 +38,9 @@ type Coefficients struct {
 	// refused holds the entries the deployment's scope admitted and the running kernel
 	// implementations did not (VAL-8), for the lookup's error and the registry's report.
 	refused []ImplRefusal
+	// codeRefused holds the entries the deployment's scope admitted and the engine-path code
+	// that runs did not (coefficient.Entry.MatchCode).
+	codeRefused []CodeRefusal
 	// running is the kernel implementations the lookup was keyed by, by lowered primitive.
 	running map[string][]coefficient.KernelImpl
 	// operations are the lowered operations the lookup was keyed by, when the caller gave them.
@@ -54,6 +57,15 @@ type ImplRefusal struct {
 	Running []coefficient.KernelImpl
 }
 
+// CodeRefusal is an engine-path entry that covers the deployment and is not valid for the code
+// that runs: it lists CodeIDs and none is the one the engine states for the entry's path.
+// Running is that CodeID, empty when the engine stated none.
+type CodeRefusal struct {
+	Set     string
+	Entry   coefficient.Entry
+	Running string
+}
+
 // Resolved is one coefficient with the set that supplied it, and the other entries that
 // matched the same lookup and lost to it (VAL-4): a price's provenance names them.
 type Resolved struct {
@@ -64,6 +76,12 @@ type Resolved struct {
 	// unkeyed when it states none and so applies to every implementation without having been
 	// shown to match the one that runs. Never refused: a lookup does not return such an entry.
 	Match coefficient.KernelMatch
+	// CodeMatch says how the entry met the engine-path code that runs: exact when it lists the
+	// CodeID the engine states for its path, unkeyed when it lists none. Never refused here.
+	CodeMatch coefficient.CodeMatch
+	// CodeID is the CodeID the engine stated for the entry's path, empty for a name that prices
+	// no engine-path code.
+	CodeID string
 	// Primitive is the lowered primitive the entry's name prices (coefficient.PrimitiveOf), and
 	// Running the implementations of the operations that consume it, which the entry was
 	// matched against: the primitive's operations narrowed to the entry's class where the name
@@ -147,6 +165,11 @@ func load(sets []*coefficient.Set, scope Scope, have present, strict bool) (*Coe
 					Running: scope.consuming(e.Name, have)})
 				continue
 			}
+			if e.MatchCode(scope.CodeIDs) == coefficient.CodeRefused {
+				c.codeRefused = append(c.codeRefused, CodeRefusal{Set: s.Name, Entry: e,
+					Running: scope.CodeIDs[coefficient.CodePathOf(e.Name)]})
+				continue
+			}
 			if _, seen := all[e.Name]; !seen {
 				names = append(names, e.Name)
 			}
@@ -173,7 +196,8 @@ func load(sets []*coefficient.Set, scope Scope, have present, strict bool) (*Coe
 			}
 			into[name] = Resolved{Entry: w.Entry, Set: w.Set, Displaced: displaced,
 				Match: w.Entry.MatchImpls(scope.consuming(w.Entry.Name, have)), Primitive: coefficient.PrimitiveOf(w.Entry.Name),
-				Running: scope.consuming(w.Entry.Name, have)}
+				Running: scope.consuming(w.Entry.Name, have), CodeMatch: w.Entry.MatchCode(scope.CodeIDs),
+				CodeID: scope.CodeIDs[coefficient.CodePathOf(w.Entry.Name)]}
 		}
 		return nil
 	}
@@ -196,6 +220,12 @@ func load(sets []*coefficient.Set, scope Scope, have present, strict bool) (*Coe
 // the order the sets list them. A reader that asks why a measured entry did not price a term
 // finds it here.
 func (c *Coefficients) Refused() []ImplRefusal { return append([]ImplRefusal(nil), c.refused...) }
+
+// CodeRefused returns the entries the scope admitted and the engine-path code that runs refused,
+// in the order the sets list them.
+func (c *Coefficients) CodeRefused() []CodeRefusal {
+	return append([]CodeRefusal(nil), c.codeRefused...)
+}
 
 // Operations returns the lowered operations the lookup was keyed by, nil when the caller gave
 // only the kernels by primitive.
@@ -229,10 +259,26 @@ func (c *Coefficients) refusedNote(name string) string {
 		lines = append(lines, fmt.Sprintf("%s: %s [%s] is valid for %s (%s)", r.Set, r.Entry.Name,
 			r.Entry.Method, coefficient.DescribeImpls(r.Entry.KernelImpls), ran))
 	}
-	if len(lines) == 0 {
-		return ""
+	var code []string
+	for _, r := range c.codeRefused {
+		if name != "" && r.Entry.Name != name {
+			continue
+		}
+		ran := "the engine stated no CodeID for the " + coefficient.CodePathOf(r.Entry.Name) + " path"
+		if r.Running != "" {
+			ran = "the " + coefficient.CodePathOf(r.Entry.Name) + " path runs CodeID " + r.Running
+		}
+		code = append(code, fmt.Sprintf("%s: %s [%s] is valid for CodeID %s (%s)", r.Set, r.Entry.Name,
+			r.Entry.Method, coefficient.DescribeCodeIDs(r.Entry.CodeIDs), ran))
 	}
-	return "; refused for the kernel implementations that run (VAL-8):\n  " + strings.Join(lines, "\n  ")
+	out := ""
+	if len(lines) > 0 {
+		out += "; refused for the kernel implementations that run (VAL-8):\n  " + strings.Join(lines, "\n  ")
+	}
+	if len(code) > 0 {
+		out += "; refused for the engine-path CodeID that runs:\n  " + strings.Join(code, "\n  ")
+	}
+	return out
 }
 
 // Scope is the deployment dimensions a coefficient's scope is matched against.
@@ -245,6 +291,15 @@ type Scope struct {
 	// Fabric is the cluster's inter-node network, its catalog identity, or "" for a
 	// single-node cluster. An entry scoped to a fabric applies only over that fabric.
 	Fabric string
+	// HostCPU is the host CPU family of the chip's node packaging (the catalog's host_cpu fact).
+	// An entry scoped to host CPUs is admitted only when it lists this one; "" is a chip that
+	// states none, which such an entry does not cover.
+	HostCPU string
+	// CodeIDs are the CodeIDs the engine states for its engine-path code, by code path
+	// (coefficient.CodePathHost, CodePathGraphs). An entry that lists CodeIDs is admitted only when
+	// it lists the one stated for the path its name prices; a path the engine states none for
+	// admits only unkeyed entries.
+	CodeIDs map[string]string
 	// Implementations are the kernel implementations that run in the priced pool, by the lowered
 	// primitive each executes, every operation of the primitive pooled (VAL-8). It is what a
 	// caller gives that cannot say which operation runs which kernel. Operations, when given,
@@ -390,14 +445,14 @@ func sortImpls(impls []coefficient.KernelImpl) {
 }
 
 func (s Scope) String() string {
-	return fmt.Sprintf("hardware=%s model=%s tp=%d ep=%d nodes_spanned=%d fabric=%s implementations=[%s]",
-		s.Hardware, s.Model, s.TP, s.EP, s.NodesSpanned, s.Fabric, describeRunning(s.PooledImplementations()))
+	return fmt.Sprintf("hardware=%s model=%s tp=%d ep=%d nodes_spanned=%d fabric=%s host_cpu=%s implementations=[%s]",
+		s.Hardware, s.Model, s.TP, s.EP, s.NodesSpanned, s.Fabric, s.HostCPU, describeRunning(s.PooledImplementations()))
 }
 
 // Admits reports whether an entry's scope covers this deployment (coefficient.Scope.Admits).
 func (s Scope) Admits(e coefficient.Scope) bool {
 	return e.Admits(coefficient.Point{Hardware: s.Hardware, Model: s.Model, TP: s.TP, EP: s.EP,
-		NodesSpanned: s.NodesSpanned, Fabric: s.Fabric})
+		NodesSpanned: s.NodesSpanned, Fabric: s.Fabric, HostCPU: s.HostCPU})
 }
 
 // Value returns a coefficient by name. A missing coefficient is an error rather than a

@@ -27,12 +27,14 @@ import (
 // fixtureLowered is a lowered plan of plain test values: the settings a deployment would state
 // to price a step, chosen by this test and resolved by no engine.
 func fixtureLowered() plan.Lowered {
+	host, graphs := registryCodeIDs()
 	return plan.Lowered{Plan: plan.PoolPlan{
+		Host:       plan.HostPlan{CodeID: host},
 		Batch:      plan.BatchLimits{Requests: 64, Tokens: 8192},
 		MaxContext: 8192,
 		PageTokens: 16,
 		Cache:      plan.CacheFormat{ElementBytes: 2, StateElementBytes: 4},
-		Graphs: plan.GraphPolicy{Decode: plan.LaunchGraph, Other: plan.LaunchPiecewise, Ceiling: 128,
+		Graphs: plan.GraphPolicy{CodeID: graphs, Decode: plan.LaunchGraph, Other: plan.LaunchPiecewise, Ceiling: 128,
 			Buckets: []int{1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128}},
 		InFlight:      2,
 		DecodeContext: plan.DecodeContextPlan{Interleave: 1},
@@ -355,7 +357,7 @@ func TestNewRefusesAPlanItCannotPriceByName(t *testing.T) {
 	}
 	// Eager launches need no capture ceiling.
 	if _, err := New(open(func(l *plan.Lowered) {
-		l.Plan.Graphs = plan.GraphPolicy{Decode: plan.LaunchEager, Other: plan.LaunchEager}
+		l.Plan.Graphs = plan.GraphPolicy{CodeID: l.Plan.Graphs.CodeID, Decode: plan.LaunchEager, Other: plan.LaunchEager}
 	})); err != nil {
 		t.Errorf("an eager plan with no ceiling is refused: %v", err)
 	}

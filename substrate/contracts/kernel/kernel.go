@@ -420,6 +420,14 @@ type CoefficientOrigin struct {
 	// list, so that CoefficientOrigin stays comparable.)
 	Primitive string
 	Running   string
+	// CodeMatch says how an engine-path entry (host, scheduler or graph-launch cost) met the code
+	// that runs: "exact" when it lists the CodeID the plan states for its path, "unkeyed" when it
+	// lists none and so applies to every code without having been shown to match the one that
+	// runs. Empty for a name that prices no engine-path code. CodeID is the one the plan stated.
+	// Both are omitted from the serialised row when empty, so a row that has no engine-path
+	// meaning reads as it did before the fields existed (SIM-4).
+	CodeMatch string `json:",omitempty"`
+	CodeID    string `json:",omitempty"`
 }
 
 // Resolution reports what the constructor decided where a deployment expressed a

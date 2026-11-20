@@ -120,7 +120,7 @@ func glm53TableCase(t *testing.T, d *load.Data) Inputs {
 		for b := 272; b <= 512; b += 16 {
 			buckets = append(buckets, b)
 		}
-		l.Plan.Graphs = plan.GraphPolicy{Decode: plan.LaunchGraph, Other: plan.LaunchPiecewise,
+		l.Plan.Graphs = plan.GraphPolicy{CodeID: l.Plan.Graphs.CodeID, Decode: plan.LaunchGraph, Other: plan.LaunchPiecewise,
 			Ceiling: 512, Buckets: buckets}
 	})
 }

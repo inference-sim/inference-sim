@@ -49,6 +49,10 @@ go run ./tools/prcheck docrefs
 - The generated copies, with `go run ./tools/invariants render`, when an invariant registry record
   changes; and the record itself, when a check is added or a status moves (design §13.1).
 - The JSON Schemas, with `go run ./tools/schemagen`, when a schema or data field changes.
+- The registry's engine CodeIDs, with `tools/codepaths/export_code_ids.py` (its docstring gives
+  the command), when an engine's `code_paths.json` changes. The tables are regenerated from the
+  engine's pinned release by `tools/codepaths/regen.py`. This repository names no path of an
+  engine module (X7).
 - The issue the change closes, named on a `Closes` line; an issue cited as a gap stays open until
   the change that removes its last citation (X28).
 

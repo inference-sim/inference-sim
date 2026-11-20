@@ -309,6 +309,30 @@ func TestChipValidatesComputeCapability(t *testing.T) {
 	}
 }
 
+// HostCPU is the packaging fact an engine-path coefficient is scoped by: x86 and grace are
+// accepted, absent means not stated, and anything else is refused at its field.
+func TestChipValidatesHostCPU(t *testing.T) {
+	for _, cpu := range []string{"", "x86", "grace"} {
+		c := h200()
+		c.HostCPU = cpu
+		if p := c.Validate(); !p.OK() {
+			t.Errorf("%q rejected:\n%s", cpu, p.Error())
+		}
+	}
+	for _, cpu := range []string{"X86", "arm", "x86_64", "Grace", " grace"} {
+		c := h200()
+		c.HostCPU = cpu
+		p := c.Validate()
+		if p.OK() || !strings.Contains(p.Error(), "HostCPU") {
+			t.Errorf("%q accepted:\n%s", cpu, p.Error())
+		}
+	}
+	var c Chip
+	if err := yaml.Unmarshal([]byte("HostCPU: x86\n"), &c); err != nil || c.HostCPU != "x86" {
+		t.Errorf("HostCPU is a chip fact read from the catalog: %v %q", err, c.HostCPU)
+	}
+}
+
 // SUB-16: catalog peaks are dense figures, and the ratio between data types is the datasheet's.
 // A sparse figure entered as dense doubles a ratio, and the check refuses it.
 func TestPeaksAreDenseFigures(t *testing.T) {

@@ -14,3 +14,5 @@ _comment_sm: "SMCount is 188 enabled Streaming Multiprocessors. NVIDIA states 24
 SMCount: 188
 _comment_cc: "ComputeCapability is the CUDA compute capability NVIDIA lists for this part (https://developer.nvidia.com/cuda-gpus: 'NVIDIA RTX PRO 6000 Blackwell Server Edition' under 12.0). It is SM120, not the SM100 of B200 and GB200, so a model graph or a kernel lane that differs by GPU generation does not take B200's."
 ComputeCapability: "12.0"
+_comment_host_cpu: "HostCPU is the architecture of the CPU that drives the GPUs, the packaging fact an engine-path coefficient (host, scheduler and launch cost) is scoped by (coefficient.Scope.HostCPU). CAVEAT: this is a PCIe card and NVIDIA's product pages state no host CPU for it (checked: the product page and the NVIDIA-Certified Systems page name none). x86 is this catalog's packaging convention for a PCIe server part, not a vendor statement; it is recorded so that the engine-path coefficients already carried for this chip keep applying to it, and is to be replaced by a cited figure when a measured host is available."
+HostCPU: x86

@@ -6,6 +6,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/substrate/contracts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/inference-sim/substrate/validate/registry"
 )
 
@@ -41,6 +42,44 @@ func TestEveryCoefficientSetLoadsAndValidates(t *testing.T) {
 		if p := s.Validate(); !p.OK() {
 			t.Errorf("%s failed validation:\n%s", filepath.Base(path), p.Error())
 		}
+	}
+}
+
+// TestEnginePathEntriesAreKeyedByTheCodeTheyPrice holds the registry to the keying of Table DC: a
+// coefficient that prices engine-path code (coefficient.CodePathOf) states the host CPUs it holds for
+// and the CodeIDs of the code it was fitted on, so a lookup under another CodeID or another CPU
+// finds nothing (VAL-8) rather than a value of unknown origin. An entry that prices no such code
+// states neither (the loader's own check refuses a code_ids on it). The CodeIDs themselves are held
+// to the engines' tables by registry/validator/test_host_overheads_code_keys.py.
+func TestEnginePathEntriesAreKeyedByTheCodeTheyPrice(t *testing.T) {
+	sets, err := registry.SetPaths(registryRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyed := 0
+	for _, path := range sets {
+		s, err := contracts.LoadCoefficientSet(path)
+		if err != nil {
+			t.Fatalf("%s: %v", filepath.Base(path), err)
+		}
+		for _, e := range s.Coefficients {
+			if coefficient.CodePathOf(e.Name) == "" {
+				if len(e.CodeIDs) != 0 {
+					t.Errorf("%s: %s states code_ids but prices no engine-path code", filepath.Base(path), e.Name)
+				}
+				continue
+			}
+			keyed++
+			if len(e.CodeIDs) == 0 {
+				t.Errorf("%s: %s (%s) prices engine-path code and states no code_ids", filepath.Base(path), e.Name, e.Scope.Key())
+			}
+			if len(e.Scope.HostCPU) == 0 {
+				t.Errorf("%s: %s (%s) prices engine-path code and states no host_cpu", filepath.Base(path), e.Name, e.Scope.Key())
+			}
+		}
+	}
+	if keyed == 0 {
+		t.Fatal("no engine-path entry found in the registry; the check tested nothing")
 	}
 }
 

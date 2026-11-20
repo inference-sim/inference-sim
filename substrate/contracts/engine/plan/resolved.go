@@ -271,6 +271,11 @@ func (p PoolPlan) ValidateResolved() error {
 	word("Graphs.Decode", string(p.Graphs.Decode), p.Graphs.Decode.Valid())
 	word("Graphs.Other", string(p.Graphs.Other), p.Graphs.Other.Valid())
 	negative("Graphs.Ceiling", int64(p.Graphs.Ceiling))
+	for field, id := range map[string]string{"Host.CodeID": p.Host.CodeID, "Graphs.CodeID": p.Graphs.CodeID} {
+		if id != "" && !validCodeID(id) {
+			bad = append(bad, fmt.Sprintf("%s %q is not a lower-case hexadecimal digest of at least 12 digits", field, id))
+		}
+	}
 	negative("Drafts.RetainedTokens", int64(p.Drafts.RetainedTokens))
 	negative("InFlight", int64(p.InFlight))
 	for i, c := range p.Launches {
@@ -378,4 +383,18 @@ type Override struct {
 // Name is the setting in the engine's own words.
 type Note struct {
 	Name, Value, Reason string
+}
+
+// validCodeID reports whether id is a lower-case hexadecimal digest of at least 12 digits, the
+// form of a coefficient's code_ids entries.
+func validCodeID(id string) bool {
+	if len(id) < 12 {
+		return false
+	}
+	for _, c := range id {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }

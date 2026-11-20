@@ -142,6 +142,13 @@ type Entry struct {
 	// ratchet in registry/validator counts the measured and calibrated entries that state none.
 	KernelImpls []KernelImpl `yaml:"kernel_impls,omitempty"`
 
+	// CodeIDs lists the engine-path code the value is valid for: the CodeIDs an engine states for
+	// the host, scheduler or graph-launch path the entry's name prices (CodePathOf). It is the
+	// lookup key of an engine-path coefficient, as KernelImpls is of a kernel's: a lookup matches
+	// the entry only when one of them is what runs, and a different CodeID does not match. An
+	// entry that lists none is unkeyed and applies to every code.
+	CodeIDs []string `yaml:"code_ids,omitempty"`
+
 	// MeasuredOn lists the kernel implementations a transferred value was measured on. It is
 	// evidence and is never matched by a lookup: the target of a transfer is KernelImpls.
 	// Required on a transferred entry that states KernelImpls; not allowed on any other method,
@@ -314,6 +321,10 @@ type Scope struct {
 	// identity (the stem of networks/<name>.yaml). Matched without regard to case, like
 	// hardware and model.
 	Fabric []string `yaml:"fabric,omitempty"`
+	// HostCPU lists the host CPU families the value holds on, by the catalog's host_cpu fact of
+	// the chip's node packaging (x86 or grace). An engine-path cost is paid on the host's cores, so
+	// it moves with the CPU and not with the GPU it drives. Matched without regard to case.
+	HostCPU []string `yaml:"host_cpu,omitempty"`
 }
 
 // UnmarshalYAML rejects unknown scope keys before decoding. The typed fields alone would
@@ -337,7 +348,7 @@ func (s *Scope) UnmarshalYAML(node *yaml.Node) error {
 // Empty reports whether no dimension is stated.
 func (s Scope) Empty() bool {
 	return len(s.Hardware) == 0 && len(s.Model) == 0 && len(s.TP) == 0 &&
-		len(s.EP) == 0 && len(s.NodesSpanned) == 0 && len(s.Fabric) == 0
+		len(s.EP) == 0 && len(s.NodesSpanned) == 0 && len(s.Fabric) == 0 && len(s.HostCPU) == 0
 }
 
 // Key returns a canonical string identifying this scope, for use as a map key.
@@ -381,6 +392,7 @@ func (s Scope) Key() string {
 	writeInts("ep", s.EP)
 	writeInts("nodes_spanned", s.NodesSpanned)
 	writeStrings("fabric", s.Fabric)
+	writeStrings("host_cpu", s.HostCPU)
 	return b.String()
 }
 

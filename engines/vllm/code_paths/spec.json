@@ -1,0 +1,88 @@
+{
+  "_comment": "The closure of vLLM code that the engine-path costs depend on, for the release named below. People edit this file; gen_code_paths.py (blis-substrate tools/codepaths) refuses a function that is not in the source and hashes the rest into code_paths.json. host: the work host_admission_*, host_output_token, host_completion and host_step_per_request price. graphs: the launch work host_launch_* and host_replay_graph_per_step price. Add a function here when a cost starts to depend on it; its code then changes the path's CodeID.",
+  "engine": {
+    "kind": "vllm",
+    "version": "0.33.0",
+    "commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+    "tag": "v0.33.0",
+    "repo": "https://github.com/vllm-project/vllm"
+  },
+  "paths": {
+    "host": [
+      {
+        "id": "vllm/v1/engine/async_llm.py::AsyncLLM.add_request",
+        "why": "the front end's entry for a request: where host_admission_per_request is spent"
+      },
+      {
+        "id": "vllm/v1/engine/input_processor.py::InputProcessor.process_inputs",
+        "why": "turns the prompt into an engine-core request; the per-prompt-token and per-request admission work"
+      },
+      {
+        "id": "vllm/renderers/base.py::BaseRenderer._tokenize_prompt",
+        "why": "tokenizes the prompt: the work host_admission_per_token prices"
+      },
+      {
+        "id": "vllm/v1/engine/core.py::EngineCore.preprocess_add_request",
+        "why": "the engine core's per-request admission before the scheduler sees it"
+      },
+      {
+        "id": "vllm/v1/engine/detokenizer.py::BaseIncrementalDetokenizer.update",
+        "why": "incremental detokenization of each emitted token: host_output_token"
+      },
+      {
+        "id": "vllm/v1/engine/detokenizer.py::FastIncrementalDetokenizer.decode_next",
+        "why": "the per-token decode the fast detokenizer runs under update"
+      },
+      {
+        "id": "vllm/v1/engine/output_processor.py::OutputProcessor.process_outputs",
+        "why": "the loop that handles a step's outputs request by request: host_output_token"
+      },
+      {
+        "id": "vllm/v1/engine/output_processor.py::RequestState.make_request_output",
+        "why": "builds each streamed output: host_output_token"
+      },
+      {
+        "id": "vllm/v1/engine/output_processor.py::OutputProcessor._update_stats_from_finished",
+        "why": "completion bookkeeping when a request finishes: host_completion"
+      },
+      {
+        "id": "vllm/v1/core/sched/scheduler.py::Scheduler.schedule",
+        "why": "the scheduler's per-step, per-request work: host_step_per_request"
+      },
+      {
+        "id": "vllm/v1/core/sched/scheduler.py::Scheduler.update_from_output",
+        "why": "the scheduler's per-step, per-request update from a step's output: host_step_per_request"
+      },
+      {
+        "id": "vllm/v1/core/sched/scheduler.py::Scheduler._update_request_with_output",
+        "why": "applies one request's step output in the scheduler: host_step_per_request"
+      },
+      {
+        "id": "vllm/v1/core/sched/scheduler.py::Scheduler.finish_requests",
+        "why": "finishing a request in the scheduler: host_completion"
+      },
+      {
+        "id": "vllm/v1/core/sched/scheduler.py::Scheduler._free_request",
+        "why": "the teardown of a finished request: host_completion"
+      }
+    ],
+    "graphs": [
+      {
+        "id": "vllm/v1/cudagraph_dispatcher.py::CudagraphDispatcher.dispatch",
+        "why": "chooses eager, piecewise or full graph for a step: which launch cost applies"
+      },
+      {
+        "id": "vllm/v1/cudagraph_dispatcher.py::CudagraphDispatcher._create_padded_batch_descriptor",
+        "why": "pads the step to a captured graph's shape: whether a replay is taken"
+      },
+      {
+        "id": "vllm/v1/worker/gpu_model_runner.py::GPUModelRunner._determine_batch_execution_and_padding",
+        "why": "decides how a step executes (graph mode, padding): host_replay_graph_per_step against host_launch_*"
+      },
+      {
+        "id": "vllm/compilation/cuda_graph.py::CUDAGraphWrapper.__call__",
+        "why": "replays a captured graph or runs eagerly: host_replay_graph_per_step, host_launch_per_kernel"
+      }
+    ]
+  }
+}
