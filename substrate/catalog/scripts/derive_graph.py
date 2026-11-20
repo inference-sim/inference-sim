@@ -3384,13 +3384,13 @@ def handler_deepseek_v4(cfg, raw, model):
         node["tp"] = layout
         return node
 
-    def token_sharded(*nodes):
+    def residual_stream(*nodes):
         # Work on the residual stream. Under V4's own sequence parallelism that stream
         # is sharded by token before the first layer (sp_shard, nvidia/model.py:
         # 1571-1578), and only attention runs on the gathered rows, between its
-        # all-gather and its reduce-scatter (:1385-1390).
-        for node in nodes:
-            node["under_sequence_parallel"] = "token_sharded"
+        # all-gather and its reduce-scatter (:1385-1390). How the mode divides these
+        # nodes is the engine's lowering, not a fact of the checkpoint (SUB-15), so the
+        # graph states the nodes and nothing of the split.
         return list(nodes)
 
     def traffic(role, bytes_per_token, *, tp=None):
@@ -3443,7 +3443,7 @@ def handler_deepseek_v4(cfg, raw, model):
 
     def mhc_boundary(side):
         # A post fused with the next pre (tilelang.py:814-982).
-        return token_sharded(
+        return residual_stream(
             traffic(f"mhc_{side}_post_pre", fused_mhc, tp="replicated"),
             with_tp(fp32_gemm(f"hc_{side}_fn", mix_hc, hc_mult * hidden), "replicated"))
 
@@ -3452,7 +3452,7 @@ def handler_deepseek_v4(cfg, raw, model):
         # bundle, the mixes and the layer input written (tilelang.py:698-789), with the
         # projection over hc_attn_fn summed across its copies, (mix_hc, hidden) FP32
         # (nvidia/model.py:1821-1834).
-        return token_sharded(
+        return residual_stream(
             traffic("mhc_attn_broadcast_pre", hidden * act + bundle + mixes + hidden * act,
                     tp="replicated"),
             with_tp(fp32_gemm("hc_attn_fn_broadcast", mix_hc, hidden), "replicated"))
@@ -3638,18 +3638,18 @@ def handler_deepseek_v4(cfg, raw, model):
             # logits (fused_moe/runner/moe_runner.py:903-910; fused_topk_bias_router.py:
             # 87-100). GateLinear is unquantized with FP32 logits (nvidia/model.py:
             # 850-856; checkpoint BF16 [384, 7168]).
-            *token_sharded(with_tp(base_gemm("router", experts, hidden), "replicated")),
+            *residual_stream(with_tp(base_gemm("router", experts, hidden), "replicated")),
         ]
         if hashed:
             # tid2eid[input_ids]: top_k INT32 expert ids per token on the default path
             # (nvidia/model.py:866-880; the checkpoint stores I64 [129280, 6]).
-            nodes += token_sharded({"op": "Gather", "role": "hash_route", "rows": vocab,
+            nodes += residual_stream({"op": "Gather", "role": "hash_route", "rows": vocab,
                                     "row_bytes": top_k * 4, "rows_per_token": 1,
                                     "out_bytes_per_token": top_k * 4})
         nodes += [
             # Mxfp4MoEMethod (deepseek_v4/quant_config.py:181-191; checkpoint packed FP4
             # with an E8M0 scale per 32)
-            *token_sharded({"op": "GroupedGEMM", "shared": False, "role": "experts",
+            *residual_stream({"op": "GroupedGEMM", "shared": False, "role": "experts",
                             "n": positive("moe_ffn_size", concept=True), "k": hidden,
                             "experts": experts, "top_k": top_k,
                             "weight_dtype": draft_expert_width if draft else expert_width},
@@ -3728,7 +3728,7 @@ def handler_deepseek_v4(cfg, raw, model):
              "out_bytes_per_token": hidden * act, "shard": "rows"}
     lm_head = with_tp(base_gemm("lm_head", vocab, hidden), "column")
     head = [
-        *token_sharded(traffic("mhc_final_post", mhc_post_bytes, tp="replicated")),
+        *residual_stream(traffic("mhc_final_post", mhc_post_bytes, tp="replicated")),
         # V4 gathers the whole hc stream before its learned hc_head, so the mixer and
         # the final norm run on every token on every rank (nvidia/model.py:1622-1649).
         {**collective("AllGather", "head_in", EMIT_SEQUENCE_PARALLEL),
@@ -3795,7 +3795,7 @@ def handler_deepseek_v4(cfg, raw, model):
                 # (:257), then the first draft layer's standalone pre takes the full
                 # hc_attn_fn on that 3-D stream (nvidia/model.py:1202-1222), unlike target
                 # layer 0, which projects with the matrix summed over its copies.
-                nodes = token_sharded(
+                nodes = residual_stream(
                     traffic("mhc_attn_broadcast_pre", hidden * act + bundle + mhc_pre_bytes,
                             tp="replicated"),
                     with_tp(fp32_gemm("hc_attn_fn", mix_hc, hc_mult * hidden), "replicated"))
@@ -3841,7 +3841,7 @@ def handler_deepseek_v4(cfg, raw, model):
             "stack": {"pattern": [k["id"] for k in draft_kinds], "repeat": 1},
             "context_stack": {"pattern": ["dspark_context"], "repeat": 1},
             "head": [
-                *token_sharded(traffic("dspark_mhc_final_post", mhc_post_bytes,
+                *residual_stream(traffic("dspark_mhc_final_post", mhc_post_bytes,
                                        tp="replicated")),
                 {**collective("AllGather", "dspark_head_in", EMIT_SEQUENCE_PARALLEL),
                  "bytes_per_token": bundle},
@@ -3874,7 +3874,7 @@ def handler_deepseek_v4(cfg, raw, model):
             # mask, enorm over the embedding and hnorm over the hc streams, before the
             # shard (nvidia/mtp.py:168-184; common/ops/fused_mtp_input_rmsnorm.py)
             traffic("mtp_input_norm", 2 * (hidden * act + bundle), tp="replicated"),
-            *token_sharded(
+            *residual_stream(
                 with_tp(gemm("mtp_e_proj", hidden, hidden), "replicated"),
                 with_tp(gemm("mtp_h_proj", hidden, hidden), "replicated"),
                 # h_proj(previous) + e_proj(embeds).unsqueeze(-2) (nvidia/mtp.py:185-187)
@@ -3884,7 +3884,7 @@ def handler_deepseek_v4(cfg, raw, model):
                 with_tp(fp32_gemm("hc_attn_fn", mix_hc, hc_mult * hidden), "replicated")),
             *attention_block(1),
             *ffn(False, draft=True),
-            *token_sharded(traffic("mtp_mhc_post", mhc_post_bytes, tp="replicated")),
+            *residual_stream(traffic("mtp_mhc_post", mhc_post_bytes, tp="replicated")),
             # gathered back before the head under sequence parallelism (nvidia/mtp.py:
             # 206-209)
             {**collective("AllGather", "mtp_out", EMIT_SEQUENCE_PARALLEL),
@@ -4002,9 +4002,10 @@ def handler_deepseek_v41(cfg, raw, model):
     (nvidia/model.py:318-319, 579-586), FusedMoE skips its final all-reduce (fused_moe/
     runner/moe_runner.py:506-512), and the engram rows are gathered along tokens. The
     draft layers take the same flag (dspark.py:85). Work on the residual stream -- mHC,
-    the engram injection, the MoE and the head before its gather -- states
-    `under_sequence_parallel: token_sharded`, since under the mode it runs on the rank's
-    ceil(tokens / tp) rows; attention, its compressor and its indexer run on all of them.
+    the engram injection, the MoE and the head before its gather -- runs under the mode on
+    the rank's ceil(tokens / tp) rows, attention, its compressor and its indexer on all of
+    them; which nodes divide, and how, is the engine's lowering (SUB-15), so the graph
+    states none of it.
 
     What the graph cannot carry, recorded so a reader does not have to rediscover it:
       * FlashMLA pads each rank's query heads to 64 (nvidia/flashmla.py:66-74). When TP
@@ -4246,12 +4247,12 @@ def handler_deepseek_v41(cfg, raw, model):
         node["tp"] = layout
         return node
 
-    def token_sharded(*nodes):
+    def residual_stream(*nodes):
         # Work on the residual stream. Under V4.1's own sequence parallelism that stream
         # is sharded by token (sp_shard, nvidia/model.py:898-905) and only attention runs
         # on the gathered rows, between its all-gather and its reduce-scatter (:579-586).
-        for node in nodes:
-            node["under_sequence_parallel"] = "token_sharded"
+        # How the mode divides these nodes is the engine's lowering (SUB-15), so the
+        # graph states the nodes and nothing of the split.
         return list(nodes)
 
     def traffic(role, bytes_per_token, *, tp=None):
@@ -4358,14 +4359,14 @@ def handler_deepseek_v41(cfg, raw, model):
     mhc_pre_bytes = bundle + mixes + hidden * act
 
     def mhc_boundary(side):
-        return token_sharded(
+        return residual_stream(
             traffic(f"mhc_{side}_post_pre", fused_mhc, tp="replicated"),
             with_tp(fp32_gemm(f"hc_{side}_fn", mix_hc, hc_mult * hidden), "replicated"))
 
     def final_mhc():
         # The final mHC post and the hc collapse run before the final norm
         # (nvidia/model.py:947-987); V4.1 has no learned hc_head (:982-986).
-        return token_sharded(
+        return residual_stream(
             traffic("mhc_final_post", mhc_post_bytes, tp="replicated"),
             traffic("hc_collapse", bundle + hc_mult * fp32 + hidden * act,
                     tp="replicated"))
@@ -4377,7 +4378,7 @@ def handler_deepseek_v41(cfg, raw, model):
         # (nvidia/model.py:485-505, 1178-1191); the drafter repeats the copies itself
         # (dspark.py:226) and its first layer takes the full hc_attn_fn on the 3-D
         # stream (nvidia/model.py:506-521).
-        return token_sharded(
+        return residual_stream(
             traffic("mhc_attn_broadcast_pre", hidden * act + bundle + mhc_pre_bytes,
                     tp="replicated"),
             with_tp(fp32_gemm(fn_role, mix_hc, fn_width), "replicated"))
@@ -4405,7 +4406,7 @@ def handler_deepseek_v41(cfg, raw, model):
         # no gather (common/engram.py:928-937, 977-1016), as is the gate.
         out = n_cols * row_dim * act
         return [
-            *token_sharded(traffic("mhc_attn_post", mhc_post_bytes, tp="replicated")),
+            *residual_stream(traffic("mhc_attn_post", mhc_post_bytes, tp="replicated")),
             {"op": "Gather", "role": "engram_lookup", "rows": engram_rows[i],
              "row_bytes": row_dim + row_dim // 32, "rows_per_token": n_cols,
              "out_bytes_per_token": out, "residency": "host",
@@ -4415,12 +4416,12 @@ def handler_deepseek_v41(cfg, raw, model):
              "bytes_per_token": out},
             {**collective("AllGather", "engram_rows_by_token", EMIT_SEQUENCE_PARALLEL),
              "bytes_per_token": out},
-            *token_sharded(with_tp(gemm("engram_wkv", (hc_mult + 1) * hidden,
+            *residual_stream(with_tp(gemm("engram_wkv", (hc_mult + 1) * hidden,
                                         n_cols * row_dim), "column")),
             {**collective("AllGather", "engram_wkv_out",
                           EMIT_TENSOR_PARALLEL_UNLESS_SEQUENCE_PARALLEL),
              "bytes_per_token": (hc_mult + 1) * hidden * act},
-            *token_sharded(
+            *residual_stream(
                 traffic("engram_gate", bundle + bundle + hidden * act + bundle,
                         tp="replicated"),
                 traffic("mhc_attn_pre", mhc_pre_bytes, tp="replicated"),
@@ -4614,7 +4615,7 @@ def handler_deepseek_v41(cfg, raw, model):
             # under V4.1's sequence parallelism.
             # The router is an unquantized GateLinear with FP32 logits
             # (deepseek_v4/nvidia/model.py:850-856; checkpoint BF16 [384, 5120]).
-            *token_sharded(with_tp(base_gemm("router", experts, hidden), "replicated"),
+            *residual_stream(with_tp(base_gemm("router", experts, hidden), "replicated"),
                            routed_node),
             # The shared expert is MXFP8, the routed ones MXFP4
             # (deepseek_v4/nvidia/model.py:900-914 under
@@ -4624,7 +4625,7 @@ def handler_deepseek_v41(cfg, raw, model):
             # and whole on every rank over the token shard under V4.1's sequence
             # parallelism (`disable_tp=is_sequence_parallel`, :164, :173); expert
             # parallelism does not place it.
-            *token_sharded(
+            *residual_stream(
                 with_tp(gemm("shared_gate_up", 2 * routed_node["n"] * shared, hidden),
                         "column"),
                 with_tp(gemm("shared_down", hidden, routed_node["n"] * shared), "row")),
@@ -4788,7 +4789,7 @@ def handler_deepseek_v41(cfg, raw, model):
             ]
         kinds.append({"id": "dspark_context", "nodes": context, "edges": chain(context)})
 
-    head = [*final_mhc(), *token_sharded(norm("final_norm")),
+    head = [*final_mhc(), *residual_stream(norm("final_norm")),
             # Under V4.1's own sequence parallelism, and without a drafter's hidden
             # buffer, the collapsed and normalized state is all-gathered before the head
             # (nvidia/model.py:986-990).
@@ -5741,9 +5742,9 @@ def handler_qwen4_exp(cfg, raw, model):
     streams = hc * hidden
 
     def replicated(node):
-        # The hyper-connection projections are ReplicatedLinear / disable_tp, and under the
-        # engine's hyper-connection sequence parallelism each rank sees its shard of the tokens.
-        return dict(node, tp="replicated", under_sequence_parallel="token_sharded")
+        # The hyper-connection projections are ReplicatedLinear / disable_tp. Whether the
+        # engine runs them on a token shard under its sequence parallelism is its lowering.
+        return dict(node, tp="replicated")
 
     def traffic(role, nbytes):
         return replicated(dict(norm(role), bytes_per_token=int(nbytes)))

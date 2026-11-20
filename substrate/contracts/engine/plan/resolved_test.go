@@ -20,8 +20,9 @@ func TestValidateResolvedRefusesEachMeaninglessSettingByName(t *testing.T) {
 		Graphs:        GraphPolicy{Decode: LaunchGraph, Other: LaunchPiecewise, Ceiling: 512, CodeID: "0123456789abcdef"},
 		Host:          HostPlan{CodeID: "fedcba9876543210"},
 		Drafts:        DraftPolicy{RetainedTokens: 2}, InFlight: 2,
-		Launches:     []LaunchChange{{FromTokens: 1, ToTokens: 128, PerLayer: -3}, {FromTokens: 129, ToTokens: 256, PerLayer: -2}},
-		DecodeShards: []DecodeShard{{Role: "pooler", FromTokens: 1, ToTokens: 256}, {Role: "unpooler", FromTokens: 32, ToTokens: 256}}}
+		Launches:          []LaunchChange{{FromTokens: 1, ToTokens: 128, PerLayer: -3}, {FromTokens: 129, ToTokens: 256, PerLayer: -2}},
+		DecodeShards:      []DecodeShard{{Role: "pooler", FromTokens: 1, ToTokens: 256}, {Role: "unpooler", FromTokens: 32, ToTokens: 256}},
+		TokenShardedRoles: []string{"router", "experts"}}
 	if err := ok.ValidateResolved(); err != nil {
 		t.Fatalf("a plan of meaningful values is refused: %v", err)
 	}
@@ -65,10 +66,13 @@ func TestValidateResolvedRefusesEachMeaninglessSettingByName(t *testing.T) {
 		{"DecodeShards[0] covers 0 to 256", func(p *PoolPlan) { p.DecodeShards[0].FromTokens = 0 }},
 		{"DecodeShards[1] covers 300 to 256", func(p *PoolPlan) { p.DecodeShards[1].FromTokens = 300 }},
 		{"DecodeShards[1] names role \"pooler\", which DecodeShards[0] already does", func(p *PoolPlan) { p.DecodeShards[1].Role = "pooler" }},
+		{"TokenShardedRoles[0] names no role", func(p *PoolPlan) { p.TokenShardedRoles[0] = "" }},
+		{"TokenShardedRoles[1] names role \"router\", which TokenShardedRoles[0] already does", func(p *PoolPlan) { p.TokenShardedRoles[1] = "router" }},
 	} {
 		p := ok
 		p.Launches = slices.Clone(ok.Launches)
 		p.DecodeShards = slices.Clone(ok.DecodeShards)
+		p.TokenShardedRoles = slices.Clone(ok.TokenShardedRoles)
 		c.edit(&p)
 		err := p.ValidateResolved()
 		if err == nil || !strings.Contains(err.Error(), c.field) {

@@ -109,7 +109,7 @@ type PlannedGEMM struct {
 	// found by that shape and not by its label (SUB-20). vLLM runs an fp32 gate on its own kernels
 	// (GateLinear), which is not the rate an fp32 mHC projection runs at.
 	Router bool
-	// TokenSharded is under_sequence_parallel: token_sharded. With the model's own
+	// TokenSharded is whether the engine runs the GEMM sharded by token (PlanOptions.TokenSharded). With the model's own
 	// sequence parallelism on, the GEMM runs on ceil(tokens / tp) rows with its whole
 	// weight; with it off, the layout above applies over every token.
 	TokenSharded bool
@@ -164,6 +164,10 @@ type PlanOptions struct {
 	// columns over the tensor-parallel ranks for, false for a node it does not split. Nil
 	// splits none.
 	DecodeShard func(model.Node) (TokenRange, bool)
+	// TokenSharded is whether the engine runs a node on its rank's shard of the step's tokens
+	// under the model's own sequence parallelism, which the node is told as PlannedGEMM.TokenSharded
+	// and the like. Nil shards none.
+	TokenSharded func(model.Node) bool
 }
 
 // PlannedLayer is one layer kind with its multiplicity and its pre-summed work.
@@ -796,7 +800,7 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 		wasFusable := fusable
 		fusable = -1
 
-		tokenSharded := n.UnderSequenceParallel == model.SPTokenSharded
+		tokenSharded := o.TokenSharded != nil && o.TokenSharded(n)
 		switch n.Op {
 		case model.OpGEMM:
 			// Two FLOPs per multiply-accumulate, per output element, per token.

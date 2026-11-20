@@ -100,6 +100,13 @@ type PoolPlan struct {
 	// shards, and when, is the engine's lowering of the model (SUB-15), so the graph states only
 	// that a GEMM is replicated and the engine names the ones it splits. Empty is none.
 	DecodeShards []DecodeShard
+	// TokenShardedRoles are the roles of the model graph's nodes that, under the model's own
+	// sequence parallelism (Collectives.SequenceParallelModel), run on their rank's shard of the
+	// step's tokens rather than on all of them. Which nodes of a model the engine's code runs
+	// on the sharded stream is the engine's lowering of the model (SUB-15), so the graph
+	// states only what each node is and the engine names the ones it shards. Every node of
+	// the pool's model with a listed role is token-sharded. Empty is none.
+	TokenShardedRoles []string
 }
 
 // DecodeShard is one replicated GEMM the engine splits over the tensor-parallel ranks for a step

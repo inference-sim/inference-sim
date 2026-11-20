@@ -958,7 +958,7 @@ func ruleList(p *pack.Pack) []pack.Rule {
 		},
 		{
 			Name:    "sequence-parallel-architecture-known",
-			Because: "a graph's sequence_parallel emit conditions and under_sequence_parallel splits are decided by its architecture's own code, so on an architecture this release has no such rule for they never apply and the graph prices tensor parallelism alone",
+			Because: "a graph's sequence_parallel emit conditions are decided by its architecture's own code, so on an architecture this release has no such rule for they never apply and the graph prices tensor parallelism alone",
 			Check: func(in pack.Input, out *validate.Problems) {
 				if in.Model == nil {
 					return
@@ -973,13 +973,9 @@ func ruleList(p *pack.Pack) []pack.Rule {
 						return
 					}
 					reported = true
-					value := string(n.Emit)
-					if field != "emit" {
-						value = string(n.UnderSequenceParallel)
-					}
 					out.RuleWarnf("sequence-parallel-architecture-known",
 						"model %s.%s: %q, but engine %s has no sequence-parallelism rule for architecture %q; architectures with one are %v (their CUDA path; on ROCm it is always off)",
-						at, field, value, p.Version, in.Model.Global.Architecture, ruleArchitectures(p))
+						at, field, n.Emit, p.Version, in.Model.Global.Architecture, ruleArchitectures(p))
 				})
 			},
 		},

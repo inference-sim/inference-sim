@@ -453,9 +453,9 @@ var emitConditions = map[EmitCondition]bool{
 
 // SequenceParallelOnly reports whether c is one of the two conditions decided by the
 // model's own sequence parallelism. They belong on the collectives the mode adds or
-// replaces. Work belongs on a node stated once, with UnderSequenceParallel for how the
-// mode divides it: at tp 1 neither condition holds, so work stated twice, once under
-// each, would vanish there.
+// replaces. Work belongs on a node stated once, which the engine's lowering divides under
+// the mode: at tp 1 neither condition holds, so work stated twice, once under each, would
+// vanish there.
 func (c EmitCondition) SequenceParallelOnly() bool {
 	return c == EmitSequenceParallel || c == EmitTensorParallelUnlessSequenceParallel
 }
@@ -464,13 +464,10 @@ func (c EmitCondition) SequenceParallelOnly() bool {
 func (c EmitCondition) Valid() bool { return emitConditions[c] }
 
 // SequenceParallelField names the field of n that the model's own sequence parallelism
-// decides -- "emit" or "under_sequence_parallel" -- or returns "" when it decides none.
+// decides -- "emit" -- or returns "" when it decides none.
 func (n Node) SequenceParallelField() string {
-	switch {
-	case n.Emit.SequenceParallelOnly():
+	if n.Emit.SequenceParallelOnly() {
 		return "emit"
-	case n.UnderSequenceParallel != SPAsTP:
-		return "under_sequence_parallel"
 	}
 	return ""
 }
@@ -512,11 +509,6 @@ type Node struct {
 	// consumer's inference, the meaning every graph had before the field existed. See
 	// TPLayout.
 	TP TPLayout `yaml:"tp,omitempty"`
-
-	// UnderSequenceParallel is how the node divides when the model's own sequence
-	// parallelism is on. Empty means as TP states, over every token the step schedules.
-	// See SequenceParallelSplit.
-	UnderSequenceParallel SequenceParallelSplit `yaml:"under_sequence_parallel,omitempty"`
 
 	// Aliases, on a GEMM or Gather, names the node whose weights this one reads, as
 	// "<layer kind id>.<role>", "head.<role>" or "embedding.<role>". The node is priced
