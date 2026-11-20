@@ -11,7 +11,14 @@ import (
 // engine line extra (e.g. "kv_cache_dtype: bfloat16") added to its pool, if extra is not empty.
 func openMistral(t *testing.T, scenario, extra string) (*Model, error) {
 	t.Helper()
-	dir := filepath.Join(ownRoot(), "..", "..", "testdata", "scenarios", "mistral-large-4")
+	return openScenarioDir(t, "mistral-large-4", scenario, extra)
+}
+
+// openScenarioDir opens scenario of testdata/scenarios/<sub> with the engine line extra added to
+// its pool after async_scheduling, if extra is not empty.
+func openScenarioDir(t *testing.T, sub, scenario, extra string) (*Model, error) {
+	t.Helper()
+	dir := filepath.Join(ownRoot(), "..", "..", "testdata", "scenarios", sub)
 	raw, err := os.ReadFile(filepath.Join(dir, scenario))
 	if err != nil {
 		t.Fatal(err)
