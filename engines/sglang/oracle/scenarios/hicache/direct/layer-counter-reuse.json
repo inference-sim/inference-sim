@@ -1,0 +1,24 @@
+{
+  "description": "LayerDoneCounter has three load events. Three loads started within one step take all three; a fourth before the boundary finds its producer event still in flight and SGLang's assertion refuses it, which the scheduler never reaches because has_free_load_back_slot holds it back. After the boundary completes the loads, the counter cycles back to event 0.",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "seed": 0,
+  "cache": {"page_size": 1, "kv_size": 32, "max_num_reqs": 4, "max_context_len": 64, "layer_num": 3, "head_num": 2, "head_dim": 4},
+  "hicache": {"write_policy": "write_back", "io_backend": "direct", "mem_layout": "layer_first", "ratio": 2.0},
+  "calls": [
+    {"on": "allocator", "m": "alloc", "n": 8, "as": "d"},
+    {"on": "controller", "m": "write", "device": "d", "node_id": 1, "as": "h"},
+    {"boundary": true},
+    {"on": "controller", "m": "load", "host": ["h", 0, 2], "node_id": 11},
+    {"on": "controller", "m": "start_loading"},
+    {"on": "controller", "m": "load", "host": ["h", 2, 4], "node_id": 12},
+    {"on": "controller", "m": "start_loading"},
+    {"on": "controller", "m": "load", "host": ["h", 4, 6], "node_id": 13},
+    {"on": "controller", "m": "start_loading"},
+    {"on": "controller", "m": "load", "host": ["h", 6, 8], "node_id": 14},
+    {"on": "controller", "m": "start_loading", "raises": "AssertionError"},
+    {"boundary": true},
+    {"on": "controller", "m": "load", "host": ["h", 6, 8], "node_id": 15},
+    {"on": "controller", "m": "start_loading"},
+    {"on": "controller", "m": "start_loading"}
+  ]
+}

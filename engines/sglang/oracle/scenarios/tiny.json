@@ -1,0 +1,23 @@
+{
+  "description": "Three short requests on a small MHA model, one page per token, no prefix sharing between the first two and a shared prefix with the third: two arrive at step 0, the third at step 3.",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "seed": 0,
+  "vocab_size": 151936,
+  "sampled_token": 13,
+  "device_memory_gib": 80,
+  "step_seconds": 0.01,
+  "page_size": 1,
+  "max_total_tokens": 4096,
+  "max_running_requests": 8,
+  "chunked_prefill_size": 8192,
+  "schedule_policy": "fcfs",
+  "overlap": false,
+  "disable_radix_cache": false,
+  "max_steps": 64,
+  "record_server_args": ["attention_backend", "chunked_prefill_size", "device", "disable_overlap_schedule", "max_running_requests", "max_total_tokens", "page_size", "schedule_policy"],
+  "requests": [
+    {"rid": "r0", "arrival_step": 0, "prompt": [11, 12, 13, 14, 15, 16, 17, 18], "max_new_tokens": 4},
+    {"rid": "r1", "arrival_step": 0, "prompt": [21, 22, 23, 24, 25, 26], "max_new_tokens": 3},
+    {"rid": "r2", "arrival_step": 3, "prompt": [11, 12, 13, 14, 15, 16, 31, 32, 33, 34], "max_new_tokens": 2}
+  ]
+}
