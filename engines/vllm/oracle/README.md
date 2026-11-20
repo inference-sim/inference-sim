@@ -121,7 +121,8 @@ SM9x and SM10x, is `core/rulepack/v0_33/testdata/vllm_indexer_kv_dtype.json`; CI
 `oracle/blocksize/oracle.py` answers a different question from the tiers above: what block size
 vLLM resolves an unstated `block_size` to. vLLM chooses it from the attention backends it
 selects for the model, GPU and KV dtype (`Platform.update_block_size_for_backend`,
-`vllm/platforms/interface.py:757-781`; the backend priority list `platforms/cuda.py:83-180`; each
+`vllm/platforms/interface.py:796-810` and `_preferred_block_size_for_backends` `:710-776` at the pin; the
+backend priority list `platforms/cuda.py`; each
 backend's preferred and supported sizes). The oracle runs vLLM's own `CudaPlatform.get_valid_backends`
 and `_preferred_block_size_for_backends` on a CPU, with the GPU-only wheels replaced
 (`oracle/blocksize/stubs.py`; each replacement is listed in the table, as FID-1 requires).
@@ -132,7 +133,7 @@ every combination of model, compute capability and KV dtype under every setting 
 combination resolves only if the size is the same under all of them; otherwise it is refused,
 naming the fact.
 
-One fact is assumed, not discovered. `ASSUMED_FACTS` in `oracle/blocksize/oracle.py` states, for
+One fact can be assumed, not discovered. `ASSUMED_FACTS` in `oracle/blocksize/oracle.py` states, for
 compute capability 9.0, that vLLM's wheel ships FlashAttention 3 (`fa3_available`), with its
 evidence: the pinned Dockerfile builds for arch 9.0 with CUDA 13.0.3, `CMakeLists.txt` includes the
 `vllm_flash_attn` project on every CUDA build, and one recorded Kimi-K2.5 h200 run on
@@ -143,15 +144,30 @@ settings that agree with it. The table still shows all 16 settings, and a combin
 only by the assumption carries it (`assumed_facts` in the JSON, a `Source` clause in
 `ResolveBlockSize`). The MLA models with KV `auto`, `bfloat16` or `float16` on SM9x (FlashAttention
 MLA, size 16) resolve this way; with an fp8 KV they still depend on `flashmla_built`. An engine run
-from a build without FA3 is resolved wrongly. `oracle/blocksize/TABLE.tsv` is the table to read: each combination, its backend,
+from a build without FA3 is resolved wrongly. At the pin no combination resolves by the assumption
+(the table's `assumed_facts` is empty), so it is dormant there. `oracle/blocksize/TABLE.tsv` is the table to read: each combination, its backend,
 its size and the size under each setting of the facts. The committed table is
 `core/vllm/blocksize_table.json`, which
-`core/vllm/blocksize.go` embeds, and CI fails if it differs from what the oracle prints:
+`core/vllm/blocksize.go` embeds, and CI fails if it differs from what the oracle prints at the pin
+(`internal/upstream.Commit`):
 
 ```sh
 BLIS_ORACLE_CATALOG=<blis-substrate>/catalog/models \
   python -I oracle/blocksize/oracle.py <vllm checkout> table > oracle/blocksize/TABLE.tsv   # for reading
   python -I oracle/blocksize/oracle.py <vllm checkout> json > core/vllm/blocksize_table.json
+```
+
+The default block size is part of the answer: `CacheConfig.DEFAULT_BLOCK_SIZE` is 64 at the pin
+(`vllm/config/cache.py:185`) and 16 at v0.33.0 (`cache.py:71`), and the preferred size starts from it.
+The runs this repository holds logs for (vLLM 0.18 to 0.22) predate that change, so they cannot be
+compared with the pin's table. `core/vllm/blocksize_table_recorded.json` is the same oracle run over the
+v0.33.0 checkout (`internal/upstream.OracleCommit`, default 16), read by
+`vllm.ResolveBlockSizeAsRecorded`; the recorded-run tests of `core/kernelmodel` compare it with the
+logged "Setting kv cache block size" lines (no mismatch is allowed). CI does not rebuild this second
+table (it checks out only the pin); regenerate it with `json` over a v0.33.0 checkout:
+
+```sh
+python -I oracle/blocksize/oracle.py <vllm v0.33.0 checkout> json > core/vllm/blocksize_table_recorded.json
 ```
 
 A derived-only model (its licence does not let the catalog redistribute it, as minimax-m2.7)

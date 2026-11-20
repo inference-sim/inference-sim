@@ -21,9 +21,9 @@ const BlockSizeIssue = "https://github.com/inference-sim/blis-vllm/issues/68"
 // a backend may accept a head count at one width and not at another, so a wider pool is refused.
 const MaxBlockSizeTP = 16
 
-// blockSizeTable is the output of the block-size oracle (oracle/blocksize/oracle.py). For each
-// model, GPU compute capability and KV dtype it holds the block size vLLM v0.33.0 resolves an
-// unstated block_size to. A combination is resolved only if that size is the same under every
+// blockSizeTable is the output of the block-size oracle (oracle/blocksize/oracle.py) at the commit
+// this build models (upstream.Commit). For each model, GPU compute capability and KV dtype it holds
+// the block size vLLM resolves an unstated block_size to. A combination is resolved only if that size is the same under every
 // setting of the facts a CPU cannot discover: FlashAttention 3 and 4 in the wheel, FlashInfer's
 // TRTLLM kernels, and FlashMLA in the wheel. Otherwise it is refused, naming the fact.
 //
@@ -41,6 +41,16 @@ const MaxBlockSizeTP = 16
 //
 //go:embed blocksize_table.json
 var blockSizeTable []byte
+
+// blockSizeRecordedTable is the same oracle's output at v0.33.0 (upstream.OracleCommit), the release
+// the committed server logs of recorded runs come from. The two commits differ in
+// CacheConfig.DEFAULT_BLOCK_SIZE, 16 there and 64 at the pin (vllm/config/cache.py:185, commit
+// 732e49d44), which update_block_size_for_backend starts the selection from; the selection code is
+// the same. It is read only by ResolveBlockSizeAsRecorded, to test the oracle against those logs.
+// Regenerate it with the command in oracle/README.md; CI does not, since that needs a second checkout.
+//
+//go:embed blocksize_table_recorded.json
+var blockSizeRecordedTable []byte
 
 type blockSizeCombination struct {
 	Model        string `json:"model"`
@@ -64,7 +74,7 @@ type blockSizeCombination struct {
 type blockSizeModelFlags struct {
 	// IsMMPrefixLM: the model's attention carries a bidirectional multimodal prefix, which narrows the
 	// backends that may be selected. It holds for a Gemma-4 model unless multimodal inputs are
-	// configuration-disabled (vllm/config/model.py:999-1021@4ba787ec), which the rows do not cover.
+	// configuration-disabled (ModelConfig._supports_multimodal_for_mm_prefix, vllm/config/model.py:1047-1072@0fda86a3), which the rows do not cover.
 	IsMMPrefixLM bool `json:"is_mm_prefix_lm"`
 }
 
@@ -75,9 +85,11 @@ type blockSizeAssumption struct {
 }
 
 type blockSizeFile struct {
-	VLLM         string            `json:"vllm"`
-	Facts        map[string]string `json:"facts"`
-	Replacements []struct {
+	VLLM string `json:"vllm"`
+	// DefaultBlockSize is CacheConfig.DEFAULT_BLOCK_SIZE at VLLM, the size the selection starts from.
+	DefaultBlockSize int               `json:"default_block_size"`
+	Facts            map[string]string `json:"facts"`
+	Replacements     []struct {
 		What string `json:"what"`
 		Why  string `json:"why"`
 	} `json:"replacements"`
@@ -89,19 +101,55 @@ type blockSizeFile struct {
 	Combinations []blockSizeCombination         `json:"combinations"`
 }
 
-var blockSizes = mustLoadBlockSizes()
+var (
+	blockSizes         = mustLoadBlockSizes(blockSizeTable, "blocksize_table.json")
+	recordedBlockSizes = mustLoadBlockSizes(blockSizeRecordedTable, "blocksize_table_recorded.json")
+)
 
-func mustLoadBlockSizes() blockSizeFile {
+func mustLoadBlockSizes(raw []byte, name string) blockSizeFile {
 	var f blockSizeFile
-	dec := json.NewDecoder(bytes.NewReader(blockSizeTable))
+	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&f); err != nil {
-		panic(fmt.Sprintf("vllm: blocksize_table.json: %v", err))
+		panic(fmt.Sprintf("vllm: %s: %v", name, err))
+	}
+	if _, ok := blockSizeCites[f.VLLM]; !ok || f.DefaultBlockSize <= 0 {
+		panic(fmt.Sprintf("vllm: %s: recorded at vLLM %q with default block size %d, which blockSizeCites has no citations for", name, f.VLLM, f.DefaultBlockSize))
 	}
 	return f
 }
 
-// BlockSizeInput is what vLLM v0.33.0's block-size resolution depends on that BLIS knows.
+// blockSizeCite is where, in one vLLM commit, the resolution a table row records is defined. The
+// lines differ between the commits (the pin added the heterogeneous-dtype phase, and moved the
+// code), so a row's source cites the lines of the commit its table was recorded at.
+type blockSizeCite struct {
+	release string // how the commit is named in a source
+	// update is Platform.update_block_size_for_backend's phase 1, which resolves the size when none
+	// is stated, starting from CacheConfig.DEFAULT_BLOCK_SIZE (defaultAt); preferred is
+	// _preferred_block_size_for_backends.
+	update, preferred, defaultAt string
+	// mmPrefix is ModelConfig._supports_multimodal_for_mm_prefix.
+	mmPrefix string
+}
+
+var blockSizeCites = map[string]blockSizeCite{
+	upstream.Commit: {
+		release:   "vLLM " + upstream.Tag,
+		update:    "vllm/platforms/interface.py:796-810@0fda86a3",
+		preferred: ":710-776",
+		defaultAt: "vllm/config/cache.py:185@0fda86a3",
+		mmPrefix:  "vllm/config/model.py:1047-1072@0fda86a3",
+	},
+	upstream.OracleCommit: {
+		release:   "vLLM v0.33.0",
+		update:    "vllm/platforms/interface.py:750-794@4ba787ec",
+		preferred: ":700-746",
+		defaultAt: "vllm/config/cache.py:71@4ba787ec",
+		mmPrefix:  "vllm/config/model.py:999-1021@4ba787ec",
+	},
+}
+
+// BlockSizeInput is what vLLM's block-size resolution depends on that BLIS knows.
 type BlockSizeInput struct {
 	// Model is the catalog model name, and Capability the chip's ComputeCapability ("9.0").
 	Model, Capability string
@@ -179,44 +227,57 @@ func selectorEnv(name string) bool {
 	return false
 }
 
-// ResolveBlockSize returns the block size vLLM v0.33.0 resolves an unstated block_size to. It
-// does so for the models, GPUs and KV dtypes the block-size oracle (oracle/blocksize) resolves, at
-// a tensor-parallel width up to MaxBlockSizeTP. Otherwise it returns an error naming why, and
-// https://github.com/inference-sim/blis-vllm/issues/68.
+// ResolveBlockSize returns the block size the pinned vLLM (upstream.Commit) resolves an unstated
+// block_size to. It does so for the models, GPUs and KV dtypes the block-size oracle
+// (oracle/blocksize) resolves, at a tensor-parallel width up to MaxBlockSizeTP. Otherwise it
+// returns an error naming why, and https://github.com/inference-sim/blis-vllm/issues/68.
 //
 // vLLM picks the size in Platform.update_block_size_for_backend
-// (vllm/platforms/interface.py:757-781@5df63a72). When the user did not state block_size, it takes
-// the smallest size every attention backend accepts. It starts from CacheConfig.DEFAULT_BLOCK_SIZE
-// 16 (vllm/config/cache.py:71) and each backend's get_preferred_block_size
-// (v1/attention/backend.py:152-160).
+// (vllm/platforms/interface.py:796-810@0fda86a3). When the user did not state block_size, it calls
+// _preferred_block_size_for_backends (:710-776) with CacheConfig.DEFAULT_BLOCK_SIZE, 64 at the pin
+// (vllm/config/cache.py:185). One backend gives its get_preferred_block_size; several give a
+// preference only if all agree on it and accept it, else the default stands; otherwise the
+// smallest size they all accept is searched for.
 //
-// The backends are the ones the platform selects per layer (platforms/cuda.py:375-415, priority
-// list :83-180). The answer therefore depends on the model's layers, the GPU's compute capability
-// and the KV dtype. The oracle runs vLLM's own selection on a CPU for each combination under every
-// setting of the facts it cannot discover. A combination resolves only if the size is the same
-// under all of them.
+// The backends are the ones the platform selects per layer (platforms/cuda.py:419-452). The answer
+// therefore depends on the model's layers, the GPU's compute capability and the KV dtype. The
+// oracle runs vLLM's own selection on a CPU for each combination under every setting of the facts
+// it cannot discover. A combination resolves only if the size is the same under all of them.
+//
+// Not modelled, so refused: a hybrid model's alignment to the recurrent page (:812-816, :969) and
+// the heterogeneous-KV-dtype alignment (:818-822, :855, when kv_cache_dtype_skip_layers is set),
+// which apply after this size is chosen and can change it; a model that selects backends outside
+// the selector; a speculative drafter; context parallelism; the attention settings the oracle did
+// not run. A table recorded at another commit is not read: a build that moves the pin must re-run
+// oracle/blocksize first.
 func ResolveBlockSize(in BlockSizeInput) (BlockSize, error) {
-	// The table is the oracle's output at the commit it records. A build that models another
-	// commit does not read it: at the pin CacheConfig.DEFAULT_BLOCK_SIZE is 64 (vllm/config/cache.py:185)
-	// and _preferred_block_size_for_backends starts from it (vllm/platforms/interface.py:777-810@0fda86a3),
-	// not from the 16 the table's rows were resolved from, so no row says what the pin resolves.
-	if blockSizes.VLLM != upstream.Commit {
-		return BlockSize{}, fmt.Errorf("block_size is not stated, and the block-size oracle's table was recorded at vLLM %s while this build models %s, "+
-			"whose default block size is 64 and whose selection is not re-derived here; state block_size, or re-run oracle/blocksize at the pin (%s)",
-			blockSizes.VLLM, upstream.Commit, BlockSizeIssue)
-	}
-	return ResolveBlockSizeFromTable(in)
+	return resolveAtCommit(blockSizes, upstream.Commit, in)
 }
 
-// ResolveBlockSizeFromTable is the block-size oracle's table looked up as recorded, whatever
-// commit the build models. ResolveBlockSize is the lookup a build may rely on: it refuses when
-// the table was recorded at another commit. This is for tests of the table itself.
-func ResolveBlockSizeFromTable(in BlockSizeInput) (BlockSize, error) {
+func resolveAtCommit(t blockSizeFile, commit string, in BlockSizeInput) (BlockSize, error) {
+	if t.VLLM != commit {
+		return BlockSize{}, fmt.Errorf("block_size is not stated, and the block-size oracle's table was recorded at vLLM %s while this build models %s, "+
+			"whose selection is not re-derived here; state block_size, or re-run oracle/blocksize at the pin (%s)",
+			t.VLLM, commit, BlockSizeIssue)
+	}
+	return resolveBlockSizeFrom(t, in)
+}
+
+// ResolveBlockSizeAsRecorded is the table recorded at v0.33.0 (upstream.OracleCommit) looked up,
+// whatever commit the build models. A run never calls it: it is for tests that compare the oracle
+// with figures recorded from the engines it was recorded against, whose default block size was 16
+// where the pin's is 64.
+func ResolveBlockSizeAsRecorded(in BlockSizeInput) (BlockSize, error) {
+	return resolveBlockSizeFrom(recordedBlockSizes, in)
+}
+
+func resolveBlockSizeFrom(blockSizes blockSizeFile, in BlockSizeInput) (BlockSize, error) {
+	cite := blockSizeCites[blockSizes.VLLM]
 	refuse := func(why string) (BlockSize, error) {
 		return BlockSize{}, fmt.Errorf("block_size is not stated, and %s (%s)", why, BlockSizeIssue)
 	}
 	if why, ok := blockSizes.NotResolved[in.Model]; ok {
-		return refuse(fmt.Sprintf("vLLM v0.33.0 resolves it from the attention backends of the model's layers, which are not resolved for %s: %s", in.Model, why))
+		return refuse(fmt.Sprintf("%s resolves it from the attention backends of the model's layers, which are not resolved for %s: %s", cite.release, in.Model, why))
 	}
 	switch {
 	case in.TP > MaxBlockSizeTP:
@@ -230,7 +291,7 @@ func ResolveBlockSizeFromTable(in BlockSizeInput) (BlockSize, error) {
 	case in.MLAPrefillBackend != "":
 		return refuse("attention_config.mla_prefill_backend is stated, which the oracle does not run")
 	case in.LanguageModelOnly && blockSizes.ModelFlags[in.Model].IsMMPrefixLM:
-		return refuse(fmt.Sprintf("language_model_only is true, which switches off %s's multimodal-prefix attention and so changes the backends the selector may pick; the oracle ran it with multimodal inputs on (vllm/config/model.py:999-1021@4ba787ec)", in.Model))
+		return refuse(fmt.Sprintf("language_model_only is true, which switches off %s's multimodal-prefix attention and so changes the backends the selector may pick; the oracle ran it with multimodal inputs on (%s)", in.Model, cite.mmPrefix))
 	}
 	for k := range in.Env {
 		if selectorEnv(k) {
@@ -251,16 +312,16 @@ func ResolveBlockSizeFromTable(in BlockSizeInput) (BlockSize, error) {
 		var src string
 		if c.Path == "layer_backends" {
 			src = fmt.Sprintf(
-				"vLLM v0.33.0 resolves an unstated block_size to the smallest size the attention backends of %s's layers all accept (%s) on compute capability %s: "+
-					"Platform.update_block_size_for_backend, vllm/platforms/interface.py:750-794@4ba787ec, _preferred_block_size_for_backends :700-746; "+
+				"%s resolves an unstated block_size to the smallest size the attention backends of %s's layers all accept (%s) on compute capability %s, starting from "+
+					"CacheConfig.DEFAULT_BLOCK_SIZE %d (%s): Platform.update_block_size_for_backend, %s, _preferred_block_size_for_backends %s; "+
 					"the oracle's table, oracle/blocksize",
-				c.Model, strings.Join(c.Backends, ", "), c.Capability)
+				cite.release, c.Model, strings.Join(c.Backends, ", "), c.Capability, blockSizes.DefaultBlockSize, cite.defaultAt, cite.update, cite.preferred)
 		} else {
 			src = fmt.Sprintf(
-				"vLLM v0.33.0 resolves an unstated block_size from the attention backend it selects (%s) for %s on compute capability %s with KV dtype %s: "+
-					"Platform.update_block_size_for_backend, vllm/platforms/interface.py:750-794@4ba787ec, backend selection platforms/cuda.py; "+
+				"%s resolves an unstated block_size from the attention backend it selects (%s) for %s on compute capability %s with KV dtype %s, starting from "+
+					"CacheConfig.DEFAULT_BLOCK_SIZE %d (%s): Platform.update_block_size_for_backend, %s, _preferred_block_size_for_backends %s, backend selection platforms/cuda.py; "+
 					"the oracle's table, oracle/blocksize",
-				strings.Join(c.Backends, ", "), c.Model, c.Capability, c.KVCacheDType)
+				cite.release, strings.Join(c.Backends, ", "), c.Model, c.Capability, c.KVCacheDType, blockSizes.DefaultBlockSize, cite.defaultAt, cite.update, cite.preferred)
 		}
 		facts := make([]string, 0, len(c.AssumedFacts))
 		for f := range c.AssumedFacts {

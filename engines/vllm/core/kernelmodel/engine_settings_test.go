@@ -162,30 +162,48 @@ func openWithoutBlockSize(t *testing.T, fixture string) (*Model, error) {
 	return Open("v.yaml", r)
 }
 
-// An unstated block_size is refused at the pin, citing #68: the block-size oracle's table was recorded
-// at v0.33.0, where the default block size is 16; the pin's is 64 (vllm/config/cache.py:185@0fda86a3)
-// and its selection is not re-derived, so no row of the table says what the pin resolves. The table
-// itself stays tested against the engines it was recorded from (blocksize_recorded_test.go,
-// core/vllm.ResolveBlockSizeFromTable); a maintainer re-run of oracle/blocksize at the pin restores
-// the resolution.
-func TestEngineRefusesAnUnstatedBlockSizeWhileTheTableIsFromAnotherCommit(t *testing.T) {
-	for _, fixture := range []string{
-		"llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml",
-		"llama-3.1-70b-instruct-b200-fp8-vllm-tp2.yaml",
-		"deepseek-v3-b200-fp8-sglang-tp8.yaml",
-		"direct/kimi-k2.5-h200-int4-vllm-tp8-cfg1.yaml",
-		"deepseek-v4-pro-b300-fp4-vllm-tp4.yaml",
+// An unstated block_size resolves at the pin as vLLM's own selection does from the pin's default
+// block size of 64 (vllm/config/cache.py:185@0fda86a3), with the source citing the pin's
+// update_block_size_for_backend lines, not the as-recorded v0.33.0 table (default 16). The sizes are
+// the pin table's: 64 for the single-backend fixtures, 256 for DeepSeek-V4's layer backends. The
+// as-recorded table stays tested against the logs it came from (blocksize_recorded_test.go).
+func TestEngineResolvesAnUnstatedBlockSizeAtThePin(t *testing.T) {
+	for _, c := range []struct {
+		fixture string
+		size    int
+	}{
+		{"llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml", 64},
+		{"llama-3.1-70b-instruct-b200-fp8-vllm-tp2.yaml", 64},
+		{"deepseek-v3-b200-fp8-sglang-tp8.yaml", 64},
+		{"direct/kimi-k2.5-h200-int4-vllm-tp8-cfg1.yaml", 64},
+		{"deepseek-v4-pro-b300-fp4-vllm-tp4.yaml", 256},
 	} {
-		t.Run(fixture, func(t *testing.T) {
-			m, err := openWithoutBlockSize(t, fixture)
+		t.Run(c.fixture, func(t *testing.T) {
+			m, err := openWithoutBlockSize(t, c.fixture)
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = m.Engine()
-			if err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/68") || !strings.Contains(err.Error(), "4ba787ec") {
-				t.Fatalf("Engine: %v, want a refusal citing #68 and the table's commit 4ba787ec", err)
+			e, err := m.Engine()
+			if err != nil || e.BlockSize != c.size {
+				t.Fatalf("Engine: block_size %d, %v; want %d", e.BlockSize, err, c.size)
+			}
+			src := m.EngineSources()["block_size"]
+			if !strings.Contains(src, "vllm/platforms/interface.py:796-810@0fda86a3") || strings.Contains(src, "4ba787ec") {
+				t.Errorf("source %q, want it to cite the pin's update_block_size_for_backend and not v0.33.0", src)
 			}
 		})
+	}
+}
+
+// A case the pin table refuses is refused through the engine too, citing #68: minimax-m3 selects
+// a sparse-attention backend outside the selector, so no size follows from the source.
+func TestEngineRefusesAnUnresolvedBlockSizeAtThePin(t *testing.T) {
+	m, err := openWithoutBlockSize(t, "direct/minimax-m3-b200-fp4-vllm-tp2-cfg1.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Engine(); err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/68") {
+		t.Fatalf("Engine: %v, want a refusal citing #68", err)
 	}
 }
 
@@ -818,6 +836,6 @@ func TestEngineResolvesAnUnstatedBlockSizeForGemma4(t *testing.T) {
 func withRecordedBlockSizeTable(t *testing.T) {
 	t.Helper()
 	prev := blockSizeResolver
-	blockSizeResolver = vllm.ResolveBlockSizeFromTable
+	blockSizeResolver = vllm.ResolveBlockSizeAsRecorded
 	t.Cleanup(func() { blockSizeResolver = prev })
 }
