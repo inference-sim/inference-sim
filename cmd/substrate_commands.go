@@ -8,9 +8,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/load"
 )
@@ -21,61 +19,6 @@ import (
 // non-zero exit. None writes a file.
 
 var substrateJSON bool
-
-var invariantsCmd = &cobra.Command{
-	Use:   "invariants",
-	Short: "Print the invariant registry of the blis-substrate version this build pins",
-	Long: "Print every invariant of the registry embedded in blis-substrate's contracts/invariants, " +
-		"at the version this build selects (stack.json names it). With --json the output is " +
-		"{\"invariants\": [...]}, each record with the registry's own keys; without it, one line " +
-		"per invariant: identifier, status, title.",
-	Args:         cobra.NoArgs,
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		return printInvariants(cmd.OutOrStdout(), substrateJSON)
-	},
-}
-
-func printInvariants(w io.Writer, asJSON bool) error {
-	reg, err := invariants.Embedded()
-	if err != nil {
-		return fmt.Errorf("the embedded invariant registry: %w", err)
-	}
-	if !asJSON {
-		for _, inv := range reg.Invariants {
-			title := inv.Title
-			if title == "" {
-				title = firstSentence(inv.Statement)
-			}
-			if _, err := fmt.Fprintf(w, "%-8s %-8s %s\n", inv.ID, inv.Status, title); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	// The records carry yaml tags only; their JSON keys are the registry's own, so each record
-	// is converted through its YAML form rather than given a second set of names here.
-	records := make([]any, 0, len(reg.Invariants))
-	for _, inv := range reg.Invariants {
-		b, err := yaml.Marshal(inv)
-		if err != nil {
-			return err
-		}
-		var m map[string]any
-		if err := yaml.Unmarshal(b, &m); err != nil {
-			return err
-		}
-		records = append(records, m)
-	}
-	return writeJSON(w, map[string]any{"invariants": records})
-}
-
-func firstSentence(s string) string {
-	if i := strings.Index(s, ". "); i >= 0 {
-		return s[:i+1]
-	}
-	return s
-}
 
 var catalogCmd = &cobra.Command{
 	Use:   "catalog",
@@ -212,12 +155,12 @@ func writeJSON(w io.Writer, v any) error {
 }
 
 func init() {
-	for _, c := range []*cobra.Command{invariantsCmd, catalogResolveCmd} {
+	for _, c := range []*cobra.Command{catalogResolveCmd} {
 		c.Flags().BoolVar(&substrateJSON, "json", false, "print JSON")
 	}
 	catalogResolveCmd.Flags().StringVar(&resolveModel, "model", "", "a model name: a catalog entry name or a source repository such as meta-llama/Llama-3.1-70B-Instruct")
 	catalogResolveCmd.Flags().StringVar(&resolveChip, "chip", "", "a chip name, such as h200")
 	registerCatalogFlag(catalogResolveCmd)
 	catalogCmd.AddCommand(catalogResolveCmd)
-	rootCmd.AddCommand(invariantsCmd, catalogCmd)
+	rootCmd.AddCommand(catalogCmd)
 }

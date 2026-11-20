@@ -36,7 +36,7 @@ this page.
   `cmd/engine_build.go`, and blis-sglang at another, `cmd/sglang_engine.go`.
 
 The reference is printed from the data and the code, not written: `blis schema`, `blis fields`,
-`blis metrics`, `blis invariants`, `blis catalog` and `blis router-configs`, with `--help` on
+`blis metrics`, `blis catalog` and `blis router-configs`, with `--help` on
 every command, the JSON Schemas and the Go doc comments.
 
 ## Engines
