@@ -244,7 +244,8 @@ func resultLedger(cs *cluster.ClusterSimulator) result.Requests {
 }
 
 // runGPUs is the number of GPUs the run's instances occupy: each instance its own pool's
-// tensor x pipeline x prefill-context-parallel width, the GPUs one engine replica spans.
+// tensor x pipeline x prefill-context-parallel x data-parallel width, the GPUs one engine
+// instance (a whole data-parallel group) spans.
 // An instance whose role names no pool (a test cluster) counts its tensor-parallel degree.
 func runGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) int {
 	all, _ := runGPUsByRole(cs, dep)
@@ -275,7 +276,7 @@ func instanceGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (gpu
 	perRole := map[deployment.Role]int{}
 	if dep != nil {
 		for _, p := range dep.Pools {
-			perRole[p.Role] = max(p.Parallel.TP, 1) * max(p.Parallel.PP, 1) * max(p.Parallel.PCP, 1)
+			perRole[p.Role] = max(p.Parallel.TP, 1) * max(p.Parallel.PP, 1) * max(p.Parallel.PCP, 1) * max(p.Parallel.DP, 1)
 		}
 	}
 	gpus, decode = map[string]int{}, map[string]bool{}
