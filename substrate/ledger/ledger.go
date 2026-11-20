@@ -126,7 +126,42 @@ type Source struct {
 	// measurement the pinned revision does not hold. The ingest tool fetches them and adds
 	// their units to the source's one unit list; none of their values is committed (X12).
 	Supplements []Supplement `yaml:"supplements,omitempty"`
-	Licence     Licence      `yaml:"licence"`
+	// Client records how the source's benchmark client sizes a run, for the G5 code
+	// measurement_contaminated.
+	Client  *Client `yaml:"client,omitempty"`
+	Licence Licence `yaml:"licence"`
+}
+
+// Client is a benchmark client's request counts per unit of concurrency: a run logs
+// LoggedPerConcurrency requests for each, of which the first WarmupPerConcurrency are warm-up
+// and the rest are measured. Evidence quotes the client's own script at a pinned commit.
+type Client struct {
+	MeasuredPerConcurrency int            `yaml:"measured_per_concurrency"`
+	WarmupPerConcurrency   int            `yaml:"warmup_per_concurrency"`
+	LoggedPerConcurrency   int            `yaml:"logged_per_concurrency"`
+	Evidence               []LicenceQuote `yaml:"evidence"`
+}
+
+func (c Client) check(at string) error {
+	var errs []error
+	if c.MeasuredPerConcurrency < 1 {
+		errs = append(errs, fmt.Errorf("%s.measured_per_concurrency: %d, want 1 or more", at, c.MeasuredPerConcurrency))
+	}
+	if c.WarmupPerConcurrency < 0 {
+		errs = append(errs, fmt.Errorf("%s.warmup_per_concurrency: %d, want 0 or more", at, c.WarmupPerConcurrency))
+	}
+	if c.LoggedPerConcurrency != c.MeasuredPerConcurrency+c.WarmupPerConcurrency {
+		errs = append(errs, fmt.Errorf("%s.logged_per_concurrency: %d, want measured plus warm-up (%d)", at, c.LoggedPerConcurrency, c.MeasuredPerConcurrency+c.WarmupPerConcurrency))
+	}
+	if len(c.Evidence) == 0 {
+		errs = append(errs, fmt.Errorf("%s.evidence: quote the client's script", at))
+	}
+	for i, q := range c.Evidence {
+		if err := q.check(fmt.Sprintf("%s.evidence[%d]", at, i)); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // Supplement is a set of records a source published after its pinned revision, pinned by
@@ -341,6 +376,11 @@ func (s *Sources) Validate() error {
 		}
 		if src.Units != "" && src.Units != DirUnits+"/"+src.ID+".jsonl.gz" {
 			errs = append(errs, fmt.Errorf("%s.units: %q, want %q", at, src.Units, DirUnits+"/"+src.ID+".jsonl.gz"))
+		}
+		if src.Client != nil {
+			if err := src.Client.check(at + ".client"); err != nil {
+				errs = append(errs, err)
+			}
 		}
 		if err := src.Licence.check(at + ".licence"); err != nil {
 			errs = append(errs, err)
