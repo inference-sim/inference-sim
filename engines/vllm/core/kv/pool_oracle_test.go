@@ -4,9 +4,10 @@ package kv
 
 import (
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // ocLayer, ocCase: the oracle's kv_pool cases (oracle/lower/extract.py kv_pool_cases).
@@ -41,7 +42,7 @@ type ocCase struct {
 
 func loadPoolOracle(t *testing.T) []ocCase {
 	t.Helper()
-	raw, err := os.ReadFile("../lower/testdata/vllm_lower.json")
+	raw, err := testgz.ReadFile("../lower/testdata/vllm_lower.json")
 	if err != nil {
 		t.Fatal(err)
 	}

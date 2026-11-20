@@ -5,13 +5,14 @@ package engineconfig
 import (
 	"encoding/json"
 	"math"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // syntheticAcceptanceRecord is oracle/synthetic_acceptance's output: vLLM v0.32.0's own
@@ -30,7 +31,7 @@ type syntheticAcceptanceRecord struct {
 
 func loadSyntheticAcceptance(t *testing.T) syntheticAcceptanceRecord {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("testdata", "synthetic_acceptance.json"))
+	raw, err := testgz.ReadFile(filepath.Join("testdata", "synthetic_acceptance.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

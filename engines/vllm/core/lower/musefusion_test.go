@@ -4,13 +4,13 @@ package lower
 
 import (
 	"encoding/json"
-	"os"
 	"slices"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 	"github.com/inference-sim/inference-sim/substrate/load"
 
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
@@ -44,7 +44,7 @@ type museOracle struct {
 }
 
 func TestMuseSparkFusionsMatchTheRelease(t *testing.T) {
-	b, err := os.ReadFile("testdata/muse_fusions.json")
+	b, err := testgz.ReadFile("testdata/muse_fusions.json")
 	if err != nil {
 		t.Fatal(err)
 	}

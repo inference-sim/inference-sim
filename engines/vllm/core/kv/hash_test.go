@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 type hashCase struct {
@@ -23,7 +25,7 @@ type hashCase struct {
 // cases pickle to more than 64 KiB, which CPython writes in several frames.
 func loadHashCases(t *testing.T) (string, []hashCase) {
 	t.Helper()
-	raw, err := os.ReadFile("testdata/block_hashes.json")
+	raw, err := testgz.ReadFile("testdata/block_hashes.json")
 	if err != nil {
 		t.Fatal(err)
 	}

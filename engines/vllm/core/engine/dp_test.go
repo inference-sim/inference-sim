@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 type dpScenario struct {
@@ -353,7 +354,7 @@ func TestDPFuzzCorpusAgainstVLLM(t *testing.T) {
 	if dir == "" {
 		t.Skip("BLIS_VLLM_DP_FUZZ_DIR is unset: the DP fuzz corpus was NOT checked (CI's oracle job sets it)")
 	}
-	traces, err := filepath.Glob(filepath.Join(dir, "*.trace.json"))
+	traces, err := testgz.Glob(filepath.Join(dir, "*.trace.json"))
 	if err != nil || len(traces) == 0 {
 		t.Fatalf("no traces in %s (%v)", dir, err)
 	}

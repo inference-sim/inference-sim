@@ -41,6 +41,10 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import traces  # noqa: E402  (oracle/traces.py; -I leaves the script directory off sys.path)
+import goldengz  # noqa: E402  (oracle/goldengz.py)
+
 KINDS = ("fixed", "no_neutral", "gap")
 ISSUE = re.compile(r"(inference-sim/blis-sglang)?#\d+")
 
@@ -110,12 +114,10 @@ def golden_traces(root: str) -> list:
     for d in cfg["golden_dirs"]:
         for dirpath, _, names in sorted(os.walk(os.path.join(root, d))):
             for n in sorted(names):
-                if n.endswith(".json"):
-                    with open(os.path.join(dirpath, n)) as f:
-                        out.append(json.load(f))
+                if n.endswith((".json", ".json.gz")):
+                    out.append(goldengz.load(os.path.join(dirpath, n[:-3] if n.endswith(".gz") else n)))
     for rel in cfg["golden_files"]:
-        with open(os.path.join(root, rel)) as f:
-            out += json.load(f).get("cases", [])
+        out += goldengz.load(os.path.join(root, rel)).get("cases", [])
     return out
 
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
@@ -362,7 +363,7 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 // zero mismatches.
 func TestMetricsAgainstVLLM(t *testing.T) {
 	families := manifestFamilies(t)
-	goldens, err := filepath.Glob("testdata/golden/*.metrics.json")
+	goldens, err := testgz.Glob("testdata/golden/*.metrics.json")
 	if err != nil || len(goldens) == 0 {
 		t.Fatalf("no metric goldens (%v): generate them with oracle/run_metrics.py (oracle/README.md)", err)
 	}
@@ -440,7 +441,7 @@ func TestMetricsFuzzCorpusAgainstVLLM(t *testing.T) {
 		t.Skip("BLIS_VLLM_METRICS_FUZZ_DIR is unset: the metrics fuzz corpus was NOT checked (CI's oracle job sets it)")
 	}
 	families := manifestFamilies(t)
-	goldens, err := filepath.Glob(filepath.Join(dir, "*.metrics.json"))
+	goldens, err := testgz.Glob(filepath.Join(dir, "*.metrics.json"))
 	if err != nil || len(goldens) == 0 {
 		t.Fatalf("no metric traces in %s (%v)", dir, err)
 	}
@@ -524,7 +525,7 @@ func sortedSamples(m map[string]float64) []string {
 
 func readJSON(t *testing.T, path string, v any) {
 	t.Helper()
-	raw, err := os.ReadFile(path)
+	raw, err := testgz.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}

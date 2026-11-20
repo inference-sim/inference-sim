@@ -10,13 +10,19 @@ gives them. The provenance must name the same SGLang commit, case file and model
 
 Usage: python3 -I oracle/compare_serverargs.py <committed answers> <fresh answers>
 """
+import gzip
 import json
+import os
 import sys
 
 
 def main(committed: str, fresh: str) -> int:
-    with open(committed) as f:
-        a = json.load(f)
+    if os.path.exists(committed):
+        with open(committed) as f:
+            a = json.load(f)
+    else:
+        with gzip.open(committed + ".gz") as f:
+            a = json.load(f)
     with open(fresh) as f:
         b = json.load(f)
     if a["provenance"] != b["provenance"]:

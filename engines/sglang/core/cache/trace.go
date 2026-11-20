@@ -5,10 +5,11 @@ package cache
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 // A Trace is the calls SGLang's own classes received at the six framework interfaces during one
@@ -54,12 +55,12 @@ func LoadTraces(dir string) (map[string]Trace, error) {
 	out := map[string]Trace{}
 	for _, d := range traceDirs {
 		sub, kind := d[0], d[1]
-		paths, err := filepath.Glob(filepath.Join(dir, sub, "*.trace.json"))
+		paths, err := testgz.Glob(filepath.Join(dir, sub, "*.trace.json"))
 		if err != nil {
 			return nil, err
 		}
 		for _, p := range paths {
-			raw, err := os.ReadFile(p)
+			raw, err := testgz.ReadFile(p)
 			if err != nil {
 				return nil, err
 			}

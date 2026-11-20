@@ -4,13 +4,13 @@ package lower
 
 import (
 	"encoding/json"
-	"os"
 	"slices"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
@@ -173,7 +173,7 @@ type oracleFile struct {
 
 func loadOracle(t *testing.T) oracleFile {
 	t.Helper()
-	raw, err := os.ReadFile("testdata/vllm_lower.json")
+	raw, err := testgz.ReadFile("testdata/vllm_lower.json")
 	if err != nil {
 		t.Fatal(err)
 	}

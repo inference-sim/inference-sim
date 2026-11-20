@@ -897,7 +897,7 @@ def entry_for(src, root, name, field, repo):
         for v in scenario_values(repo, t).get(name, []):
             stated.append({"value": v, "trace": t})
     for x in reviewed_stated(name):
-        if not os.path.exists(os.path.join(repo, x["trace"])):
+        if not any(os.path.exists(os.path.join(repo, x["trace"]) + sfx) for sfx in ("", ".gz")):
             raise SystemExit("gen_classes: %s: reviewed trace %s does not exist" % (name, x["trace"]))
         for v in x["values"]:
             stated.append({"value": v, "trace": x["trace"], "reviewed": True})

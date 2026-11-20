@@ -5,7 +5,6 @@ package hicache
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -14,6 +13,7 @@ import (
 
 	blissglang "github.com/inference-sim/inference-sim/engines/sglang"
 	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 // goldenDir is where the HiCache framework's traces are committed: recorded/ from SGLang's
@@ -71,12 +71,12 @@ func loadTraces(t *testing.T) map[string]hiTrace {
 	t.Helper()
 	out := map[string]hiTrace{}
 	for _, kind := range []string{"recorded", "direct"} {
-		paths, err := filepath.Glob(filepath.Join(goldenDir, kind, "*.trace.json"))
+		paths, err := testgz.Glob(filepath.Join(goldenDir, kind, "*.trace.json"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, p := range paths {
-			raw, err := os.ReadFile(p)
+			raw, err := testgz.ReadFile(p)
 			if err != nil {
 				t.Fatal(err)
 			}

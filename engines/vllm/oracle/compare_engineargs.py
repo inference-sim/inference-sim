@@ -10,12 +10,16 @@ comparison, as it is for the other goldens.
 Usage: python3 -I oracle/compare_engineargs.py <committed trace> <fresh trace>
 """
 import json
+import os
 import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import goldengz  # noqa: E402  (oracle/goldengz.py; -I leaves the script directory off sys.path)
 
 
 def main(committed: str, fresh: str) -> int:
-    with open(committed) as f:
-        a = json.load(f)
+    a = goldengz.load(committed)
     with open(fresh) as f:
         b = json.load(f)
     if a["provenance"]["scenario_sha256"] != b["provenance"]["scenario_sha256"]:

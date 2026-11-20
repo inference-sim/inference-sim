@@ -13,12 +13,16 @@ import json
 import os
 import sys
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import goldengz  # noqa: E402  (oracle/goldengz.py; -I leaves the script directory off sys.path)
+
 FIELDS = ("config", "field_default", "dedicated_mode", "serves_render", "render_status",
           "render_error_type", "render_error_message")
 
 
 def main(golden_dir: str, fresh_dir: str) -> int:
-    names = sorted(f[:-5] for f in os.listdir(golden_dir) if f.endswith(".json"))
+    names = sorted(f[:-5] for f in goldengz.listdir(golden_dir) if f.endswith(".json"))
     if not names:
         print(f"{golden_dir}: no goldens to compare")
         return 1
@@ -29,8 +33,7 @@ def main(golden_dir: str, fresh_dir: str) -> int:
             print(f"{name}: no fresh trace from vLLM")
             bad += 1
             continue
-        with open(os.path.join(golden_dir, name + ".json")) as f:
-            golden = json.load(f)
+        golden = goldengz.load(os.path.join(golden_dir, name + ".json"))
         with open(fresh_path) as f:
             fresh = json.load(f)
         if golden["provenance"]["scenario_sha256"] != fresh["provenance"]["scenario_sha256"]:

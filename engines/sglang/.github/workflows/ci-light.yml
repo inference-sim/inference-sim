@@ -309,7 +309,7 @@ jobs:
           python -I oracle/lower/extract.py sglang-source oracle/serverargs/cases.json serverargs-models oracle/lower/cases.json > shard-out/oracle-traces/lower.json
       - name: the committed lowering answers are SGLang's own
         if: matrix.group == 'lower'
-        run: diff -u lower/testdata/sglang_lower.json shard-out/oracle-traces/lower.json
+        run: diff -u <(python3 -I oracle/goldengz.py cat lower/testdata/sglang_lower.json) shard-out/oracle-traces/lower.json
       - name: run every scenario through SGLang's scheduler
         if: matrix.group == 'lower'
         env:

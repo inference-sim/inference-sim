@@ -14,6 +14,16 @@ ORACLE_MODEL_REVISION=27dcfa74d334bc871f3234de431e71c6eeba5dd6 HF_HUB_OFFLINE=1 
 The scheduler helper builds a `ModelConfig`, which reads a model's `config.json` but loads no
 weights; the scenario's fixed `num_blocks` and `block_size` govern every decision.
 
+## Compressed goldens
+
+A golden of 16000 bytes or more is committed as `<name>.gz` (gzip, mtime 0), so the repository's module stays under
+100 MB (`internal/repocheck` `TestModuleZipIsUnder100MB`); a smaller one stays plain. The Go tests read either form through
+`internal/testgz`, and the comparison and provenance scripts through `oracle/goldengz.py`, always by the plain name.
+A runner writes plain files, since a golden records the sha256 of every oracle file its run executed
+(`oracle_inputs`) and a change to a runner would make every golden it produced stale; after a runner or a hand copy has
+written a golden directory, store it in the committed form with `python3 -I oracle/goldengz.py pack <dir>...`
+(`unpack <dir> <copy>` and `cat <file>` give a script that reads the plain name itself a decompressed copy).
+
 ## Environment
 
 `oracle/requirements.lock` is the whole environment, every package pinned (Linux x86_64, CPU).

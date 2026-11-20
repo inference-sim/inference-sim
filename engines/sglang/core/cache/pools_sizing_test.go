@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 // sizingTrace is the sizing oracle/run_pools.py records beside a direct trace's calls: each
@@ -29,13 +31,13 @@ type sizingTrace struct {
 
 func loadSizing(t *testing.T) map[string]sizingTrace {
 	t.Helper()
-	paths, err := filepath.Glob(filepath.Join(PoolsGoldenDir, "direct", "*.trace.json"))
+	paths, err := testgz.Glob(filepath.Join(PoolsGoldenDir, "direct", "*.trace.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	out := map[string]sizingTrace{}
 	for _, p := range paths {
-		raw, err := os.ReadFile(p)
+		raw, err := testgz.ReadFile(p)
 		if err != nil {
 			t.Fatal(err)
 		}

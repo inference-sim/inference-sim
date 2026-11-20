@@ -5,7 +5,6 @@ package offloading
 import (
 	"encoding/hex"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -13,6 +12,8 @@ import (
 	"testing"
 
 	blisvllm "github.com/inference-sim/inference-sim/engines/vllm"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // FID-5 (design §7.6): the offload framework's interfaces, OffloadingManager, OffloadingSpec and the
@@ -46,11 +47,11 @@ type pendingFID5 struct {
 
 func loadFID5(t *testing.T) map[string]fid5Trace {
 	t.Helper()
-	paths, err := filepath.Glob(filepath.Join("testdata", "golden-fid5", "*.fid5.json"))
+	paths, err := testgz.Glob(filepath.Join("testdata", "golden-fid5", "*.fid5.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if raw, err := os.ReadFile(filepath.Join("testdata", "golden-fid5.pending.json")); err == nil {
+	if raw, err := testgz.ReadFile(filepath.Join("testdata", "golden-fid5.pending.json")); err == nil {
 		var p pendingFID5
 		if err := json.Unmarshal(raw, &p); err != nil {
 			t.Fatalf("golden-fid5.pending.json: %v", err)
@@ -69,7 +70,7 @@ func loadFID5(t *testing.T) map[string]fid5Trace {
 	}
 	out := map[string]fid5Trace{}
 	for _, p := range paths {
-		raw, err := os.ReadFile(p)
+		raw, err := testgz.ReadFile(p)
 		if err != nil {
 			t.Fatal(err)
 		}

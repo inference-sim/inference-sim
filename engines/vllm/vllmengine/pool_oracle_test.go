@@ -5,7 +5,6 @@ package vllmengine
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // oracleRun and oracleCase are the fields of core/lower/testdata/vllm_lower.json's kv_pool cases
@@ -39,7 +39,7 @@ type oracleCase struct {
 
 func loadOracleKVPool(t *testing.T) []oracleCase {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "core", "lower", "testdata", "vllm_lower.json"))
+	raw, err := testgz.ReadFile(filepath.Join("..", "core", "lower", "testdata", "vllm_lower.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
