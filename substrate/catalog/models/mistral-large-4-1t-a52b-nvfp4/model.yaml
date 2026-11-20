@@ -10,3 +10,4 @@ licence:
   evidence: https://huggingface.co/mistralai/Mistral-Large-4-1T-A52B-NVFP4/raw/bb6d00fe249b0e876f0cffc6b85014be02de3e68/LICENSE
 config:
   sha256: c09dc9ea714c8de78f42f8a86dc6c1ecec039f8a8c465eb39cc33994f2f89cfd
+drafters: [speculator]
