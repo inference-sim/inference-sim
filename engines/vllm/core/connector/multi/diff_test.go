@@ -1032,8 +1032,8 @@ func checkProvenance(t *testing.T, scenarioPath string, tr trace) {
 	p := tr.Provenance
 	for _, c := range []struct{ field, got, want string }{
 		{"scenario_sha256", p.ScenarioSHA256, hex.EncodeToString(sum[:])},
-		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], upstream.Version},
-		{"vllm_commit", p.VLLMCommit, upstream.Commit},
+		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], upstream.OracleVersion},
+		{"vllm_commit", p.VLLMCommit, upstream.OracleCommit},
 		{"mock_version", p.MockVersion, mocks.Version},
 	} {
 		if c.got != c.want {

@@ -181,7 +181,7 @@ func loadOracle(t *testing.T) oracleFile {
 	if err := json.Unmarshal(raw, &o); err != nil {
 		t.Fatal(err)
 	}
-	if o.Commit != upstream.Commit {
+	if o.Commit != upstream.OracleCommit {
 		t.Fatalf("the oracle file is for commit %s, not the pinned release", o.Commit)
 	}
 	return o

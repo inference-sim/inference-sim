@@ -3,6 +3,7 @@
 package kernelmodel
 
 import (
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 	"strings"
 	"testing"
 
@@ -136,9 +137,9 @@ func TestTheReleaseRulesPackDecidesTheSpeculativeMethod(t *testing.T) {
 		name, scenario, method, want string
 	}{
 		{"a method no release lists", "llama-3.1-70b-instruct-h200-tp4-4node.yaml", "bogus",
-			`"bogus" is not accepted by engine 0.33.0`},
+			`"bogus" is not accepted by engine ` + upstream.Version},
 		{"a BLIS shorthand, not a vLLM method", "llama-3.1-70b-instruct-h200-tp4-4node.yaml", "draft",
-			`"draft" is not accepted by engine 0.33.0`},
+			`"draft" is not accepted by engine ` + upstream.Version},
 		{"MTP on DeepSeek-V4.1", dspark, "mtp", "mtp"},
 	} {
 		_, err := openDrafting(t, tt.scenario, &engineconfig.Speculative{Method: tt.method, NumSpecTokens: 3})

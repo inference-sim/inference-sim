@@ -743,6 +743,10 @@ def canonical(doc):
             vc = ordered(f["value_classes"], "value_classes")
             if "thresholds" in vc:
                 vc["thresholds"] = [ordered(t, "threshold") for t in vc["thresholds"]]
+                for t in vc["thresholds"]:
+                    # Go writes a whole number as 1, not 1.0 (the canonical form is Go's).
+                    if isinstance(t.get("value"), float) and t["value"].is_integer():
+                        t["value"] = int(t["value"])
             g["value_classes"] = vc
         est = ordered(f["estimation"], "estimation")
         if "setting" in est:

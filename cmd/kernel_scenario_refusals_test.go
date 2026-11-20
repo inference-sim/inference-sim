@@ -463,7 +463,7 @@ func TestRunCmd_A032ScenarioTheEngineCannotBuildIsRefusedByName(t *testing.T) {
 	if strings.Contains(stderr, "goroutine ") || strings.Contains(stderr, "panic:") {
 		t.Errorf("the refusal must be a clean CLI error, not a panic; stderr:\n%s", lastLines(stderr, 8))
 	}
-	if !strings.Contains(stderr, "engine vllm 0.33.0: vllm: max_model_len must be stated") {
+	if !strings.Contains(stderr, "engine vllm "+modelledVLLMVersion(t)+": vllm: max_model_len must be stated") {
 		t.Errorf("the refusal must be the engine's, naming the missing piece; stderr:\n%s", lastLines(stderr, 4))
 	}
 }
@@ -630,4 +630,29 @@ func TestRunCmd_EngineVersionIsRefusedNamingTheEngineBlock(t *testing.T) {
 		"--rate", "4", "--num-requests", "4", "--seed", "1"); err != nil || !completedIs(out, 4) {
 		t.Fatalf("the same scenario stating engine: {kind} must run: %v\n%s", err, lastLines(accErr, 5))
 	}
+}
+
+// modelledVLLMVersion is the vLLM version this build models, as stack.json states it.
+func modelledVLLMVersion(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "stack.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s struct {
+		Engines []struct {
+			Kind    string `json:"kind"`
+			Version string `json:"version"`
+		} `json:"engines"`
+	}
+	if err := json.Unmarshal(b, &s); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range s.Engines {
+		if e.Kind == "vllm" && e.Version != "" {
+			return e.Version
+		}
+	}
+	t.Fatal("stack.json names no vllm engine version")
+	return ""
 }

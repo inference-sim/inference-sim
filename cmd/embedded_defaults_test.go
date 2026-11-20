@@ -79,6 +79,20 @@ func (e *buildFailure) Error() string { return e.err.Error() + "\n" + e.out }
 func TestBlisBinary_UsesItsEmbeddedDefaults(t *testing.T) {
 	blis := builtBlis(t)
 	scenarios, catalog, registry := kernelRepos(t)
+	// The binary is the shipped one, with no seam to read the block-size oracle's table as recorded
+	// (this package's TestMain does that for in-process runs), so the scenario states its block_size.
+	body, err := os.ReadFile(filepath.Join(scenarios, kernelTestScenario))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stated := strings.Replace(string(body), "    engine:\n", "    engine:\n      block_size: 64\n", 1)
+	if stated == string(body) {
+		t.Fatal("the scenario has no deployment engine block to state block_size in")
+	}
+	scenarios = t.TempDir()
+	if err := os.WriteFile(filepath.Join(scenarios, kernelTestScenario), []byte(stated), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	work := t.TempDir()
 	run := func(extra ...string) (string, string, error) {
 		args := append([]string{"run", "--scenario", kernelTestScenario, "--scenarios", scenarios,

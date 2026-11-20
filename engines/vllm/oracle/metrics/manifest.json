@@ -1,6 +1,6 @@
 {
   "generator": "blis-vllm cmd/metricsmanifest",
-  "vllm": "0.33.0",
+  "vllm": "0.34.0+0fda86a35419",
   "families": [
     {
       "name": "vllm:\u003ckvcr DURATION_METRIC\u003e",
@@ -9,7 +9,7 @@
         "scope",
         "result"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:126",
+      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:127",
       "module": "kv_offload",
       "class": "unavailable",
       "reason": "a metric of the KVCR secondary tier (vllm/v1/kv_offload/tiering/kvcr/manager.py:119-140@5df63a72), whose name is defined in the external kvcr package, not in vLLM; the tier requires that package, which no source installs",
@@ -21,7 +21,7 @@
       "labels": [
         "resource"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:138",
+      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:139",
       "module": "kv_offload",
       "class": "unavailable",
       "reason": "a metric of the KVCR secondary tier (vllm/v1/kv_offload/tiering/kvcr/manager.py:119-140@5df63a72), whose name is defined in the external kvcr package, not in vLLM; the tier requires that package, which no source installs",
@@ -33,7 +33,7 @@
       "labels": [
         "operation"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:134",
+      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:135",
       "module": "kv_offload",
       "class": "unavailable",
       "reason": "a metric of the KVCR secondary tier (vllm/v1/kv_offload/tiering/kvcr/manager.py:119-140@5df63a72), whose name is defined in the external kvcr package, not in vLLM; the tier requires that package, which no source installs",
@@ -45,7 +45,7 @@
       "labels": [
         "operation"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:130",
+      "defined": "vllm/v1/kv_offload/tiering/kvcr/manager.py:131",
       "module": "kv_offload",
       "class": "unavailable",
       "reason": "a metric of the KVCR secondary tier (vllm/v1/kv_offload/tiering/kvcr/manager.py:119-140@5df63a72), whose name is defined in the external kvcr package, not in vLLM; the tier requires that package, which no source installs",
@@ -58,7 +58,7 @@
         "model_name",
         "reason"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:848",
+      "defined": "vllm/v1/metrics/loggers.py:862",
       "module": "engine",
       "class": "unavailable",
       "reason": "the API server's queue-limit rejections (max_num_queued_reqs, max_num_queued_tokens; vllm/v1/metrics/loggers.py:47@5df63a72): front-end admission, which the embedded llm-d router and inference-sim's admission model own, not the engine"
@@ -69,7 +69,7 @@
       "labels": [
         "(the config's metrics_info() keys)"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:1120",
+      "defined": "vllm/v1/metrics/loggers.py:1134",
       "module": "engine",
       "class": "exact",
       "reason": "an info gauge labelled by CacheConfig.metrics_info() (vllm/v1/metrics/loggers.py:1116-1135@5df63a72), a function of the configuration alone"
@@ -80,7 +80,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:631",
+      "defined": "vllm/v1/metrics/loggers.py:645",
       "module": "engine",
       "class": "unavailable",
       "reason": "requests whose logits held NaNs: a property of real numerics on a GPU",
@@ -92,7 +92,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/spec_decode/metrics.py:219",
+      "defined": "vllm/v1/spec_decode/metrics.py:241",
       "module": "spec_decode",
       "class": "unavailable",
       "reason": "diffusion language models: no source serves one",
@@ -104,7 +104,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/spec_decode/metrics.py:223",
+      "defined": "vllm/v1/spec_decode/metrics.py:245",
       "module": "spec_decode",
       "class": "unavailable",
       "reason": "diffusion language models: no source serves one",
@@ -116,7 +116,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/spec_decode/metrics.py:217",
+      "defined": "vllm/v1/spec_decode/metrics.py:239",
       "module": "spec_decode",
       "class": "unavailable",
       "reason": "diffusion language models: no source serves one",
@@ -128,7 +128,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:961",
+      "defined": "vllm/v1/metrics/loggers.py:975",
       "module": "engine",
       "class": "derived",
       "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
@@ -140,7 +140,7 @@
         "labelnames",
         "sleep_state"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:594",
+      "defined": "vllm/v1/metrics/loggers.py:608",
       "module": "engine",
       "class": "unavailable",
       "reason": "the engine's sleep mode (an operator RPC that offloads weights), which no simulated run invokes; it reads awake = 1 throughout"
@@ -151,7 +151,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/perf.py:1764",
+      "defined": "vllm/v1/metrics/perf.py:1765",
       "module": "engine",
       "class": "derived",
       "reason": "per-GPU FLOP and byte estimates from the model shape and each step's batch (vllm/v1/metrics/perf.py@5df63a72): a cost estimate, which belongs with the latency kernel's pricing, given blis-vllm's batches",
@@ -163,7 +163,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/perf.py:1776",
+      "defined": "vllm/v1/metrics/perf.py:1777",
       "module": "engine",
       "class": "derived",
       "reason": "per-GPU FLOP and byte estimates from the model shape and each step's batch (vllm/v1/metrics/perf.py@5df63a72): a cost estimate, which belongs with the latency kernel's pricing, given blis-vllm's batches",
@@ -175,7 +175,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/perf.py:1788",
+      "defined": "vllm/v1/metrics/perf.py:1789",
       "module": "engine",
       "class": "derived",
       "reason": "per-GPU FLOP and byte estimates from the model shape and each step's batch (vllm/v1/metrics/perf.py@5df63a72): a cost estimate, which belongs with the latency kernel's pricing, given blis-vllm's batches",
@@ -187,7 +187,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:698",
+      "defined": "vllm/v1/metrics/loggers.py:712",
       "module": "engine",
       "class": "exact",
       "reason": "a KV connector's prefix-cache queries and hits at admission (vllm/v1/core/sched/scheduler.py:1284-1311@5df63a72), from blis-vllm's connector model; zero without a connector",
@@ -199,7 +199,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:686",
+      "defined": "vllm/v1/metrics/loggers.py:700",
       "module": "engine",
       "class": "exact",
       "reason": "a KV connector's prefix-cache queries and hits at admission (vllm/v1/core/sched/scheduler.py:1284-1311@5df63a72), from blis-vllm's connector model; zero without a connector",
@@ -211,7 +211,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:799",
+      "defined": "vllm/v1/metrics/loggers.py:813",
       "module": "engine",
       "class": "exact",
       "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
@@ -222,7 +222,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/hf3fs/hf3fs_connector.py:1146",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/hf3fs/hf3fs_connector.py:1152",
       "module": "kv_connector",
       "class": "unavailable",
       "reason": "the HF3FS connector, which no source uses (feature matrix: connectors)",
@@ -234,7 +234,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/hf3fs/hf3fs_connector.py:1165",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/hf3fs/hf3fs_connector.py:1171",
       "module": "kv_connector",
       "class": "unavailable",
       "reason": "the HF3FS connector, which no source uses (feature matrix: connectors)",
@@ -246,7 +246,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/hf3fs/hf3fs_connector.py:1156",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/hf3fs/hf3fs_connector.py:1162",
       "module": "kv_connector",
       "class": "unavailable",
       "reason": "the HF3FS connector, which no source uses (feature matrix: connectors)",
@@ -258,7 +258,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/hf3fs/hf3fs_connector.py:1136",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/hf3fs/hf3fs_connector.py:1142",
       "module": "kv_connector",
       "class": "unavailable",
       "reason": "the HF3FS connector, which no source uses (feature matrix: connectors)",
@@ -366,7 +366,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:941",
+      "defined": "vllm/v1/metrics/loggers.py:955",
       "module": "engine",
       "class": "derived",
       "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
@@ -377,7 +377,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:888",
+      "defined": "vllm/v1/metrics/loggers.py:902",
       "module": "engine",
       "class": "exact",
       "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
@@ -388,7 +388,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:1055",
+      "defined": "vllm/v1/metrics/loggers.py:1069",
       "module": "engine",
       "class": "derived",
       "reason": "a KV-block residency interval sampled at kv_cache_metrics_sample (default 1%, vllm/config/observability.py:67@5df63a72) with Python's random (vllm/v1/core/kv_cache_metrics.py:60@5df63a72); blis-vllm reports it on virtual time with its own seeded sampler, so it is a distribution given time and sampling, not a value to match per step",
@@ -400,7 +400,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:1042",
+      "defined": "vllm/v1/metrics/loggers.py:1056",
       "module": "engine",
       "class": "derived",
       "reason": "a KV-block residency interval sampled at kv_cache_metrics_sample (default 1%, vllm/config/observability.py:67@5df63a72) with Python's random (vllm/v1/core/kv_cache_metrics.py:60@5df63a72); blis-vllm reports it on virtual time with its own seeded sampler, so it is a distribution given time and sampling, not a value to match per step",
@@ -412,7 +412,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:1068",
+      "defined": "vllm/v1/metrics/loggers.py:1082",
       "module": "engine",
       "class": "derived",
       "reason": "a KV-block residency interval sampled at kv_cache_metrics_sample (default 1%, vllm/config/observability.py:67@5df63a72) with Python's random (vllm/v1/core/kv_cache_metrics.py:60@5df63a72); blis-vllm reports it on virtual time with its own seeded sampler, so it is a distribution given time and sampling, not a value to match per step",
@@ -424,7 +424,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:620",
+      "defined": "vllm/v1/metrics/loggers.py:634",
       "module": "engine",
       "class": "exact",
       "reason": "set from SchedulerStats the scheduler fills at each step (vllm/v1/metrics/loggers.py:1146-1172@5df63a72), which blis-vllm's scheduler produces from the same decisions"
@@ -455,7 +455,7 @@
       "name": "vllm:kv_offload_cpu_allocation_size",
       "type": "histogram",
       "labels": [],
-      "defined": "vllm/v1/kv_offload/cpu/spec.py:77",
+      "defined": "vllm/v1/kv_offload/cpu/spec.py:81",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the CPU tier's occupancy and allocation sizes, set from the offload manager's own block accounting (vllm/v1/kv_offload/cpu/manager.py:459-478@5df63a72)",
@@ -465,7 +465,7 @@
       "name": "vllm:kv_offload_cpu_cache_read_usage_perc",
       "type": "gauge",
       "labels": [],
-      "defined": "vllm/v1/kv_offload/cpu/spec.py:70",
+      "defined": "vllm/v1/kv_offload/cpu/spec.py:74",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the CPU tier's occupancy and allocation sizes, set from the offload manager's own block accounting (vllm/v1/kv_offload/cpu/manager.py:459-478@5df63a72)",
@@ -475,7 +475,7 @@
       "name": "vllm:kv_offload_cpu_cache_usage_perc",
       "type": "gauge",
       "labels": [],
-      "defined": "vllm/v1/kv_offload/cpu/spec.py:55",
+      "defined": "vllm/v1/kv_offload/cpu/spec.py:59",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the CPU tier's occupancy and allocation sizes, set from the offload manager's own block accounting (vllm/v1/kv_offload/cpu/manager.py:459-478@5df63a72)",
@@ -485,7 +485,7 @@
       "name": "vllm:kv_offload_cpu_cache_write_usage_perc",
       "type": "gauge",
       "labels": [],
-      "defined": "vllm/v1/kv_offload/cpu/spec.py:63",
+      "defined": "vllm/v1/kv_offload/cpu/spec.py:67",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the CPU tier's occupancy and allocation sizes, set from the offload manager's own block accounting (vllm/v1/kv_offload/cpu/manager.py:459-478@5df63a72)",
@@ -585,7 +585,7 @@
       "name": "vllm:kv_offload_stores_skipped",
       "type": "counter",
       "labels": [],
-      "defined": "vllm/v1/kv_offload/cpu/spec.py:88",
+      "defined": "vllm/v1/kv_offload/cpu/spec.py:92",
       "module": "kv_offload",
       "class": "exact",
       "reason": "stores the CPU offload manager skipped below its reuse threshold, a decision of the manager",
@@ -597,7 +597,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:244",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:248",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -609,7 +609,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:237",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:241",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -621,7 +621,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:300",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:325",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -633,7 +633,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:282",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:307",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -645,7 +645,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:291",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:316",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -657,7 +657,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:193",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:197",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -669,7 +669,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:206",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:210",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -681,10 +681,34 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:200",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:204",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec"
+    },
+    {
+      "name": "vllm:kv_offload_tiering_deferred_release_chunks",
+      "type": "gauge",
+      "labels": [
+        "((TIER_LABEL,))"
+      ],
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:255",
+      "module": "kv_offload",
+      "class": "unavailable",
+      "reason": "the deferred release of a failed promotion's primary-tier chunks, added after v0.33.0 (vllm/v1/kv_offload/tiering/spec.py:255@0fda86a3); engines/vllm does not yet model it (inference-sim/inference-sim#2290)",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec"
+    },
+    {
+      "name": "vllm:kv_offload_tiering_deferred_release_hold_seconds",
+      "type": "histogram",
+      "labels": [
+        "((TIER_LABEL,))"
+      ],
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:265",
+      "module": "kv_offload",
+      "class": "unavailable",
+      "reason": "the deferred release of a failed promotion's primary-tier chunks, added after v0.33.0 (vllm/v1/kv_offload/tiering/spec.py:265@0fda86a3); engines/vllm does not yet model it (inference-sim/inference-sim#2290)",
       "enabled_by": "OffloadingConnector, TieringOffloadingSpec"
     },
     {
@@ -693,7 +717,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:130",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:134",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -705,7 +729,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:108",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:112",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -717,7 +741,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:228",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:232",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -729,7 +753,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:219",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:223",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -739,7 +763,7 @@
       "name": "vllm:kv_offload_tiering_promotion_allocation_failures",
       "type": "counter",
       "labels": [],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:211",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:215",
       "module": "kv_offload",
       "class": "exact",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)",
@@ -751,7 +775,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:185",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:189",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -763,7 +787,7 @@
       "labels": [
         "result"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:251",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:276",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -775,7 +799,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:152",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:156",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -787,7 +811,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:159",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:163",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -799,7 +823,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:169",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:173",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -811,7 +835,7 @@
       "labels": [
         "((TIER_LABEL,))"
       ],
-      "defined": "vllm/v1/kv_offload/tiering/spec.py:176",
+      "defined": "vllm/v1/kv_offload/tiering/spec.py:180",
       "module": "kv_offload",
       "class": "derived",
       "reason": "a tier's transfer bytes, times, delays, latency estimate and job failures: they follow the transfers blis-vllm starts, given the durations and outcomes the simulator supplies",
@@ -843,7 +867,7 @@
       "labels": [
         "([)"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:1104",
+      "defined": "vllm/v1/metrics/loggers.py:1118",
       "module": "engine",
       "class": "derived",
       "reason": "running and waiting LoRA adapters, refreshed with the wall-clock time of the update (set_to_current_time, vllm/v1/metrics/loggers.py:1236@5df63a72): the adapter sets follow the scheduler; the sample value is a timestamp the simulator supplies",
@@ -855,7 +879,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:725",
+      "defined": "vllm/v1/metrics/loggers.py:739",
       "module": "engine",
       "class": "unavailable",
       "reason": "the multimodal processor cache: no source serves multimodal requests (feature-matrix exclusion of multimodal encoder scheduling)"
@@ -866,7 +890,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:714",
+      "defined": "vllm/v1/metrics/loggers.py:728",
       "module": "engine",
       "class": "unavailable",
       "reason": "the multimodal processor cache: no source serves multimodal requests (feature-matrix exclusion of multimodal encoder scheduling)"
@@ -937,7 +961,7 @@
       "labels": [
         "(metric_labelnames)"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/metrics.py:148",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake_store/metrics.py:148",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
@@ -949,7 +973,7 @@
       "labels": [
         "(metric_labelnames)"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/metrics.py:153",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake_store/metrics.py:153",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
@@ -961,7 +985,7 @@
       "labels": [
         "(metric_labelnames)"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/metrics.py:143",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake_store/metrics.py:143",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
@@ -971,7 +995,7 @@
       "name": "vllm:mooncake_store_operation_time_seconds",
       "type": "histogram",
       "labels": [],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/metrics.py:116",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake_store/metrics.py:116",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
@@ -983,7 +1007,7 @@
       "labels": [
         "(metric_labelnames)"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/metrics.py:138",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake_store/metrics.py:138",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
@@ -1007,10 +1031,22 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:209",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:217",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
+      "enabled_by": "NixlConnector"
+    },
+    {
+      "name": "vllm:nixl_num_declined_expired_reads",
+      "type": "counter",
+      "labels": [
+        "labelnames"
+      ],
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:296",
+      "module": "kv_connector",
+      "class": "unavailable",
+      "reason": "the reading instance's count of remote KV reads declined after the lease expired, added after v0.33.0 (vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:296@0fda86a3); engines/vllm does not yet model it (inference-sim/inference-sim#2290)",
       "enabled_by": "NixlConnector"
     },
     {
@@ -1019,7 +1055,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:234",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:242",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
@@ -1031,7 +1067,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:255",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:263",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
@@ -1043,7 +1079,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:244",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:252",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
@@ -1055,7 +1091,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:266",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:274",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
@@ -1067,7 +1103,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:276",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:284",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
@@ -1079,7 +1115,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:197",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:205",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
@@ -1091,7 +1127,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:188",
+      "defined": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:196",
       "module": "kv_connector",
       "class": "derived",
       "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)",
@@ -1103,7 +1139,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:739",
+      "defined": "vllm/v1/metrics/loggers.py:753",
       "module": "engine",
       "class": "exact",
       "reason": "set from SchedulerStats the scheduler fills at each step (vllm/v1/metrics/loggers.py:1146-1172@5df63a72), which blis-vllm's scheduler produces from the same decisions"
@@ -1115,7 +1151,7 @@
         "labelnames",
         "stage"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:573",
+      "defined": "vllm/v1/metrics/loggers.py:587",
       "module": "engine",
       "class": "exact",
       "reason": "waiting requests by async KV-load stage, a count of the scheduler's own request states",
@@ -1127,7 +1163,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:528",
+      "defined": "vllm/v1/metrics/loggers.py:542",
       "module": "engine",
       "class": "exact",
       "reason": "set from SchedulerStats the scheduler fills at each step (vllm/v1/metrics/loggers.py:1146-1172@5df63a72), which blis-vllm's scheduler produces from the same decisions"
@@ -1138,7 +1174,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:538",
+      "defined": "vllm/v1/metrics/loggers.py:552",
       "module": "engine",
       "class": "exact",
       "reason": "set from SchedulerStats the scheduler fills at each step (vllm/v1/metrics/loggers.py:1146-1172@5df63a72), which blis-vllm's scheduler produces from the same decisions"
@@ -1150,7 +1186,7 @@
         "labelnames",
         "reason"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:548",
+      "defined": "vllm/v1/metrics/loggers.py:562",
       "module": "engine",
       "class": "exact",
       "reason": "set from SchedulerStats the scheduler fills at each step (vllm/v1/metrics/loggers.py:1146-1172@5df63a72), which blis-vllm's scheduler produces from the same decisions"
@@ -1161,7 +1197,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:673",
+      "defined": "vllm/v1/metrics/loggers.py:687",
       "module": "engine",
       "class": "exact",
       "reason": "the local prefix cache's queries and hits, counted where the scheduler admits a request (record_prefix_cache_stats, vllm/v1/core/kv_cache_manager.py:244-262@5df63a72), from blis-vllm's own prefix lookup"
@@ -1172,7 +1208,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:662",
+      "defined": "vllm/v1/metrics/loggers.py:676",
       "module": "engine",
       "class": "exact",
       "reason": "the local prefix cache's queries and hits, counted where the scheduler admits a request (record_prefix_cache_stats, vllm/v1/core/kv_cache_manager.py:244-262@5df63a72), from blis-vllm's own prefix lookup"
@@ -1183,7 +1219,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:748",
+      "defined": "vllm/v1/metrics/loggers.py:762",
       "module": "engine",
       "class": "exact",
       "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
@@ -1195,7 +1231,7 @@
         "labelnames",
         "source"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:758",
+      "defined": "vllm/v1/metrics/loggers.py:772",
       "module": "engine",
       "class": "exact",
       "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
@@ -1206,7 +1242,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:773",
+      "defined": "vllm/v1/metrics/loggers.py:787",
       "module": "engine",
       "class": "exact",
       "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
@@ -1218,7 +1254,7 @@
         "labelnames",
         "source"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:782",
+      "defined": "vllm/v1/metrics/loggers.py:796",
       "module": "engine",
       "class": "exact",
       "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
@@ -1229,7 +1265,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:1001",
+      "defined": "vllm/v1/metrics/loggers.py:1015",
       "module": "engine",
       "class": "derived",
       "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
@@ -1240,7 +1276,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:875",
+      "defined": "vllm/v1/metrics/loggers.py:889",
       "module": "engine",
       "class": "exact",
       "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
@@ -1251,7 +1287,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:981",
+      "defined": "vllm/v1/metrics/loggers.py:995",
       "module": "engine",
       "class": "derived",
       "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
@@ -1262,7 +1298,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:898",
+      "defined": "vllm/v1/metrics/loggers.py:912",
       "module": "engine",
       "class": "exact",
       "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
@@ -1273,7 +1309,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:1011",
+      "defined": "vllm/v1/metrics/loggers.py:1025",
       "module": "engine",
       "class": "exact",
       "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
@@ -1284,7 +1320,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:918",
+      "defined": "vllm/v1/metrics/loggers.py:932",
       "module": "engine",
       "class": "exact",
       "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
@@ -1295,7 +1331,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:908",
+      "defined": "vllm/v1/metrics/loggers.py:922",
       "module": "engine",
       "class": "exact",
       "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
@@ -1306,7 +1342,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:1021",
+      "defined": "vllm/v1/metrics/loggers.py:1035",
       "module": "engine",
       "class": "exact",
       "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
@@ -1317,7 +1353,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:991",
+      "defined": "vllm/v1/metrics/loggers.py:1005",
       "module": "engine",
       "class": "derived",
       "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
@@ -1328,7 +1364,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:865",
+      "defined": "vllm/v1/metrics/loggers.py:879",
       "module": "engine",
       "class": "exact",
       "reason": "counted from IterationStats the output processor builds from the engine's outputs (vllm/v1/metrics/stats.py:474-605@5df63a72): token and request counts follow the scheduler's decisions alone"
@@ -1339,10 +1375,22 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:971",
+      "defined": "vllm/v1/metrics/loggers.py:985",
       "module": "engine",
       "class": "derived",
       "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
+    },
+    {
+      "name": "vllm:request_render_duration_seconds",
+      "type": "histogram",
+      "labels": [
+        "model_name",
+        "request_type"
+      ],
+      "defined": "vllm/renderers/metrics.py:16",
+      "module": "other",
+      "class": "unavailable",
+      "reason": "the wall time the online API server spends rendering a request (chat template, tokenization, multimodal preprocessing): front-end host time, which the embedded router and a token-level simulation do not run (vllm/renderers/metrics.py:16@0fda86a3)"
     },
     {
       "name": "vllm:request_success",
@@ -1351,7 +1399,7 @@
         "labelnames",
         "finished_reason"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:809",
+      "defined": "vllm/v1/metrics/loggers.py:823",
       "module": "engine",
       "class": "exact",
       "reason": "finished requests by finish reason, from the scheduler's check_stop and finish_requests (vllm/v1/core/sched/utils.py:98-140@5df63a72)"
@@ -1362,7 +1410,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:951",
+      "defined": "vllm/v1/metrics/loggers.py:965",
       "module": "engine",
       "class": "derived",
       "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
@@ -1469,7 +1517,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/spec_decode/metrics.py:231",
+      "defined": "vllm/v1/spec_decode/metrics.py:253",
       "module": "spec_decode",
       "class": "exact",
       "reason": "the scheduler decides how many drafts each verify step schedules, and the accepted count is the acceptance the simulator supplies (#2021 B3), so given that input each counter is an exact function of the scheduler's decisions (SpecDecodingStats.observe_draft, vllm/v1/spec_decode/metrics.py:41-49@5df63a72); checked against vLLM's own logger by the speculative tier-5 scenarios",
@@ -1482,7 +1530,7 @@
         "labelnames",
         "position"
       ],
-      "defined": "vllm/v1/spec_decode/metrics.py:255",
+      "defined": "vllm/v1/spec_decode/metrics.py:287",
       "module": "spec_decode",
       "class": "exact",
       "reason": "the scheduler decides how many drafts each verify step schedules, and the accepted count is the acceptance the simulator supplies (#2021 B3), so given that input each counter is an exact function of the scheduler's decisions (SpecDecodingStats.observe_draft, vllm/v1/spec_decode/metrics.py:41-49@5df63a72); checked against vLLM's own logger by the speculative tier-5 scenarios",
@@ -1494,7 +1542,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/spec_decode/metrics.py:230",
+      "defined": "vllm/v1/spec_decode/metrics.py:252",
       "module": "spec_decode",
       "class": "exact",
       "reason": "the scheduler decides how many drafts each verify step schedules, and the accepted count is the acceptance the simulator supplies (#2021 B3), so given that input each counter is an exact function of the scheduler's decisions (SpecDecodingStats.observe_draft, vllm/v1/spec_decode/metrics.py:41-49@5df63a72); checked against vLLM's own logger by the speculative tier-5 scenarios",
@@ -1506,10 +1554,34 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/spec_decode/metrics.py:229",
+      "defined": "vllm/v1/spec_decode/metrics.py:251",
       "module": "spec_decode",
       "class": "exact",
       "reason": "the scheduler decides how many drafts each verify step schedules, and the accepted count is the acceptance the simulator supplies (#2021 B3), so given that input each counter is an exact function of the scheduler's decisions (SpecDecodingStats.observe_draft, vllm/v1/spec_decode/metrics.py:41-49@5df63a72); checked against vLLM's own logger by the speculative tier-5 scenarios",
+      "enabled_by": "speculative_config"
+    },
+    {
+      "name": "vllm:spec_decode_num_verified_tokens",
+      "type": "counter",
+      "labels": [
+        "labelnames"
+      ],
+      "defined": "vllm/v1/spec_decode/metrics.py:255",
+      "module": "spec_decode",
+      "class": "unavailable",
+      "reason": "the draft tokens the target verified, added after v0.33.0 (vllm/v1/spec_decode/metrics.py:255@0fda86a3); engines/vllm does not yet model it (inference-sim/inference-sim#2290)",
+      "enabled_by": "speculative_config"
+    },
+    {
+      "name": "vllm:spec_decode_num_verified_tokens_per_pos",
+      "type": "counter",
+      "labels": [
+        "(pos_labelnames)"
+      ],
+      "defined": "vllm/v1/spec_decode/metrics.py:292",
+      "module": "spec_decode",
+      "class": "unavailable",
+      "reason": "the draft tokens the target verified, added after v0.33.0 (vllm/v1/spec_decode/metrics.py:255@0fda86a3); engines/vllm does not yet model it (inference-sim/inference-sim#2290)",
       "enabled_by": "speculative_config"
     },
     {
@@ -1518,7 +1590,7 @@
       "labels": [
         "labelnames"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:931",
+      "defined": "vllm/v1/metrics/loggers.py:945",
       "module": "engine",
       "class": "derived",
       "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
@@ -1593,7 +1665,7 @@
         "labelnames",
         "status"
       ],
-      "defined": "vllm/v1/metrics/loggers.py:644",
+      "defined": "vllm/v1/metrics/loggers.py:658",
       "module": "engine",
       "class": "unavailable",
       "reason": "finished requests by output watermark status: text watermarking, which a token-level simulation does not model",
@@ -1628,9 +1700,9 @@
     }
   ],
   "counts": {
-    "total": 142,
+    "total": 148,
     "exact": 50,
     "derived": 55,
-    "unavailable": 37
+    "unavailable": 43
   }
 }

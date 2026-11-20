@@ -88,10 +88,6 @@ var adapterGoldens = []string{
 	"chunked-prefill-off", "chunked-prefill-off-long-prefill",
 }
 
-// derivedAtCommit is the vLLM main head the rules were ported to (row 3d); a golden marked
-// derived_from_source was read from that source, not recorded from it (core/sched's derivedAtCommit).
-const derivedAtCommit = "0fda86a35419c9c70dbfada224c838c10fbb62ad"
-
 func TestAdapterAgainstVLLM(t *testing.T) {
 	var mocks struct {
 		Version string `json:"version"`
@@ -124,12 +120,12 @@ func TestAdapterAgainstVLLM(t *testing.T) {
 				t.Fatal(err)
 			}
 			sum := sha256.Sum256(raw)
-			wantCommit, wantVersion := upstream.Commit, Version
+			wantCommit, wantVersion := upstream.OracleCommit, upstream.OracleVersion
 			if want.Provenance.DerivedFromSource != "" {
 				if want.Provenance.OracleRun == nil || *want.Provenance.OracleRun {
 					t.Fatalf("golden %s is derived from source and must record oracle_run false", name)
 				}
-				wantCommit, wantVersion = derivedAtCommit, derivedAtCommit[:12]
+				wantCommit, wantVersion = upstream.Commit, upstream.Commit[:12]
 			}
 			if want.Provenance.ScenarioSHA256 != hex.EncodeToString(sum[:]) ||
 				want.Provenance.VLLMCommit != wantCommit ||

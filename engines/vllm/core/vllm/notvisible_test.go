@@ -90,6 +90,25 @@ var notVisibleCases = []struct {
 		"speculative_config.model", "my_pkg.Proposer"},
 }
 
+// refusedByStrictParsing are the path-loaded components whose setting the engine block has no key
+// for, so a deployment cannot state it: the strict speculative_config block refuses the key, which
+// TestAPathLoaderTheBlockHasNoKeyForIsRefusedByStrictParsing runs. Each is a surface.json item.
+var refusedByStrictParsing = map[string]string{
+	// SpeculatorConfig.speculator_class, a qualified name a speculator registered through
+	// register_speculative_method supplies (vllm/v1/worker/gpu/spec_decode/__init__.py:36@0fda86a3).
+	"speculative_config.speculator_config.speculator_class (qualified name)": "speculator_config",
+}
+
+func TestAPathLoaderTheBlockHasNoKeyForIsRefusedByStrictParsing(t *testing.T) {
+	for item, key := range refusedByStrictParsing {
+		block := "speculative_config: {method: eagle3, num_speculative_tokens: 2, " + key + ": {speculator_class: my_pkg.Speculator}}\n"
+		_, err := build(t, block)()
+		if err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("%s: stating %s: err %v, want a refusal naming it", item, key, err)
+		}
+	}
+}
+
 func TestCodeVLLMLoadsFromOutsideTheReleaseIsRefusedByName(t *testing.T) {
 	for _, c := range notVisibleCases {
 		t.Run(c.name, func(t *testing.T) {
@@ -194,6 +213,9 @@ func TestEveryPathLoaderOfTheSurfaceListIsRefusedAndRun(t *testing.T) {
 		if c.item != "" {
 			run[c.item] = true
 		}
+	}
+	for item := range refusedByStrictParsing {
+		run[item] = true
 	}
 	for _, it := range surfaceItems(t, "path_loader") {
 		name, _ := it["name"].(string)

@@ -105,6 +105,24 @@ func TestPadTokensMatchSource(t *testing.T) {
 		}
 		return string(b)
 	}
+	// Model Runner V1 (worker/gpu_model_runner.py) is gone at the vLLM main head the engine is
+	// pinned to (Model Runner V2, worker/gpu/, replaced it), so its lines can be checked only in
+	// a checkout that still has it. The shared dp_utils.py lines are checked in every checkout;
+	// the V1 lines' V2 counterpart is not re-derived here.
+	if _, err := os.Stat(filepath.Join(root, "vllm", "v1", "worker", "gpu_model_runner.py")); err != nil {
+		t.Logf("VLLM_SOURCE=%s has no worker/gpu_model_runner.py (Model Runner V1 was removed): "+
+			"the V1 engine lines of PadTokens' documentation were NOT checked", root)
+		src := read("vllm", "v1", "worker", "dp_utils.py")
+		for _, w := range []string{
+			"def _post_process_dp_padding(tensor: torch.Tensor, should_dp_pad: bool) -> torch.Tensor:",
+			"max_num_tokens = int(num_tokens_across_dp.max().item())",
+		} {
+			if !strings.Contains(src, w) {
+				t.Errorf("dp_utils.py no longer contains %q; re-derive PadTokens' documentation", w)
+			}
+		}
+		return
+	}
 	for file, wants := range map[string][]string{
 		"dp_utils.py": {
 			"def _post_process_dp_padding(tensor: torch.Tensor, should_dp_pad: bool) -> torch.Tensor:",

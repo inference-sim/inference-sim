@@ -87,7 +87,7 @@ var engineKeys = map[string][]string{
 	"mamba_cache_dtype":                        {"mamba_cache_dtype"},
 	"mamba_ssm_cache_dtype":                    {"mamba_ssm_cache_dtype"},
 	"moe_backend":                              {"moe_backend", "kernel_config.moe_backend"},
-	"mamba_cache_mode":                         {"mamba_cache_mode"},
+	"mamba_cache_mode":                         {}, // no name at the pin: removed by #63830, the key is kept to refuse a stated value
 	"gpu_memory_utilization":                   {"gpu_memory_utilization"},
 	"scheduling_policy":                        {"scheduling_policy"},
 	"dbo.enable_dbo":                           {"enable_dbo"},
@@ -130,7 +130,6 @@ var refused = map[string]string{
 	"eplb_config.step_interval":             "enable_eplb: true\neplb_config: {step_interval: 100}\n",
 	"prefix_match_unit":                     "prefix_match_unit: 8\n",
 	"prefix_cache_retention_interval":       "prefix_cache_retention_interval: 256\n",
-	"mamba_cache_mode":                      "mamba_cache_mode: align\n",
 }
 
 // atDefault is the partner of each refused case (SIM-9's refusal pair): the same setting stated at
@@ -159,7 +158,6 @@ var noDefaultValue = map[string]string{
 	"attention_config.mla_prefill_backend":  "vllm/config/attention.py:81@5df63a72",
 	"speculative_config.kv_cache_dtype":     "vllm/config/speculative.py:428@5df63a72",
 	"prefix_match_unit":                     "vllm/config/cache.py:90@5df63a72",
-	"mamba_cache_mode":                      "removed from vllm/config/cache.py (#63830), so no value is accepted",
 }
 
 // pricedByTheKernel is the allow-list: keys the latency kernel prices through the lowering of the
@@ -257,7 +255,7 @@ func indent(s, pad string) string {
 func TestEveryNotModelledFieldIsRefusedOrExplained(t *testing.T) {
 	Register()
 	// The base fixture builds, so a refusal below is the stated field's.
-	if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: withEngine(t, "")}); err != nil {
+	if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: withEngine(t, "")}); err != nil {
 		t.Fatalf("the base scenario does not build: %v", err)
 	}
 	keyOf := map[string]string{}
@@ -279,14 +277,14 @@ func TestEveryNotModelledFieldIsRefusedOrExplained(t *testing.T) {
 			// Each build opens its own Data and a scenario of its own, so the refusals run in parallel.
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()
-				_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: withEngine(t, snippet)})
+				_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: withEngine(t, snippet)})
 				if err == nil {
 					t.Errorf("%s: stated as %q, away from vLLM's default, and not refused", name, strings.TrimSpace(snippet))
 					return
 				}
 				// The pair: the same key at vLLM's default builds.
 				if def, ok := atDefault[name]; ok {
-					if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: withEngine(t, def)}); err != nil {
+					if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: withEngine(t, def)}); err != nil {
 						t.Errorf("%s: stated at vLLM's default as %q, and refused: %v", name, strings.TrimSpace(def), err)
 					}
 				} else if _, ok := noDefaultValue[name]; !ok {
@@ -302,7 +300,7 @@ func TestEveryNotModelledFieldIsRefusedOrExplained(t *testing.T) {
 				}
 			})
 		case readByTheEngine[name].snippet != "":
-			if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: withEngine(t, readByTheEngine[name].snippet)}); err != nil {
+			if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: withEngine(t, readByTheEngine[name].snippet)}); err != nil {
 				t.Errorf("%s: %s, which %s covers, is refused: %v", name, readByTheEngine[name].snippet, readByTheEngine[name].test, err)
 			}
 		case pricedByTheKernel[name] != "":
@@ -414,7 +412,7 @@ func TestADeploymentStatesDPSyncInterval(t *testing.T) {
 	// the group stays busy past the request's last token follows the stated interval.
 	end := func(extra string) (engine.Time, int) {
 		tr, err := enginetest.Drive(func() (engine.Engine, error) {
-			return engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: withEngine(t, extra)})
+			return engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: withEngine(t, extra)})
 		}, []enginetest.Arrival{{At: 0, Req: engine.Request{ID: "a", Prompt: make([]int32, 64), Output: make([]int32, 4)}}}, enginetest.Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -455,7 +453,7 @@ func TestOnlySyntheticRejectionSamplingIsRefused(t *testing.T) {
 			extra += ", rejection_sample_method: " + c.method
 		}
 		extra += c.length + "}\n"
-		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: withEngine(t, extra)})
+		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: withEngine(t, extra)})
 		if c.refused != (err != nil) {
 			t.Errorf("rejection_sample_method %q%s: err %v, want refused %t", c.method, c.length, err, c.refused)
 		}
@@ -475,12 +473,24 @@ func TestKVEventsPublisherDefaultFollowsEnableKVCacheEvents(t *testing.T) {
 		{true, "zmq", false}, {true, "null", true}, {false, "null", false}, {false, "zmq", true},
 	} {
 		extra := fmt.Sprintf("kv_events_config: {enable_kv_cache_events: %t, publisher: %q}\n", c.enabled, c.publisher)
-		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: withEngine(t, extra)})
+		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: withEngine(t, extra)})
 		if c.refused != (err != nil) {
 			t.Errorf("events %t, publisher %s: err %v, want refused %t", c.enabled, c.publisher, err, c.refused)
 		}
 		if err != nil && !strings.Contains(err.Error(), "issues/60") {
 			t.Errorf("events %t, publisher %s: refusal does not cite #60: %v", c.enabled, c.publisher, err)
+		}
+	}
+}
+
+// mamba_cache_mode was removed from vLLM's CacheConfig (#63830), so the pin has no such setting and
+// the engine refuses a stated value, whatever it is, naming the release.
+func TestTheEngineRefusesAMambaCacheModeTheReleaseDoesNotHave(t *testing.T) {
+	Register()
+	for _, mode := range []string{"none", "align", "all"} {
+		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: withEngine(t, "mamba_cache_mode: "+mode+"\n")})
+		if err == nil || !strings.Contains(err.Error(), "mamba_cache_mode") || !strings.Contains(err.Error(), "enable_prefix_caching") {
+			t.Errorf("mamba_cache_mode %s: err %v, want a refusal naming mamba_cache_mode and enable_prefix_caching", mode, err)
 		}
 	}
 }
@@ -524,7 +534,7 @@ func TestTheEngineRefusesUseTRTLLMAttentionWhateverItsValue(t *testing.T) {
 		if err := os.WriteFile(roots[RootScenario], []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		_, err = engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots})
+		_, err = engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: roots})
 		return err
 	}
 	for _, c := range []struct{ chip, line string }{

@@ -5,10 +5,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
@@ -68,9 +70,11 @@ func toString(v any) string {
 // own settings carry the same values, so the scheduler runs the batch the cost model prices.
 func TestAnEngineBuildsFromAnUnstatedDeploymentWithOneSetOfValues(t *testing.T) {
 	Register()
+	// block_size resolves from the oracle's table as recorded; the pin's refusal is held below.
+	t.Cleanup(kernelmodel.ReadBlockSizeTableAsRecorded())
 	const fixture = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
 	roots := scenarioWithout(t, fixture, "block_size", "max_num_seqs", "max_num_batched_tokens", "gpu_memory_utilization")
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots, Pool: 0}
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: roots, Pool: 0}
 	p, err := open(spec, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -97,10 +101,21 @@ func TestAnEngineBuildsFromAnUnstatedDeploymentWithOneSetOfValues(t *testing.T) 
 	}
 }
 
+// The block-size oracle's table is from another commit than the pin, so an unstated block_size is
+// refused naming the issue that re-runs it, rather than resolved to a size the pin may not pick.
+func TestAnUnstatedBlockSizeIsRefusedWhileTheOracleTableIsFromAnotherCommit(t *testing.T) {
+	Register()
+	roots := scenarioWithout(t, "gpt-oss-120b-h200-fp4-vllm-tp4.yaml", "block_size")
+	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: roots})
+	if err == nil || !strings.Contains(err.Error(), "block_size") || !strings.Contains(err.Error(), "blis-vllm/issues/68") {
+		t.Errorf("an unstated block_size: err %v, want a refusal naming block_size and issues/68", err)
+	}
+}
+
 // A value the file states wins: complete never replaces it.
 func TestAStatedEngineSettingIsNeverReplaced(t *testing.T) {
 	Register()
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Pool: 0,
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Pool: 0,
 		Roots: scenarioWithout(t, "gpt-oss-120b-h200-fp4-vllm-tp4.yaml", "max_num_seqs", "max_num_batched_tokens")}
 	p, err := open(spec, nil)
 	if err != nil {

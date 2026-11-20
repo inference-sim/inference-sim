@@ -292,6 +292,16 @@
       "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
       "reason": "the tiering manager's own lookups, promotions, cascades and backpressure drops (vllm/v1/kv_offload/tiering/metrics.py@5df63a72), decisions blis-vllm makes on virtual time (#2021 B3: decision clocks run on the simulator's now)"
     },
+    "vllm:kv_offload_tiering_deferred_release_chunks": {
+      "class": "unavailable",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "the deferred release of a failed promotion's primary-tier chunks, added after v0.33.0 (vllm/v1/kv_offload/tiering/spec.py:255@0fda86a3); engines/vllm does not yet model it (inference-sim/inference-sim#2290)"
+    },
+    "vllm:kv_offload_tiering_deferred_release_hold_seconds": {
+      "class": "unavailable",
+      "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
+      "reason": "the deferred release of a failed promotion's primary-tier chunks, added after v0.33.0 (vllm/v1/kv_offload/tiering/spec.py:265@0fda86a3); engines/vllm does not yet model it (inference-sim/inference-sim#2290)"
+    },
     "vllm:kv_offload_tiering_lookup_async_delay_seconds": {
       "class": "derived",
       "enabled_by": "OffloadingConnector, TieringOffloadingSpec",
@@ -430,6 +440,11 @@
       "enabled_by": "NixlConnector",
       "reason": "a KV connector's transfer statistics: bytes and counts follow blis-vllm's connector decisions; durations and failures are inputs the simulator supplies through TransferDone (#2021 B3)"
     },
+    "vllm:nixl_num_declined_expired_reads": {
+      "class": "unavailable",
+      "enabled_by": "NixlConnector",
+      "reason": "the reading instance's count of remote KV reads declined after the lease expired, added after v0.33.0 (vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py:296@0fda86a3); engines/vllm does not yet model it (inference-sim/inference-sim#2290)"
+    },
     "vllm:nixl_num_descriptors": {
       "class": "derived",
       "enabled_by": "NixlConnector",
@@ -554,6 +569,10 @@
       "class": "derived",
       "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
     },
+    "vllm:request_render_duration_seconds": {
+      "class": "unavailable",
+      "reason": "the wall time the online API server spends rendering a request (chat template, tokenization, multimodal preprocessing): front-end host time, which the embedded router and a token-level simulation do not run (vllm/renderers/metrics.py:16@0fda86a3)"
+    },
     "vllm:request_success": {
       "class": "exact",
       "reason": "finished requests by finish reason, from the scheduler's check_stop and finish_requests (vllm/v1/core/sched/utils.py:98-140@5df63a72)"
@@ -623,6 +642,16 @@
       "enabled_by": "speculative_config",
       "reason": "the scheduler decides how many drafts each verify step schedules, and the accepted count is the acceptance the simulator supplies (#2021 B3), so given that input each counter is an exact function of the scheduler's decisions (SpecDecodingStats.observe_draft, vllm/v1/spec_decode/metrics.py:41-49@5df63a72); checked against vLLM's own logger by the speculative tier-5 scenarios"
     },
+    "vllm:spec_decode_num_verified_tokens": {
+      "class": "unavailable",
+      "enabled_by": "speculative_config",
+      "reason": "the draft tokens the target verified, added after v0.33.0 (vllm/v1/spec_decode/metrics.py:255@0fda86a3); engines/vllm does not yet model it (inference-sim/inference-sim#2290)"
+    },
+    "vllm:spec_decode_num_verified_tokens_per_pos": {
+      "class": "unavailable",
+      "enabled_by": "speculative_config",
+      "reason": "the draft tokens the target verified, added after v0.33.0 (vllm/v1/spec_decode/metrics.py:255@0fda86a3); engines/vllm does not yet model it (inference-sim/inference-sim#2290)"
+    },
     "vllm:time_to_first_token_seconds": {
       "class": "derived",
       "reason": "an interval between engine events; blis-vllm reports it on the virtual time the simulator passes in, so it is computed given the step durations the latency kernel prices (#2021 B3, B7)"
@@ -676,5 +705,5 @@
     "vllm/entrypoints/serve/utils/orca_metrics.py:vllm:num_requests_waiting": "maps the engine family of this name to an ORCA load-report field; the family is defined in vllm/v1/metrics/loggers.py",
     "vllm/v1/metrics/reader.py:vllm:spec_decode_num_accepted_tokens_per_pos": "the metrics reader recognizes this family by name to group its samples; it is defined in vllm/v1/spec_decode/metrics.py"
   },
-  "vllm": "0.33.0"
+  "vllm": "0.34.0+0fda86a35419"
 }

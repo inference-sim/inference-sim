@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/kv_offload/tiering/p2p/control/zmq.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
+// Derived from vllm/v1/kv_offload/tiering/p2p/control/zmq.py at vLLM v0.34.0+0fda86a35419 (0fda86a35419c9c70dbfada224c838c10fbb62ad).
 // Also p2p/data/nixl.py, over the in-memory sockets and NIXL agent of blis-vllm's oracle
 // (oracle/fake_zmq, oracle/fake_nixl).
 

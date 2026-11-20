@@ -16,6 +16,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
@@ -91,7 +92,7 @@ func kvStartupEngine(t *testing.T, scenario string, pinGiB float64) engine.Engin
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: map[string]string{RootScenario: path}})
+	e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: map[string]string{RootScenario: path}})
 	if err != nil {
 		t.Fatalf("%s: %v", scenario, err)
 	}
@@ -127,6 +128,9 @@ func tightestTier(dev float64) float64 {
 // arguments; only the number of fit units behind each logged figure is kept, not their identity.
 func TestEngineKVStartupFigureAgainstTheLoggedOne(t *testing.T) {
 	Register()
+	// The logged figures are of runs at the vLLM releases the oracle recorded; the scenarios state no
+	// block_size, so it is the table as recorded that names theirs.
+	t.Cleanup(kernelmodel.ReadBlockSizeTableAsRecorded())
 	f := loadKVStartup(t)
 	type dev struct{ e2e, pinned []float64 }
 	seen := map[string]*dev{}

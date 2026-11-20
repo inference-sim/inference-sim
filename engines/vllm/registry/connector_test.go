@@ -15,7 +15,7 @@ import (
 	schemas "github.com/inference-sim/inference-sim/substrate/contracts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/connector"
 
-	blisvllm "github.com/inference-sim/inference-sim/engines/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
@@ -126,9 +126,9 @@ func earned(root string, m model) []string {
 		switch {
 		case len(g.Steps) == 0:
 			missing = append(missing, fmt.Sprintf("golden %s records no steps", name))
-		case g.Provenance.VLLMVersion != blisvllm.Upstream.Version || g.Provenance.VLLMCommit != blisvllm.Upstream.Commit:
+		case g.Provenance.VLLMVersion != upstream.OracleVersion || g.Provenance.VLLMCommit != upstream.OracleCommit:
 			missing = append(missing, fmt.Sprintf("golden %s is vLLM %s@%s, not %s@%s", name,
-				g.Provenance.VLLMVersion, g.Provenance.VLLMCommit, blisvllm.Upstream.Version, blisvllm.Upstream.Commit))
+				g.Provenance.VLLMVersion, g.Provenance.VLLMCommit, upstream.OracleVersion, upstream.OracleCommit))
 		case g.Provenance.ScenarioSHA256 != hex.EncodeToString(sum[:]):
 			missing = append(missing, fmt.Sprintf("golden %s was not produced from the committed scenario", name))
 		case g.Provenance.Tier != m.tier:
@@ -303,7 +303,7 @@ func TestEvidenceRefusesWhatIsNotATrace(t *testing.T) {
 		return fmt.Sprintf(`{"steps": %s, "provenance": {"vllm_version": %q, "vllm_commit": %q, "scenario_sha256": %q, "tier": %d}}`,
 			steps, version, commit, sha, tier)
 	}
-	good := golden(blisvllm.Upstream.Version, blisvllm.Upstream.Commit, hex.EncodeToString(sum[:]), 4, `[{}]`)
+	good := golden(upstream.OracleVersion, upstream.OracleCommit, hex.EncodeToString(sum[:]), 4, `[{}]`)
 	m := model{pkg: "core/x", scenarios: "oracle/scenarios/x/x-*.json", connectors: []string{"NixlConnector"}, tier: 4}
 	for _, c := range []struct {
 		name, golden, diffTest string
@@ -312,9 +312,9 @@ func TestEvidenceRefusesWhatIsNotATrace(t *testing.T) {
 	}{
 		{"valid evidence", good, m.scenarios, scenario, ""},
 		{"an empty object", `{}`, m.scenarios, scenario, "records no steps"},
-		{"another release", golden("0.31.0", blisvllm.Upstream.Commit, hex.EncodeToString(sum[:]), 4, `[{}]`), m.scenarios, scenario, "is vLLM 0.31.0"},
-		{"another scenario", golden(blisvllm.Upstream.Version, blisvllm.Upstream.Commit, "00", 4, `[{}]`), m.scenarios, scenario, "not produced from the committed scenario"},
-		{"another tier", golden(blisvllm.Upstream.Version, blisvllm.Upstream.Commit, hex.EncodeToString(sum[:]), 2, `[{}]`), m.scenarios, scenario, "tier-2 trace"},
+		{"another release", golden("0.31.0", upstream.OracleCommit, hex.EncodeToString(sum[:]), 4, `[{}]`), m.scenarios, scenario, "is vLLM 0.31.0"},
+		{"another scenario", golden(upstream.OracleVersion, upstream.OracleCommit, "00", 4, `[{}]`), m.scenarios, scenario, "not produced from the committed scenario"},
+		{"another tier", golden(upstream.OracleVersion, upstream.OracleCommit, hex.EncodeToString(sum[:]), 2, `[{}]`), m.scenarios, scenario, "tier-2 trace"},
 		{"no golden", "", m.scenarios, scenario, "has no golden trace"},
 		{"a diff test that runs other scenarios", good, "oracle/scenarios/y/*.json", scenario, "does not run"},
 		{"a scenario of another connector", good, m.scenarios, []byte(`{"config": {"connector": {"name": "LMCacheConnectorV1"}}}`), "does not run one of"},

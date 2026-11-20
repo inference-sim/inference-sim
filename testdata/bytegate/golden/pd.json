@@ -4,8 +4,8 @@
   "name": "glm-5-h200-3p1d-ib.r4-s2-obf0dc613",
   "engine": {
     "kind": "vllm",
-    "version": "0.33.0",
-    "commit": "4ba787ec9959e566d3b587a796dff07673324da5"
+    "version": "0.34.0+0fda86a35419",
+    "commit": "0fda86a35419c9c70dbfada224c838c10fbb62ad"
   },
   "data": {
     "catalog": {
@@ -15,8 +15,8 @@
     },
     "registry": {
       "source": "path",
-      "hash": "cdd8c345cd171d8945290f272086f59435a64d86b356e658acc329281be06461",
-      "combined_hash": "cdd8c345cd171d8945290f272086f59435a64d86b356e658acc329281be06461"
+      "hash": "8b52eb6caf2127cef49e178c2dde9bad6c43a8f23f425022ed9fd03fef5b0c90",
+      "combined_hash": "8b52eb6caf2127cef49e178c2dde9bad6c43a8f23f425022ed9fd03fef5b0c90"
     },
     "released_data": false,
     "build": "unreleased"
@@ -308,7 +308,7 @@
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
         "code_ids": [
-          "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+          "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
           "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
         ],
         "kernel_match": "unkeyed"
@@ -337,7 +337,7 @@
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
         "code_ids": [
-          "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+          "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
           "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
         ],
         "kernel_match": "unkeyed"
@@ -366,7 +366,7 @@
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
         "code_ids": [
-          "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+          "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
           "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
         ],
         "kernel_match": "unkeyed"
@@ -395,7 +395,7 @@
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
         "code_ids": [
-          "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+          "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
           "e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074"
         ],
         "kernel_match": "unkeyed"
@@ -422,7 +422,7 @@
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
         "code_ids": [
-          "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+          "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
           "e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074"
         ],
         "kernel_match": "unkeyed",
@@ -455,7 +455,7 @@
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
         "code_ids": [
-          "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+          "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
           "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
         ],
         "kernel_match": "unkeyed"
@@ -484,7 +484,7 @@
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
         "code_ids": [
-          "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+          "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
           "e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074"
         ],
         "kernel_match": "unkeyed"
@@ -617,7 +617,7 @@
           {
             "library": "vllm-csrc",
             "variant": "fused_moe_kernel",
-            "code_hash": "32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244"
+            "code_hash": "c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc"
           }
         ],
         "primitive": "moe.grouped_gemm",
@@ -625,7 +625,7 @@
           {
             "library": "vllm-csrc",
             "variant": "fused_moe_kernel",
-            "code_hash": "32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244"
+            "code_hash": "c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc"
           }
         ],
         "kernel_match": "exact",
@@ -662,7 +662,7 @@
           {
             "library": "vllm-csrc",
             "variant": "fused_moe_kernel",
-            "code_hash": "32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244"
+            "code_hash": "c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc"
           }
         ],
         "primitive": "moe.grouped_gemm",
@@ -670,7 +670,7 @@
           {
             "library": "vllm-csrc",
             "variant": "fused_moe_kernel",
-            "code_hash": "32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244"
+            "code_hash": "c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc"
           }
         ],
         "kernel_match": "exact",
@@ -746,7 +746,7 @@
           {
             "library": "vllm-csrc",
             "variant": "fused_moe_kernel",
-            "code_hash": "32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244"
+            "code_hash": "c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc"
           }
         ],
         "primitive": "moe.grouped_gemm",
@@ -754,7 +754,7 @@
           {
             "library": "vllm-csrc",
             "variant": "fused_moe_kernel",
-            "code_hash": "32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244"
+            "code_hash": "c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc"
           }
         ],
         "kernel_match": "exact",
@@ -922,7 +922,7 @@
         {
           "library": "vllm-csrc",
           "variant": "fused_moe_kernel",
-          "code_hash": "32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244"
+          "code_hash": "c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc"
         }
       ]
     },
@@ -2130,7 +2130,7 @@
             "Name": "max_cudagraph_capture_size",
             "Primitive": "",
             "Running": "",
-            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+            "Scope": "512: vLLM main's default (VllmConfig._set_cudagraph_sizes and _split_cudagraph_capture_sizes, vllm/config/vllm.py:2465-2870 at 0fda86a), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes: the interface default: one shared token ladder up to 512 (CudaPlatformBase.get_cudagraph_capture_defaults, vllm/platforms/cuda.py:640-652); a step above it runs with no graph",
             "Set": "blis-latency-kernel"
           },
           {
@@ -2202,7 +2202,7 @@
             "Name": "engine_version",
             "Primitive": "",
             "Running": "",
-            "Scope": "0.31.0: the scenario declares vLLM 0.33.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+            "Scope": "0.31.0: the scenario declares vLLM 0.34.0+0fda86a35419 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
         ],
@@ -2475,7 +2475,7 @@
             "Method": "transferred",
             "Name": "gemm_eps_max_fp8_grouped_triton",
             "Primitive": "moe.grouped_gemm",
-            "Running": "vllm-csrc/fused_moe_kernel/32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244",
+            "Running": "vllm-csrc/fused_moe_kernel/c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc",
             "Scope": "hardware: h200; transferred from hardware=h200",
             "Set": "cost-model-primitives"
           },
@@ -2493,7 +2493,7 @@
             "Method": "transferred",
             "Name": "gemm_floor_fp8_grouped_triton",
             "Primitive": "moe.grouped_gemm",
-            "Running": "vllm-csrc/fused_moe_kernel/32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244",
+            "Running": "vllm-csrc/fused_moe_kernel/c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc",
             "Scope": "hardware: h200; transferred from hardware=h200",
             "Set": "cost-model-primitives"
           },
@@ -2502,7 +2502,7 @@
             "Method": "transferred",
             "Name": "gemm_m_half_fp8_grouped_triton",
             "Primitive": "moe.grouped_gemm",
-            "Running": "vllm-csrc/fused_moe_kernel/32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244",
+            "Running": "vllm-csrc/fused_moe_kernel/c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc",
             "Scope": "hardware: h200; transferred from hardware=h200",
             "Set": "cost-model-primitives"
           },
@@ -2516,7 +2516,7 @@
             "Set": "cost-model-primitives"
           },
           {
-            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -2527,7 +2527,7 @@
             "Set": "cost-model-host-overheads"
           },
           {
-            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -2538,7 +2538,7 @@
             "Set": "cost-model-host-overheads"
           },
           {
-            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -2558,7 +2558,7 @@
             "Set": "cost-model-primitives"
           },
           {
-            "CodeID": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+            "CodeID": "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -2569,7 +2569,7 @@
             "Set": "cost-model-host-overheads"
           },
           {
-            "CodeID": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+            "CodeID": "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -2580,7 +2580,7 @@
             "Set": "cost-model-host-overheads"
           },
           {
-            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -2591,7 +2591,7 @@
             "Set": "cost-model-host-overheads"
           },
           {
-            "CodeID": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+            "CodeID": "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -2659,7 +2659,7 @@
             "Name": "max_cudagraph_capture_size",
             "Primitive": "",
             "Running": "",
-            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+            "Scope": "512: vLLM main's default (VllmConfig._set_cudagraph_sizes and _split_cudagraph_capture_sizes, vllm/config/vllm.py:2465-2870 at 0fda86a), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes: the interface default: one shared token ladder up to 512 (CudaPlatformBase.get_cudagraph_capture_defaults, vllm/platforms/cuda.py:640-652); a step above it runs with no graph",
             "Set": "blis-latency-kernel"
           },
           {
@@ -2731,7 +2731,7 @@
             "Name": "engine_version",
             "Primitive": "",
             "Running": "",
-            "Scope": "0.31.0: the scenario declares vLLM 0.33.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+            "Scope": "0.31.0: the scenario declares vLLM 0.34.0+0fda86a35419 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
         ],
@@ -3004,7 +3004,7 @@
             "Method": "transferred",
             "Name": "gemm_eps_max_fp8_grouped_triton",
             "Primitive": "moe.grouped_gemm",
-            "Running": "vllm-csrc/fused_moe_kernel/32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244",
+            "Running": "vllm-csrc/fused_moe_kernel/c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc",
             "Scope": "hardware: h200; transferred from hardware=h200",
             "Set": "cost-model-primitives"
           },
@@ -3022,7 +3022,7 @@
             "Method": "transferred",
             "Name": "gemm_floor_fp8_grouped_triton",
             "Primitive": "moe.grouped_gemm",
-            "Running": "vllm-csrc/fused_moe_kernel/32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244",
+            "Running": "vllm-csrc/fused_moe_kernel/c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc",
             "Scope": "hardware: h200; transferred from hardware=h200",
             "Set": "cost-model-primitives"
           },
@@ -3031,7 +3031,7 @@
             "Method": "transferred",
             "Name": "gemm_m_half_fp8_grouped_triton",
             "Primitive": "moe.grouped_gemm",
-            "Running": "vllm-csrc/fused_moe_kernel/32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244",
+            "Running": "vllm-csrc/fused_moe_kernel/c2b40c697c5e7ac386dab1c076891fef2ce0052f76040ef36fcd4c7b30a1c7dc",
             "Scope": "hardware: h200; transferred from hardware=h200",
             "Set": "cost-model-primitives"
           },
@@ -3045,7 +3045,7 @@
             "Set": "cost-model-primitives"
           },
           {
-            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -3056,7 +3056,7 @@
             "Set": "cost-model-host-overheads"
           },
           {
-            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -3067,7 +3067,7 @@
             "Set": "cost-model-host-overheads"
           },
           {
-            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -3087,7 +3087,7 @@
             "Set": "cost-model-primitives"
           },
           {
-            "CodeID": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+            "CodeID": "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -3098,7 +3098,7 @@
             "Set": "cost-model-host-overheads"
           },
           {
-            "CodeID": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+            "CodeID": "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -3109,7 +3109,7 @@
             "Set": "cost-model-host-overheads"
           },
           {
-            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
@@ -3120,7 +3120,7 @@
             "Set": "cost-model-host-overheads"
           },
           {
-            "CodeID": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+            "CodeID": "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
             "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",

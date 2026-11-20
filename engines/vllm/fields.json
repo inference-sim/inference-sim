@@ -2,7 +2,7 @@
   "kind": "FieldList",
   "engine": {
     "kind": "vllm",
-    "version": "0.33.0"
+    "version": "0.34.0+0fda86a35419"
   },
   "fields": [
     {
@@ -149,6 +149,28 @@
       }
     },
     {
+      "name": "DG_JIT_NVCC_COMPILER",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "DJ_JIT_NVCC_COMPILER",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "DO_NOT_TRACK",
       "source": "env",
       "status": "not_modelled",
@@ -212,11 +234,33 @@
       }
     },
     {
-      "name": "FLASH_ATTENTION_TRITON_AMD_ENABLE",
+      "name": "FLASHINFER_CUBIN_DIR",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "FLASHINFER_SM107_MEGA_CHECK_ROUTES",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "FLASHINFER_WORKSPACE_BASE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -454,6 +498,28 @@
       }
     },
     {
+      "name": "KMP_BLOCKTIME",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "KMP_TPAUSE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "LAMPORT_RS_SCONV",
       "source": "env",
       "status": "not_modelled",
@@ -603,6 +669,17 @@
       }
     },
     {
+      "name": "MC_MS_AUTO_DISC",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "MC_SLICE_SIZE",
       "source": "env",
       "status": "proven_inert",
@@ -670,6 +747,72 @@
       }
     },
     {
+      "name": "MONO_DN_BATCH",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MONO_DN_HOIST",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MONO_PTPC_CHUNK",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MONO_R2_OFF",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MONO_SPLIT_QHEADS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MONO_UG_SCALE_PAIR",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "MOONCAKE_CONFIG_PATH",
       "source": "env",
       "status": "not_modelled",
@@ -697,6 +840,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MORI_ENABLE_SDMA",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -763,6 +917,28 @@
             ]
           }
         ]
+      }
+    },
+    {
+      "name": "NCCL_CUMEM_HOST_ENABLE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "NCCL_DISABLE_MEM_MANAGER",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
       }
     },
     {
@@ -894,6 +1070,17 @@
       }
     },
     {
+      "name": "NCCL_P2P_DISABLE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "NCCL_P2P_LEVEL",
       "source": "env",
       "status": "not_modelled",
@@ -944,6 +1131,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "NCCL_SHM_DISABLE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -1398,6 +1596,17 @@
       }
     },
     {
+      "name": "THP_MEM_ALLOC_ENABLE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "TILELANG_CLEANUP_TEMP_FILES",
       "source": "env",
       "status": "not_modelled",
@@ -1496,6 +1705,17 @@
             ]
           }
         ]
+      }
+    },
+    {
+      "name": "TORCH_SYMM_MEM_DISABLE_MULTICAST",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
       }
     },
     {
@@ -2031,11 +2251,33 @@
       }
     },
     {
+      "name": "VLLM_COMPILE_ON_ONE_RANK",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_COMPUTE_NANS_IN_LOGITS",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_CONFIDENTIAL_COMPUTE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -2798,6 +3040,28 @@
       }
     },
     {
+      "name": "VLLM_FLASHINFER_CUTEDSL_MOE_LOCALIZE_FREE_FULL_WEIGHTS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_FLASHINFER_CUTEDSL_MOE_LOCALIZE_MEMSET_OVERLAP",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_FLASHINFER_MOE_A2A_LOW_PRECISION_COMBINE",
       "source": "env",
       "status": "not_modelled",
@@ -2842,6 +3106,28 @@
       }
     },
     {
+      "name": "VLLM_FP8_MOE_REQUANT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_FP8_MOE_REQUANT_ACT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_GC_DEBUG",
       "source": "env",
       "status": "not_modelled",
@@ -2858,6 +3144,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_GLM_TOKENIZER_JSON",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -3018,6 +3315,17 @@
       }
     },
     {
+      "name": "VLLM_K3_SHARDED_MARKOV",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_KEEP_ALIVE_ON_ENGINE_DEATH",
       "source": "env",
       "status": "not_modelled",
@@ -3034,6 +3342,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_KIMI_K3_DSA_LL64",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -3257,17 +3576,6 @@
       }
     },
     {
-      "name": "VLLM_MARLIN_INPUT_DTYPE",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "VLLM_MARLIN_USE_ATOMIC_ADD",
       "source": "env",
       "status": "not_modelled",
@@ -3433,6 +3741,17 @@
       }
     },
     {
+      "name": "VLLM_MAX_TOKENIZE_TOKENS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_MAX_TOKENS_PER_EXPERT_FP4_MOE",
       "source": "env",
       "status": "not_modelled",
@@ -3553,6 +3872,17 @@
       }
     },
     {
+      "name": "VLLM_ML4_FUSIONS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_MLA_DISABLE",
       "source": "env",
       "status": "not_modelled",
@@ -3569,6 +3899,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_MOE_LOCALIZE_BACKFILL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -3663,6 +4004,17 @@
       }
     },
     {
+      "name": "VLLM_MOONCAKE_STORE_SELECTIVE_LEASE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_MOONCAKE_STORE_TIER_LOG",
       "source": "env",
       "status": "not_modelled",
@@ -3723,6 +4075,28 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_MORI_DISPATCH_INTER_KERNEL_SWITCH_THRESHOLD",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_MORI_EP_V2",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -3965,6 +4339,17 @@
       }
     },
     {
+      "name": "VLLM_P2P_TRANSFER_STALL_TIMEOUT_S",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_PATTERN_MATCH_DEBUG",
       "source": "env",
       "status": "not_modelled",
@@ -4003,6 +4388,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_PP_TRANSPORT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -4130,6 +4526,17 @@
       }
     },
     {
+      "name": "VLLM_RELOAD_MODE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_REPLICATE_EMBED",
       "source": "env",
       "status": "not_modelled",
@@ -4163,6 +4570,17 @@
       }
     },
     {
+      "name": "VLLM_ROCM_AITER_FLYDSL_SPARSE_MLA_MIN_TOKENS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_ROCM_AITER_MLA_ASM_PADDING",
       "source": "env",
       "status": "not_modelled",
@@ -4179,6 +4597,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_ROCM_ENGRAM_HIP_VMM",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -4234,6 +4663,28 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_ROCM_MUSE_SP_MIN_TOKENS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_ROCM_PARALLEL_INDEX_TOPK",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -4333,6 +4784,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_ROCM_USE_AITER_FLYDSL_SPARSE_MLA",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -4633,6 +5095,17 @@
       }
     },
     {
+      "name": "VLLM_SKINNY_GEMM_MAX_WEIGHT_BYTES",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_SKIP_MODEL_NAME_VALIDATION",
       "source": "env",
       "status": "not_modelled",
@@ -4688,6 +5161,17 @@
       }
     },
     {
+      "name": "VLLM_SPARSE_INDEXER_MAX_DECODE_LOGITS_MB",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_SPARSE_INDEXER_MAX_LOGITS_MB",
       "source": "env",
       "status": "not_modelled",
@@ -4715,6 +5199,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_STRICT_QUANT_SCHEME",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -5047,6 +5542,17 @@
       }
     },
     {
+      "name": "VLLM_USE_FUSED_MQA_TOPK",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_USE_HW_AGNOSTIC",
       "source": "env",
       "status": "not_modelled",
@@ -5063,6 +5569,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_USE_LOCALITY_DOMAINS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -5229,26 +5746,6 @@
       }
     },
     {
-      "name": "VLLM_USE_V2_MODEL_RUNNER",
-      "source": "env",
-      "status": "modelled",
-      "evidence": {
-        "traces": [
-          "core/engine/testdata/golden/t3-async-dspark.json",
-          "core/engine/testdata/golden/t3-async-v2-pp2.json"
-        ]
-      },
-      "value_classes": {
-        "type": "boolean",
-        "covered": [
-          "true"
-        ]
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "VLLM_V1_OUTPUT_PROC_CHUNK_SIZE",
       "source": "env",
       "status": "not_modelled",
@@ -5392,17 +5889,6 @@
       }
     },
     {
-      "name": "VLLM_XPU_FORCE_N_CONTIG_WEIGHT",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "VLLM_XPU_INC_WNA16_BACKEND",
       "source": "env",
       "status": "not_modelled",
@@ -5419,6 +5905,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_XPU_SUPPORT_FP8_QUERY",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -5452,6 +5949,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "WITH_NVIDIA_PEERMEM",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -5738,6 +6246,17 @@
       }
     },
     {
+      "name": "async_scheduling_depth",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "attention_backend",
       "source": "config",
       "status": "not_modelled",
@@ -5870,6 +6389,17 @@
       }
     },
     {
+      "name": "attention_config.indexer_decode_cp",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "attention_config.indexer_kv_dtype",
       "source": "config",
       "status": "modelled",
@@ -5900,6 +6430,17 @@
       }
     },
     {
+      "name": "attention_config.indexer_logits_dtype",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "attention_config.indexer_sparse_logits",
       "source": "config",
       "status": "not_modelled",
@@ -5908,17 +6449,6 @@
       },
       "estimation": {
         "rule": "leave_unset"
-      }
-    },
-    {
-      "name": "attention_config.indexer_tp_shard_min_rows",
-      "source": "config",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
-      },
-      "estimation": {
-        "rule": "none"
       }
     },
     {
@@ -5992,6 +6522,28 @@
       },
       "estimation": {
         "rule": "leave_unset"
+      }
+    },
+    {
+      "name": "attention_config.sparse_mla_shard_q",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "attention_config.sparse_mla_shard_q_min_tokens",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
       }
     },
     {
@@ -6147,6 +6699,28 @@
       }
     },
     {
+      "name": "cache_aware_admission_threshold",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "cache_aware_admission_window",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "chat_template",
       "source": "config",
       "status": "not_modelled",
@@ -6163,6 +6737,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#54"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "checkpoint_prepare_on_startup",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -6427,6 +7012,17 @@
       }
     },
     {
+      "name": "compilation_config.decode_cudagraph_capture_request_sizes",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "compilation_config.decoder_replay_cudagraph_capture_sizes",
       "source": "config",
       "status": "modelled",
@@ -6498,6 +7094,17 @@
       },
       "estimation": {
         "rule": "leave_unset"
+      }
+    },
+    {
+      "name": "compilation_config.encoder_cudagraph_max_token_budget",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
       }
     },
     {
@@ -6598,6 +7205,39 @@
           2,
           3
         ]
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "compilation_config.max_decode_cudagraph_capture_requests",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "compilation_config.max_decode_cudagraph_capture_tokens",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "compilation_config.max_prefill_cudagraph_capture_tokens",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -6773,6 +7413,17 @@
       }
     },
     {
+      "name": "compilation_config.prefill_cudagraph_capture_token_sizes",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "compilation_config.splitting_ops",
       "source": "config",
       "status": "inert_unproven",
@@ -6781,6 +7432,17 @@
       },
       "estimation": {
         "rule": "leave_unset"
+      }
+    },
+    {
+      "name": "compilation_config.use_breakable_cudagraph",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
       }
     },
     {
@@ -7122,6 +7784,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#74"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "dbo_schedule",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -7693,6 +8366,17 @@
       }
     },
     {
+      "name": "enable_extensible_kv_cache",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "enable_fault_tolerance",
       "source": "config",
       "status": "not_modelled",
@@ -8077,6 +8761,17 @@
       }
     },
     {
+      "name": "encoder_cache_size",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "enforce_eager",
       "source": "config",
       "status": "not_modelled",
@@ -8113,6 +8808,17 @@
       }
     },
     {
+      "name": "engram_config.disk_offload",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "engram_config.dp_shared_memory",
       "source": "config",
       "status": "not_modelled",
@@ -8135,6 +8841,72 @@
       }
     },
     {
+      "name": "engram_config.peer_group_fetch",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "engram_config.peer_group_rdma_inflight",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "engram_config.peer_group_size",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "engram_config.peer_group_store",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "engram_config.peer_group_thp_dir",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "engram_config.peer_group_transport",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "engram_config.use_thp",
       "source": "config",
       "status": "not_modelled",
@@ -8151,6 +8923,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#108"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "eplb_config.draft_num_redundant_experts",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -8289,6 +9072,17 @@
       }
     },
     {
+      "name": "fault_tolerance_config.request_failure_policy",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "fingerprint_mode",
       "source": "config",
       "status": "not_modelled",
@@ -8355,8 +9149,18 @@
       },
       "value_classes": {
         "type": "numeric",
+        "thresholds": [
+          {
+            "value": 0.7,
+            "closed": "below"
+          },
+          {
+            "value": 1,
+            "closed": "above"
+          }
+        ],
         "covered_classes": [
-          0
+          1
         ]
       },
       "estimation": {
@@ -8413,6 +9217,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#54"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "headless_client_handshake_address",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -8529,6 +9344,28 @@
       }
     },
     {
+      "name": "ir_op_priority.rotary_embedding",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "ir_op_priority.rotary_embedding_query_only",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "jit_monitor_mode",
       "source": "config",
       "status": "not_modelled",
@@ -8573,6 +9410,17 @@
       }
     },
     {
+      "name": "kernel_config.b12x_moe_uncompressed_scales",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "kernel_config.enable_cutedsl_warmup",
       "source": "config",
       "status": "inert_unproven",
@@ -8595,6 +9443,17 @@
       }
     },
     {
+      "name": "kernel_config.enable_flashinfer_mm_encoder_autotune",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "kernel_config.enable_jit_warmup",
       "source": "config",
       "status": "inert_unproven",
@@ -8606,6 +9465,17 @@
       }
     },
     {
+      "name": "kernel_config.enable_rocm_aiter_gemm_warmup",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "kernel_config.enable_rocm_segmented_attn_autotune",
       "source": "config",
       "status": "inert_unproven",
@@ -8614,6 +9484,17 @@
       },
       "estimation": {
         "rule": "leave_unset"
+      }
+    },
+    {
+      "name": "kernel_config.flashinfer_sparse_mla_kernel",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
       }
     },
     {
@@ -8644,6 +9525,28 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#59"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "kernel_config.ir_op_priority.rotary_embedding",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "kernel_config.ir_op_priority.rotary_embedding_query_only",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -8712,11 +9615,33 @@
       }
     },
     {
+      "name": "kernel_config.rdna_hybrid_w4a16_prefill_dequant",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "kernel_config.sparse_indexer_topk_backend",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#59"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "kernel_config.step5_attention_backend",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -8757,7 +9682,8 @@
           "int8_per_token_head",
           "fp8_per_token_head",
           "nvfp4",
-          "nvfp4_4over6"
+          "nvfp4_4over6",
+          "mxfp4_mla"
         ],
         "covered": [
           "fp8"
@@ -9143,17 +10069,6 @@
       }
     },
     {
-      "name": "log_config_file",
-      "source": "config",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/blis-vllm#56"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "log_error_stack",
       "source": "config",
       "status": "not_modelled",
@@ -9352,22 +10267,22 @@
       }
     },
     {
-      "name": "mamba_cache_mode",
+      "name": "mamba_cache_philox_rounds",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#7"
+        "issue": "inference-sim/blis-vllm#59"
       },
       "estimation": {
         "rule": "none"
       }
     },
     {
-      "name": "mamba_cache_philox_rounds",
+      "name": "mamba_prefill_backend",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#59"
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -9412,6 +10327,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#55"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "max_async_kv_loads_per_step",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -9564,7 +10490,15 @@
             "closed": "above"
           },
           {
+            "value": 8192,
+            "closed": "above"
+          },
+          {
             "value": 8193,
+            "closed": "above"
+          },
+          {
+            "value": 16384,
             "closed": "above"
           },
           {
@@ -9619,6 +10553,14 @@
           {
             "value": 512,
             "closed": "above"
+          },
+          {
+            "value": 1024,
+            "closed": "above"
+          },
+          {
+            "value": 2048,
+            "closed": "above"
           }
         ],
         "covered_classes": [
@@ -9627,6 +10569,17 @@
       },
       "estimation": {
         "rule": "leave_unset"
+      }
+    },
+    {
+      "name": "max_num_inflight_kv_loads",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
       }
     },
     {
@@ -9688,8 +10641,39 @@
       },
       "value_classes": {
         "type": "numeric",
+        "thresholds": [
+          {
+            "value": 2,
+            "closed": "above"
+          },
+          {
+            "value": 3,
+            "closed": "above"
+          },
+          {
+            "value": 4,
+            "closed": "above"
+          },
+          {
+            "value": 5,
+            "closed": "above"
+          },
+          {
+            "value": 8,
+            "closed": "above"
+          },
+          {
+            "value": 9,
+            "closed": "above"
+          },
+          {
+            "value": 1025,
+            "closed": "above"
+          }
+        ],
         "covered_classes": [
-          0
+          3,
+          4
         ]
       },
       "estimation": {
@@ -9702,6 +10686,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#55"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "max_tokenize_tokens",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -10774,6 +11769,17 @@
       }
     },
     {
+      "name": "quantization_config.linear.hadamard_size",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "quantization_config.linear.weight",
       "source": "config",
       "status": "inert_unproven",
@@ -10796,6 +11802,17 @@
       }
     },
     {
+      "name": "quantization_config.moe.hadamard_size",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "quantization_config.moe.weight",
       "source": "config",
       "status": "inert_unproven",
@@ -10807,14 +11824,36 @@
       }
     },
     {
-      "name": "quantization_config.targets",
+      "name": "quantization_config.targets.activation",
       "source": "config",
-      "status": "inert_unproven",
+      "status": "not_modelled",
       "evidence": {
-        "note": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml marks it inert; no inertness proof yet (VLM-3, due in M2). Policy note: The checkpoint's quantization recipe as vLLM read it; the catalog graph states the formats the checkpoint serves."
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
-        "rule": "leave_unset"
+        "rule": "none"
+      }
+    },
+    {
+      "name": "quantization_config.targets.hadamard_size",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "quantization_config.targets.weight",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
       }
     },
     {
@@ -11095,6 +12134,17 @@
       }
     },
     {
+      "name": "shuffle_safetensors_files",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "shutdown_timeout",
       "source": "config",
       "status": "not_modelled",
@@ -11238,33 +12288,22 @@
       }
     },
     {
-      "name": "speculative_config.disable_eagle_block_drop",
+      "name": "speculative_config.draft_decode_context_parallel_size",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#58"
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
       }
     },
     {
-      "name": "speculative_config.disable_lookahead_block_hashes",
+      "name": "speculative_config.draft_enable_eplb",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#58"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "speculative_config.disable_padded_drafter_batch",
-      "source": "config",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/blis-vllm#58"
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -11375,6 +12414,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#58"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "speculative_config.draft_load_config.shuffle_safetensors_files",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -11537,8 +12587,8 @@
         "values": [
           "ngram",
           "draft_model",
+          "dfly",
           "suffix",
-          "custom_class",
           "eagle",
           "eagle3",
           "extract_hidden_states",
@@ -11551,6 +12601,7 @@
           "glm_ocr_mtp",
           "ernie_mtp",
           "nemotron_h_mtp",
+          "nemotron3_5_transcribe_mtp",
           "exaone_moe_mtp",
           "exaone4_5_mtp",
           "qwen3_next_mtp",
@@ -11635,6 +12686,18 @@
           {
             "value": 4,
             "closed": "above"
+          },
+          {
+            "value": 7,
+            "closed": "above"
+          },
+          {
+            "value": 8,
+            "closed": "above"
+          },
+          {
+            "value": 17,
+            "closed": "above"
           }
         ],
         "covered_classes": [
@@ -11662,6 +12725,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#17"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "speculative_config.prefill_context_kv_only",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -11735,6 +12809,28 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#58"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "speculative_config.speculator_options",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "speculative_config.suffix_decoding_corpus_tokens",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"
@@ -11818,17 +12914,6 @@
     },
     {
       "name": "speculative_config.tensor_parallel_size",
-      "source": "config",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/blis-vllm#58"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "speculative_config.use_heterogeneous_vocab",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
@@ -12055,6 +13140,10 @@
             "closed": "above"
           },
           {
+            "value": 3,
+            "closed": "above"
+          },
+          {
             "value": 4,
             "closed": "above"
           },
@@ -12071,12 +13160,16 @@
             "closed": "above"
           },
           {
+            "value": 16,
+            "closed": "above"
+          },
+          {
             "value": 17,
             "closed": "above"
           }
         ],
         "covered_classes": [
-          2
+          3
         ]
       },
       "estimation": {
@@ -12433,11 +13526,33 @@
       }
     },
     {
+      "name": "watermark_config.enforce",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "watermark_config.key",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#55"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "watermark_config.key_file",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2290"
       },
       "estimation": {
         "rule": "none"

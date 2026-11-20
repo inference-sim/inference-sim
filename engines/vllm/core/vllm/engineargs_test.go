@@ -117,7 +117,7 @@ func TestEngineArgsAgainstVLLM(t *testing.T) {
 	if err := json.Unmarshal(raw, &tr); err != nil {
 		t.Fatal(err)
 	}
-	if tr.Provenance.Tier != 1 || tr.Provenance.VLLMCommit != upstream.Commit {
+	if tr.Provenance.Tier != 1 || tr.Provenance.VLLMCommit != upstream.OracleCommit {
 		t.Fatalf("the trace is tier %d at %q, not tier 1 at the pinned release", tr.Provenance.Tier, tr.Provenance.VLLMCommit)
 	}
 	if len(tr.Cases) != len(cases.Cases) {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/config/vllm.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
+// Derived from vllm/config/vllm.py at vLLM v0.34.0+0fda86a35419 (0fda86a35419c9c70dbfada224c838c10fbb62ad):
 // VllmConfig._set_cudagraph_sizes (:2292-2548) and DEFAULT_BREAKABLE_CUDAGRAPH_ARCHITECTURES
 // (:74-100). Also vllm/config/compilation.py (CUDAGraphMode, :53-110).
 

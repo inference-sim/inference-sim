@@ -108,7 +108,7 @@ func TestResolutionAgainstTheRecordedRuns(t *testing.T) {
 		if method == "none" {
 			method = ""
 		}
-		bs, err := vllm.ResolveBlockSize(vllm.BlockSizeInput{
+		bs, err := vllm.ResolveBlockSizeFromTable(vllm.BlockSizeInput{
 			Model: model, Capability: chip.ComputeCapability, TP: r.LogTP, KVCacheDType: r.CacheDType,
 			Speculative: vllm.SpeculationAddsAttentionLayers(method, 1),
 		})

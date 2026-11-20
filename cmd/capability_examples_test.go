@@ -168,7 +168,7 @@ func TestCapabilityExample_EngineIsSelectedByKind(t *testing.T) {
 	}
 	const engine = `engine: {kind: vllm}`
 	for _, tc := range []struct{ name, edit, want string }{
-		{"a stated version", `engine: {kind: vllm, version: "0.33.0"}`, "field engine.version"},
+		{"a stated version", `engine: {kind: vllm, version: "0.34.0+0fda86a35419"}`, "field engine.version"},
 		{"unregistered kind", `engine: {kind: tensorrt-llm}`, "this build runs the kinds sglang, vllm"},
 		{"retired field", engine + "\nengine_version: \"0.33.0\"", "engine_version"},
 	} {

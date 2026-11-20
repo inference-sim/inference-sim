@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/single_type_kv_cache_manager.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
+// Derived from vllm/v1/core/single_type_kv_cache_manager.py at vLLM v0.34.0+0fda86a35419 (0fda86a35419c9c70dbfada224c838c10fbb62ad).
 // Also vllm/v1/kv_cache_interface.py (get_mamba_prefill_checkpoint_position,
 // is_mamba_prefill_checkpoint_valid) and vllm/v1/core/kv_cache_coordinator.py.
 

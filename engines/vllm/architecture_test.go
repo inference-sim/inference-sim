@@ -14,7 +14,7 @@ import (
 // function; a file moved from inference-sim or blis-latency-kernel names the commit it was taken
 // from; anything else says it is original.
 var provenanceRules = harness.ProvenanceRules{
-	Derived: regexp.MustCompile(`^// Derived from vllm/\S+ at vLLM v\d+\.\d+\.\d+ \([0-9a-f]{40}\)`),
+	Derived: regexp.MustCompile(`^// Derived from vllm/\S+ at vLLM v\d+\.\d+\.\d+(\+[0-9a-f]{12})? \([0-9a-f]{40}\)`),
 	Licence: []string{
 		"// SPDX-License-Identifier: Apache-2.0",
 		"// SPDX-FileCopyrightText: Copyright contributors to the vLLM project",

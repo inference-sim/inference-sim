@@ -51,6 +51,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
 // ArchGlmMoeDsa is the architecture name of GLM-5, 5.2, 5.2-fp8 and 5.3, the architectures[0] of
@@ -59,7 +60,7 @@ import (
 const ArchGlmMoeDsa = "GlmMoeDsaForCausalLM"
 
 // Version is the engine release this pack describes.
-const Version = "0.33.0"
+const Version = upstream.Version
 
 func set[T comparable](vs ...T) map[T]bool {
 	m := make(map[T]bool, len(vs))

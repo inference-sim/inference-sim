@@ -52,8 +52,8 @@ func TestMuseSparkFusionsMatchTheRelease(t *testing.T) {
 	if err := json.Unmarshal(b, &o); err != nil {
 		t.Fatal(err)
 	}
-	if o.Commit != upstream.Commit {
-		t.Fatalf("muse_fusions.json was recorded at %s, the port models %s", o.Commit, upstream.Commit)
+	if o.Commit != upstream.OracleCommit {
+		t.Fatalf("muse_fusions.json was recorded at %s, the port models %s", o.Commit, upstream.OracleCommit)
 	}
 	if len(o.Cases) == 0 || len(o.Tokens) == 0 {
 		t.Fatal("muse_fusions.json has no cases")

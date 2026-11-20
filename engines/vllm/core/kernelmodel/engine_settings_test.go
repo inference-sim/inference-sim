@@ -2,6 +2,7 @@ package kernelmodel
 
 import (
 	"fmt"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -161,53 +162,28 @@ func openWithoutBlockSize(t *testing.T, fixture string) (*Model, error) {
 	return Open("v.yaml", r)
 }
 
-// An unstated block_size at 0.32.0 is vLLM's own for the models, GPUs and KV dtypes the
-// block-size oracle resolves (core/vllm.ResolveBlockSize), with its source; the kernel prices the
-// same size, so it and Engine describe one engine. Anything else is refused, citing #68.
-func TestEngineResolvesAnUnstatedBlockSizeAt032(t *testing.T) {
-	for _, c := range []struct {
-		fixture string
-		size    int
-		refusal string
-	}{
-		// FlashAttention on Hopper, FlashInfer on Blackwell: 16 (the default every backend accepts).
-		{"llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml", 16, ""},
-		{"llama-3.1-70b-instruct-b200-fp8-vllm-tp2.yaml", 16, ""},
-		// MLA on Blackwell selects FlashInfer MLA, which supports 32 and 64 (mla/flashinfer_mla.py:204-205).
-		{"deepseek-v3-b200-fp8-sglang-tp8.yaml", 32, ""},
-		// MLA on Hopper with fp8 KV depends on whether the wheel carries FlashMLA.
-		{"deepseek-v3-h200-fp8-sglang-tp8.yaml", 0, "flashmla_built"},
-		// MLA on Hopper with an unstated KV dtype is FlashAttention MLA's 16 if the wheel ships FA3, which the
-		// oracle assumes (oracle/blocksize ASSUMED_FACTS); the source says so.
-		{"direct/kimi-k2.5-h200-int4-vllm-tp8-cfg1.yaml", 16, ""},
-		// DeepSeek-V4's layers hand the platform their own backends (sparse MLA, indexer 256; the sliding-window
-		// cache a multiple of 32; the compressor any size): the smallest all accept is 256, the size the corpus's
-		// own record of this deployment states.
-		{"deepseek-v4-pro-b300-fp4-vllm-tp4.yaml", 256, ""},
+// An unstated block_size is refused at the pin, citing #68: the block-size oracle's table was recorded
+// at v0.33.0, where the default block size is 16; the pin's is 64 (vllm/config/cache.py:185@0fda86a3)
+// and its selection is not re-derived, so no row of the table says what the pin resolves. The table
+// itself stays tested against the engines it was recorded from (blocksize_recorded_test.go,
+// core/vllm.ResolveBlockSizeFromTable); a maintainer re-run of oracle/blocksize at the pin restores
+// the resolution.
+func TestEngineRefusesAnUnstatedBlockSizeWhileTheTableIsFromAnotherCommit(t *testing.T) {
+	for _, fixture := range []string{
+		"llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml",
+		"llama-3.1-70b-instruct-b200-fp8-vllm-tp2.yaml",
+		"deepseek-v3-b200-fp8-sglang-tp8.yaml",
+		"direct/kimi-k2.5-h200-int4-vllm-tp8-cfg1.yaml",
+		"deepseek-v4-pro-b300-fp4-vllm-tp4.yaml",
 	} {
-		t.Run(c.fixture, func(t *testing.T) {
-			m, err := openWithoutBlockSize(t, c.fixture)
+		t.Run(fixture, func(t *testing.T) {
+			m, err := openWithoutBlockSize(t, fixture)
 			if err != nil {
 				t.Fatal(err)
 			}
-			e, err := m.Engine()
-			if c.refusal != "" {
-				if err == nil || !strings.Contains(err.Error(), c.refusal) || !strings.Contains(err.Error(), "blis-vllm/issues/68") {
-					t.Fatalf("Engine: %v, want a refusal containing %q citing #68", err, c.refusal)
-				}
-				return
-			}
-			if err != nil || e.BlockSize != c.size {
-				t.Fatalf("Engine: block_size %d (%v), want %d", e.BlockSize, err, c.size)
-			}
-			if src := m.EngineSources()["block_size"]; !strings.Contains(src, "vllm/platforms/interface.py:750-794@4ba787ec") {
-				t.Errorf("block_size source %q, want the rule with its citation", src)
-			} else if assumed := strings.Contains(src, "assuming fa3_available: "); assumed != strings.HasPrefix(c.fixture, "direct/kimi") {
-				t.Errorf("block_size source %q: names the FA3 assumption: %t", src, assumed)
-			}
-			// The kernel prices the size Engine reports.
-			if got := m.Lowered().Plan.PageTokens; int(got) != c.size {
-				t.Errorf("the kernel prices block_size %d, Engine reports %d", got, c.size)
+			_, err = m.Engine()
+			if err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/68") || !strings.Contains(err.Error(), "4ba787ec") {
+				t.Fatalf("Engine: %v, want a refusal citing #68 and the table's commit 4ba787ec", err)
 			}
 		})
 	}
@@ -259,12 +235,13 @@ func openWithMemoryUtilization(t *testing.T, line string) (*Model, error) {
 	return Open("v.yaml", r)
 }
 
-// An unstated gpu_memory_utilization is vLLM's default, 0.92, in each release the engine models,
-// with the line it is written on (vllm/config/cache.py:111, 103 and 102); a stated value is kept;
+// An unstated gpu_memory_utilization is vLLM's default, 0.92 (the head's DEFAULT_GPU_MEMORY_UTILIZATION,
+// which applies with the extensible KV cache off; with it on the head defaults to 1.0, which the engine
+// does not model and the source says), with the line it is written on; a stated value is kept;
 // and the KV budget is sized from the resolved value, so the kernel and Engine agree.
 func TestEngineResolvesAnUnstatedMemoryUtilization(t *testing.T) {
 	for _, c := range []struct{ release, source string }{
-		{"0.33.0", "vllm/config/cache.py:215@4ba787ec"},
+		{upstream.Version, "vllm/config/cache.py:186,490-496@0fda86a3"},
 	} {
 		t.Run(c.release, func(t *testing.T) {
 			m, err := openWithMemoryUtilization(t, "")
@@ -313,7 +290,7 @@ func TestEngineKeepsOrRefusesAStatedMemoryUtilization(t *testing.T) {
 	}
 	// And the resolver never replaces such a value with the default, whatever reaches it: only
 	// 0, which the schema reads as unset (core/engineconfig/validate.go:65), is replaced.
-	in := latencykernel.Inputs{Scenario: &scenario.Scenario{Engine: &scenario.Engine{Kind: "vllm", Version: "0.33.0"}},
+	in := latencykernel.Inputs{Scenario: &scenario.Scenario{Engine: &scenario.Engine{Kind: "vllm", Version: upstream.Version}},
 		Deployment: &deployment.Deployment{Pools: []deployment.Pool{{}}}, Chip: &hardware.Chip{MemoryGiB: 141}, Model: &model.Graph{}}
 	for _, c := range []struct {
 		util float64
@@ -331,6 +308,7 @@ func TestEngineKeepsOrRefusesAStatedMemoryUtilization(t *testing.T) {
 // change with the width. A pool at or under the limit is unaffected. The width reaches the
 // resolution through BlockSizeInput.TP.
 func TestEngineRefusesAnUnstatedBlockSizeOnAPoolWiderThanTheOracleRan(t *testing.T) {
+	withRecordedBlockSizeTable(t)
 	const fixture = "minimax-m2.5-b200-fp4-vllm-tp4.yaml"
 	raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", fixture))
 	if err != nil {
@@ -379,6 +357,7 @@ func TestEngineRefusesAnUnstatedBlockSizeOnAPoolWiderThanTheOracleRan(t *testing
 // expert parallel, DP > 1) vLLM caps an unstated max_num_seqs and max_num_batched_tokens at 256; the kernel's own
 // fallback is v0.31.0's, which skips that cap.
 func TestKernelPricesTheEngineSettingsEngineReportsInBatchedDP(t *testing.T) {
+	withRecordedBlockSizeTable(t)
 	const fixture = "minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml"
 	raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", fixture))
 	if err != nil {
@@ -448,6 +427,7 @@ func openGPTOSSWithSpeculation(t *testing.T, speculative string) (*Model, error)
 // NgramProposer.load_model and SuffixDecodingProposer.load_model load nothing). Only a method
 // that builds draft layers, with at least one speculative token, makes the resolution refuse.
 func TestAnUnstatedBlockSizeIsRefusedOnlyForSpeculationThatAddsLayers(t *testing.T) {
+	withRecordedBlockSizeTable(t)
 	const ind = "      "
 	spec := func(method string, k int) string {
 		return fmt.Sprintf("%sspeculative_config:\n%s  method: %s\n%s  num_speculative_tokens: %d\n", ind, ind, method, ind, k)
@@ -664,6 +644,7 @@ func TestIndexerKVDTypeOnDeepSeekV4IsVLLMsOwnResolution(t *testing.T) {
 // that is too wide and for that pool only: a decode pool at tp 4 resolves beside a prefill pool at
 // tp 32 that is refused, naming its own width.
 func TestAPrefillAndADecodePoolResolveTheirBlockSizesFromTheirOwnWidths(t *testing.T) {
+	withRecordedBlockSizeTable(t)
 	raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", "llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -783,6 +764,7 @@ func TestUsesMLAReadsTheGraphsAttention(t *testing.T) {
 // the test reads only the block size and what feeds it. language_model_only true switches off the
 // multimodal prefix the table was run with, so the engine refuses it rather than guess.
 func TestEngineResolvesAnUnstatedBlockSizeForGemma4(t *testing.T) {
+	withRecordedBlockSizeTable(t)
 	open := func(t *testing.T, fixture, model, extra string) (*Model, error) {
 		t.Helper()
 		raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", fixture))
@@ -827,4 +809,15 @@ func TestEngineResolvesAnUnstatedBlockSizeForGemma4(t *testing.T) {
 			t.Errorf("Engine: %v, want a refusal naming language_model_only and #68", err)
 		}
 	})
+}
+
+// withRecordedBlockSizeTable runs the test with the block-size oracle's table read as recorded
+// (v0.33.0), whatever commit the build models: the tests that follow check what kernelmodel does
+// with a resolved or refused size, not what the pin resolves, which TestEngineRefusesAnUnstatedBlockSize
+// WhileTheTableIsFromAnotherCommit holds.
+func withRecordedBlockSizeTable(t *testing.T) {
+	t.Helper()
+	prev := blockSizeResolver
+	blockSizeResolver = vllm.ResolveBlockSizeFromTable
+	t.Cleanup(func() { blockSizeResolver = prev })
 }
