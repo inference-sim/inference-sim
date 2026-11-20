@@ -114,6 +114,24 @@ func TestTheFactoryRefusesAnotherReleaseAndWhatTheEngineDoesNotModel(t *testing.
 	}
 }
 
+// The start-up rules of the priority settings are SGLang's, raised before the engine is built.
+func TestTheFactoryRefusesWhatSGLangRefusesOfThePrioritySettings(t *testing.T) {
+	h := newHost()
+	for block, want := range map[string]string{
+		"model_path: m\nschedule_policy: priority\n":                              "unknown schedule_policy",
+		"model_path: m\nenable_priority_scheduling: true\nschedule_policy: lpm\n": "schedule_policy must be 'fcfs' or 'lof'",
+		"model_path: m\nretraction_policy: priority\n":                            "--retraction-policy priority requires --enable-priority-scheduling",
+	} {
+		_, err := FactoryFor(h).New(specOf(t, block))
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: got %v, want SGLang's refusal %q", block, err, want)
+		}
+	}
+	if _, err := FactoryFor(h).New(specOf(t, "model_path: m\nmax_running_requests: 8\nenable_priority_scheduling: true\nretraction_policy: priority\nmax_queued_requests: 4\n")); err != nil {
+		t.Errorf("priority scheduling with priority retraction: %v", err)
+	}
+}
+
 // classifyingKernel prices a batch the way the substrate kernel's step model splits it: a request
 // schedules a prefill chunk when it schedules more tokens than the batch's DecodeThreshold
 // (kernel/step.go), and each such request costs a millisecond more than a decode pass's base 5.

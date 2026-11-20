@@ -93,6 +93,9 @@ func newFromDocument(h Host, s engine.Spec) (engine.Engine, error) {
 		return nil, err
 	}
 	a := res.Args
+	if err := config.CheckServerArgs(&a); err != nil {
+		return nil, err
+	}
 	if err := refuseUnmodelled(&a); err != nil {
 		return nil, err
 	}

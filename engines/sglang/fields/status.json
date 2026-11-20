@@ -195,12 +195,15 @@
  },
  "fields": {
   "config:abort_on_priority_when_disabled": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "traces": [
+     "core/sched/testdata/golden-sched/priority-disabled.trace.json",
+     "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:admin_api_key": {
@@ -213,12 +216,16 @@
    }
   },
   "config:allow_auto_truncate": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#9"
+    "traces": [
+     "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+     "core/sched/testdata/golden-sched/truncate-a.trace.json",
+     "core/sched/testdata/golden-sched/truncate-loose.trace.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:allowed_media_domains": {
@@ -1944,12 +1951,15 @@
    }
   },
   "config:enable_priority_scheduling": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "traces": [
+     "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+     "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:enable_profile_cuda_graph": {
@@ -3328,12 +3338,16 @@
    }
   },
   "config:max_queued_requests": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "traces": [
+     "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+     "core/sched/testdata/golden-sched/queue-limit.trace.json",
+     "core/sched/testdata/golden-sched/queue-limit-heavy.trace.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:max_running_requests": {
@@ -3932,12 +3946,16 @@
    }
   },
   "config:prefill_max_requests": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "traces": [
+     "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+     "core/sched/testdata/golden-sched/prefill-max.trace.json",
+     "core/sched/testdata/golden-sched/prefill-max-nocache.trace.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:prefill_only_disable_kv_cache": {
@@ -3950,12 +3968,17 @@
    }
   },
   "config:priority_scheduling_preemption_threshold": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "traces": [
+     "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+     "core/sched/testdata/golden-sched/priority-fcfs.trace.json",
+     "core/sched/testdata/golden-sched/priority-heavy.trace.json",
+     "core/sched/testdata/golden-sched/priority-threshold.trace.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:prompt_tokens_buckets": {
@@ -4097,12 +4120,16 @@
    }
   },
   "config:retraction_policy": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "traces": [
+     "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+     "core/sched/testdata/golden-sched/retract-priority.trace.json",
+     "core/sched/testdata/golden-sched/retract-priority-lof.trace.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:return_aux_hidden_state_layer_ids": {
@@ -4205,21 +4232,33 @@
    }
   },
   "config:schedule_low_priority_values_first": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "traces": [
+     "core/sched/testdata/golden-sched/priority-fcfs.trace.json",
+     "core/sched/testdata/golden-sched/priority-low-first.trace.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:schedule_policy": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#4"
+    "traces": [
+     "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+     "core/sched/testdata/golden-sched/dfs-a.trace.json",
+     "core/sched/testdata/golden-sched/heavy-hrrn.trace.json",
+     "core/sched/testdata/golden-sched/heavy-lof.trace.json",
+     "core/sched/testdata/golden-sched/heavy-lpm.trace.json",
+     "core/sched/testdata/golden-sched/heavy-spf.trace.json",
+     "core/sched/testdata/golden-sched/random-a.trace.json",
+     "core/sched/testdata/golden-sched/routing-a.trace.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:scheduler_recv_interval": {
