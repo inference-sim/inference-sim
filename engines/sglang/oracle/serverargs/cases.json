@@ -28,6 +28,24 @@
    "nvidia_smi_memory_total_mib": 183359,
    "source": "nvidia-smi memory.total on B200, https://github.com/NVIDIA/gpu-operator/issues/2155; compute capability https://developer.nvidia.com/cuda-gpus"
   },
+  "GB200-NVL72": {
+   "capability": [
+    10,
+    0
+   ],
+   "device_name": "NVIDIA GB200",
+   "nvidia_smi_memory_total_mib": 189471,
+   "source": "nvidia-smi memory.total on GB200, as AISimulate's gb200 descriptor records it ('189471MiB reported by nvidia-smi'), https://github.com/ai-dynamo/aisimulate/blob/2f0f4cd8606d580567b253d02f3d699fe36db865/python/aisimulate/src/aisimulate_core/systems/gb200.yaml; compute capability https://developer.nvidia.com/cuda-gpus; no case runs this chip"
+  },
+  "GB300": {
+   "capability": [
+    10,
+    3
+   ],
+   "device_name": "NVIDIA GB300",
+   "nvidia_smi_memory_total_mib": 284208,
+   "source": "nvidia-smi memory.total on GB300, as AISimulate's gb300 descriptor records it ('284208MiB reported by nvidia-smi'), https://github.com/ai-dynamo/aisimulate/blob/2f0f4cd8606d580567b253d02f3d699fe36db865/python/aisimulate/src/aisimulate_core/systems/gb300.yaml; compute capability https://developer.nvidia.com/cuda-gpus; no case runs this chip"
+  },
   "probe-20GiB": {
    "capability": [
     9,
@@ -162,6 +180,31 @@
    "revision": "dc54ff55a7e9e71b85db953d8bc22eca894b44c6",
    "licence": "mit",
    "checkpoint_files": true
+  },
+  "llama-3.1-8b": {
+   "repo": "meta-llama/Llama-3.1-8B-Instruct",
+   "revision": "0e9e39f249a16976918f6564b8830bc894c89659",
+   "licence": "llama3.1 community licence"
+  },
+  "qwen2.5-7b": {
+   "repo": "Qwen/Qwen2.5-7B-Instruct",
+   "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+   "licence": "apache-2.0"
+  },
+  "qwen3-14b": {
+   "repo": "Qwen/Qwen3-14B",
+   "revision": "40c069824f4251a91eefaf281ebe4c544efd3e18",
+   "licence": "apache-2.0"
+  },
+  "mistral-nemo": {
+   "repo": "mistralai/Mistral-Nemo-Instruct-2407",
+   "revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+   "licence": "apache-2.0"
+  },
+  "yi-34b": {
+   "repo": "01-ai/Yi-34B",
+   "revision": "e1fa7c83283f2e1d5a12cb4adea37c3f829e28f8",
+   "licence": "apache-2.0"
   }
  },
  "cases": [
@@ -1795,6 +1838,116 @@
     "quantization": "modelopt_fp4",
     "kv_cache_dtype": "fp8_e4m3"
    }
+  },
+  {
+   "name": "llama31-8b-h100-defaults",
+   "model": "llama-3.1-8b",
+   "chip": "H100",
+   "args": {}
+  },
+  {
+   "name": "llama31-8b-h200-tp2-explicit",
+   "model": "llama-3.1-8b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 2,
+    "max_running_requests": 64,
+    "chunked_prefill_size": 4096
+   }
+  },
+  {
+   "name": "llama31-8b-b200-defaults",
+   "model": "llama-3.1-8b",
+   "chip": "B200",
+   "args": {}
+  },
+  {
+   "name": "qwen25-7b-h100-defaults",
+   "model": "qwen2.5-7b",
+   "chip": "H100",
+   "args": {}
+  },
+  {
+   "name": "qwen25-7b-h200-tp2-explicit",
+   "model": "qwen2.5-7b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 2,
+    "max_running_requests": 64,
+    "chunked_prefill_size": 4096
+   }
+  },
+  {
+   "name": "qwen25-7b-b200-defaults",
+   "model": "qwen2.5-7b",
+   "chip": "B200",
+   "args": {}
+  },
+  {
+   "name": "qwen3-14b-h100-defaults",
+   "model": "qwen3-14b",
+   "chip": "H100",
+   "args": {}
+  },
+  {
+   "name": "qwen3-14b-h200-tp2-explicit",
+   "model": "qwen3-14b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 2,
+    "max_running_requests": 64,
+    "chunked_prefill_size": 4096
+   }
+  },
+  {
+   "name": "qwen3-14b-b200-defaults",
+   "model": "qwen3-14b",
+   "chip": "B200",
+   "args": {}
+  },
+  {
+   "name": "nemo-h100-defaults",
+   "model": "mistral-nemo",
+   "chip": "H100",
+   "args": {}
+  },
+  {
+   "name": "nemo-h200-tp2-explicit",
+   "model": "mistral-nemo",
+   "chip": "H200",
+   "args": {
+    "tp_size": 2,
+    "max_running_requests": 64,
+    "chunked_prefill_size": 4096
+   }
+  },
+  {
+   "name": "nemo-b200-defaults",
+   "model": "mistral-nemo",
+   "chip": "B200",
+   "args": {}
+  },
+  {
+   "name": "yi34b-h100-defaults",
+   "model": "yi-34b",
+   "chip": "H100",
+   "args": {}
+  },
+  {
+   "name": "yi34b-h200-tp2-explicit",
+   "model": "yi-34b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 2,
+    "max_running_requests": 64,
+    "chunked_prefill_size": 4096
+   }
+  },
+  {
+   "name": "yi34b-b200-defaults",
+   "model": "yi-34b",
+   "chip": "B200",
+   "args": {}
   }
  ]
 }
