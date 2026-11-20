@@ -13,15 +13,19 @@ import (
 	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 )
 
-// THE CAPTURE CEILING FOLLOWS THE ENGINE'S DEFAULT, on every input that sets it. vLLM v0.31.0
-// captures token counts up to min(max_num_seqs x decode_query_len x 2, 512), or 1024 on
-// data-center Blackwell (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), and
-// a step above that runs with no graph, a uniform decode included
+// THE CAPTURE CEILING FOLLOWS THE ENGINE'S DEFAULT, on every input that sets it. vLLM
+// captures token counts up to min(max_num_seqs x decode_query_len x 2, 512) off data-center
+// Blackwell (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2465-2690), and on it a
+// prefill token grid up to min(8192, max_num_batched_tokens) beside a decode request grid
+// up to max_num_seqs (_split_cudagraph_capture_sizes, :2698-2870, with CUDA family 100's
+// defaults, vllm/platforms/cuda.py:640-652; pack.DefaultCUDAGraphCapture), and a step above
+// that runs with no graph, a uniform decode included
 // (vllm/v1/worker/gpu/cudagraph_utils.py:499-529). The fixture's own max_num_seqs, 256, puts
 // it at 512 on h200, which fixes neither the Blackwell figure nor the seqs term; these cases
 // move each:
 //
-//   - h200 marked Blackwell, seqs 1024: ceiling 1024.
+//   - h200 marked Blackwell, seqs 1024: ceiling 8192, the head's prefill grid (v0.33.0's
+//     shared ladder stopped at 1024; derived from the head's source, oracle not re-run).
 //   - h200, seqs 64: ceiling 128 (the seqs term binds).
 //   - h200, seqs 1024: ceiling 512, and a uniform decode of 513 requests -- admissible at
 //     that cap -- runs with no graph under FULL_AND_PIECEWISE.
@@ -55,7 +59,7 @@ func TestTheCaptureCeilingFollowsTheEngineDefault(t *testing.T) {
 		blackwell bool
 		ceiling   int
 	}{
-		{"blackwell, seqs 1024", 1024, true, 1024},
+		{"blackwell, seqs 1024", 1024, true, 8192},
 		{"h200, seqs 64", 64, false, 128},
 		{"h200, seqs 1024", 1024, false, 512},
 	} {
