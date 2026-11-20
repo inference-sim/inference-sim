@@ -16,7 +16,7 @@ func multiNode() *Scenario {
 	return &Scenario{
 		Kind: "Scenario", Name: "glm-5.3-60node-h200",
 		Model: "glm-5.3", Coefficients: []string{"cost-model-primitives-h200"},
-		EngineVersion: "0.29.0",
+		Engine: &Engine{Kind: "vllm", Version: "0.29.0"},
 		Cluster: Cluster{Hardware: "h200", Fabric: "ib-400g", Nodes: 60,
 			GPUsPerNode: 8, Storage: []string{"cpu_dram", "nvme_gen4"}},
 	}
@@ -28,8 +28,8 @@ func singleNode() *Scenario {
 	return &Scenario{
 		Kind: "Scenario", Name: "granite-230b-h100",
 		Model: "granite-5-230b", Coefficients: []string{"cost-model-primitives-h100"},
-		EngineVersion: "0.29.0",
-		Cluster:       Cluster{Hardware: "h100", Nodes: 1, GPUsPerNode: 8},
+		Engine:  &Engine{Kind: "vllm", Version: "0.29.0"},
+		Cluster: Cluster{Hardware: "h100", Nodes: 1, GPUsPerNode: 8},
 	}
 }
 
@@ -101,7 +101,7 @@ func TestRejects(t *testing.T) {
 		{"wrong kind", func(s *Scenario) { s.Kind = "Deployment" }},
 		{"no model", func(s *Scenario) { s.Model = "" }},
 		{"no hardware", func(s *Scenario) { s.Cluster.Hardware = "" }},
-		{"no engine version", func(s *Scenario) { s.EngineVersion = "" }},
+		{"no engine kind", func(s *Scenario) { s.Engine.Kind = "" }},
 		{"no coefficients", func(s *Scenario) { s.Coefficients = nil }},
 		{"empty coefficient set name", func(s *Scenario) {
 			s.Coefficients = []string{"", "mfu", "mfu2"}
@@ -158,39 +158,29 @@ func TestScenarioAcceptancePin(t *testing.T) {
 	}
 }
 
-// TestEngine covers SIM-1's scenario side: engine {kind, version} is the field, the
-// deprecated engine_version is accepted alone or agreeing with it until M4, and a scenario
-// naming no engine is refused.
+// TestEngine covers SIM-1's scenario side: engine {kind} is the field, the release is the
+// build's and is never a document field, and a scenario naming no engine is refused.
 func TestEngine(t *testing.T) {
-	withEngine := func(e *Engine, version string) *Scenario {
+	withEngine := func(e *Engine) *Scenario {
 		s := singleNode()
-		s.Engine, s.EngineVersion = e, version
+		s.Engine = e
 		return s
 	}
-	vllm := &Engine{Kind: "vllm", Version: "0.32.0"}
-	for name, s := range map[string]*Scenario{
-		"engine alone":         withEngine(vllm, ""),
-		"engine_version alone": withEngine(nil, "0.32.0"),
-		"both, agreeing":       withEngine(vllm, "0.32.0"),
-	} {
-		if p := s.Validate(); !p.OK() {
-			t.Errorf("%s: rejected:\n%s", name, p.Error())
-		}
+	if p := withEngine(&Engine{Kind: "vllm"}).Validate(); !p.OK() {
+		t.Errorf("a kind-only engine rejected:\n%s", p.Error())
 	}
-	if got := withEngine(vllm, "").EngineRelease(); got != "0.32.0" {
-		t.Errorf("EngineRelease with engine = %q", got)
+	if got := withEngine(&Engine{Kind: "vllm", Version: "0.33.0"}).EngineRelease(); got != "0.33.0" {
+		t.Errorf("EngineRelease = %q", got)
 	}
-	if got := withEngine(nil, "0.31.0").EngineRelease(); got != "0.31.0" {
-		t.Errorf("EngineRelease with engine_version = %q", got)
+	if got := withEngine(nil).EngineRelease(); got != "" {
+		t.Errorf("EngineRelease with no engine = %q", got)
 	}
 	for _, c := range []struct {
 		name, path string
 		s          *Scenario
 	}{
-		{"neither", "engine", withEngine(nil, "")},
-		{"no kind", "engine.kind", withEngine(&Engine{Version: "0.32.0"}, "")},
-		{"no version", "engine.version", withEngine(&Engine{Kind: "vllm"}, "")},
-		{"disagreeing", "engine_version", withEngine(vllm, "0.31.0")},
+		{"neither", "engine", withEngine(nil)},
+		{"no kind", "engine.kind", withEngine(&Engine{})},
 	} {
 		p := c.s.Validate()
 		found := false

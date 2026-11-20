@@ -64,26 +64,16 @@ func (s *Scenario) Validate() *validate.Problems {
 	return p
 }
 
-// validateEngine checks the engine a scenario names (SIM-1). Until M4 the deprecated
-// engine_version is accepted alone, or beside engine with the same version (plan §3.3).
+// validateEngine checks the engine a scenario names (SIM-1): its kind. The release is the
+// build's, not the scenario's (LIF-6).
 func (s *Scenario) validateEngine(p *validate.Problems) {
 	e := s.Engine
-	switch {
-	case e == nil && s.EngineVersion == "":
-		p.Field("engine", "required: the engine that runs the scenario, as engine: {kind, version}")
-		return
-	case e == nil:
+	if e == nil {
+		p.Field("engine", "required: the engine that runs the scenario, as engine: {kind}")
 		return
 	}
 	if e.Kind == "" {
 		p.Field("engine.kind", "required: the engine kind, for example vllm")
-	}
-	if e.Version == "" {
-		p.Field("engine.version", "required: the upstream release the engine models, for example 0.32.0")
-	}
-	if s.EngineVersion != "" && e.Version != "" && s.EngineVersion != e.Version {
-		p.Field("engine_version", "is %q but engine.version is %q: engine_version is deprecated; state the release once, in engine.version",
-			s.EngineVersion, e.Version)
 	}
 }
 

@@ -732,6 +732,9 @@
     "result.Engine": {
       "additionalProperties": false,
       "properties": {
+        "commit": {
+          "type": "string"
+        },
         "kind": {
           "type": "string"
         },

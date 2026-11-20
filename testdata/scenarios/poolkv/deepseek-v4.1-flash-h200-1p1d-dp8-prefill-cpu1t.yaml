@@ -5,7 +5,7 @@
 # per pool (a pool's offload and pd_transfer; the deployment-level blocks are the default).
 kind: Scenario
 name: deepseek-v4.1-flash-h200-1p1d-dp8-prefill-cpu1t
-engine: {kind: vllm, version: "0.33.0"}
+engine: {kind: vllm}
 
 model: deepseek-v4.1-flash
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric, cost-model-offload-tiers]

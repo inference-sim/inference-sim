@@ -165,7 +165,7 @@ func adoptSGLangTwin() error {
 		}
 		switch doc["kind"] {
 		case "Scenario":
-			doc["engine"] = map[string]any{"kind": "vllm", "version": "0.33.0"}
+			doc["engine"] = map[string]any{"kind": "vllm"}
 		case "Deployment":
 			pools, _ := doc["pools"].([]any)
 			for _, p := range pools {

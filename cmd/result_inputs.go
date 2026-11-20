@@ -50,7 +50,7 @@ func resultRevisions() result.Revisions {
 // the document requires.
 func revisionsFrom(info *debug.BuildInfo) result.Revisions {
 	v := versionsFrom(info)
-	r := result.Revisions{Simulator: v.BLIS, Substrate: v.Schemas}
+	r := result.Revisions{Simulator: v.BLIS, Substrate: v.Schemas, LLMD: llmdCommit()}
 	if info != nil {
 		r.EngineModule = v.BLIS
 		for _, dep := range info.Deps {

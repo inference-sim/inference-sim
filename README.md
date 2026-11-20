@@ -44,8 +44,9 @@ every command, the JSON Schemas and the Go doc comments.
 
 ## Engines
 
-A scenario names its engine: `engine: {kind: vllm, version: "0.33.0"}` or
-`engine: {kind: sglang, version: "0.5.23"}`; `stack.json` lists the releases this build runs. An SGLang
+A scenario names its engine kind: `engine: {kind: vllm}` or `engine: {kind: sglang}`, and states no
+release (a `version` field is refused as unknown); `stack.json` names the engine commits this build runs,
+`inference-sim version` prints them, and every Result records them under `engine`. An SGLang
 pool's `engine:` block states SGLang's own `ServerArgs` field names (`mem_fraction_static`,
 `chunked_prefill_size`, ...) and a name that is not one is refused naming it; `blis fields` prints each
 engine's field list. Two SGLang scenarios run in CI, `testdata/kernel/sglang/glm-5-h200-fp8-sglang-tp8.yaml`

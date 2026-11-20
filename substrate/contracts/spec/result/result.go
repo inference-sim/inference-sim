@@ -105,12 +105,15 @@ type Result struct {
 	Runtime *Runtime `yaml:"runtime,omitempty"`
 }
 
-// Engine is the engine a run used: its kind and the upstream release it models.
+// Engine is the engine a run used: its kind and the upstream commit it models (LIF-6). The
+// scenario states neither; the build fixes both, and the Result records them.
 type Engine struct {
 	// Kind names the engine, for example "vllm".
 	Kind string `yaml:"kind"`
-	// Version is the upstream release, for example "0.32.0".
+	// Version is the upstream release the commit belongs to, for example "0.33.0".
 	Version string `yaml:"version"`
+	// Commit is the full upstream commit the engine models.
+	Commit string `yaml:"commit"`
 }
 
 // Data records which catalog and registry a run read (design §3.3, X8).
@@ -558,6 +561,9 @@ type Revisions struct {
 	Substrate string `yaml:"substrate"`
 	// Router is the llm-d router fork's version.
 	Router string `yaml:"router,omitempty"`
+	// LLMD is the llm-d commit the router fork is based on, from stack.json (LIF-6). The
+	// scenario states none; the build fixes it.
+	LLMD string `yaml:"llm_d,omitempty"`
 	// EngineModule is the engine's version: the simulator's own, as the engines are packages of its module.
 	EngineModule string `yaml:"engine_module,omitempty"`
 }

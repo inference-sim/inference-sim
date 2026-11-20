@@ -16,7 +16,6 @@ kind: Scenario
 name: deepseek-v4-pro-h200-fp8-vllm-tp8-ep8-dp2-mtp-cfg3
 engine:
   kind: vllm
-  version: "0.33.0"
 
 model: deepseek-v4-pro
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

@@ -14,7 +14,14 @@ import (
 //go:embed defaults.yaml
 var defaultsYAML []byte
 
+// stackJSON is the repository's stack.json, compiled in: the upstream commits this build runs
+// (LIF-6), which `blis version` prints and every Result records (cmd.SetBundledStack).
+//
+//go:embed stack.json
+var stackJSON []byte
+
 func main() {
 	cmd.SetBundledDefaults(defaultsYAML)
+	cmd.SetBundledStack(stackJSON)
 	cmd.Execute()
 }

@@ -24,7 +24,7 @@ func TestKernelReadsTheResolvedPackaging(t *testing.T) {
 name: nvl72-tp8
 model: llama-3.1-8b-instruct
 coefficients: [cost-model-primitives, cost-model-host-overheads]
-engine_version: "0.32.0"
+engine: {kind: vllm}
 cluster:
   hardware: gb200-nvl72
   fabric: ib-400g

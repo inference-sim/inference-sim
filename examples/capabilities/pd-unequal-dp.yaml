@@ -7,7 +7,7 @@
 #     --num-instances 6 --prefill-instances 4 --decode-instances 2 --rate 5 --num-requests 20
 kind: Scenario
 name: pd-unequal-dp
-engine: {kind: vllm, version: "0.33.0"}
+engine: {kind: vllm}
 
 model: minimax-m2.5
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]

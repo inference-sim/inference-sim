@@ -36,7 +36,7 @@ func pdPool(t *testing.T, groups, decode string, idx int, first *int) (*Kernel, 
 name: switch-groups
 model: muse-spark-open-816b-a42b-nvfp4
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
-engine_version: "0.32.0"
+engine: {kind: vllm}
 cluster:
   hardware: h200
   fabric: ib-400g

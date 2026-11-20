@@ -1,6 +1,6 @@
 kind: Scenario
 name: muse-gb200-nvl-pp2tp8-dspark
-engine: {kind: vllm, version: "0.33.0"}
+engine: {kind: vllm}
 model: muse-spark-open-816b-a42b-nvfp4
 # Acceptance is the registry's profile for this model and drafter at K=7, thinking on, category
 # coding (internal deployment measurements, AL 2.72 on GB200 with vLLM). `blis run` reads only

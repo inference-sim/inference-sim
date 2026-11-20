@@ -16,7 +16,7 @@ import (
 )
 
 // Repos locates the roots a scenario's names resolve against, and the engine rules its
-// engine_version selects.
+// release the build runs selects.
 //
 // A scenario names its model, hardware, fabric and coefficient sets without saying where
 // they live — it describes a deployment, not a filesystem — so a caller supplies the roots.
@@ -34,13 +34,17 @@ type Repos struct {
 	// for vLLM, the engine's rule packs (its Lookup, wrapped as RulesFrom does). Required: the kernel no longer looks rules up itself.
 	Rules func(version string) enginefacts.EngineRules
 	// RulesKind is the engine kind the supplied Rules are for, as a scenario's engine block
-	// names it (engine: {kind, version}). Open refuses a scenario whose engine block names
+	// names it (engine: {kind}). Open refuses a scenario whose engine block names
 	// another kind, because a release number alone does not say whose rules answer it:
-	// {kind: sglang, version: X} would otherwise pair with the vLLM rules for X. Empty means
+	// {kind: sglang} would otherwise pair with the vLLM rules. Empty means
 	// "vllm", the only engine kind a Repos could carry before this field existed, so every
 	// existing caller, none of which sets it, keeps working unchanged. A scenario with no
-	// engine block (the legacy engine_version form) names no kind and is not checked.
+	// engine block names no kind and is not checked.
 	RulesKind string
+	// Release is the upstream release the build runs for RulesKind (LIF-6). A scenario states
+	// none; OpenInputs sets Inputs.Scenario.Engine.Version from it. Empty means the one release
+	// RulesVersions lists.
+	Release string
 	// RulesVersions lists the releases Rules answers for, for the error a scenario naming
 	// another one gets. Optional.
 	RulesVersions func() []string
@@ -56,6 +60,20 @@ type Repos struct {
 
 // legacyRulesKind is the engine kind Repos.RulesKind means when it is empty.
 const legacyRulesKind = "vllm"
+
+// release is the upstream release the build runs for r.RulesKind: Release, else the one
+// release RulesVersions lists, else "".
+func (r Repos) release() string {
+	if r.Release != "" {
+		return r.Release
+	}
+	if r.RulesVersions != nil {
+		if vs := r.RulesVersions(); len(vs) == 1 {
+			return vs[0]
+		}
+	}
+	return ""
+}
 
 // RulesFrom adapts a lookup returning a concrete rules type, such as blis-vllm/rules'
 // Lookup returning *rules.Pack, to Repos.Rules. It keeps a nil result nil: a nil *Pack in a
@@ -116,9 +134,8 @@ func isNil(v any) bool {
 // scenario implies" is this package's answer to give, not each caller's to guess.
 //
 // Every artifact is loaded through blis-schemas' own loaders. The engine rules are the ones
-// the caller's Repos.Rules returns for the scenario's own engine_version, so a scenario
-// pinned to an older release cannot silently get current behaviour, and a release the
-// caller has no rules for is refused.
+// the caller's Repos.Rules returns for the build's engine release, so a release
+// the caller has no rules for is refused rather than priced by nearby ones.
 //
 // It prices the deployment's FIRST pool, which is what a colocated deployment has. Use
 // OpenPool to price one pool of a disaggregated one.
@@ -294,9 +311,13 @@ func OpenInputsIn(scenario string, r Repos, poolIndex int, nodePool string) (Inp
 	if r.Rules == nil {
 		return Inputs{}, fmt.Errorf("%s: no engine rules source: Repos.Rules is unset, and the "+
 			"kernel looks no rules up itself. Pass the engine model's rules for the scenario's "+
-			"engine_version (for vLLM, the engine's rulepack)", scenario)
+			"engine release (for vLLM, the engine's rulepack)", scenario)
 	}
 	if sc.Engine != nil {
+		if sc.Engine.Version = r.release(); sc.Engine.Version == "" {
+			return Inputs{}, fmt.Errorf("%s: the engine release is unknown: set Repos.Release, or list "+
+				"exactly one release in Repos.RulesVersions", scenario)
+		}
 		have := r.RulesKind
 		if have == "" {
 			have = legacyRulesKind

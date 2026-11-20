@@ -7,27 +7,24 @@ import (
 	"testing"
 )
 
-// A scenario that names its release as engine: {kind, version}, with no engine_version, opens
-// and reads as that release; engine_version alone still does until M4; the two stated unequal,
-// or another engine kind, are refused before anything opens.
-func TestTheEngineFieldNamesTheRelease(t *testing.T) {
+// A scenario names its engine by kind alone; the release is the build's (LIF-6, SIM-1). It
+// reads as that release and opens; a scenario stating a version, or another engine kind, is
+// refused before anything opens.
+func TestTheEngineFieldNamesTheKind(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "scenarios", "glm-5-h200-tp8-mtp3.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	const old = `engine_version: "0.33.0"` + "\n"
+	const old = "engine: {kind: vllm}\n"
 	if !strings.Contains(string(raw), old) {
-		t.Fatal("fixture has no engine_version to edit")
+		t.Fatal("fixture has no engine block to edit")
 	}
 	for _, c := range []struct {
 		name, stated, release, refusal string
 	}{
-		{"engine only", "engine: {kind: vllm, version: \"0.33.0\"}\n", "0.33.0", ""},
-		{"engine_version only", `engine_version: "0.33.0"` + "\n", "0.33.0", ""},
-		{"both, equal", "engine: {kind: vllm, version: \"0.33.0\"}\n" + `engine_version: "0.33.0"` + "\n", "0.33.0", ""},
-		{"both, unequal", "engine: {kind: vllm, version: \"0.33.0\"}\n" + `engine_version: "0.31.0"` + "\n", "",
-			`engine_version is "0.31.0" but engine.version is "0.33.0"`},
-		{"another kind", "engine: {kind: sglang, version: \"0.33.0\"}\n", "", `engine.kind is "sglang"`},
+		{"kind only", old, "0.33.0", ""},
+		{"a version stated", "engine: {kind: vllm, version: \"0.33.0\"}\n", "", "field version not found"},
+		{"another kind", "engine: {kind: sglang}\n", "", `engine.kind is "sglang"`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := repos()

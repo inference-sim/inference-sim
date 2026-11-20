@@ -260,7 +260,7 @@ func TestAPipelineStageTrimsTheShareOfTheTailItHolds(t *testing.T) {
 name: pp2
 model: llama-3.1-8b-instruct
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-memory, cost-model-fabric]
-engine_version: "0.32.0"
+engine: {kind: vllm}
 cluster:
   hardware: h100
   fabric: ib-400g

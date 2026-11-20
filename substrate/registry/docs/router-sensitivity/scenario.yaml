@@ -4,7 +4,7 @@
 # joined by NIXL over 400 Gb InfiniBand. The router is the llm-d profile pair in router/<name>.yaml.
 kind: Scenario
 name: mm25-gb200-@TOPO@-@ROUTER@
-engine_version: "0.32.0"
+engine: {kind: vllm}
 model: minimax-m2.5
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
 cluster:
