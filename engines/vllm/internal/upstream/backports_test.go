@@ -3,6 +3,8 @@
 package upstream
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -43,6 +45,14 @@ func TestBackportProblems(t *testing.T) {
 		{"unclean path", func(b *Backport) { b.Paths = []string{"vllm/../x.py"} }, nil, "clean path under vllm/"},
 		{"path outside vllm", func(b *Backport) { b.Paths = []string{"tests/x.py"} }, nil, "clean path under vllm/"},
 		{"empty path", func(b *Backport) { b.Paths = []string{""} }, nil, "clean path under vllm/"},
+		{"scheduler is not model code", func(b *Backport) { b.Paths = []string{"vllm/v1/core/sched/scheduler.py"} }, nil, "outside the model code"},
+		{"kernels are not model code", func(b *Backport) { b.Paths = []string{"vllm/model_executor/layers/fused_moe/fused_moe.py"} }, nil, "outside the model code"},
+		{"a sibling of a scope directory", func(b *Backport) { b.Paths = []string{"vllm/model_executor/models_extra/x.py"} }, nil, "outside the model code"},
+		{"a file beside a scope file", func(b *Backport) { b.Paths = []string{"vllm/transformers_utils/config.py.orig"} }, nil, "outside the model code"},
+		{"architecture registry", func(b *Backport) { b.Paths = []string{"vllm/model_executor/models/registry.py"} }, nil, ""},
+		{"config class", func(b *Backport) { b.Paths = []string{"vllm/transformers_utils/configs/kimi_vl.py"} }, nil, ""},
+		{"config parser", func(b *Backport) { b.Paths = []string{"vllm/transformers_utils/config_parser_base.py"} }, nil, ""},
+		{"architecture config convertor", func(b *Backport) { b.Paths = []string{"vllm/transformers_utils/model_arch_config_convertor.py"} }, nil, ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -101,5 +111,40 @@ func TestBackportsReturnsACopy(t *testing.T) {
 	got[0].Paths[0] = "Changed"
 	if want := []Backport{goodBackport()}; !reflect.DeepEqual(backports, want) || len(Backports()) != 1 {
 		t.Errorf("the record moved: %v", backports)
+	}
+}
+
+// Every path a backport may change exists in the vLLM tree at the pin, so a layout change that
+// leaves the scope naming nothing fails here and not silently at the next backport.
+func TestBackportScopeExistsAtThePin(t *testing.T) {
+	root := os.Getenv("VLLM_SOURCE")
+	if root == "" {
+		if os.Getenv("VLLM_SOURCE_REQUIRED") != "" {
+			t.Fatalf("VLLM_SOURCE is unset and VLLM_SOURCE_REQUIRED is set")
+		}
+		t.Skip("VLLM_SOURCE is unset: the backport scope was NOT checked against a vLLM checkout at " + Commit)
+	}
+	for _, p := range BackportScope() {
+		info, err := os.Stat(filepath.Join(root, filepath.FromSlash(p)))
+		if err != nil {
+			t.Errorf("scope entry %s: %v", p, err)
+			continue
+		}
+		if info.IsDir() != strings.HasSuffix(p, "/") {
+			t.Errorf("scope entry %s: a name ends in / exactly when it is a directory", p)
+		}
+	}
+}
+
+func TestBackportScopeIsCleanAndCopied(t *testing.T) {
+	for _, p := range BackportScope() {
+		if !strings.HasPrefix(p, "vllm/") || strings.Contains(p, "..") {
+			t.Errorf("scope entry %q is not under vllm/", p)
+		}
+	}
+	s := BackportScope()
+	s[0] = "changed"
+	if BackportScope()[0] == "changed" {
+		t.Error("BackportScope returns the package's own slice")
 	}
 }

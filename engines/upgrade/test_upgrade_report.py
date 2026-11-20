@@ -28,9 +28,26 @@ class TestSurfaceDiff(unittest.TestCase):
                          {"connector:C": "refused", "connector:D": "unstatused", "transformers_fallback:auto": "refused"})
         self.assertEqual(d["added"][0]["issue"], "https://github.com/inference-sim/inference-sim/issues/2286")
         self.assertEqual(d["removed"], [{"id": "connector:B", "category": "connector", "status": "refused"}])
-        self.assertEqual(d["distance"], {"added": 3, "removed": 1, "unstatused": 1,
+        self.assertEqual(d["distance"], {"added": 3, "removed": 1, "changed": 0, "unstatused": 1,
                                          "added_by_status": {"refused": 2, "unstatused": 1}})
         self.assertEqual(d["transformers_fallback"], ["transformers_fallback:auto"])
+
+    def test_an_item_whose_value_differs_is_changed_and_keeps_no_old_verdict(self):
+        old = [dict(item("engine_default:CacheConfig.DEFAULT_BLOCK_SIZE", "engine_default"), value=16),
+               dict(item("engine_default:CacheConfig.cache_dtype", "engine_default"), value="auto"),
+               item("connector:A")]
+        new = [dict(item("engine_default:CacheConfig.DEFAULT_BLOCK_SIZE", "engine_default"), value=64),
+               dict(item("engine_default:CacheConfig.cache_dtype", "engine_default"), value="auto"),
+               item("connector:A")]
+        d = ur.surface_diff(old, new, {"engine_default:CacheConfig.DEFAULT_BLOCK_SIZE": {"status": "modelled"}})
+        self.assertEqual(d["changed"], [{"id": "engine_default:CacheConfig.DEFAULT_BLOCK_SIZE", "category": "engine_default",
+                                         "status": "modelled", "from": 16, "to": 64}])
+        self.assertEqual((d["distance"]["changed"], d["added"], d["removed"]), (1, [], []))
+
+    def test_a_value_compares_by_content_not_by_key_order(self):
+        old = [dict(item("kv_report_mode:full", "kv_report_mode"), value={"a": 1, "b": [1, 2]})]
+        new = [dict(item("kv_report_mode:full", "kv_report_mode"), value={"b": [1, 2], "a": 1})]
+        self.assertEqual(ur.surface_diff(old, new, {})["changed"], [])
 
     def test_no_change_is_zero_distance(self):
         items = [item("connector:A")]
