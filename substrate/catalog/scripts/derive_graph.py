@@ -398,6 +398,7 @@ def quantized_classes(cfg: dict[str, Any], model: str) -> dict[str, str]:
 # Architectures whose handler places each node's width under a ModelOpt quant_algo
 # checkpoint, reading the exclusion list per module (see weight_dtype()).
 MODELOPT_PER_NODE_ARCHS = frozenset({
+    "Inkling2ForConditionalGeneration",
     "MuseSparkForConditionalGeneration",
     "KimiK25ForConditionalGeneration",
     "MiniMaxM2ForCausalLM",
@@ -1706,6 +1707,8 @@ def moe(cfg: dict[str, Any], model: str, hidden: int) -> dict[str, Any]:
 # runner/moe_runner.py:620-643), which is lowering (SUB-15, X3) and stays in the GroupedGEMM
 # primitive's launch count; inference-sim/blis-vllm#194 lowers it per backend.
 MOE_FAMILIES: dict[str, dict[str, Any]] = {
+    # Inkling2MoE: a GateLinear-style router at the model dtype, no shared expert (n_shared_experts 0).
+    "Inkling2ForConditionalGeneration": {"router": "base", "shared": "gated"},
     # DeepseekV2MoE (model_executor/models/deepseek_v2.py:320-326, 359-372). Kimi-K2.5's text
     # decoder is the same class (kimi_k25.py), and GLM-5's DSA family builds it too
     # (vllm/models/deepseek_v32/nvidia/model.py:98-104).
@@ -7954,6 +7957,265 @@ UNHANDLED_ARCHITECTURE_ISSUES = {
     "MiMoV2ForCausalLM": "inference-sim/blis-substrate#317",
 }
 
+
+def inkling2_expert_widths(cfg: dict[str, Any], model: str, layers: int,
+                           hidden: int) -> list[tuple[str, dict[str, int] | None]]:
+    """Each decoder layer's stored routed-expert width, read from the pinned headers (SUB-15).
+
+    Inkling-2-Small's config.json states one ModelOpt algorithm, NVFP4, and its checkpoint
+    stores the last layers' experts as MXFP8 (Inkling2 declares the choice per layer,
+    vllm/models/inkling2/nvidia/model.py:172-174), which only the tensors say. An NVFP4 expert
+    weight is U8 with an F8_E4M3 scale per 16 values, an MXFP8 one F8_E4M3 with a U8 scale per
+    32; any other layout, or a shape the config does not give, is refused."""
+    if _HEADERS is None:
+        raise DeriveError(f"{model}: the experts' stored width is in the shard headers, and the "
+                          f"entry pins none")
+    experts = int(require(cfg, "num_experts", model))
+    inner = int(require(cfg, "ffn_size", model))
+    out = []
+    for i in range(layers):
+        pre = f"model.llm.layers.{i}.mlp.experts."
+        w13, w2 = _HEADERS.get(pre + "w13_weight"), _HEADERS.get(pre + "w2_weight")
+        s13, s2 = _HEADERS.get(pre + "w13_weight_scale"), _HEADERS.get(pre + "w2_weight_scale")
+        if not (w13 and w2 and s13 and s2):
+            raise DeriveError(f"{model}: the pinned headers hold no expert weights for layer {i}")
+        if w13["dtype"] == "U8" and s13["dtype"] == "F8_E4M3":
+            width, group, packed = "nvfp4", 16, 2
+        elif w13["dtype"] == "F8_E4M3" and s13["dtype"] == "U8":
+            width, group, packed = "mxfp8", 32, 1
+        else:
+            raise DeriveError(f"{model}: layer {i} stores its experts as {w13['dtype']} with "
+                              f"{s13['dtype']} scales, neither NVFP4 nor MXFP8")
+        want = {"w13": (w13["shape"], [experts, 2 * inner, hidden // packed]),
+                "w2": (w2["shape"], [experts, hidden, inner // packed]),
+                "w13 scale": (s13["shape"], [experts, 2 * inner, hidden // group]),
+                "w2 scale": (s2["shape"], [experts, hidden, inner // group])}
+        for what, (got, expect) in want.items():
+            if got != expect:
+                raise DeriveError(f"{model}: layer {i} {what} is {got}, not {expect}")
+        out.append((width, {"elements": 32, "bytes": 1} if width == "mxfp8" else None))
+    return out
+
+
+def handler_inkling2(cfg, raw, model):
+    """Inkling-2-Small (Inkling2ForConditionalGeneration, vllm/models/inkling2/nvidia/
+    model.py, attention.py, dspark.py@0fda86a35419).
+
+    Every layer is attention then a routed MoE with no shared expert, each followed by a
+    4-tap short convolution of the residual stream, and each reading its input as a mix of
+    the residual blocks completed so far (block attention residuals, n_layers_per_attn_res_block
+    = 6). Eight layers (every sixth, from the sixth) attend over the whole context; the rest
+    over sliding_window_size tokens. A full layer projects its query side, its keys and its
+    values from three separate norms of the mix, and its k/v short convolutions take dynamic
+    taps (a [heads x 4] GEMM per side); a local layer fuses all six projections in one GEMM.
+
+    PRICED AS: relative-position-bias attention as plain swa / gqa attention (the 16-wide
+    rel logits, rel_logits_proj and the clips are not priced); the dynamic-tap convolution as
+    the static one plus its tap GEMM; the attn-res mix as bytes moved, at the stack-mean number
+    of completed blocks read, 4.5. NOT PRICED, each small: embed_norm, the layer-0 mix the
+    checkpoint omits (attn_queries has 47 entries), the gate/up softcaps inside the experts, the
+    route-scale multiply. The DSpark drafter draws block_size = 8 positions (the anchor and 7
+    masks) in one pass and the engine requires num_speculative_tokens = 7, so a pass is priced
+    at the 8 positions it computes against 7 drafted tokens."""
+    def whole(v, key):
+        if isinstance(v, bool) or int(v) != v:
+            raise DeriveError(f"{model}: {key} is {v!r}, not a whole number")
+        return int(v)
+
+    hidden = whole(require(cfg, "hidden_size", model), "hidden_size")
+    layers = whole(require(cfg, "num_layers", model), "num_hidden_layers")
+    nq = whole(require(cfg, "num_q_heads", model), "num_attention_heads")
+    nkv = whole(require(cfg, "num_kv_heads", model), "num_key_value_heads")
+    dh = head_dim(cfg, model)
+    vocab = whole(require(cfg, "vocab_size", model), "vocab_size")
+    d_rel = whole(require_key(cfg, "d_rel", model), "d_rel")
+    window = whole(require(cfg, "sliding_window", model), "sliding_window_size")
+    conv = whole(require_key(cfg, "sconv_kernel_size", model), "sconv_kernel_size")
+    per_block = whole(require_key(cfg, "n_layers_per_attn_res_block", model),
+                      "n_layers_per_attn_res_block")
+    local = set(require_key(cfg, "local_layer_ids", model))
+    if (cfg.get("swa_head_dim"), cfg.get("swa_num_attention_heads"),
+            cfg.get("swa_num_key_value_heads")) != (dh, nq, nkv):
+        raise DeriveError(f"{model}: the sliding-window layers' head geometry differs from the "
+                          f"full layers'; this handler prices one")
+    if any(not 0 <= i < layers for i in local):
+        raise DeriveError(f"{model}: local_layer_ids outside the {layers} layers")
+    if cfg.get("q_bias") or cfg.get("o_bias"):
+        raise DeriveError(f"{model}: a biased attention projection, which this handler does not price")
+    if int(pick(cfg, "shared_ffn_size") or 0) or int(cfg.get("n_shared_experts") or 0):
+        raise DeriveError(f"{model}: shared experts, which this handler does not price")
+    if cfg.get("tie_word_embeddings"):
+        raise DeriveError(f"{model}: a tied head; Inkling2 has a separate unembed")
+    base = base_dtype(cfg, raw, model)
+    act = DTYPE_WIDTHS[base]
+
+    # Attention tensors the headers hold are checked against the geometry the nodes are
+    # sized from, and at the base width: the experts are the only quantized weights.
+    if _HEADERS is not None:
+        shapes = {"attn.wq_du.weight": [nq * dh, hidden], "attn.wk_dv.weight": [nkv * dh, hidden],
+                  "attn.wv_dv.weight": [nkv * dh, hidden], "attn.wr_du.weight": [nq * d_rel, hidden],
+                  "attn.gate_attn.weight": [nq * dh, hidden], "attn.attn_sink_proj.weight": [nq, hidden],
+                  "attn.wo_ud.weight": [hidden, nq * dh], "mlp.gate.weight": [
+                      int(require(cfg, "num_experts", model)), hidden]}
+        for i in range(layers):
+            for leaf, shape in shapes.items():
+                t = _HEADERS.get(f"model.llm.layers.{i}.{leaf}")
+                if not t or t["shape"] != shape or t["dtype"] != "BF16":
+                    raise DeriveError(f"{model}: layer {i} {leaf} is {t}, not BF16 {shape}")
+        un = _HEADERS.get("model.llm.unembed.weight")
+        if not un or un["shape"] != [vocab, hidden] or un["dtype"] != "BF16":
+            raise DeriveError(f"{model}: unembed is {un}, not BF16 {[vocab, hidden]}")
+    widths = inkling2_expert_widths(cfg, model, layers, hidden)
+
+    def traffic(role, nbytes, tp="replicated"):
+        return dict(norm(role), bytes_per_token=int(nbytes), tp=tp)
+
+    def with_tp(node, tp):
+        node["tp"] = tp
+        return node
+
+    # A mix reads the completed blocks and the running one: layer i has i // per_block
+    # completed, so the stack mean over the layers is what the one node per kind states.
+    mean_reads = sum(i // per_block + 1 for i in range(layers)) / layers
+    mix_bytes = round((mean_reads + 1) * hidden * act)
+
+    def sconv(role, size):
+        return {"op": "RecurrentUpdate", "recurrent_kind": "short_conv", "role": role,
+                "conv_kernel": conv, "intermediate_size": size, "state_dtype": base}
+
+    def mlp(width, scale):
+        experts = moe_block(cfg, model, hidden, raw, family="Inkling2ForConditionalGeneration",
+                            routed_width="fp8" if width == "mxfp8" else width)
+        if scale:
+            for n in experts:
+                if n.get("role") == "experts":
+                    n["weight_scale"] = dict(scale)
+        return [traffic("mlp_attn_res_mix", mix_bytes), *experts,
+                collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
+                collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE),
+                sconv("mlp_sconv", hidden)]
+
+    def attention_node(is_local):
+        node = {"op": "Attention", "holds_engine_kv": True, "kind": "swa" if is_local else "gqa",
+                "n_q": nq, "n_kv": nkv, "d_h": dh, "kv_heads_not_replicated": True}
+        if is_local:
+            node["window"] = window
+        return node
+
+    def layer(is_local, width, scale):
+        prep = traffic("qk_rel_prep", 2 * (nq * dh + nq * d_rel + nkv * dh) * act, tp="sharded")
+        if is_local:
+            front = [traffic("attn_res_mix", mix_bytes),
+                     gemm("qkvr_gate_sink_proj", (2 * nq * dh) + nq * d_rel + nq + 2 * nkv * dh, hidden),
+                     sconv("k_sconv", nkv * dh), sconv("v_sconv", nkv * dh)]
+        else:
+            front = [traffic("attn_res_mix", mix_bytes), traffic("input_norms", 3 * 2 * hidden * act),
+                     gemm("q_gate_sink_proj", (2 * nq * dh) + nq * d_rel + nq, hidden),
+                     gemm("k_proj", nkv * dh, hidden), gemm("v_proj", nkv * dh, hidden),
+                     gemm("k_tap_proj", 4 * nkv, hidden), gemm("v_tap_proj", 4 * nkv, hidden),
+                     sconv("k_sconv", nkv * dh), sconv("v_sconv", nkv * dh)]
+        nodes = [*front, prep, attention_node(is_local),
+                 traffic("attn_gate_sink", 3 * nq * dh * act, tp="sharded"),
+                 with_tp(gemm("wo_ud", hidden, nq * dh), "row"),
+                 collective("AllReduce", "attn_out", EMIT_TENSOR_PARALLEL),
+                 sconv("attn_sconv", hidden), *mlp(width, scale)]
+        return nodes
+
+    kinds, sequence, made = [], [], {}
+    for i in range(layers):
+        is_local = i in local
+        width, scale = widths[i]
+        kid = f"{'swa' if is_local else 'full'}_{width}"
+        if kid not in made:
+            nodes = layer(is_local, width, scale)
+            made[kid] = {"id": kid, "nodes": nodes, "edges": chain(nodes)}
+            kinds.append(made[kid])
+        sequence.append(kid)
+
+    head = [traffic("output_attn_res_mix", round((layers // per_block + 2) * hidden * act)),
+            traffic("final_norm", 2 * hidden * act),
+            with_tp(gemm("lm_head", vocab, hidden), "column"),
+            traffic("logit_softcap", 2 * vocab * act, tp="sharded")]
+
+    draft = raw.get("mtp_config") or {}
+    if not draft:
+        return kinds, compress(sequence), {"global": {"architecture": raw["architectures"][0]},
+                                           "head": head}
+    d_layers = whole(require(draft, "num_layers", model), "mtp_config.num_hidden_layers")
+    d_hidden = whole(require(draft, "hidden_size", model), "mtp_config.hidden_size")
+    d_ffn = whole(require(draft, "ffn_size", model), "mtp_config.intermediate_size")
+    d_nq = whole(require(draft, "num_q_heads", model), "mtp_config.num_attention_heads")
+    d_nkv = whole(require(draft, "num_kv_heads", model), "mtp_config.num_key_value_heads")
+    d_dh = head_dim(draft, model)
+    d_window = whole(require_key(draft, "sliding_window_size", model), "mtp_config.sliding_window_size")
+    block = whole(require_key(draft, "block_size", model), "mtp_config.block_size")
+    markov = whole(require_key(draft, "markov_rank", model), "mtp_config.markov_rank")
+    targets = [whole(t, "target_layer_ids") for t in require_key(draft, "target_layer_ids", model)]
+    d_local = set(require_key(draft, "local_layer_ids", model))
+    if d_hidden != hidden or d_nq != nq or d_nkv != nkv or d_dh != dh:
+        raise DeriveError(f"{model}: the drafter's geometry differs from the target's")
+    if (draft.get("markov_head_type") != "rnn_hidden" or draft.get("q_bias") or draft.get("o_bias")
+            or sorted(targets) != targets or len(set(targets)) != len(targets)
+            or any(not 0 < t <= layers for t in targets)):
+        raise DeriveError(f"{model}: an mtp_config this handler does not price")
+
+    def d_layer(is_local):
+        attn = {"op": "Attention", "holds_engine_kv": True, "kind": "swa" if is_local else "gqa",
+                "n_q": nq, "n_kv": nkv, "d_h": dh, "kv_heads_not_replicated": True}
+        if is_local:
+            attn["window"] = d_window
+        nodes = [traffic("input_norm", 2 * hidden * act),
+                 gemm("qkv_proj", (nq + 2 * nkv) * dh, hidden),
+                 traffic("qk_norm_rope", 2 * (nq + nkv) * dh * act, tp="sharded"),
+                 attn,
+                 with_tp(gemm("o_proj", hidden, nq * dh), "row"),
+                 collective("AllReduce", "attn_out", EMIT_TENSOR_PARALLEL),
+                 traffic("post_attn_norm", 3 * hidden * act),
+                 gemm("mlp_gate_up", 2 * d_ffn, hidden),
+                 with_tp(gemm("mlp_down", hidden, d_ffn), "row"),
+                 collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL)]
+        return nodes
+
+    d_sequence, d_kinds = [], []
+    for i in range(d_layers):
+        kid = "dspark_swa" if i in d_local else "dspark_full"
+        if kid not in {k["id"] for k in d_kinds}:
+            nodes = d_layer(i in d_local)
+            d_kinds.append({"id": kid, "nodes": nodes, "edges": chain(nodes)})
+        d_sequence.append(kid)
+    ctx_nodes = [traffic("dspark_context_norm", 2 * hidden * act),
+                 gemm("dspark_context_kv", 2 * nkv * dh, hidden),
+                 traffic("dspark_context_kv_insert", 2 * 2 * nkv * dh * act, tp="sharded")]
+    mix = [traffic("dspark_target_mix", (len(targets) + d_layers) * hidden * act)]
+    d_kinds += [{"id": "dspark_context", "nodes": ctx_nodes, "edges": chain(ctx_nodes)},
+                {"id": "dspark_context_mix", "nodes": mix, "edges": []}]
+    extras = {
+        "global": {"architecture": raw["architectures"][0]},
+        "head": head,
+        "speculator": {
+            "method": "dspark",
+            "num_spec_tokens": block - 1,
+            "drafting": "parallel_block",
+            "stack": compress(d_sequence),
+            "context_stack": {"prologue": ["dspark_context_mix"], "pattern": ["dspark_context"],
+                              "repeat": d_layers},
+            "head": [traffic("dspark_final_norm", 2 * hidden * act),
+                     {**with_tp(gemm("dspark_lm_head", vocab, hidden), "column"),
+                      "aliases": "head.lm_head"},
+                     with_tp(gemm("markov_hidden_proj", 3 * markov, 2 * hidden), "replicated")],
+            "sequential_head": [
+                {"op": "Gather", "role": "markov_w1", "rows": vocab, "row_bytes": markov * act,
+                 "rows_per_token": 1, "out_bytes_per_token": markov * act},
+                with_tp(gemm("markov_rnn_proj", 3 * markov, 2 * markov), "replicated"),
+                with_tp(gemm("markov_fold", vocab, markov), "column"),
+            ],
+            "aux_hidden_state_layers": targets,
+        },
+    }
+    result_kinds = kinds + d_kinds
+    return result_kinds, compress(sequence), extras
+
+
 HANDLERS = {
     "LlamaForCausalLM": handler_dense_placed,
     "LlamaForCausalLMEagle3": handler_llama_eagle3,
@@ -7987,6 +8249,7 @@ HANDLERS = {
     "DeepseekV41ForCausalLM": handler_deepseek_v41,
     "GlmMoeDsaForCausalLM": handler_glm_moe_dsa,
     "InklingForConditionalGeneration": handler_moe,
+    "Inkling2ForConditionalGeneration": handler_inkling2,
     "GptOssForCausalLM": handler_moe,
     "MiniMaxM2ForCausalLM": handler_minimax_m2,
     "MiniMaxM3SparseForCausalLM": handler_minimax_m3,
@@ -8327,6 +8590,30 @@ def tower_muse_spark(vc: dict[str, Any], raw: dict[str, Any], text_hidden: int, 
     return t
 
 
+def tower_inkling2(vc: dict[str, Any], raw: dict[str, Any], text_hidden: int, dtype: str, model: str) -> dict[str, Any]:
+    """Inkling-2's vision tower (vllm/models/inkling2/nvidia/vision.py@0fda86a35419): a 20-pixel
+    patch ViT replicated on every rank (nn.Linear, no TP), a class token per image, layer
+    scale, and a 2x2 merge into a two-layer GELU projection. Images are stills, so the
+    temporal_patch_size frames of a patch are equal and one frame is read."""
+    H, L, nh, ratio, p, ms, hid = _need(vc, ("hidden_size", "num_hidden_layers", "num_attention_heads",
+                                            "mlp_ratio", "native_patch_size", "adapter_merge_size",
+                                            "projection_hidden_dim"), model)
+    I = int(H * ratio)
+    bias = bool(vc.get("projector_bias", False))
+    block = _vit_block(H, nh, H // nh, I, qkv_bias=True, o_bias=True, mlp_bias=True, gated=False,
+                       norm_params=6 * H, tp=False)
+    emb = [_gemm("patch_embed", H, 3 * p * p, bias=False),
+           _vnode("elementwise", "class_and_pos", bytes_per_row=2 * H * 2,
+                  params=(int(vc["posemb_grid_size"]) ** 2 + 2) * H),
+           _norm("ln_pre", H, 2 * H)]
+    proj = [_gemm("proj_in", hid, H * ms * ms, bias=bias, rows="output_tokens"),
+            _vnode("elementwise", "proj_act", bytes_per_row=2 * hid * 2, rows="output_tokens"),
+            _gemm("proj_out", text_hidden, hid, bias=bias, rows="output_tokens")]
+    return _tower(vc, text_hidden, dtype, patch=p, temporal=1, channels=3, merge=int(ms) * int(ms),
+                  parallel="replicated", embedding=emb, block=block, layers=int(L), projector=proj,
+                  class_tokens=1)
+
+
 # Architecture -> (builder, the audio tower the source also carries, if any).
 TOWER_BUILDERS = {
     "KimiK25ForConditionalGeneration": lambda *a: tower_moonvit(*a, v2=False),
@@ -8340,6 +8627,7 @@ TOWER_BUILDERS = {
     "Llama4ForConditionalGeneration": tower_llama4,
     "MiniMaxM3SparseForConditionalGeneration": tower_minimax_m3,
     "MuseSparkForConditionalGeneration": tower_muse_spark,
+    "Inkling2ForConditionalGeneration": tower_inkling2,
 }
 # Towers the kernels cannot express or the deriver cannot yet state, by architecture.
 UNPRICED_IMAGE_TOWERS = {
