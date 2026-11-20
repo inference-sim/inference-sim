@@ -63,6 +63,9 @@ var Table1 = []Component{
 	// The ledger and the substrate's own tools are substrate code: they may read any substrate
 	// package, and (by having no row for them) nothing of the simulator or an engine.
 	{"ledger", []string{"substrate/ledger/..."}, []string{"substrate/contracts/...", "substrate/catalog/...", "substrate/load/...", "substrate/validate/..."}},
+	// The calibration pre-registrations read the ledger and the contracts' check vocabulary and
+	// nothing else; no other component may import them (their row is the only one naming them).
+	{"pre-registrations", []string{"substrate/prereg/..."}, []string{"substrate/contracts/...", "substrate/ledger/..."}},
 	{"substrate tools", []string{"substrate/tools/..."}, []string{"substrate/..."}},
 }
 
