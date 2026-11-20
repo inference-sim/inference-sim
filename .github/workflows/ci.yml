@@ -782,6 +782,13 @@ jobs:
             exit 1
           fi
 
+      # The tool that hashes an engine's code paths into CodeIDs (design 3.2, Table DC) and the one
+      # that hands them to the registry's writers. Each engine's own Go test holds its table and
+      # the exported file fresh.
+      - name: The code-path hash and CodeID export tests
+        working-directory: substrate
+        run: python -m pytest tools/codepaths -q
+
   # Before a release: every llm-d router package the binary links, tested at the versions
   # inference-sim selects (design §3.2, LIF-2). Also on pull requests that change go.mod. The
   # engines and the substrate are directories of this module, so `go test ./...` covers them. The

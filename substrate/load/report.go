@@ -53,7 +53,9 @@ type Selected struct {
 	// unkeyed when it lists none). MeasuredOn are the implementations a transferred value was
 	// measured on. A sibling implementation the entry is also valid for is in KernelImpls and
 	// not in Priced.
-	Priced     []coefficient.KernelImpl
+	Priced []coefficient.KernelImpl
+	// CodeIDs are the engine-path CodeIDs the entry is valid for (coefficient.Entry.CodeIDs).
+	CodeIDs    []string
 	Match      coefficient.KernelMatch
 	MeasuredOn []coefficient.KernelImpl
 	// Primitive is the lowered primitive the entry's name prices (coefficient.PrimitiveOf), or
@@ -112,6 +114,7 @@ func (d *Data) RecordEntry(set string, e coefficient.Entry, primitive string, pr
 		Primitive: primitive, Priced: append([]coefficient.KernelImpl(nil), priced...), Match: match,
 		MeasuredOn:   append([]coefficient.KernelImpl(nil), e.MeasuredOn...),
 		KernelImpls:  append([]coefficient.KernelImpl(nil), e.KernelImpls...),
+		CodeIDs:      append([]string(nil), e.CodeIDs...),
 		FitRange:     append([]coefficient.Bound(nil), e.FitRange...),
 		CI95:         copyInterval(e.CI95),
 		Extrapolated: extrapolated, Unidentified: e.Unidentified(), Whole: true})
@@ -236,6 +239,9 @@ func (d *Data) record(s Selected) {
 	d.loaded[s.File] = true
 	key := string(s.Kind) + "\x00" + s.Set + "\x00" + s.Entry + "\x00" + s.Method + "\x00" + s.Scope.Key() +
 		"\x00" + coefficient.DescribeImpls(s.KernelImpls)
+	if len(s.CodeIDs) > 0 {
+		key += "\x00" + coefficient.DescribeCodeIDs(s.CodeIDs)
+	}
 	if old, ok := d.selected[key]; ok && s.Kind == KindCoefficient {
 		s = mergeCoefficient(old, s)
 	}
@@ -255,7 +261,7 @@ func mergeCoefficient(a, b Selected) Selected {
 	out.Unidentified = a.Unidentified || b.Unidentified
 	out.Whole = a.Whole && b.Whole
 	out.Priced = unionImpls(a.Priced, b.Priced)
-	agree := reflect.DeepEqual(a.KernelImpls, b.KernelImpls) && a.Match == b.Match &&
+	agree := reflect.DeepEqual(a.KernelImpls, b.KernelImpls) && reflect.DeepEqual(a.CodeIDs, b.CodeIDs) && a.Match == b.Match &&
 		reflect.DeepEqual(a.MeasuredOn, b.MeasuredOn) && reflect.DeepEqual(a.FitRange, b.FitRange) &&
 		reflect.DeepEqual(a.CI95, b.CI95)
 	if a.Whole && b.Whole && !agree {
@@ -348,6 +354,7 @@ func (r Report) Result() result.SelectedEntries {
 				Set: s.Set, Name: s.Entry, Method: vocab.Method(s.Method), Scope: s.Scope, File: s.File}
 			if out.ClosenessVersion != 0 {
 				c.KernelImpls, c.FitRange, c.CI95 = s.KernelImpls, s.FitRange, s.CI95
+				c.CodeIDs = s.CodeIDs
 				c.Primitive, c.Priced, c.KernelMatch, c.MeasuredOn = s.Primitive, s.Priced, s.Match, s.MeasuredOn
 				c.Extrapolated, c.Unidentified = s.Extrapolated, s.Unidentified
 			}

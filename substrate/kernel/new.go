@@ -281,6 +281,11 @@ func construct(in Inputs) (*Kernel, error) {
 		TP: layout.TP, EP: layout.ExpertWidth, NodesSpanned: layout.NodesSpanned,
 		Fabric:          fabricName,
 		Implementations: running, Operations: ops,
+		HostCPU: in.Chip.HostCPU,
+		CodeIDs: map[string]string{
+			coefficient.CodePathHost:   in.Lowered.Plan.Host.CodeID,
+			coefficient.CodePathGraphs: in.Lowered.Plan.Graphs.CodeID,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("resolving coefficients: %w", err)
@@ -2489,6 +2494,7 @@ func (k *Kernel) buildProvenance(c *resolve.Coefficients) {
 			Name: name, Set: r.Set, Method: string(r.Entry.Method),
 			Scope:       scopeString(r.Entry, k.chip.Name),
 			KernelMatch: string(r.Match), Primitive: r.Primitive, Running: coefficient.DescribeImpls(r.Running),
+			CodeMatch: codeMatchOf(name, r), CodeID: r.CodeID,
 		})
 	}
 	k.origins = append(k.origins, k.assumptions...)
@@ -2513,6 +2519,15 @@ func (k *Kernel) buildProvenance(c *resolve.Coefficients) {
 		SequenceParallelMoE: k.layout.SequenceParallelMoE || k.layout.ModelSequenceParallel,
 		Overrides:           overrides,
 	}
+}
+
+// codeMatchOf is the CodeMatch a Provenance entry reports: empty for a name that prices no
+// engine-path code, so that only the entries a CodeID can key carry one.
+func codeMatchOf(name string, r resolve.Resolved) string {
+	if coefficient.CodePathOf(name) == "" {
+		return ""
+	}
+	return string(r.CodeMatch)
 }
 
 // KernelAssumptionSet is the Set a Provenance entry carries when the kernel supplied the

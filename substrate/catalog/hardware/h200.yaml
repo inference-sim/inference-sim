@@ -13,3 +13,5 @@ _comment_sm: "SMCount is the count of enabled Streaming Multiprocessors on the G
 SMCount: 132
 _comment_cc: "ComputeCapability is the CUDA compute capability NVIDIA lists for this part (https://developer.nvidia.com/cuda-gpus). A model graph that differs by GPU generation resolves its architecture overlay by the major version, so a chip that states none cannot run such a graph."
 ComputeCapability: "9.0"
+_comment_host_cpu: "HostCPU is the architecture of the CPU that drives the GPUs, the packaging fact an engine-path coefficient (host, scheduler and launch cost) is scoped by (coefficient.Scope.HostCPU). Source: NVIDIA's DGX H200, which the same guide covers ('The DGX H100/H200 systems are built on eight NVIDIA H100 Tensor Core GPUs or eight NVIDIA H200 Tensor Core GPUs'; one shared CPU row, '2 x Intel Xeon 8480C PCIe Gen5 CPUs with 56 cores each', https://docs.nvidia.com/dgx/dgxh100-user-guide/introduction-to-dgxh100.html). Engine-path coefficients are scoped by it because they are code running on that CPU."
+HostCPU: x86

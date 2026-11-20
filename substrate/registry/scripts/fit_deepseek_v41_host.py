@@ -75,11 +75,15 @@ PY_PATH_LOW_US = 1.11
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import code_keys  # noqa: E402
 import coefficient_blocks as cb  # noqa: E402
 
 REPO = HERE.parent
 HOST_PATH = REPO / "coefficients" / "cost-model-host-overheads.yaml"
 ANCHORS = REPO / "validator" / "testdata" / "anchors"
+# The keys every engine-path entry carries (code_keys.py): the host CPU of its chips, the CodeIDs of its path.
+CPUS = code_keys.chip_host_cpus()
+CODE_IDS = code_keys.engine_code_ids()
 ANCHOR_JSON = ANCHORS / "v41_h200_enforce_eager_anchor.json"
 ANCHOR_SOURCE = ("an internal DeepSeek-V4.1-Flash H200 enforce-eager serving run's report "
                  "(not redistributed)")
@@ -220,7 +224,8 @@ def lines(name, value, units, method, fitted, scope, sources, rationale,
         out.append(f'      transferred_from: "{transferred_from}"')
         out.append(f'      transfer_rule: "{transfer_rule}"')
     out += [f"      fitted: {'true' if fitted else 'false'}",
-            f"      scope: {scope}", "      sources:"]
+            code_keys.keyed_scope(f"      scope: {scope}", CPUS),
+            code_keys.code_ids_line(name, CODE_IDS), "      sources:"]
     out += [f'        - {{kind: {k}, cite: "{c}", role: {r}}}' for k, c, r in sources]
     return out + ["      rationale: >", f"        {rationale}"]
 

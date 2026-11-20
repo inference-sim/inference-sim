@@ -215,6 +215,11 @@ type SelectedCoefficient struct {
 	// run; the build it priced is Priced. Empty when the entry states none, which is allowed
 	// for an entry that is not tied to one implementation (KernelMatch is then unkeyed).
 	KernelImpls []coefficient.KernelImpl `yaml:"kernel_impls,omitempty"`
+	// CodeIDs are the engine-path code identities the entry states it is valid for, copied from
+	// the entry: the host, scheduler or graph-launch code (engines/*/code_paths.json) its value
+	// was fitted on. Empty for an entry that is not tied to one. A lookup returned the entry
+	// only for a plan that stated one of them for the entry's path.
+	CodeIDs []string `yaml:"code_ids,omitempty"`
 	// Primitive is the lowered primitive the entry's name prices (coefficient.PrimitiveOf), or
 	// empty for a name that prices no lowered kernel. Present with closeness_version.
 	Primitive string `yaml:"primitive,omitempty"`

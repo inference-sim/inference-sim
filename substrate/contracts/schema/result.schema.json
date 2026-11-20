@@ -132,6 +132,12 @@
           },
           "type": "array"
         },
+        "host_cpu": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "model": {
           "items": {
             "type": "string"
@@ -1665,6 +1671,12 @@
           },
           "maxItems": 2,
           "minItems": 2,
+          "type": "array"
+        },
+        "code_ids": {
+          "items": {
+            "type": "string"
+          },
           "type": "array"
         },
         "extrapolated": {

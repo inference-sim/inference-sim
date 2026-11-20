@@ -111,6 +111,13 @@ type Chip struct {
 	// resolves, and one that distinguishes architectures cannot be resolved for this chip.
 	ComputeCapability string `yaml:"ComputeCapability,omitempty"`
 
+	// HostCPU is the architecture of the CPU that drives the GPUs, a packaging fact: "x86" for
+	// the HGX and DGX hosts, "grace" where the GPUs sit on a Grace CPU over NVLink-C2C. Host,
+	// scheduler and launch costs are code running on that CPU, so an engine-path coefficient is
+	// scoped by it (coefficient.Scope.HostCPU). Empty means not stated: no coefficient scoped
+	// by host_cpu applies to such a chip.
+	HostCPU string `yaml:"HostCPU,omitempty"`
+
 	// GPUsPerNode and GPUsPerRack describe packaging. GPUsPerRack is non-zero only
 	// where a rack boundary is a distinct link from a node boundary, which is the
 	// third topology tier a two-tier model cannot express.
@@ -121,6 +128,15 @@ type Chip struct {
 	// from the inter-rack fabric. Zero means no such tier exists on this part.
 	IntraRackBwGBps float64 `yaml:"IntraRackBwGBps,omitempty"`
 }
+
+// The host CPU architectures a chip may state (Chip.HostCPU).
+const (
+	HostCPUx86   = "x86"
+	HostCPUGrace = "grace"
+)
+
+// HostCPUs is every host CPU architecture a chip may state, in a fixed order.
+func HostCPUs() []string { return []string{HostCPUx86, HostCPUGrace} }
 
 // Fabric is an inter-node network class, reusable across chips.
 type Fabric struct {

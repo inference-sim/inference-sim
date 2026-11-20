@@ -234,7 +234,11 @@ func (e Entry) MatchImpls(consuming []KernelImpl) KernelMatch {
 // a new key and its own value (design 6.2). The implementations are in sorted order, so listing
 // them differently does not change it.
 func (e Entry) Identity() string {
-	return e.Name + "\x00" + e.Scope.Key() + "\x00" + string(e.Method) + "\x00" + DescribeImpls(e.KernelImpls)
+	id := e.Name + "\x00" + e.Scope.Key() + "\x00" + string(e.Method) + "\x00" + DescribeImpls(e.KernelImpls)
+	if len(e.CodeIDs) > 0 {
+		id += "\x00" + DescribeCodeIDs(e.CodeIDs)
+	}
+	return id
 }
 
 // TargetImpls are the implementations the entry is valid for.

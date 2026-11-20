@@ -34,12 +34,42 @@ coefficients:
 """
 
 
+CPUS = {"a": "x86", "b": "x86", "c": "grace", "d": "grace"}
+IDS = {"host": {"vllm": "1" * 64, "sglang": "2" * 64}, "graphs": {"vllm": "3" * 64, "sglang": "3" * 64}}
+
+
 def test_a_new_part_reaches_every_part_wide_entry_and_a_chip_with_its_own_value_is_left_to_it():
-    got = mod.render(TEXT, ["a", "b", "c", "d"])
-    assert "host_completion:\n      value: 1.0\n      scope: {hardware: [a, b, c, d]}" in got
-    assert "value: 3.2\n      scope: {hardware: [a, b, d]}" in got      # c has its own entry
-    assert "value: 2.0\n      scope: {hardware: [c]}" in got           # the chip's own entry is not rewritten
-    assert "scope: {hardware: [a], model: [m]}" in got                  # a model-scoped entry is not touched
+    got = mod.render(TEXT, ["a", "b", "c", "d"], CPUS, IDS)
+    assert "host_completion:\n      value: 1.0\n      scope: {hardware: [a, b, c, d], host_cpu: [x86, grace]}" in got
+    assert "value: 3.2\n      scope: {hardware: [a, b, d], host_cpu: [x86, grace]}" in got   # c has its own entry
+    assert "value: 2.0\n      scope: {hardware: [c], host_cpu: [grace]}" in got              # the chip's own entry keeps its chip
+    assert "scope: {hardware: [a], model: [m], host_cpu: [x86]}" in got                       # a model-scoped part list is not touched
+
+
+def test_each_entry_is_keyed_by_the_cpus_of_its_chips_and_the_code_ids_of_its_path():
+    got = mod.render(TEXT, ["a", "b", "c", "d"], CPUS, IDS)
+    host = "      code_ids: [" + "1" * 64 + ", " + "2" * 64 + "]"
+    graphs = "      code_ids: [" + "3" * 64 + "]"          # two engines that state one id list it once
+    assert "host_completion:\n      value: 1.0\n      scope: {hardware: [a, b, c, d], host_cpu: [x86, grace]}\n" + host in got
+    assert "host_admission_per_token:\n      value: 0.1\n      scope: {hardware: [a], model: [m], host_cpu: [x86]}\n" + host in got
+    assert "host_launch_per_kernel:\n      value: 2.0\n      scope: {hardware: [c], host_cpu: [grace]}\n" + graphs in got
+
+
+def test_keying_is_idempotent_and_follows_a_changed_code_id():
+    once = mod.render(TEXT, ["a", "b", "c", "d"], CPUS, IDS)
+    assert mod.render(once, ["a", "b", "c", "d"], CPUS, IDS) == once
+    newer = {**IDS, "host": {"vllm": "4" * 64, "sglang": "2" * 64}}
+    again = mod.render(once, ["a", "b", "c", "d"], CPUS, newer)
+    assert "1" * 64 not in again and again.count("4" * 64) == 2    # replaced, not appended; once per host entry
+    assert again.count("code_ids:") == once.count("code_ids:")
+
+
+def test_a_chip_the_catalog_does_not_hold_or_a_name_bound_to_no_path_is_refused():
+    import pytest
+    with pytest.raises(SystemExit):
+        mod.render(TEXT, ["a", "b"], {"a": "x86"}, IDS)
+    with pytest.raises(SystemExit):
+        mod.render(TEXT.replace("host_completion", "gemm_eps_max_bf16"), ["a", "b", "c", "d"], CPUS, IDS)
 
 
 def test_the_committed_file_is_what_the_script_writes():

@@ -27,6 +27,9 @@ func (c *Chip) Validate() *validate.Problems {
 		p.Field("Provenance", "%q is not a recognized provenance", c.Provenance)
 	}
 	checkFieldProvenance(p, c.Provenance, c.FieldProvenance, reflect.ValueOf(*c), chipFields)
+	if c.HostCPU != "" && c.HostCPU != HostCPUx86 && c.HostCPU != HostCPUGrace {
+		p.Field("HostCPU", "%q is not a host CPU architecture; use %s", c.HostCPU, strings.Join(HostCPUs(), " or "))
+	}
 	if c.ComputeCapability != "" {
 		if _, ok := c.CapabilityMajor(); !ok {
 			p.Field("ComputeCapability", "%q must be major.minor, such as 9.0 or 10.3", c.ComputeCapability)

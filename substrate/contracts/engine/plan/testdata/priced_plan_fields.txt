@@ -39,6 +39,7 @@ DraftPolicy.RetainedTokens # kernel: TestEachResolvedPlanSettingMovesAPrice
 DraftPolicy.Chain # kernel: TestEachResolvedPlanSettingMovesAPrice
 EngramPlacement.Host # kernel: TestEachResolvedPlanSettingMovesAPrice
 EngramPlacement.Shards # kernel: TestEachResolvedPlanSettingMovesAPrice
+GraphPolicy.CodeID # kernel: TestTheEnginePathCodeIDDecidesWhichHostCoefficientPrices
 GraphPolicy.Buckets # kernel: TestEachResolvedPlanSettingMovesAPrice
 GraphPolicy.Ceiling # kernel: TestEachResolvedPlanSettingMovesAPrice
 GraphPolicy.Decode # kernel: TestEachResolvedPlanSettingMovesAPrice
@@ -63,6 +64,7 @@ PoolPlan.MoE # kernel: TestEachResolvedPlanSettingMovesAPrice
 PoolPlan.PageTokens # kernel: TestEachResolvedPlanSettingMovesAPrice
 PoolPlan.WeightFormat # kernel: TestEachResolvedPlanSettingMovesAPrice
 DraftPolicy.Adaptive # kernel: TestAnAdaptiveVerifierThePlanStatesVerifiesFewerDrafts
+HostPlan.CodeID # kernel: TestTheEnginePathCodeIDDecidesWhichHostCoefficientPrices
 HostPlan.NativeFrontend # kernel: TestTheCompiledFrontendIsPricedAtItsOwnRate
 PoolPlan.Host # kernel: TestTheCompiledFrontendIsPricedAtItsOwnRate
 PoolPlan.Launches # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCharged

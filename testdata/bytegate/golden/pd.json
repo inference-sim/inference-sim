@@ -9,13 +9,13 @@
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "88ad45237e84b11d89e79e925e0189fcdf95341ed65a4e4ece1ac9c81a625e3e",
-      "combined_hash": "88ad45237e84b11d89e79e925e0189fcdf95341ed65a4e4ece1ac9c81a625e3e"
+      "hash": "a0c2e9cc89f44b4c1c7b919ee7dcb8e25e9afb63311e27b777f7011b0a788cf6",
+      "combined_hash": "a0c2e9cc89f44b4c1c7b919ee7dcb8e25e9afb63311e27b777f7011b0a788cf6"
     },
     "registry": {
       "source": "path",
-      "hash": "5d818ced48d99d319b87ff6afe1ad03f88992d788b3a95a33158df54d6855144",
-      "combined_hash": "5d818ced48d99d319b87ff6afe1ad03f88992d788b3a95a33158df54d6855144"
+      "hash": "cdd8c345cd171d8945290f272086f59435a64d86b356e658acc329281be06461",
+      "combined_hash": "cdd8c345cd171d8945290f272086f59435a64d86b356e658acc329281be06461"
     },
     "released_data": false,
     "build": "unreleased"
@@ -299,9 +299,17 @@
             "h200",
             "l40s",
             "rtx6000pro-server"
+          ],
+          "host_cpu": [
+            "x86",
+            "grace"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
+        "code_ids": [
+          "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+          "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
+        ],
         "kernel_match": "unkeyed"
       },
       {
@@ -320,9 +328,17 @@
             "h200",
             "l40s",
             "rtx6000pro-server"
+          ],
+          "host_cpu": [
+            "x86",
+            "grace"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
+        "code_ids": [
+          "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+          "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
+        ],
         "kernel_match": "unkeyed"
       },
       {
@@ -341,9 +357,17 @@
             "h200",
             "l40s",
             "rtx6000pro-server"
+          ],
+          "host_cpu": [
+            "x86",
+            "grace"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
+        "code_ids": [
+          "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+          "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
+        ],
         "kernel_match": "unkeyed"
       },
       {
@@ -362,9 +386,17 @@
             "h200",
             "l40s",
             "rtx6000pro-server"
+          ],
+          "host_cpu": [
+            "x86",
+            "grace"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
+        "code_ids": [
+          "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+          "e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074"
+        ],
         "kernel_match": "unkeyed"
       },
       {
@@ -381,9 +413,17 @@
             "h200",
             "l40s",
             "rtx6000pro-server"
+          ],
+          "host_cpu": [
+            "x86",
+            "grace"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
+        "code_ids": [
+          "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+          "e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074"
+        ],
         "kernel_match": "unkeyed",
         "ci95": [
           3.1,
@@ -406,9 +446,17 @@
             "h200",
             "l40s",
             "rtx6000pro-server"
+          ],
+          "host_cpu": [
+            "x86",
+            "grace"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
+        "code_ids": [
+          "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+          "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
+        ],
         "kernel_match": "unkeyed"
       },
       {
@@ -427,9 +475,17 @@
             "h200",
             "l40s",
             "rtx6000pro-server"
+          ],
+          "host_cpu": [
+            "x86",
+            "grace"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
+        "code_ids": [
+          "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+          "e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074"
+        ],
         "kernel_match": "unkeyed"
       },
       {
@@ -2455,6 +2511,8 @@
             "Set": "cost-model-primitives"
           },
           {
+            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_admission_per_request",
@@ -2464,6 +2522,8 @@
             "Set": "cost-model-host-overheads"
           },
           {
+            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_admission_per_token",
@@ -2473,6 +2533,8 @@
             "Set": "cost-model-host-overheads"
           },
           {
+            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_completion",
@@ -2491,6 +2553,8 @@
             "Set": "cost-model-primitives"
           },
           {
+            "CodeID": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_launch_eager_per_layer",
@@ -2500,6 +2564,8 @@
             "Set": "cost-model-host-overheads"
           },
           {
+            "CodeID": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_launch_per_kernel",
@@ -2509,6 +2575,8 @@
             "Set": "cost-model-host-overheads"
           },
           {
+            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_output_token",
@@ -2518,6 +2586,8 @@
             "Set": "cost-model-host-overheads"
           },
           {
+            "CodeID": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_replay_graph_per_step",
@@ -2970,6 +3040,8 @@
             "Set": "cost-model-primitives"
           },
           {
+            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_admission_per_request",
@@ -2979,6 +3051,8 @@
             "Set": "cost-model-host-overheads"
           },
           {
+            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_admission_per_token",
@@ -2988,6 +3062,8 @@
             "Set": "cost-model-host-overheads"
           },
           {
+            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_completion",
@@ -3006,6 +3082,8 @@
             "Set": "cost-model-primitives"
           },
           {
+            "CodeID": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_launch_eager_per_layer",
@@ -3015,6 +3093,8 @@
             "Set": "cost-model-host-overheads"
           },
           {
+            "CodeID": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_launch_per_kernel",
@@ -3024,6 +3104,8 @@
             "Set": "cost-model-host-overheads"
           },
           {
+            "CodeID": "46298fd84a9c6626d6288a31607cc148bea235242f9d27c492f03cd3bb11a87b",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_output_token",
@@ -3033,6 +3115,8 @@
             "Set": "cost-model-host-overheads"
           },
           {
+            "CodeID": "4e55ab166901b91702e6cd6f21e6b0aef21d6632ebacc7892b9e7e57309fd7a2",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_replay_graph_per_step",
