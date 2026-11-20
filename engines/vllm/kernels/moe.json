@@ -1,9 +1,5 @@
 {
-  "_comment": "Edited by people; kernels/gen_kernel_impls.py reads it with vLLM's own MoE oracle and refuses a classification that disagrees with it. The moe.grouped_gemm rows of kernel_impls.json: the kernels vLLM v0.33.0 runs block-FP8 routed experts with, by Fp8MoeBackend member. 'seen' lists the builds AISimulate measured these kernels on, each hashed from its own source, so a coefficient fitted on them can be keyed to the build it ran (D5).",
-  "upstream": {
-    "tag": "v0.33.0",
-    "commit": "4ba787ec9959e566d3b587a796dff07673324da5"
-  },
+  "_comment": "Edited by people; kernels/gen_kernel_impls.py reads it with vLLM's own MoE oracle and refuses a classification that disagrees with it. The moe.grouped_gemm rows of kernel_impls.json: the kernels vLLM runs block-FP8 routed experts with, by Fp8MoeBackend member. 'seen' lists the builds AISimulate measured these kernels on, each hashed from its own source, so a coefficient fitted on them can be keyed to the build it ran (D5).",
   "engine_modules": [
     "vllm.model_executor.layers.fused_moe.fused_moe"
   ],

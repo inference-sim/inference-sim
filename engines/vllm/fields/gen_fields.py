@@ -17,8 +17,8 @@ Usage:
 
 Name spaces. A configuration field is named as `vllm serve` accepts it, in snake case:
   - every field of EngineArgs and AsyncEngineArgs (vllm/engine/arg_utils.py) that has a flag;
-  - every field of FrontendArgs and BaseFrontendArgs (cli_args.py: vllm/entrypoints/common/ at
-    v0.33.0, vllm/entrypoints/launchers/ at v0.32.0; CLI_ARGS below),
+  - every field of FrontendArgs and BaseFrontendArgs (the cli_args.py under vllm/entrypoints that
+    defines FrontendArgs, wherever the release keeps it; cli_args_path),
     and the flags make_arg_parser adds there itself (model_tag, headless, api_server_count, ...);
   - for an EngineArgs field whose value is a vLLM config object (its annotation names a class
     decorated with @config under vllm/config/, or one of the four dict-typed fields that
@@ -169,20 +169,20 @@ def flags_in(tree):
     return out
 
 
-# Where FrontendArgs and make_arg_parser live, by release: vllm/entrypoints/launchers/cli_args.py
-# at v0.32.0, vllm/entrypoints/common/cli_args.py at v0.33.0. Exactly one must exist.
-CLI_ARGS = (
-    "vllm/entrypoints/common/cli_args.py",
-    "vllm/entrypoints/launchers/cli_args.py",
-)
-
-
 def cli_args_path(src):
-    """The one cli_args.py the checkout has (CLI_ARGS); none, or both, stops the generator."""
-    found = [rel for rel in CLI_ARGS if os.path.isfile(os.path.join(src, rel))]
+    """The cli_args.py that defines FrontendArgs: found under vllm/entrypoints at any depth, since
+    vLLM moves it between releases (vllm/entrypoints/launchers/ at v0.32.0, .../common/ at v0.33.0).
+    None, or two, stops the generator."""
+    found = []
+    for root, _, files in os.walk(os.path.join(src, "vllm", "entrypoints")):
+        if "cli_args.py" in files:
+            path = os.path.join(root, "cli_args.py")
+            if any(isinstance(n, ast.ClassDef) and n.name == "FrontendArgs" for n in parse(path).body):
+                found.append(path)
     if len(found) != 1:
-        raise SystemExit("gen_fields: want exactly one of %s in %s, found %s" % (", ".join(CLI_ARGS), src, found or "none"))
-    return os.path.join(src, found[0])
+        raise SystemExit("gen_fields: want exactly one cli_args.py defining FrontendArgs under vllm/entrypoints of %s, found %s"
+                         % (src, sorted(os.path.relpath(f, src) for f in found) or "none"))
+    return found[0]
 
 
 def config_names(src):
