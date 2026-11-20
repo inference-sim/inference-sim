@@ -8,14 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
 	"github.com/inference-sim/inference-sim/substrate/kernel/internal/resolve"
 )
 
-// opaqueRules is a release's rules behind the rules.EngineRules interface alone: every method
+// opaqueRules is a release's rules behind the enginefacts.EngineRules interface alone: every method
 // forwards to the wrapped rules, but the value is not a *pack.Pack. It is how a caller whose
 // rules are not a blis-schemas pack (another engine model's, or a pack wrapped to log or
 // override one fact) reaches the kernel.
@@ -232,7 +232,7 @@ func TestOpenUsesTheCallersRules(t *testing.T) {
 	r := repos()
 	inner := r.Rules
 	var asked []string
-	r.Rules = func(version string) rules.EngineRules {
+	r.Rules = func(version string) enginefacts.EngineRules {
 		asked = append(asked, version)
 		return opaqueRules{inner(version)}
 	}
@@ -254,7 +254,7 @@ func TestOpenUsesTheCallersRules(t *testing.T) {
 func TestOpenRefusesATypedNilAsNoRules(t *testing.T) {
 	r := repos()
 	var missing *pack.Pack
-	r.Rules = func(string) rules.EngineRules { return missing }
+	r.Rules = func(string) enginefacts.EngineRules { return missing }
 	_, err := Open("minimax-m25-h200-ep8.yaml", r)
 	if err == nil || !strings.Contains(err.Error(), "no engine rules for version") {
 		t.Fatalf("Open with a typed-nil rules value: %v, want the no-rules refusal", err)
@@ -266,7 +266,7 @@ func TestOpenRefusesATypedNilAsNoRules(t *testing.T) {
 // rules are, rather than built into a kernel whose first rules call panics.
 func TestNewRefusesRulesThatCannotAnswer(t *testing.T) {
 	in := fixtureInputs(t, "minimax-m25-h200-ep8.yaml")
-	in.Rules = opaqueRules{} // embeds a nil rules.EngineRules
+	in.Rules = opaqueRules{} // embeds a nil enginefacts.EngineRules
 	var err error
 	func() {
 		defer func() {
@@ -315,7 +315,7 @@ func TestNewRefusesRulesThatPanicLater(t *testing.T) {
 // caller said which; with no RulesVersions it does not claim the list is empty.
 func TestTheMissingReleaseRefusalListsVersionsOnlyWhenKnown(t *testing.T) {
 	r := repos()
-	r.Rules = func(string) rules.EngineRules { return nil }
+	r.Rules = func(string) enginefacts.EngineRules { return nil }
 	r.RulesVersions = nil
 	_, err := Open("minimax-m25-h200-ep8.yaml", r)
 	if err == nil {

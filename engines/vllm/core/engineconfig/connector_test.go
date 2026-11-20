@@ -4,12 +4,11 @@
 package engineconfig
 
 import (
-	"strings"
-	"testing"
-
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"gopkg.in/yaml.v3"
+	"strings"
+	"testing"
 )
 
 // The offload connector's options, as kv_transfer_config.kv_connector_extra_config gives
@@ -30,7 +29,7 @@ func TestOffloadConnectorOptions(t *testing.T) {
 		{"an unknown failure policy", &ConnectorOptions{KVLoadFailurePolicy: "retry"}, "offload.connector_options.kv_load_failure_policy"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			p := &rules.Problems{}
+			p := &validate.Problems{}
 			ValidateConnectorOptions(p, "offload", c.o)
 			if c.bad == "" {
 				if !p.OK() {

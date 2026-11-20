@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
@@ -44,7 +44,7 @@ func pricedEverywhere(t *testing.T) (built int, coefficient, engine map[string]m
 				t.Fatal(err)
 			}
 			r := Repos{Scenarios: dir, Data: d,
-				Rules:      func(string) rules.EngineRules { return inertRules{} },
+				Rules:      func(string) enginefacts.EngineRules { return inertRules{} },
 				DraftModel: noDrafter, Lower: lowerTo(8192, 16, 0)}
 			in, err := OpenInputs("s.yaml", r, 0)
 			var k *Kernel

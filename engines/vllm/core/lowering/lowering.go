@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
-	subrules "github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
@@ -43,7 +43,7 @@ type Input struct {
 	Model *model.Graph
 	Draft *model.Graph
 	Chip  *hardware.Chip
-	Rules subrules.EngineRules
+	Rules enginefacts.EngineRules
 	// Settings are the pool's settings.
 	Settings vllmsettings.Settings
 }
@@ -146,7 +146,7 @@ func Lower(in Input) (low *plan.Lowered, err error) {
 // rulesAnswer asks a rules value the one question every value answers, its release, and reports
 // a value that cannot: a forwarding struct around a nil rules value is not nil, but its first
 // call dereferences nil.
-func rulesAnswer(r subrules.EngineRules) (err error) {
+func rulesAnswer(r enginefacts.EngineRules) (err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			err = fmt.Errorf("EngineVersion panicked: %v", p)
@@ -512,7 +512,7 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 		defaultBatched = 256
 	}
 	if p.Graphs.Decode != plan.LaunchEager || p.Graphs.Other != plan.LaunchEager {
-		e := subrules.CUDAGraphCaptureInput{Mode: graphMode, MaxCaptureSize: eng.MaxCUDAGraphCaptureSize,
+		e := enginefacts.CUDAGraphCaptureInput{Mode: graphMode, MaxCaptureSize: eng.MaxCUDAGraphCaptureSize,
 			CaptureSizes: eng.CUDAGraphCaptureSizes, MaxNumBatchedTokens: eng.MaxNumBatchedTokens}
 		if e.MaxNumBatchedTokens <= 0 {
 			e.MaxNumBatchedTokens = defaultBatched
@@ -897,7 +897,7 @@ func blockFP8Experts(g *model.Graph) bool {
 // resolvedAll2AllBackend is the backend the engine runs for the stated one beside the stated MoE
 // backend. A pack that knows the binding to passthrough beside a self-communicating MoE backend
 // (core/rulepack/pack ResolvedAll2AllBackend) applies it; any other rules value gives the effective backend.
-func resolvedAll2AllBackend(r subrules.EngineRules, backend, moeBackend string) string {
+func resolvedAll2AllBackend(r enginefacts.EngineRules, backend, moeBackend string) string {
 	if b, ok := r.(interface {
 		ResolvedAll2AllBackend(backend, moeBackend string) string
 	}); ok {
@@ -912,7 +912,7 @@ func resolvedAll2AllBackend(r subrules.EngineRules, backend, moeBackend string) 
 // beside any other MoE backend. The rules pack refuses both too (moe-ep-backend-binds-passthrough),
 // but a caller can reach the lowering without it (blis-vllm#271). A release whose pack does not know
 // the binding refuses nothing here.
-func refuseAll2AllBinding(r subrules.EngineRules, backend, moeBackend string) error {
+func refuseAll2AllBinding(r enginefacts.EngineRules, backend, moeBackend string) error {
 	b, ok := r.(interface {
 		SelfCommunicatingMoEBackend(string) (self, known bool)
 	})
@@ -972,7 +972,7 @@ func dispatchKernel(backend string) plan.KernelImpl {
 //     deepseek-v41-refuses-mtp).
 func refuseV4Layouts(in Input, grafted []model.LayerKind, eng vllmsettings.Settings, cacheDType string) error {
 	arch := in.Model.Global.Architecture
-	if arch != subrules.ArchDeepseekV4 && arch != subrules.ArchDeepseekV41 {
+	if arch != enginefacts.ArchDeepseekV4 && arch != enginefacts.ArchDeepseekV41 {
 		return nil
 	}
 	pool := in.Deployment.Pools[in.PoolIndex]
@@ -1001,7 +1001,7 @@ func refuseV4Layouts(in Input, grafted []model.LayerKind, eng vllmsettings.Setti
 			"implements no DCP sharding, and its window cache asserts dcp_world_size == 1",
 			pool.Parallel.DCP, arch)
 	}
-	if arch != subrules.ArchDeepseekV41 {
+	if arch != enginefacts.ArchDeepseekV41 {
 		return nil
 	}
 	if family == 9 && cacheDType == "nvfp4_ds_mla" {

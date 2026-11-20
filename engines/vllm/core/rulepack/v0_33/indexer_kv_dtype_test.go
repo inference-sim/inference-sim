@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
 )
@@ -50,7 +50,7 @@ func TestIndexerKVDTypeIsWhatVLLMsOwnFunctionsGive(t *testing.T) {
 	p := Pack()
 	errors, ok := 0, 0
 	for _, c := range table.Cases {
-		for _, arch := range []string{rules.ArchDeepseekV4, rules.ArchDeepseekV41} {
+		for _, arch := range []string{enginefacts.ArchDeepseekV4, enginefacts.ArchDeepseekV41} {
 			name := arch + "/" + c.Requested + "/" + map[int]string{90: "sm90", 100: "sm100"}[c.Family]
 			t.Run(name, func(t *testing.T) {
 				got, known, err := p.ResolveIndexerKVDType(arch, c.Family/10, c.Requested)

@@ -5,7 +5,8 @@
 package lowering
 
 import (
-	subrules "github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
@@ -14,10 +15,10 @@ import (
 // Lower recovers only this type, so a panic in the lowering's own code still surfaces as a panic.
 type rulesPanic struct{ v any }
 
-// panicTagged forwards every subrules.EngineRules method to the caller's rules and re-raises a
+// panicTagged forwards every enginefacts.EngineRules method to the caller's rules and re-raises a
 // panic from one of them as a rulesPanic. Its method set is the interface's, so a method
-// added to subrules.EngineRules fails to compile here until it is forwarded too.
-type panicTagged struct{ subrules.EngineRules }
+// added to enginefacts.EngineRules fails to compile here until it is forwarded too.
+type panicTagged struct{ enginefacts.EngineRules }
 
 func tag() {
 	if p := recover(); p != nil {
@@ -103,17 +104,17 @@ func (r panicTagged) WindowPagesPerRequest(c model.Cache, engineBlock, inFlight,
 	return r.EngineRules.WindowPagesPerRequest(c, engineBlock, inFlight, extraRetained, maxModelLen)
 }
 
-func (r panicTagged) KVCacheGroups(in subrules.KVCacheGroupsInput) (subrules.KVCacheGrouping, error) {
+func (r panicTagged) KVCacheGroups(in enginefacts.KVCacheGroupsInput) (enginefacts.KVCacheGrouping, error) {
 	defer tag()
 	return r.EngineRules.KVCacheGroups(in)
 }
 
-func (r panicTagged) CheckEngineBlock(at string, b deployment.EngineBlock) *subrules.Problems {
+func (r panicTagged) CheckEngineBlock(at string, b deployment.EngineBlock) *validate.Problems {
 	defer tag()
 	return r.EngineRules.CheckEngineBlock(at, b)
 }
 
-func (r panicTagged) CheckConnectorOptions(at string, b deployment.EngineBlock) *subrules.Problems {
+func (r panicTagged) CheckConnectorOptions(at string, b deployment.EngineBlock) *validate.Problems {
 	defer tag()
 	return r.EngineRules.CheckConnectorOptions(at, b)
 }
@@ -123,7 +124,7 @@ func (r panicTagged) DraftTokens(b deployment.EngineBlock) int {
 	return r.EngineRules.DraftTokens(b)
 }
 
-func (r panicTagged) CUDAGraphCaptureSizes(in subrules.CUDAGraphCaptureInput) (subrules.CUDAGraphCapture, bool, error) {
+func (r panicTagged) CUDAGraphCaptureSizes(in enginefacts.CUDAGraphCaptureInput) (enginefacts.CUDAGraphCapture, bool, error) {
 	defer tag()
 	return r.EngineRules.CUDAGraphCaptureSizes(in)
 }
@@ -133,7 +134,7 @@ func (r panicTagged) ResolveDPLoadBalancing(pl deployment.Parallelism) deploymen
 	return r.EngineRules.ResolveDPLoadBalancing(pl)
 }
 
-// ResolvedAll2AllBackend is not part of subrules.EngineRules: a pack that binds a default
+// ResolvedAll2AllBackend is not part of enginefacts.EngineRules: a pack that binds a default
 // all2all_backend to passthrough beside a self-communicating MoE backend offers it, and the
 // wrapper passes it on (resolvedAll2AllBackend falls back to EffectiveAll2AllBackend otherwise).
 func (r panicTagged) ResolvedAll2AllBackend(backend, moeBackend string) string {

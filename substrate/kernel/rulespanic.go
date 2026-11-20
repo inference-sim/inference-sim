@@ -1,7 +1,8 @@
 package latencykernel
 
 import (
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
@@ -10,10 +11,10 @@ import (
 // buildGuarded recovers only this type, so a panic in the kernel's own code still surfaces as a panic.
 type rulesPanic struct{ v any }
 
-// panicTagged forwards every rules.EngineRules method to the caller's rules and re-raises a
+// panicTagged forwards every enginefacts.EngineRules method to the caller's rules and re-raises a
 // panic from one of them as a rulesPanic. Its method set is the interface's, so a method
-// added to rules.EngineRules fails to compile here until it is forwarded too.
-type panicTagged struct{ rules.EngineRules }
+// added to enginefacts.EngineRules fails to compile here until it is forwarded too.
+type panicTagged struct{ enginefacts.EngineRules }
 
 func tag() {
 	if p := recover(); p != nil {
@@ -99,17 +100,17 @@ func (r panicTagged) WindowPagesPerRequest(c model.Cache, engineBlock, inFlight,
 	return r.EngineRules.WindowPagesPerRequest(c, engineBlock, inFlight, extraRetained, maxModelLen)
 }
 
-func (r panicTagged) KVCacheGroups(in rules.KVCacheGroupsInput) (rules.KVCacheGrouping, error) {
+func (r panicTagged) KVCacheGroups(in enginefacts.KVCacheGroupsInput) (enginefacts.KVCacheGrouping, error) {
 	defer tag()
 	return r.EngineRules.KVCacheGroups(in)
 }
 
-func (r panicTagged) CheckEngineBlock(at string, b deployment.EngineBlock) *rules.Problems {
+func (r panicTagged) CheckEngineBlock(at string, b deployment.EngineBlock) *validate.Problems {
 	defer tag()
 	return r.EngineRules.CheckEngineBlock(at, b)
 }
 
-func (r panicTagged) CheckConnectorOptions(at string, b deployment.EngineBlock) *rules.Problems {
+func (r panicTagged) CheckConnectorOptions(at string, b deployment.EngineBlock) *validate.Problems {
 	defer tag()
 	return r.EngineRules.CheckConnectorOptions(at, b)
 }
@@ -119,7 +120,7 @@ func (r panicTagged) DraftTokens(b deployment.EngineBlock) int {
 	return r.EngineRules.DraftTokens(b)
 }
 
-func (r panicTagged) CUDAGraphCaptureSizes(in rules.CUDAGraphCaptureInput) (rules.CUDAGraphCapture, bool, error) {
+func (r panicTagged) CUDAGraphCaptureSizes(in enginefacts.CUDAGraphCaptureInput) (enginefacts.CUDAGraphCapture, bool, error) {
 	defer tag()
 	return r.EngineRules.CUDAGraphCaptureSizes(in)
 }

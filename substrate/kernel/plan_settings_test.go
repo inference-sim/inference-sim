@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
@@ -69,8 +69,8 @@ func lowerTo(maxContext, page int, util float64, f ...func(*plan.Lowered)) func(
 // nothing else of any engine.
 type planRules struct{ windowedRules }
 
-func (planRules) KVCacheGroups(rules.KVCacheGroupsInput) (rules.KVCacheGrouping, error) {
-	return rules.KVCacheGrouping{}, errors.New("these test rules group no caches")
+func (planRules) KVCacheGroups(enginefacts.KVCacheGroupsInput) (enginefacts.KVCacheGrouping, error) {
+	return enginefacts.KVCacheGrouping{}, errors.New("these test rules group no caches")
 }
 
 // planCase opens one catalog deployment and hands the kernel the lowered plan f edits from
@@ -95,7 +95,7 @@ func planCase(t *testing.T, d *load.Data, modelName, chip string, nodes int, par
 	if f != nil {
 		f(&low)
 	}
-	r := Repos{Scenarios: dir, Data: d, Rules: func(string) rules.EngineRules { return planRules{} },
+	r := Repos{Scenarios: dir, Data: d, Rules: func(string) enginefacts.EngineRules { return planRules{} },
 		DraftModel: noDrafter,
 		Lower:      func(Inputs) (*plan.Lowered, error) { return &low, nil }}
 	in, err := OpenInputs("s.yaml", r, 0)

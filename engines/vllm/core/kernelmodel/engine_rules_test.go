@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	vllmrules "github.com/inference-sim/inference-sim/engines/vllm/core/rulepack"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
@@ -31,7 +31,7 @@ func TestReposGetTheVLLMRulesUnlessTheyStateTheirOwn(t *testing.T) {
 		t.Errorf("Rules for a release with no pack = %v, want nil (a nil pack must not read as rules)", got)
 	}
 	called := false
-	own := Repos{Rules: func(string) rules.EngineRules { called = true; return nil }}
+	own := Repos{Rules: func(string) enginefacts.EngineRules { called = true; return nil }}
 	if r := withEngineRules(own); r.Rules == nil {
 		t.Fatal("a caller's own rules were dropped")
 	} else if r.Rules("0.33.0"); !called {
@@ -42,13 +42,13 @@ func TestReposGetTheVLLMRulesUnlessTheyStateTheirOwn(t *testing.T) {
 	}
 }
 
-// A rules value that is not a *rules.Pack is read through rules.EngineRules alone, so a
+// A rules value that is not a *rules.Pack is read through enginefacts.EngineRules alone, so a
 // speculative method is checked whatever the rules' concrete type. Before the switch, any
 // other type was refused outright as "not a blis-schemas rules pack".
 func TestTheSpeculativeMethodIsCheckedThroughTheInterface(t *testing.T) {
 	r := repos()
 	r.Scenarios = "../../testdata/scenarios"
-	pack := func(v string) rules.EngineRules {
+	pack := func(v string) enginefacts.EngineRules {
 		if p := vllmrules.Lookup(v); p != nil {
 			return wrapped{p}
 		}
@@ -68,8 +68,8 @@ func TestTheSpeculativeMethodIsCheckedThroughTheInterface(t *testing.T) {
 
 // wrapped is a rules value of another concrete type that answers as its pack does. It holds
 // the pack behind the interface, not embedded, so no *rules.Pack method or field (Names,
-// SpeculativeMethods) is reachable on it: the check must go through rules.EngineRules.
-type wrapped struct{ rules.EngineRules }
+// SpeculativeMethods) is reachable on it: the check must go through enginefacts.EngineRules.
+type wrapped struct{ enginefacts.EngineRules }
 
 func openDraftingWith(t *testing.T, r Repos, scenario string, sp *engineconfig.Speculative) (*Model, error) {
 	t.Helper()

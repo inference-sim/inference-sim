@@ -2,6 +2,7 @@ package vllm
 
 import (
 	"fmt"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 	"reflect"
 	"strings"
 	"testing"
@@ -13,7 +14,6 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 )
 
@@ -450,7 +450,7 @@ func TestFactoryRulesIgnoreClausesOnUnstatedWidths(t *testing.T) {
 		{"refused at pp 1, stated 1", 1, func(pl deployment.Parallelism) bool { return pl.PP == 1 }, true},
 	} {
 		fires := c.fires
-		probe := &pack.Pack{Version: "0.32.0", Rules: []pack.Rule{{Name: "probe", Check: func(in pack.Input, out *rules.Problems) {
+		probe := &pack.Pack{Version: "0.32.0", Rules: []pack.Rule{{Name: "probe", Check: func(in pack.Input, out *validate.Problems) {
 			if fires(in.Deployment.Pools[0].Parallel) {
 				out.RuleErrorf("probe", "pools[0].engine: refused")
 			}

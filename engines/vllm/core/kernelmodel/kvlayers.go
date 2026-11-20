@@ -16,7 +16,7 @@ package kernelmodel
 import (
 	"fmt"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
@@ -170,7 +170,7 @@ func kvLayersOf(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine
 // isDeepseekV4 is whether g is DeepSeek V4 or V4.1.
 func isDeepseekV4(g *model.Graph) bool {
 	a := g.Global.Architecture
-	return a == rules.ArchDeepseekV4 || a == rules.ArchDeepseekV41
+	return a == enginefacts.ArchDeepseekV4 || a == enginefacts.ArchDeepseekV41
 }
 
 // recurrentDrafterRefusal refuses an enabled speculator whose stack holds a recurrent layer, whatever
@@ -384,7 +384,7 @@ type deepseekServing struct {
 	runner string
 	family int
 	// cacheDType is the cache dtype that runs, as the release's rules resolve the requested one
-	// for the architecture, family and TP (rules.EngineRules.ResolveCacheDType), which picks a
+	// for the architecture, family and TP (enginefacts.EngineRules.ResolveCacheDType), which picks a
 	// cache's record (V4.1's compressed cache is NVFP4 under nvfp4_ds_mla).
 	cacheDType string
 	// indexer resolves attention_config.indexer_kv_dtype for the DeepSeek indexer; nil when the
@@ -420,7 +420,7 @@ func deepseekKVLayers(g *model.Graph, pool deployment.Pool, engine engineconfig.
 	if err != nil {
 		return nil, fmt.Errorf("deepseek KV layers: %w", err)
 	}
-	v41 := g.Global.Architecture == rules.ArchDeepseekV41
+	v41 := g.Global.Architecture == enginefacts.ArchDeepseekV41
 	indexerDType, err := resolveIndexerDType(g.Global.Architecture, ds, engine.IndexerKVDType)
 	if err != nil {
 		return nil, err

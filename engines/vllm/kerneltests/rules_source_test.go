@@ -3,6 +3,7 @@
 package latencykernel_test
 
 import (
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 	. "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"os"
@@ -10,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
@@ -35,7 +36,7 @@ func TestRulesFromKeepsAMissingReleaseMissing(t *testing.T) {
 	// The same holds when the lookup's own result type is an interface whose value holds a
 	// nil pointer: comparing it with the interface's zero value would call it present.
 	var missing *pack.Pack
-	viaInterface := RulesFrom(func(string) rules.EngineRules { return missing })
+	viaInterface := RulesFrom(func(string) enginefacts.EngineRules { return missing })
 	if r := viaInterface("unknown"); r != nil {
 		t.Errorf("a nil *pack.Pack inside an interface gave non-nil rules %#v", r)
 	}
@@ -43,11 +44,11 @@ func TestRulesFromKeepsAMissingReleaseMissing(t *testing.T) {
 
 // countingRules counts how often the caller's engine-block checks run.
 type countingRules struct {
-	rules.EngineRules
+	enginefacts.EngineRules
 	checked *int
 }
 
-func (c countingRules) CheckEngineBlock(at string, b deployment.EngineBlock) *rules.Problems {
+func (c countingRules) CheckEngineBlock(at string, b deployment.EngineBlock) *validate.Problems {
 	*c.checked++
 	return c.EngineRules.CheckEngineBlock(at, b)
 }

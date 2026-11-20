@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/load"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
@@ -206,7 +206,7 @@ pools:
 `
 	build := func(util float64) error {
 		r, name := openRepos(t, d, body)
-		r.Rules = func(string) rules.EngineRules { return inertRules{} }
+		r.Rules = func(string) enginefacts.EngineRules { return inertRules{} }
 		r.DraftModel, r.Lower = noDrafter, lowerTo(8192, 16, util)
 		in, err := OpenInputs(name, r, 0)
 		if err != nil {

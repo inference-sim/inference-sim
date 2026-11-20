@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/kerneltest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
@@ -55,7 +55,7 @@ pools:
     parallel: {%s}
 `, groups, decode)
 	r, name := openRepos(t, d, body)
-	r.Rules = func(string) rules.EngineRules { return inertRules{} }
+	r.Rules = func(string) enginefacts.EngineRules { return inertRules{} }
 	r.DraftModel, r.Lower = noDrafter, lowerTo(8192, 16, 0)
 	in, err := OpenInputs(name, r, idx)
 	if err != nil {

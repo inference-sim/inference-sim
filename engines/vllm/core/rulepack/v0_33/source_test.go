@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
 )
@@ -749,8 +749,8 @@ func spCondition(t *testing.T, src string) pack.SequenceParallelCondition {
 func TestModelSequenceParallelRulesMatchSource(t *testing.T) {
 	root := vllmSource(t)
 	modules := map[string][]string{
-		rules.ArchDeepseekV4:  {"vllm", "models", "deepseek_v4", "nvidia", "model.py"},
-		rules.ArchDeepseekV41: {"vllm", "models", "deepseek_v41", "nvidia", "model.py"},
+		enginefacts.ArchDeepseekV4:  {"vllm", "models", "deepseek_v4", "nvidia", "model.py"},
+		enginefacts.ArchDeepseekV41: {"vllm", "models", "deepseek_v41", "nvidia", "model.py"},
 	}
 	for arch, parts := range modules {
 		if _, err := os.Stat(filepath.Join(append([]string{root}, parts...)...)); err != nil {

@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	blisschemas "github.com/inference-sim/inference-sim/substrate/contracts"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
@@ -22,7 +22,7 @@ import (
 const kvDir = "testdata/kvgroups"
 
 // loadLayers reads a *.layers.json file, the form golden.py reads too.
-func loadLayers(t *testing.T, name string) []rules.KVCacheLayer {
+func loadLayers(t *testing.T, name string) []enginefacts.KVCacheLayer {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join(kvDir, name+".layers.json"))
 	if err != nil {
@@ -36,9 +36,9 @@ func loadLayers(t *testing.T, name string) []rules.KVCacheLayer {
 	if err := json.Unmarshal(b, &raw); err != nil {
 		t.Fatal(err)
 	}
-	out := make([]rules.KVCacheLayer, len(raw))
+	out := make([]enginefacts.KVCacheLayer, len(raw))
 	for i, r := range raw {
-		out[i] = rules.KVCacheLayer{Name: r.Name, Cache: model.Cache{
+		out[i] = enginefacts.KVCacheLayer{Name: r.Name, Cache: model.Cache{
 			Name: r.Name, Kind: model.CacheKind(r.Kind), Owned: true, BytesPerEntry: r.Bytes,
 			TokensPerEntry: r.TPE, Window: r.Window, Entries: r.Entries, BlockSize: r.Block,
 			PageAlignment: r.Align}}
@@ -85,7 +85,7 @@ func TestKVCacheGroupsMatchEngineGoldens(t *testing.T) {
 			if err := json.Unmarshal(b, &want); err != nil {
 				t.Fatal(err)
 			}
-			got, err := c.pack.KVCacheGroups(rules.KVCacheGroupsInput{
+			got, err := c.pack.KVCacheGroups(enginefacts.KVCacheGroupsInput{
 				Layers: loadLayers(t, c.layers), EngineBlockSize: c.block,
 				CacheDType: "fp8_ds_mla", BlockStrideAlignment: c.align, NumSpecTokens: k})
 			if err != nil {
@@ -124,7 +124,7 @@ func TestOwnedKVCacheLayersWalkTheStacks(t *testing.T) {
 		Speculator: &model.Speculator{Stack: model.Stack{Pattern: []string{"src"}, Repeat: 1}},
 	}
 	var names []string
-	for _, l := range rules.OwnedKVCacheLayers(g) {
+	for _, l := range enginefacts.OwnedKVCacheLayers(g) {
 		names = append(names, l.Name)
 	}
 	want := []string{"layers.0.kv", "layers.0.ring", "speculator.layers.0.kv", "speculator.layers.0.ring"}
@@ -133,16 +133,16 @@ func TestOwnedKVCacheLayersWalkTheStacks(t *testing.T) {
 	}
 }
 
-func kv(name string, block, bytes int) rules.KVCacheLayer {
-	return rules.KVCacheLayer{Name: name, Cache: model.Cache{Name: name, Kind: model.CacheKV,
+func kv(name string, block, bytes int) enginefacts.KVCacheLayer {
+	return enginefacts.KVCacheLayer{Name: name, Cache: model.Cache{Name: name, Kind: model.CacheKV,
 		Owned: true, BytesPerEntry: bytes, BlockSize: block}}
 }
 
 // One uniform type is one group, and the block is every layer's page.
 func TestKVCacheGroupsUniformType(t *testing.T) {
 	p := v0_33.Pack()
-	got, err := p.KVCacheGroups(rules.KVCacheGroupsInput{
-		Layers:          []rules.KVCacheLayer{kv("a", 0, 100), kv("b", 0, 300)},
+	got, err := p.KVCacheGroups(enginefacts.KVCacheGroupsInput{
+		Layers:          []enginefacts.KVCacheLayer{kv("a", 0, 100), kv("b", 0, 300)},
 		EngineBlockSize: 16, BlockStrideAlignment: 1000})
 	if err != nil {
 		t.Fatal(err)
@@ -157,28 +157,28 @@ func TestKVCacheGroupsUniformType(t *testing.T) {
 
 // The grouping refuses what it does not model rather than return a plausible number.
 func TestKVCacheGroupsRefuses(t *testing.T) {
-	window := func(name string, w int) rules.KVCacheLayer {
-		return rules.KVCacheLayer{Name: name, Cache: model.Cache{Name: name, Kind: model.CacheWindow,
+	window := func(name string, w int) enginefacts.KVCacheLayer {
+		return enginefacts.KVCacheLayer{Name: name, Cache: model.Cache{Name: name, Kind: model.CacheWindow,
 			Owned: true, BytesPerEntry: 100, Window: w}}
 	}
 	for _, c := range []struct {
 		name     string
 		pack     *pack.Pack
-		in       rules.KVCacheGroupsInput
+		in       enginefacts.KVCacheGroupsInput
 		errorHas string
 	}{
-		{"no layers", v0_33.Pack(), rules.KVCacheGroupsInput{EngineBlockSize: 16}, "no owned caches"},
+		{"no layers", v0_33.Pack(), enginefacts.KVCacheGroupsInput{EngineBlockSize: 16}, "no owned caches"},
 		{"unmodeled release", &pack.Pack{Version: "9.9.9"},
-			rules.KVCacheGroupsInput{Layers: []rules.KVCacheLayer{kv("a", 0, 1)}, EngineBlockSize: 16}, "not transcribed"},
+			enginefacts.KVCacheGroupsInput{Layers: []enginefacts.KVCacheLayer{kv("a", 0, 1)}, EngineBlockSize: 16}, "not transcribed"},
 		{"no block size", v0_33.Pack(),
-			rules.KVCacheGroupsInput{Layers: []rules.KVCacheLayer{kv("a", 0, 1)}}, "no block size"},
+			enginefacts.KVCacheGroupsInput{Layers: []enginefacts.KVCacheLayer{kv("a", 0, 1)}}, "no block size"},
 		{"duplicate layer", v0_33.Pack(),
-			rules.KVCacheGroupsInput{Layers: []rules.KVCacheLayer{kv("a", 0, 1), kv("a", 0, 1)}, EngineBlockSize: 16}, "stated twice"},
+			enginefacts.KVCacheGroupsInput{Layers: []enginefacts.KVCacheLayer{kv("a", 0, 1), kv("a", 0, 1)}, EngineBlockSize: 16}, "stated twice"},
 		{"several types, one page", v0_33.Pack(),
-			rules.KVCacheGroupsInput{Layers: []rules.KVCacheLayer{kv("a", 0, 100), window("w", 128)}, EngineBlockSize: 16},
+			enginefacts.KVCacheGroupsInput{Layers: []enginefacts.KVCacheLayer{kv("a", 0, 100), window("w", 128)}, EngineBlockSize: 16},
 			"_get_kv_cache_groups_uniform_page_size"},
 		{"page of zero bytes", v0_33.Pack(),
-			rules.KVCacheGroupsInput{Layers: []rules.KVCacheLayer{{Name: "z", Cache: model.Cache{Kind: model.CacheKV,
+			enginefacts.KVCacheGroupsInput{Layers: []enginefacts.KVCacheLayer{{Name: "z", Cache: model.Cache{Kind: model.CacheKV,
 				Owned: true, BytesPerEntry: 100, TokensPerEntry: 32}}}, EngineBlockSize: 16}, "page of 0 bytes"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -193,7 +193,7 @@ func TestKVCacheGroupsRefuses(t *testing.T) {
 // Packing mixed pages costs bytes that per-layer pages miss: the shared block is the
 // widest group, so a group narrower than it pays padding in every block.
 func TestKVCacheGroupsPaddingIsCharged(t *testing.T) {
-	got, err := v0_33.Pack().KVCacheGroups(rules.KVCacheGroupsInput{
+	got, err := v0_33.Pack().KVCacheGroups(enginefacts.KVCacheGroupsInput{
 		Layers: loadLayers(t, "deepseek-v4.1-example"), EngineBlockSize: 64, CacheDType: "fp8_ds_mla"})
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +217,7 @@ func TestExampleLayersAreTheGraphs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := rules.OwnedKVCacheLayers(g)
+	got := enginefacts.OwnedKVCacheLayers(g)
 	want := loadLayers(t, "deepseek-v4.1-example")
 	if len(got) != len(want) {
 		t.Fatalf("the graph has %d owned caches, the layers file %d", len(got), len(want))
@@ -245,16 +245,16 @@ func TestCompressorRingRows(t *testing.T) {
 // A state cache is never padded by the engine, so a stated alignment on one is refused,
 // and v0.31.0 sizes its ring from the deployment's K when one is given.
 func TestKVCacheGroupsStateCache(t *testing.T) {
-	ring := func(align int) rules.KVCacheLayer {
-		return rules.KVCacheLayer{Name: "ring", Cache: model.Cache{Name: "ring", Kind: model.CacheState,
+	ring := func(align int) enginefacts.KVCacheLayer {
+		return enginefacts.KVCacheLayer{Name: "ring", Cache: model.Cache{Name: "ring", Kind: model.CacheState,
 			Owned: true, BytesPerEntry: 4096, Entries: 8, PageAlignment: align}}
 	}
-	in := rules.KVCacheGroupsInput{Layers: []rules.KVCacheLayer{kv("a", 0, 100), ring(576)}, EngineBlockSize: 16}
+	in := enginefacts.KVCacheGroupsInput{Layers: []enginefacts.KVCacheLayer{kv("a", 0, 100), ring(576)}, EngineBlockSize: 16}
 	if _, err := v0_33.Pack().KVCacheGroups(in); err == nil || !strings.Contains(err.Error(), "never pads") {
 		t.Errorf("an aligned state cache was accepted: %v", err)
 	}
 	k := 7
-	in = rules.KVCacheGroupsInput{Layers: []rules.KVCacheLayer{kv("a", 0, 100), ring(0)}, EngineBlockSize: 16, NumSpecTokens: &k}
+	in = enginefacts.KVCacheGroupsInput{Layers: []enginefacts.KVCacheLayer{kv("a", 0, 100), ring(0)}, EngineBlockSize: 16, NumSpecTokens: &k}
 	got, err := v0_33.Pack().KVCacheGroups(in)
 	if err != nil {
 		t.Fatal(err)

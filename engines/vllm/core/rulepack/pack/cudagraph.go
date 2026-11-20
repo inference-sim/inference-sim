@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 )
 
 // CUDAGraphCaptureSizes resolves the CUDA graph capture a deployment's stated knobs give,
@@ -32,18 +32,18 @@ import (
 // performance_mode interactivity, which captures every size up to 32, or the
 // sequence-parallel rounding the engine applies under tensor parallelism with SP enabled;
 // the schema states neither.
-func (p *Pack) CUDAGraphCaptureSizes(in rules.CUDAGraphCaptureInput) (rules.CUDAGraphCapture, bool, error) {
+func (p *Pack) CUDAGraphCaptureSizes(in enginefacts.CUDAGraphCaptureInput) (enginefacts.CUDAGraphCapture, bool, error) {
 	if in.Mode == "NONE" {
-		return rules.CUDAGraphCapture{Sizes: []int{}}, true, nil
+		return enginefacts.CUDAGraphCapture{Sizes: []int{}}, true, nil
 	}
 	if in.MaxCaptureSize == nil && in.CaptureSizes == nil {
-		return rules.CUDAGraphCapture{}, false, nil
+		return enginefacts.CUDAGraphCapture{}, false, nil
 	}
 	mnbt := in.MaxNumBatchedTokens
 	if mnbt < 1 {
-		return rules.CUDAGraphCapture{}, true, fmt.Errorf("resolving CUDA graph capture sizes needs max_num_batched_tokens, which the deployment does not state")
+		return enginefacts.CUDAGraphCapture{}, true, fmt.Errorf("resolving CUDA graph capture sizes needs max_num_batched_tokens, which the deployment does not state")
 	}
-	var out rules.CUDAGraphCapture
+	var out enginefacts.CUDAGraphCapture
 	if in.CaptureSizes != nil {
 		seen := map[int]bool{}
 		for _, s := range in.CaptureSizes {
@@ -96,7 +96,7 @@ func (p *Pack) CUDAGraphCaptureSizes(in rules.CUDAGraphCaptureInput) (rules.CUDA
 	}
 	if m := in.MaxCaptureSize; m != nil && *m != out.Max {
 		if in.CaptureSizes != nil {
-			return out, true, rules.ErrCUDAGraphCaptureInconsistent
+			return out, true, enginefacts.ErrCUDAGraphCaptureInconsistent
 		}
 		out.Truncated = out.Max < min(*m, mnbt)
 	}

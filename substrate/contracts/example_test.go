@@ -18,7 +18,7 @@ import (
 
 // exampleRules are an engine release's checker as an engine module supplies it, for the
 // examples: it opens a pool's engine block, checks one bound and refuses one value. A real
-// caller passes its engine module's checker (engines/vllm for vLLM).
+// caller passes its engine module's checker (the vLLM engine module's for vLLM).
 type exampleRules struct {
 	version string
 }

@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
@@ -86,7 +86,7 @@ type decoderReplay struct {
 // that vLLM refuses at startup is an error.
 func (m *Model) decoderReplayOf(release string, rl sequenceParallelRules, pl poolShape, cuda captureSizer) (*decoderReplay, string, error) {
 	g := m.graph
-	if g == nil || g.Global.Architecture != rules.ArchDeepseekV41 || release != vllm.Version {
+	if g == nil || g.Global.Architecture != enginefacts.ArchDeepseekV41 || release != vllm.Version {
 		return nil, "", nil
 	}
 	e := m.engine
