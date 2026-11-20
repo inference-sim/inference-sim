@@ -377,6 +377,17 @@
       }
     },
     {
+      "name": "GLOO_SOCKET_IFNAME",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "GPU_PINNED_MIN_XFER_SIZE",
       "source": "env",
       "status": "not_modelled",
@@ -1148,6 +1159,17 @@
       }
     },
     {
+      "name": "NCCL_SOCKET_IFNAME",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "NCCL_SOCKET_NTHREADS",
       "source": "env",
       "status": "not_modelled",
@@ -1878,6 +1900,17 @@
             ]
           }
         ]
+      }
+    },
+    {
+      "name": "UCX_NET_DEVICES",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "none"
       }
     },
     {
