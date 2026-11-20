@@ -1925,7 +1925,22 @@ func (k *Kernel) PDTransferDemand(tokens int, from, to kernel.Placement) kernel.
 // stated window cache (ringTransferBytes), not a cache that grows with the prompt.
 func (k *Kernel) pdTransferBytes(tokens int) float64 {
 	return float64(tokens)*k.kvBytesPerToken + k.ringTransferBytes(tokens) +
-		k.cacheTransferBytes(tokens)
+		k.cacheTransferBytes(tokens) + k.recurrentTransferBytes()
+}
+
+// recurrentTransferBytes is what a P/D handoff moves of a request's recurrent state: the one
+// state block each Mamba group keeps after the exchange clips the rest (clip_ssm_state_blocks,
+// vllm/distributed/kv_transfer/kv_connector/utils.py:89-96), as its conv sub-projection regions
+// and its temporal region, whatever the prompt's length (NixlBaseConnectorWorker._compute_desc_ids,
+// nixl/base_worker.py:220-230). The scratch and checkpoint blocks stay behind.
+func (k *Kernel) recurrentTransferBytes() float64 {
+	var total float64
+	for _, l := range k.rankMemory().layers {
+		if l.RecurrentStateBytes != 0 {
+			total += k.recurrentRankBytes(l) * float64(l.Count)
+		}
+	}
+	return total
 }
 
 // AdmissionOverhead returns host time before a request can be scheduled.

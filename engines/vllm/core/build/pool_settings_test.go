@@ -3,6 +3,8 @@
 package build
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -113,5 +115,45 @@ func TestPoolSettingsOf_ReservationAndFlag(t *testing.T) {
 	if _, err := PoolSettingsOf("variant.yaml", m, 1<<62, runconfig.KVPrefixHit{}, EngineKnobFlags{}); err == nil ||
 		!strings.Contains(err.Error(), "decode pool") {
 		t.Errorf("a reservation larger than the device: %v, want a refusal naming the decode pool", err)
+	}
+}
+
+// A model whose every KV layer is a sliding window has no growing-context page, and vLLM still
+// starts it: its pool is cut from the window groups' pages
+// (get_kv_cache_config_from_groups, vllm/v1/core/kv_cache_utils.py:1622-1628@5df63a72). A P/D
+// deployment of such a model opens both pools and sizes each one, as the colocated deployment
+// does (inference-sim#2323).
+func TestAnAllWindowModelOpensAndSizesBothPDPools(t *testing.T) {
+	repos := vendoredRepos(t)
+	dir := t.TempDir()
+	const pool = "    nodes: 1\n    parallel: {tp: 8, pp: 1, dp: 1, enable_expert_parallel: true}\n" +
+		"    engine: &e\n      block_size: 16\n      max_num_seqs: 64\n      max_num_batched_tokens: 8192\n" +
+		"      max_model_len: 262144\n      moe_backend: marlin\n      enable_prefix_caching: true\n" +
+		"      gpu_memory_utilization: 0.9\n      async_scheduling: true\n"
+	body := "kind: Scenario\nname: variant\nengine: {kind: vllm}\nmodel: muse-spark-open-dspark\n" +
+		"coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]\n" +
+		"cluster:\n  hardware: h100\n  fabric: roce-200g\n  nodes: 2\n  gpus_per_node: 8\n---\n" +
+		"kind: Deployment\nname: variant\npools:\n  - role: prefill\n" + pool +
+		"  - role: decode\n    nodes: 1\n    parallel: {tp: 8, pp: 1, dp: 1, enable_expert_parallel: true}\n    engine: *e\n" +
+		"pd_transfer:\n  connector: NixlConnector\n"
+	if err := os.WriteFile(filepath.Join(dir, "variant.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repos.Scenarios = dir
+	p, _, err := OpenPools("variant.yaml", repos, true, Topology{NumInstances: 2, Prefill: 1, Decode: 1})
+	if err != nil || p == nil {
+		t.Fatalf("an all-window P/D deployment: %+v, %v", p, err)
+	}
+	for _, m := range []*kernelmodel.Model{p.Prefill, p.Decode} {
+		if got := m.Kernel().SequenceVariableBytes(16); got != 0 {
+			t.Fatalf("non-vacuity: %s pool SequenceVariableBytes(16) = %d; the fixture must be all-window (0)", m.Role(), got)
+		}
+		ps, err := PoolSettingsOf("variant.yaml", m, 0, runconfig.KVPrefixHit{}, EngineKnobFlags{})
+		if err != nil {
+			t.Fatalf("%s pool: %v", m.Role(), err)
+		}
+		if ps.TotalKVBlocks <= 0 {
+			t.Errorf("%s pool sized %d KV blocks, want a positive pool", m.Role(), ps.TotalKVBlocks)
+		}
 	}
 }

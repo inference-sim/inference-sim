@@ -224,8 +224,8 @@ func openPools(scenario string, repos kernelmodel.Repos, kernelOpen bool, top To
 	// kernel would price a crossing with no fabric at the on-node rate. blis-schemas already
 	// refuses a multi-node cluster that names none, and a P/D deployment always spans two
 	// nodes, so no check is repeated here; TransferTime prices every rank pair up front.
-	ps, pe := p.Prefill.Settings()
-	ds, de := p.Decode.Settings()
+	ps, pe := p.Prefill.SettingsCheckedByGroups()
+	ds, de := p.Decode.SettingsCheckedByGroups()
 	if pe != nil || de != nil {
 		return nil, fmt.Errorf("scenario %q: prefill pool: %v; decode pool: %v",
 			scenario, pe, de)
@@ -286,14 +286,6 @@ func requireNIXLRules(scenario string, p *Pools, warnings *[]string) error {
 			"blis-schemas does not state the children or their order, so this assumption is not "+
 			"checked -- a deployment listing the OffloadingConnector first would load remotely "+
 			"prefilled prompts from the decode CPU tier", scenario))
-	}
-	// NIXL's prefill backoff (nixl/base_scheduler.py:385-407): the prefill stops short of the
-	// last few prompt tokens and the decode side recomputes them. BLIS moves and decodes the
-	// whole prompt, so a pool that backs off is refused rather than simulated without it.
-	if b := p.Prefill.PrefillBackoffTokens(); b > 0 {
-		return fmt.Errorf("scenario %q: under NIXL this model's decode engine recomputes the last %d prompt "+
-			"token(s) that the prefill engine does not compute (_prefill_backoff: a Mamba-state model, "+
-			"or multi-module MTP drafting K>1); BLIS does not model that recompute", scenario, b)
 	}
 	return nil
 }

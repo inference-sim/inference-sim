@@ -669,7 +669,7 @@ func openChipModel(name, dir string) (*engineModel, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := m.Settings(); err != nil {
+	if _, err := m.SettingsCheckedByGroups(); err != nil {
 		return nil, fmt.Errorf("the scenario does not run on this chip: %w", err)
 	}
 	return m, nil

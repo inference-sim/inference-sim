@@ -296,6 +296,8 @@ func TestPDConformance(t *testing.T) {
 		// The measured Muse P/D arm runs vLLM's default async scheduling: two batches in flight.
 		{"prefiller async", producer + "async_scheduling: true\nuse_v2_model_runner: true\n", func(r *engine.Request) { r.RemoteDecode = true }},
 		{"decoder async", consumer + "async_scheduling: true\nuse_v2_model_runner: true\n", func(r *engine.Request) { r.RemotePrefill, r.Peer = true, peer }},
+		{"prefiller mamba", producer + mambaLayers, func(r *engine.Request) { r.RemoteDecode = true }},
+		{"decoder mamba", consumer + mambaLayers, func(r *engine.Request) { r.RemotePrefill, r.Peer = true, peer }},
 		{"decoder hybrid async", consumer + "async_scheduling: true\nuse_v2_model_runner: true\nkv_layers:\n" +
 			"- {count: 1, spec: full, num_kv_heads: 1, head_size: 64}\n" +
 			"- {count: 1, spec: sliding_window, sliding_window: 32, num_kv_heads: 1, head_size: 64}\n",
@@ -401,5 +403,52 @@ func TestPDHybridHandoffHoldsThePrompt(t *testing.T) {
 	// window in 16-token blocks keeps the blocks of its last 31 tokens).
 	if len(h) != 1 || len(h[0].Blocks) != 12 {
 		t.Fatalf("handoffs %+v, want the full-attention group's 10 blocks and the window's 2", h)
+	}
+}
+
+// A Mamba hybrid: one full-attention layer and one Mamba layer whose state is padded to the attention page
+// (16 tokens x K and V x 1 head x 64 x 2 bytes = 4096).
+const mambaLayers = "kv_layers:\n" +
+	"- {count: 1, spec: full, num_kv_heads: 1, head_size: 64}\n" +
+	"- {count: 1, spec: mamba, state_bytes: 600, page_size_padded: 4096, block_size: 16, mamba_cache_mode: align}\n"
+
+// A Mamba model's prefiller stops one prompt token short, so the decoder can derive the last state
+// from the one before it (_prefill_backoff, nixl/base_scheduler.py:379-394), and hands off the
+// full-attention group's blocks for the tokens it computed and the Mamba group's one state block
+// (clip_ssm_state_blocks). The decoder, which pulls that and computes the last token itself, ends
+// the request with every output token (INV-1: nothing is lost across the handoff).
+func TestPDMambaHandoffStopsOneTokenShortAndTheDecoderFinishes(t *testing.T) {
+	const prompt, output = 161, 5 // 161 tokens: 11 blocks whole, 10 for the 160 the prefiller computes
+	p := mustEngine(t, producer+mambaLayers)
+	r := req("a", prompt, 1)
+	r.RemoteDecode = true
+	if err := p.Add(r, 0); err != nil {
+		t.Fatal(err)
+	}
+	results, _, _ := runOne(t, p, 0)
+	var h []engine.Handoff
+	for _, res := range results {
+		h = append(h, res.Handoffs...)
+	}
+	if len(h) != 1 || len(h[0].Blocks) != 10+1 {
+		t.Fatalf("handoffs %+v, want the full-attention group's 10 blocks and the Mamba group's one state block", h)
+	}
+
+	d := mustEngine(t, consumer+mambaLayers)
+	q := req("a", prompt, output)
+	q.RemotePrefill, q.Peer = true, peer
+	if err := d.Add(q, 0); err != nil {
+		t.Fatal(err)
+	}
+	results, started, _ := runOne(t, d, 50)
+	if len(started) != 1 {
+		t.Fatalf("the decoder started %d transfers, want its one pull", len(started))
+	}
+	var got int
+	for _, res := range results {
+		got += res.Emitted["a"]
+	}
+	if got != output {
+		t.Errorf("the decoder returned %d output tokens, want %d", got, output)
 	}
 }
