@@ -1,0 +1,150 @@
+{
+ "kind": "TransferRuleValidation",
+ "description": "VAL-5, leaving one generation out. The rule carries a measured value from one generation to another by keeping its efficiency (value over the datasheet figure of the class's axis) and multiplying by the target's figure, reading the same series on the source generation. Roofline is the target's figure times the family's median efficiency on every chip outside the target's generation. Both are scored on the same held-out points by max(estimate/truth, truth/estimate); use_rule is true only if the rule's median is strictly below roofline's, and otherwise a cross-generation transfer ranks as roofline.",
+ "min_points": 10,
+ "rows": [
+  {
+   "from": "Ada",
+   "to": "Ampere",
+   "class": "intra_node_bandwidth",
+   "points": 108,
+   "rule_median_ratio": 3.7244444444444444,
+   "rule_worst_ratio": 16.064,
+   "roofline_median_ratio": 1.3620757623347606,
+   "roofline_worst_ratio": 1.9675208244713787,
+   "use_rule": false
+  },
+  {
+   "from": "Ada",
+   "to": "Blackwell",
+   "class": "intra_node_bandwidth",
+   "points": 200,
+   "rule_median_ratio": 3.7857158970582607,
+   "rule_worst_ratio": 16.881777777777778,
+   "roofline_median_ratio": 1.3656007497381168,
+   "roofline_worst_ratio": 2.039278815196394,
+   "use_rule": false
+  },
+  {
+   "from": "Ada",
+   "to": "Hopper",
+   "class": "intra_node_bandwidth",
+   "points": 108,
+   "rule_median_ratio": 4.099047619047619,
+   "rule_worst_ratio": 18.823529411764707,
+   "roofline_median_ratio": 1.3612010080247638,
+   "roofline_worst_ratio": 2.417777333741089,
+   "use_rule": false
+  },
+  {
+   "from": "Ampere",
+   "to": "Ada",
+   "class": "intra_node_bandwidth",
+   "points": 54,
+   "rule_median_ratio": 3.724444444444444,
+   "rule_worst_ratio": 16.064,
+   "roofline_median_ratio": 4.088096740837132,
+   "roofline_worst_ratio": 26.591452991452993,
+   "use_rule": true
+  },
+  {
+   "from": "Ampere",
+   "to": "Blackwell",
+   "class": "intra_node_bandwidth",
+   "points": 200,
+   "rule_median_ratio": 1.0852205943025632,
+   "rule_worst_ratio": 1.9980873393211356,
+   "roofline_median_ratio": 1.3656007497381168,
+   "roofline_worst_ratio": 2.039278815196394,
+   "use_rule": true
+  },
+  {
+   "from": "Ampere",
+   "to": "Hopper",
+   "class": "intra_node_bandwidth",
+   "points": 108,
+   "rule_median_ratio": 1.0937160034320308,
+   "rule_worst_ratio": 1.4764957264957266,
+   "roofline_median_ratio": 1.3612010080247638,
+   "roofline_worst_ratio": 2.417777333741089,
+   "use_rule": true
+  },
+  {
+   "from": "Blackwell",
+   "to": "Ada",
+   "class": "intra_node_bandwidth",
+   "points": 54,
+   "rule_median_ratio": 3.813741995719788,
+   "rule_worst_ratio": 15.815111111111113,
+   "roofline_median_ratio": 4.088096740837132,
+   "roofline_worst_ratio": 26.591452991452993,
+   "use_rule": true
+  },
+  {
+   "from": "Blackwell",
+   "to": "Ampere",
+   "class": "intra_node_bandwidth",
+   "points": 108,
+   "rule_median_ratio": 1.0756662535783326,
+   "rule_worst_ratio": 1.461981060964788,
+   "roofline_median_ratio": 1.3620757623347606,
+   "roofline_worst_ratio": 1.9675208244713787,
+   "use_rule": true
+  },
+  {
+   "from": "Blackwell",
+   "to": "Hopper",
+   "class": "intra_node_bandwidth",
+   "points": 108,
+   "rule_median_ratio": 1.112187685859257,
+   "rule_worst_ratio": 1.7676270571047805,
+   "roofline_median_ratio": 1.3612010080247638,
+   "roofline_worst_ratio": 2.417777333741089,
+   "use_rule": true
+  },
+  {
+   "from": "Hopper",
+   "to": "Ada",
+   "class": "intra_node_bandwidth",
+   "points": 54,
+   "rule_median_ratio": 4.087619047619048,
+   "rule_worst_ratio": 18.488888888888887,
+   "roofline_median_ratio": 4.088096740837132,
+   "roofline_worst_ratio": 26.591452991452993,
+   "use_rule": true
+  },
+  {
+   "from": "Hopper",
+   "to": "Ampere",
+   "class": "intra_node_bandwidth",
+   "points": 108,
+   "rule_median_ratio": 1.093952423175724,
+   "rule_worst_ratio": 1.3965244865718798,
+   "roofline_median_ratio": 1.3620757623347606,
+   "roofline_worst_ratio": 1.9675208244713787,
+   "use_rule": true
+  },
+  {
+   "from": "Hopper",
+   "to": "Blackwell",
+   "class": "intra_node_bandwidth",
+   "points": 200,
+   "rule_median_ratio": 1.1180501243897933,
+   "rule_worst_ratio": 2.1797759184435814,
+   "roofline_median_ratio": 1.3656007497381168,
+   "roofline_worst_ratio": 2.039278815196394,
+   "use_rule": true
+  },
+  {
+   "from": "Hopper",
+   "to": "Blackwell",
+   "class": "memory_bandwidth",
+   "points": 12,
+   "rule_median_ratio": 1.3650793650793651,
+   "rule_worst_ratio": 2.272727272727273,
+   "roofline_median_ratio": 1.303030303030303,
+   "roofline_worst_ratio": 1.9230769230769231,
+   "use_rule": false
+  }
+ ]
+}

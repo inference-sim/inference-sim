@@ -134,6 +134,15 @@
     known_bad: 'ledger: TestSameGenerationLeavesOneChipOut'
   - repo: blis-substrate
     check: >-
+      The cross-generation transfer rule is validated by leaving one generation out and compared with
+      roofline on the same held-out points; the committed validation equals what the registry and
+      catalog compute, and a transfer ranks as the rule only where it beats roofline
+    runs: pull_request
+    status: ci
+    test: 'ledger: TestCommittedTransferValidationIsCurrent'
+    known_bad: 'ledger: TestTransferRuleLosesWhenTheTargetsEfficiencyDiffers'
+  - repo: blis-substrate
+    check: >-
       The same comparison over data units with role validate, which the AISimulate and forward-pass
       sources do not list yet
     runs: nightly
@@ -147,7 +156,9 @@
     the leave-one-chip-out error is measured and published per family over the registry's measured
     coefficients, for the same-generation and global-median methods; it does not yet read validate
     units (the AISimulate and forward-pass sources list none), and the roofline and vendor-spec
-    methods have no estimator that reads a datasheet
+    methods have no estimator that reads a datasheet. The cross-generation transfer rule is validated
+    by leaving one generation out (registry/docs/transfer-rule-validation.json); where it does not
+    beat roofline, or where fewer than ten points exist, a cross-generation transfer ranks as roofline
 - id: VAL-6
   section: §9.4
   statement: >-
