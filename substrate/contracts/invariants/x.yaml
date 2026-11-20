@@ -616,7 +616,7 @@
     status: new
   - repo: llm-d-router
     check: >-
-      The engine repositories and the router fork import only substrate packages under contracts/
+      The router fork imports no inference-sim package; it hosts the router contract (blisembed) itself
     runs: pull_request
     status: new
   - repo: blis-substrate
