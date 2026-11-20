@@ -109,8 +109,8 @@ type Pool struct {
 	Role     Role        `yaml:"role"`
 	Nodes    int         `yaml:"nodes"`
 	Parallel Parallelism `yaml:"parallel"`
-	// Engine is the pool's engine settings, held unopened: the engine model a scenario's
-	// engine_version selects opens it (EngineBlock).
+	// Engine is the pool's engine settings, held unopened: the engine model the
+	// build's release selects opens it (EngineBlock).
 	Engine EngineBlock `yaml:"engine"`
 	// Labels are the Kubernetes labels on the pool's model-server pods, as the pool's pod
 	// template sets them. The router selects and filters endpoints by them (an InferencePool

@@ -42,8 +42,8 @@ memory's, which the caller resolves), and the corpus does not state it, so it is
 power of two, at least 32768, that admits the longest isl+osl the deployment is scored at.
 A window shorter than that would describe a deployment that cannot serve its own points.
 
-Every file names engine {kind: vllm, version: "0.33.0"}, the release inference-sim runs
-(release plan §3.3). The kernel encodes vLLM 0.31.0's behaviour whatever release a fixture
+Every file names engine {kind: vllm} and no release: the build fixes it (stack.json, LIF-6).
+The kernel encodes vLLM 0.31.0's behaviour whatever release a fixture
 names until the boundary transition (M2), and scripts/kernel/priceprobe reports
 what this regeneration moved.
 
@@ -162,9 +162,8 @@ def node_size(dep: dict, catalog: Path) -> tuple[int, bool]:
 DEFAULT_NODE_SIZE = 8
 HGX_8GPU_CHIPS = frozenset({"h100", "h200", "b200", "b300", "a100-80", "a100-sxm"})
 
-# The engine release every generated file names: the one inference-sim runs (LIF-6).
+# The engine kind every generated file names; the release is the build's (LIF-6).
 ENGINE_KIND = "vllm"
-ENGINE_VERSION = "0.33.0"
 
 # The fields a run's stated_config may carry, in the order the header names them.
 STATED_FIELDS = ("block_size", "gpu_memory_utilization", "enable_prefix_caching",
@@ -227,7 +226,6 @@ def emit(dep: dict, workloads: set[str], labels: set[str], catalog: Path = DEFAU
         f"name: {name}",
         "engine:",
         f"  kind: {ENGINE_KIND}",
-        f'  version: "{ENGINE_VERSION}"',
         "",
         f"model: {dep['model']}",
         f"coefficients: {COEFFICIENTS}",

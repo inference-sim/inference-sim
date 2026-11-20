@@ -8,7 +8,8 @@ coefficients:
   - cost-model-attention
   - cost-model-recurrent
   - cost-model-memory
-engine_version: 0.33.0
+engine:
+  kind: vllm
 cluster:
   hardware: h200
   nodes: 1

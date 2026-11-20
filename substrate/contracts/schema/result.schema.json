@@ -777,6 +777,9 @@
     "result.Engine": {
       "additionalProperties": false,
       "properties": {
+        "commit": {
+          "type": "string"
+        },
         "kind": {
           "type": "string"
         },
@@ -1628,6 +1631,9 @@
         "engine_module": {
           "type": "string"
         },
+        "llm_d": {
+          "type": "string"
+        },
         "router": {
           "type": "string"
         },
@@ -2021,14 +2027,10 @@
       "properties": {
         "kind": {
           "type": "string"
-        },
-        "version": {
-          "type": "string"
         }
       },
       "required": [
-        "kind",
-        "version"
+        "kind"
       ],
       "type": "object"
     },
@@ -2094,9 +2096,6 @@
         },
         "engine": {
           "$ref": "#/$defs/scenario.Engine"
-        },
-        "engine_version": {
-          "type": "string"
         },
         "kind": {
           "const": "Scenario"

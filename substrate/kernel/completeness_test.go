@@ -39,12 +39,12 @@ func pricedEverywhere(t *testing.T) (built int, coefficient, engine map[string]m
 			if ch, err := d.Chip(c); err == nil && ch.GPUsPerNode > 0 {
 				packaging = "" // the catalog entry fixes the packaging, and a restatement is refused
 			}
-			body := fmt.Sprintf("kind: Scenario\nname: p\nmodel: %s\ncoefficients: %s\nengine_version: \"0.32.0\"\ncluster:\n  hardware: %s\n  fabric: ib-400g\n  nodes: 1\n%s---\nkind: Deployment\nname: d\npools:\n  - role: colocated\n    nodes: 1\n    parallel: {tp: 8, pp: 1, dp: 1}\n", m, sets, c, packaging)
+			body := fmt.Sprintf("kind: Scenario\nname: p\nmodel: %s\ncoefficients: %s\nengine: {kind: vllm}\ncluster:\n  hardware: %s\n  fabric: ib-400g\n  nodes: 1\n%s---\nkind: Deployment\nname: d\npools:\n  - role: colocated\n    nodes: 1\n    parallel: {tp: 8, pp: 1, dp: 1}\n", m, sets, c, packaging)
 			dir := t.TempDir()
 			if err := os.WriteFile(filepath.Join(dir, "s.yaml"), []byte(body), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			r := Repos{Scenarios: dir, Data: d,
+			r := Repos{Scenarios: dir, Data: d, Release: "0.33.0",
 				Rules:      func(string) enginefacts.EngineRules { return inertRules{} },
 				DraftModel: noDrafter, Lower: func(in Inputs) (*plan.Lowered, error) {
 					return lowerTo(8192, 16, 0, func(l *plan.Lowered) {

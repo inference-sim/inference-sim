@@ -68,7 +68,7 @@ def layout_scenario(lay, shape, pol):
     pg = lay["prefill"]["tp"] * lay["prefill"]["pp"] * lay["prefill"]["dp"]
     dg = lay["decode"]["tp"] * lay["decode"]["pp"] * lay["decode"]["dp"]
     pn, dn = math.ceil(p * pg / gpn), math.ceil(d * dg / gpn)
-    sub = {"@NAME@": f"{lay['id']}-{shape.lower()}-{pol}", "@ENGINE@": lay["engine_version"], "@MODEL@": lay["model"],
+    sub = {"@NAME@": f"{lay['id']}-{shape.lower()}-{pol}", "@MODEL@": lay["model"],
            "@HARDWARE@": lay["hardware"], "@FABRIC@": lay["fabric"], "@GPN@": gpn, "@NODES@": pn + dn,
            "@PNODES@": pn, "@DNODES@": dn, "@ROUTER@": pol}
     for role, key in (("prefill", "P"), ("decode", "D")):

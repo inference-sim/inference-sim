@@ -136,7 +136,7 @@ func LowerPool(in latencykernel.Inputs) (*plan.Lowered, error) {
 // withEngineRules returns r with the vLLM engine rules filled in where r states none: the
 // packs of github.com/inference-sim/inference-sim/engines/vllm/core/rulepack, which the kernel takes from its caller
 // rather than looking up itself (inference-sim#2021 B4). It is the one place this repository
-// chooses the rules a scenario's engine_version selects, so a run, a replay and every scoring
+// chooses the rules the build's engine release selects, so a run, a replay and every scoring
 // tool price a release against the same pack.
 func withEngineRules(r Repos) Repos {
 	if r.Rules == nil {
@@ -1230,8 +1230,7 @@ type Shape struct {
 	Model           string
 	Acceptance      *acceptance.Pin
 	WorkloadBinding *workload.Binding
-	// EngineVersion is the engine release the scenario names (EngineRelease): engine.version,
-	// or the deprecated engine_version.
+	// EngineVersion is the engine release the build runs (EngineRelease); a scenario states none.
 	EngineVersion string
 	// Unmodelled are each pool's stated engine settings that the compatibility engine does not
 	// model, by their scenario field names (unmodelledSettings), parallel to Roles.
@@ -1335,7 +1334,7 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 
 // checkSpeculativeMethod refuses a pool whose engine.speculative_config.method the scenario's engine
 // release does not accept, read from that release's rules (rules.EngineRules
-// SpeculativeMethodAccepted), so the accepted set moves with engine_version: dspark is
+// SpeculativeMethodAccepted), so the accepted set moves with the engine release: dspark is
 // accepted at vLLM 0.31.0 because that release ships it.
 //
 // The kernel does not check it itself. It refuses a method the model graph's speculator

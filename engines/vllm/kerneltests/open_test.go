@@ -3,49 +3,24 @@
 package latencykernel_test
 
 import (
-	schemas "github.com/inference-sim/inference-sim/substrate/contracts"
 	. "github.com/inference-sim/inference-sim/substrate/kernel"
 
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 // TestOpenRefusesAnUnregisteredEngineVersion keeps the version coupling honest.
 //
-// The rules pack is the one the caller's rules source returns for the scenario's own
-// engine_version, so a scenario pinned to a release the caller has no rules for must be
-// refused rather than priced with whatever pack happens to be current. The error names the
-// versions that do exist, because the next question a reader has is which one to use.
+// The rules pack is the one the caller's rules source returns for the release the build runs
+// (Repos.Release), so a release the caller has no rules for must be refused rather than priced
+// with whatever pack happens to be current. The error names the versions that do exist,
+// because the next question a reader has is which one to use.
 func TestOpenRefusesAnUnregisteredEngineVersion(t *testing.T) {
-	dir := t.TempDir()
-	sc, dep, err := schemas.LoadBundle(filepath.Join("testdata", "minimax-m25-h200-ep8.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	sc.EngineVersion = "0.0.1-not-a-release"
-
-	scBytes, err := yaml.Marshal(sc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	depBytes, err := yaml.Marshal(dep)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := append(append(scBytes, []byte("---\n")...), depBytes...)
-	if err := os.WriteFile(filepath.Join(dir, "bogus.yaml"), body, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = Open("bogus.yaml", withRules(Repos{
-		Scenarios: dir, Data: testData,
+	_, err := Open("minimax-m25-h200-ep8.yaml", withRules(Repos{
+		Scenarios: "testdata", Data: testData, Release: "0.0.1-not-a-release",
 	}))
 	if err == nil {
-		t.Fatal("a scenario naming an unregistered engine version built a kernel")
+		t.Fatal("a build running an unregistered engine release built a kernel")
 	}
 	for _, want := range []string{"0.0.1-not-a-release", "known versions"} {
 		if !strings.Contains(err.Error(), want) {

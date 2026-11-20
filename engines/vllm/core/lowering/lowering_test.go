@@ -72,7 +72,7 @@ func tryLowerOn(t *testing.T, at where, chip *hardware.Chip, s vllmsettings.Sett
 		perNode = "  gpus_per_node: 8\n"
 	}
 	body := fmt.Sprintf("kind: Scenario\nname: l\nmodel: %s\ncoefficients: [cost-model-primitives]\n"+
-		"engine_version: \"0.32.0\"\ncluster:\n  hardware: %s\n  fabric: ib-400g\n  nodes: %d\n%s---\n"+
+		"engine: {kind: vllm}\ncluster:\n  hardware: %s\n  fabric: ib-400g\n  nodes: %d\n%s---\n"+
 		"kind: Deployment\nname: d\npools:\n  - role: colocated\n    nodes: %d\n    parallel: {%s}\n",
 		at.model, at.chip, nodes, perNode, nodes, at.parallel)
 	path := filepath.Join(t.TempDir(), "s.yaml")

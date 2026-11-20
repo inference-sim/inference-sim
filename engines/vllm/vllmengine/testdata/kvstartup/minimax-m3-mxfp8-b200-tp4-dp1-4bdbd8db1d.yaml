@@ -1,7 +1,7 @@
 # A scenario of the dashboard's scenario writer for one fit unit's recorded run (counts only are kept of the units).
 kind: Scenario
 name: minimax-m3-mxfp8-b200-tp4-dp1-4bdbd8db1d
-engine: {kind: vllm, version: 0.33.0}
+engine: {kind: vllm}
 model: minimax-m3-mxfp8
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
 cluster: {hardware: b200, gpus_per_node: 8, nodes: 1}

@@ -55,16 +55,9 @@ type Scenario struct {
 	// (routing.Resolve).
 	Routing *routing.Pin `yaml:"routing,omitempty"`
 
-	// Engine names the engine that runs the scenario, by kind and upstream release
-	// (SIM-1). The simulator chooses the engine by it and refuses a release it does not
-	// run. It is distinct from the per-pool engine settings a Deployment states: those
-	// move between releases, this identifies which release.
+	// Engine names the engine that runs the scenario, by kind (SIM-1). The simulator chooses
+	// the engine by it. It is distinct from the per-pool engine settings a Deployment states.
 	Engine *Engine `yaml:"engine,omitempty"`
-
-	// EngineVersion is the field Engine replaces. Deprecated: by M1, in the first substrate release with Engine;
-	// removed in M4 (plan §3.3). A scenario may state it alone, or beside Engine with
-	// the same version; EngineRelease reads either.
-	EngineVersion string `yaml:"engine_version,omitempty"`
 
 	// Cluster is the available-hardware inventory: the accelerator every node carries,
 	// the inter-node fabric, how many nodes there are and, where the chip's catalog entry
@@ -73,22 +66,25 @@ type Scenario struct {
 	Cluster Cluster `yaml:"cluster"`
 }
 
-// Engine is an engine by kind and upstream release, for example {kind: vllm, version:
-// 0.32.0}.
+// Engine is the engine a scenario names: its kind. A scenario states no release of an
+// engine (LIF-6, SIM-1): the build fixes it, and a document that states a version is refused
+// as an unknown field.
 type Engine struct {
 	// Kind names the engine, as its engine repository registers it: vllm or sglang.
 	Kind string `yaml:"kind"`
-	// Version is the upstream release the engine models, for example "0.32.0".
-	Version string `yaml:"version"`
+	// Version is the upstream release the build runs for Kind, for example "0.33.0". It is
+	// never read from or written to a document: the code that opens the scenario sets it from
+	// the build (stack.json).
+	Version string `yaml:"-"`
 }
 
-// EngineRelease returns the upstream release the scenario names: Engine.Version when
-// Engine is set, else the deprecated EngineVersion.
+// EngineRelease returns the upstream release the build runs for the scenario's engine, or ""
+// when the scenario names no engine or the release has not been set.
 func (s *Scenario) EngineRelease() string {
 	if s.Engine != nil {
 		return s.Engine.Version
 	}
-	return s.EngineVersion
+	return ""
 }
 
 // Cluster is the available-hardware inventory: the hardware a problem is handed and a

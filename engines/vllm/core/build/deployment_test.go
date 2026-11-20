@@ -120,61 +120,25 @@ func TestAdopt_RefusesTwoColocatedPools(t *testing.T) {
 	}
 }
 
-// A scenario stating a release other than 0.33.0 is refused, naming the release stated and the
-// one this build models. One build models one release (#2021 B6), so a 0.33.0 deployment is
-// never run as an older one, nor an older one as 0.33.0.
-func TestAdopt_RefusesAReleaseTheEngineDoesNotModel(t *testing.T) {
+// The scenario names its engine by kind alone (SIM-1); the release is the build's (LIF-6). A
+// scenario stating one, or an engine kind other than vllm, is refused (kernelmodel.EngineRelease).
+func TestAdopt_ReadsTheScenariosEngineKind(t *testing.T) {
 	repos := vendoredRepos(t)
 	raw, err := os.ReadFile(filepath.Join(repos.Scenarios, "glm-5-h200-tp8-mtp3.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range []struct {
-		version string
-		ok      bool
-	}{{"0.33.0", true}, {"0.29.0", false}, {"0.31.0", false}, {"0.32.0", false}, {"0.30.0", false}, {"", false}} {
-		body := strings.Replace(string(raw), `engine_version: "0.33.0"`, `engine_version: "`+c.version+`"`, 1)
-		if !strings.Contains(body, `engine_version: "`+c.version+`"`) {
-			t.Fatalf("fixture has no engine_version to edit")
-		}
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "v.yaml"), []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		_, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Data: repos.Data})
-		switch {
-		case c.ok && err != nil:
-			t.Errorf("engine_version %s: %v, want it adopted", c.version, err)
-		case !c.ok && (err == nil || !strings.Contains(err.Error(), statedVersion(c.version)) ||
-			!strings.Contains(err.Error(), "models the release 0.33.0")):
-			t.Errorf("engine_version %q: %v, want a refusal naming it and the modelled release", c.version, err)
-		}
-	}
-}
-
-// The scenario names its release as engine: {kind, version} (SIM-1). Until M4 the deprecated
-// engine_version is read alone, or beside engine with the same release; the two stated unequal,
-// or an engine kind other than vllm, are refused (kernelmodel.EngineRelease).
-func TestAdopt_ReadsTheScenariosEngineRelease(t *testing.T) {
-	repos := vendoredRepos(t)
-	raw, err := os.ReadFile(filepath.Join(repos.Scenarios, "glm-5-h200-tp8-mtp3.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	const old = `engine_version: "0.33.0"` + "\n"
+	const old = "engine: {kind: vllm}\n"
 	if !strings.Contains(string(raw), old) {
-		t.Fatal("fixture has no engine_version to edit")
+		t.Fatal("fixture has no engine block to edit")
 	}
 	for _, c := range []struct {
 		name, stated string
 		refusal      string
 	}{
-		{"engine only", "engine: {kind: vllm, version: \"0.33.0\"}\n", ""},
-		{"engine_version only", `engine_version: "0.33.0"` + "\n", ""},
-		{"both, equal", "engine: {kind: vllm, version: \"0.33.0\"}\n" + `engine_version: "0.33.0"` + "\n", ""},
-		{"both, unequal", "engine: {kind: vllm, version: \"0.33.0\"}\n" + `engine_version: "0.31.0"` + "\n",
-			`engine_version is "0.31.0" but engine.version is "0.33.0"`},
-		{"another kind", "engine: {kind: sglang, version: \"0.32.0\"}\n", `engine.kind is "sglang"`},
+		{"kind only", old, ""},
+		{"a version stated", "engine: {kind: vllm, version: \"0.33.0\"}\n", "field version not found"},
+		{"another kind", "engine: {kind: sglang}\n", `engine.kind is "sglang"`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -216,15 +180,6 @@ func TestAdopt_LeavesItsSettingsToTheEngine(t *testing.T) {
 	}
 }
 
-// statedVersion is how a refusal names the release a scenario states: an empty one is named as
-// none stated, not as the release "".
-func statedVersion(v string) string {
-	if v == "" {
-		return "states no engine release"
-	}
-	return `states engine release "` + v + `"`
-}
-
 // A 0.33.0 hybrid model's first pool opens on its KV cache groups, as the v0.33.0 engine checks them:
 // Muse-Spark-Open-816B-A42B at TP8 x EP8 on GB200 and 262,144 tokens is a hybrid model whose KV is
 // checked over its groups (the figures below are the H200 DP8 arm's, which vLLM does not build with
@@ -240,23 +195,16 @@ func TestAdopt_033HybridKVIsCheckedOverItsGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range []struct {
-		version string
-		ok      bool
-	}{{"0.33.0", true}} {
-		dir := t.TempDir()
-		body := strings.Replace(string(raw), `engine_version: "0.33.0"`, `engine_version: "`+c.version+`"`, 1)
-		if err := os.WriteFile(filepath.Join(dir, "m.yaml"), []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		in := AdoptInputs{Scenario: "m.yaml", ScenariosDir: dir, Data: repos.Data}
-		a, err := Adopt(in)
-		if err != nil {
-			t.Fatalf("engine_version %s: adopt: %v", c.version, err)
-		}
-		err = OpenFirstPool(in, &a)
-		if (err == nil) != c.ok {
-			t.Errorf("engine_version %s: %v, want adopted %t", c.version, err, c.ok)
-		}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "m.yaml"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	in := AdoptInputs{Scenario: "m.yaml", ScenariosDir: dir, Data: repos.Data}
+	a, err := Adopt(in)
+	if err != nil {
+		t.Fatalf("adopt: %v", err)
+	}
+	if err := OpenFirstPool(in, &a); err != nil {
+		t.Errorf("open: %v", err)
 	}
 }

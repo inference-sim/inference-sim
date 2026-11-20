@@ -108,7 +108,7 @@ def main():
     print("## Price-change report\n")
     print("Every cost-model fixture (testdata/kernel) priced in two builds on the same catalog and registry: "
           "before, the v0.15.0 release of inference-sim on the fixtures as v0.5.0 wrote them; after, this branch on the "
-          "regenerated fixtures (`engine: {kind: vllm, version: \"0.33.0\"}`, only what each run stated, X19). "
+          "regenerated fixtures (`engine: {kind: vllm}`, only what each run stated, X19). "
           "Steps: decode batches of 1, 32 and 256 sequences at context 4096, one prefill of 2048 tokens; "
           "KV bytes per sequence at 1024 tokens; fixed bytes.\n")
     print(f"{len(keys)} fixtures priced in both builds: {len(gen)} regenerated, {len(hw)} hand-written (engine block unchanged). "

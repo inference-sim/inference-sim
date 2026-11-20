@@ -1,7 +1,7 @@
 # A scenario of the dashboard's scenario writer for one fit unit's recorded run (counts only are kept of the units).
 kind: Scenario
 name: kimi-k2.5-b200-tp8-dp1-cb712aad13
-engine: {kind: vllm, version: 0.33.0}
+engine: {kind: vllm}
 model: kimi-k2.5
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
 cluster: {hardware: b200, gpus_per_node: 8, nodes: 1}

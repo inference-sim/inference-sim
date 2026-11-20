@@ -143,7 +143,7 @@ func emitRunResult(p postRun) {
 		GoodputTargets: p.goodputTargets,
 		Saturation:     satFinal,
 		Artifacts:      artifacts,
-		Engine:         result.Engine{Kind: scenarioEngine.Kind, Version: scenarioEngine.Version},
+		Engine:         result.Engine{Kind: scenarioEngine.Kind, Version: scenarioEngine.Version, Commit: scenarioEngine.Commit},
 		Revisions:      resultRevisions(),
 		Data:           resultData(data),
 	}

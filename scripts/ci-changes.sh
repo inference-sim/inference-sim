@@ -140,7 +140,7 @@ classify() {
   # -- Modules and the stack record. -----------------------------------------------------------
   case "$p" in
     go.mod|go.sum)           for g in $groups; do mark "$g"; done ;;
-    stack.json|guides.lock)  mark cmd other stack selected root ;;
+    stack.json|guides.lock)  mark cmd other stack selected root bytegate ;;
   esac
 
   # -- Data trees (grep evidence + deletion run in the header). --------------------------------

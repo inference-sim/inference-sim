@@ -95,7 +95,7 @@ func TestCIChangesSampleChangeLists(t *testing.T) {
 		{"a kernel fixture", []string{"testdata/kernel/glm5-h200-tp8.yaml"},
 			groupsOf("cmd core cluster kernel other scripts structure")},
 		{"a workload trace fixture", []string{"testdata/trace-v3/a.csv"}, groupsOf("workload structure")},
-		{"the stack record", []string{"stack.json"}, groupsOf("cmd other stack selected root structure")},
+		{"the stack record", []string{"stack.json"}, groupsOf("cmd other stack selected root bytegate structure")},
 		{"the router test directory only", []string{"sim/llmd/router_test.go"}, groupsOf("lint llmd cmd structure")},
 		{"a workflow other than ci.yml", []string{".github/workflows/gofmt.yml"}, groupsOf("scripts actionlint structure")},
 		{"an issue template (data under .github)", []string{".github/ISSUE_TEMPLATE/bug_report.md"}, groupsOf("structure")},

@@ -75,7 +75,7 @@ func priceOnGB200(t *testing.T, tp, tokens int, legacy bool) (kernel.StepEstimat
 name: gb200-packaging
 model: muse-spark-open-816b-a42b-nvfp4
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
-engine_version: "0.32.0"
+engine: {kind: vllm}
 cluster:
   hardware: gb200-nvl72
   fabric: ib-400g

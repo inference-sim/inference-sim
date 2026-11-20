@@ -22,7 +22,7 @@ type DeploymentConfig struct {
 	ClusterAutoscaler ClusterAutoscalerConfig
 
 	// NewEngine builds an instance's engine through blis-schemas' engine.Engine contract, for a
-	// release the compatibility engine does not model (engine_version 0.33.0, GOAL.md); nil
+	// release the compatibility engine does not model (engine release 0.33.0, GOAL.md); nil
 	// builds the compatibility engine (sim.NewEngine). It receives the instance's index in the
 	// cluster and its configuration, resolved for its pool role as the compatibility engine's is.
 	// The build site (cmd/engine_build.go) supplies it, so this package names no engine

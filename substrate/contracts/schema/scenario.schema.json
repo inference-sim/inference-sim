@@ -158,14 +158,10 @@
       "properties": {
         "kind": {
           "type": "string"
-        },
-        "version": {
-          "type": "string"
         }
       },
       "required": [
-        "kind",
-        "version"
+        "kind"
       ],
       "type": "object"
     },
@@ -201,9 +197,6 @@
         },
         "engine": {
           "$ref": "#/$defs/scenario.Engine"
-        },
-        "engine_version": {
-          "type": "string"
         },
         "kind": {
           "const": "Scenario"

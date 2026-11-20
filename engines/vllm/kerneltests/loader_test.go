@@ -92,6 +92,7 @@ func fixtureInputsAt(t testing.TB, path string) Inputs {
 	if err != nil {
 		t.Fatalf("committed fixture %s: %v", scenario, err)
 	}
+	sc.Engine.Version = vllmrules.Versions()[0]
 	graphPath := filepath.Join(catalogRoot, "models", sc.Model, "graph.yaml")
 	graph, err := schemas.LoadModelGraph(graphPath)
 	artifacttest.RequireArtifact(t, catalogRoot, graphPath, "catalog", err)

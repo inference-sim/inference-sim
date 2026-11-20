@@ -83,7 +83,7 @@ func planCase(t *testing.T, d *load.Data, modelName, chip string, nodes int, par
 	if ch, err := d.Chip(chip); err == nil && ch.GPUsPerNode == 0 {
 		packaging = "  gpus_per_node: 8\n"
 	}
-	body := fmt.Sprintf("kind: Scenario\nname: p\nmodel: %s\ncoefficients: %s\nengine_version: \"0.32.0\"\n"+
+	body := fmt.Sprintf("kind: Scenario\nname: p\nmodel: %s\ncoefficients: %s\nengine: {kind: vllm}\n"+
 		"cluster:\n  hardware: %s\n  fabric: ib-400g\n  nodes: %d\n%s---\nkind: Deployment\nname: d\n"+
 		"pools:\n  - role: colocated\n    nodes: %d\n    parallel: {%s}\n", modelName, sets, chip, nodes,
 		packaging, nodes, parallel)
@@ -95,7 +95,7 @@ func planCase(t *testing.T, d *load.Data, modelName, chip string, nodes int, par
 	if f != nil {
 		f(&low)
 	}
-	r := Repos{Scenarios: dir, Data: d, Rules: func(string) enginefacts.EngineRules { return planRules{} },
+	r := Repos{Scenarios: dir, Data: d, Release: "0.33.0", Rules: func(string) enginefacts.EngineRules { return planRules{} },
 		DraftModel: noDrafter,
 		Lower:      func(Inputs) (*plan.Lowered, error) { return &low, nil }}
 	in, err := OpenInputs("s.yaml", r, 0)

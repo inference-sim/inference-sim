@@ -42,7 +42,7 @@ func priceShape(t *testing.T, d *load.Data, s shapetest.Shape, chip string) shap
 	}
 	// The model is named in the catalog so the scenario resolves; its graph is then replaced
 	// by the shape, so the cost model prices the shape on the chip's real coefficients.
-	body := fmt.Sprintf("kind: Scenario\nname: p\nmodel: qwen3-14b\ncoefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]\nengine_version: \"0.32.0\"\ncluster:\n  hardware: %s\n  fabric: ib-400g\n  nodes: 1\n%s---\nkind: Deployment\nname: d\npools:\n  - role: colocated\n    nodes: 1\n    parallel: {tp: 8, pp: 1, dp: 1}\n", chip, packaging)
+	body := fmt.Sprintf("kind: Scenario\nname: p\nmodel: qwen3-14b\ncoefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]\nengine: {kind: vllm}\ncluster:\n  hardware: %s\n  fabric: ib-400g\n  nodes: 1\n%s---\nkind: Deployment\nname: d\npools:\n  - role: colocated\n    nodes: 1\n    parallel: {tp: 8, pp: 1, dp: 1}\n", chip, packaging)
 	r, name := openRepos(t, d, body)
 	r.Rules = func(string) enginefacts.EngineRules { return windowedRules{} }
 	r.DraftModel, r.Lower = noDrafter, lowerTo(8192, 16, 0)

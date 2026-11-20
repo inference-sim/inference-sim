@@ -5,7 +5,6 @@ coefficients:
   - cost-model-primitives
 engine:
   kind: vllm
-  version: "0.31.0"
 workload:
   shape: chatbot
 # --8<-- [start:acceptance]

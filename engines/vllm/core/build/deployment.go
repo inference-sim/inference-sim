@@ -11,7 +11,6 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/load"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
-	vllm "github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
 )
 
 // AdoptInputs name a run's scenario and the data it reads, as the command line gave them
@@ -70,17 +69,6 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 	shape, err := kernelmodel.ShapeOf(in.Scenario, kernelmodel.Repos{Scenarios: in.ScenariosDir})
 	if err != nil {
 		return Adopted{}, fmt.Errorf("scenario %q: %v", in.Scenario, err)
-	}
-	// One build models one engine release (#2021 B6): a deployment stating vllm.Version runs on
-	// blis-vllm's engine for it (core/vllm, through vllmengine). Any other release is refused
-	// rather than run as that one.
-	if shape.EngineVersion != vllm.Version {
-		stated := fmt.Sprintf("states engine release %q", shape.EngineVersion)
-		if shape.EngineVersion == "" {
-			stated = "states no engine release (engine.version, or the deprecated engine_version)"
-		}
-		return Adopted{}, fmt.Errorf("scenario %q %s; blis-vllm models the release %s: state engine.version %q",
-			in.Scenario, stated, vllm.Version, vllm.Version)
 	}
 	// A colocated run simulates one pool's engine; a second colocated pool would be dropped.
 	if !slices.Contains(shape.Roles, deployment.RolePrefill) && len(shape.Roles) > 1 {

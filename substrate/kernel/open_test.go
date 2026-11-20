@@ -19,7 +19,7 @@ const openScenario = `kind: Scenario
 name: open-test
 model: llama-3.1-8b-instruct
 coefficients: [cost-model-primitives, cost-model-host-overheads]
-engine_version: "0.32.0"
+engine: {kind: vllm}
 workload:
   shape: chatbot
 cluster:
@@ -42,7 +42,7 @@ func openRepos(t *testing.T, d *load.Data, body string) (Repos, string) {
 		t.Fatal(err)
 	}
 	return Repos{
-		Scenarios: dir, Data: d,
+		Scenarios: dir, Data: d, Release: "0.33.0",
 		Rules:      func(string) enginefacts.EngineRules { return openRules{} },
 		DraftModel: noDrafter, Lower: lowerTo(0, 16, 0),
 	}, "s.yaml"
@@ -101,8 +101,8 @@ func TestRecordSelectedReachesTheReport(t *testing.T) {
 	}
 }
 
-// A scenario names its engine by kind and version, but a release number alone does not say
-// whose rules answer it. Repos.RulesKind says which kind the supplied rules are for, empty
+// A scenario names its engine by kind, and the build fixes the release, but a release number
+// alone does not say whose rules answer it. Repos.RulesKind says which kind the supplied rules are for, empty
 // meaning vllm, and Open refuses an engine block of another kind.
 func TestOpenRefusesAnEngineKindTheRulesAreNotFor(t *testing.T) {
 	d, err := load.Embedded()
@@ -110,8 +110,8 @@ func TestOpenRefusesAnEngineKindTheRulesAreNotFor(t *testing.T) {
 		t.Fatal(err)
 	}
 	with := func(kind string) string {
-		return strings.Replace(openScenario, `engine_version: "0.32.0"`,
-			"engine: {kind: "+kind+", version: \"0.32.0\"}", 1)
+		return strings.Replace(openScenario, `engine: {kind: vllm}`,
+			"engine: {kind: "+kind+"}", 1)
 	}
 	for _, c := range []struct {
 		name, scenario, rulesKind string
@@ -121,8 +121,6 @@ func TestOpenRefusesAnEngineKindTheRulesAreNotFor(t *testing.T) {
 		{"matching kind", with("sglang"), "sglang", true},
 		{"empty rules kind, kind vllm", with("vllm"), "", true},
 		{"empty rules kind, kind sglang", with("sglang"), "", false},
-		{"legacy scenario, no engine block", openScenario, "", true},
-		{"legacy scenario, any rules kind", openScenario, "sglang", true},
 	} {
 		r, name := openRepos(t, d, c.scenario)
 		r.RulesKind = c.rulesKind

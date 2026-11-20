@@ -166,7 +166,7 @@ var requiredKeys = map[string][]string{
 	"routing.Provenance":          {"source"},
 	"routing.Value":               {"token_imbalance"},
 	"scenario.Cluster":            {"hardware", "nodes"},
-	"scenario.Engine":             {"kind", "version"},
+	"scenario.Engine":             {"kind"},
 	"scenario.Packaging":          {"gpus_per_node", "gpus_per_node_source"},
 	"scenario.Pool":               {"name"},
 	"scenario.Scenario":           {"cluster", "coefficients", "kind", "model", "name"},

@@ -21,14 +21,14 @@ import (
 )
 
 // openEdited opens glm-5-h200-tp8-mtp3 (h200, block_size 64, max_num_batched_tokens 8192,
-// max_num_seqs 256, max_model_len 32768) at a release, with each named line removed.
-func openEdited(t *testing.T, release string, drop ...string) *Model {
+// max_num_seqs 256, max_model_len 32768) with each named line removed.
+func openEdited(t *testing.T, drop ...string) *Model {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "scenarios", "glm-5-h200-tp8-mtp3.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "`+release+`"`, 1)
+	body := string(raw)
 	for _, d := range drop {
 		if add, ok := strings.CutPrefix(d, "+"); ok {
 			// A line to add to the engine block, beside max_num_seqs.
@@ -70,7 +70,7 @@ func TestEngineResolvesUnstatedBatchSettingsAt032(t *testing.T) {
 		{"both unstated", []string{"max_num_seqs: 256", "max_num_batched_tokens: 8192"}, 1024, 8192, false, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			m := openEdited(t, "0.33.0", c.drop...)
+			m := openEdited(t, c.drop...)
 			e, err := m.Engine()
 			if err != nil {
 				t.Fatal(err)
@@ -111,7 +111,7 @@ func TestEngineResolvesTheTokenBudgetFromEnableChunkedPrefill(t *testing.T) {
 			if c.add != "" {
 				drop = append(drop, c.add)
 			}
-			m := openEdited(t, "0.33.0", drop...)
+			m := openEdited(t, drop...)
 			e, err := m.Engine()
 			if err != nil {
 				t.Fatal(err)
@@ -129,7 +129,7 @@ func TestEngineResolvesTheTokenBudgetFromEnableChunkedPrefill(t *testing.T) {
 // An unstated block_size at 0.32.0 is still refused, naming the open issue (#68); at 0.31.0 the
 // block is returned as stated, and an unstated batch setting is refused, as before.
 func TestEngineRefusesWhatItDoesNotResolve(t *testing.T) {
-	_, err := openEdited(t, "0.33.0", "block_size: 64").Engine()
+	_, err := openEdited(t, "block_size: 64").Engine()
 	if err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/68") {
 		t.Errorf("0.32.0 without block_size: %v, want a refusal citing blis-vllm#68", err)
 	}
@@ -234,9 +234,9 @@ func TestEngineKeepsAStatedBlockSize(t *testing.T) {
 	}
 }
 
-// openWithMemoryUtilization opens glm-5-h200-tp8-mtp3 at a release with gpu_memory_utilization
+// openWithMemoryUtilization opens glm-5-h200-tp8-mtp3 with gpu_memory_utilization
 // set to line ("" removes it).
-func openWithMemoryUtilization(t *testing.T, release, line string) (*Model, error) {
+func openWithMemoryUtilization(t *testing.T, line string) (*Model, error) {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "scenarios", "glm-5-h200-tp8-mtp3.yaml"))
 	if err != nil {
@@ -251,7 +251,6 @@ func openWithMemoryUtilization(t *testing.T, release, line string) (*Model, erro
 		repl = "${1}gpu_memory_utilization: " + line + "\n"
 	}
 	body := re.ReplaceAllString(string(raw), repl)
-	body = strings.Replace(body, `engine_version: "0.33.0"`, `engine_version: "`+release+`"`, 1)
 	r := repos()
 	r.Scenarios = t.TempDir()
 	if err := os.WriteFile(filepath.Join(r.Scenarios, "v.yaml"), []byte(body), 0o644); err != nil {
@@ -268,7 +267,7 @@ func TestEngineResolvesAnUnstatedMemoryUtilization(t *testing.T) {
 		{"0.33.0", "vllm/config/cache.py:215@4ba787ec"},
 	} {
 		t.Run(c.release, func(t *testing.T) {
-			m, err := openWithMemoryUtilization(t, c.release, "")
+			m, err := openWithMemoryUtilization(t, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -283,7 +282,7 @@ func TestEngineResolvesAnUnstatedMemoryUtilization(t *testing.T) {
 				t.Errorf("the kernel does not price the resolved 0.92")
 			}
 			// The KV budget is sized from it: a stated 0.92 gives the same budget.
-			stated, err := openWithMemoryUtilization(t, c.release, "0.92")
+			stated, err := openWithMemoryUtilization(t, "0.92")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -299,7 +298,7 @@ func TestEngineResolvesAnUnstatedMemoryUtilization(t *testing.T) {
 // A stated gpu_memory_utilization is kept and reported as stated; a stated value outside (0, 1]
 // is still refused, not replaced by the default.
 func TestEngineKeepsOrRefusesAStatedMemoryUtilization(t *testing.T) {
-	m, err := openWithMemoryUtilization(t, "0.33.0", "0.85")
+	m, err := openWithMemoryUtilization(t, "0.85")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,13 +307,13 @@ func TestEngineKeepsOrRefusesAStatedMemoryUtilization(t *testing.T) {
 	}
 	// Document validation refuses a stated value outside [0, 1] before a model opens.
 	for _, v := range []string{"1.5", "-0.1"} {
-		if _, err := openWithMemoryUtilization(t, "0.33.0", v); err == nil {
+		if _, err := openWithMemoryUtilization(t, v); err == nil {
 			t.Errorf("stated %s opened, want it refused", v)
 		}
 	}
 	// And the resolver never replaces such a value with the default, whatever reaches it: only
 	// 0, which the schema reads as unset (core/engineconfig/validate.go:65), is replaced.
-	in := latencykernel.Inputs{Scenario: &scenario.Scenario{EngineVersion: "0.33.0"},
+	in := latencykernel.Inputs{Scenario: &scenario.Scenario{Engine: &scenario.Engine{Kind: "vllm", Version: "0.33.0"}},
 		Deployment: &deployment.Deployment{Pools: []deployment.Pool{{}}}, Chip: &hardware.Chip{MemoryGiB: 141}, Model: &model.Graph{}}
 	for _, c := range []struct {
 		util float64
@@ -749,7 +748,7 @@ func TestHasRecurrentLayersNamesTheModelsThatRunTheMambaHook(t *testing.T) {
 // attention is multi-head latent attention, so its pool is replicated-layout when it is
 // tensor-parallel only.
 func TestUsesMLAReadsTheGraphsAttention(t *testing.T) {
-	if !openEdited(t, "0.33.0").UsesMLA() {
+	if !openEdited(t).UsesMLA() {
 		t.Error("glm-5, whose attention is MLA, is not read as using MLA")
 	}
 	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "scenarios", "llama-3.1-70b-instruct-h200-tp4-4node.yaml"))
