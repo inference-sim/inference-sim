@@ -204,6 +204,9 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 	if isMistralLarge4(g) {
 		return mistralKVLayers(g, pool, engine, ds)
 	}
+	if isInkling2(g) {
+		return inkling2KVLayers(g, pool, engine, ds)
+	}
 	kinds := map[string]model.LayerKind{}
 	for _, k := range g.LayerKinds {
 		kinds[k.ID] = k
