@@ -1,0 +1,1271 @@
+kind: ModelGraph
+name: mistral-large-4-1t-a52b-nvfp4
+derived_from:
+  format: mistral_params_json
+  path: params.json
+  sha256: c09dc9ea714c8de78f42f8a86dc6c1ecec039f8a8c465eb39cc33994f2f89cfd
+  deriver_version: 1
+global:
+  hidden_size: 6144
+  vocab_size: 204800
+  tie_word_embeddings: false
+  weight_dtype: bf16
+  architecture: PixtralForConditionalGeneration
+  context_window: 1048576
+layer_kinds:
+- id: dense_rope_own_idx
+  nodes:
+  - op: Elementwise
+    role: input_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: kv_a_proj
+    n: 576
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: kv_a_layernorm
+    bytes_per_token: 2048
+    tp: replicated
+  - op: GEMM
+    role: q_proj
+    n: 8192
+    k: 6144
+    tp: column
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: GEMM
+    role: kv_b_proj
+    n: 12288
+    k: 512
+    tp: column
+    weight_dtype: bf16
+  - op: Elementwise
+    role: index_q_input_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: index_wq_b
+    n: 4096
+    k: 6144
+    tp: replicated
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: GEMM
+    role: index_wk_weights_proj
+    n: 160
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: index_k_norm
+    bytes_per_token: 512
+    tp: replicated
+  - op: Attention
+    holds_engine_kv: false
+    role: block_index_scores
+    kind: gqa
+    n_q: 32
+    n_kv: 1
+    d_h: 128
+    tp: replicated
+    caches:
+    - name: index
+      kind: index
+      owned: true
+      bytes_per_entry: 132
+  - op: Attention
+    holds_engine_kv: true
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    index_topk: 2048
+    caches:
+    - name: kv
+      kind: kv
+      owned: true
+      bytes_per_entry: 656
+      bytes_by_cache_dtype:
+        auto: 1152
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 8192
+    tp: row
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+    bytes_per_token: 36864
+    tp: replicated
+  - op: GEMM
+    role: mlp_gate_up
+    n: 49152
+    k: 6144
+    tp: column
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: GEMM
+    role: mlp_down
+    n: 6144
+    k: 24576
+    tp: row
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+- id: moe_rope_own_idx
+  nodes:
+  - op: Elementwise
+    role: input_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: kv_a_proj
+    n: 576
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: kv_a_layernorm
+    bytes_per_token: 2048
+    tp: replicated
+  - op: GEMM
+    role: q_proj
+    n: 8192
+    k: 6144
+    tp: column
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: GEMM
+    role: kv_b_proj
+    n: 12288
+    k: 512
+    tp: column
+    weight_dtype: bf16
+  - op: Elementwise
+    role: index_q_input_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: index_wq_b
+    n: 4096
+    k: 6144
+    tp: replicated
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: GEMM
+    role: index_wk_weights_proj
+    n: 160
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: index_k_norm
+    bytes_per_token: 512
+    tp: replicated
+  - op: Attention
+    holds_engine_kv: false
+    role: block_index_scores
+    kind: gqa
+    n_q: 32
+    n_kv: 1
+    d_h: 128
+    tp: replicated
+    caches:
+    - name: index
+      kind: index
+      owned: true
+      bytes_per_entry: 132
+  - op: Attention
+    holds_engine_kv: true
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    index_topk: 2048
+    caches:
+    - name: kv
+      kind: kv
+      owned: true
+      bytes_per_entry: 656
+      bytes_by_cache_dtype:
+        auto: 1152
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 8192
+    tp: row
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+    bytes_per_token: 36864
+    tp: replicated
+  - op: GEMM
+    role: router
+    n: 128
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 6144
+    k: 6144
+    experts: 128
+    top_k: 4
+    weight_dtype: nvfp4
+  - op: GEMM
+    role: shared_gate_up
+    n: 12288
+    k: 6144
+    weight_dtype: fp8
+    tp: column
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 36864
+  - op: GEMM
+    role: shared_down
+    n: 6144
+    k: 6144
+    weight_dtype: fp8
+    tp: row
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
+  - - 18
+    - 19
+  - - 19
+    - 20
+- id: moe_nope_own_idx
+  nodes:
+  - op: Elementwise
+    role: input_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: kv_a_proj
+    n: 512
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: kv_a_layernorm
+    bytes_per_token: 2048
+    tp: replicated
+  - op: GEMM
+    role: q_proj
+    n: 8192
+    k: 6144
+    tp: column
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: GEMM
+    role: kv_b_proj
+    n: 16384
+    k: 512
+    tp: column
+    weight_dtype: bf16
+  - op: Elementwise
+    role: index_q_input_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: index_wq_b
+    n: 4096
+    k: 6144
+    tp: replicated
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: GEMM
+    role: index_wk_weights_proj
+    n: 160
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: index_k_norm
+    bytes_per_token: 512
+    tp: replicated
+  - op: Attention
+    holds_engine_kv: false
+    role: block_index_scores
+    kind: gqa
+    n_q: 32
+    n_kv: 1
+    d_h: 128
+    tp: replicated
+    caches:
+    - name: index
+      kind: index
+      owned: true
+      bytes_per_entry: 132
+  - op: Attention
+    holds_engine_kv: true
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    index_topk: 2048
+    caches:
+    - name: kv
+      kind: kv
+      owned: true
+      bytes_per_entry: 656
+      bytes_by_cache_dtype:
+        auto: 1152
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 8192
+    tp: row
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+    bytes_per_token: 36864
+    tp: replicated
+  - op: GEMM
+    role: router
+    n: 128
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 6144
+    k: 6144
+    experts: 128
+    top_k: 4
+    weight_dtype: nvfp4
+  - op: GEMM
+    role: shared_gate_up
+    n: 12288
+    k: 6144
+    weight_dtype: fp8
+    tp: column
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 36864
+  - op: GEMM
+    role: shared_down
+    n: 6144
+    k: 6144
+    weight_dtype: fp8
+    tp: row
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
+  - - 18
+    - 19
+  - - 19
+    - 20
+- id: moe_rope_own_sidx
+  nodes:
+  - op: Elementwise
+    role: input_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: kv_a_proj
+    n: 576
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: kv_a_layernorm
+    bytes_per_token: 2048
+    tp: replicated
+  - op: GEMM
+    role: q_proj
+    n: 8192
+    k: 6144
+    tp: column
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: GEMM
+    role: kv_b_proj
+    n: 12288
+    k: 512
+    tp: column
+    weight_dtype: bf16
+  - op: Attention
+    holds_engine_kv: true
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    index_topk: 2048
+    caches:
+    - name: kv
+      kind: kv
+      owned: true
+      bytes_per_entry: 656
+      bytes_by_cache_dtype:
+        auto: 1152
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 8192
+    tp: row
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+    bytes_per_token: 36864
+    tp: replicated
+  - op: GEMM
+    role: router
+    n: 128
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 6144
+    k: 6144
+    experts: 128
+    top_k: 4
+    weight_dtype: nvfp4
+  - op: GEMM
+    role: shared_gate_up
+    n: 12288
+    k: 6144
+    weight_dtype: fp8
+    tp: column
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 36864
+  - op: GEMM
+    role: shared_down
+    n: 6144
+    k: 6144
+    weight_dtype: fp8
+    tp: row
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+- id: moe_nope_share_idx
+  nodes:
+  - op: Elementwise
+    role: input_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: q_proj
+    n: 8192
+    k: 6144
+    tp: column
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: GEMM
+    role: kv_b_proj
+    n: 16384
+    k: 512
+    tp: column
+    weight_dtype: bf16
+  - op: Elementwise
+    role: index_q_input_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: index_wq_b
+    n: 4096
+    k: 6144
+    tp: replicated
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: GEMM
+    role: index_wk_weights_proj
+    n: 160
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: index_k_norm
+    bytes_per_token: 512
+    tp: replicated
+  - op: Attention
+    holds_engine_kv: false
+    role: block_index_scores
+    kind: gqa
+    n_q: 32
+    n_kv: 1
+    d_h: 128
+    tp: replicated
+    caches:
+    - name: index
+      kind: index
+      owned: true
+      bytes_per_entry: 132
+  - op: Attention
+    holds_engine_kv: true
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    index_topk: 2048
+    caches:
+    - name: kv
+      kind: kv
+      owned: false
+      bytes_per_entry: 656
+      bytes_by_cache_dtype:
+        auto: 1152
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 8192
+    tp: row
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+    bytes_per_token: 36864
+    tp: replicated
+  - op: GEMM
+    role: router
+    n: 128
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 6144
+    k: 6144
+    experts: 128
+    top_k: 4
+    weight_dtype: nvfp4
+  - op: GEMM
+    role: shared_gate_up
+    n: 12288
+    k: 6144
+    weight_dtype: fp8
+    tp: column
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 36864
+  - op: GEMM
+    role: shared_down
+    n: 6144
+    k: 6144
+    weight_dtype: fp8
+    tp: row
+    weight_scale:
+      elements: 16384
+      bytes: 4
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
+- id: dspark_0
+  nodes: &id001
+  - op: Elementwise
+    role: input_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: kv_a_proj
+    n: 576
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: kv_a_layernorm
+    bytes_per_token: 2048
+    tp: replicated
+  - op: GEMM
+    role: q_proj
+    n: 8192
+    k: 6144
+    tp: column
+    weight_dtype: bf16
+  - op: GEMM
+    role: kv_b_proj
+    n: 12288
+    k: 512
+    tp: column
+    weight_dtype: bf16
+  - op: Attention
+    holds_engine_kv: true
+    kind: mla
+    n_q: 64
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    prefill_qk_head_dim: 128
+    prefill_v_head_dim: 128
+    window: 2048
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 8192
+    tp: row
+    weight_dtype: bf16
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+    bytes_per_token: 36864
+    tp: replicated
+  - op: GEMM
+    role: mlp_gate_up
+    n: 49152
+    k: 6144
+    tp: column
+    weight_dtype: bf16
+  - op: GEMM
+    role: mlp_down
+    n: 6144
+    k: 24576
+    tp: row
+    weight_dtype: bf16
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+- id: dspark_1
+  nodes: *id001
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+- id: dspark_2
+  nodes: *id001
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+- id: dspark_context_mix
+  nodes:
+  - op: GEMM
+    role: dspark_target_projection
+    n: 6144
+    k: 30720
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: dspark_target_norm
+    bytes_per_token: 24576
+    tp: replicated
+  edges:
+  - - 0
+    - 1
+- id: dspark_context
+  nodes:
+  - op: GEMM
+    role: dspark_context_kv_a_0
+    n: 576
+    k: 6144
+    tp: replicated
+    aliases: dspark_0.kv_a_proj
+  - op: Elementwise
+    role: dspark_context_kv_norm_0
+    bytes_per_token: 2048
+    tp: replicated
+  - op: Elementwise
+    role: dspark_context_kv_rope_insert_0
+    bytes_per_token: 2304
+    tp: replicated
+  - op: GEMM
+    role: dspark_context_kv_a_1
+    n: 576
+    k: 6144
+    tp: replicated
+    aliases: dspark_1.kv_a_proj
+  - op: Elementwise
+    role: dspark_context_kv_norm_1
+    bytes_per_token: 2048
+    tp: replicated
+  - op: Elementwise
+    role: dspark_context_kv_rope_insert_1
+    bytes_per_token: 2304
+    tp: replicated
+  - op: GEMM
+    role: dspark_context_kv_a_2
+    n: 576
+    k: 6144
+    tp: replicated
+    aliases: dspark_2.kv_a_proj
+  - op: Elementwise
+    role: dspark_context_kv_norm_2
+    bytes_per_token: 2048
+    tp: replicated
+  - op: Elementwise
+    role: dspark_context_kv_rope_insert_2
+    bytes_per_token: 2304
+    tp: replicated
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+stack:
+  prologue:
+  - dense_rope_own_idx
+  - moe_rope_own_idx
+  - moe_rope_own_idx
+  - moe_nope_own_idx
+  - moe_rope_own_idx
+  - moe_rope_own_idx
+  - moe_rope_own_idx
+  - moe_nope_own_idx
+  - moe_rope_own_idx
+  - moe_rope_own_idx
+  - moe_rope_own_idx
+  - moe_nope_own_idx
+  - moe_rope_own_idx
+  - moe_rope_own_idx
+  - moe_rope_own_idx
+  - moe_nope_own_idx
+  - moe_rope_own_idx
+  - moe_rope_own_sidx
+  - moe_rope_own_sidx
+  - moe_nope_own_idx
+  - moe_rope_own_idx
+  - moe_rope_own_sidx
+  - moe_rope_own_sidx
+  - moe_nope_own_idx
+  - moe_rope_own_idx
+  - moe_rope_own_sidx
+  - moe_rope_own_sidx
+  - moe_nope_own_idx
+  - moe_rope_own_idx
+  - moe_rope_own_sidx
+  - moe_rope_own_sidx
+  - moe_nope_own_idx
+  - moe_rope_own_idx
+  - moe_rope_own_sidx
+  - moe_rope_own_sidx
+  - moe_nope_own_idx
+  pattern:
+  - moe_rope_own_idx
+  - moe_rope_own_sidx
+  - moe_rope_own_sidx
+  - moe_nope_share_idx
+  repeat: 9
+modality: multimodal
+encoder:
+  towers:
+  - modality: image
+    input:
+      patch_size: 14
+      channels: 3
+    merge_ratio: 4
+    output_hidden_size: 6144
+    parallel: tensor
+    weight_dtype: bf16
+    embedding:
+    - op: gemm
+      role: patch_embed
+      n: 2048
+      k: 588
+      tp: replicated
+    - op: elementwise
+      role: ln_pre
+      bytes_per_row: 8192
+      params: 2048
+      tp: replicated
+    layer_kinds:
+    - id: vit_block
+      nodes:
+      - op: elementwise
+        role: norms
+        bytes_per_row: 16384
+        params: 4096
+        tp: replicated
+      - op: gemm
+        role: qkv
+        n: 6144
+        k: 2048
+        tp: column
+      - op: attention
+        role: attention
+        n_heads: 16
+        d_h: 128
+        tp: sharded
+      - op: gemm
+        role: o_proj
+        n: 2048
+        k: 2048
+        tp: row
+      - op: gemm
+        role: gate_up
+        n: 12288
+        k: 2048
+        tp: column
+      - op: elementwise
+        role: act
+        bytes_per_row: 36864
+        tp: sharded
+      - op: gemm
+        role: down
+        n: 2048
+        k: 6144
+        tp: row
+    stack:
+      pattern:
+      - vit_block
+      repeat: 30
+    projector:
+    - op: elementwise
+      role: pre_mm_projector_norm
+      bytes_per_row: 8192
+      params: 2048
+      tp: replicated
+    - op: gemm
+      role: merging_layer
+      n: 2048
+      k: 8192
+      tp: replicated
+      rows: output_tokens
+    - op: gemm
+      role: proj_in
+      n: 6144
+      k: 2048
+      tp: replicated
+      rows: output_tokens
+    - op: elementwise
+      role: proj_act
+      bytes_per_row: 24576
+      rows: output_tokens
+    - op: gemm
+      role: proj_out
+      n: 6144
+      k: 6144
+      tp: replicated
+      rows: output_tokens
+embedding:
+- op: Gather
+  role: embed_tokens
+  rows: 204800
+  row_bytes: 12288
+  rows_per_token: 1
+  out_bytes_per_token: 12288
+  shard: rows
+- op: AllReduce
+  role: embed_out
+  emit: tensor_parallel
+head:
+- op: Elementwise
+  role: final_norm
+  bytes_per_token: 24576
+  tp: replicated
+- op: GEMM
+  role: lm_head
+  n: 204800
+  k: 6144
+  tp: column
+  weight_dtype: bf16
+speculator:
+  method: dspark
+  num_spec_tokens: 3
+  drafting: parallel_block
+  embedding:
+  - op: Gather
+    role: dspark_embed_tokens
+    rows: 204800
+    row_bytes: 12288
+    rows_per_token: 1
+    out_bytes_per_token: 12288
+    shard: rows
+    aliases: embedding.embed_tokens
+  - op: AllReduce
+    role: dspark_embed_out
+    emit: tensor_parallel
+  stack:
+    pattern:
+    - dspark_0
+    - dspark_1
+    - dspark_2
+    repeat: 1
+  context_stack:
+    prologue:
+    - dspark_context_mix
+    pattern:
+    - dspark_context
+    repeat: 1
+  head:
+  - op: Elementwise
+    role: dspark_final_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: dspark_lm_head
+    n: 204800
+    k: 6144
+    tp: column
+    aliases: head.lm_head
+  sequential_head:
+  - op: Gather
+    role: markov_w1
+    rows: 204800
+    row_bytes: 1024
+    rows_per_token: 1
+    out_bytes_per_token: 1024
+  - op: GEMM
+    role: joint_proj
+    n: 1536
+    k: 7168
+    tp: replicated
+  - op: GEMM
+    role: markov_w2
+    n: 204800
+    k: 512
+    tp: replicated
+  aux_hidden_state_layers:
+  - 2
+  - 19
+  - 37
+  - 55
+  - 72

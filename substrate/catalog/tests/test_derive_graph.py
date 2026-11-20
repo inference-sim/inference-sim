@@ -7207,7 +7207,7 @@ def test_the_graphs_that_state_a_scale_are_the_block_scaled_ones():
     block = {"elements": 16384, "bytes": 4}
     assert {n for n, sc in scaled.items() if sc == block} == {
         "deepseek-r1-0528", "deepseek-v3", "glm-5", "glm-5.1-fp8", "glm-5.2-fp8", "glm-5.3", "glm-5.3-flash",
-        "minimax-m2.5", "minimax-m2.7", "qwen3.5-397b-a17b-fp8", "qwen3.8-flash-next-fp8"}
+        "minimax-m2.5", "minimax-m2.7", "mistral-large-4-1t-a52b", "qwen3.5-397b-a17b-fp8", "qwen3.8-flash-next-fp8"}
     assert {n for n, sc in scaled.items() if sc != block} == {
         "minimax-m3-mxfp8", "minimax-m3-nvfp4", "minimax-m3.1-flash", "minimax-m3.1-flash-dspark",
         "deepseek-v4.1-flash"}
@@ -10344,3 +10344,208 @@ def test_inkling2_refuses_headers_that_contradict_the_config(tmp_path, edit, mat
 def test_inkling2_refuses_to_guess_the_expert_width_without_headers(tmp_path):
     with pytest.raises(deriver().DeriveError, match="shard headers"):
         _inkling2_derive(tmp_path, headers=None)
+
+
+# --- Mistral-Large-4 (params.json) --------------------------------------------------------------
+# The real params.json is hash-only (X12) and is not committed. This is a scaled-down document with
+# the real key set: 8 layers, layer 0 dense, layers 3 and 7 NoPE, layers 4-7 reuse the indexer.
+
+def _mistral_params(**edit) -> dict:
+    p = json.loads(r"""{
+ "dim": 256,
+ "n_layers": 8,
+ "head_dim": 128,
+ "hidden_dim": 512,
+ "n_heads": 4,
+ "n_kv_heads": 4,
+ "rope_theta": 10000.0,
+ "norm_eps": 1e-05,
+ "vocab_size": 1000,
+ "tied_embeddings": false,
+ "max_position_embeddings": 4096,
+ "ragged_attention": null,
+ "nope": "rope,rope,rope,nope",
+ "softmax_tanh_gating": 30.0,
+ "llama_4_scaling": null,
+ "q_lora_rank": null,
+ "qk_rope_head_dim": 64,
+ "qk_nope_head_dim": 64,
+ "kv_lora_rank": 128,
+ "v_head_dim": 128,
+ "ssmax_scaling": true,
+ "lerope": true,
+ "dsa": {
+  "topk": 16,
+  "n_heads": 2,
+  "head_dim": 32,
+  "rope_head_dim": 64,
+  "match_nope": true,
+  "ssmax_scaling": true,
+  "norm_eps": 1e-06,
+  "sharing": "full,full,full,full,shared,shared,shared,shared",
+  "fp8_indexer": true,
+  "fp8_kv_cache": true
+ },
+ "quantization": {
+  "qscheme_act": "BLOCK",
+  "qformat_weight": "fp8_e4m3",
+  "qdynamic_act": true,
+  "qscheme_weight": "BLOCK",
+  "use_ue8m0_for_qscales": true,
+  "block_size_out": 128,
+  "block_size_in": 128,
+  "quantize_kv_a": false
+ },
+ "yarn": {
+  "original_max_position_embeddings": 512,
+  "factor": 2048,
+  "apply_scale": false,
+  "beta": 32,
+  "alpha": 1
+ },
+ "kv_sharing": {
+  "source_layers_str": "0,1,2,3,4,5,6,3"
+ },
+ "moe": {
+  "expert_parallel": 1,
+  "expert_model_parallel": 1,
+  "route_every_n": 1,
+  "first_k_dense_replace": 1,
+  "num_experts": 8,
+  "num_experts_per_tok": 4,
+  "num_expert_groups": 1,
+  "num_expert_groups_per_tok": 1,
+  "routed_scale": 1.0,
+  "expert_hidden_dim": 128,
+  "num_shared_experts": 1
+ },
+ "vision_encoder": {
+  "image_token_id": 10,
+  "image_break_token_id": 12,
+  "image_end_token_id": 13,
+  "intermediate_size": 128,
+  "num_hidden_layers": 2,
+  "num_attention_heads": 2,
+  "mm_projector_id": "patch_merge",
+  "spatial_merge_size": 2,
+  "hidden_size": 64,
+  "num_channels": 3,
+  "image_size": 1540,
+  "max_image_size": 1540,
+  "patch_size": 14,
+  "rope_theta": 10000.0,
+  "add_pre_mm_projector_layer_norm": true,
+  "adapter_bias": false
+ },
+ "mtp": {
+  "n_layers": 3,
+  "depth": 3,
+  "ragged_attention": "64,64,64",
+  "target_activation_layers": "1,3,5",
+  "norm_strategy": "eagle",
+  "dspark": {
+   "markov_rank": 512,
+   "head_type": "rnn",
+   "draft_input": "position_specific"
+  }
+ }
+}""")
+    for key, value in edit.items():
+        p[key] = value
+    return p
+
+
+def _mistral_derive(tmp_path, params=None):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    p = tmp_path / "params.json"
+    p.write_text(json.dumps(params or _mistral_params()))
+    return derive_graph.derive(p, "mistral-test")
+
+
+def _mistral_kind(g, kid):
+    return next(k for k in g["layer_kinds"] if k["id"] == kid)
+
+
+def test_mistral_params_json_is_read_and_its_source_is_recorded(tmp_path):
+    g = _mistral_derive(tmp_path)
+    assert g["derived_from"]["format"] == "mistral_params_json"
+    seq = layer_sequence(g["stack"])
+    assert len(seq) == 8 and seq[0].startswith("dense_") and all(k.startswith("moe_") for k in seq[1:])
+
+
+def test_mistral_nope_layers_have_no_rope_key_and_share_layers_own_no_cache(tmp_path):
+    g = _mistral_derive(tmp_path)
+    seq = layer_sequence(g["stack"])
+    assert [i for i, k in enumerate(seq) if "_nope_" in k] == [3, 7]
+    assert [i for i, k in enumerate(seq) if k.endswith("_sidx")] == [4, 5, 6, 7]
+    nodes = {n.get("role", n.get("name")): n for n in _mistral_kind(g, seq[7])["nodes"]}
+    assert "kv_a_proj" not in nodes and "index_wq_b" not in nodes
+    assert nodes["q_proj"]  # a sharer still projects its own queries
+    attn = next(n for n in _mistral_kind(g, seq[7])["nodes"] if n["op"] == "Attention")
+    assert attn["caches"][0]["owned"] is False
+
+
+def test_mistral_cache_records_are_the_mla_latent_and_the_indexer_key(tmp_path):
+    g = _mistral_derive(tmp_path)
+    owner = _mistral_kind(g, "moe_rope_own_idx")
+    kv = next(n for n in owner["nodes"] if n["op"] == "Attention" and n["caches"][0]["name"] == "kv")
+    idx = next(n for n in owner["nodes"] if n["op"] == "Attention" and n["caches"][0]["name"] == "index")
+    # fp8_ds_mla: the fp8 latent (128), one fp32 scale per 128 of it, the rope part in bf16 (64 * 2).
+    assert kv["caches"][0]["bytes_per_entry"] == 128 + 4 + 2 * 64
+    assert kv["caches"][0]["bytes_by_cache_dtype"] == {"auto": 2 * (128 + 64)}
+    assert idx["caches"][0]["bytes_per_entry"] == 32 + 4
+
+
+def test_mistral_fp8_params_quantization_is_remapped_to_block_fp8_with_bf16_exceptions(tmp_path):
+    g = _mistral_derive(tmp_path)
+    assert (g["global"]["weight_dtype"], g["global"]["weight_scale"]) == ("fp8", {"elements": 16384, "bytes": 4})
+    moe = _mistral_kind(g, "moe_rope_own_idx")
+    by = {n.get("role"): n for n in moe["nodes"]}
+    for role in ("kv_a_proj", "kv_b_proj", "router", "index_wk_weights_proj"):
+        assert by[role]["weight_dtype"] == "bf16", role
+    assert "weight_dtype" not in by["q_proj"]
+
+
+@pytest.mark.parametrize("edit,match", [
+    ({"surprise_key": 1}, "surprise_key"),
+    ({"q_lora_rank": 1536}, "q_lora_rank"),
+    ({"tied_embeddings": True}, "tied"),
+])
+def test_mistral_params_refuses_what_it_does_not_price(tmp_path, edit, match):
+    with pytest.raises(Exception, match=match):
+        _mistral_derive(tmp_path, _mistral_params(**edit))
+
+
+def test_mistral_drafter_is_one_kind_per_layer_and_its_context_reads_the_layers_weights(tmp_path):
+    g = _mistral_derive(tmp_path)
+    s = g["speculator"]
+    assert (s["method"], s["drafting"], s["num_spec_tokens"]) == ("dspark", "parallel_block", 3)
+    assert s["aux_hidden_state_layers"] == [2, 4, 6]
+    assert layer_sequence(s["stack"]) == ["dspark_0", "dspark_1", "dspark_2"]
+    ctx = [n for n in _mistral_kind(g, "dspark_context")["nodes"] if n.get("aliases")]
+    assert [n["aliases"] for n in ctx] == [f"dspark_{d}.kv_a_proj" for d in range(3)]
+    assert all("weight_dtype" not in n and "weight_scale" not in n for n in ctx)
+    assert _node({"nodes": s["head"]}, "dspark_lm_head")["aliases"] == "head.lm_head"
+    assert _node({"nodes": s["sequential_head"]}, "joint_proj")["k"] == 256 + 2 * 512
+
+
+def test_mistral_modelopt_mixed_precision_must_name_exactly_the_modules_it_quantizes(tmp_path):
+    q = {"quant_algo": "MIXED_PRECISION", "producer": {"name": "modelopt"},
+         "quantized_layers": {"model.layers.0.self_attn.q_proj": {"quant_algo": "FP8_PB_WO"}}}
+    p = _mistral_params(quantization=q)
+    with pytest.raises(Exception, match="quantized_layers"):
+        _mistral_derive(tmp_path, p)
+
+
+@pytest.mark.parametrize("model,layers_indexed,sharers", [
+    ("mistral-large-4-1t-a52b", 44, 9),
+    ("mistral-large-4-1t-a52b-nvfp4", 44, 9),
+])
+def test_mistral_large4_committed_graphs_census(model, layers_indexed, sharers):
+    g = yaml.safe_load((Path(__file__).resolve().parents[1] / "models" / model / "graph.yaml").read_text())
+    seq = layer_sequence(g["stack"])
+    assert len(seq) == 72
+    assert sum(k.endswith("_idx") for k in seq) == layers_indexed
+    assert sum("_share_" in k for k in seq) == sharers
+    assert g["derived_from"]["format"] == "mistral_params_json"

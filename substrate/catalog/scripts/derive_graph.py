@@ -414,7 +414,8 @@ MODELOPT_PER_NODE_ARCHS = frozenset({
 # Qwen3.5-397B-A17B-NVFP4-V2). Another architecture's mixed block is still refused: its module
 # names have not been read against a real map.
 MODELOPT_MIXED_ARCHS = frozenset({"GlmMoeDsaForCausalLM", "Qwen3_5MoeForConditionalGeneration",
-                                  "Qwen4ExpForConditionalGeneration"})
+                                  "Qwen4ExpForConditionalGeneration",
+                                  "PixtralForConditionalGeneration"})
 
 # The quant_method spellings vLLM v0.33.0 builds a ModelOpt config from for a mixed checkpoint:
 # "modelopt", which ModelOptMixedPrecisionConfig.override_quantization_method turns into
@@ -1709,6 +1710,10 @@ def moe(cfg: dict[str, Any], model: str, hidden: int) -> dict[str, Any]:
 MOE_FAMILIES: dict[str, dict[str, Any]] = {
     # Inkling2MoE: a GateLinear-style router at the model dtype, no shared expert (n_shared_experts 0).
     "Inkling2ForConditionalGeneration": {"router": "base", "shared": "gated"},
+    # MistralLarge4MoE (vllm/models/mistral/nvidia/moe.py@0fda86a35419): the router is a
+    # GateLinear(out_dtype=float32) built with no quant config, so its weight is at the model
+    # dtype; the shared expert is a gated SiLU MLP of the routed expert's width.
+    "PixtralForConditionalGeneration": {"router": "base", "shared": "gated"},
     # DeepseekV2MoE (model_executor/models/deepseek_v2.py:320-326, 359-372). Kimi-K2.5's text
     # decoder is the same class (kimi_k25.py), and GLM-5's DSA family builds it too
     # (vllm/models/deepseek_v32/nvidia/model.py:98-104).
@@ -8216,6 +8221,278 @@ def handler_inkling2(cfg, raw, model):
     return result_kinds, compress(sequence), extras
 
 
+# The block-FP8 scale of a 128 x 128 weight block: one float32 each (block_fp8_scale).
+FP8_BLOCK_SCALE = {"elements": 128 * 128, "bytes": 4}
+
+
+def mistral_large4_quant_classes(raw: dict[str, Any], model: str, layers: int, first_dense: int,
+                                 indexed: list[bool]) -> dict[str, str]:
+    """The width each module class is stored at, from the checkpoint's own quantization block.
+
+    Block FP8 (params `quantization`, remapped by params_to_hf to vLLM's fp8 config) quantizes
+    every linear the engine builds with the quant config and the routed experts with them. The
+    NVFP4 checkpoint is ModelOpt MIXED_PRECISION: an explicit `quantized_layers` map, parsed here
+    strictly. It must name exactly the modules the architecture has -- experts NVFP4, and
+    attention wq/wo, the indexer's wq_b, the dense MLP and the shared experts FP8_PB_WO
+    (block-scaled FP8 weights) -- so a module the map adds or drops is refused rather than priced
+    at a guessed width. Modules in neither map (kv_a, kv_b, the indexer's wk_weights_proj, the
+    router, the head, the embedding) are BF16."""
+    quant = raw.get("quantization_config") or {}
+    method = str(quant.get("quant_method", "")).lower()
+    if method == "fp8":
+        return {"experts": "fp8", "attn": "fp8", "indexer": "fp8", "dense": "fp8", "shared": "fp8"}
+    if method == "modelopt" and str(quant.get("quant_algo", "")).upper() == "MIXED_PRECISION":
+        if quant.get("group_size") != 16 or quant.get("ignore"):
+            raise DeriveError(f"{model}: a ModelOpt block with group_size {quant.get('group_size')!r} "
+                              f"and ignore {quant.get('ignore')!r}, not group_size 16 and an empty "
+                              f"ignore list")
+        unread = sorted(set(quant) - {"quant_method", "quant_algo", "group_size", "ignore",
+                                      "quantized_layers"})
+        if unread:
+            raise DeriveError(f"{model}: ModelOpt quantization states {unread}, which the deriver "
+                              f"has not read")
+        fp8, fp4 = {"quant_algo": "FP8_PB_WO"}, {"group_size": 16, "quant_algo": "NVFP4"}
+        expected: dict[str, Any] = {}
+        for i in range(layers):
+            expected[f"layers.{i}.attention.wq"] = fp8
+            expected[f"layers.{i}.attention.wo"] = fp8
+            if indexed[i]:
+                expected[f"layers.{i}.attention.indexer.wq_b"] = fp8
+            if i < first_dense:
+                for w in ("w1", "w2", "w3"):
+                    expected[f"layers.{i}.feed_forward.{w}"] = fp8
+            else:
+                expected[f"layers.{i}.experts"] = fp4
+                for w in ("w1", "w2", "w3"):
+                    expected[f"layers.{i}.shared_experts.{w}"] = fp8
+        stated = quant.get("quantized_layers")
+        if stated != expected:
+            gone = sorted(set(expected) - set(stated or {}))[:3]
+            extra = sorted(set(stated or {}) - set(expected))[:3]
+            raise DeriveError(f"{model}: quantized_layers differs from the modules this architecture "
+                              f"builds (missing e.g. {gone}, unexpected e.g. {extra}, or an algorithm "
+                              f"other than the expected one)")
+        return {"experts": "nvfp4", "attn": "fp8", "indexer": "fp8", "dense": "fp8", "shared": "fp8"}
+    raise DeriveError(f"{model}: quantization {method!r} is not one the Mistral-Large-4 handler places")
+
+
+def handler_mistral_large4(cfg, raw, model):
+    """Mistral-Large-4-1T-A52B (PixtralForConditionalGeneration over MistralLarge4ForCausalLM,
+    vllm/models/mistral/nvidia/{attention,indexer,mlp,moe}.py@0fda86a35419), FP8 and NVFP4.
+
+    Every layer is sparse-MLA attention (top-k 2048 over a 576-wide latent cache) then an MLP:
+    layer 0 dense, the rest routed MoE with one shared expert. Forty-four layers run a lightning
+    indexer; the rest reuse the selection of an earlier one. Layers whose KV source is another
+    layer compute no latent projection and own no cache, but still run their q, kv_b and o
+    projections (kv_b_proj is per layer). A NoPE layer spends the rope width on the nope width.
+
+    PRICED AS: the cache record of a layer is the fp8_ds_mla one (656 B per token, the checkpoint
+    states fp8_kv_cache) on every layer, NoPE layers included; a reader of a shared KV cache
+    binds to the NEAREST preceding owner (the model validator's rule), where the real source is
+    named by kv_sharing -- the records are identical, so residency is the same. NOT PRICED:
+    SSMax scaling, the tanh softmax gating, LeRoPE and yarn scaling (scalar work on tensors the
+    attention already moves), the vision tower's patch ordering. use_ue8m0_for_qscales is ignored by
+    the engine, which loads float32 scales. The DSpark drafter is a three-layer dense MLA stack with
+    a sliding window, priced as causal; its own cache record is inferred, not read from the engine."""
+    def whole(v, key):
+        if isinstance(v, bool) or int(v) != v:
+            raise DeriveError(f"{model}: {key} is {v!r}, not a whole number")
+        return int(v)
+
+    hidden = whole(require(cfg, "hidden_size", model), "dim")
+    layers = whole(require(cfg, "num_layers", model), "n_layers")
+    nq = whole(require(cfg, "num_q_heads", model), "n_heads")
+    dh = head_dim(cfg, model)
+    vocab = whole(require(cfg, "vocab_size", model), "vocab_size")
+    lora = whole(require(cfg, "kv_lora_rank", model), "kv_lora_rank")
+    rope = whole(require(cfg, "qk_rope_head_dim", model), "qk_rope_head_dim")
+    nope_w = whole(require(cfg, "qk_nope_head_dim", model), "qk_nope_head_dim")
+    v_dim = whole(require(cfg, "v_head_dim", model), "v_head_dim")
+    first_dense = whole(require_key(cfg, "first_k_dense_replace", model), "first_k_dense_replace")
+    max_pos = whole(require_key(cfg, "max_position_embeddings", model), "max_position_embeddings")
+    index_heads = whole(require_key(cfg, "index_n_heads", model), "dsa.n_heads")
+    index_dim = whole(require_key(cfg, "index_head_dim", model), "dsa.head_dim")
+    if nope_w + rope != dh:
+        raise DeriveError(f"{model}: qk_nope_head_dim + qk_rope_head_dim is not head_dim")
+    flags = list(require_key(cfg, "nope_layer_flags", model))
+    sources = list(require_key(cfg, "kv_source_layers", model))
+    sharing = list(require_key(cfg, "index_sharing", model))
+    if not (len(flags) == len(sources) == len(sharing) == layers):
+        raise DeriveError(f"{model}: the NoPE, KV-source and indexer maps do not each name {layers} layers")
+    for i, src in enumerate(sources):
+        if not 0 <= src <= i or sources[src] != src or flags[src] != flags[i]:
+            raise DeriveError(f"{model}: layer {i} takes its KV from layer {src}, which is not an "
+                              f"earlier owner of the same attention shape")
+    if sharing[0] != "full":
+        raise DeriveError(f"{model}: layer 0 reuses an indexer selection nothing has made")
+    if not cfg.get("fp8_kv_cache") or not cfg.get("fp8_indexer"):
+        raise DeriveError(f"{model}: a checkpoint without fp8_kv_cache and fp8_indexer; the cache "
+                          f"records below are the fp8 ones")
+    indexed = [t == "full" for t in sharing]
+    base = base_dtype(cfg, raw, model)
+    act = DTYPE_WIDTHS[base]
+    g = weight_dtype(cfg, raw, model)
+    width = mistral_large4_quant_classes(raw, model, layers, first_dense, indexed)
+
+    def put(node, w, tp=None):
+        """Say the node's stored width where it differs from the global one, with the block scale
+        of an FP8 weight under a global width that is not itself FP8."""
+        if tp:
+            node["tp"] = tp
+        if w != g:
+            node["weight_dtype"] = w
+            if w == "fp8":
+                node["weight_scale"] = dict(FP8_BLOCK_SCALE)
+        return node
+
+    def traffic(role, nbytes, tp="replicated"):
+        return dict(norm(role), bytes_per_token=int(nbytes), tp=tp)
+
+    # fp8_ds_mla: the latent in fp8, one float32 scale per 128 of it, the rope part in bf16;
+    # "auto" (a bf16 cache) holds the whole 576-wide vector at two bytes.
+    kv_record = lora + (lora // 128) * 4 + rope * 2
+    kv_auto = (lora + rope) * DTYPE_WIDTHS["bf16"]
+    index_record = index_dim + 4
+
+    def attention_nodes(nope, owner, has_index):
+        out = []
+        if owner:
+            out += [put(gemm("kv_a_proj", lora + (0 if nope else rope), hidden), "bf16", "replicated"),
+                    traffic("kv_a_layernorm", 2 * lora * act)]
+        out += [put(gemm("q_proj", nq * dh, hidden), width["attn"], "column"),
+                put(gemm("kv_b_proj", nq * ((nope_w + rope if nope else nope_w) + v_dim), lora),
+                    "bf16", "column")]
+        if has_index:
+            out += [traffic("index_q_input_norm", 2 * hidden * act),
+                    put(gemm("index_wq_b", index_heads * index_dim, hidden), width["indexer"],
+                        "replicated"),
+                    put(gemm("index_wk_weights_proj", index_dim + index_heads, hidden), "bf16",
+                        "replicated"),
+                    traffic("index_k_norm", 2 * index_dim * act),
+                    {"op": "Attention", "holds_engine_kv": False, "role": "block_index_scores",
+                     "kind": "gqa", "n_q": index_heads, "n_kv": 1, "d_h": index_dim,
+                     "tp": "replicated",
+                     "caches": [{"name": "index", "kind": "index", "owned": True,
+                                 "bytes_per_entry": index_record}]}]
+        attn = attention(cfg, model, kind="sparse_mla")
+        attn["caches"] = [{"name": "kv", "kind": "kv", "owned": owner, "bytes_per_entry": kv_record,
+                           "bytes_by_cache_dtype": {"auto": kv_auto}}]
+        out += [attn,
+                put(gemm("o_proj", hidden, nq * dh), width["attn"], "row"),
+                collective("AllReduce", "attn_out", EMIT_TENSOR_PARALLEL),
+                traffic("post_attn_norm", 3 * hidden * act)]
+        return out
+
+    def mlp_nodes(dense):
+        if dense:
+            gate_up, down = dense_mlp(cfg, model, hidden)
+            return [put(gate_up, width["dense"], "column"), put(down, width["dense"], "row"),
+                    collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL)]
+        nodes = moe_block(cfg, model, hidden, raw, family="PixtralForConditionalGeneration",
+                          routed_width=width["experts"] if width["experts"] != g else None,
+                          shared_width=width["shared"] if width["shared"] != g else None)
+        for n in nodes:
+            if n.get("weight_dtype") == "fp8" and g != "fp8":
+                n["weight_scale"] = dict(FP8_BLOCK_SCALE)
+        return [*nodes, collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
+                collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE)]
+
+    kinds, sequence, made = [], [], {}
+    for i in range(layers):
+        dense = i < first_dense
+        owner = sources[i] == i
+        kid = (f"{'dense' if dense else 'moe'}_{'nope' if flags[i] else 'rope'}_"
+               f"{'own' if owner else 'share'}_{'idx' if indexed[i] else 'sidx'}")
+        if kid not in made:
+            nodes = [traffic("input_norm", 2 * hidden * act),
+                     *attention_nodes(flags[i], owner, indexed[i]), *mlp_nodes(dense)]
+            made[kid] = {"id": kid, "nodes": nodes, "edges": chain(nodes)}
+            kinds.append(made[kid])
+        sequence.append(kid)
+
+    embed = {"op": "Gather", "role": "embed_tokens", "rows": vocab, "row_bytes": hidden * act,
+             "rows_per_token": 1, "out_bytes_per_token": hidden * act, "shard": "rows"}
+    head = [traffic("final_norm", 2 * hidden * act),
+            put(gemm("lm_head", vocab, hidden), "bf16", "column")]
+    extras: dict[str, Any] = {
+        "global": {"architecture": raw["architectures"][0], "context_window": max_pos},
+        "embedding": [embed, collective("AllReduce", "embed_out", EMIT_TENSOR_PARALLEL)],
+        "head": head,
+    }
+
+    mtp = cfg.get("mtp_config") or {}
+    if not mtp:
+        return kinds, compress(sequence), extras
+    d_layers = whole(require_key(mtp, "num_layers", model), "mtp.n_layers")
+    depth = whole(require_key(mtp, "depth", model), "mtp.depth")
+    markov = whole(require_key(mtp, "markov_rank", model), "mtp.dspark.markov_rank")
+    windows = set(require_key(mtp, "ragged_attention", model))
+    targets = [whole(t, "mtp.target_activation_layers")
+               for t in require_key(mtp.get("dflash_config") or {}, "target_layer_ids", model)]
+    if (mtp.get("head_type") != "rnn" or mtp.get("draft_input") != "position_specific"
+            or mtp.get("norm_strategy") != "eagle" or len(windows) != 1 or min(windows) < 1
+            or sorted(set(targets)) != targets or any(not 0 <= t < layers for t in targets)
+            or depth < 2):
+        raise DeriveError(f"{model}: an mtp block this handler does not price (rnn head, "
+                          f"position-specific masks, eagle norm, one window, ascending targets)")
+    window = windows.pop()
+    aux = draft_aux_hidden_state_layers({"dflash_config": {"target_layer_ids": targets}}, model,
+                                        layers, states=len(targets))
+
+    # A draft layer is a dense MLA block of the target's geometry, BF16 in both checkpoints
+    # (get_mistral_large_4_dspark_config clears the quantization config), its latent projection
+    # present on every layer (the drafter owns its cache) and attending a sliding window.
+    d_attn = attention(cfg, model, kind="mla")
+    d_attn["window"] = window
+    d_nodes = [traffic("input_norm", 2 * hidden * act),
+               put(gemm("kv_a_proj", lora + rope, hidden), "bf16", "replicated"),
+               traffic("kv_a_layernorm", 2 * lora * act),
+               put(gemm("q_proj", nq * dh, hidden), "bf16", "column"),
+               put(gemm("kv_b_proj", nq * (nope_w + v_dim), lora), "bf16", "column"),
+               d_attn,
+               put(gemm("o_proj", hidden, nq * dh), "bf16", "row"),
+               collective("AllReduce", "attn_out", EMIT_TENSOR_PARALLEL),
+               traffic("post_attn_norm", 3 * hidden * act)]
+    gate_up, down = dense_mlp(cfg, model, hidden)
+    d_nodes += [put(gate_up, "bf16", "column"), put(down, "bf16", "row"),
+                collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL)]
+    mix = [put(gemm("dspark_target_projection", hidden, hidden * len(targets)), "bf16", "replicated"),
+           traffic("dspark_target_norm", 2 * hidden * act)]
+    # The context pass derives each draft layer's latent KV from the target states with that
+    # layer's own kv_a_proj, so its weights are the layer's (aliased) and the layers are kinds of
+    # their own: an alias needs one weight to read, and a repeated kind holds several.
+    ctx = []
+    for d in range(d_layers):
+        ctx += [dict(gemm(f"dspark_context_kv_a_{d}", lora + rope, hidden), tp="replicated",
+                     aliases=f"dspark_{d}.kv_a_proj"),
+                traffic(f"dspark_context_kv_norm_{d}", 2 * lora * act),
+                traffic(f"dspark_context_kv_rope_insert_{d}", (lora + rope) * act * 2)]
+    d_ids = [f"dspark_{d}" for d in range(d_layers)]
+    kinds += [{"id": kid, "nodes": d_nodes, "edges": chain(d_nodes)} for kid in d_ids]
+    kinds += [{"id": "dspark_context_mix", "nodes": mix, "edges": chain(mix)},
+              {"id": "dspark_context", "nodes": ctx, "edges": chain(ctx)}]
+    extras["speculator"] = {
+        "method": "dspark",
+        "num_spec_tokens": depth,
+        "drafting": "parallel_block",
+        "embedding": [{**embed, "role": "dspark_embed_tokens", "aliases": "embedding.embed_tokens"},
+                      collective("AllReduce", "dspark_embed_out", EMIT_TENSOR_PARALLEL)],
+        "stack": {"pattern": d_ids, "repeat": 1},
+        "context_stack": {"prologue": ["dspark_context_mix"], "pattern": ["dspark_context"],
+                          "repeat": 1},
+        "head": [traffic("dspark_final_norm", 2 * hidden * act),
+                 dict(gemm("dspark_lm_head", vocab, hidden), tp="column", aliases="head.lm_head")],
+        "sequential_head": [
+            {"op": "Gather", "role": "markov_w1", "rows": vocab, "row_bytes": markov * act,
+             "rows_per_token": 1, "out_bytes_per_token": markov * act},
+            put(gemm("joint_proj", 3 * markov, hidden + 2 * markov), "bf16", "replicated"),
+            put(gemm("markov_w2", vocab, markov), "bf16", "replicated"),
+        ],
+        "aux_hidden_state_layers": aux,
+    }
+    return kinds, compress(sequence), extras
+
+
 HANDLERS = {
     "LlamaForCausalLM": handler_dense_placed,
     "LlamaForCausalLMEagle3": handler_llama_eagle3,
@@ -8250,6 +8527,7 @@ HANDLERS = {
     "GlmMoeDsaForCausalLM": handler_glm_moe_dsa,
     "InklingForConditionalGeneration": handler_moe,
     "Inkling2ForConditionalGeneration": handler_inkling2,
+    "PixtralForConditionalGeneration": handler_mistral_large4,
     "GptOssForCausalLM": handler_moe,
     "MiniMaxM2ForCausalLM": handler_minimax_m2,
     "MiniMaxM3SparseForCausalLM": handler_minimax_m3,
@@ -8614,6 +8892,32 @@ def tower_inkling2(vc: dict[str, Any], raw: dict[str, Any], text_hidden: int, dt
                   class_tokens=1)
 
 
+def tower_pixtral(vc: dict[str, Any], raw: dict[str, Any], text_hidden: int, dtype: str, model: str) -> dict[str, Any]:
+    """Mistral-Large-4's Pixtral tower (vllm/model_executor/models/pixtral.py@0fda86a35419):
+    a 14-pixel-patch RoPE ViT of gated-SiLU blocks with bias-free projections, split over
+    the tensor-parallel ranks, then a patch-merge adapter: pre-norm, a 2x2 spatial merge
+    into one linear, and a two-layer GELU projection. The image-break and image-end tokens
+    the processor inserts are not priced."""
+    H, L, nh, inter, p, ms, ch = _need(vc, ("hidden_size", "num_hidden_layers", "num_attention_heads",
+                                           "intermediate_size", "patch_size", "spatial_merge_size",
+                                           "num_channels"), model)
+    if vc.get("mm_projector_id") != "patch_merge" or vc.get("adapter_bias"):
+        raise DeriveError(f"{model}: a vision adapter other than the bias-free patch_merge, which "
+                          f"the Pixtral builder does not price")
+    block = _vit_block(H, nh, H // nh, inter, qkv_bias=False, o_bias=False, mlp_bias=False, gated=True,
+                       norm_params=2 * H)
+    emb = [_gemm("patch_embed", H, ch * p * p, bias=False), _norm("ln_pre", H, H)]
+    proj = []
+    if vc.get("add_pre_mm_projector_layer_norm"):
+        proj.append(_norm("pre_mm_projector_norm", H, H))
+    proj += [_gemm("merging_layer", H, H * ms * ms, bias=False, rows="output_tokens"),
+             _gemm("proj_in", text_hidden, H, bias=False, rows="output_tokens"),
+             _vnode("elementwise", "proj_act", bytes_per_row=2 * text_hidden * 2, rows="output_tokens"),
+             _gemm("proj_out", text_hidden, text_hidden, bias=False, rows="output_tokens")]
+    return _tower(vc, text_hidden, dtype, patch=int(p), temporal=1, channels=int(ch), merge=int(ms) * int(ms),
+                  parallel="tensor", embedding=emb, block=block, layers=int(L), projector=proj)
+
+
 # Architecture -> (builder, the audio tower the source also carries, if any).
 TOWER_BUILDERS = {
     "KimiK25ForConditionalGeneration": lambda *a: tower_moonvit(*a, v2=False),
@@ -8628,6 +8932,7 @@ TOWER_BUILDERS = {
     "MiniMaxM3SparseForConditionalGeneration": tower_minimax_m3,
     "MuseSparkForConditionalGeneration": tower_muse_spark,
     "Inkling2ForConditionalGeneration": tower_inkling2,
+    "PixtralForConditionalGeneration": tower_pixtral,
 }
 # Towers the kernels cannot express or the deriver cannot yet state, by architecture.
 UNPRICED_IMAGE_TOWERS = {
@@ -8645,6 +8950,12 @@ TOWER_PREFIXES = ("vision_tower", "visual", "vision_model", "vision_encoder", "m
                   "multi_modal_projector", "embed_vision", "vision_adapter", "vision_projection",
                   "vision", "aligner")
 _TOWER_DTYPES = {"bfloat16": "bf16", "float16": "fp16", "float32": "fp32"}
+
+
+# Architectures whose engine builds the vision tower with no quantization config, so a
+# quantized checkpoint's tower is stored at the configuration's dtype whatever the block says
+# (Pixtral: VisionTransformer is built without quant_config, pixtral.py@0fda86a35419).
+TOWERS_UNQUANTIZED_BY_ENGINE = frozenset({"PixtralForConditionalGeneration"})
 
 
 def tower_dtype(raw: dict[str, Any], model: str) -> str | None:
@@ -8665,7 +8976,7 @@ def tower_dtype(raw: dict[str, Any], model: str) -> str | None:
     if cfg_dtype is None:
         return None
     quant = raw.get("quantization_config") or {}
-    if not quant:
+    if not quant or (raw.get("architectures") or [None])[0] in TOWERS_UNQUANTIZED_BY_ENGINE:
         return cfg_dtype
     # Vendors spell the exclusion list ignore, ignored_layers, modules_to_not_convert or
     # exclude_modules; any list of module names that names the tower counts.
@@ -8793,9 +9104,177 @@ def state_unquantized_widths(graph: dict[str, Any]) -> dict[str, Any]:
     return graph
 
 
+# --- Mistral params.json ------------------------------------------------------------
+# A Mistral-native checkpoint states its architecture in params.json, not config.json, and vLLM
+# converts it to a Hugging Face config at load (transformers_utils/configs/mistral.py,
+# adapt_config_dict, @0fda86a35419). The deriver does the same conversion for the keys the
+# Mistral-Large-4 handler prices and REFUSES every key it has not read: an unread key is a
+# feature the graph would silently leave out.
+PARAMS_JSON_KEYS = frozenset({
+    "dim", "n_layers", "head_dim", "hidden_dim", "n_heads", "n_kv_heads", "rope_theta", "norm_eps",
+    "vocab_size", "tied_embeddings", "max_position_embeddings", "ragged_attention", "nope",
+    "softmax_tanh_gating", "llama_4_scaling", "q_lora_rank", "qk_rope_head_dim", "qk_nope_head_dim",
+    "kv_lora_rank", "v_head_dim", "ssmax_scaling", "lerope", "dsa", "quantization",
+    "quantization_config", "yarn", "kv_sharing", "moe", "vision_encoder", "mtp"})
+PARAMS_DSA_KEYS = frozenset({"topk", "n_heads", "head_dim", "rope_head_dim", "match_nope",
+                             "ssmax_scaling", "norm_eps", "sharing", "fp8_indexer", "fp8_kv_cache"})
+PARAMS_MOE_KEYS = frozenset({"expert_parallel", "expert_model_parallel", "route_every_n",
+                             "first_k_dense_replace", "num_experts", "num_experts_per_tok",
+                             "num_expert_groups", "num_expert_groups_per_tok", "routed_scale",
+                             "expert_hidden_dim", "num_shared_experts"})
+PARAMS_MTP_KEYS = frozenset({"n_layers", "depth", "ragged_attention", "target_activation_layers",
+                             "norm_strategy", "dspark"})
+PARAMS_VISION_KEYS = frozenset({"image_token_id", "image_break_token_id", "image_end_token_id",
+                                "intermediate_size", "num_hidden_layers", "num_attention_heads",
+                                "mm_projector_id", "spatial_merge_size", "hidden_size",
+                                "num_channels", "image_size", "max_image_size", "patch_size",
+                                "rope_theta", "add_pre_mm_projector_layer_norm", "adapter_bias"})
+PARAMS_QUANT_KEYS = frozenset({"qscheme_act", "qformat_weight", "qdynamic_act", "qscheme_weight",
+                               "use_ue8m0_for_qscales", "block_size_out", "block_size_in",
+                               "quantize_kv_a"})
+
+
+def is_params_json(raw: dict[str, Any]) -> bool:
+    """A Mistral params.json: it states dim and n_layers where a config states architectures."""
+    return "dim" in raw and "n_layers" in raw and "architectures" not in raw
+
+
+def _params_section(params: dict[str, Any], key: str, allowed: frozenset, model: str) -> dict[str, Any]:
+    section = params.get(key)
+    if not isinstance(section, dict):
+        raise DeriveError(f"{model}: params.json states no {key!r} section, which this architecture needs")
+    unread = sorted(set(section) - allowed)
+    if unread:
+        raise DeriveError(f"{model}: params.json {key} states {unread}, which the deriver has not read")
+    return section
+
+
+def _int_list(text: Any, key: str, model: str) -> list[int]:
+    try:
+        return [int(t) for t in str(text).split(",")]
+    except ValueError:
+        raise DeriveError(f"{model}: params.json {key} is {text!r}, not a comma-separated list of "
+                          f"whole numbers") from None
+
+
+def params_to_hf(params: dict[str, Any], model: str) -> dict[str, Any]:
+    """The Hugging Face-shaped config vLLM builds from a Mistral-Large-4 params.json.
+
+    The text model is the architecture the engine registers for this checkpoint
+    (MistralLarge4ForCausalLM) under the multimodal wrapper PixtralForConditionalGeneration,
+    which is what adapt_config_dict names. params.json states no dtype: the engine reads the
+    tensors' stored dtype and its "auto" resolves to bfloat16. A quantization block is placed
+    on the top level, where vLLM reads it, and never on the text config."""
+    unread = sorted(set(params) - PARAMS_JSON_KEYS)
+    if unread:
+        raise DeriveError(f"{model}: params.json states {unread}, which the deriver has not read")
+
+    def need(key: str) -> Any:
+        if params.get(key) is None:
+            raise DeriveError(f"{model}: params.json states no {key!r}, which this architecture needs")
+        return params[key]
+
+    layers = int(need("n_layers"))
+    if params.get("q_lora_rank") is not None or params.get("ragged_attention") is not None \
+            or params.get("llama_4_scaling") is not None or params.get("tied_embeddings"):
+        raise DeriveError(f"{model}: a q_lora_rank, ragged_attention, llama_4_scaling or tied head, "
+                          f"which the Mistral-Large-4 handler does not price")
+    if int(need("n_kv_heads")) != int(need("n_heads")):
+        raise DeriveError(f"{model}: n_kv_heads differs from n_heads; the latent cache has one head")
+    dsa = _params_section(params, "dsa", PARAMS_DSA_KEYS, model)
+    moe = _params_section(params, "moe", PARAMS_MOE_KEYS, model)
+    mtp = _params_section(params, "mtp", PARAMS_MTP_KEYS, model)
+    vision = _params_section(params, "vision_encoder", PARAMS_VISION_KEYS, model)
+    if (moe.get("route_every_n") != 1 or moe.get("num_expert_groups") != 1
+            or moe.get("num_expert_groups_per_tok") != 1 or moe.get("expert_parallel") != 1
+            or moe.get("expert_model_parallel") != 1):
+        raise DeriveError(f"{model}: grouped routing or a stated expert parallelism, which the "
+                          f"Mistral-Large-4 handler does not price")
+
+    pattern = [t.strip() for t in str(need("nope")).split(",")]
+    if any(t not in ("rope", "nope") for t in pattern):
+        raise DeriveError(f"{model}: params.json nope is {params['nope']!r}, not a list of rope and nope")
+    sharing = [t.strip() for t in str(dsa["sharing"]).split(",")]
+    sources = _int_list(_params_section(params, "kv_sharing", frozenset({"source_layers_str"}), model)
+                        ["source_layers_str"], "kv_sharing.source_layers_str", model)
+    if len(sharing) != layers or len(sources) != layers or any(t not in ("full", "shared") for t in sharing):
+        raise DeriveError(f"{model}: the indexer sharing and KV sharing maps do not each name the "
+                          f"{layers} layers")
+
+    text: dict[str, Any] = {
+        "model_type": "mistral_large_4",
+        "hidden_size": int(need("dim")),
+        "num_hidden_layers": layers,
+        "num_attention_heads": int(need("n_heads")),
+        "num_key_value_heads": int(need("n_kv_heads")),
+        "head_dim": int(need("head_dim")),
+        "intermediate_size": int(need("hidden_dim")),
+        "vocab_size": int(need("vocab_size")),
+        "tie_word_embeddings": False,
+        "max_position_embeddings": int(need("max_position_embeddings")),
+        "kv_lora_rank": int(need("kv_lora_rank")),
+        "qk_nope_head_dim": int(need("qk_nope_head_dim")),
+        "qk_rope_head_dim": int(need("qk_rope_head_dim")),
+        "v_head_dim": int(need("v_head_dim")),
+        "index_topk": int(dsa["topk"]),
+        "index_n_heads": int(dsa["n_heads"]),
+        "index_head_dim": int(dsa["head_dim"]),
+        "index_sharing": sharing,
+        "fp8_kv_cache": bool(dsa["fp8_kv_cache"]),
+        "fp8_indexer": bool(dsa["fp8_indexer"]),
+        "nope_layer_flags": [pattern[i % len(pattern)] == "nope" for i in range(layers)],
+        "kv_source_layers": sources,
+        "n_routed_experts": int(moe["num_experts"]),
+        "num_experts_per_tok": int(moe["num_experts_per_tok"]),
+        "moe_intermediate_size": int(moe["expert_hidden_dim"]),
+        "n_shared_experts": int(moe["num_shared_experts"]),
+        "first_k_dense_replace": int(moe["first_k_dense_replace"]),
+    }
+    dspark = _params_section(mtp, "dspark", frozenset({"markov_rank", "head_type", "draft_input"}), model) \
+        if isinstance(mtp.get("dspark"), dict) else None
+    if dspark is None:
+        raise DeriveError(f"{model}: params.json mtp states no dspark section")
+    text["mtp_config"] = {
+        "num_layers": int(mtp["n_layers"]),
+        "depth": int(mtp["depth"]),
+        "ragged_attention": _int_list(mtp["ragged_attention"], "mtp.ragged_attention", model),
+        "dflash_config": {"target_layer_ids": _int_list(mtp["target_activation_layers"],
+                                                        "mtp.target_activation_layers", model)},
+        "norm_strategy": mtp["norm_strategy"],
+        "markov_rank": int(dspark["markov_rank"]),
+        "head_type": dspark["head_type"],
+        "draft_input": dspark["draft_input"],
+    }
+    out: dict[str, Any] = {"architectures": ["PixtralForConditionalGeneration"], "dtype": "bfloat16",
+                           "text_config": text, "vision_config": dict(vision)}
+    if "quantization_config" in params:
+        out["quantization_config"] = params["quantization_config"]
+    elif "quantization" in params:
+        # vLLM's remap of a params.json quantization block to the fp8 config it builds
+        # (transformers_utils/configs/mistral.py adapt_config_dict): block-scaled FP8 weights and
+        # dynamic activations. use_ue8m0_for_qscales is not read by the engine, which loads float32
+        # scales (fp8.py), so it is recorded here as read and not priced.
+        q = _params_section(params, "quantization", PARAMS_QUANT_KEYS, model)
+        if (q.get("qscheme_act"), q.get("qformat_weight"), q.get("qscheme_weight"),
+                q.get("qdynamic_act")) != ("BLOCK", "fp8_e4m3", "BLOCK", True) \
+                or (q.get("block_size_out"), q.get("block_size_in")) != (128, 128):
+            raise DeriveError(f"{model}: a params.json quantization block other than dynamic block-FP8 "
+                              f"with 128 x 128 weight blocks, which has no remap to read")
+        if q.get("quantize_kv_a"):
+            raise DeriveError(f"{model}: quantize_kv_a is set, so the latent A-projection is FP8; the "
+                              f"handler states it BF16")
+        out["quantization_config"] = {"quant_method": "fp8", "activation_scheme": "dynamic",
+                                      "weight_block_size": [128, 128]}
+    return out
+
+
 def _derive(config_path: Path, model: str) -> dict[str, Any]:
     source = config_path.read_bytes()
     raw = json.loads(source)
+    source_format, source_path = "hf_config_json", "config.json"
+    if is_params_json(raw):
+        raw = params_to_hf(raw, model)
+        source_format, source_path = "mistral_params_json", "params.json"
     cfg = text_config(raw)
 
     arches = raw.get("architectures") or cfg.get("architectures") or []
@@ -8831,8 +9310,8 @@ def _derive(config_path: Path, model: str) -> dict[str, Any]:
         "kind": "ModelGraph",
         "name": model,
         "derived_from": {
-            "format": "hf_config_json",
-            "path": "config.json",
+            "format": source_format,
+            "path": source_path,
             "sha256": hashlib.sha256(source).hexdigest(),
             "deriver_version": DERIVER_VERSION,
         },
