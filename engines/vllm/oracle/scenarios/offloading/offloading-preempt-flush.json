@@ -1,0 +1,123 @@
+{
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 12,
+  "max_model_len": 256,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_page": {
+   "num_kv_heads": 1,
+   "head_size": 512
+  },
+  "transfer": {
+   "load_delay": 2,
+   "store_delay": 4
+  },
+  "connector": {
+   "name": "OffloadingConnector",
+   "kv_role": "kv_both",
+   "extra_config": {
+    "cpu_bytes_to_use": 262144,
+    "offload_prompt_only": false
+   }
+  }
+ },
+ "requests": [
+  {
+   "id": "a",
+   "arrival_step": 0,
+   "prompt": [
+    3501,
+    20182,
+    23023,
+    24747,
+    21367,
+    17273,
+    8092,
+    8884,
+    24089,
+    8382,
+    9537,
+    24054
+   ],
+   "output": [
+    15068,
+    14322,
+    13687,
+    19512,
+    27089,
+    3109,
+    8402,
+    15550,
+    12914,
+    7742,
+    14721,
+    28360,
+    20165,
+    16026
+   ]
+  },
+  {
+   "id": "b",
+   "arrival_step": 0,
+   "prompt": [
+    21805,
+    21758,
+    9023,
+    5406,
+    348,
+    21355,
+    2292,
+    4032,
+    19492,
+    11045,
+    911,
+    2727
+   ],
+   "output": [
+    2178,
+    18649,
+    4696,
+    16026,
+    23052,
+    8743,
+    18726,
+    14464,
+    627,
+    27046,
+    23098,
+    13294,
+    13865,
+    682
+   ]
+  },
+  {
+   "id": "c",
+   "arrival_step": 1,
+   "prompt": [
+    11387,
+    23257,
+    18659,
+    12058,
+    15436,
+    8636,
+    11653,
+    9906,
+    17370,
+    6184
+   ],
+   "output": [
+    1403,
+    20592,
+    18347,
+    15377,
+    26140,
+    8392
+   ]
+  }
+ ],
+ "max_steps": 300,
+ "name": "offloading-preempt-flush"
+}

@@ -1,0 +1,159 @@
+{
+ "name": "t3-async-mtp-multi",
+ "description": "Async scheduling with a multi-module MTP drafter (K=3, four nextn layers): prefill lookahead K, chunked prefill, the batch queue.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 24,
+  "block_size": 4,
+  "num_blocks": 80,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "async_scheduling": true,
+  "speculative": {
+   "method": "mtp",
+   "num_speculative_tokens": 3,
+   "draft": "mtp-4"
+  }
+ },
+ "requests": [
+  {
+   "id": "a",
+   "arrival_step": 0,
+   "prompt": [
+    7897,
+    19519,
+    17933,
+    4373,
+    12222,
+    19889,
+    15633,
+    20603,
+    19133,
+    2247,
+    19944,
+    531,
+    29880,
+    27542,
+    15475,
+    8598,
+    18148,
+    7778,
+    6383,
+    23599,
+    15509,
+    17826,
+    27509,
+    18110,
+    15709,
+    13113,
+    21040,
+    28313,
+    5035,
+    7699
+   ],
+   "output": [
+    20903,
+    5068,
+    28544,
+    17243,
+    12877,
+    24389,
+    596,
+    22100,
+    25568
+   ],
+   "accepted": [
+    0,
+    1,
+    0,
+    2,
+    0,
+    2,
+    3,
+    3,
+    3
+   ]
+  },
+  {
+   "id": "b",
+   "arrival_step": 0,
+   "prompt": [
+    7834,
+    10038,
+    3480,
+    23732,
+    13078,
+    15791,
+    5178,
+    3052,
+    2279,
+    749,
+    13259,
+    18102,
+    9582
+   ],
+   "output": [
+    26329,
+    25172,
+    2028,
+    7372,
+    17150,
+    17685,
+    11904
+   ],
+   "accepted": [
+    2,
+    1,
+    0,
+    2,
+    1,
+    0,
+    2
+   ]
+  },
+  {
+   "id": "c",
+   "arrival_step": 2,
+   "prompt": [
+    20511,
+    8470,
+    24406,
+    11848,
+    26156,
+    22724,
+    27674,
+    24344,
+    21465,
+    17468,
+    1050,
+    27636,
+    15357,
+    25526,
+    8260,
+    21365,
+    1799,
+    29620,
+    5239,
+    3809,
+    12282
+   ],
+   "output": [
+    15470,
+    28557,
+    8179,
+    12576,
+    17917,
+    3441
+   ],
+   "accepted": [
+    1,
+    0,
+    1,
+    3,
+    2,
+    1
+   ]
+  }
+ ]
+}

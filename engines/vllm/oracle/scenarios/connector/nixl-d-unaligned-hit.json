@@ -1,0 +1,78 @@
+{
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 32,
+  "block_size": 8,
+  "num_blocks": 40,
+  "max_model_len": 256,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_consumer",
+   "kv_load_failure_policy": "recompute",
+   "extra_config": {
+    "kv_recompute_threshold": 0
+   }
+  }
+ },
+ "requests": [
+  {
+   "id": "l0",
+   "arrival_step": 0,
+   "prompt": [
+    201,
+    202,
+    203,
+    204,
+    205,
+    206,
+    207,
+    208,
+    209,
+    210,
+    211,
+    212,
+    213,
+    7,
+    7,
+    7
+   ],
+   "output": [
+    2821,
+    3386
+   ]
+  },
+  {
+   "id": "d0",
+   "arrival_step": 3,
+   "prompt": [
+    201,
+    202,
+    203,
+    204,
+    205,
+    206,
+    207,
+    208,
+    209,
+    210,
+    211,
+    212,
+    213,
+    8,
+    8,
+    8,
+    8,
+    8
+   ],
+   "output": [
+    2181,
+    2983
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1
+  }
+ ],
+ "name": "nixl-d-unaligned-hit"
+}

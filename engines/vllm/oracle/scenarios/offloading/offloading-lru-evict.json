@@ -1,0 +1,160 @@
+{
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 256,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_page": {
+   "num_kv_heads": 1,
+   "head_size": 512
+  },
+  "transfer": {
+   "load_delay": 1,
+   "store_delay": 1
+  },
+  "connector": {
+   "name": "OffloadingConnector",
+   "kv_role": "kv_both",
+   "extra_config": {
+    "cpu_bytes_to_use": 98304,
+    "offload_prompt_only": false
+   }
+  }
+ },
+ "requests": [
+  {
+   "id": "a",
+   "arrival_step": 0,
+   "prompt": [
+    3501,
+    20182,
+    23023,
+    24747,
+    21367,
+    17273,
+    8092,
+    8884,
+    24089,
+    8382,
+    9537,
+    24054,
+    2380,
+    21577,
+    14738,
+    9929
+   ],
+   "output": [
+    1
+   ]
+  },
+  {
+   "id": "b",
+   "arrival_step": 3,
+   "prompt": [
+    21805,
+    21758,
+    9023,
+    5406,
+    348,
+    21355,
+    2292,
+    4032,
+    19492,
+    11045,
+    911,
+    2727,
+    8981,
+    6699,
+    27987,
+    12514
+   ],
+   "output": [
+    1
+   ]
+  },
+  {
+   "id": "c",
+   "arrival_step": 6,
+   "prompt": [
+    6352,
+    8875,
+    14831,
+    20452,
+    7150,
+    15884,
+    26157,
+    9219,
+    16400,
+    8344,
+    3357,
+    3971,
+    26809,
+    2934,
+    9131,
+    9197
+   ],
+   "output": [
+    1
+   ]
+  },
+  {
+   "id": "d",
+   "arrival_step": 9,
+   "prompt": [
+    3501,
+    20182,
+    23023,
+    24747,
+    21367,
+    17273,
+    8092,
+    8884,
+    24089,
+    8382,
+    9537,
+    24054,
+    2380,
+    21577,
+    14738,
+    9929,
+    3
+   ],
+   "output": [
+    1,
+    2
+   ]
+  },
+  {
+   "id": "e",
+   "arrival_step": 12,
+   "prompt": [
+    21805,
+    21758,
+    9023,
+    5406,
+    348,
+    21355,
+    2292,
+    4032,
+    19492,
+    11045,
+    911,
+    2727,
+    8981,
+    6699,
+    27987,
+    12514,
+    3
+   ],
+   "output": [
+    1,
+    2
+   ]
+  }
+ ],
+ "max_steps": 200,
+ "name": "offloading-lru-evict"
+}

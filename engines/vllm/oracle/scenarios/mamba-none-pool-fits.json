@@ -1,0 +1,94 @@
+{
+ "name": "mamba-none-pool-fits",
+ "description": "None mode, 8192 bytes: the Mamba group needs one page per request, not the align mode's three.",
+ "config": {
+  "max_num_seqs": 2,
+  "max_num_batched_tokens": 32,
+  "block_size": 8,
+  "num_blocks": 200,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": false,
+  "scheduling_policy": "fcfs",
+  "kv_layers": [
+   {
+    "count": 1,
+    "spec": "full",
+    "num_kv_heads": 1,
+    "head_size": 4
+   },
+   {
+    "count": 1,
+    "spec": "mamba",
+    "state_bytes": 192,
+    "page_size_padded": 256,
+    "block_size": 128,
+    "mamba_cache_mode": "none",
+    "num_speculative_blocks": 0,
+    "num_prefill_checkpoint_blocks": 0
+   }
+  ],
+  "kv_available_bytes": 8192,
+  "kv_startup_check": true
+ },
+ "requests": [
+  {
+   "id": "A",
+   "arrival_step": 0,
+   "prompt": [
+    46722,
+    33968,
+    13475,
+    35879,
+    42146,
+    7967,
+    1561,
+    23017,
+    27502,
+    22700,
+    18937,
+    16027,
+    20770,
+    22914,
+    30501,
+    27247,
+    38076,
+    9054,
+    45291,
+    24591
+   ],
+   "output": [
+    21004,
+    15885,
+    10071,
+    15068
+   ]
+  },
+  {
+   "id": "B",
+   "arrival_step": 2,
+   "prompt": [
+    7243,
+    14315,
+    6217,
+    20791,
+    42879,
+    25179,
+    12117,
+    17068,
+    4594,
+    945,
+    41408,
+    32912,
+    11437,
+    2274
+   ],
+   "output": [
+    3326,
+    25012,
+    11266
+   ]
+  }
+ ],
+ "max_steps": 60
+}

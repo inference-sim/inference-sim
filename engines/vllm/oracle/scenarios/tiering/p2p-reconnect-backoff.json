@@ -1,0 +1,933 @@
+{
+ "description": "Virtual time: the decoder's data plane is lost while its control socket stays up, so each of the prefiller's WRITEs to it fails and the round fails on both sides. Three consecutive failures fault the peer, and the prefiller disconnects and reaps the session with a reconnect backoff: the first fault's wait is 0, so the decoder reconnects at once; a second fault within the max doubles it to 1 s. A connection inside that wait is rejected with a DisconnectMsg, so the decoder's session dies and the request's lookups MISS; after the wait a new connection is accepted.",
+ "instances": [
+  {
+   "spec": {
+    "name": "TieringOffloadingSpec",
+    "cpu_bytes_to_use": 65536,
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1,
+    "blocks_per_chunk": 1,
+    "extra": {
+     "tier_poll_interval_s": 0,
+     "secondary_tiers": [
+      {
+       "type": "p2p",
+       "host": "127.0.0.1",
+       "port": 5710
+      }
+     ]
+    }
+   }
+  },
+  {
+   "spec": {
+    "name": "TieringOffloadingSpec",
+    "cpu_bytes_to_use": 65536,
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1,
+    "blocks_per_chunk": 1,
+    "extra": {
+     "tier_poll_interval_s": 0,
+     "secondary_tiers": [
+      {
+       "type": "p2p",
+       "host": "127.0.0.1",
+       "port": 5711
+      }
+     ]
+    }
+   }
+  }
+ ],
+ "calls": [
+  {
+   "m": "nixl_down",
+   "tier": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "dz1",
+   "params": {
+    "remote_prefiller": {
+     "kv_request_id": "z1",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5710
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "dz1",
+   "key": "kz1"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": [
+    "dz1"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 0,
+   "ctx": "pz1",
+   "params": {
+    "remote_decoder": {
+     "kv_request_id": "z1"
+    }
+   }
+  },
+  {
+   "m": "prepare_store",
+   "inst": 0,
+   "ctx": "pz1",
+   "keys": [
+    "kz1"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "inst": 0,
+   "ctx": "pz1",
+   "keys": [
+    "kz1"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": [
+    "pz1"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 0,
+   "ctx": "pz1"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 1,
+   "ctx": "dz1"
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "dz2",
+   "params": {
+    "remote_prefiller": {
+     "kv_request_id": "z2",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5710
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "dz2",
+   "key": "kz2"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": [
+    "dz2"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 0,
+   "ctx": "pz2",
+   "params": {
+    "remote_decoder": {
+     "kv_request_id": "z2"
+    }
+   }
+  },
+  {
+   "m": "prepare_store",
+   "inst": 0,
+   "ctx": "pz2",
+   "keys": [
+    "kz2"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "inst": 0,
+   "ctx": "pz2",
+   "keys": [
+    "kz2"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": [
+    "pz2"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 0,
+   "ctx": "pz2"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 1,
+   "ctx": "dz2"
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "dz3",
+   "params": {
+    "remote_prefiller": {
+     "kv_request_id": "z3",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5710
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "dz3",
+   "key": "kz3"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": [
+    "dz3"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 0,
+   "ctx": "pz3",
+   "params": {
+    "remote_decoder": {
+     "kv_request_id": "z3"
+    }
+   }
+  },
+  {
+   "m": "prepare_store",
+   "inst": 0,
+   "ctx": "pz3",
+   "keys": [
+    "kz3"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "inst": 0,
+   "ctx": "pz3",
+   "keys": [
+    "kz3"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": [
+    "pz3"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 0,
+   "ctx": "pz3"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 1,
+   "ctx": "dz3"
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "dz4",
+   "params": {
+    "remote_prefiller": {
+     "kv_request_id": "z4",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5710
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "dz4",
+   "key": "kz4"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": [
+    "dz4"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 0,
+   "ctx": "pz4",
+   "params": {
+    "remote_decoder": {
+     "kv_request_id": "z4"
+    }
+   }
+  },
+  {
+   "m": "prepare_store",
+   "inst": 0,
+   "ctx": "pz4",
+   "keys": [
+    "kz4"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "inst": 0,
+   "ctx": "pz4",
+   "keys": [
+    "kz4"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": [
+    "pz4"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 0,
+   "ctx": "pz4"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 1,
+   "ctx": "dz4"
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "dz5",
+   "params": {
+    "remote_prefiller": {
+     "kv_request_id": "z5",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5710
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "dz5",
+   "key": "kz5"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": [
+    "dz5"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 0,
+   "ctx": "pz5",
+   "params": {
+    "remote_decoder": {
+     "kv_request_id": "z5"
+    }
+   }
+  },
+  {
+   "m": "prepare_store",
+   "inst": 0,
+   "ctx": "pz5",
+   "keys": [
+    "kz5"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "inst": 0,
+   "ctx": "pz5",
+   "keys": [
+    "kz5"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": [
+    "pz5"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 0,
+   "ctx": "pz5"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 1,
+   "ctx": "dz5"
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "dz6",
+   "params": {
+    "remote_prefiller": {
+     "kv_request_id": "z6",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5710
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "dz6",
+   "key": "kz6"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": [
+    "dz6"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 0,
+   "ctx": "pz6",
+   "params": {
+    "remote_decoder": {
+     "kv_request_id": "z6"
+    }
+   }
+  },
+  {
+   "m": "prepare_store",
+   "inst": 0,
+   "ctx": "pz6",
+   "keys": [
+    "kz6"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "inst": 0,
+   "ctx": "pz6",
+   "keys": [
+    "kz6"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": [
+    "pz6"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 0,
+   "ctx": "pz6"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 1,
+   "ctx": "dz6"
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "d7",
+   "params": {
+    "remote_prefiller": {
+     "kv_request_id": "z7",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5710
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d7",
+   "key": "k7"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": [
+    "d7"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d7",
+   "key": "k7"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 1,
+   "ctx": "d7"
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "advance",
+   "s": 1.5
+  },
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "d8",
+   "params": {
+    "remote_prefiller": {
+     "kv_request_id": "z8",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5710
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d8",
+   "key": "k8"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": [
+    "d8"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d8",
+   "key": "k8"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 1,
+   "ctx": "d8"
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  }
+ ]
+}

@@ -1,0 +1,3274 @@
+{
+ "about": "Engine KV tokens per replica (vllm.Engine.KVCacheCapacity) against the vLLM engine core's logged 'GPU KV cache size: N tokens', for the fit units of the published ledger whose server log prints it. end_to_end sizes the pool from the kernel's own memory estimate; pinned sizes it from the logged 'Available KV cache memory' (kv_cache_memory_bytes), which isolates the pool's structure from the memory terms. tolerance is the tier above today's largest |ratio - 1| in the group (3, 5, 10, 15, 25, 50, 100, 400 percent). formula says whether the logged build computes the figure as v0.33.0 does (vLLM >= 0.28) or not.",
+ "fixtures": [
+  {
+   "group": "deepseek-v4-pro/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 27.09,
+     "logged_tokens": 53174,
+     "logged_vllm": "0.25.0"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-b300-tp4-dp1-013c3c05c9.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 100.31,
+     "logged_tokens": 2179968,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-0161cb90f3.yaml"
+  },
+  {
+   "group": "kimi-k2.5-nvfp4/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 18.97,
+     "logged_tokens": 579712,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "kimi-k2.5-nvfp4-b200-tp4-dp1-0347066f9e.yaml"
+  },
+  {
+   "group": "kimi-k2.5-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 165.37,
+     "logged_tokens": 5053632,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "kimi-k2.5-nvfp4-b300-tp8-dp1-0502601683.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 88.64,
+     "logged_tokens": 1778816,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp4-dp1-0623e62a58.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 3,
+     "formula": "unknown",
+     "logged_available_gib": 52.11,
+     "logged_tokens": 1234688,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-0758521c40.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 100.99,
+     "logged_tokens": 3416096,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b200-tp4-dp1-0830bacae5.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "unknown",
+     "logged_available_gib": 129.31,
+     "logged_tokens": 3064192,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-09548d041a.yaml"
+  },
+  {
+   "group": "kimi-k2.5-nvfp4/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 83.5,
+     "logged_tokens": 2551776,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "kimi-k2.5-nvfp4-b200-tp8-dp1-0a9de100fe.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 56.33,
+     "logged_tokens": 476352,
+     "logged_vllm": "0.17.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b200-tp2-dp1-0ba17d7ce0.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 79.92,
+     "logged_tokens": 1736704,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-0d7b76439c.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "unknown",
+     "logged_available_gib": 179.31,
+     "logged_tokens": 4248960,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp8-dp1-0ef830815f.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 98.92,
+     "logged_tokens": 3345984,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b200-tp4-dp1-0f8607161e.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 114.34,
+     "logged_tokens": 13321488,
+     "logged_vllm": "0.18.0"
+    },
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 116.16,
+     "logged_tokens": 13533408,
+     "logged_vllm": "0.15.1"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp8-dp1-11beb5d4d9.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h100/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 34.09,
+     "logged_tokens": 992992,
+     "logged_vllm": "0.18.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h100-tp2-dp1-122072e218.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 22.03,
+     "logged_tokens": 441984,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-128c634c32.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 107.97,
+     "logged_tokens": 1254400,
+     "logged_vllm": "0.23.1rc1.dev672+g93d8f834d"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp2-dp1-12f5c6289a.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "unknown",
+     "logged_available_gib": 101.32,
+     "logged_tokens": 2401024,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-13ab1206ae.yaml"
+  },
+  {
+   "group": "minimax-m2.5/h200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 99.46,
+     "logged_tokens": 3364272,
+     "logged_vllm": "0.21.0"
+    },
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 99.47,
+     "logged_tokens": 3364592,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-h200-tp8-dp1-14955a1017.yaml"
+  },
+  {
+   "group": "deepseek-v4-pro/h200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 23.37,
+     "logged_tokens": 649157,
+     "logged_vllm": "0.20.1"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-h200-tp8-dp1-14ccb4d483.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 197.3,
+     "logged_tokens": 4287744,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp8-dp1-1655b331d6.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 168.34,
+     "logged_tokens": 3378304,
+     "logged_vllm": "0.23.1rc1.dev672+g93d8f834d"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp4-dp1-1750097a94.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 139.58,
+     "logged_tokens": 9442688,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b200-tp8-dp1-195c6deb51.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 105.82,
+     "logged_tokens": 6164720,
+     "logged_vllm": "0.18.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp4-dp1-1a72008806.yaml"
+  },
+  {
+   "group": "kimi-k2.5-nvfp4/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 18.97,
+     "logged_tokens": 579776,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "kimi-k2.5-nvfp4-b200-tp4-dp1-1b2d971ba9.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 100.15,
+     "logged_tokens": 4746624,
+     "logged_vllm": "0.17.2rc1.dev2746+g20bafcab5"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-1b36ccbb99.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 173.75,
+     "logged_tokens": 4117248,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp4-dp1-1bbdbb365c.yaml"
+  },
+  {
+   "group": "kimi-k2.5-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 164.23,
+     "logged_tokens": 5018752,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "kimi-k2.5-nvfp4-b300-tp8-dp1-1d81fd557c.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 137.42,
+     "logged_tokens": 9296240,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b200-tp8-dp1-1db8a99bd2.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 108.81,
+     "logged_tokens": 1264128,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp2-dp1-1ed96e0fe6.yaml"
+  },
+  {
+   "group": "deepseek-v4-pro/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 94.72,
+     "logged_tokens": 185901,
+     "logged_vllm": "0.25.0"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-b300-tp8-dp1-1ee508edc5.yaml"
+  },
+  {
+   "group": "deepseek-v4-pro/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 43.99,
+     "logged_tokens": 86333,
+     "logged_vllm": "0.25.0"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-b200-tp8-dp1-1f81c4c598.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 175.66,
+     "logged_tokens": 8232064,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp8-dp1-1fad940eb1.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 123.36,
+     "logged_tokens": 2923136,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp8-dp1-20e9687f91.yaml"
+  },
+  {
+   "group": "kimi-k2.5/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 95.65,
+     "logged_tokens": 1461568,
+     "logged_vllm": "0.15.1"
+    }
+   ],
+   "scenario": "kimi-k2.5-b200-tp8-dp1-2114271cc1.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 101.69,
+     "logged_tokens": 2040704,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-21617897f1.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 3,
+     "formula": "older",
+     "logged_available_gib": 202.42,
+     "logged_tokens": 4796672,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp8-dp1-21b6f73350.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b200/tp1/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 28.56,
+     "logged_tokens": 241472,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b200-tp1-dp1-2acff97c84.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 47.97,
+     "logged_tokens": 811232,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b200-tp2-dp1-2b368defb6.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 22.03,
+     "logged_tokens": 441984,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-2c5713bbad.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 103.34,
+     "logged_tokens": 2073728,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-2da9e78bfc.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 44.86,
+     "logged_tokens": 1266943,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp2-dp1-2eb6e5bc47.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b200/tp1/dp1",
+   "observations": [
+    {
+     "fit_units": 3,
+     "formula": "older",
+     "logged_available_gib": 28.64,
+     "logged_tokens": 242192,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b200-tp1-dp1-2f8d9f1a34.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 88.68,
+     "logged_tokens": 2582944,
+     "logged_vllm": "0.18.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp2-dp1-31f4499c30.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 29.7,
+     "logged_tokens": 344960,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp2-dp1-3214f16bd2.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 4,
+     "formula": "older",
+     "logged_available_gib": 45.24,
+     "logged_tokens": 765152,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b200-tp2-dp1-32c83efcc0.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 47.85,
+     "logged_tokens": 2267648,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-334d95b71e.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b300/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 172.55,
+     "logged_tokens": 2918192,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b300-tp2-dp1-33ea61c7b6.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 127.11,
+     "logged_tokens": 2550784,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-342db046b8.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 77.74,
+     "logged_tokens": 1689472,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-3712cd09c0.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 131.5,
+     "logged_tokens": 6232320,
+     "logged_vllm": "0.26.1rc1.dev255+g5e35a6f4f"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp8-dp1-383ebde443.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 197.52,
+     "logged_tokens": 4291072,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp8-dp1-3924d8c25a.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h100/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 32.73,
+     "logged_tokens": 1051050,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h100-tp2-dp1-3a77480625.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 47.47,
+     "logged_tokens": 802816,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b200-tp2-dp1-3aee7d4925.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 139.58,
+     "logged_tokens": 9442560,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b200-tp8-dp1-3b41b15287.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 178.1,
+     "logged_tokens": 3870464,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp8-dp1-3c73f58bb0.yaml"
+  },
+  {
+   "group": "kimi-k2.5-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 165.3,
+     "logged_tokens": 5051552,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "kimi-k2.5-nvfp4-b300-tp8-dp1-3db6374f0c.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b200/tp1/dp2",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 29.07,
+     "logged_tokens": 245840,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b200-tp1-dp2-3dbc0a284b.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 181.5,
+     "logged_tokens": 6139232,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b300-tp4-dp1-3dc776a902.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 110.74,
+     "logged_tokens": 2222336,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-3f0d4f8c65.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 100.36,
+     "logged_tokens": 4756480,
+     "logged_vllm": "0.17.2rc1.dev2746+g20bafcab5"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-401f448bd2.yaml"
+  },
+  {
+   "group": "deepseek-v4-pro/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 36.18,
+     "logged_tokens": 77225,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-b300-tp4-dp1-412c48e3c5.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 182.28,
+     "logged_tokens": 4319360,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp8-dp1-4182513a40.yaml"
+  },
+  {
+   "group": "minimax-m2.5/h200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 71.05,
+     "logged_tokens": 1201696,
+     "logged_vllm": "0.16.0"
+    },
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 71.05,
+     "logged_tokens": 1201712,
+     "logged_vllm": "0.16.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-h200-tp4-dp1-423a0e0af6.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp1/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 57.39,
+     "logged_tokens": 889091,
+     "logged_vllm": "0.20.2"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp1-dp1-44509d3bdc.yaml"
+  },
+  {
+   "group": "kimi-k2.5/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 92.01,
+     "logged_tokens": 1405888,
+     "logged_vllm": "0.21.0"
+    },
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 92.09,
+     "logged_tokens": 1407072,
+     "logged_vllm": "0.20.2"
+    },
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 93.33,
+     "logged_tokens": 1426048,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "kimi-k2.5-b200-tp8-dp1-450f7d89a7.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp1/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 58.56,
+     "logged_tokens": 852848,
+     "logged_vllm": "0.15.1"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp1-dp1-461691a7ec.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 167.17,
+     "logged_tokens": 3354752,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp4-dp1-46a896299b.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 156.16,
+     "logged_tokens": 3393664,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp8-dp1-4822f10eb2.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 177.32,
+     "logged_tokens": 5997696,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b300-tp4-dp1-484519cbf5.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 3,
+     "formula": "unknown",
+     "logged_available_gib": 49.36,
+     "logged_tokens": 1169536,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    },
+    {
+     "fit_units": 3,
+     "formula": "unknown",
+     "logged_available_gib": 49.93,
+     "logged_tokens": 1182976,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-4bdbd8db1d.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp1/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 57.24,
+     "logged_tokens": 825607,
+     "logged_vllm": "0.21.0"
+    },
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 57.39,
+     "logged_tokens": 827770,
+     "logged_vllm": "0.20.2"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp1-dp1-4db1606b42.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 3,
+     "formula": "older",
+     "logged_available_gib": 123.23,
+     "logged_tokens": 2920064,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp8-dp1-4f23096f5a.yaml"
+  },
+  {
+   "group": "minimax-m2.5/h200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 100.72,
+     "logged_tokens": 3406704,
+     "logged_vllm": "0.18.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-h200-tp8-dp1-5052003ffe.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h100/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 49.87,
+     "logged_tokens": 3199616,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h100-tp4-dp1-51bfb5a15d.yaml"
+  },
+  {
+   "group": "deepseek-v4-pro/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 98.29,
+     "logged_tokens": 192001,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-b300-tp8-dp1-53315dd8f1.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 3,
+     "formula": "older",
+     "logged_available_gib": 187.28,
+     "logged_tokens": 6713600,
+     "logged_vllm": "0.23.1rc1.dev672+g93d8f834d"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp4-dp1-561b1d9967.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 56.33,
+     "logged_tokens": 476352,
+     "logged_vllm": "0.17.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b200-tp2-dp1-5702c04a44.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 98.29,
+     "logged_tokens": 2136064,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-57848f8278.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 122.11,
+     "logged_tokens": 4901120,
+     "logged_vllm": "0.17.2rc1.dev2746+g20bafcab5"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-578a22b4a7.yaml"
+  },
+  {
+   "group": "deepseek-v4-pro/h200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 23.37,
+     "logged_tokens": 649157,
+     "logged_vllm": "0.20.1"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-h200-tp8-dp1-57cda54ae2.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 87.94,
+     "logged_tokens": 1764736,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp4-dp1-57ec240d63.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 127.39,
+     "logged_tokens": 6037376,
+     "logged_vllm": "0.17.2rc1.dev2746+g20bafcab5"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-588146125d.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 45.72,
+     "logged_tokens": 1291264,
+     "logged_vllm": "0.26.1rc1.dev255+g5e35a6f4f"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp2-dp1-59171fa0be.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 172.48,
+     "logged_tokens": 4087168,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp4-dp1-5ab8bb137c.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 88.68,
+     "logged_tokens": 2582944,
+     "logged_vllm": "0.18.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp2-dp1-5c616a02df.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 99.41,
+     "logged_tokens": 3362656,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b200-tp4-dp1-5dd9ea5149.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 88.68,
+     "logged_tokens": 2582944,
+     "logged_vllm": "0.18.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp2-dp1-5e6ec6ca9e.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 101.49,
+     "logged_tokens": 3432960,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b200-tp4-dp1-5f4def44d4.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 157.7,
+     "logged_tokens": 3427072,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp8-dp1-5fd23f41d3.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 100.34,
+     "logged_tokens": 2180608,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-61ea4c8ff4.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 118.01,
+     "logged_tokens": 2564608,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp8-dp1-6253e6c7ee.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 180.64,
+     "logged_tokens": 8560896,
+     "logged_vllm": "0.17.2rc1.dev2746+g20bafcab5"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp8-dp1-63a352f4de.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 88.68,
+     "logged_tokens": 2583008,
+     "logged_vllm": "0.18.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp2-dp1-6425179eba.yaml"
+  },
+  {
+   "group": "kimi-k2.5-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 164.02,
+     "logged_tokens": 5012320,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "kimi-k2.5-nvfp4-b300-tp8-dp1-642ed48efb.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 79.92,
+     "logged_tokens": 1736704,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-6431708620.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 180.2,
+     "logged_tokens": 8540160,
+     "logged_vllm": "0.17.2rc1.dev2746+g20bafcab5"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp8-dp1-6456cce84f.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 107.41,
+     "logged_tokens": 1247872,
+     "logged_vllm": "0.23.1rc1.dev672+g93d8f834d"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp2-dp1-64824060f3.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 114.4,
+     "logged_tokens": 13328128,
+     "logged_vllm": "0.18.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp8-dp1-658c3683eb.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 76.2,
+     "logged_tokens": 1655808,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-67356cd5d5.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 3,
+     "formula": "older",
+     "logged_available_gib": 122.58,
+     "logged_tokens": 2904704,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp8-dp1-67b53c9cb4.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 199.75,
+     "logged_tokens": 6756704,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b300-tp4-dp1-6899d4a0d9.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 197.85,
+     "logged_tokens": 4299776,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp8-dp1-6a270ecb52.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 95.26,
+     "logged_tokens": 4464128,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-6a6c194e1e.yaml"
+  },
+  {
+   "group": "minimax-m2.5/h200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 97.83,
+     "logged_tokens": 3309072,
+     "logged_vllm": "0.16.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-h200-tp8-dp1-6cf9cf2754.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 46.21,
+     "logged_tokens": 927232,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-6d6ef106b3.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 175.66,
+     "logged_tokens": 8232064,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp8-dp1-6db6ded7a7.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 127.14,
+     "logged_tokens": 2551552,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-6eb4c07c43.yaml"
+  },
+  {
+   "group": "deepseek-v4-pro/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 13.09,
+     "logged_tokens": 25693,
+     "logged_vllm": "0.25.0"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-b200-tp8-dp1-6ed6643d2e.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 203.2,
+     "logged_tokens": 4815104,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp8-dp1-77388844fc.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 42.28,
+     "logged_tokens": 1981184,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-7747a94bcf.yaml"
+  },
+  {
+   "group": "deepseek-v4-pro/h200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 23.32,
+     "logged_tokens": 177744,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-h200-tp8-dp1-77f8c3eb12.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h100/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 51.24,
+     "logged_tokens": 2984880,
+     "logged_vllm": "0.18.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h100-tp4-dp1-787813f2b9.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 3,
+     "formula": "older",
+     "logged_available_gib": 127.69,
+     "logged_tokens": 6051456,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-79f0b7eead.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h100/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 50.29,
+     "logged_tokens": 3230115,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h100-tp4-dp1-7c09eea630.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 87.37,
+     "logged_tokens": 2707162,
+     "logged_vllm": "0.21.0"
+    },
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 87.42,
+     "logged_tokens": 2708694,
+     "logged_vllm": "0.20.2"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp2-dp1-7da7deec67.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 132.12,
+     "logged_tokens": 4736256,
+     "logged_vllm": "0.23.1rc1.dev672+g93d8f834d"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp8-dp1-7e419f4e35.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 109.87,
+     "logged_tokens": 1858080,
+     "logged_vllm": "0.17.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b200-tp4-dp1-84fee7eeb3.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/b200/tp1/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 87.96,
+     "logged_tokens": 2562160,
+     "logged_vllm": "0.15.1"
+    }
+   ],
+   "scenario": "gpt-oss-120b-b200-tp1-dp1-85f4ea16b0.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 197.3,
+     "logged_tokens": 4287744,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp8-dp1-87a7f06962.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 100.8,
+     "logged_tokens": 4777088,
+     "logged_vllm": "0.17.2rc1.dev2746+g20bafcab5"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-886a6cc877.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp1/dp2",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 119.46,
+     "logged_tokens": 1865984,
+     "logged_vllm": "0.26.1rc1.dev255+g5e35a6f4f"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp1-dp2-89401c9ad1.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 95.61,
+     "logged_tokens": 4155392,
+     "logged_vllm": "0.17.2rc1.dev2746+g20bafcab5"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-8951f4e785.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 105.77,
+     "logged_tokens": 6161344,
+     "logged_vllm": "0.18.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp4-dp1-8a502c58eb.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 77.74,
+     "logged_tokens": 1689472,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-8b35003ec5.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b300/tp1/dp1",
+   "observations": [
+    {
+     "fit_units": 3,
+     "formula": "older",
+     "logged_available_gib": 108.96,
+     "logged_tokens": 921392,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b300-tp1-dp1-8c3c52b82d.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h100/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 32.72,
+     "logged_tokens": 1050865,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h100-tp2-dp1-8d9d8af987.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 127.19,
+     "logged_tokens": 2552576,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-8f9fa8ef17.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b300/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 172.38,
+     "logged_tokens": 2915408,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b300-tp2-dp1-9069874fc1.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 122.11,
+     "logged_tokens": 5722751,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-91a14e0a58.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 103.34,
+     "logged_tokens": 2073728,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-92ec65c083.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 203.15,
+     "logged_tokens": 6871552,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b300-tp4-dp1-932fa47526.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 98.62,
+     "logged_tokens": 2143104,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-9482c725fc.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "unknown",
+     "logged_available_gib": 181.95,
+     "logged_tokens": 4311552,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp8-dp1-94fa9dcf39.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 78.06,
+     "logged_tokens": 1696384,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-95e9d81c59.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 138.34,
+     "logged_tokens": 16117392,
+     "logged_vllm": "0.15.1"
+    },
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 138.35,
+     "logged_tokens": 16118448,
+     "logged_vllm": "0.15.1"
+    }
+   ],
+   "scenario": "gpt-oss-120b-b200-tp4-dp1-96622f485f.yaml"
+  },
+  {
+   "group": "deepseek-v4-pro/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 102.18,
+     "logged_tokens": 219383,
+     "logged_vllm": "0.25.0"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-b300-tp8-dp1-972ae0ff97.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 104.32,
+     "logged_tokens": 2472064,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-97ac7a63f9.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 110.74,
+     "logged_tokens": 2222336,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-9a309078b3.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 215.79,
+     "logged_tokens": 14597872,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b300-tp8-dp1-9c6a95170e.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 179.37,
+     "logged_tokens": 8501120,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp8-dp1-9c73efebe7.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h100/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 58.86,
+     "logged_tokens": 7561009,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h100-tp8-dp1-9f8754f772.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 42.28,
+     "logged_tokens": 1981184,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-9fe5ca2230.yaml"
+  },
+  {
+   "group": "deepseek-v4-pro/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 27.09,
+     "logged_tokens": 53174,
+     "logged_vllm": "0.25.0"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-b300-tp4-dp1-a02a01eaf2.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 87.37,
+     "logged_tokens": 2520575,
+     "logged_vllm": "0.20.2"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp2-dp1-a1a3989403.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 79.92,
+     "logged_tokens": 1736704,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-a2c91aa581.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 22.73,
+     "logged_tokens": 456064,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-a3312d5732.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b300/tp1/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 23.26,
+     "logged_tokens": 196640,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b300-tp1-dp1-a43c8ed4fe.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 3,
+     "formula": "older",
+     "logged_available_gib": 132.76,
+     "logged_tokens": 4759424,
+     "logged_vllm": "0.23.1rc1.dev672+g93d8f834d"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp8-dp1-a5094e1604.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 98.34,
+     "logged_tokens": 2137216,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-a5c7c16beb.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 123.81,
+     "logged_tokens": 4187840,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b200-tp4-dp1-a673df2365.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "unknown",
+     "logged_available_gib": 102.14,
+     "logged_tokens": 2420352,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-a6a34fe916.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 80.6,
+     "logged_tokens": 936448,
+     "logged_vllm": "0.23.1rc1.dev672+g93d8f834d"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp2-dp1-a8b910de1f.yaml"
+  },
+  {
+   "group": "kimi-k2.5-nvfp4/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 18.97,
+     "logged_tokens": 579776,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "kimi-k2.5-nvfp4-b200-tp4-dp1-aa2264ad7f.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 3,
+     "formula": "older",
+     "logged_available_gib": 122.76,
+     "logged_tokens": 2908800,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp8-dp1-aa95041e47.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 88.71,
+     "logged_tokens": 1780224,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp4-dp1-af98554b47.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 122.11,
+     "logged_tokens": 4901120,
+     "logged_vllm": "0.17.2rc1.dev2746+g20bafcab5"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-afdba68596.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 158.75,
+     "logged_tokens": 3449856,
+     "logged_vllm": "0.23.1rc1.dev672+g93d8f834d"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp8-dp1-b05ae49af9.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 178.01,
+     "logged_tokens": 3868288,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp8-dp1-b0f77a3fdf.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 3,
+     "formula": "older",
+     "logged_available_gib": 48.55,
+     "logged_tokens": 2301056,
+     "logged_vllm": "0.17.2rc1.dev2746+g20bafcab5"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-b157fe659b.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 167.14,
+     "logged_tokens": 3354112,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp4-dp1-b1eba4b320.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 203.15,
+     "logged_tokens": 6871552,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b300-tp4-dp1-b2ea7d5598.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 47.63,
+     "logged_tokens": 805600,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b200-tp2-dp1-b3ffb25b59.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h100/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 50.87,
+     "logged_tokens": 2960512,
+     "logged_vllm": "0.18.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h100-tp4-dp1-b437ece322.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "unknown",
+     "logged_available_gib": 99.15,
+     "logged_tokens": 2349440,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    },
+    {
+     "fit_units": 2,
+     "formula": "unknown",
+     "logged_available_gib": 99.83,
+     "logged_tokens": 2365568,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-b4832c1ea9.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 46.12,
+     "logged_tokens": 925440,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-bc136e99a8.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 197.85,
+     "logged_tokens": 4299776,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp8-dp1-bc23ddb948.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 102.7,
+     "logged_tokens": 3681408,
+     "logged_vllm": "0.23.1rc1.dev672+g93d8f834d"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp4-dp1-c156c27057.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 104.81,
+     "logged_tokens": 6047014,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp4-dp1-c1fa626b9d.yaml"
+  },
+  {
+   "group": "deepseek-v4-pro/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 13.09,
+     "logged_tokens": 25693,
+     "logged_vllm": "0.25.0"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-b200-tp8-dp1-c379f0ed9a.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 42.28,
+     "logged_tokens": 1981184,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-c46b7f31b0.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 22.03,
+     "logged_tokens": 441984,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-c484be1e29.yaml"
+  },
+  {
+   "group": "kimi-k2.5/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 95.64,
+     "logged_tokens": 1461376,
+     "logged_vllm": "0.15.1"
+    }
+   ],
+   "scenario": "kimi-k2.5-b200-tp8-dp1-cb712aad13.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 56.33,
+     "logged_tokens": 476352,
+     "logged_vllm": "0.17.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b200-tp2-dp1-cd5a508558.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 94.78,
+     "logged_tokens": 4119424,
+     "logged_vllm": "0.17.2rc1.dev2746+g20bafcab5"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-cd82cb76ee.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 3,
+     "formula": "older",
+     "logged_available_gib": 128.66,
+     "logged_tokens": 6097664,
+     "logged_vllm": "0.17.2rc1.dev2746+g20bafcab5"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-d1627d78cc.yaml"
+  },
+  {
+   "group": "minimax-m2.5/h200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 100.72,
+     "logged_tokens": 3406704,
+     "logged_vllm": "0.18.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-h200-tp8-dp1-d1be9a9270.yaml"
+  },
+  {
+   "group": "deepseek-v4-pro/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 30.84,
+     "logged_tokens": 60248,
+     "logged_vllm": "0.22.0"
+    },
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 31.13,
+     "logged_tokens": 61164,
+     "logged_vllm": "0.25.0"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-b300-tp4-dp1-d1c37b9064.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 116.16,
+     "logged_tokens": 13533408,
+     "logged_vllm": "0.15.1"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp8-dp1-d2dcea6f8b.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 168.48,
+     "logged_tokens": 3380992,
+     "logged_vllm": "0.23.1rc1.dev672+g93d8f834d"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp4-dp1-d31be15efa.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 203.07,
+     "logged_tokens": 4811904,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp8-dp1-d435286d40.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 56.33,
+     "logged_tokens": 476352,
+     "logged_vllm": "0.17.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b200-tp2-dp1-d48cd90513.yaml"
+  },
+  {
+   "group": "kimi-k2.5-nvfp4/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 18.98,
+     "logged_tokens": 580064,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "kimi-k2.5-nvfp4-b200-tp4-dp1-d636b268dd.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 3,
+     "formula": "older",
+     "logged_available_gib": 127.93,
+     "logged_tokens": 3031552,
+     "logged_vllm": "0.23.1rc1.dev672+g93d8f834d"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp2-dp1-d663ea5fd9.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 181.0,
+     "logged_tokens": 6122304,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b300-tp4-dp1-d6764e04d2.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 124.96,
+     "logged_tokens": 2507648,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-d7353e701e.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 198.0,
+     "logged_tokens": 4302848,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp8-dp1-d80003c0c9.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 103.34,
+     "logged_tokens": 2073728,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-d9d487719b.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 114.34,
+     "logged_tokens": 13321712,
+     "logged_vllm": "0.18.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp8-dp1-da163fa8ab.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 104.81,
+     "logged_tokens": 6494975,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h200-tp4-dp1-db113d98e5.yaml"
+  },
+  {
+   "group": "deepseek-v4-pro/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 43.99,
+     "logged_tokens": 86333,
+     "logged_vllm": "0.25.0"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-b200-tp8-dp1-dddd9614e5.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h100/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 49.87,
+     "logged_tokens": 3200119,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h100-tp4-dp1-dde97a6028.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 3,
+     "formula": "older",
+     "logged_available_gib": 202.6,
+     "logged_tokens": 4800768,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp8-dp1-de1cbad849.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 93.64,
+     "logged_tokens": 2218880,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp4-dp1-de63a2dcbc.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 22.73,
+     "logged_tokens": 456064,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-e07056082e.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 30.41,
+     "logged_tokens": 353280,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp2-dp1-e175f76b0b.yaml"
+  },
+  {
+   "group": "kimi-k2.5/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 106.79,
+     "logged_tokens": 1631776,
+     "logged_vllm": "0.20.0"
+    },
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 108.55,
+     "logged_tokens": 1658592,
+     "logged_vllm": "0.24.0"
+    }
+   ],
+   "scenario": "kimi-k2.5-b300-tp4-dp1-e269de0f9a.yaml"
+  },
+  {
+   "group": "kimi-k2.5-nvfp4/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 95.56,
+     "logged_tokens": 2920160,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "kimi-k2.5-nvfp4-b300-tp4-dp1-e4bcf8313b.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "unknown",
+     "logged_available_gib": 126.21,
+     "logged_tokens": 2990592,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    },
+    {
+     "fit_units": 2,
+     "formula": "unknown",
+     "logged_available_gib": 126.77,
+     "logged_tokens": 3004032,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-e6be93819b.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 130.59,
+     "logged_tokens": 3688320,
+     "logged_vllm": "0.26.1rc1.dev255+g5e35a6f4f"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp2-dp1-e6edd43cc4.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 22.73,
+     "logged_tokens": 456064,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-e961575eaa.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 197.85,
+     "logged_tokens": 4299776,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp8-dp1-e9f72aa987.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 79.92,
+     "logged_tokens": 1736704,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-eadec79f79.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 94.78,
+     "logged_tokens": 4119424,
+     "logged_vllm": "0.17.2rc1.dev2746+g20bafcab5"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-eb3a7e4acd.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 123.81,
+     "logged_tokens": 4187904,
+     "logged_vllm": "0.19.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b200-tp4-dp1-eb89a1cf6c.yaml"
+  },
+  {
+   "group": "deepseek-v4-pro/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 13.09,
+     "logged_tokens": 25693,
+     "logged_vllm": "0.25.0"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-b200-tp8-dp1-ec92387d06.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 100.99,
+     "logged_tokens": 2026624,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-edc475d707.yaml"
+  },
+  {
+   "group": "minimax-m2.5/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 109.86,
+     "logged_tokens": 1857920,
+     "logged_vllm": "0.17.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-b200-tp4-dp1-f1e9e48be7.yaml"
+  },
+  {
+   "group": "minimax-m2.5-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 215.32,
+     "logged_tokens": 14566720,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "minimax-m2.5-nvfp4-b300-tp8-dp1-f239b32640.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 76.2,
+     "logged_tokens": 1655808,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-f29a02b1c0.yaml"
+  },
+  {
+   "group": "kimi-k2.5-nvfp4/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 166.78,
+     "logged_tokens": 5096800,
+     "logged_vllm": "0.22.0"
+    }
+   ],
+   "scenario": "kimi-k2.5-nvfp4-b300-tp8-dp1-f458a1c988.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 180.23,
+     "logged_tokens": 8541568,
+     "logged_vllm": "0.23.1rc1.dev1403+g4080263bb"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp8-dp1-f527a273d3.yaml"
+  },
+  {
+   "group": "kimi-k2.5/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 175.94,
+     "logged_tokens": 2688352,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "kimi-k2.5-b300-tp8-dp1-f72dbc723c.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h100/tp2/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 34.09,
+     "logged_tokens": 992992,
+     "logged_vllm": "0.18.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h100-tp2-dp1-f8b70bc50d.yaml"
+  },
+  {
+   "group": "gpt-oss-120b/h100/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "older",
+     "logged_available_gib": 58.32,
+     "logged_tokens": 7484972,
+     "logged_vllm": "0.21.0"
+    }
+   ],
+   "scenario": "gpt-oss-120b-h100-tp8-dp1-f8d08837e1.yaml"
+  },
+  {
+   "group": "deepseek-v4-pro/h200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 23.37,
+     "logged_tokens": 178091,
+     "logged_vllm": "0.20.1"
+    }
+   ],
+   "scenario": "deepseek-v4-pro-h200-tp8-dp1-f911e71f33.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 168.18,
+     "logged_tokens": 3375104,
+     "logged_vllm": "0.23.1rc1.dev231+g8b00f4123"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b300-tp4-dp1-fc8949995f.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 95.42,
+     "logged_tokens": 4147456,
+     "logged_vllm": "0.17.2rc1.dev2746+g20bafcab5"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-fcbcc5555e.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 110.74,
+     "logged_tokens": 2222336,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp4-dp1-fcc1f78da6.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 78.06,
+     "logged_tokens": 1696384,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp8-dp1-fccb621b4c.yaml"
+  },
+  {
+   "group": "minimax-m3-nvfp4/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "older",
+     "logged_available_gib": 102.63,
+     "logged_tokens": 4864127,
+     "logged_vllm": "0.26.1rc1.dev255+g5e35a6f4f"
+    }
+   ],
+   "scenario": "minimax-m3-nvfp4-b200-tp4-dp1-fd65c796a8.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b300/tp8/dp1",
+   "observations": [
+    {
+     "fit_units": 2,
+     "formula": "unknown",
+     "logged_available_gib": 178.99,
+     "logged_tokens": 4241280,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    },
+    {
+     "fit_units": 2,
+     "formula": "unknown",
+     "logged_available_gib": 179.67,
+     "logged_tokens": 4257408,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b300-tp8-dp1-fd7879a97b.yaml"
+  },
+  {
+   "group": "minimax-m3-mxfp8/b200/tp4/dp1",
+   "observations": [
+    {
+     "fit_units": 1,
+     "formula": "unknown",
+     "logged_available_gib": 46.15,
+     "logged_tokens": 926080,
+     "logged_vllm": "0.1.dev17492+g454b47db8"
+    }
+   ],
+   "scenario": "minimax-m3-mxfp8-b200-tp4-dp1-ffba360829.yaml"
+  }
+ ],
+ "tolerance": {
+  "deepseek-v4-pro/b200/tp8/dp1": {
+   "end_to_end": 4.0,
+   "fit_units": 5,
+   "pinned": 0.03,
+   "scenarios": 5
+  },
+  "deepseek-v4-pro/b300/tp4/dp1": {
+   "end_to_end": 0.5,
+   "fit_units": 5,
+   "pinned": 0.1,
+   "scenarios": 5
+  },
+  "deepseek-v4-pro/b300/tp8/dp1": {
+   "end_to_end": 0.5,
+   "fit_units": 5,
+   "pinned": 0.1,
+   "scenarios": 3
+  },
+  "deepseek-v4-pro/h200/tp8/dp1": {
+   "end_to_end": 0.5,
+   "fit_units": 4,
+   "pinned": 0.5,
+   "scenarios": 4
+  },
+  "gpt-oss-120b/b200/tp1/dp1": {
+   "end_to_end": 0.1,
+   "fit_units": 2,
+   "pinned": 0.03,
+   "scenarios": 1
+  },
+  "gpt-oss-120b/b200/tp4/dp1": {
+   "end_to_end": 0.05,
+   "fit_units": 3,
+   "pinned": 0.03,
+   "scenarios": 2
+  },
+  "gpt-oss-120b/h100/tp2/dp1": {
+   "end_to_end": 0.1,
+   "fit_units": 4,
+   "pinned": 0.1,
+   "scenarios": 4
+  },
+  "gpt-oss-120b/h100/tp4/dp1": {
+   "end_to_end": 0.1,
+   "fit_units": 6,
+   "pinned": 0.1,
+   "scenarios": 5
+  },
+  "gpt-oss-120b/h100/tp8/dp1": {
+   "end_to_end": 0.1,
+   "fit_units": 3,
+   "pinned": 0.1,
+   "scenarios": 2
+  },
+  "gpt-oss-120b/h200/tp1/dp1": {
+   "end_to_end": 0.1,
+   "fit_units": 4,
+   "pinned": 0.1,
+   "scenarios": 4
+  },
+  "gpt-oss-120b/h200/tp2/dp1": {
+   "end_to_end": 0.05,
+   "fit_units": 7,
+   "pinned": 0.1,
+   "scenarios": 7
+  },
+  "gpt-oss-120b/h200/tp4/dp1": {
+   "end_to_end": 0.05,
+   "fit_units": 4,
+   "pinned": 0.1,
+   "scenarios": 4
+  },
+  "gpt-oss-120b/h200/tp8/dp1": {
+   "end_to_end": 0.05,
+   "fit_units": 5,
+   "pinned": 0.03,
+   "scenarios": 5
+  },
+  "kimi-k2.5-nvfp4/b200/tp4/dp1": {
+   "end_to_end": 0.1,
+   "fit_units": 5,
+   "pinned": 0.03,
+   "scenarios": 4
+  },
+  "kimi-k2.5-nvfp4/b200/tp8/dp1": {
+   "end_to_end": 0.05,
+   "fit_units": 1,
+   "pinned": 0.03,
+   "scenarios": 1
+  },
+  "kimi-k2.5-nvfp4/b300/tp4/dp1": {
+   "end_to_end": 0.1,
+   "fit_units": 1,
+   "pinned": 0.03,
+   "scenarios": 1
+  },
+  "kimi-k2.5-nvfp4/b300/tp8/dp1": {
+   "end_to_end": 0.1,
+   "fit_units": 5,
+   "pinned": 0.03,
+   "scenarios": 5
+  },
+  "kimi-k2.5/b200/tp8/dp1": {
+   "end_to_end": 0.05,
+   "fit_units": 5,
+   "pinned": 0.03,
+   "scenarios": 5
+  },
+  "kimi-k2.5/b300/tp4/dp1": {
+   "end_to_end": 0.05,
+   "fit_units": 3,
+   "pinned": 0.03,
+   "scenarios": 2
+  },
+  "kimi-k2.5/b300/tp8/dp1": {
+   "end_to_end": 0.03,
+   "fit_units": 1,
+   "pinned": 0.03,
+   "scenarios": 1
+  },
+  "minimax-m2.5-nvfp4/b200/tp1/dp1": {
+   "end_to_end": 0.25,
+   "fit_units": 5,
+   "pinned": 0.03,
+   "scenarios": 2
+  },
+  "minimax-m2.5-nvfp4/b200/tp1/dp2": {
+   "end_to_end": 4.0,
+   "fit_units": 2,
+   "pinned": 0.03,
+   "scenarios": 1
+  },
+  "minimax-m2.5-nvfp4/b200/tp4/dp1": {
+   "end_to_end": 0.05,
+   "fit_units": 2,
+   "pinned": 0.03,
+   "scenarios": 2
+  },
+  "minimax-m2.5-nvfp4/b200/tp8/dp1": {
+   "end_to_end": 0.05,
+   "fit_units": 4,
+   "pinned": 0.03,
+   "scenarios": 3
+  },
+  "minimax-m2.5-nvfp4/b300/tp1/dp1": {
+   "end_to_end": 0.03,
+   "fit_units": 3,
+   "pinned": 0.03,
+   "scenarios": 1
+  },
+  "minimax-m2.5-nvfp4/b300/tp2/dp1": {
+   "end_to_end": 0.05,
+   "fit_units": 2,
+   "pinned": 0.03,
+   "scenarios": 2
+  },
+  "minimax-m2.5-nvfp4/b300/tp4/dp1": {
+   "end_to_end": 0.05,
+   "fit_units": 4,
+   "pinned": 0.03,
+   "scenarios": 3
+  },
+  "minimax-m2.5-nvfp4/b300/tp8/dp1": {
+   "end_to_end": 0.05,
+   "fit_units": 4,
+   "pinned": 0.03,
+   "scenarios": 2
+  },
+  "minimax-m2.5/b200/tp2/dp1": {
+   "end_to_end": 0.15,
+   "fit_units": 13,
+   "pinned": 0.03,
+   "scenarios": 8
+  },
+  "minimax-m2.5/b200/tp4/dp1": {
+   "end_to_end": 0.1,
+   "fit_units": 8,
+   "pinned": 0.03,
+   "scenarios": 6
+  },
+  "minimax-m2.5/b300/tp1/dp1": {
+   "end_to_end": 0.25,
+   "fit_units": 1,
+   "pinned": 0.03,
+   "scenarios": 1
+  },
+  "minimax-m2.5/b300/tp4/dp1": {
+   "end_to_end": 0.05,
+   "fit_units": 3,
+   "pinned": 0.03,
+   "scenarios": 3
+  },
+  "minimax-m2.5/h200/tp4/dp1": {
+   "end_to_end": 0.1,
+   "fit_units": 2,
+   "pinned": 0.03,
+   "scenarios": 2
+  },
+  "minimax-m2.5/h200/tp8/dp1": {
+   "end_to_end": 0.1,
+   "fit_units": 5,
+   "pinned": 0.03,
+   "scenarios": 5
+  },
+  "minimax-m3-mxfp8/b200/tp4/dp1": {
+   "end_to_end": 4.0,
+   "fit_units": 25,
+   "pinned": 0.03,
+   "scenarios": 17
+  },
+  "minimax-m3-mxfp8/b200/tp8/dp1": {
+   "end_to_end": 0.5,
+   "fit_units": 33,
+   "pinned": 0.03,
+   "scenarios": 28
+  },
+  "minimax-m3-mxfp8/b300/tp4/dp1": {
+   "end_to_end": 0.5,
+   "fit_units": 29,
+   "pinned": 0.03,
+   "scenarios": 21
+  },
+  "minimax-m3-mxfp8/b300/tp8/dp1": {
+   "end_to_end": 0.25,
+   "fit_units": 20,
+   "pinned": 0.03,
+   "scenarios": 14
+  },
+  "minimax-m3-nvfp4/b200/tp2/dp1": {
+   "end_to_end": 0.5,
+   "fit_units": 6,
+   "pinned": 0.03,
+   "scenarios": 4
+  },
+  "minimax-m3-nvfp4/b200/tp4/dp1": {
+   "end_to_end": 0.15,
+   "fit_units": 7,
+   "pinned": 0.03,
+   "scenarios": 6
+  },
+  "minimax-m3-nvfp4/b200/tp8/dp1": {
+   "end_to_end": 0.1,
+   "fit_units": 17,
+   "pinned": 0.03,
+   "scenarios": 8
+  },
+  "minimax-m3-nvfp4/b300/tp1/dp2": {
+   "end_to_end": 0.05,
+   "fit_units": 1,
+   "pinned": 0.03,
+   "scenarios": 1
+  },
+  "minimax-m3-nvfp4/b300/tp2/dp1": {
+   "end_to_end": 0.5,
+   "fit_units": 9,
+   "pinned": 0.03,
+   "scenarios": 6
+  },
+  "minimax-m3-nvfp4/b300/tp4/dp1": {
+   "end_to_end": 0.1,
+   "fit_units": 10,
+   "pinned": 0.03,
+   "scenarios": 8
+  },
+  "minimax-m3-nvfp4/b300/tp8/dp1": {
+   "end_to_end": 0.5,
+   "fit_units": 18,
+   "pinned": 0.03,
+   "scenarios": 13
+  }
+ }
+}

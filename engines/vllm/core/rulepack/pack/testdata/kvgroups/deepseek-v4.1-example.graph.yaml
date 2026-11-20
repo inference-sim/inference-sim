@@ -1,0 +1,349 @@
+# DeepSeek-V4.1-Flash, abridged to show the keys a V4.1 graph needs. The catalog's
+# derived graph carries every node; this one keeps the nodes whose keys are new and drops
+# norms, RoPE launches, mHC, the router and similar work, the draft's confidence head, and the SM100 attention path's different launches. Its collectives are
+# shown in full on the first layer kind only. Each figure here is from the
+# model's config.json or from vLLM v0.31.0's source, as the schema's doc comments cite.
+kind: ModelGraph
+name: deepseek-v4.1-flash
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 8be45ce0476004a3f529fd896115a4a2e800a129ad2d3ec05b16050f52e21879
+  deriver_version: 1
+modality: text_decoder_of_multimodal
+global:
+  architecture: DeepseekV41ForCausalLM
+  hidden_size: 5120
+  vocab_size: 129280
+  tie_word_embeddings: false
+  weight_dtype: fp8
+  # The checkpoint's 32 x 32 UE8M0 blocks, expanded to 1 x 32 at load.
+  weight_scale: {elements: 32, bytes: 1}
+  context_window: 1048576
+
+# BF16, not FP8: the quant config has no method for an embedding.
+# Each rank looks up the rows it holds and the partial results are all-reduced, before the
+# residual stream is sharded for sequence parallelism.
+embedding:
+- {op: Gather, role: embed_tokens, rows: 129280, row_bytes: 10240, rows_per_token: 1,
+   out_bytes_per_token: 10240, shard: rows}
+- {op: AllReduce, role: embed_out, emit: tensor_parallel}
+
+layer_kinds:
+# Layers 0 and 1: sliding window only, compress ratio 0. Layer 1 also looks up Engram.
+# Under V4.1's own sequence parallelism the residual stream is sharded by token, so each
+# attention input is all-gathered and its output reduce-scattered rather than all-reduced.
+- id: swa
+  nodes:
+  - {op: AllGather, role: attn_in, emit: sequence_parallel}
+  - {op: GEMM, role: fused_wqa_wkv, n: 1792, k: 5120, tp: replicated}
+  - {op: GEMM, role: wq_b, n: 32768, k: 1280, tp: column}
+  - op: Attention
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 512
+    qk_rope_head_dim: 64
+    window: 128
+    caches:
+    - {name: swa, kind: window, owned: true, bytes_per_entry: 584, window: 128,
+       block_size: 32, page_alignment: 576}
+  # MXFP8 is a Blackwell-only BMM, so on SM90 wo_a is dequantized to BF16 at load; its
+  # E8M0 scales stay resident.
+  - {op: GEMM, role: wo_a, n: 8192, k: 4096, tp: column, weight_dtype: bf16,
+     weight_scale: {elements: 32, bytes: 1}}
+  - {op: GEMM, role: wo_b, n: 5120, k: 8192, tp: row}
+  - {op: AllReduce, role: attn_out, emit: tensor_parallel_unless_sequence_parallel}
+  - {op: ReduceScatter, role: attn_out, emit: sequence_parallel}
+  # The MoE runs on the residual stream, so under the mode each rank routes only its own
+  # token shard. The nodes above, between the all-gather and the reduce-scatter, see every
+  # token, and state no split.
+  - {op: GroupedGEMM, role: experts, n: 2304, k: 5120, experts: 384, top_k: 6,
+     weight_dtype: mxfp4, under_sequence_parallel: token_sharded}
+  - {op: All2All, role: moe_dispatch_combine, emit: expert_parallel}
+  # The MoE's tensor-parallel reduction follows the model's own sequence parallelism, not
+  # the engine-wide sequence-parallel-MoE rule, which V4.1 never consults: FusedMoE skips
+  # it when the model makes the MoE sequence-parallel.
+  - {op: AllReduce, role: mlp_out, emit: tensor_parallel_unless_sequence_parallel}
+  edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [5, 7], [6, 8], [7, 8], [8, 9], [9, 10]]
+- id: swa_engram
+  nodes:
+  - {op: Gather, role: engram_lookup, rows: 384006168, row_bytes: 264, rows_per_token: 24,
+     out_bytes_per_token: 12288, residency: host, residency_control: engram_cpu_offload,
+     shard: heads}
+  # Without sequence parallelism each rank looks up its heads for every token and the
+  # rows are all-gathered; with it the gather runs along tokens instead (not shown).
+  - {op: AllGather, role: engram_rows, emit: tensor_parallel_unless_sequence_parallel,
+     bytes_per_token: 12288}
+  - {op: GEMM, role: fused_wqa_wkv, n: 1792, k: 5120, tp: replicated}
+  - op: Attention
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 512
+    qk_rope_head_dim: 64
+    window: 128
+    caches:
+    - {name: swa, kind: window, owned: true, bytes_per_entry: 584, window: 128,
+       block_size: 32, page_alignment: 576}
+  edges: [[0, 1], [1, 2], [2, 3]]
+
+# Layers 2, 8 and 14 own the ratio-2 compressed cache, the indexer key cache and the
+# compressor's FP32 ring; layers 3-7, 9-13 and 15-19 read the nearest one's cache.
+- id: csa2_source
+  nodes: &csa2_source_nodes
+  - {op: GEMM, role: fused_wqa_wkv, n: 1792, k: 5120, tp: replicated}
+  - {op: GEMM, role: compressor_fused_wkv_wgate, n: 1024, k: 5120, tp: replicated,
+     weight_dtype: bf16}
+  # Launched per token, but only the last token of each ratio-2 group writes an entry of
+  # the index cache.
+  - {op: Elementwise, role: index_k_norm_rope_store, per_tokens: 2, writes_cache: index,
+     tp: replicated}
+  - {op: GEMM, role: index_weights_proj, n: 32, k: 5120, tp: replicated, weight_dtype: bf16}
+  - op: Attention
+    role: block_index_scores
+    kind: sparse_mla
+    n_q: 32
+    n_kv: 1
+    d_h: 128
+    compress_ratio: 2
+    tp: replicated
+    caches:
+    - {name: index, kind: index, owned: true, bytes_per_entry: 132, tokens_per_entry: 2,
+       page_alignment: 576}
+  - op: Attention
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 512
+    qk_rope_head_dim: 64
+    window: 128
+    index_topk: 512
+    compress_ratio: 2
+    caches:
+    - {name: swa, kind: window, owned: true, bytes_per_entry: 584, window: 128,
+       block_size: 32, page_alignment: 576}
+    - {name: compressed, kind: kv, owned: true, bytes_per_entry: 584, tokens_per_entry: 2,
+       page_alignment: 576}
+    - {name: compressor_ring, kind: state, owned: true, bytes_per_entry: 4096, entries: 8}
+  # The prefill path dequantizes the whole compressed stream into a BF16 workspace once
+  # per step: read each record, whatever size it is on the chip and cache dtype, and
+  # write 512 BF16 values. Every compressed layer runs it, readers included; this
+  # abridgement shows it once.
+  - op: Elementwise
+    role: prefill_dequant_gather
+    context: {reads_cache: compressed, bytes_per_entry: 1024, per: request, phase: prefill}
+  edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6]]
+- id: csa2_source_engram
+  nodes:
+  - {op: Gather, role: engram_lookup, rows: 384016682, row_bytes: 264, rows_per_token: 24,
+     out_bytes_per_token: 12288, residency: host, residency_control: engram_cpu_offload,
+     shard: heads}
+  - {op: AllGather, role: engram_rows, emit: tensor_parallel_unless_sequence_parallel,
+     bytes_per_token: 12288}
+  - op: Attention
+    role: block_index_scores
+    kind: sparse_mla
+    n_q: 32
+    n_kv: 1
+    d_h: 128
+    compress_ratio: 2
+    tp: replicated
+    caches:
+    - {name: index, kind: index, owned: true, bytes_per_entry: 132, tokens_per_entry: 2,
+       page_alignment: 576}
+  - op: Attention
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 512
+    qk_rope_head_dim: 64
+    window: 128
+    index_topk: 512
+    compress_ratio: 2
+    caches:
+    - {name: swa, kind: window, owned: true, bytes_per_entry: 584, window: 128,
+       block_size: 32, page_alignment: 576}
+    - {name: compressed, kind: kv, owned: true, bytes_per_entry: 584, tokens_per_entry: 2,
+       page_alignment: 576}
+    - {name: compressor_ring, kind: state, owned: true, bytes_per_entry: 4096, entries: 8}
+  edges: [[0, 1], [1, 2], [2, 3]]
+- id: csa2_reader
+  nodes:
+  - op: Attention
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 512
+    qk_rope_head_dim: 64
+    window: 128
+    index_topk: 512
+    compress_ratio: 2
+    caches:
+    - {name: swa, kind: window, owned: true, bytes_per_entry: 584, window: 128,
+       block_size: 32, page_alignment: 576}
+    - {name: compressed, kind: kv, owned: false, bytes_per_entry: 584, tokens_per_entry: 2}
+
+# Layer 20 owns the ratio-1 compressed and indexer caches the rest of the stack reads.
+- id: csa1_source
+  nodes:
+  - op: Attention
+    role: block_index_scores
+    kind: sparse_mla
+    n_q: 32
+    n_kv: 1
+    d_h: 128
+    compress_ratio: 1
+    tp: replicated
+    caches:
+    - {name: index, kind: index, owned: true, bytes_per_entry: 132, page_alignment: 576}
+  - op: Attention
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 512
+    qk_rope_head_dim: 64
+    window: 128
+    index_topk: 512
+    compress_ratio: 1
+    caches:
+    - {name: swa, kind: window, owned: true, bytes_per_entry: 584, window: 128,
+       block_size: 32, page_alignment: 576}
+    - {name: compressed, kind: kv, owned: true, bytes_per_entry: 584, page_alignment: 576}
+  edges: [[0, 1]]
+- id: csa1_reader
+  nodes:
+  - op: Attention
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 512
+    qk_rope_head_dim: 64
+    window: 128
+    index_topk: 512
+    compress_ratio: 1
+    caches:
+    - {name: swa, kind: window, owned: true, bytes_per_entry: 584, window: 128,
+       block_size: 32, page_alignment: 576}
+    - {name: compressed, kind: kv, owned: false, bytes_per_entry: 584}
+# Layers 24, 28, 32 and 36 score the context with their own queries over layer 20's
+# indexer keys, and mask the FP32 scores to layer 20's candidate blocks with -inf stores:
+# one row per query token, as wide as max_model_len in decode.
+- id: csa1_index
+  nodes:
+  - op: Attention
+    role: block_index_scores
+    kind: sparse_mla
+    n_q: 32
+    n_kv: 1
+    d_h: 128
+    compress_ratio: 1
+    tp: replicated
+    caches:
+    - {name: index, kind: index, owned: false, bytes_per_entry: 132}
+  - op: Elementwise
+    role: candidate_mask
+    tp: replicated
+    context: {bytes_per_entry: 4, per: query_token, decode_extent: max_model_len}
+  - op: Attention
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 512
+    qk_rope_head_dim: 64
+    window: 128
+    index_topk: 512
+    compress_ratio: 1
+    caches:
+    - {name: swa, kind: window, owned: true, bytes_per_entry: 584, window: 128,
+       block_size: 32, page_alignment: 576}
+    - {name: compressed, kind: kv, owned: false, bytes_per_entry: 584}
+  edges: [[0, 1], [1, 2]]
+
+# DSpark's three draft layers: sliding window only, 128 experts, top 3. A draft query
+# reads the 128-token window plus all 5 positions of its block, non-causally.
+- id: dspark_0
+  nodes: &dspark_nodes
+  - {op: GEMM, role: fused_wqa_wkv, n: 1792, k: 5120, tp: replicated}
+  - op: Attention
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 512
+    qk_rope_head_dim: 64
+    window: 133
+    caches:
+    - {name: swa, kind: window, owned: true, bytes_per_entry: 584, window: 128,
+       block_size: 32, page_alignment: 576}
+  - {op: GroupedGEMM, role: experts, n: 2304, k: 5120, experts: 128, top_k: 3,
+     weight_dtype: mxfp4, under_sequence_parallel: token_sharded}
+  - {op: All2All, role: moe_dispatch_combine, emit: expert_parallel}
+  edges: &edges4 [[0, 1], [1, 2], [2, 3]]
+- {id: dspark_1, nodes: *dspark_nodes, edges: *edges4}
+- {id: dspark_2, nodes: *dspark_nodes, edges: *edges4}
+# The draft's work over the target's tokens: main_proj over three target layers' hidden
+# states, then each draft layer's own fused_wqa_wkv for its context KV.
+- id: dspark_context
+  nodes:
+  - {op: GEMM, role: main_proj, n: 5120, k: 15360, tp: replicated}
+  - {op: GEMM, role: context_wqa_wkv_0, n: 1792, k: 5120, tp: replicated,
+     aliases: dspark_0.fused_wqa_wkv}
+  - {op: GEMM, role: context_wqa_wkv_1, n: 1792, k: 5120, tp: replicated,
+     aliases: dspark_1.fused_wqa_wkv}
+  - {op: GEMM, role: context_wqa_wkv_2, n: 1792, k: 5120, tp: replicated,
+     aliases: dspark_2.fused_wqa_wkv}
+  edges: [[0, 1], [0, 2], [0, 3]]
+
+stack:
+  prologue: [swa, swa_engram,
+             csa2_source, csa2_reader, csa2_reader, csa2_reader, csa2_reader, csa2_reader,
+             csa2_source, csa2_reader, csa2_reader, csa2_reader, csa2_reader, csa2_reader,
+             csa2_source_engram, csa2_reader, csa2_reader, csa2_reader, csa2_reader, csa2_reader,
+             csa1_source]
+  pattern: [csa1_reader, csa1_reader, csa1_reader, csa1_index]
+  repeat: 4
+  epilogue: [csa1_reader, csa1_reader, csa1_reader]
+
+head:
+- {op: Elementwise, role: final_norm}
+- {op: GEMM, role: lm_head, n: 129280, k: 5120, tp: column, weight_dtype: bf16}
+
+speculator:
+  method: dspark
+  num_spec_tokens: 5
+  drafting: parallel_block
+  # The draft's own lookup, into the target's table, before each pass. It reduces before
+  # the draft shards its stream, so the all-reduce runs under the mode too.
+  embedding:
+  - {op: Gather, role: dspark_embed_tokens, rows: 129280, row_bytes: 10240, rows_per_token: 1,
+     out_bytes_per_token: 10240, shard: rows, aliases: embedding.embed_tokens}
+  - {op: AllReduce, role: dspark_embed_out, emit: tensor_parallel}
+  stack:
+    pattern: [dspark_0, dspark_1, dspark_2]
+    repeat: 1
+  context_stack:
+    pattern: [dspark_context]
+    repeat: 1
+  head:
+  - {op: GEMM, role: dspark_lm_head, n: 129280, k: 5120, tp: column, aliases: head.lm_head}
+  # The Markov head, once per draft position in order: a rank-256 row for the previous
+  # token, projected to the vocabulary.
+  sequential_head:
+  - {op: Gather, role: markov_w1, rows: 129280, row_bytes: 512, rows_per_token: 1,
+     out_bytes_per_token: 512}
+  - {op: GEMM, role: markov_w2, n: 129280, k: 256, tp: replicated, weight_dtype: bf16}
+
+# SM100 and SM103 run the MXFP8 BMM natively and store the 528 B MXFP8 record; under
+# nvfp4_ds_mla the compressed cache becomes a 288 B NVFP4 record. Mega attention, SM100's
+# default where the layout allows it, resolves an unstated cache dtype to nvfp4_ds_mla;
+# which dtype runs is the cost model's to resolve.
+base_capability_families: [9]
+arch_overrides:
+- capability_family: 10
+  nodes:
+  - {role: wo_a, weight_dtype: fp8}
+  caches:
+  - {name: swa, bytes_per_entry: 528, page_alignment: 512}
+  - {name: compressed, bytes_per_entry: 528, page_alignment: 512,
+     bytes_by_cache_dtype: {nvfp4_ds_mla: 288}}
+  - {name: index, page_alignment: 512}

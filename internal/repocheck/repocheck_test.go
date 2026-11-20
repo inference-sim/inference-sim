@@ -220,11 +220,11 @@ func TestNoNestedModule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Row 2.5a imports the history of blis-substrate with its go.mod; row 2.5b deletes it together
-	// with the import rewrite, and this exemption.
+	// Rows 2.5a and 2.6a import the history of blis-substrate and blis-vllm with their go.mod;
+	// the combined import-rewrite PR deletes both together with this exemption.
 	var nested []string
 	for _, g := range got {
-		if g != "substrate/go.mod" {
+		if g != "substrate/go.mod" && g != "engines/vllm/go.mod" {
 			nested = append(nested, g)
 		}
 	}

@@ -1,0 +1,264 @@
+{
+ "name": "dp4-hybrid-local2",
+ "description": "DP 4 under hybrid load balancing, 2 ranks per node (data_parallel_size_local 2): two front ends, each a DPLBAsyncMPClient over its node's two ranks with the coordinator's counts sliced to them. The router sends bursts to each node, and the node's balancer spreads them over its own ranks only.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 30,
+  "max_model_len": 128,
+  "enable_prefix_caching": false,
+  "scheduling_policy": "fcfs",
+  "data_parallel_size": 4,
+  "prefill_schedule_interval": 1,
+  "dp_sync_interval": 16,
+  "stats_interval": 3,
+  "data_parallel_size_local": 2,
+  "data_parallel_hybrid_lb": true
+ },
+ "requests": [
+  {
+   "id": "h0",
+   "arrival_step": 0,
+   "prompt": [
+    13201,
+    7168,
+    30267,
+    20883,
+    10292,
+    6942
+   ],
+   "output": [
+    36303,
+    46445,
+    42579
+   ],
+   "priority": 0,
+   "endpoint": 0
+  },
+  {
+   "id": "h1",
+   "arrival_step": 0,
+   "prompt": [
+    3744,
+    40022,
+    26962,
+    30687,
+    43855,
+    49425,
+    41341,
+    43603,
+    11321
+   ],
+   "output": [
+    41837,
+    1983,
+    35627,
+    5139
+   ],
+   "priority": 0,
+   "endpoint": 0
+  },
+  {
+   "id": "h2",
+   "arrival_step": 0,
+   "prompt": [
+    4902,
+    3336,
+    13465,
+    16855,
+    40296,
+    2971,
+    31404
+   ],
+   "output": [
+    22383,
+    29870
+   ],
+   "priority": 0,
+   "endpoint": 0
+  },
+  {
+   "id": "h3",
+   "arrival_step": 0,
+   "prompt": [
+    39729,
+    13800,
+    35021,
+    16312,
+    42962,
+    20277,
+    33753,
+    1301
+   ],
+   "output": [
+    44414,
+    6569,
+    30971
+   ],
+   "priority": 0,
+   "endpoint": 1
+  },
+  {
+   "id": "h4",
+   "arrival_step": 1,
+   "prompt": [
+    43913,
+    19229,
+    27658,
+    37127,
+    6452
+   ],
+   "output": [
+    47387,
+    17645,
+    21662,
+    16051
+   ],
+   "priority": 0,
+   "endpoint": 1
+  },
+  {
+   "id": "h5",
+   "arrival_step": 1,
+   "prompt": [
+    34612,
+    19942,
+    2949,
+    5602,
+    37906,
+    8073,
+    27240,
+    8064,
+    20064,
+    26330
+   ],
+   "output": [
+    5379,
+    2106
+   ],
+   "priority": 0,
+   "endpoint": 1
+  },
+  {
+   "id": "h6",
+   "arrival_step": 2,
+   "prompt": [
+    45885,
+    1035,
+    14992,
+    14744,
+    4429,
+    31801
+   ],
+   "output": [
+    25606,
+    47458,
+    27045,
+    28511,
+    5786
+   ],
+   "priority": 0,
+   "endpoint": 0
+  },
+  {
+   "id": "h7",
+   "arrival_step": 2,
+   "prompt": [
+    38109,
+    42251,
+    14008,
+    45230,
+    18680,
+    23078,
+    6711
+   ],
+   "output": [
+    21395,
+    22796,
+    1992
+   ],
+   "priority": 0,
+   "endpoint": 1
+  },
+  {
+   "id": "h8",
+   "arrival_step": 4,
+   "prompt": [
+    27873,
+    8732,
+    9820,
+    17147,
+    47335,
+    7622,
+    1717,
+    4925,
+    31470
+   ],
+   "output": [
+    32904,
+    12644
+   ],
+   "priority": 0,
+   "endpoint": 0
+  },
+  {
+   "id": "h9",
+   "arrival_step": 4,
+   "prompt": [
+    45700,
+    37653,
+    13346,
+    30322,
+    34349,
+    13496
+   ],
+   "output": [
+    48965,
+    9583,
+    28474,
+    43186
+   ],
+   "priority": 0,
+   "endpoint": 1
+  },
+  {
+   "id": "h10",
+   "arrival_step": 5,
+   "prompt": [
+    26149,
+    8635,
+    26877,
+    28574,
+    14950,
+    1030,
+    18681,
+    39845
+   ],
+   "output": [
+    20932,
+    2286,
+    14809
+   ],
+   "priority": 0,
+   "endpoint": 1
+  },
+  {
+   "id": "h11",
+   "arrival_step": 6,
+   "prompt": [
+    13275,
+    26839,
+    40453,
+    43063,
+    38811
+   ],
+   "output": [
+    7575,
+    3759
+   ],
+   "priority": 0,
+   "endpoint": 0
+  }
+ ]
+}

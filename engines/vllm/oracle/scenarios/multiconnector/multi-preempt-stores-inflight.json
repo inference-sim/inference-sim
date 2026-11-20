@@ -1,0 +1,181 @@
+{
+ "config": {
+  "block_size": 4,
+  "connector": {
+   "extra_config": {
+    "connectors": [
+     {
+      "kv_connector": "OffloadingConnector",
+      "kv_connector_extra_config": {
+       "cpu_bytes_to_use": 262144,
+       "offload_prompt_only": false
+      },
+      "kv_role": "kv_both"
+     },
+     {
+      "kv_connector": "NixlConnector",
+      "kv_role": "kv_both"
+     }
+    ]
+   },
+   "kv_load_failure_policy": "fail",
+   "kv_role": "kv_both",
+   "name": "MultiConnector"
+  },
+  "enable_prefix_caching": true,
+  "kv_page": {
+   "head_size": 512,
+   "num_kv_heads": 1
+  },
+  "max_model_len": 256,
+  "max_num_batched_tokens": 16,
+  "max_num_seqs": 4,
+  "num_blocks": 12,
+  "scheduling_policy": "fcfs",
+  "transfer": {
+   "load_delay": 2,
+   "store_delay": 4
+  }
+ },
+ "max_steps": 300,
+ "name": "multi-preempt-stores-inflight",
+ "requests": [
+  {
+   "arrival_step": 0,
+   "id": "a",
+   "output": [
+    15068,
+    14322,
+    13687,
+    19512,
+    27089,
+    3109,
+    8402,
+    15550,
+    12914,
+    7742,
+    14721,
+    28360,
+    20165,
+    16026
+   ],
+   "prompt": [
+    3501,
+    20182,
+    23023,
+    24747,
+    21367,
+    17273,
+    8092,
+    8884,
+    24089,
+    8382,
+    9537,
+    24054
+   ]
+  },
+  {
+   "arrival_step": 0,
+   "id": "b",
+   "output": [
+    2178,
+    18649,
+    4696,
+    16026,
+    23052,
+    8743,
+    18726,
+    14464,
+    627,
+    27046,
+    23098,
+    13294,
+    13865,
+    682
+   ],
+   "prompt": [
+    21805,
+    21758,
+    9023,
+    5406,
+    348,
+    21355,
+    2292,
+    4032,
+    19492,
+    11045,
+    911,
+    2727
+   ]
+  },
+  {
+   "arrival_step": 1,
+   "id": "c",
+   "output": [
+    1403,
+    20592,
+    18347,
+    15377,
+    26140,
+    8392
+   ],
+   "prompt": [
+    11387,
+    23257,
+    18659,
+    12058,
+    15436,
+    8636,
+    11653,
+    9906,
+    17370,
+    6184
+   ]
+  },
+  {
+   "arrival_step": 30,
+   "id": "d",
+   "output": [
+    5,
+    6
+   ],
+   "prompt": [
+    3501,
+    20182,
+    23023,
+    24747,
+    21367,
+    17273,
+    8092,
+    8884,
+    24089,
+    8382,
+    9537,
+    24054,
+    77
+   ],
+   "recv_delay": 2,
+   "remote_prefill": true
+  },
+  {
+   "arrival_step": 34,
+   "id": "e",
+   "max_tokens": 1,
+   "output": [
+    1
+   ],
+   "prompt": [
+    6176,
+    7632,
+    13817,
+    8045,
+    18968,
+    26352,
+    9865,
+    3563
+   ],
+   "remote_decode": true,
+   "send_delay": 2
+  }
+ ]
+}

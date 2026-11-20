@@ -1,0 +1,39 @@
+# The vLLM entries of the KV-connector registry (blis-schemas spec/connector), for vLLM
+# v0.32.0. An entry earns behaves_like only by a differential test against that release
+# (inference-sim/inference-sim#2021 B10); registry/connector_test.go checks every entry
+# against this module's diff tests. Connectors not listed are not served: their scheduler
+# side is not yet modelled (docs/feature-matrix.md, "KV connectors and offload").
+kind: ConnectorRegistry
+name: blis-vllm-v0.32.0
+connectors:
+  # NixlConnector resolves to the pull scheduler
+  # (vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py@4ba787ec).
+  NixlConnector:
+    upstream: KVConnectorBase_V1
+    behaves_like: nixl-pull
+    roles: [pd_transfer]
+    evidence: "diff-test @ vLLM v0.32.0: core/connector/nixl, 42 scenarios + 3300 fuzz seeds at 0 mismatches"
+  NixlPullConnector:
+    upstream: KVConnectorBase_V1
+    behaves_like: nixl-pull
+    roles: [pd_transfer]
+    evidence: "diff-test @ vLLM v0.32.0: core/connector/nixl, 42 scenarios + 3300 fuzz seeds at 0 mismatches"
+  # The OffloadingConnector's scheduler side over the CPU tier (CPUOffloadingSpec, or
+  # TieringOffloadingSpec with no secondary tiers), LRU eviction
+  # (vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:53@4ba787ec).
+  OffloadingConnector:
+    upstream: KVConnectorBase_V1
+    behaves_like: offloading-cpu
+    roles: [offload]
+    evidence: "diff-test @ vLLM v0.32.0: core/connector/offloading, 13 scenarios + 3600 fuzz seeds at 0 mismatches (CPU tier, LRU, full attention and sliding-window groups, several workers, async scheduling and PP, DSpark and EAGLE-3 drafters)"
+  # MultiConnector composes an ordered list of children behind one connector
+  # (vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py:133@4ba787ec). The schema's
+  # "composite" role is for it: it names no transfer or offload of its own, so it is served as
+  # neither pd_transfer nor offload. The children modelled are NixlConnector and
+  # OffloadingConnector (core/vllm/multiconnector.go); any other child is refused where the engine
+  # block is built.
+  MultiConnector:
+    upstream: KVConnectorBase_V1
+    behaves_like: multi-nixl-offload
+    roles: [composite]
+    evidence: "diff-test @ vLLM v0.32.0: core/connector/multi, the MultiConnector scenarios (oracle/scenarios/multiconnector) and fuzz seeds at 0 mismatches against vLLM's real MultiConnector over its NIXL and offloading children"

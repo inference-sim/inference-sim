@@ -1,0 +1,152 @@
+// Moved from inference-sim/sim/kernelmodel/routing_test.go at ca532abca209af41425c007974a5f3ef336f5981.
+
+package kernelmodel
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
+	"github.com/inference-sim/blis-substrate/load"
+)
+
+const epScenario = "deepseek-v4.1-flash-h100-tp8-dspark5.yaml"
+
+const routingSet = `kind: RoutingProfileSet
+name: capture
+role: ROLE
+profiles:
+  - {model: deepseek-v4.1-flash, category: text, phase: decode, placement: linear,
+     expert_parallel: 8, method: measured, provenance: {source: "hf://capture@rev", hardware: b200, tier: 2},
+     points: [{batch_tokens: 1, token_imbalance: 2.0, expert_imbalance: 1.5},
+              {batch_tokens: 8192, token_imbalance: 1.6, expert_imbalance: 1.0}]}
+`
+
+// registryWith is the default data with one routing set added, through a registry overlay.
+func registryWith(t *testing.T, role string) *load.Data {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "routing"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := strings.Replace(routingSet, "ROLE", role, 1)
+	if err := os.WriteFile(filepath.Join(dir, "routing", "capture.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o := DataOptions()
+	o.RegistryOverlays = []string{dir}
+	d, err := load.Open(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func openWith(t *testing.T, registry *load.Data, o RoutingOverrides) *Model {
+	t.Helper()
+	SetRoutingOverrides(o)
+	t.Cleanup(func() { SetRoutingOverrides(RoutingOverrides{}) })
+	r := repos()
+	r.Scenarios = "../../testdata/scenarios"
+	r.Data = registry
+	m, err := OpenPool(epScenario, r, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func decodeStep(m *Model) time.Duration {
+	b := kernel.Batch{DecodeThreshold: 8, Reqs: make([]kernel.ReqShape, 64)}
+	for i := range b.Reqs {
+		b.Reqs[i] = kernel.ReqShape{Scheduled: 1, Computed: 4095, PromptLen: 4096}
+	}
+	return m.k.StepTime(b).Overlap
+}
+
+// The resolution reaches the kernel and the results file: a command-line imbalance slows an
+// expert-parallel step, and the record names the layer that supplied it. With nothing
+// stated the step is the evenly loaded one and the record says why.
+func TestRoutingResolvesPerPoolAndIsRecorded(t *testing.T) {
+	reg := registryWith(t, "sensitivity")
+	even := openWith(t, reg, RoutingOverrides{})
+	if r := even.Provenance().Routing; r == nil || r.SourceLayer != string(routing.LayerDefault) || r.Reason == "" {
+		t.Fatalf("the default is not recorded with its reason: %+v", r)
+	}
+	cli := openWith(t, reg, RoutingOverrides{CLI: &routing.Value{TokenImbalance: 1.8, Source: "--routing-token-imbalance"}})
+	if r := cli.Provenance().Routing; r == nil || r.SourceLayer != "cli" || r.TokenImbalance != 1.8 {
+		t.Fatalf("the cli layer is not recorded: %+v", r)
+	}
+	if decodeStep(cli) <= decodeStep(even) {
+		t.Errorf("a 1.8x busiest-rank load did not slow the step: %v against %v", decodeStep(cli), decodeStep(even))
+	}
+}
+
+// A sensitivity set applies only when named; a default-role set applies to every run whose
+// key it carries, here through the workload's category.
+func TestRoutingRegistryRoles(t *testing.T) {
+	text := &routing.Workload{Category: "text"}
+	sens := openWith(t, registryWith(t, "sensitivity"), RoutingOverrides{Workload: text})
+	if r := sens.Provenance().Routing; r.SourceLayer != string(routing.LayerDefault) {
+		t.Errorf("an unnamed sensitivity set applied: %+v", r)
+	}
+	data := registryWith(t, "default")
+	def := openWith(t, data, RoutingOverrides{Workload: text})
+	r := def.Provenance().Routing
+	// The profile the resolution used is in the data's selected-entry report (VAL-6), beside
+	// the coefficients the kernel's lookups returned.
+	var routed, coefficients bool
+	for _, sel := range data.Report().Selected {
+		routed = routed || (sel.Kind == load.KindRouting && sel.Set == "capture")
+		coefficients = coefficients || sel.Kind == load.KindCoefficient
+	}
+	if !routed || !coefficients {
+		t.Errorf("the selected-entry report lacks the routing profile (%v) or the kernel's coefficients (%v): %+v",
+			routed, coefficients, data.Report().Selected)
+	}
+	if r.SourceLayer != string(routing.LayerRegistry) || r.Set != "capture" || r.MeasuredOn != "b200" ||
+		len(r.Keys) != 1 || r.Keys[0] != "deepseek-v4.1-flash/text/decode/linear/ep8" {
+		t.Fatalf("the registry profile is not resolved or not recorded: %+v", r)
+	}
+	if decodeStep(def) <= decodeStep(sens) {
+		t.Errorf("the registry curve did not reach the step")
+	}
+}
+
+// The pool's engine.eplb reaches the routing resolution from the block this package decoded: a
+// registry curve describes linear placement, so with EPLB on it does not apply and the default
+// is recorded with EPLB as its reason.
+func TestRoutingReadsTheDecodedEPLB(t *testing.T) {
+	reg := registryWith(t, "default")
+	text := &routing.Workload{Category: "text"}
+	SetRoutingOverrides(RoutingOverrides{Workload: text})
+	t.Cleanup(func() { SetRoutingOverrides(RoutingOverrides{}) })
+	src, err := os.ReadFile(filepath.Join("..", "..", "testdata", "scenarios", epScenario))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	const engine = "    engine:\n"
+	if strings.Count(string(src), engine) != 1 {
+		t.Fatalf("%s has %d engine blocks, want 1", epScenario, strings.Count(string(src), engine))
+	}
+	withEPLB := strings.Replace(string(src), engine, engine+"      enable_eplb: true\n", 1)
+	if err := os.WriteFile(filepath.Join(dir, epScenario), []byte(withEPLB), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := repos()
+	r.Scenarios = dir
+	r.Data = reg
+	m, err := OpenPool(epScenario, r, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := m.Provenance().Routing; rec == nil || rec.SourceLayer != string(routing.LayerDefault) ||
+		!strings.Contains(rec.Reason, "EPLB") {
+		t.Errorf("with engine.eplb enabled the routing record is %+v, want the default for EPLB", rec)
+	}
+}

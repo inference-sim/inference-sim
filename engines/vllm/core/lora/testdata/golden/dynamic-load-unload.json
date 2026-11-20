@@ -1,0 +1,457 @@
+{
+ "adapter_ids": {
+  "a": 1,
+  "b": 2,
+  "c": 3,
+  "d": 4,
+  "e": 6,
+  "f": 7,
+  "x": 5
+ },
+ "config": {
+  "max_cpu_loras": 3,
+  "max_loras": 2
+ },
+ "provenance": {
+  "blis_vllm_commit": "08f5efeae8586d967a220d7866062c448b9bf4c0",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/9+2ee0b3b47a9c",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "tests.v1.core.utils.CacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)",
+   "nixl._api.nixl_agent (OBJ and UCX backends)",
+   "zmq (pyzmq, as tiering/p2p/control/zmq.py uses it)",
+   "time.monotonic",
+   "vLLM environment variables of a tiering sequence"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "oracle_inputs": {
+   "oracle/mocks.json": "9521f9f69e212f249e79b33614003c43dea5642e45499afa48b893737fc49f9b",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_lora_cache.py": "804bd9fad3a45a8dccb01482f41fb47cc655af925e59ac5f2e3e29298af61007",
+   "oracle/run_scheduler.py": "48ef014382a90ec1a4b3f3c09fd5e9aeae2325868af45926a7ab17bc3f1211d7",
+   "oracle/scenarios/lora-cache/dynamic-load-unload.json": "67b0edcf579b85e37703e8087d7598497ac1eb2bf6fd900ebbab2861e1b4ae48"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+  "scenario_sha256": "67b0edcf579b85e37703e8087d7598497ac1eb2bf6fd900ebbab2861e1b4ae48",
+  "seed": null,
+  "tier": 2,
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
+ },
+ "steps": [
+  {
+   "active": [
+    1
+   ],
+   "error": null,
+   "events": [
+    [
+     "load",
+     1
+    ],
+    [
+     "activate",
+     1
+    ]
+   ],
+   "op": "load",
+   "registered": [
+    1
+   ],
+   "requested": [
+    1
+   ],
+   "result": true,
+   "slots": [
+    1,
+    null
+   ]
+  },
+  {
+   "active": [
+    1,
+    2
+   ],
+   "error": null,
+   "events": [
+    [
+     "load",
+     2
+    ],
+    [
+     "activate",
+     2
+    ]
+   ],
+   "op": "load",
+   "registered": [
+    1,
+    2
+   ],
+   "requested": [
+    2
+   ],
+   "result": true,
+   "slots": [
+    1,
+    2
+   ]
+  },
+  {
+   "active": [
+    2,
+    1
+   ],
+   "error": null,
+   "events": [],
+   "op": "load",
+   "registered": [
+    2,
+    1
+   ],
+   "requested": [
+    1
+   ],
+   "result": true,
+   "slots": [
+    1,
+    2
+   ]
+  },
+  {
+   "active": [
+    1,
+    3
+   ],
+   "error": null,
+   "events": [
+    [
+     "load",
+     3
+    ],
+    [
+     "deactivate",
+     2
+    ],
+    [
+     "activate",
+     3
+    ]
+   ],
+   "op": "load",
+   "registered": [
+    2,
+    1,
+    3
+   ],
+   "requested": [
+    3
+   ],
+   "result": true,
+   "slots": [
+    1,
+    3
+   ]
+  },
+  {
+   "active": [
+    1,
+    3
+   ],
+   "error": null,
+   "events": [],
+   "registered": [
+    2,
+    1,
+    3
+   ],
+   "requested": [
+    1,
+    3
+   ],
+   "slots": [
+    1,
+    3
+   ]
+  },
+  {
+   "active": [
+    3,
+    4
+   ],
+   "error": null,
+   "events": [
+    [
+     "load",
+     4
+    ],
+    [
+     "evict",
+     2
+    ],
+    [
+     "deactivate",
+     1
+    ],
+    [
+     "activate",
+     4
+    ]
+   ],
+   "op": "load",
+   "registered": [
+    1,
+    3,
+    4
+   ],
+   "requested": [
+    4
+   ],
+   "result": true,
+   "slots": [
+    4,
+    3
+   ]
+  },
+  {
+   "active": [
+    3,
+    4
+   ],
+   "error": null,
+   "events": [],
+   "op": "unload",
+   "registered": [
+    1,
+    3,
+    4
+   ],
+   "requested": [
+    2
+   ],
+   "result": false,
+   "slots": [
+    4,
+    3
+   ]
+  },
+  {
+   "active": [
+    3,
+    4
+   ],
+   "error": null,
+   "events": [],
+   "op": "unload",
+   "registered": [
+    1,
+    3,
+    4
+   ],
+   "requested": [
+    5
+   ],
+   "result": false,
+   "slots": [
+    4,
+    3
+   ]
+  },
+  {
+   "active": [
+    3,
+    4
+   ],
+   "error": null,
+   "events": [
+    [
+     "remove",
+     1
+    ]
+   ],
+   "op": "unload",
+   "registered": [
+    3,
+    4
+   ],
+   "requested": [
+    1
+   ],
+   "result": true,
+   "slots": [
+    4,
+    3
+   ]
+  },
+  {
+   "active": [
+    3,
+    4
+   ],
+   "error": null,
+   "events": [],
+   "registered": [
+    3,
+    4
+   ],
+   "requested": [
+    4
+   ],
+   "slots": [
+    4,
+    3
+   ]
+  },
+  {
+   "active": [
+    4,
+    6
+   ],
+   "error": null,
+   "events": [
+    [
+     "load",
+     6
+    ],
+    [
+     "deactivate",
+     3
+    ],
+    [
+     "activate",
+     6
+    ]
+   ],
+   "op": "load",
+   "registered": [
+    3,
+    4,
+    6
+   ],
+   "requested": [
+    6
+   ],
+   "result": true,
+   "slots": [
+    4,
+    6
+   ]
+  },
+  {
+   "active": [
+    6,
+    7
+   ],
+   "error": null,
+   "events": [
+    [
+     "load",
+     7
+    ],
+    [
+     "evict",
+     3
+    ],
+    [
+     "deactivate",
+     4
+    ],
+    [
+     "activate",
+     7
+    ]
+   ],
+   "op": "load",
+   "registered": [
+    4,
+    6,
+    7
+   ],
+   "requested": [
+    7
+   ],
+   "result": true,
+   "slots": [
+    7,
+    6
+   ]
+  },
+  {
+   "active": [
+    1,
+    6
+   ],
+   "error": null,
+   "events": [
+    [
+     "load",
+     1
+    ],
+    [
+     "evict",
+     4
+    ],
+    [
+     "deactivate",
+     6
+    ],
+    [
+     "activate",
+     1
+    ],
+    [
+     "deactivate",
+     7
+    ],
+    [
+     "activate",
+     6
+    ]
+   ],
+   "registered": [
+    7,
+    1,
+    6
+   ],
+   "requested": [
+    1,
+    6
+   ],
+   "slots": [
+    6,
+    1
+   ]
+  }
+ ]
+}

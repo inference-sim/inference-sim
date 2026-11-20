@@ -1,0 +1,7608 @@
+{
+ "cases": [
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 9,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 1
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 256,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 128,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 256,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 128,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 256,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 128,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 256,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 128,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 256,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 128,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 256,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 128,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 2
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 256,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 128,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 256,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 128,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 256,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 128,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 256,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 128,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 256,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 128,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 256,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    1,
+    31,
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 128,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": false,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "fp8",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": false,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": false,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": false,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 2,
+    "ep": true,
+    "kv_cache_dtype": "nvfp4",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 2,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": false,
+   "gather_deferred_at": [],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": []
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 1,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 2,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": false,
+   "moe_finalize_all_reduce_max_tokens": 0,
+   "qk_norm_rope_kv_insert": true,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  },
+  {
+   "backend_under_every_fact": true,
+   "case": {
+    "cap": 10,
+    "dcp": 2,
+    "dp": 1,
+    "ep": true,
+    "kv_cache_dtype": "auto",
+    "multicast": true,
+    "pcp": 1,
+    "pp": 1,
+    "spans_nodes": true,
+    "tp": 8
+   },
+   "column_gather_boundary": true,
+   "gather_deferred_at": [
+    32,
+    128,
+    129,
+    256
+   ],
+   "moe_finalize_all_reduce": true,
+   "moe_finalize_all_reduce_max_tokens": 128,
+   "qk_norm_rope_kv_insert": false,
+   "unpooler_sharded_at": [
+    32,
+    128,
+    129,
+    256
+   ]
+  }
+ ],
+ "commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+ "head_dim": 64,
+ "model": "muse-spark-open-816b-a42b-nvfp4",
+ "replacements": [
+  {
+   "what": "module vllm._C_stable_libtorch",
+   "why": "compiled extension or NVML, imported by vllm.platforms.cuda; decides no block size"
+  },
+  {
+   "what": "module vllm._C",
+   "why": "compiled extension or NVML, imported by vllm.platforms.cuda; decides no block size"
+  },
+  {
+   "what": "module pynvml",
+   "why": "compiled extension or NVML, imported by vllm.platforms.cuda; decides no block size"
+  },
+  {
+   "what": "module flashinfer",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.decode",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.prefill",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.utils",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.page",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.mla",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.trtllm_low_latency_gemm",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.fused_moe",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.comm",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module vllm.vllm_flash_attn",
+   "why": "CUDA flash-attention wheel; FA2 is assumed present, FA3 and FA4 are the facts fa3_available and fa4_available"
+  },
+  {
+   "what": "torch.empty(device='cuda')",
+   "why": "allocates on the CPU instead, so cutlass_mla.py:99's import-time workspace (a module global, never read for selection) can be built"
+  },
+  {
+   "what": "vllm.utils.platform_utils.num_compute_units",
+   "why": "a fixed SM count for cutlass_mla.py:73, read only to size that workspace"
+  },
+  {
+   "what": "vllm.utils.flashinfer.can_use_trtllm_attention / supports_trtllm_attention",
+   "why": "the fact trtllm_usable replaces them; the capability rules (:663-670) are copied and the artifactory and cubin probes (:620-645) are what the fact stands for"
+  },
+  {
+   "what": "vllm.v1.attention.ops.flashmla._is_flashmla_available",
+   "why": "the fact flashmla_built replaces the probe of the compiled extensions; the capability rules in is_flashmla_dense_supported (:51-58) and is_flashmla_sparse_supported (:61-74) run as written"
+  },
+  {
+   "what": "flashinfer.comm MNNVL workspaces",
+   "why": "a stand-in that records it was built; whether one can be is the case's multicast input, read by vLLM's own _create_on_all_tp_ranks (mnnvl_fusions.py:32-58)"
+  },
+  {
+   "what": "torch.ops._C",
+   "why": "compiled ops that quantization modules probe when imported (for example w8a8_utils.py:28-41); none of them feeds the three decisions"
+  },
+  {
+   "what": "the TP group and _all_tp_ranks",
+   "why": "one process stands for every TP rank: world_size is the case's tp, and the MIN all-reduce over ranks that agree by construction returns the flag"
+  },
+  {
+   "what": "fused_moe/config.py get_dp_group, get_pcp_group, get_tensor_model_parallel_rank",
+   "why": "rank 0 of each group: the ranks only say which rank this process is, and every flag the decisions read is the same on every rank"
+  },
+  {
+   "what": "tp_group_spans_nodes",
+   "why": "the case's spans_nodes input (mnnvl_fusions.py:20-23)"
+  }
+ ],
+ "tokens": [
+  1,
+  31,
+  32,
+  128,
+  129,
+  256,
+  257
+ ]
+}

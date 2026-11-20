@@ -1,0 +1,93 @@
+{
+ "description": "After reset_cache, a chunk the fs tier holds is a MISS until on_reset_flushed; the fs tier keeps its files across the reset, so the chunk is found again after it.",
+ "spec": {
+  "name": "TieringOffloadingSpec",
+  "cpu_bytes_to_use": 49152,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1,
+  "extra": {
+   "secondary_tiers": [
+    {
+     "type": "fs",
+     "root_dir": "@root",
+     "n_read_threads": 1,
+     "n_write_threads": 0
+    }
+   ]
+  }
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "k1"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "k1"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "a"
+   ]
+  },
+  {
+   "m": "reset_cache"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "on_reset_flushed"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  }
+ ]
+}

@@ -1,0 +1,370 @@
+{
+ "finished": {
+  "e1": {
+   "output_tokens": 10,
+   "reason": "length",
+   "step": 3
+  },
+  "e2": {
+   "output_tokens": 15,
+   "reason": "length",
+   "step": 4
+  },
+  "e3": {
+   "output_tokens": 6,
+   "reason": "stop",
+   "step": 3
+  }
+ },
+ "provenance": {
+  "blis_vllm_commit": "e299646714d8134a0eea8409fa6ebeafd9e1af37",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/9+2ee0b3b47a9c",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "tests.v1.core.utils.CacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)",
+   "nixl._api.nixl_agent (OBJ and UCX backends)",
+   "zmq (pyzmq, as tiering/p2p/control/zmq.py uses it)",
+   "time.monotonic",
+   "vLLM environment variables of a tiering sequence"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "oracle_inputs": {
+   "oracle/mocks.json": "9521f9f69e212f249e79b33614003c43dea5642e45499afa48b893737fc49f9b",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_scheduler.py": "8aeea68a1dce3a32b9b8458ce710812c7851769e67bc3cc28414750054916b3a",
+   "oracle/scenarios/spec-model-len-cap.json": "5f3de6b00441390b02ceee602b0af67cd019f46e00e2b24c0f95bebd7bbc5c9d"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+  "scenario_sha256": "5f3de6b00441390b02ceee602b0af67cd019f46e00e2b24c0f95bebd7bbc5c9d",
+  "seed": null,
+  "tier": 2,
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
+ },
+ "steps": [
+  {
+   "blocks": {
+    "e1": [
+     [
+      "11247e6cd2eb1684e00c67bea544d966a27066cadc0f226f5c832c5f9d3b077a00000000",
+      1
+     ],
+     [
+      "7e22cb6e1cc68e9271dd5544fc6fd660bd679d1ca5c816e99bbb1600c50e383100000000",
+      1
+     ],
+     [
+      "dd48cbc4e839f5e028d34ccb4547999b4c805127a91abcf44d2df5c8aa0078de00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "e2": [
+     [
+      "7bd735cc1e3c31ee6a6a3690718debc46558602aed31bc14f5b69c0952a18ba800000000",
+      1
+     ],
+     [
+      "a108f47986bd196c1f49ed25b9234f94a401e4208c06556928825a352d0f00a000000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 51,
+   "kv_usage": 0.13559322033898302,
+   "num_running": 2,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "e1",
+    "e2"
+   ],
+   "scheduled": {
+    "e1": 14,
+    "e2": 9
+   },
+   "step": 0
+  },
+  {
+   "blocks": {
+    "e1": [
+     [
+      "11247e6cd2eb1684e00c67bea544d966a27066cadc0f226f5c832c5f9d3b077a00000000",
+      1
+     ],
+     [
+      "7e22cb6e1cc68e9271dd5544fc6fd660bd679d1ca5c816e99bbb1600c50e383100000000",
+      1
+     ],
+     [
+      "dd48cbc4e839f5e028d34ccb4547999b4c805127a91abcf44d2df5c8aa0078de00000000",
+      1
+     ],
+     [
+      "6545fd1704720aed8e72f7da080f87351d37018f7a7bd911120d6aaf79e4297000000000",
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "e2": [
+     [
+      "7bd735cc1e3c31ee6a6a3690718debc46558602aed31bc14f5b69c0952a18ba800000000",
+      1
+     ],
+     [
+      "a108f47986bd196c1f49ed25b9234f94a401e4208c06556928825a352d0f00a000000000",
+      1
+     ],
+     [
+      "c82d6c8991e2463b6ab1d07beafad790836163dbc5ad2245c345096f68abe7a100000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "e3": [
+     [
+      "d6aeea4fce911806b114c516814c8ea5581cc0e5e2bd372411fd495b371c96d700000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 47,
+   "kv_usage": 0.2033898305084746,
+   "num_running": 3,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "scheduled": {
+    "e1": 4,
+    "e2": 4,
+    "e3": 5
+   },
+   "spec_scheduled": {
+    "e1": 3,
+    "e2": 3
+   },
+   "step": 1
+  },
+  {
+   "blocks": {
+    "e1": [
+     [
+      "11247e6cd2eb1684e00c67bea544d966a27066cadc0f226f5c832c5f9d3b077a00000000",
+      1
+     ],
+     [
+      "7e22cb6e1cc68e9271dd5544fc6fd660bd679d1ca5c816e99bbb1600c50e383100000000",
+      1
+     ],
+     [
+      "dd48cbc4e839f5e028d34ccb4547999b4c805127a91abcf44d2df5c8aa0078de00000000",
+      1
+     ],
+     [
+      "6545fd1704720aed8e72f7da080f87351d37018f7a7bd911120d6aaf79e4297000000000",
+      1
+     ],
+     [
+      "2042afc6b373f5531e196be2b92f77f5e775278666a08702ac57d7cbcdb6321900000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "e2": [
+     [
+      "7bd735cc1e3c31ee6a6a3690718debc46558602aed31bc14f5b69c0952a18ba800000000",
+      1
+     ],
+     [
+      "a108f47986bd196c1f49ed25b9234f94a401e4208c06556928825a352d0f00a000000000",
+      1
+     ],
+     [
+      "c82d6c8991e2463b6ab1d07beafad790836163dbc5ad2245c345096f68abe7a100000000",
+      1
+     ],
+     [
+      "7445e1c58850be127a3b2ea0c20adde541ba0cf24b3cdec4550a50304e3a239200000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "e3": [
+     [
+      "d6aeea4fce911806b114c516814c8ea5581cc0e5e2bd372411fd495b371c96d700000000",
+      1
+     ],
+     [
+      "2002e7d4c3604252533a27344196a621273e34e2e7868b1b39a0a374a2dcab1300000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 45,
+   "kv_usage": 0.23728813559322037,
+   "num_running": 3,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "e1",
+    "e2",
+    "e3"
+   ],
+   "scheduled": {
+    "e1": 4,
+    "e2": 4,
+    "e3": 4
+   },
+   "spec_scheduled": {
+    "e1": 3,
+    "e2": 3,
+    "e3": 3
+   },
+   "step": 2
+  },
+  {
+   "blocks": {
+    "e2": [
+     [
+      "7bd735cc1e3c31ee6a6a3690718debc46558602aed31bc14f5b69c0952a18ba800000000",
+      1
+     ],
+     [
+      "a108f47986bd196c1f49ed25b9234f94a401e4208c06556928825a352d0f00a000000000",
+      1
+     ],
+     [
+      "c82d6c8991e2463b6ab1d07beafad790836163dbc5ad2245c345096f68abe7a100000000",
+      1
+     ],
+     [
+      "7445e1c58850be127a3b2ea0c20adde541ba0cf24b3cdec4550a50304e3a239200000000",
+      1
+     ],
+     [
+      "c5f9246def10d968e53e2358ecd0f62a72980baa7734a7e1bd34a4f8f6dec46100000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "finished": [
+    "e1",
+    "e3"
+   ],
+   "free_blocks": 53,
+   "kv_usage": 0.10169491525423724,
+   "num_running": 1,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [
+    "e2"
+   ],
+   "scheduled": {
+    "e1": 1,
+    "e2": 4,
+    "e3": 4
+   },
+   "spec_scheduled": {
+    "e2": 3,
+    "e3": 3
+   },
+   "step": 3
+  },
+  {
+   "blocks": {},
+   "finished": [
+    "e2"
+   ],
+   "free_blocks": 59,
+   "kv_usage": 0.0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "preempted": [],
+   "running": [],
+   "scheduled": {
+    "e2": 2
+   },
+   "spec_scheduled": {
+    "e2": 1
+   },
+   "step": 4
+  }
+ ]
+}

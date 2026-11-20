@@ -1,0 +1,405 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+// Derived from vllm/v1/metrics/loggers.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
+// Also vllm/v1/metrics/stats.py (PrefixCacheStats, PromptTokenStats, PrefillStats,
+// IterationStats) and the PrefillStats bookkeeping of vllm/v1/core/sched/scheduler.py.
+
+// Package metrics is vLLM's Prometheus stat logger for the vllm:* families whose values the
+// scheduler alone decides (class "exact" in oracle/metrics/manifest.json): request counts, KV
+// usage, prefix-cache queries and hits, preemptions, prompt and generation tokens, finished
+// requests by reason, and tokens per step. It reads what one engine step decided and keeps
+// each series as vLLM's PrometheusStatLogger.record does (loggers.py:1138-1330@4ba787ec).
+//
+// Families that need time (latencies) or supplied inputs (spec-decode acceptance, transfer
+// durations) are not here: they are "derived" in the manifest and reported on the
+// simulator's values elsewhere.
+package metrics
+
+import (
+	"fmt"
+	"sort"
+)
+
+// Admission is one request the scheduler admitted from the waiting queue in a step, after a
+// prefix-cache lookup (a request resuming with computed tokens takes none). A request whose KV
+// connector load runs asynchronously is admitted at the step that starts the load, and runs later.
+type Admission struct {
+	ID string
+	// PromptTokens is the request's num_tokens at admission: its prompt plus, for a request
+	// resuming after preemption, the output it already has.
+	PromptTokens int
+	// LocalHit is the tokens the local prefix cache supplied.
+	LocalHit int
+	// Preempted is whether the request was preempted before (num_preemptions > 0).
+	Preempted bool
+	// CacheLookup is whether a local prefix-cache lookup ran: prefix caching is on
+	// (prefix_cache_lookup_enabled, kv_cache_manager.py:251-253@4ba787ec). Only a lookup that
+	// ran is counted (record_prefix_cache_stats, :255-264), though the prompt is counted
+	// either way.
+	CacheLookup bool
+	// External is num_external_computed_tokens: the tokens a KV connector supplied beyond the
+	// local hit, by a load that has finished or is still running (scheduler.py:1251-1257@4ba787ec).
+	External int
+	// Connector is whether a KV connector is configured, so the admission also counts as a
+	// connector prefix-cache query (connector_prefix_cache_stats, scheduler.py:1476-1495).
+	Connector bool
+	// ExternalBySource splits External by the CacheHitSource of the tier that supplied it
+	// (get_external_cache_hit_sources, scheduler.py:1494-1503@4ba787ec), by the label's value.
+	ExternalBySource map[string]int
+}
+
+// Finish is one request a step finished.
+type Finish struct {
+	ID string
+	// Reason is vLLM's finish-reason string: stop, length, abort, error or repetition.
+	Reason           string
+	PromptTokens     int
+	GenerationTokens int
+	// Preemptions is how many times the request was preempted.
+	Preemptions int
+	// MaxTokens is the request's max_tokens as the engine received it (SamplingParams
+	// .max_tokens, observed when non-zero, loggers.py:1325-1328@4ba787ec).
+	MaxTokens int
+	// CachedTokens is the request's cached prompt tokens as its first output reported them
+	// (RequestState.num_cached_tokens, output_processor.py:790-794@4ba787ec); Model fills it.
+	CachedTokens int
+}
+
+// Step is what one engine step decided, as the scheduler's stats and outputs report it.
+type Step struct {
+	// Running and Waiting are get_request_counts after the step; Deferred is the waiting
+	// requests deferred by transient constraints (vllm:num_requests_waiting_by_reason).
+	Running, Waiting, Deferred int
+	// KVUsage is the KV cache usage after the step.
+	KVUsage float64
+	// Admitted are the requests admitted from the waiting queue, in admission order.
+	Admitted []Admission
+	// Scheduled is tokens per request this step.
+	Scheduled map[string]int
+	// Preempted are the requests preempted this step.
+	Preempted []string
+	// Emitted is the output tokens each request produced this step; FirstTokens are the
+	// requests whose first output token this is.
+	Emitted     map[string]int
+	FirstTokens []string
+	// Finished are the requests the step finished.
+	Finished []Finish
+	// Forgotten are the requests a client aborted (AsyncLLM.abort): the frontend drops the request
+	// state before any output carries the abort back (OutputProcessor.abort_requests,
+	// output_processor.py:552-613@5df63a72), so the request is in no finish-reason sample and
+	// the events it held (a preemption, its prefill stats) are never counted. A request the
+	// engine itself ends (a pause in abort mode, a shutdown with no timeout) arrives instead as
+	// a Finished entry with Reason "abort", and is counted.
+	Forgotten []string
+	// EngineAborts is the number of requests the engine itself aborted this step (each is also a
+	// Finished entry with reason "abort"). The frontend processes their abort outputs as an
+	// iteration of their own, before the step's batch (EngineCoreProc._send_abort_outputs,
+	// core.py:2132-2140@5df63a72).
+	EngineAborts int
+	// Drafts are the requests that verified drafts this step, in scheduled order. The counters
+	// they feed are SpecDecodingStats.observe_draft's (vllm/v1/spec_decode/metrics.py:41-49).
+	Drafts []Draft
+}
+
+// Draft is one request's verify step: the drafts it was scheduled and the drafts the target
+// accepted. A grammar-invalidated draft is not counted as proposed (make_spec_decoding_stats,
+// scheduler.py:3305-3322@4ba787ec); the caller passes the count net of those.
+type Draft struct {
+	Proposed, Accepted int
+}
+
+// Bucketed names a histogram family and its upper bounds, as vLLM registers it.
+type Bucketed struct {
+	Family string
+	Bounds []float64
+}
+
+// Model keeps the series of one engine.
+type Model struct {
+	// specTokens is num_speculative_tokens: the positions vllm:spec_decode_num_accepted_tokens_per_pos
+	// registers, which exists only when speculation is on (SpecDecodingProm, metrics.py:249-258).
+	specTokens int
+	gauges     map[string]float64
+	counters   map[string]float64
+	hists      map[string]*histogram
+	// pending is each admitted request's PrefillStats, set at its first admission and
+	// emitted with its first output token (scheduler.py:1251-1257, 2454-2458@4ba787ec).
+	pending map[string]prefill
+	// preemptions are the PREEMPTED events each request holds until its next output takes
+	// them (scheduler.py:1838-1839, 2522@4ba787ec).
+	preemptions map[string]int
+	// cached is each request's cached prompt tokens from its first output, until it finishes.
+	cached map[string]int
+}
+
+type prefill struct{ prompt, localHit, external int }
+
+type histogram struct {
+	bounds []float64
+	counts []float64 // cumulative per bound, as Prometheus exposes _bucket
+	sum    float64
+	n      float64
+}
+
+// finishReasons are FinishReason's strings, every one of which vLLM pre-registers at zero
+// (loggers.py:819-826@4ba787ec; vllm/v1/engine/__init__.py:49-71@4ba787ec).
+var finishReasons = []string{"stop", "length", "abort", "error", "repetition"}
+
+// promptSources and hitSources are PromptTokenStats.ALL_SOURCES and CacheHitSource
+// (vllm/v1/metrics/stats.py; vllm/v1/metrics/cache_hit_source.py:18-24@4ba787ec).
+var (
+	promptSources = []string{"local_compute", "local_cache_hit", "external_kv_transfer"}
+	hitSources    = []string{"device", "host", "p2p", "disk", "external_unspecified"}
+)
+
+// New returns a model with every series vLLM pre-registers at zero, and the histograms
+// whose bounds are given.
+func New(hists []Bucketed) *Model {
+	m := &Model{gauges: map[string]float64{}, counters: map[string]float64{},
+		hists: map[string]*histogram{}, pending: map[string]prefill{}, preemptions: map[string]int{}, cached: map[string]int{}}
+	for _, g := range []string{"vllm:num_requests_running", "vllm:num_requests_waiting", "vllm:kv_cache_usage_perc",
+		"vllm:num_requests_waiting_by_reason{reason=capacity}", "vllm:num_requests_waiting_by_reason{reason=deferred}"} {
+		m.gauges[g] = 0
+	}
+	for _, c := range []string{"vllm:prefix_cache_queries_total", "vllm:prefix_cache_hits_total",
+		"vllm:external_prefix_cache_queries_total", "vllm:external_prefix_cache_hits_total",
+		"vllm:prompt_tokens_total", "vllm:prompt_tokens_cached_total", "vllm:generation_tokens_total",
+		"vllm:num_preemptions_total"} {
+		m.counters[c] = 0
+	}
+	for _, r := range finishReasons {
+		m.counters["vllm:request_success_total{finished_reason="+r+"}"] = 0
+	}
+	for _, s := range promptSources {
+		m.counters["vllm:prompt_tokens_by_source_total{source="+s+"}"] = 0
+	}
+	for _, s := range hitSources {
+		m.counters["vllm:prompt_tokens_cached_by_source_total{source="+s+"}"] = 0
+	}
+	for _, h := range hists {
+		m.hists[h.Family] = &histogram{bounds: append([]float64(nil), h.Bounds...), counts: make([]float64, len(h.Bounds))}
+	}
+	return m
+}
+
+// WithSpeculation registers the speculative-decoding counters, at zero, for a pool that drafts
+// numSpecTokens tokens a step: the three totals and one accepted-tokens counter for each draft
+// position (SpecDecodingProm.__init__, vllm/v1/spec_decode/metrics.py:200-258@4ba787ec). A pool
+// without speculation registers none of them.
+func (m *Model) WithSpeculation(numSpecTokens int) *Model {
+	m.specTokens = numSpecTokens
+	for _, c := range []string{"vllm:spec_decode_num_drafts_total", "vllm:spec_decode_num_draft_tokens_total",
+		"vllm:spec_decode_num_accepted_tokens_total"} {
+		m.counters[c] = 0
+	}
+	for i := range numSpecTokens {
+		m.counters[fmt.Sprintf("vllm:spec_decode_num_accepted_tokens_per_pos_total{position=%d}", i)] = 0
+	}
+	return m
+}
+
+// Step records one engine step: its scheduler stats, then the iteration stats its outputs
+// carry, in the order PrometheusStatLogger.record applies them.
+func (m *Model) Step(s Step) {
+	// SchedulerStats (loggers.py:1146-1177@4ba787ec).
+	m.gauges["vllm:num_requests_running"] = float64(s.Running)
+	m.gauges["vllm:num_requests_waiting"] = float64(s.Waiting)
+	m.gauges["vllm:num_requests_waiting_by_reason{reason=capacity}"] = float64(s.Waiting - s.Deferred)
+	m.gauges["vllm:num_requests_waiting_by_reason{reason=deferred}"] = float64(s.Deferred)
+	m.gauges["vllm:kv_cache_usage_perc"] = s.KVUsage
+	for _, a := range s.Admitted {
+		// record_prefix_cache_stats at admission (scheduler.py:1508-1511): a preempted
+		// request's lookup goes to preempted_*, which no vllm:* family exports
+		// (PrefixCacheStats.record, stats.py:136-145@4ba787ec).
+		if a.Preempted {
+			continue
+		}
+		if a.CacheLookup {
+			m.counters["vllm:prefix_cache_queries_total"] += float64(a.PromptTokens)
+			m.counters["vllm:prefix_cache_hits_total"] += float64(a.LocalHit)
+			m.counters["vllm:prompt_tokens_cached_by_source_total{source=device}"] += float64(a.LocalHit)
+		}
+		// The connector's prefix-cache query at admission: the tokens the local hit left, of which
+		// the connector supplied External (scheduler.py:1476-1495@4ba787ec).
+		if a.Connector && a.PromptTokens-a.LocalHit != 0 {
+			m.counters["vllm:external_prefix_cache_queries_total"] += float64(a.PromptTokens - a.LocalHit)
+			m.counters["vllm:external_prefix_cache_hits_total"] += float64(a.External)
+			for _, src := range sortedIntKeys(a.ExternalBySource) {
+				m.counters["vllm:prompt_tokens_cached_by_source_total{source="+src+"}"] += float64(a.ExternalBySource[src])
+			}
+		}
+		// PrefillStats.set at the first admission (scheduler.py:1251-1257@4ba787ec): a request
+		// not preempted before is being admitted for the first time.
+		m.pending[a.ID] = prefill{prompt: a.PromptTokens, localHit: a.LocalHit, external: a.External}
+	}
+	// IterationStats (loggers.py:1259-1330@4ba787ec), built from the step's outputs. A
+	// preemption is an event on the request, which the request's next emitted output carries
+	// to the frontend; IterationStats counts it there (stats.py:578-581@4ba787ec).
+	for _, id := range s.Preempted {
+		m.preemptions[id]++
+	}
+	emitting := map[string]bool{}
+	for id, n := range s.Emitted {
+		if n > 0 {
+			emitting[id] = true
+		}
+	}
+	for _, f := range s.Finished {
+		emitting[f.ID] = true
+	}
+	for _, id := range sortedBoolKeys(emitting) {
+		m.counters["vllm:num_preemptions_total"] += float64(m.preemptions[id])
+		delete(m.preemptions, id)
+	}
+	computed := 0
+	for _, id := range s.FirstTokens {
+		// The first output carries the request's PrefillStats (PromptTokenStats.update_from_output).
+		p, ok := m.pending[id]
+		if !ok {
+			continue
+		}
+		delete(m.pending, id)
+		// PromptTokenStats.update_from_output: the tokens skipped are the local hit and the
+		// external ones (stats.py:426-460@4ba787ec).
+		cached := p.localHit + p.external
+		m.cached[id] = cached
+		m.counters["vllm:prompt_tokens_total"] += float64(p.prompt)
+		m.counters["vllm:prompt_tokens_cached_total"] += float64(cached)
+		m.counters["vllm:prompt_tokens_by_source_total{source=local_compute}"] += float64(p.prompt - cached)
+		m.counters["vllm:prompt_tokens_by_source_total{source=local_cache_hit}"] += float64(p.localHit)
+		m.counters["vllm:prompt_tokens_by_source_total{source=external_kv_transfer}"] += float64(p.external)
+		computed += p.prompt - cached
+	}
+	generated := 0
+	for _, id := range sortedKeys(s.Emitted) {
+		generated += s.Emitted[id]
+	}
+	m.counters["vllm:generation_tokens_total"] += float64(generated)
+	// An engine-sent abort output is its own iteration to the logger (the frontend builds
+	// IterationStats for any output batch, and PrometheusStatLogger.record observes the
+	// iteration's tokens, zero here). A step that carries one is counted once more if it also
+	// ran a batch: the abort outputs are processed before the batch's.
+	if s.EngineAborts > 0 {
+		m.observe("vllm:iteration_tokens_total", 0)
+	}
+	if len(s.Emitted) > 0 || len(s.FirstTokens) > 0 {
+		// One observation per step that produced outputs: the prompt tokens computed for
+		// requests whose first token this is, plus the generated tokens (loggers.py:1272-1275).
+		m.observe("vllm:iteration_tokens_total", float64(computed+generated))
+	}
+	for _, d := range s.Drafts {
+		// SpecDecodingStats.observe_draft, applied by SpecDecodingProm.observe (metrics.py:41-49,
+		// 262-272): a draft per verifying request, the positions it proposed and the leading
+		// positions the target accepted.
+		m.counters["vllm:spec_decode_num_drafts_total"]++
+		m.counters["vllm:spec_decode_num_draft_tokens_total"] += float64(d.Proposed)
+		m.counters["vllm:spec_decode_num_accepted_tokens_total"] += float64(d.Accepted)
+		for i := 0; i < d.Accepted && i < m.specTokens; i++ {
+			m.counters[fmt.Sprintf("vllm:spec_decode_num_accepted_tokens_per_pos_total{position=%d}", i)]++
+		}
+	}
+	for _, id := range s.Forgotten {
+		delete(m.pending, id)
+		delete(m.preemptions, id)
+		delete(m.cached, id)
+	}
+	for _, f := range s.Finished {
+		f.CachedTokens = m.cached[f.ID]
+		delete(m.cached, f.ID)
+		m.counters["vllm:request_success_total{finished_reason="+f.Reason+"}"]++
+		m.observe("vllm:request_prompt_tokens", float64(f.PromptTokens))
+		// The prompt tokens computed rather than cached (loggers.py:1312-1318@4ba787ec): the
+		// first-admission cache hit the request's PrefillStats recorded.
+		m.observe("vllm:request_prefill_kv_computed_tokens", float64(f.PromptTokens-max(f.CachedTokens, 0)))
+		m.observe("vllm:request_generation_tokens", float64(f.GenerationTokens))
+		m.observe("vllm:request_num_preemptions", float64(f.Preemptions))
+		m.observe("vllm:request_max_num_generation_tokens", float64(f.GenerationTokens))
+		m.observe("vllm:request_params_n", 1)
+		if f.MaxTokens > 0 {
+			m.observe("vllm:request_params_max_tokens", float64(f.MaxTokens))
+		}
+		delete(m.pending, f.ID)
+	}
+}
+
+// Value is a gauge's or a counter's current value by its series key, as Series names it; 0 for
+// a key the model does not keep.
+func (m *Model) Value(key string) float64 {
+	if v, ok := m.gauges[key]; ok {
+		return v
+	}
+	return m.counters[key]
+}
+
+func (m *Model) observe(family string, v float64) {
+	h, ok := m.hists[family]
+	if !ok {
+		h = &histogram{}
+		m.hists[family] = h
+	}
+	h.sum += v
+	h.n++
+	for i, b := range h.bounds {
+		if v <= b {
+			h.counts[i]++
+		}
+	}
+}
+
+// Series returns every sample as Prometheus exposes it: counters with their _total suffix,
+// histograms as _count, _sum and _bucket{le=...}, by name with sorted labels.
+func (m *Model) Series() map[string]float64 {
+	out := map[string]float64{}
+	for k, v := range m.gauges {
+		out[k] = v
+	}
+	for k, v := range m.counters {
+		out[k] = v
+	}
+	for name, h := range m.hists {
+		out[name+"_count"] = h.n
+		out[name+"_sum"] = h.sum
+		for i, b := range h.bounds {
+			out[fmt.Sprintf("%s_bucket{le=%s}", name, formatBound(b))] = h.counts[i]
+		}
+		if len(h.bounds) > 0 {
+			out[name+"_bucket{le=+Inf}"] = h.n
+		}
+	}
+	return out
+}
+
+// formatBound writes a bucket bound as prometheus_client does (floatToGoString).
+func formatBound(b float64) string {
+	if b == float64(int64(b)) {
+		return fmt.Sprintf("%.1f", b)
+	}
+	return fmt.Sprintf("%g", b)
+}
+
+func sortedBoolKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sortedKeys(m map[string]int) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sortedIntKeys(m map[string]int) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}

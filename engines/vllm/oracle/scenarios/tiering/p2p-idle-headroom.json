@@ -1,0 +1,323 @@
+{
+ "description": "Virtual time, VLLM_P2P_MAX_PEERS=10 and VLLM_P2P_IDLE_TIMEOUT_S=5: idle sessions are reaped only once at most min(8, 10 - 1) = 8 slots are free, so the decoder's lone session, idle past the timeout, is kept. A second P/D fetch from the same prefiller reuses it: its FetchMsg goes out at once, with no new handshake, and the load completes within the following rounds.",
+ "instances": [
+  {
+   "spec": {
+    "name": "TieringOffloadingSpec",
+    "cpu_bytes_to_use": 65536,
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1,
+    "blocks_per_chunk": 1,
+    "extra": {
+     "tier_poll_interval_s": 0,
+     "secondary_tiers": [
+      {
+       "type": "p2p",
+       "host": "127.0.0.1",
+       "port": 5710
+      }
+     ]
+    }
+   }
+  },
+  {
+   "spec": {
+    "name": "TieringOffloadingSpec",
+    "cpu_bytes_to_use": 65536,
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1,
+    "blocks_per_chunk": 1,
+    "extra": {
+     "tier_poll_interval_s": 0,
+     "secondary_tiers": [
+      {
+       "type": "p2p",
+       "host": "127.0.0.1",
+       "port": 5711
+      }
+     ]
+    }
+   }
+  }
+ ],
+ "env": {
+  "VLLM_P2P_MAX_PEERS": 10,
+  "VLLM_P2P_IDLE_TIMEOUT_S": 5
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "inst": 0,
+   "ctx": "p",
+   "params": {
+    "remote_decoder": {
+     "kv_request_id": "h1"
+    }
+   }
+  },
+  {
+   "m": "prepare_store",
+   "inst": 0,
+   "ctx": "p",
+   "keys": [
+    "k1"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "inst": 0,
+   "ctx": "p",
+   "keys": [
+    "k1"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": [
+    "p"
+   ]
+  },
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "d",
+   "params": {
+    "remote_prefiller": {
+     "kv_request_id": "h1",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5710
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": [
+    "d"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d",
+   "key": "k1"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 0,
+   "ctx": "p"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 1,
+   "ctx": "d"
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "advance",
+   "s": 6.0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 0,
+   "ctx": "p2",
+   "params": {
+    "remote_decoder": {
+     "kv_request_id": "h2"
+    }
+   }
+  },
+  {
+   "m": "prepare_store",
+   "inst": 0,
+   "ctx": "p2",
+   "keys": [
+    "k2"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "inst": 0,
+   "ctx": "p2",
+   "keys": [
+    "k2"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": [
+    "p2"
+   ]
+  },
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "d2",
+   "params": {
+    "remote_prefiller": {
+     "kv_request_id": "h2",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5710
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d2",
+   "key": "k2"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": [
+    "d2"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d2",
+   "key": "k2"
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d2",
+   "key": "k2"
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d2",
+   "key": "k2"
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d2",
+   "key": "k2"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 0,
+   "ctx": "p2"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 1,
+   "ctx": "d2"
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  }
+ ]
+}
