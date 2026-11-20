@@ -1,5 +1,5 @@
 {
-  "description": "Everything oracle/indexer/oracle.py replaces (design FID-1). Like oracle/lower/replacements.json it is a separate list from oracle/mocks.json on purpose: the digest of that list is the version every golden trace records. The oracle records no trace; its answers are rules/v0_32/testdata/vllm_indexer_kv_dtype.json, regenerated and compared in CI.",
+  "description": "Everything oracle/indexer/oracle.py replaces (design FID-1). Like oracle/lower/replacements.json it is a separate list from oracle/mocks.json on purpose: the digest of that list is the version every golden trace records. The oracle records no trace; its answers are rules/v0_33/testdata/vllm_indexer_kv_dtype.json, regenerated and compared in CI.",
   "replacements": [
     {
       "symbol": "vllm.platforms.current_platform",

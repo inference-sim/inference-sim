@@ -9,29 +9,22 @@
 // (rules/pack), and the engine block the packs read is too (rules/engineconfig). A consumer
 // takes a pack from this module and passes it on; the latency kernel takes it from its caller.
 //
-// It is a module of its own, separate from the engine model, so a cost model can import the
-// packs without importing the engine. 0.33 is the release the engine executes (blis-vllm's
-// Upstream), checked against vLLM v0.33.0's own source in CI. 0.29, 0.31 and 0.32 are validation
-// and compatibility data for scenario files written against those releases; the engine
-// refuses to execute them.
+// It is a package of its own, separate from the engine model, so a cost model can import the
+// packs without importing the engine. 0.33 is the one release, the one the engine executes
+// (blis-vllm's Upstream), checked against vLLM v0.33.0's own source in CI; a scenario that
+// declares another release is refused.
 package rules
 
 import (
 	"sort"
 
 	"github.com/inference-sim/blis-vllm/rules/pack"
-	"github.com/inference-sim/blis-vllm/rules/v0_29"
-	"github.com/inference-sim/blis-vllm/rules/v0_31"
-	"github.com/inference-sim/blis-vllm/rules/v0_32"
 	"github.com/inference-sim/blis-vllm/rules/v0_33"
 )
 
 // Packs returns a fresh copy of every pack, by version.
 func Packs() map[string]*pack.Pack {
 	return map[string]*pack.Pack{
-		v0_29.Version: v0_29.Pack(),
-		v0_31.Version: v0_31.Pack(),
-		v0_32.Version: v0_32.Pack(),
 		v0_33.Version: v0_33.Pack(),
 	}
 }
@@ -41,7 +34,7 @@ func Lookup(version string) *pack.Pack { return Packs()[version] }
 
 // Versions returns every version this module has a pack for, sorted.
 func Versions() []string {
-	out := make([]string, 0, 3)
+	out := make([]string, 0, 1)
 	for v := range Packs() {
 		out = append(out, v)
 	}

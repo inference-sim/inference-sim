@@ -15,8 +15,6 @@ import (
 // model prices no dispatch for it. Any other backend is named by itself, for the cost model to
 // price from its own coefficients or to say it has none.
 func TestThePlanStatesTheAll2AllBackendTheEngineRuns(t *testing.T) {
-	rulesVersion = "0.33.0"
-	t.Cleanup(func() { rulesVersion = "0.32.0" })
 	for _, c := range []struct {
 		name     string
 		s        vllmsettings.Settings
@@ -54,8 +52,6 @@ func TestThePlanStatesTheAll2AllBackendTheEngineRuns(t *testing.T) {
 // backend. The lowering refuses both by name, citing the open issue, and builds the pairs vLLM
 // accepts; the note for a bound passthrough says the communication is inside the MoE kernel.
 func TestTheLoweringRefusesWhatVLLMsPassthroughBindingRefuses(t *testing.T) {
-	rulesVersion = "0.33.0"
-	t.Cleanup(func() { rulesVersion = "0.32.0" })
 	for _, c := range []struct {
 		name    string
 		s       vllmsettings.Settings

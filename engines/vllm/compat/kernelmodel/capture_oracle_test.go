@@ -13,7 +13,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
-	"github.com/inference-sim/blis-vllm/rules/v0_32"
+	"github.com/inference-sim/blis-vllm/rules/v0_33"
 )
 
 // captureOracleCase is one row of core/lower/testdata/vllm_lower.json "capture": a deployment's
@@ -74,7 +74,7 @@ func openCapture(t *testing.T, c captureOracleCase, hardware string) *latencyker
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "0.33.0"`, 1)
+	body := string(raw)
 	if n := len(engineLine.FindAllString(body, -1)); n != 3 {
 		t.Fatalf("fixture states %d of max_num_batched_tokens, max_num_seqs, compilation_config, want 3", n)
 	}
@@ -184,12 +184,12 @@ func TestKernelCaptureTokensAreVLLMs(t *testing.T) {
 			}
 			in := rules.CUDAGraphCaptureInput{Mode: c.Case.Mode, MaxNumBatchedTokens: c.Case.MaxBatched,
 				MaxCaptureSize: c.Case.MaxCapture, CaptureSizes: c.Case.Sizes}
-			p, _, err := v0_32.Pack().CUDAGraphCaptureSizes(in)
+			p, _, err := v0_33.Pack().CUDAGraphCaptureSizes(in)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if p.Max != c.Resolved.Max || !slices.Equal(p.Sizes, c.Resolved.Sizes) {
-				t.Errorf("the v0_32 pack gives max %d sizes %v; vLLM max %d sizes %v", p.Max, p.Sizes, c.Resolved.Max, c.Resolved.Sizes)
+				t.Errorf("the v0_33 pack gives max %d sizes %v; vLLM max %d sizes %v", p.Max, p.Sizes, c.Resolved.Max, c.Resolved.Sizes)
 			}
 		})
 		checked++

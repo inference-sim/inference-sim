@@ -28,9 +28,8 @@ import (
 
 var data = mustData()
 
-// rulesVersion is the engine release whose rules a case lowers under; a case that needs another
-// sets it and restores it.
-var rulesVersion = "0.32.0"
+// rulesVersion is the engine release whose rules a case lowers under.
+const rulesVersion = "0.33.0"
 
 func mustData() *load.Data {
 	d, err := load.Embedded()

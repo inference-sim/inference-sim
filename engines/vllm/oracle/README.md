@@ -102,8 +102,8 @@ It takes `AttentionConfig.resolve_indexer_kv_dtype`, `dsa_indexer_uses_fp4`, V4.
 `oracle/lower/extract.py` does, and runs them unmodified over a stub platform
 (`oracle/indexer/replacements.json`; `python3 -I oracle/lower/check_replacements.py
 oracle/indexer/oracle.py oracle/indexer/replacements.json` checks the list). Its table, every dtype on
-SM9x and SM10x, is `rules/v0_32/testdata/vllm_indexer_kv_dtype.json`; CI fails if it differs from
-`python -I oracle/indexer/oracle.py <vllm checkout> check rules/v0_32/testdata/vllm_indexer_kv_dtype.json`
+SM9x and SM10x, is `rules/v0_33/testdata/vllm_indexer_kv_dtype.json`; CI fails if it differs from
+`python -I oracle/indexer/oracle.py <vllm checkout> check rules/v0_33/testdata/vllm_indexer_kv_dtype.json`
 (`print` writes it), and `TestIndexerKVDTypeIsWhatVLLMsOwnFunctionsGive` compares the pack with it.
 
 ## Block-size oracle

@@ -37,10 +37,8 @@ func TestAP2PTierOnlyConnectorOptionsResolveToTheCPUTier(t *testing.T) {
 	}
 }
 
-// A scenario for a release the compatibility engine runs (0.29/0.31) that states vLLM's p2p tier is
-// refused, naming the tier and the release that has it, rather than run without the tier; the same
-// scenario stating 0.33.0 adopts to the v0.33.0 engine, which builds the tier.
-func TestAdopt_RefusesTheP2PTierForACompatibilityRelease(t *testing.T) {
+// A scenario stating vLLM's p2p tier adopts: the v0.33.0 engine builds the tier.
+func TestAdopt_AdoptsTheP2PTier(t *testing.T) {
 	repos := vendoredRepos(t)
 	raw, err := os.ReadFile(filepath.Join(repos.Scenarios, "glm-5-h200-tp8-mtp3.yaml"))
 	if err != nil {
@@ -49,28 +47,12 @@ func TestAdopt_RefusesTheP2PTierForACompatibilityRelease(t *testing.T) {
 	const offload = "offload:\n  connector: OffloadingConnector\n  spec: TieringOffloadingSpec\n" +
 		"  tiers:\n    - {tier: cpu_dram, bytes: 17179869184}\n" +
 		"  connector_options:\n    secondary_tiers: [{type: p2p, port: 5710}]\n"
-	adopt := func(version string) (Adopted, error) {
-		body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "`+version+`"`, 1) + offload
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "v.yaml"), []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Data: repos.Data})
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "v.yaml"), []byte(string(raw)+offload), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	for _, v := range CompatVersions() {
-		_, err := adopt(v)
-		if err == nil {
-			t.Errorf("%s with a p2p tier: adopted, want a refusal", v)
-			continue
-		}
-		for _, frag := range []string{"secondary_tiers", "p2p", "0.33.0"} {
-			if !strings.Contains(err.Error(), frag) {
-				t.Errorf("%s: refusal %q must name %q", v, err, frag)
-			}
-		}
-	}
-	if a, err := adopt("0.33.0"); err != nil || !a.CoreEngine {
-		t.Errorf("0.33.0 with a p2p tier: %v (CoreEngine %t), want it adopted to the v0.33.0 engine", err, a.CoreEngine)
+	if _, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Data: repos.Data}); err != nil {
+		t.Errorf("a p2p tier: %v, want it adopted to the v0.33.0 engine", err)
 	}
 }
 
@@ -135,9 +117,8 @@ func TestOpenPools_OpensAP2PHandoff(t *testing.T) {
 
 // A tier on the catalog's object store (s3) resolves as a secondary tier on its device, which the
 // v0.33.0 engine runs as vLLM's obj tier; before, it was refused as "BLIS simulates the fs tier
-// only". Adopt refuses it for both compatibility releases, which model the fs tier only, and
-// adopts it at 0.33.0.
-func TestAnObjectStoreTierResolvesAndIsRefusedForACompatibilityRelease(t *testing.T) {
+// only". Adopt takes it as it does any tier a 0.33.0 deployment states.
+func TestAnObjectStoreTierResolvesAndAdopts(t *testing.T) {
 	o := &deployment.Offload{Spec: "TieringOffloadingSpec", Tiers: []deployment.Tier{
 		{Device: OffloadCPUTier, Bytes: 1 << 34}, {Device: "s3", Bytes: 1 << 40}}}
 	block, err := KVOffloadBlockFromDeployment(o)
@@ -154,21 +135,12 @@ func TestAnObjectStoreTierResolvesAndIsRefusedForACompatibilityRelease(t *testin
 	}
 	const offload = "offload:\n  connector: OffloadingConnector\n  spec: TieringOffloadingSpec\n" +
 		"  tiers:\n    - {tier: cpu_dram, bytes: 17179869184}\n    - {tier: s3, bytes: 1099511627776}\n"
-	adopt := func(version string) (Adopted, error) {
-		body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "`+version+`"`, 1) + offload
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "v.yaml"), []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Data: repos.Data})
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "v.yaml"), []byte(string(raw)+offload), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	for _, v := range CompatVersions() {
-		if _, err := adopt(v); err == nil || !strings.Contains(err.Error(), "object store") || !strings.Contains(err.Error(), "0.33.0") {
-			t.Errorf("%s with an s3 tier: %v, want a refusal naming the object store and 0.33.0", v, err)
-		}
-	}
-	if a, err := adopt("0.33.0"); err != nil || !a.CoreEngine {
-		t.Errorf("0.33.0 with an s3 tier: %v (CoreEngine %t), want it adopted to the v0.33.0 engine", err, a.CoreEngine)
+	if _, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Data: repos.Data}); err != nil {
+		t.Errorf("an s3 tier: %v, want it adopted to the v0.33.0 engine", err)
 	}
 }
 

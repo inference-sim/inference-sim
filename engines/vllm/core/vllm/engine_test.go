@@ -1,7 +1,6 @@
 package vllm
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -266,7 +265,6 @@ func TestFactoryRefuses(t *testing.T) {
 		name, version, extra, want string
 	}{
 		{"another release", "0.32.0", "", "this build models vLLM 0.33.0"},
-		{"a compatibility release without its engine", "0.31.0", "", "compatibility engine"},
 		{"an unknown key", Version, "max_num_seqz: 3\n", "max_num_seqz"},
 		{"no KV blocks", Version, "num_gpu_blocks: 1\n", "num_gpu_blocks"},
 		{"an unknown policy", Version, "scheduling_policy: sjf\n", "fcfs and priority"},
@@ -317,7 +315,7 @@ func TestFactoryRefuses(t *testing.T) {
 		{"adaptive verification without full CUDA graphs", Version, "use_v2_model_runner: true\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\ncompilation_config: {cudagraph_mode: PIECEWISE}\n", "requires full CUDA graphs"},
 		{"adaptive verification with a lowercase piecewise mode", Version, "use_v2_model_runner: true\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\ncompilation_config: {cudagraph_mode: piecewise}\n", "requires full CUDA graphs"},
 		{"adaptive verification with PP", Version, "use_v2_model_runner: true\npipeline_parallel_size: 2\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\n", "pipeline parallelism"},
-		// What rules/v0_32 refuses in an engine block (inference-sim issue 2021 B11 step 2).
+		// What rules/v0_33 refuses in an engine block (inference-sim issue 2021 B11 step 2).
 		{"a cache dtype v0.32.0 does not accept", Version, "kv_cache_dtype: fp9\n", "enum-values-known"},
 		{"an all2all backend v0.32.0 does not accept", Version, "all2all_backend: carrier_pigeon\n", "all2all-backend-known"},
 		{"a moe backend v0.32.0 does not accept", Version, "moe_backend: flashinfer_moe_ep_mega_cutedsl\n", "moe_backend"},
@@ -382,7 +380,7 @@ func TestFactoryAccepts(t *testing.T) {
 			"speculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\n"},
 		// The factory sees one engine block and not the pool's parallel block, so EPLB beside
 		// expert parallelism is a shape the block can have; eplb-needs-expert-parallelism is the
-		// whole-document validator's (rules/v0_32 TestEPLBNeedsExpertParallelism).
+		// whole-document validator's (rules/v0_33 TestEPLBNeedsExpertParallelism).
 		{"EPLB stated in the block alone", "enable_eplb: true\n"},
 		{"adaptive verification at vLLM's default graph mode", "use_v2_model_runner: true\n" +
 			"speculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\n"},
@@ -402,7 +400,7 @@ func TestFactoryAccepts(t *testing.T) {
 	}
 }
 
-// The factory checks rules/v0_32 over the engine block alone, so it refuses only what the block
+// The factory checks rules/v0_33 over the engine block alone, so it refuses only what the block
 // decides. The pool's other parallel widths are not in the block: a rule clause that turns on
 // them is the caller's, which validates the whole document set. dp_shared_memory "requires dp
 // above 1" (engram-config-valid), which the block cannot state, and it requires cpu_offload,
@@ -480,19 +478,15 @@ func TestTheSmallestPoolVLLMStartsServesAFullWindow(t *testing.T) {
 	}
 }
 
-// A compatibility release is built by the engine the caller wires in, and only for those
-// releases.
-func TestCompatSeam(t *testing.T) {
-	var got string
-	f := Factory{Pricer: fixed, Compat: func(s engine.Spec) (engine.Engine, error) {
-		got = s.UpstreamVersion
-		return nil, errors.New("compat built")
-	}}
-	for _, v := range CompatVersions {
+// One build models one release: any other the spec states is refused, naming both.
+func TestAnotherReleaseIsRefused(t *testing.T) {
+	for _, v := range []string{"0.29.0", "0.31.0", "0.32.0", "0.34.0", ""} {
 		s := spec(t, "")
 		s.UpstreamVersion = v
-		if _, err := f.New(s); err == nil || err.Error() != "compat built" || got != v {
-			t.Errorf("%s: err %v, compat saw %q", v, err, got)
+		_, err := Factory{Pricer: fixed}.New(s)
+		if err == nil || !strings.Contains(err.Error(), "models vLLM "+Version) ||
+			!strings.Contains(err.Error(), fmt.Sprintf("%q is refused", v)) {
+			t.Errorf("release %q: err %v, want a refusal naming %s and the stated release", v, err, Version)
 		}
 	}
 }

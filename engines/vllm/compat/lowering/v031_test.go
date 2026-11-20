@@ -208,7 +208,7 @@ func TestAnAutoCacheFollowsTheComputeWidthNotTheStorageWidth(t *testing.T) {
 // occupancy that does not occur and omit NIC traffic that does.
 func TestCustomAllReduceRequestIsResolvedNotObeyed(t *testing.T) {
 	no := false
-	rules := vllmrules.Lookup("0.32.0")
+	rules := vllmrules.Lookup("0.33.0")
 	for _, c := range []struct {
 		what        string
 		gpusPerNode int
@@ -249,7 +249,7 @@ func TestCustomAllReduceRequestIsResolvedNotObeyed(t *testing.T) {
 // A declined all-reduce request reaches the Result on the all_reduce_backend row, whatever field
 // name the lowering gives it: the conversion in package result is checked against the lowering.
 func TestADeclinedAllReduceRequestReachesOneRowOfTheResult(t *testing.T) {
-	ok, overrides := customAllReduce(vllmsettings.Settings{}, layout{TP: 3, DP: 1}, false, vllmrules.Lookup("0.32.0"))
+	ok, overrides := customAllReduce(vllmsettings.Settings{}, layout{TP: 3, DP: 1}, false, vllmrules.Lookup("0.33.0"))
 	if ok || len(overrides) != 1 {
 		t.Fatalf("tp 3 should decline the custom all-reduce: %v %v", ok, overrides)
 	}

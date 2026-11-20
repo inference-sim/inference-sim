@@ -5,9 +5,11 @@
 # stub specs built from a *.layers.json file the way KVCacheGroups maps caches to specs,
 # and prints the groups and bytes per block:
 #
-#   git -C vllm show v0.31.0:vllm/v1/core/kv_cache_utils.py > /tmp/kvu31.py
-#   python -I golden.py /tmp/kvu31.py synth-state.layers.json 64 0 \
-#     > synth-state.v0_31.block64.align0.json
+#   git -C vllm show v0.33.0:vllm/v1/core/kv_cache_planning.py > /tmp/kvp33.py
+#   python -I golden.py /tmp/kvp33.py synth-state.layers.json 64 0 \
+#     > synth-state.v0_33.block64.align0.json
+#
+# (v0.33.0 moved these functions from kv_cache_utils.py to kv_cache_planning.py.)
 #
 # The next two arguments are the engine block size and a block_stride_alignment.
 #
@@ -31,6 +33,9 @@ def round_up(x, m): return cdiv(x, m) * m
 
 class KVCacheSpec:
     block_stride_alignment = None
+    # v0.33's _get_kv_cache_bytes_per_block reads the alignment through this method
+    # (vllm/v1/kv_cache_interface.py:224-234); this stub states plain byte alignments only.
+    def get_block_stride_alignment(self): return self.block_stride_alignment or 1
 class MambaSpec(KVCacheSpec): pass
 class HiSparseHotSpec(KVCacheSpec): pass
 class Spec(KVCacheSpec):
@@ -92,5 +97,7 @@ if align > 1:
     for g in groups[:1]:
         for n in g.layer_names[:1]:
             specs[n].block_stride_alignment = align
-bpb = ns["_get_kv_cache_bytes_per_block"](groups)
+# v0.33 takes the resolved layout too (block-outermost, as _get_packed_kv_cache_groups saw it).
+bpb = (ns["_get_kv_cache_bytes_per_block"](groups, Layout()) if "layout" in
+       ns["_get_kv_cache_bytes_per_block"].__code__.co_varnames else ns["_get_kv_cache_bytes_per_block"](groups))
 print(json.dumps({"bytes": bpb, "groups": [[g.kv_cache_spec.block_size, g.kv_cache_spec.page_size_bytes, g.layer_names] for g in groups]}))

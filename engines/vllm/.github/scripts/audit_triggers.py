@@ -146,7 +146,7 @@ def ci_yml():
     jobs = jobs_of(text)
     keys = dict(JOB_KEYS)
     keys.update({j: ["oracle"] for j in jobs if j.startswith("oracle")})
-    keys.update({"packs-against-vllm": ["packs_v0_29", "packs_v0_31", "packs_v0_32", "packs_v0_33"]})
+    keys.update({"packs-against-vllm": ["packs_v0_33"]})
     for job, ks in keys.items():
         if job not in jobs:
             continue

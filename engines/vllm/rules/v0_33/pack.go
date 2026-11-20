@@ -1,7 +1,7 @@
-// Original to blis-vllm. Begun as a copy of the v0_32 pack (rules/v0_32), itself a copy of the
-// v0_31 pack (moved from inference-sim/blis-schemas/rules/v0_31/pack.go at
+// Original to blis-vllm. Begun as a copy of the v0_32 pack, itself a copy of the v0_31 pack
+// (moved from inference-sim/blis-schemas/rules/v0_31/pack.go at
 // c197a5ad5b2091f003ad2c3d016f3ef9738a6459), then re-derived against vLLM v0.33.0
-// (4ba787ec9959e566d3b587a796dff07673324da5).
+// (4ba787ec9959e566d3b587a796dff07673324da5). The earlier packs are gone; git history has them.
 
 // Package v0_33 is the rules pack for vLLM 0.33.0 (tag v0.33.0, commit 4ba787ec), the
 // release blis-vllm executes.

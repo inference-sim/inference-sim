@@ -9,7 +9,7 @@
 # part (vllm/engine/arg_utils.py), stated because BLIS sizes the scheduler from the scenario.
 kind: Scenario
 name: deepseek-v4.1-flash-h100-tp8-dspark5
-engine_version: "0.31.0"
+engine_version: "0.33.0"
 
 model: deepseek-v4.1-flash
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

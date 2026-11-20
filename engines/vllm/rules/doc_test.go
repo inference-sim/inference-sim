@@ -11,10 +11,10 @@ const executed = "0.33.0"
 
 // Original to blis-vllm.
 
-// The registry holds a pack for every release a scenario file may declare, and one for the
-// release the engine executes: a scenario declaring blis-vllm's own Upstream must find rules.
+// The registry holds the pack of the one release the engine executes: a scenario declaring
+// blis-vllm's own Upstream must find rules.
 func TestEveryReleaseHasItsPack(t *testing.T) {
-	if got, want := Versions(), []string{"0.29.0", "0.31.0", "0.32.0", "0.33.0"}; !reflect.DeepEqual(got, want) {
+	if got, want := Versions(), []string{"0.33.0"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Versions() = %v, want %v", got, want)
 	}
 	if Lookup(executed) == nil {

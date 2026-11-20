@@ -87,19 +87,19 @@ func compatBlocks(t *testing.T, scenario031 string) int64 {
 // contract, and holds exactly the compatibility engine's block count for the same deployment.
 func TestDashboardDeploymentsBuildAndRun(t *testing.T) {
 	Register()
-	for _, c := range []struct{ v032, v031 string }{
-		{"d058-032.yaml", "d058-031.yaml"}, // kimi-k2.5, b200, tp4
-		{"d071-032.yaml", "d071-031.yaml"}, // minimax-m2.5, b200, tp2
+	for _, name := range []string{
+		"d058-032.yaml", // kimi-k2.5, b200, tp4
+		"d071-032.yaml", // minimax-m2.5, b200, tp2
 	} {
-		t.Run(c.v032, func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Config: poolEngine(t, c.v032),
-				Roots: roots(t, c.v032), Pool: 0}
+			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Config: poolEngine(t, name),
+				Roots: roots(t, name), Pool: 0}
 			e, err := engine.New(spec)
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := compatBlocks(t, c.v031)
+			want := compatBlocks(t, name)
 			if got := e.Snapshot().KVBlocksTotal; got != want-1 {
 				// Snapshot excludes the null block; compat's count includes it.
 				t.Errorf("KV blocks: %d usable (%d with the null block), compat sizes %d", got, got+1, want)

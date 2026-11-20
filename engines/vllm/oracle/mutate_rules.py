@@ -1,5 +1,5 @@
 # Original to blis-vllm.
-"""Mutation sweep for the tier-1 rules (rules/v0_32): apply one mutant at a time to a scratch copy
+"""Mutation sweep for the tier-1 rules (rules/v0_33): apply one mutant at a time to a scratch copy
 of the module, run the rule's unit tests and its MatchSource checks against the pinned vLLM source,
 and report whether each is caught.
 
@@ -8,7 +8,7 @@ piece of the data, rule or parser that v0.32.0 added over v0.31.0 (the 0.32.0 pa
 those mutants exist and run in CI rather than only on a contributor's machine. The mutant IDs are
 C1-C28; D1-D11 are oracle/mutate_t3.py's.
 
-Usage: python3 oracle/mutate_rules.py <blis-vllm checkout> <scratch dir> <vLLM v0.32.0 source> [C1,...]
+Usage: python3 oracle/mutate_rules.py <blis-vllm checkout> <scratch dir> <vLLM v0.33.0 source> [C1,...]
 Exits non-zero if the unmutated module fails, or a mutant survives or breaks the build without a
 test failure.
 """
@@ -17,8 +17,8 @@ import shutil
 import subprocess
 import sys
 
-PACK = "rules/v0_32/pack.go"
-SOURCE = "rules/v0_32/source_test.go"
+PACK = "rules/v0_33/pack.go"
+SOURCE = "rules/v0_33/source_test.go"
 
 DCP = "TestDCPDividesTP"
 BIND = "TestMoEEPBackendBindsPassthrough"
@@ -119,7 +119,7 @@ TESTS = "|".join(sorted({t for m in MUTANTS for t in m[5].split("|")}))
 
 def run(scratch: str, vllm: str, tests: str) -> subprocess.CompletedProcess:
     env = dict(os.environ, VLLM_SOURCE=vllm, VLLM_SOURCE_REQUIRED="1")
-    return subprocess.run(["go", "test", "-count=1", "-run", tests, "./v0_32/"],
+    return subprocess.run(["go", "test", "-count=1", "-run", tests, "./v0_33/"],
                           cwd=os.path.join(scratch, "rules"), capture_output=True, text=True, env=env)
 
 

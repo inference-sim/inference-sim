@@ -80,7 +80,7 @@ func TestAFixtureStatingOnlyTheEngineBlockFindsItsRules(t *testing.T) {
 		t.Fatalf("the fixture no longer states %s; update this test", old)
 	}
 	path := filepath.Join(t.TempDir(), "engine-block-only.yaml")
-	body := strings.Replace(string(src), old, "engine:\n  kind: vllm\n  version: \"0.32.0\"", 1)
+	body := strings.Replace(string(src), old, "engine:\n  kind: vllm\n  version: \"0.33.0\"", 1)
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestAFixtureStatingOnlyTheEngineBlockFindsItsRules(t *testing.T) {
 	if in.Scenario.EngineVersion != "" {
 		t.Fatalf("the deprecated engine_version is %q, want unstated", in.Scenario.EngineVersion)
 	}
-	if got := in.Rules.EngineVersion(); got != "0.32.0" {
-		t.Errorf("rules are for %q, want 0.32.0", got)
+	if got := in.Rules.EngineVersion(); got != "0.33.0" {
+		t.Errorf("rules are for %q, want 0.33.0", got)
 	}
 }

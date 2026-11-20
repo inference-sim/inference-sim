@@ -63,7 +63,7 @@ func TestProvenanceRestatesTheKernelsEvidence(t *testing.T) {
 			"the origins %d", got, assumedRegistry)
 	}
 
-	pack := vllmrules.Lookup("0.31.0")
+	pack := vllmrules.Lookup("0.33.0")
 	if pack == nil {
 		t.Fatal("no 0.31.0 rules pack registered")
 	}

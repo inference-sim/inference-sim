@@ -264,7 +264,7 @@ func openPools(scenario string, repos kernelmodel.Repos, kernelOpen bool, top To
 // NIXL connectors (NixlConnector is an alias of NixlPullConnector, nixl/connector.py:9-12), and
 // MultiConnector, which llm-d composes from a NixlConnector and an OffloadingConnector. The
 // schema cannot see a MultiConnector's children, so, as the blis-schemas rules pack does
-// (rules/v0_31 pack.go:964-968), it is taken to carry the NIXL one.
+// (rules/v0_33 pack.go), it is taken to carry the NIXL one.
 var nixlConnectors = map[string]bool{
 	"NixlConnector": true, "NixlPullConnector": true, "NixlPushConnector": true, "MultiConnector": true,
 }

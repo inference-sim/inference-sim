@@ -133,15 +133,6 @@ func TestEngineRefusesWhatItDoesNotResolve(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/68") {
 		t.Errorf("0.32.0 without block_size: %v, want a refusal citing blis-vllm#68", err)
 	}
-	m := openEdited(t, "0.31.0", "max_num_seqs: 256")
-	if _, err := m.Engine(); err == nil || !strings.Contains(err.Error(), "states no max_num_seqs") {
-		t.Errorf("0.31.0 without max_num_seqs: %v, want the refusal", err)
-	}
-	// 0.31.0 resolves only gpu_memory_utilization (TestEngineResolvesAnUnstatedMemoryUtilization);
-	// its batch settings and block size are returned as stated.
-	if src := m.EngineSources(); len(src) != 1 || src["gpu_memory_utilization"] == "" {
-		t.Errorf("0.31.0 sources %v, want gpu_memory_utilization only", src)
-	}
 }
 
 // openWithoutBlockSize opens a committed 0.32.0 fixture with its block_size removed, as a
@@ -260,7 +251,7 @@ func openWithMemoryUtilization(t *testing.T, release, line string) (*Model, erro
 		repl = "${1}gpu_memory_utilization: " + line + "\n"
 	}
 	body := re.ReplaceAllString(string(raw), repl)
-	body = strings.Replace(body, `engine_version: "0.29.0"`, `engine_version: "`+release+`"`, 1)
+	body = strings.Replace(body, `engine_version: "0.33.0"`, `engine_version: "`+release+`"`, 1)
 	r := repos()
 	r.Scenarios = t.TempDir()
 	if err := os.WriteFile(filepath.Join(r.Scenarios, "v.yaml"), []byte(body), 0o644); err != nil {
@@ -274,9 +265,7 @@ func openWithMemoryUtilization(t *testing.T, release, line string) (*Model, erro
 // and the KV budget is sized from the resolved value, so the kernel and Engine agree.
 func TestEngineResolvesAnUnstatedMemoryUtilization(t *testing.T) {
 	for _, c := range []struct{ release, source string }{
-		{"0.29.0", "vllm/config/cache.py:111@98dff2a8"},
-		{"0.31.0", "vllm/config/cache.py:103@db9527a4"},
-		{"0.32.0", "vllm/config/cache.py:102@5df63a72"},
+		{"0.33.0", "vllm/config/cache.py:215@4ba787ec"},
 	} {
 		t.Run(c.release, func(t *testing.T) {
 			m, err := openWithMemoryUtilization(t, c.release, "")
@@ -545,7 +534,7 @@ func TestIndexerKVDTypeIsReadForMiniMaxM3Only(t *testing.T) {
 // DeepSeek V4 and V4.1 build their indexer cache as an MLA spec, so attention_config.indexer_kv_dtype
 // is neither "read only for MiniMax-M3" nor absent for them: vLLM resolves it
 // (dsa_indexer_uses_fp4, vllm/v1/attention/backends/mla/indexer.py:59-84@5df63a72; the table in
-// rules/v0_32/testdata/vllm_indexer_kv_dtype.json is that function's output). auto and fp8 are the
+// rules/v0_33/testdata/vllm_indexer_kv_dtype.json is that function's output). auto and fp8 are the
 // 132-byte record the catalog graph states, so they are accepted and leave the KV layers unchanged;
 // bf16 and nvfp4 are refused with vLLM's reason, fp8_e4m3 is not a member of the dtype's type, and
 // mxfp4 is vLLM's refusal below SM10x and, on SM10x, accepted with its 68-byte record in place of

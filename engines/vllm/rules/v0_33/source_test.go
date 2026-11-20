@@ -1042,7 +1042,7 @@ func TestCacheDTypeResolutionsMatchSource(t *testing.T) {
 
 // The GlmMoeDsaForCausalLM resolution in CacheDTypeResolutions: the hook changes "auto" to
 // fp8_e4m3 only on CUDA with capability family 100, and is the one registered for the architecture.
-// v0.31.0 has no such branch (TestCacheDTypeResolutionsMatchSource in rules/v0_31).
+// v0.31.0 had no such branch.
 func TestGlmMoeDsaCacheDTypeResolutionMatchesSource(t *testing.T) {
 	root := vllmSource(t)
 	src := readSource(t, root, "vllm", "model_executor", "models", "config.py")

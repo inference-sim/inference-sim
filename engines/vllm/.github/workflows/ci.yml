@@ -87,9 +87,6 @@ jobs:
       metrics: ${{ steps.filter.outputs.metrics }}
       goldens: ${{ steps.filter.outputs.goldens }}
       oracle: ${{ steps.filter.outputs.oracle }}
-      packs_v0_29: ${{ steps.filter.outputs.packs_v0_29 }}
-      packs_v0_31: ${{ steps.filter.outputs.packs_v0_31 }}
-      packs_v0_32: ${{ steps.filter.outputs.packs_v0_32 }}
       packs_v0_33: ${{ steps.filter.outputs.packs_v0_33 }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -468,10 +465,10 @@ jobs:
           path: ~/.cache/go-build
           key: ${{ steps.go.outputs.build-key }}
 
-  # Each rules pack transcribes one vLLM release by hand; these tests re-derive its constants
-  # from that release's own source and fail on any difference in either direction. Each pack is
-  # checked against the tag it describes. A pack's check runs when its package or what its tests link
-  # changed; the three names always report.
+  # The rules pack transcribes vLLM v0.33.0 by hand; these tests re-derive its constants
+  # from that release's own source and fail on any difference in either direction. The pack is
+  # checked against the tag it describes. The check runs when the pack's package or what its tests link
+  # changed; the name always reports.
   packs-against-vllm:
     needs: changes
     runs-on: ubuntu-latest
@@ -482,15 +479,6 @@ jobs:
         # Each tag's commit is pinned, so a moved tag fails the check below instead of
         # silently changing what the pack is compared against.
         include:
-          - pack: v0_29
-            tag: v0.29.0
-            commit: 98dff2a81d747d1dba01a47f939f48c3526d4206
-          - pack: v0_31
-            tag: v0.31.0
-            commit: db9527a46873454610df6dbedf79a36d6bf1a7f6
-          - pack: v0_32
-            tag: v0.32.0
-            commit: 5df63a7203cdb9328d824a27b682e77c7b9928be
           - pack: v0_33
             tag: v0.33.0
             commit: 4ba787ec9959e566d3b587a796dff07673324da5
@@ -537,7 +525,7 @@ jobs:
         with:
           name: tier1-${{ matrix.pack }}
           path: tier1-out/
-      - if: needs.changes.outputs[format('packs_{0}', matrix.pack)] == 'true' && github.event_name != 'pull_request' && matrix.pack == 'v0_32'
+      - if: needs.changes.outputs[format('packs_{0}', matrix.pack)] == 'true' && github.event_name != 'pull_request' && matrix.pack == 'v0_33'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/go-build

@@ -12,7 +12,7 @@ import (
 
 // KVCachePacking is how a release groups a model's stated caches into KV cache groups
 // that share one block pool, as data. vLLM draws every group's blocks from one pool, and
-// every block costs the widest group's page bytes (vllm/v1/core/kv_cache_utils.py
+// every block costs the widest group's page bytes (vllm/v1/core/kv_cache_planning.py
 // _get_kv_cache_bytes_per_block; "Groups alias from byte 0"), so a model whose caches
 // have different page sizes pays for padding in every block. Pack.KVCacheGroups applies
 // it.
@@ -22,19 +22,17 @@ type KVCachePacking struct {
 	Modeled bool
 	// StateCacheBuckets is whether a kind: state cache is its own bucket, a
 	// CircularBufferSpec the packer may split down to one state per group to fit the
-	// block the other buckets need (v0.31.0). v0.29.0 stores DeepSeek-V4's compressor
-	// state as a SlidingWindowMLASpec whose window the graph does not state, so a state
-	// cache cannot be placed there.
+	// block the other buckets need (v0.33.0 kv_cache_planning.py:995-1020).
 	StateCacheBuckets bool
 	// LoneWindowIsState is whether a sliding-window bucket splits like a state bucket
-	// when no balanced mixed-page bucket fixes a repeat pattern (v0.31.0 is_state_bucket).
+	// when no balanced mixed-page bucket fixes a repeat pattern (v0.33.0 is_state_bucket, kv_cache_planning.py:995-1007).
 	LoneWindowIsState bool
 	// BlockStrideAlignment is whether the block's bytes round up to the least common
-	// multiple of every layer's block_stride_alignment (v0.31.0).
+	// multiple of every layer's block_stride_alignment (v0.33.0 kv_cache_planning.py:574-605).
 	BlockStrideAlignment bool
 	// StateRingFromSpecTokens is whether a state cache's ring holds
 	// CompressorRingRows(K) rows, derived from the deployment's K rather than stated
-	// (v0.31.0 vllm/models/deepseek_v41/compressor.py:147-149).
+	// (v0.33.0 vllm/models/deepseek_v41/compressor.py:222-223).
 	StateRingFromSpecTokens bool
 }
 
@@ -65,11 +63,11 @@ func (k KVCachePacking) String() string {
 //
 // It follows vLLM's get_kv_cache_groups for the paths stated caches take. Every layer of
 // one uniform type is one group (_get_kv_cache_groups_uniform_type). Layers with more than
-// one page size are packed by _get_packed_kv_cache_groups (v0.31.0
-// vllm/v1/core/kv_cache_utils.py:2001-2120): bucketed by uniform type, balanced buckets
+// one page size are packed by _get_packed_kv_cache_groups (v0.33.0
+// vllm/v1/core/kv_cache_planning.py:914-1043): bucketed by uniform type, balanced buckets
 // split into groups of the same number of pattern repeats, chosen by _approximate_gcd to
 // minimise padding, and state buckets split to fit the block the others need. The block
-// is the widest group (_get_kv_cache_bytes_per_block, :1606-1632, called at :1768).
+// is the widest group (_get_kv_cache_bytes_per_block, kv_cache_planning.py:574-605).
 //
 // A cache's uniform type follows the spec the engine gives it: kv and index caches are
 // full-attention specs at their block size, window caches sliding-window specs keyed by
@@ -390,8 +388,8 @@ func roundUp(x, m int) int { return cdiv(x, m) * m }
 
 // CompressorRingRows is DeepSeek-V4.1's compressor ring capacity at K speculative tokens:
 // the drafts, the bonus token and the previous row, rounded up to a power of two of at
-// least 8, max(8, 1 << (K+1).bit_length()) (v0.31.0 vllm/models/deepseek_v41/
-// compressor.py:147-149). K=5 is 8 rows; K=7 is 16.
+// least 8, max(8, 1 << (K+1).bit_length()) (v0.33.0 vllm/models/deepseek_v41/
+// compressor.py:222-223). K=5 is 8 rows; K=7 is 16.
 func CompressorRingRows(k int) int {
 	n := k + 1 // rows_per_step - 1
 	bits := 0

@@ -9,15 +9,14 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-vllm/rules/pack"
-	"github.com/inference-sim/blis-vllm/rules/v0_29"
-	"github.com/inference-sim/blis-vllm/rules/v0_31"
+	"github.com/inference-sim/blis-vllm/rules/v0_33"
 )
 
 // Each EngineRules method answers from the pack's own data, so a consumer moved from the
 // fields to the interface sees the same values: the four facts consumers read by type
 // assertion today, and the checks.
 func TestEngineRulesAnswersFromThePack(t *testing.T) {
-	for _, p := range []*pack.Pack{v0_29.Pack(), v0_31.Pack()} {
+	for _, p := range []*pack.Pack{v0_33.Pack()} {
 		t.Run(p.Version, func(t *testing.T) {
 			var r rules.EngineRules = p
 			if r.EngineVersion() != p.Version {

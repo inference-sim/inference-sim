@@ -53,7 +53,7 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 		}
 	}
 	// An unstated cache dtype is "auto", which an architecture's own hook can change on the
-	// chip that runs it (GlmMoeDsaForCausalLM on SM10x: fp8_e4m3, rules/v0_32). A stated dtype is
+	// chip that runs it (GlmMoeDsaForCausalLM on SM10x: fp8_e4m3, rules/v0_33). A stated dtype is
 	// never changed here. A DeepSeek-V4 or V4.1 graph is left to the kernel, which resolves that
 	// packed layout itself. Every other graph is resolved here, whether it names its architecture
 	// (the catalog's GLM-5 graphs do since the layer-10 pin) or is named by its config digest.

@@ -332,6 +332,3 @@ registry	0.41
 rules	0.49
 rules/engineconfig	0.65
 rules/pack	0.55
-rules/v0_29	0.83
-rules/v0_31	0.91
-rules/v0_32	1.16

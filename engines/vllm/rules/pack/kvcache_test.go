@@ -16,8 +16,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
 	"github.com/inference-sim/blis-vllm/rules/pack"
-	"github.com/inference-sim/blis-vllm/rules/v0_29"
-	"github.com/inference-sim/blis-vllm/rules/v0_31"
+	"github.com/inference-sim/blis-vllm/rules/v0_33"
 )
 
 const kvDir = "testdata/kvgroups"
@@ -63,13 +62,12 @@ func TestKVCacheGroupsMatchEngineGoldens(t *testing.T) {
 		align  int
 		k      int // speculative K for the ring; 0: the graph's stated ring
 	}{
-		{"synth-nostate", v0_29.Pack(), 64, 0, 0},
-		{"synth-nostate", v0_31.Pack(), 64, 0, 0},
-		{"synth-state", v0_31.Pack(), 64, 0, 0},
-		{"synth-state", v0_31.Pack(), 64, 1024, 0},
-		{"deepseek-v4.1-example", v0_31.Pack(), 64, 0, 0},
-		{"deepseek-v4.1-example", v0_31.Pack(), 256, 0, 0},
-		{"deepseek-v4.1-example", v0_31.Pack(), 64, 0, 7},
+		{"synth-nostate", v0_33.Pack(), 64, 0, 0},
+		{"synth-state", v0_33.Pack(), 64, 0, 0},
+		{"synth-state", v0_33.Pack(), 64, 1024, 0},
+		{"deepseek-v4.1-example", v0_33.Pack(), 64, 0, 0},
+		{"deepseek-v4.1-example", v0_33.Pack(), 256, 0, 0},
+		{"deepseek-v4.1-example", v0_33.Pack(), 64, 0, 7},
 	} {
 		name := c.layers + "." + "v" + strings.ReplaceAll(c.pack.Version, ".", "_")
 		name = strings.TrimSuffix(name, "_0") + ".block" + strconv.Itoa(c.block) + ".align" + strconv.Itoa(c.align)
@@ -142,7 +140,7 @@ func kv(name string, block, bytes int) rules.KVCacheLayer {
 
 // One uniform type is one group, and the block is every layer's page.
 func TestKVCacheGroupsUniformType(t *testing.T) {
-	p := v0_31.Pack()
+	p := v0_33.Pack()
 	got, err := p.KVCacheGroups(rules.KVCacheGroupsInput{
 		Layers:          []rules.KVCacheLayer{kv("a", 0, 100), kv("b", 0, 300)},
 		EngineBlockSize: 16, BlockStrideAlignment: 1000})
@@ -155,13 +153,6 @@ func TestKVCacheGroupsUniformType(t *testing.T) {
 	if got.GroupOf("b") != 0 || got.GroupOf("missing") != -1 || got.PageBytes["a"] != 1600 {
 		t.Errorf("lookups wrong: %+v", got)
 	}
-	// v0.29.0 does not round the block to a stride alignment.
-	got, _ = v0_29.Pack().KVCacheGroups(rules.KVCacheGroupsInput{
-		Layers:          []rules.KVCacheLayer{kv("a", 0, 100), kv("b", 0, 300)},
-		EngineBlockSize: 16, BlockStrideAlignment: 1000})
-	if got.BytesPerBlock != 6400 {
-		t.Errorf("v0.29.0 BytesPerBlock = %d, want 6400", got.BytesPerBlock)
-	}
 }
 
 // The grouping refuses what it does not model rather than return a plausible number.
@@ -170,28 +161,23 @@ func TestKVCacheGroupsRefuses(t *testing.T) {
 		return rules.KVCacheLayer{Name: name, Cache: model.Cache{Name: name, Kind: model.CacheWindow,
 			Owned: true, BytesPerEntry: 100, Window: w}}
 	}
-	ring := rules.KVCacheLayer{Name: "ring", Cache: model.Cache{Name: "ring", Kind: model.CacheState,
-		Owned: true, BytesPerEntry: 4096, Entries: 8}}
 	for _, c := range []struct {
 		name     string
 		pack     *pack.Pack
 		in       rules.KVCacheGroupsInput
 		errorHas string
 	}{
-		{"no layers", v0_31.Pack(), rules.KVCacheGroupsInput{EngineBlockSize: 16}, "no owned caches"},
+		{"no layers", v0_33.Pack(), rules.KVCacheGroupsInput{EngineBlockSize: 16}, "no owned caches"},
 		{"unmodeled release", &pack.Pack{Version: "9.9.9"},
 			rules.KVCacheGroupsInput{Layers: []rules.KVCacheLayer{kv("a", 0, 1)}, EngineBlockSize: 16}, "not transcribed"},
-		{"no block size", v0_31.Pack(),
+		{"no block size", v0_33.Pack(),
 			rules.KVCacheGroupsInput{Layers: []rules.KVCacheLayer{kv("a", 0, 1)}}, "no block size"},
-		{"duplicate layer", v0_31.Pack(),
+		{"duplicate layer", v0_33.Pack(),
 			rules.KVCacheGroupsInput{Layers: []rules.KVCacheLayer{kv("a", 0, 1), kv("a", 0, 1)}, EngineBlockSize: 16}, "stated twice"},
-		{"several types, one page", v0_31.Pack(),
+		{"several types, one page", v0_33.Pack(),
 			rules.KVCacheGroupsInput{Layers: []rules.KVCacheLayer{kv("a", 0, 100), window("w", 128)}, EngineBlockSize: 16},
 			"_get_kv_cache_groups_uniform_page_size"},
-		{"state cache on v0.29.0", v0_29.Pack(),
-			rules.KVCacheGroupsInput{Layers: []rules.KVCacheLayer{kv("a", 0, 100), ring}, EngineBlockSize: 16},
-			"does not state"},
-		{"page of zero bytes", v0_31.Pack(),
+		{"page of zero bytes", v0_33.Pack(),
 			rules.KVCacheGroupsInput{Layers: []rules.KVCacheLayer{{Name: "z", Cache: model.Cache{Kind: model.CacheKV,
 				Owned: true, BytesPerEntry: 100, TokensPerEntry: 32}}}, EngineBlockSize: 16}, "page of 0 bytes"},
 	} {
@@ -207,7 +193,7 @@ func TestKVCacheGroupsRefuses(t *testing.T) {
 // Packing mixed pages costs bytes that per-layer pages miss: the shared block is the
 // widest group, so a group narrower than it pays padding in every block.
 func TestKVCacheGroupsPaddingIsCharged(t *testing.T) {
-	got, err := v0_31.Pack().KVCacheGroups(rules.KVCacheGroupsInput{
+	got, err := v0_33.Pack().KVCacheGroups(rules.KVCacheGroupsInput{
 		Layers: loadLayers(t, "deepseek-v4.1-example"), EngineBlockSize: 64, CacheDType: "fp8_ds_mla"})
 	if err != nil {
 		t.Fatal(err)
@@ -264,12 +250,12 @@ func TestKVCacheGroupsStateCache(t *testing.T) {
 			Owned: true, BytesPerEntry: 4096, Entries: 8, PageAlignment: align}}
 	}
 	in := rules.KVCacheGroupsInput{Layers: []rules.KVCacheLayer{kv("a", 0, 100), ring(576)}, EngineBlockSize: 16}
-	if _, err := v0_31.Pack().KVCacheGroups(in); err == nil || !strings.Contains(err.Error(), "never pads") {
+	if _, err := v0_33.Pack().KVCacheGroups(in); err == nil || !strings.Contains(err.Error(), "never pads") {
 		t.Errorf("an aligned state cache was accepted: %v", err)
 	}
 	k := 7
 	in = rules.KVCacheGroupsInput{Layers: []rules.KVCacheLayer{kv("a", 0, 100), ring(0)}, EngineBlockSize: 16, NumSpecTokens: &k}
-	got, err := v0_31.Pack().KVCacheGroups(in)
+	got, err := v0_33.Pack().KVCacheGroups(in)
 	if err != nil {
 		t.Fatal(err)
 	}

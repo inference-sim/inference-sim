@@ -34,7 +34,7 @@ func TestReposGetTheVLLMRulesUnlessTheyStateTheirOwn(t *testing.T) {
 	own := Repos{Rules: func(string) rules.EngineRules { called = true; return nil }}
 	if r := withEngineRules(own); r.Rules == nil {
 		t.Fatal("a caller's own rules were dropped")
-	} else if r.Rules("0.31.0"); !called {
+	} else if r.Rules("0.33.0"); !called {
 		t.Error("a caller's own rules were replaced by the vLLM packs")
 	}
 	if DefaultRepos().Rules == nil {
@@ -61,7 +61,7 @@ func TestTheSpeculativeMethodIsCheckedThroughTheInterface(t *testing.T) {
 	}
 	_, err := openDraftingWith(t, r, "llama-3.1-70b-instruct-h200-tp4-4node.yaml",
 		&engineconfig.Speculative{Method: "bogus", NumSpecTokens: 3})
-	if err == nil || !strings.Contains(err.Error(), `"bogus" is not accepted by engine 0.29.0`) {
+	if err == nil || !strings.Contains(err.Error(), `"bogus" is not accepted by engine 0.33.0`) {
 		t.Errorf("got %v, want the release's refusal of an unknown method", err)
 	}
 }

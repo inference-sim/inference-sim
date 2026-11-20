@@ -9,7 +9,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-vllm/rules/v0_32"
+	"github.com/inference-sim/blis-vllm/rules/v0_33"
 )
 
 // CheckConnectorOptions reports an offload's connector options at the paths and in the words
@@ -23,7 +23,7 @@ func TestCheckConnectorOptions(t *testing.T) {
 		}
 		return deployment.NewEngineBlock(n.Content[0])
 	}
-	p := v0_32.Pack()
+	p := v0_33.Pack()
 	got := p.CheckConnectorOptions("offload", block("blocks_per_chunk: -1\nkv_load_failure_policy: retry\n")).Error()
 	for _, want := range []string{
 		`error: offload.connector_options.blocks_per_chunk: must not be negative; omit it, or 0, for the connector's default`,

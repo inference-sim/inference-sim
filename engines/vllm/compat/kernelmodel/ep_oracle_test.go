@@ -14,7 +14,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
-	"github.com/inference-sim/blis-vllm/rules/v0_32"
+	"github.com/inference-sim/blis-vllm/rules/v0_33"
 )
 
 // moeCase is one case of core/lower/testdata/vllm_lower.json's moe_parallel section
@@ -85,7 +85,7 @@ func moeKey(tp, dp, pcp int, ep bool, backend string) string {
 // through the kernel (Resolved()) and the pack, not through a lowering step of this repository.
 func TestExpertLayoutIsVLLMs(t *testing.T) {
 	oracle := loadMoEOracle(t)
-	pack := v0_32.Pack()
+	pack := v0_33.Pack()
 
 	t.Run("pack and schema", func(t *testing.T) {
 		if got := pack.EffectiveAll2AllBackend(""); got != "allgather_reducescatter" {

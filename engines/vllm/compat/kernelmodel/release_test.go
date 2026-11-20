@@ -15,19 +15,19 @@ func TestTheEngineFieldNamesTheRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const old = `engine_version: "0.29.0"` + "\n"
+	const old = `engine_version: "0.33.0"` + "\n"
 	if !strings.Contains(string(raw), old) {
 		t.Fatal("fixture has no engine_version to edit")
 	}
 	for _, c := range []struct {
 		name, stated, release, refusal string
 	}{
-		{"engine only", "engine: {kind: vllm, version: \"0.31.0\"}\n", "0.31.0", ""},
-		{"engine_version only", `engine_version: "0.31.0"` + "\n", "0.31.0", ""},
-		{"both, equal", "engine: {kind: vllm, version: \"0.31.0\"}\n" + `engine_version: "0.31.0"` + "\n", "0.31.0", ""},
-		{"both, unequal", "engine: {kind: vllm, version: \"0.31.0\"}\n" + `engine_version: "0.29.0"` + "\n", "",
-			`engine_version is "0.29.0" but engine.version is "0.31.0"`},
-		{"another kind", "engine: {kind: sglang, version: \"0.31.0\"}\n", "", `engine.kind is "sglang"`},
+		{"engine only", "engine: {kind: vllm, version: \"0.33.0\"}\n", "0.33.0", ""},
+		{"engine_version only", `engine_version: "0.33.0"` + "\n", "0.33.0", ""},
+		{"both, equal", "engine: {kind: vllm, version: \"0.33.0\"}\n" + `engine_version: "0.33.0"` + "\n", "0.33.0", ""},
+		{"both, unequal", "engine: {kind: vllm, version: \"0.33.0\"}\n" + `engine_version: "0.31.0"` + "\n", "",
+			`engine_version is "0.31.0" but engine.version is "0.33.0"`},
+		{"another kind", "engine: {kind: sglang, version: \"0.33.0\"}\n", "", `engine.kind is "sglang"`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := repos()

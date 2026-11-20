@@ -88,22 +88,17 @@ func replayDecodes(n int) []ReqShape {
 }
 
 // replayOff is the same pool with bounded replay switched off, which is the pool priced as vLLM 0.31.0
-// ran it: every layer on every scheduled token.
+// ran it before the replay: every layer on every scheduled token.
 const replayOff = "      swa_bounded_replay: false\n"
 
 // A prefill chunk is cheaper than the same chunk on the pool that runs every layer on every token,
-// by the layers after the last KV layer on the rows they do not run; a pool on the earlier release
-// prices it as it always did.
+// by the layers after the last KV layer on the rows they do not run.
 func TestAPrefillChunkIsPricedOnTheTrailingRowsOfTheLayersAfterTheLastKVLayer(t *testing.T) {
 	trimmed, full := mustReplay(t, "0.33.0", ""), mustReplay(t, "0.33.0", replayOff)
-	before := mustReplay(t, "0.31.0", "")
 	big := []ReqShape{replayChunk(8192, 0)}
 	a, b := trimmed.StepTimeOfShapes(big), full.StepTimeOfShapes(big)
 	if a >= b || float64(a) > 0.85*float64(b) {
 		t.Errorf("an 8192-token chunk prices %d us with the decoder replay and %d us without; the 19 later layers are half the stack", a, b)
-	}
-	if v := before.StepTimeOfShapes(big); v != b {
-		t.Errorf("the 0.31.0 pool prices the chunk at %d us, the 0.32.0 pool with replay off %d us; neither runs the replay", v, b)
 	}
 }
 
@@ -204,10 +199,6 @@ func TestAPoolThatCannotReplayDisclosesWhy(t *testing.T) {
 	no := mustReplay(t, "0.33.0", replayOff)
 	if got := strings.Join(no.EngineAssumptions(), "\n"); !strings.Contains(got, "decoder_replay = off: SWA bounded replay is off") {
 		t.Errorf("a pool with bounded replay off does not say why: %s", got)
-	}
-	early := mustReplay(t, "0.31.0", "")
-	if got := strings.Join(early.EngineAssumptions(), "\n"); strings.Contains(got, "decoder_replay") {
-		t.Errorf("a 0.31.0 pool has no decoder replay to disclose: %s", got)
 	}
 	dp, err := openReplayAt(t, "0.33.0", 4, 2, "")
 	if err != nil {

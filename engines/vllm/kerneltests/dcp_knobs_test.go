@@ -13,7 +13,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
-	"github.com/inference-sim/blis-vllm/rules/v0_29"
+	"github.com/inference-sim/blis-vllm/rules/v0_33"
 
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
@@ -243,14 +243,14 @@ func TestAnUnstatedDCPBackendIsTheStockDefaultAndIsDisclosed(t *testing.T) {
 }
 
 // The backend names a release accepts are the release's rules pack's to say. A pack that
-// does not list a2a refuses it; the v0.29 pack lists both; a name no release has is refused
+// does not list a2a refuses it; the v0.33 pack lists both; a name no release has is refused
 // even where DCP is off, because the engine types the setting as a closed literal and
 // validates it at startup whatever the width (vllm/config/parallel.py:40, :371).
 func TestTheDCPBackendIsGatedByTheReleaseAndByWhatTheKernelPrices(t *testing.T) {
 	if _, err := dcpVariant(t, dcpMLAFixture, 8, 1, 8, withBackend("a2a")); err != nil {
-		t.Errorf("a2a, which the v0.29 pack lists, was refused: %v", err)
+		t.Errorf("a2a, which the v0.33 pack lists, was refused: %v", err)
 	}
-	narrow := *v0_29.Pack()
+	narrow := *v0_33.Pack()
 	narrow.DCPCommBackends = map[string]bool{"ag_rs": true}
 	_, err := dcpVariant(t, dcpMLAFixture, 8, 1, 8, func(in *Inputs) {
 		withBackend("a2a")(in)
@@ -271,7 +271,7 @@ func TestTheDCPBackendIsGatedByTheReleaseAndByWhatTheKernelPrices(t *testing.T) 
 // and the kernel says so rather than letting the check vanish: the stated name is still
 // held to what the kernel prices, and Provenance records that the release was not consulted.
 func TestAStatedBackendTheReleaseCouldNotCheckIsDisclosed(t *testing.T) {
-	noList := *v0_29.Pack()
+	noList := *v0_33.Pack()
 	noList.DCPCommBackends = nil
 	k, err := dcpVariant(t, dcpMLAFixture, 8, 1, 8, func(in *Inputs) {
 		withBackend("a2a")(in)

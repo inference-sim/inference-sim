@@ -12,8 +12,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-vllm/rules/v0_31"
-	"github.com/inference-sim/blis-vllm/rules/v0_32"
+	"github.com/inference-sim/blis-vllm/rules/v0_33"
 )
 
 func ip(n int) *int { return &n }
@@ -37,7 +36,7 @@ func stride(m int) []int {
 }
 
 func TestCUDAGraphCaptureSizes(t *testing.T) {
-	p := v0_31.Pack()
+	p := v0_33.Pack()
 	for _, c := range []struct {
 		name     string
 		in       rules.CUDAGraphCaptureInput
@@ -88,7 +87,7 @@ func TestCUDAGraphCaptureSizes(t *testing.T) {
 // Properties over many stated maxima: the sizes are ascending, at least 1, within both
 // the stated maximum and max_num_batched_tokens, and the last is the maximum that runs.
 func TestCUDAGraphCaptureSizesProperties(t *testing.T) {
-	p := v0_31.Pack()
+	p := v0_33.Pack()
 	for m := 1; m <= 1100; m++ {
 		for _, mnbt := range []int{1, 7, 64, 100, 512, 8192} {
 			c, _, err := p.CUDAGraphCaptureSizes(rules.CUDAGraphCaptureInput{MaxNumBatchedTokens: mnbt, MaxCaptureSize: ip(m)})
@@ -141,7 +140,7 @@ func TestCUDAGraphCaptureSizesAreVLLMs032(t *testing.T) {
 	if err := json.Unmarshal(raw, &f); err != nil {
 		t.Fatal(err)
 	}
-	p := v0_32.Pack()
+	p := v0_33.Pack()
 	stated := 0
 	for _, c := range f.Capture {
 		k := c.Case

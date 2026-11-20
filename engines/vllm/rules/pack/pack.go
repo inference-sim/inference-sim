@@ -59,8 +59,7 @@ type Pack struct {
 	// their own kernels (the FlashInfer MoE-EP megakernels), which the engine binds to
 	// all2all_backend passthrough when the backend is left at its default
 	// (bind_passthrough_all2all_backend, vllm/config/kernel.py:194-227@4ba787ec). Empty for a
-	// release without the binding: M3 models v0.33.0 only, and v0.31.0 and v0.32.0 name the FlashInfer
-	// MoE-EP backends differently.
+	// release without the binding (a pack built for a test).
 	SelfCommunicatingMoEBackends map[string]bool
 
 	// CacheDTypeResolutions say, per architecture, which cache dtype runs when the
@@ -166,8 +165,7 @@ func (p *Pack) Names() []string {
 // one of the set that supports it, expert parallelism must be on, and both widths must
 // exceed one.
 //
-// An empty backend is the engine's default, DefaultAll2AllBackend, which is a member in
-// both registered releases, so an unstated backend is not a reason to answer false.
+// An empty backend is the engine's default, DefaultAll2AllBackend, which is a member, so an unstated backend is not a reason to answer false.
 //
 // A name the engine renames is looked up under the name it runs as.
 func (p *Pack) SequenceParallelMoE(backend string, expertParallel bool, tp, dp int) bool {
@@ -202,7 +200,7 @@ func (p *Pack) ResolvedAll2AllBackend(backend, moeBackend string) string {
 
 // SelfCommunicatingMoEBackend reports whether an MoE backend dispatches and combines tokens inside
 // its own kernels (the binding to passthrough), and whether this release has the binding at all. A
-// release modelled by v0.33.0 alone has it; v0.31.0 and v0.32.0 do not model it.
+// pack that states no such backends has no binding.
 func (p *Pack) SelfCommunicatingMoEBackend(moeBackend string) (self, known bool) {
 	return p.SelfCommunicatingMoEBackends[NormalizeMoEBackend(moeBackend)], len(p.SelfCommunicatingMoEBackends) > 0
 }

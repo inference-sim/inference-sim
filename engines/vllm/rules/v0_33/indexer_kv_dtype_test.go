@@ -11,7 +11,6 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 
 	"github.com/inference-sim/blis-vllm/rules/pack"
-	"github.com/inference-sim/blis-vllm/rules/v0_31"
 )
 
 type indexerCase struct {
@@ -87,14 +86,10 @@ func TestIndexerKVDTypeIsWhatVLLMsOwnFunctionsGive(t *testing.T) {
 	}
 }
 
-// Other architectures, and v0.31.0's pack, carry no rule: the value is returned as stated and the
-// caller decides.
-func TestIndexerKVDTypeRuleIsDeepSeekAndV032Only(t *testing.T) {
+// Other architectures carry no rule: the value is returned as stated and the caller decides.
+func TestIndexerKVDTypeRuleIsDeepSeekOnly(t *testing.T) {
 	if got, known, err := Pack().ResolveIndexerKVDType("MiniMaxM3ForCausalLM", 10, "bf16"); known || err != nil || got != "bf16" {
 		t.Errorf("another architecture: %q %v %v", got, known, err)
-	}
-	if got, known, err := v0_31.Pack().ResolveIndexerKVDType(rules.ArchDeepseekV4, 10, "fp8"); known || err != nil || got != "fp8" {
-		t.Errorf("v0.31.0: %q %v %v", got, known, err)
 	}
 	if !strings.Contains(Pack().DSAIndexer.Default, "fp8") {
 		t.Error("auto does not resolve to fp8")

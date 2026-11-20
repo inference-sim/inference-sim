@@ -54,7 +54,7 @@ func loadM3Oracle(t *testing.T, model string) m3Oracle {
 // the way the dashboard's points state it (tp 8, language_model_only).
 func openM3(t *testing.T, model, chip, stated string) (*Model, error) {
 	t.Helper()
-	y := "kind: Scenario\nname: q\nengine_version: \"0.32.0\"\nmodel: " + model + "\n" +
+	y := "kind: Scenario\nname: q\nengine_version: \"0.33.0\"\nmodel: " + model + "\n" +
 		"coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]\n" +
 		"cluster:\n  hardware: " + chip + "\n  nodes: 1\n  gpus_per_node: 8\n---\nkind: Deployment\nname: q\npools:\n" +
 		"  - role: colocated\n    nodes: 1\n    parallel: {tp: 8, pp: 1, dp: 1}\n    engine:\n" +
