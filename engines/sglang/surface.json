@@ -7,8 +7,9 @@
  },
  "sites_under": "python/sglang/srt/",
  "counts": {
+  "modelled": 3,
   "out_of_scope": 18,
-  "refused": 433
+  "refused": 522
  },
  "items": [
   {
@@ -339,6 +340,12 @@
    "category": "tree_core",
    "name": "python",
    "site": "mem_cache/unified_cache/tree_core_registry.py:171",
+   "default": false,
+   "env": "SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND",
+   "env_site": "environ.py:741",
+   "forced_by": [
+    "arg_groups/kv_shard_hook.py:135=python"
+   ],
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
   },
@@ -347,6 +354,10 @@
    "category": "tree_core",
    "name": "rust",
    "site": "mem_cache/unified_cache/tree_core_registry.py:172",
+   "default": true,
+   "env": "SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND",
+   "env_site": "environ.py:741",
+   "forced_by": [],
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
   },
@@ -4064,6 +4075,1052 @@
    "class": "Spec",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+  },
+  {
+   "id": "engine_setting:SGLANG_INIT_NEW_TOKEN_RATIO",
+   "category": "engine_setting",
+   "name": "SGLANG_INIT_NEW_TOKEN_RATIO",
+   "site": "environ.py:646",
+   "group": "admission",
+   "kind": "env",
+   "default": 0.7,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "engine_setting:SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR",
+   "category": "engine_setting",
+   "name": "SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR",
+   "site": "environ.py:647",
+   "group": "admission",
+   "kind": "env",
+   "default": 0.14,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "engine_setting:SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS",
+   "category": "engine_setting",
+   "name": "SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS",
+   "site": "environ.py:648",
+   "group": "admission",
+   "kind": "env",
+   "default": 600,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "engine_setting:schedule_conservativeness",
+   "category": "engine_setting",
+   "name": "schedule_conservativeness",
+   "site": "arg_groups/fields/schedule.py:139",
+   "group": "admission",
+   "kind": "arg",
+   "default": 1.0,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "engine_setting:max_prefill_tokens",
+   "category": "engine_setting",
+   "name": "max_prefill_tokens",
+   "site": "arg_groups/fields/schedule.py:71",
+   "group": "prefill",
+   "kind": "arg",
+   "default": 16384,
+   "status": "modelled",
+   "evidence": [
+    "config/testdata/serverargs.json",
+    "core/sched/testdata/golden-sched/max-prefill-tokens-250.trace.json",
+    "core/sched/testdata/golden-sched/max-prefill-tokens.trace.json"
+   ]
+  },
+  {
+   "id": "engine_setting:chunked_prefill_size",
+   "category": "engine_setting",
+   "name": "chunked_prefill_size",
+   "site": "arg_groups/fields/schedule.py:52",
+   "group": "prefill",
+   "kind": "arg",
+   "default": null,
+   "status": "modelled",
+   "evidence": [
+    "config/testdata/serverargs.json",
+    "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+   ]
+  },
+  {
+   "id": "engine_setting:SGLANG_RETRACT_DECODE_STEPS",
+   "category": "engine_setting",
+   "name": "SGLANG_RETRACT_DECODE_STEPS",
+   "site": "environ.py:649",
+   "group": "retraction",
+   "kind": "env",
+   "default": 20,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "engine_setting:SGLANG_CLIP_MAX_NEW_TOKENS_ESTIMATION",
+   "category": "engine_setting",
+   "name": "SGLANG_CLIP_MAX_NEW_TOKENS_ESTIMATION",
+   "site": "environ.py:650",
+   "group": "output_limits",
+   "kind": "env",
+   "default": 4096,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  {
+   "id": "engine_setting:SGLANG_MAX_NEW_TOKENS_LIMIT",
+   "category": "engine_setting",
+   "name": "SGLANG_MAX_NEW_TOKENS_LIMIT",
+   "site": "environ.py:651",
+   "group": "output_limits",
+   "kind": "env",
+   "default": null,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  {
+   "id": "engine_setting:allow_auto_truncate",
+   "category": "engine_setting",
+   "name": "allow_auto_truncate",
+   "site": "arg_groups/fields/serving.py:254",
+   "group": "output_limits",
+   "kind": "arg",
+   "default": false,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  {
+   "id": "engine_setting:context_length",
+   "category": "engine_setting",
+   "name": "context_length",
+   "site": "arg_groups/fields/model.py:110",
+   "group": "output_limits",
+   "kind": "arg",
+   "default": null,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  {
+   "id": "engine_setting:max_running_requests",
+   "category": "engine_setting",
+   "name": "max_running_requests",
+   "site": "arg_groups/fields/schedule.py:31",
+   "group": "running_requests",
+   "kind": "arg",
+   "default": null,
+   "status": "modelled",
+   "evidence": [
+    "config/testdata/serverargs.json",
+    "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+   ]
+  },
+  {
+   "id": "engine_setting:mem_fraction_static",
+   "category": "engine_setting",
+   "name": "mem_fraction_static",
+   "site": "arg_groups/fields/schedule.py:27",
+   "group": "memory_budget",
+   "kind": "arg",
+   "default": null,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+  },
+  {
+   "id": "engine_setting:disable_overlap_schedule",
+   "category": "engine_setting",
+   "name": "disable_overlap_schedule",
+   "site": "arg_groups/fields/schedule.py:193",
+   "group": "overlap",
+   "kind": "arg",
+   "default": false,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "engine_setting:SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP",
+   "category": "engine_setting",
+   "name": "SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP",
+   "site": "environ.py:693",
+   "group": "overlap",
+   "kind": "env",
+   "default": false,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  {
+   "id": "engine_setting:page_size",
+   "category": "engine_setting",
+   "name": "page_size",
+   "site": "arg_groups/fields/schedule.py:143",
+   "group": "kv_events",
+   "kind": "arg",
+   "default": null,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "engine_setting:kv_events_config",
+   "category": "engine_setting",
+   "name": "kv_events_config",
+   "site": "arg_groups/fields/observability.py:144",
+   "group": "kv_events",
+   "kind": "arg",
+   "default": null,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  {
+   "id": "engine_setting:SGLANG_HICACHE_NIXL_BACKEND_PLUGIN",
+   "category": "engine_setting",
+   "name": "SGLANG_HICACHE_NIXL_BACKEND_PLUGIN",
+   "site": "mem_cache/storage/nixl/nixl_utils.py:82",
+   "group": "storage_plugin",
+   "kind": "getenv",
+   "default": "auto",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
+  },
+  {
+   "id": "pd_allocation_policy:early",
+   "category": "pd_allocation_policy",
+   "name": "early",
+   "site": "arg_groups/fields/disagg.py:59",
+   "setting": "disaggregation_decode_allocation_policy",
+   "default": true,
+   "read_at": [
+    "disaggregation/decode.py:1871"
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+  },
+  {
+   "id": "pd_allocation_policy:prefill_complete",
+   "category": "pd_allocation_policy",
+   "name": "prefill_complete",
+   "site": "arg_groups/fields/disagg.py:59",
+   "setting": "disaggregation_decode_allocation_policy",
+   "default": false,
+   "read_at": [
+    "arg_groups/pd_disaggregation_hook.py:47",
+    "arg_groups/serving_hook.py:534",
+    "disaggregation/decode.py:1107",
+    "disaggregation/prefill.py:1829",
+    "disaggregation/prefill.py:488",
+    "disaggregation/prefill.py:1068",
+    "disaggregation/prefill.py:1199",
+    "disaggregation/prefill.py:1427",
+    "disaggregation/common/conn.py:418"
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+  },
+  {
+   "id": "retraction_policy:length",
+   "category": "retraction_policy",
+   "name": "length",
+   "site": "arg_groups/fields/schedule.py:126",
+   "default": true,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "retraction_policy:priority",
+   "category": "retraction_policy",
+   "name": "priority",
+   "site": "arg_groups/fields/schedule.py:126",
+   "default": false,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/77"
+  },
+  {
+   "id": "tree_core_divergence:namespaced-keys",
+   "category": "tree_core_divergence",
+   "name": "namespaced-keys",
+   "site": "mem_cache/unified_cache/tree_core_registry.py:172",
+   "core": "rust",
+   "against": "python",
+   "difference": "the Rust core queues one BlockRemoved per namespace where the Python core merges them into one (events.py:140-170)",
+   "divergence_issue": "https://github.com/inference-sim/blis-sglang/issues/55",
+   "recorded_in": "oracle/treecore-divergences.json",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/55"
+  },
+  {
+   "id": "tree_core_divergence:namespaced-keys-dynamo",
+   "category": "tree_core_divergence",
+   "name": "namespaced-keys-dynamo",
+   "site": "mem_cache/unified_cache/tree_core_registry.py:172",
+   "core": "rust",
+   "against": "python",
+   "difference": "as namespaced-keys, in the dynamo event format",
+   "divergence_issue": "https://github.com/inference-sim/blis-sglang/issues/55",
+   "recorded_in": "oracle/treecore-divergences.json",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/55"
+  },
+  {
+   "id": "spec_running_requests:_handle_dflash",
+   "category": "spec_running_requests",
+   "name": "_handle_dflash",
+   "site": "arg_groups/speculative_hook.py:439",
+   "value": 48,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "spec_running_requests:_handle_dspark",
+   "category": "spec_running_requests",
+   "name": "_handle_dspark",
+   "site": "arg_groups/speculative_hook.py:853",
+   "value": 48,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "spec_running_requests:_handle_frozen_kv_mtp",
+   "category": "spec_running_requests",
+   "name": "_handle_frozen_kv_mtp",
+   "site": "arg_groups/speculative_hook.py:993",
+   "value": 48,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "spec_running_requests:_handle_eagle_family",
+   "category": "spec_running_requests",
+   "name": "_handle_eagle_family",
+   "site": "arg_groups/speculative_hook.py:1087",
+   "value": 48,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "spec_running_requests:_handle_ngram",
+   "category": "spec_running_requests",
+   "name": "_handle_ngram",
+   "site": "arg_groups/speculative_hook.py:1295",
+   "value": 48,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "scheduler_loop:event_loop_pdmux",
+   "category": "scheduler_loop",
+   "name": "event_loop_pdmux",
+   "site": "managers/scheduler.py:6225",
+   "condition": "disaggregation_mode == DisaggregationMode.NULL and scheduler.enable_pdmux",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  {
+   "id": "scheduler_loop:event_loop_pp",
+   "category": "scheduler_loop",
+   "name": "event_loop_pp",
+   "site": "managers/scheduler.py:6227",
+   "condition": "disaggregation_mode == DisaggregationMode.NULL and not (scheduler.enable_pdmux) and get_parallel().pp_size > 1",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "scheduler_loop:event_loop_overlap_mlx",
+   "category": "scheduler_loop",
+   "name": "event_loop_overlap_mlx",
+   "site": "managers/scheduler.py:6229",
+   "condition": "disaggregation_mode == DisaggregationMode.NULL and not (scheduler.enable_pdmux) and not (get_parallel().pp_size > 1) and scheduler.enable_overlap_mlx",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  {
+   "id": "scheduler_loop:event_loop_overlap",
+   "category": "scheduler_loop",
+   "name": "event_loop_overlap",
+   "site": "managers/scheduler.py:6231",
+   "condition": "disaggregation_mode == DisaggregationMode.NULL and not (scheduler.enable_pdmux) and not (get_parallel().pp_size > 1) and not (scheduler.enable_overlap_mlx) and scheduler.enable_overlap",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "scheduler_loop:event_loop_normal",
+   "category": "scheduler_loop",
+   "name": "event_loop_normal",
+   "site": "managers/scheduler.py:6233",
+   "condition": "disaggregation_mode == DisaggregationMode.NULL and not (scheduler.enable_pdmux) and not (get_parallel().pp_size > 1) and not (scheduler.enable_overlap_mlx) and not (scheduler.enable_overlap)",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "scheduler_loop:event_loop_pp_disagg_prefill",
+   "category": "scheduler_loop",
+   "name": "event_loop_pp_disagg_prefill",
+   "site": "managers/scheduler.py:6236",
+   "condition": "not (disaggregation_mode == DisaggregationMode.NULL) and disaggregation_mode == DisaggregationMode.PREFILL and get_parallel().pp_size > 1",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+  },
+  {
+   "id": "scheduler_loop:event_loop_overlap_disagg_prefill",
+   "category": "scheduler_loop",
+   "name": "event_loop_overlap_disagg_prefill",
+   "site": "managers/scheduler.py:6238",
+   "condition": "not (disaggregation_mode == DisaggregationMode.NULL) and disaggregation_mode == DisaggregationMode.PREFILL and not (get_parallel().pp_size > 1) and scheduler.enable_overlap",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+  },
+  {
+   "id": "scheduler_loop:event_loop_normal_disagg_prefill",
+   "category": "scheduler_loop",
+   "name": "event_loop_normal_disagg_prefill",
+   "site": "managers/scheduler.py:6240",
+   "condition": "not (disaggregation_mode == DisaggregationMode.NULL) and disaggregation_mode == DisaggregationMode.PREFILL and not (get_parallel().pp_size > 1) and not (scheduler.enable_overlap)",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+  },
+  {
+   "id": "scheduler_loop:event_loop_pp_disagg_decode",
+   "category": "scheduler_loop",
+   "name": "event_loop_pp_disagg_decode",
+   "site": "managers/scheduler.py:6243",
+   "condition": "not (disaggregation_mode == DisaggregationMode.NULL) and not (disaggregation_mode == DisaggregationMode.PREFILL) and disaggregation_mode == DisaggregationMode.DECODE and get_parallel().pp_size > 1",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+  },
+  {
+   "id": "scheduler_loop:event_loop_overlap_disagg_decode",
+   "category": "scheduler_loop",
+   "name": "event_loop_overlap_disagg_decode",
+   "site": "managers/scheduler.py:6245",
+   "condition": "not (disaggregation_mode == DisaggregationMode.NULL) and not (disaggregation_mode == DisaggregationMode.PREFILL) and disaggregation_mode == DisaggregationMode.DECODE and not (get_parallel().pp_size > 1) and scheduler.enable_overlap",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+  },
+  {
+   "id": "scheduler_loop:event_loop_normal_disagg_decode",
+   "category": "scheduler_loop",
+   "name": "event_loop_normal_disagg_decode",
+   "site": "managers/scheduler.py:6247",
+   "condition": "not (disaggregation_mode == DisaggregationMode.NULL) and not (disaggregation_mode == DisaggregationMode.PREFILL) and disaggregation_mode == DisaggregationMode.DECODE and not (get_parallel().pp_size > 1) and not (scheduler.enable_overlap)",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+  },
+  {
+   "id": "overlap_switch:enable_overlap",
+   "category": "overlap_switch",
+   "name": "enable_overlap",
+   "site": "managers/scheduler.py:500",
+   "condition": "not get_schedule().disable_overlap_schedule and (not use_mlx())",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "overlap_switch:enable_overlap_mlx",
+   "category": "overlap_switch",
+   "name": "enable_overlap_mlx",
+   "site": "managers/scheduler.py:503",
+   "condition": "not get_schedule().disable_overlap_schedule and use_mlx()",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "overlap_depth:result_queue",
+   "category": "overlap_depth",
+   "name": "result_queue",
+   "site": "managers/scheduler.py:2061",
+   "queue_appends": 1,
+   "drain_sites": 2,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "overlap_disabler:disable_overlap_for_batch",
+   "category": "overlap_disabler",
+   "name": "disable_overlap_for_batch",
+   "site": "managers/scheduler.py:2152",
+   "condition": "envs.SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP.get() and batch_is_extend and last_batch_is_extend",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "overlap_disabler:need_grammar_sync",
+   "category": "overlap_disabler",
+   "name": "need_grammar_sync",
+   "site": "managers/scheduler.py:2160",
+   "condition": "batch and (not batch.spec_algorithm.is_none()) and batch.grammar_needs_sync() and batch.forward_mode.is_decode() and (len(self.result_queue) > 0)",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "memory_budget:slack_gb",
+   "category": "memory_budget",
+   "name": "slack_gb",
+   "site": "mem_cache/kv_cache_configurator.py:3007",
+   "formulas": [
+    "pre_model_load_memory * (1 - get_schedule().mem_fraction_static)",
+    "max(slack_gb, pre_capture_activation_reserve_mb(get_device_memory_capacity(self.device)) / 1024)"
+   ],
+   "lines": [
+    3007,
+    3027
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+  },
+  {
+   "id": "memory_budget:mm_reservation_gb",
+   "category": "memory_budget",
+   "name": "mm_reservation_gb",
+   "site": "mem_cache/kv_cache_configurator.py:3034",
+   "formulas": [
+    "mm_runtime_reservation_gb(is_multimodal=self.model_config.is_multimodal, mm_feature_transport=get_mm().mm_feature_transport)"
+   ],
+   "lines": [
+    3034
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+  },
+  {
+   "id": "memory_budget:rest_memory",
+   "category": "memory_budget",
+   "name": "rest_memory",
+   "site": "mem_cache/kv_cache_configurator.py:3038",
+   "formulas": [
+    "available_gpu_memory - slack_gb - mm_reservation_gb",
+    "self._handle_max_mamba_cache(rest_memory)"
+   ],
+   "lines": [
+    3038,
+    3040
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+  },
+  {
+   "id": "memory_budget:returned",
+   "category": "memory_budget",
+   "name": "returned",
+   "site": "mem_cache/kv_cache_configurator.py:3060",
+   "formulas": [
+    "int(rest_memory * (1 << 30))"
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+  },
+  {
+   "id": "nixl_plugin:3FS",
+   "category": "nixl_plugin",
+   "name": "3FS",
+   "site": "mem_cache/storage/nixl/nixl_utils.py:122",
+   "kind": "file",
+   "auto_rank": 0,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
+  },
+  {
+   "id": "nixl_plugin:POSIX",
+   "category": "nixl_plugin",
+   "name": "POSIX",
+   "site": "mem_cache/storage/nixl/nixl_utils.py:122",
+   "kind": "file",
+   "auto_rank": 1,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
+  },
+  {
+   "id": "nixl_plugin:GDS_MT",
+   "category": "nixl_plugin",
+   "name": "GDS_MT",
+   "site": "mem_cache/storage/nixl/nixl_utils.py:122",
+   "kind": "file",
+   "auto_rank": 2,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
+  },
+  {
+   "id": "nixl_plugin:GDS",
+   "category": "nixl_plugin",
+   "name": "GDS",
+   "site": "mem_cache/storage/nixl/nixl_utils.py:122",
+   "kind": "file",
+   "auto_rank": 3,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
+  },
+  {
+   "id": "nixl_plugin:OBJ",
+   "category": "nixl_plugin",
+   "name": "OBJ",
+   "site": "mem_cache/storage/nixl/nixl_utils.py:124",
+   "kind": "object",
+   "auto_rank": 0,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
+  },
+  {
+   "id": "kv_event_hash:get_hash_str",
+   "category": "kv_event_hash",
+   "name": "get_hash_str",
+   "site": "mem_cache/utils.py:116",
+   "seed_tags": [],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "kv_event_hash:storage_namespace_seed",
+   "category": "kv_event_hash",
+   "name": "storage_namespace_seed",
+   "site": "mem_cache/utils.py:125",
+   "seed_tags": [
+    "sglang-cache-namespace-v1"
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "kv_event_hash:get_storage_hash_str",
+   "category": "kv_event_hash",
+   "name": "get_storage_hash_str",
+   "site": "mem_cache/utils.py:142",
+   "seed_tags": [],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "kv_event_hash:hash_str_to_int64",
+   "category": "kv_event_hash",
+   "name": "hash_str_to_int64",
+   "site": "mem_cache/utils.py:155",
+   "seed_tags": [],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "kv_event_hash:compute_node_hash_values",
+   "category": "kv_event_hash",
+   "name": "compute_node_hash_values",
+   "site": "mem_cache/utils.py:166",
+   "seed_tags": [],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "kv_event_hash:compute_node_event_hash_values",
+   "category": "kv_event_hash",
+   "name": "compute_node_event_hash_values",
+   "site": "mem_cache/utils.py:178",
+   "seed_tags": [
+    "sglang-cache-salt-v1\u0000"
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "kv_event_hash:kv_event_namespace_seed",
+   "category": "kv_event_hash",
+   "name": "kv_event_namespace_seed",
+   "site": "disaggregation/kv_events.py:312",
+   "seed_tags": [],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "kv_event_hash:namespaced_block_hash",
+   "category": "kv_event_hash",
+   "name": "namespaced_block_hash",
+   "site": "disaggregation/kv_events.py:329",
+   "seed_tags": [],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "kv_event_hash:_NAMESPACE_SEED_TAG",
+   "category": "kv_event_hash",
+   "name": "_NAMESPACE_SEED_TAG",
+   "site": "disaggregation/kv_events.py:309",
+   "seed_tags": [
+    "sglang-kv-event-namespace-v1"
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "kv_event_granularity:page_size",
+   "category": "kv_event_granularity",
+   "name": "page_size",
+   "site": "mem_cache/events.py:126",
+   "used_at": [
+    "mem_cache/events.py:135",
+    "mem_cache/events.py:175",
+    "mem_cache/events.py:178",
+    "mem_cache/events.py:241",
+    "mem_cache/events.py:242",
+    "mem_cache/events.py:289",
+    "mem_cache/events.py:290"
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "kv_event_merge:BlockRemoved",
+   "category": "kv_event_merge",
+   "name": "BlockRemoved",
+   "site": "mem_cache/events.py:150",
+   "when": "tail.medium == event.medium",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "kv_event_merge:BlockStored",
+   "category": "kv_event_merge",
+   "name": "BlockStored",
+   "site": "mem_cache/events.py:155",
+   "when": "tail.medium == event.medium and tail.lora_id == event.lora_id and (tail.block_size == event.block_size) and (tail.cache_salt == event.cache_salt) and (tail.session_id == event.session_id) and (tail.lora_name == event.lora_name) and tail.block_hashes and (event.parent_block_hash == tail.block_hashes[-1])",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "kv_event_format:default",
+   "category": "kv_event_format",
+   "name": "default",
+   "site": "disaggregation/kv_events.py:723",
+   "default": true,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "kv_event_format:dynamo",
+   "category": "kv_event_format",
+   "name": "dynamo",
+   "site": "disaggregation/kv_events.py:723",
+   "default": false,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "drafter_arch:DeepseekV3ForCausalLMNextN",
+   "category": "drafter_arch",
+   "name": "DeepseekV3ForCausalLMNextN",
+   "site": "configs/model_config.py:1036",
+   "target_archs": [
+    "DeepseekV32ForCausalLM",
+    "DeepseekV3ForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:GlmMoeDsaForCausalLMNextN",
+   "category": "drafter_arch",
+   "name": "GlmMoeDsaForCausalLMNextN",
+   "site": "configs/model_config.py:1039",
+   "target_archs": [
+    "GlmMoeDsaForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:DeepseekV4ForCausalLMDSpark",
+   "category": "drafter_arch",
+   "name": "DeepseekV4ForCausalLMDSpark",
+   "site": "configs/model_config.py:1054",
+   "target_archs": [
+    "DeepseekV4ForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:DeepseekV4ForCausalLMNextN",
+   "category": "drafter_arch",
+   "name": "DeepseekV4ForCausalLMNextN",
+   "site": "configs/model_config.py:1060",
+   "target_archs": [
+    "DeepseekV4ForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:Glm4MoeForCausalLMNextN",
+   "category": "drafter_arch",
+   "name": "Glm4MoeForCausalLMNextN",
+   "site": "configs/model_config.py:1064",
+   "target_archs": [
+    "Glm4MoeForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:Glm4MoeLiteForCausalLMNextN",
+   "category": "drafter_arch",
+   "name": "Glm4MoeLiteForCausalLMNextN",
+   "site": "configs/model_config.py:1069",
+   "target_archs": [
+    "Glm4MoeLiteForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:Glm5NextForConditionalGenerationNextN",
+   "category": "drafter_arch",
+   "name": "Glm5NextForConditionalGenerationNextN",
+   "site": "configs/model_config.py:1075",
+   "target_archs": [
+    "Glm5NextForConditionalGeneration"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:GlmOcrForConditionalGenerationNextN",
+   "category": "drafter_arch",
+   "name": "GlmOcrForConditionalGenerationNextN",
+   "site": "configs/model_config.py:1083",
+   "target_archs": [
+    "GlmOcrForConditionalGeneration"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:LongcatFlashForCausalLMNextN",
+   "category": "drafter_arch",
+   "name": "LongcatFlashForCausalLMNextN",
+   "site": "configs/model_config.py:1089",
+   "target_archs": [
+    "LongcatFlashForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:MiMoMTP",
+   "category": "drafter_arch",
+   "name": "MiMoMTP",
+   "site": "configs/model_config.py:1093",
+   "target_archs": [
+    "MiMoForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:MiMoV2MTP",
+   "category": "drafter_arch",
+   "name": "MiMoV2MTP",
+   "site": "configs/model_config.py:1095",
+   "target_archs": [],
+   "target_arch_lists": [
+    "MIMO_V2_MODEL_ARCHS"
+   ],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:Step3p5MTP",
+   "category": "drafter_arch",
+   "name": "Step3p5MTP",
+   "site": "configs/model_config.py:1098",
+   "target_archs": [
+    "Step3p5ForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:InklingForConditionalGenerationMTP",
+   "category": "drafter_arch",
+   "name": "InklingForConditionalGenerationMTP",
+   "site": "configs/model_config.py:1103",
+   "target_archs": [
+    "InklingForConditionalGeneration"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:GigaChat35ForCausalLMNextN",
+   "category": "drafter_arch",
+   "name": "GigaChat35ForCausalLMNextN",
+   "site": "configs/model_config.py:1114",
+   "target_archs": [
+    "GigaChat35ForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:BailingMoeForCausalLMNextN",
+   "category": "drafter_arch",
+   "name": "BailingMoeForCausalLMNextN",
+   "site": "configs/model_config.py:1127",
+   "target_archs": [
+    "BailingMoeForCausalLM",
+    "BailingMoeV2ForCausalLM",
+    "BailingMoeV2_5ForCausalLM",
+    "BailingMoeV3ForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:Ernie4_5_MoeForCausalLMMTP",
+   "category": "drafter_arch",
+   "name": "Ernie4_5_MoeForCausalLMMTP",
+   "site": "configs/model_config.py:1132",
+   "target_archs": [
+    "Ernie4_5_MoeForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:Qwen3NextForCausalLMMTP",
+   "category": "drafter_arch",
+   "name": "Qwen3NextForCausalLMMTP",
+   "site": "configs/model_config.py:1135",
+   "target_archs": [
+    "Qwen3NextForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:Qwen4ExpForCausalLMMTP",
+   "category": "drafter_arch",
+   "name": "Qwen4ExpForCausalLMMTP",
+   "site": "configs/model_config.py:1146",
+   "target_archs": [
+    "Qwen4ExpForConditionalGeneration"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:Qwen3MoeForCausalLMMTP",
+   "category": "drafter_arch",
+   "name": "Qwen3MoeForCausalLMMTP",
+   "site": "configs/model_config.py:1156",
+   "target_archs": [
+    "Qwen3MoeForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:Qwen3_5ForCausalLMMTP",
+   "category": "drafter_arch",
+   "name": "Qwen3_5ForCausalLMMTP",
+   "site": "configs/model_config.py:1179",
+   "target_archs": [
+    "InternS2MobiusForConditionalGeneration",
+    "InternS2PreviewForConditionalGeneration",
+    "Qwen3_5ForCausalLM",
+    "Qwen3_5ForConditionalGeneration",
+    "Qwen3_5MoeForCausalLM",
+    "Qwen3_5MoeForConditionalGeneration"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:ExaoneMoEForCausalLMMTP",
+   "category": "drafter_arch",
+   "name": "ExaoneMoEForCausalLMMTP",
+   "site": "configs/model_config.py:1187",
+   "target_archs": [
+    "ExaoneMoEForCausalLM",
+    "ExaoneMoeForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:NemotronHForCausalLMMTP",
+   "category": "drafter_arch",
+   "name": "NemotronHForCausalLMMTP",
+   "site": "configs/model_config.py:1202",
+   "target_archs": [
+    "NemotronHForCausalLM",
+    "NemotronHPuzzleForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:HYV3ForCausalLMNextN",
+   "category": "drafter_arch",
+   "name": "HYV3ForCausalLMNextN",
+   "site": "configs/model_config.py:1206",
+   "target_archs": [
+    "HYV3ForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  {
+   "id": "drafter_arch:HYV4ForCausalLMNextN",
+   "category": "drafter_arch",
+   "name": "HYV4ForCausalLMNextN",
+   "site": "configs/model_config.py:1210",
+   "target_archs": [
+    "HYV4ForCausalLM"
+   ],
+   "target_arch_lists": [],
+   "registered": "native",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
   }
  ]
 }

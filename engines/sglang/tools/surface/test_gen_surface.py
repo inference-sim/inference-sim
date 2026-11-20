@@ -51,6 +51,7 @@ FILES = {
             _NS_PATH = "disagg"
             disaggregation_transfer_backend: A[str, Arg(help="h", choices=DISAGG_TRANSFER_BACKEND_CHOICES)] = "mooncake"
             disaggregation_decode_retraction_backup: A[str, Arg(choices=["cpu_tensor", "none"])] = "none"
+            disaggregation_decode_allocation_policy: A[Literal["early", "prefill_complete"], "h"] = "early"
     """,
     "arg_groups/fields/memory.py": """
         from sglang.srt.arg_groups.choices import RADIX_EVICTION_POLICY_CHOICES
@@ -69,6 +70,105 @@ FILES = {
         class Schedule(msgspec.Struct):
             _NS_PATH = "schedule"
             schedule_policy: A[str, Arg(choices=["fcfs", "lpm", "priority"])] = "fcfs"
+            retraction_policy: A[str, Arg(choices=["length", "priority"])] = "length"
+            schedule_conservativeness: A[float, "h"] = 1.0
+            max_prefill_tokens: A[int, "h"] = 16384
+            chunked_prefill_size: A[Optional[int], "h"] = None
+            max_running_requests: A[Optional[int], "h"] = None
+            mem_fraction_static: A[Optional[float], "h"] = None
+            disable_overlap_schedule: A[bool, "h"] = False
+            page_size: A[Optional[int], "h"] = None
+    """,
+    "arg_groups/fields/serving.py": """
+        class Serving(msgspec.Struct):
+            _NS_PATH = "serving"
+            allow_auto_truncate: A[bool, "h"] = False
+    """,
+    "arg_groups/fields/model.py": """
+        class Model(msgspec.Struct):
+            _NS_PATH = "model"
+            context_length: A[Optional[int], "h"] = None
+    """,
+    "arg_groups/fields/observability.py": """
+        class Observability(msgspec.Struct):
+            _NS_PATH = "observability"
+            kv_events_config: A[Optional[str], "h"] = None
+    """,
+    "environ.py": """
+        class Envs:
+            SGLANG_INIT_NEW_TOKEN_RATIO = EnvFloat(0.7)
+            SGLANG_RETRACT_DECODE_STEPS = EnvInt(20)
+            SGLANG_MAX_NEW_TOKENS_LIMIT = EnvInt(None)
+            SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP = EnvBool(False)
+            SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND = EnvStr("rust")
+            SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR = EnvFloat(0.14)
+            SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS = EnvInt(600)
+            SGLANG_CLIP_MAX_NEW_TOKENS_ESTIMATION = EnvInt(4096)
+    """,
+    "arg_groups/kv_shard_hook.py": """
+        def handle(cfg):
+            if not envs.SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND.is_set():
+                envs.SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND.set("python")
+    """,
+    "arg_groups/speculative_hook.py": """
+        def _handle_eagle_family(server_args):
+            declare_resolution(server_args, "eagle", max_running_requests=48)
+        def _handle_ngram(server_args):
+            declare_resolution(server_args, "ngram", max_running_requests=32)
+        def _not_a_handler(server_args):
+            return None
+    """,
+    "managers/scheduler.py": """
+        class Scheduler:
+            def __init__(self):
+                self.enable_overlap = not get_schedule().disable_overlap_schedule and not use_mlx()
+                self.enable_overlap_mlx = not get_schedule().disable_overlap_schedule and use_mlx()
+            def event_loop_overlap(self):
+                while True:
+                    self.result_queue.append((batch.copy(), result))
+                    pop_and_process()
+                    pop_and_process()
+            def is_disable_overlap_for_batch(self, batch):
+                disable_overlap_for_batch = envs.SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP.get() and extend
+                need_grammar_sync = batch and batch.grammar_needs_sync()
+                return disable_overlap_for_batch or need_grammar_sync
+        def _dispatch_event_loop_once(scheduler):
+            if scheduler.pp_size > 1:
+                scheduler.event_loop_pp()
+            elif scheduler.enable_overlap:
+                scheduler.event_loop_overlap()
+            else:
+                scheduler.event_loop_normal()
+    """,
+    "mem_cache/events.py": """
+        class KVCacheEventRecorder:
+            def __init__(self, *, page_size=1):
+                self.page_size = page_size
+            def enqueue(self, event):
+                tail = self.events[-1]
+                if isinstance(event, BlockRemoved) and isinstance(tail, BlockRemoved):
+                    if tail.medium == event.medium:
+                        return
+                if isinstance(event, BlockStored) and isinstance(tail, BlockStored):
+                    if tail.medium == event.medium and tail.lora_id == event.lora_id:
+                        return
+            def other(self):
+                return self.page_size
+    """,
+    "mem_cache/storage/nixl/nixl_utils.py": """
+        class NixlBackendSelection:
+            FILE_PLUGINS = ["3FS", "POSIX"]
+            OBJ_PLUGINS = ["OBJ"]
+            def __init__(self, plugin="auto"):
+                plugin = os.getenv("SGLANG_HICACHE_NIXL_BACKEND_PLUGIN", "auto")
+    """,
+    "configs/model_config.py": """
+        class ModelConfig:
+            def _config_draft_model(self):
+                if self.hf_config.architectures[0] in ["LlamaForCausalLM", "LlamaModel"]:
+                    self.hf_config.architectures[0] = "LlamaForCausalLMNextN"
+                elif self.hf_config.architectures[0] == "MixtralTarget":
+                    self.hf_config.architectures[0] = "MixtralForCausalLM"
     """,
     "arg_groups/fields/exec_.py": """
         class Moe(msgspec.Struct):
@@ -137,6 +237,7 @@ FILES = {
         def register_tree_core_backend(name, factory):
             pass
         register_tree_core_backend("python", _python_tree_core_factory)
+        register_tree_core_backend("rust", _rust_tree_core_factory)
     """,
     "mem_cache/unified_cache/component_type.py": """
         class ComponentType(int, Enum):
@@ -163,6 +264,18 @@ FILES = {
             "lfu": LFUStrategy,
             "fifo": FIFOStrategy,
         }
+        def get_hash_str(token_ids):
+            return sha256(token_ids)
+        def storage_namespace_seed(extra_key):
+            return sha256(b"sglang-cache-namespace-v1" + extra_key)
+        def get_storage_hash_str(token_ids, extra_key):
+            return sha256(token_ids)
+        def hash_str_to_int64(h):
+            return int(h, 16)
+        def compute_node_hash_values(node):
+            return []
+        def compute_node_event_hash_values(node):
+            return [sha256(b"sglang-cache-salt-v1")]
     """,
     "managers/schedule_policy.py": """
         class CacheAwarePolicy(Enum):
@@ -225,6 +338,11 @@ FILES = {
                 return MHATokenToKVPool()
             def _build_token_to_kv_pool_allocator(self):
                 return PagedTokenToKVPoolAllocator()
+            def _profile_available_bytes(self):
+                slack_gb = pre_model_load_memory * (1 - get_schedule().mem_fraction_static)
+                mm_reservation_gb = mm_runtime_reservation_gb()
+                rest_memory = available_gpu_memory - slack_gb - mm_reservation_gb
+                return int(rest_memory * (1 << 30))
     """,
     "mem_cache/pool_host/base.py": """
         class HostKVCache(ABC):
@@ -267,6 +385,13 @@ FILES = {
             @classmethod
             def register_publisher(cls, name, ctor):
                 pass
+        _NAMESPACE_SEED_TAG = b"sglang-kv-event-namespace-v1"
+        def kv_event_namespace_seed(key):
+            return hash(_NAMESPACE_SEED_TAG + key)
+        def namespaced_block_hash(seed, block):
+            return hash(seed + block)
+        class KVEventsConfig:
+            format: Literal["default", "dynamo"] = "default"
     """,
     "observability/metrics_collector.py": """
         from collections import Counter
@@ -376,6 +501,8 @@ class Base(unittest.TestCase):
             f.write("{}")
         with open(os.path.join(self.repo, "provenance.go"), "w") as f:
             f.write(PROVENANCE)
+        self.divergences = {"divergences": [{"sequence": "namespaced-keys", "what": "w", "issue": ISSUE,
+                                             "why": "the Rust core queues one event per namespace"}]}
         gen_surface.UPSTREAM["tag"], gen_surface.UPSTREAM["commit"] = "v0.5.23", COMMIT
 
     def tearDown(self):
@@ -383,7 +510,9 @@ class Base(unittest.TestCase):
 
     def derive(self):
         write_tree(self.src, self.files)
-        return gen_surface.derive(self.src)
+        with open(os.path.join(self.repo, "oracle", "treecore-divergences.json"), "w") as f:
+            json.dump(self.divergences, f)
+        return gen_surface.derive(self.src, self.repo)
 
     def ids(self):
         return {i["id"] for i in self.derive()}
@@ -393,6 +522,8 @@ class Base(unittest.TestCase):
 
     def build(self, status):
         write_tree(self.src, self.files)
+        with open(os.path.join(self.repo, "oracle", "treecore-divergences.json"), "w") as f:
+            json.dump(self.divergences, f)
         return gen_surface.build(self.src, status, self.repo)
 
     def fails(self, pattern, status=None):
@@ -612,6 +743,185 @@ class TestStatuses(Base):
         status = self.all_refused()
         status["items"]["tree_core:python"] = {"status": "refused", "issue": ISSUE, "evidence": ["x"]}
         self.fails(r"tree_core:python: keys \['evidence'\] do not belong with status refused", status)
+
+
+class TestParticulars(Base):
+    """The Table DC particulars: settings, P/D allocation, tree cores, loops, KV events, memory, drafters."""
+
+    def by_id(self):
+        return {i["id"]: i for i in self.derive()}
+
+    def test_a_setting_records_its_default_from_whichever_declaration_holds_it(self):
+        by_id = self.by_id()
+        self.assertEqual(by_id["engine_setting:SGLANG_INIT_NEW_TOKEN_RATIO"]["default"], 0.7)
+        self.assertEqual(by_id["engine_setting:SGLANG_INIT_NEW_TOKEN_RATIO"]["kind"], "env")
+        self.assertIsNone(by_id["engine_setting:SGLANG_MAX_NEW_TOKENS_LIMIT"]["default"])
+        self.assertEqual(by_id["engine_setting:max_prefill_tokens"]["default"], 16384)
+        self.assertEqual(by_id["engine_setting:max_prefill_tokens"]["site"], "arg_groups/fields/schedule.py:6")
+        self.assertEqual(by_id["engine_setting:SGLANG_HICACHE_NIXL_BACKEND_PLUGIN"]["default"], "auto")
+        self.assertEqual(by_id["engine_setting:SGLANG_HICACHE_NIXL_BACKEND_PLUGIN"]["kind"], "getenv")
+
+    def test_a_setting_the_release_no_longer_declares_fails(self):
+        self.files["environ.py"] = self.files["environ.py"].replace("SGLANG_RETRACT_DECODE_STEPS", "SGLANG_RETRACT_RENAMED")
+        self.fails(r"environ.py: no environment variable SGLANG_RETRACT_DECODE_STEPS")
+
+    def test_a_getenv_read_must_be_found_exactly_once(self):
+        self.files["mem_cache/storage/nixl/nixl_utils.py"] += "        other = os.getenv(\"SGLANG_HICACHE_NIXL_BACKEND_PLUGIN\")\n"
+        self.fails(r"2 os.getenv calls of SGLANG_HICACHE_NIXL_BACKEND_PLUGIN, want one")
+
+    def test_the_allocation_policy_marks_its_default_and_where_each_choice_is_read(self):
+        self.files["disaggregation/decode.py"] += """
+        def alloc(self):
+            if self.server_args.disaggregation_decode_allocation_policy == "prefill_complete":
+                return 1
+            return self.server_args.disaggregation_decode_allocation_policy == "early"
+        """
+        by_id = self.by_id()
+        self.assertIs(by_id["pd_allocation_policy:early"]["default"], True)
+        self.assertIs(by_id["pd_allocation_policy:prefill_complete"]["default"], False)
+        self.assertEqual(by_id["pd_allocation_policy:prefill_complete"]["read_at"], ["disaggregation/decode.py:5"])
+        self.assertEqual(by_id["pd_allocation_policy:early"]["read_at"], ["disaggregation/decode.py:7"])
+
+    def test_an_allocation_policy_default_that_is_no_choice_fails(self):
+        self.files["arg_groups/fields/disagg.py"] = self.files["arg_groups/fields/disagg.py"].replace('= "early"', '= "late"')
+        self.fails(r"the default of disaggregation_decode_allocation_policy, 'late', is not a choice")
+
+    def test_a_tree_core_records_the_default_and_what_forces_a_core(self):
+        by_id = self.by_id()
+        self.assertIs(by_id["tree_core:rust"]["default"], True)
+        self.assertIs(by_id["tree_core:python"]["default"], False)
+        self.assertEqual(by_id["tree_core:python"]["forced_by"], ["arg_groups/kv_shard_hook.py:3=python"])
+        self.assertEqual(by_id["tree_core:rust"]["forced_by"], [])
+        self.assertEqual(by_id["tree_core:rust"]["env_site"], "environ.py:6")
+
+    def test_a_default_core_that_is_not_registered_fails(self):
+        self.files["environ.py"] = self.files["environ.py"].replace('EnvStr("rust")', 'EnvStr("cxx")')
+        self.fails(r"the default of SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND, 'cxx', is not a registered core")
+
+    def test_each_recorded_divergence_is_an_item_of_the_rust_core(self):
+        by_id = self.by_id()
+        d = by_id["tree_core_divergence:namespaced-keys"]
+        self.assertEqual((d["core"], d["against"], d["divergence_issue"]), ("rust", "python", ISSUE))
+        self.assertEqual(d["site"], by_id["tree_core:rust"]["site"])
+
+    def test_a_divergence_needs_an_issue_and_its_status_must_cite_that_issue(self):
+        self.divergences["divergences"][0]["issue"] = "not-a-url"
+        self.fails(r"divergence namespaced-keys names 'not-a-url', not an issue URL")
+        self.divergences["divergences"][0]["issue"] = ISSUE
+        status = self.all_refused()
+        status["items"]["tree_core_divergence:namespaced-keys"]["issue"] = "https://github.com/inference-sim/blis-sglang/issues/99"
+        self.fails(r"tree_core_divergence:namespaced-keys: refused with .*issues/99.*records the divergence under .*issues/3", status)
+
+    def test_a_divergence_with_no_rust_core_fails(self):
+        self.files["mem_cache/unified_cache/tree_core_registry.py"] = self.files[
+            "mem_cache/unified_cache/tree_core_registry.py"].replace('register_tree_core_backend("rust", _rust_tree_core_factory)', "")
+        self.files["environ.py"] = self.files["environ.py"].replace('EnvStr("rust")', 'EnvStr("python")')
+        self.fails(r"the Rust core is not registered")
+
+    def test_a_speculative_handler_records_the_running_requests_it_resolves(self):
+        got = {i["name"]: i["value"] for i in self.derive() if i["category"] == "spec_running_requests"}
+        self.assertEqual(got, {"_handle_eagle_family": 48, "_handle_ngram": 32})
+
+    def test_the_dispatch_records_the_condition_that_selects_each_loop(self):
+        got = {i["name"]: i["condition"] for i in self.derive() if i["category"] == "scheduler_loop"}
+        self.assertEqual(got, {
+            "event_loop_pp": "scheduler.pp_size > 1",
+            "event_loop_overlap": "not (scheduler.pp_size > 1) and scheduler.enable_overlap",
+            "event_loop_normal": "not (scheduler.pp_size > 1) and not (scheduler.enable_overlap)"})
+
+    def test_the_overlap_scheduler_records_its_switch_depth_and_disablers(self):
+        by_id = self.by_id()
+        self.assertEqual(by_id["overlap_switch:enable_overlap"]["condition"],
+                         "not get_schedule().disable_overlap_schedule and (not use_mlx())")
+        self.assertEqual(by_id["overlap_depth:result_queue"]["queue_appends"], 1)
+        self.assertEqual(by_id["overlap_depth:result_queue"]["drain_sites"], 2)
+        self.assertEqual(sorted(i["name"] for i in self.derive() if i["category"] == "overlap_disabler"),
+                         ["disable_overlap_for_batch", "need_grammar_sync"])
+
+    def test_an_overlap_disabler_that_is_no_named_condition_fails(self):
+        self.files["managers/scheduler.py"] = self.files["managers/scheduler.py"].replace(
+            "return disable_overlap_for_batch or need_grammar_sync", "return disable_overlap_for_batch or batch.x")
+        self.fails(r"is_disable_overlap_for_batch does not return an or of named conditions")
+
+    def test_the_memory_budget_records_each_formula_and_the_returned_bytes(self):
+        by_id = self.by_id()
+        self.assertEqual(by_id["memory_budget:slack_gb"]["formulas"],
+                         ["pre_model_load_memory * (1 - get_schedule().mem_fraction_static)"])
+        self.assertEqual(by_id["memory_budget:returned"]["formulas"], ["int(rest_memory * (1 << 30))"])
+
+    def test_a_memory_budget_variable_the_release_drops_fails(self):
+        self.files["mem_cache/kv_cache_configurator.py"] = self.files["mem_cache/kv_cache_configurator.py"].replace(
+            "mm_reservation_gb = ", "mm_other = ")
+        self.fails(r"_profile_available_bytes assigns no mm_reservation_gb")
+
+    def test_nixl_plugins_carry_their_auto_selection_rank(self):
+        got = {i["name"]: (i["kind"], i["auto_rank"]) for i in self.derive() if i["category"] == "nixl_plugin"}
+        self.assertEqual(got, {"3FS": ("file", 0), "POSIX": ("file", 1), "OBJ": ("object", 0)})
+
+    def test_kv_event_hashing_granularity_merging_and_format(self):
+        by_id = self.by_id()
+        self.assertEqual(by_id["kv_event_hash:storage_namespace_seed"]["seed_tags"], ["sglang-cache-namespace-v1"])
+        self.assertEqual(by_id["kv_event_hash:_NAMESPACE_SEED_TAG"]["seed_tags"], ["sglang-kv-event-namespace-v1"])
+        self.assertEqual(by_id["kv_event_granularity:page_size"]["used_at"], ["mem_cache/events.py:3", "mem_cache/events.py:13"])
+        self.assertEqual(by_id["kv_event_merge:BlockRemoved"]["when"], "tail.medium == event.medium")
+        self.assertIn("tail.lora_id == event.lora_id", by_id["kv_event_merge:BlockStored"]["when"])
+        self.assertIs(by_id["kv_event_format:default"]["default"], True)
+        self.assertIs(by_id["kv_event_format:dynamo"]["default"], False)
+
+    def test_a_check_of_two_different_event_types_is_no_merge(self):
+        self.files["mem_cache/events.py"] = self.files["mem_cache/events.py"].replace(
+            "            def other(self):",
+            "                if isinstance(event, BlockStored) and isinstance(tail, BlockRemoved):\n"
+            "                    if tail.medium == event.medium:\n"
+            "                        return\n"
+            "            def other(self):")
+        merges = [(i["name"], i["site"]) for i in self.derive() if i["category"] == "kv_event_merge"]
+        self.assertEqual(merges, [("BlockRemoved", "mem_cache/events.py:6"), ("BlockStored", "mem_cache/events.py:9")])
+
+    def test_a_recorder_that_merges_nothing_fails(self):
+        self.files["mem_cache/events.py"] = self.files["mem_cache/events.py"].replace("isinstance(tail, BlockRemoved)", "tail")
+        self.files["mem_cache/events.py"] = self.files["mem_cache/events.py"].replace("isinstance(tail, BlockStored)", "tail")
+        self.fails(r"KVCacheEventRecorder.enqueue merges no event")
+
+    def test_a_drafter_architecture_lists_the_targets_it_rewrites_and_whether_it_is_registered(self):
+        by_id = self.by_id()
+        d = by_id["drafter_arch:LlamaForCausalLMNextN"]
+        self.assertEqual(d["target_archs"], ["LlamaForCausalLM", "LlamaModel"])
+        self.assertIsNone(d["registered"])
+        m = by_id["drafter_arch:MixtralForCausalLM"]
+        self.assertEqual((m["target_archs"], m["registered"]), (["MixtralTarget"], "native"))
+
+    def test_every_new_category_needs_a_status(self):
+        status = self.all_refused()
+        del status["items"]["pd_allocation_policy:early"]
+        self.fails(r"pd_allocation_policy:early: no status", status)
+
+
+class TestCommittedLists(unittest.TestCase):
+    """The committed status.json agrees with fields.json and the tree-core divergence record."""
+
+    ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    def load(self, rel):
+        with open(os.path.join(self.ROOT, rel), encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_a_setting_is_modelled_in_the_surface_list_only_if_the_field_list_models_it(self):
+        fields = {f["name"]: f for f in self.load("fields.json")["fields"]}
+        status = self.load("tools/surface/status.json")["items"]
+        settings = {k.split(":", 1)[1]: v for k, v in status.items() if k.startswith("engine_setting:")}
+        self.assertEqual(len(settings), len(gen_surface.SETTINGS))
+        for name, st in settings.items():
+            self.assertIn(name, fields, name)
+            if st["status"] == "modelled":
+                self.assertEqual(fields[name]["status"], "modelled", name)
+            elif fields[name]["status"] == "not_modelled":
+                self.assertEqual(st["issue"], "https://github.com/" + fields[name]["evidence"]["issue"].replace("#", "/issues/"), name)
+
+    def test_each_recorded_divergence_is_refused_under_the_issue_the_record_names(self):
+        status = self.load("tools/surface/status.json")["items"]
+        for d in self.load(gen_surface.DIVERGENCES)["divergences"]:
+            self.assertEqual(status["tree_core_divergence:" + d["sequence"]]["issue"], d["issue"], d["sequence"])
 
 
 class TestCommandLine(Base):
