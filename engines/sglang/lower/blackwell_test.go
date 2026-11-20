@@ -5,6 +5,7 @@ package lower
 import (
 	"encoding/json"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
@@ -22,14 +23,21 @@ func chipFile(t *testing.T, name string) *hardware.Chip {
 }
 
 // B200 (compute capability 10.0) and B300 (10.3) are SM100 to SGLang's resolution, which reads the
-// major; their nvidia-smi memory is the oracle's figure for each.
+// major, and so are the GB200 NVL72 (10.0) and GB300 (10.3) parts; their nvidia-smi memory is the
+// oracle's figure for each (oracle/serverargs/cases.json "chips").
 func TestBlackwellChipsAreLowered(t *testing.T) {
 	for _, tc := range []struct {
 		chip string
 		cc   [2]int
 		mib  float64
-	}{{"b200", [2]int{10, 0}, 183359}, {"b300", [2]int{10, 3}, 275040}} {
-		c, err := ChipOf(chipFile(t, tc.chip))
+	}{
+		{"b200", [2]int{10, 0}, 183359},
+		{"b300", [2]int{10, 3}, 275040},
+		{"gb200-nvl72", [2]int{10, 0}, 189471},
+		{"gb300", [2]int{10, 3}, 284208},
+	} {
+		chip := &hardware.Chip{Name: tc.chip, ComputeCapability: strconv.Itoa(tc.cc[0]) + "." + strconv.Itoa(tc.cc[1])}
+		c, err := ChipOf(chip)
 		if err != nil {
 			t.Fatalf("%s: %v", tc.chip, err)
 		}

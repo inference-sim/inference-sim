@@ -35,11 +35,20 @@ import (
 const engineKindSGLang = "sglang"
 
 // sglangContextOverheadGiB is the device memory CUDA and the driver hold before a model loads, on
-// the H200: vLLM's start-up reads 137.64 GiB free of the 139.8 GiB the driver reports
-// (the substrate catalog/hardware/h200.yaml, _comment_memory). SGLang reads the same free figure
-// before it loads the weights (get_available_gpu_memory, tp_worker.py@297e54fd). It is measured on
-// the H200 only, so any other chip is refused until its figure is.
-const sglangContextOverheadGiB = 2.16
+// each chip: the total the driver reports less the free figure vLLM's start-up logs on that chip
+// (the substrate catalog/hardware/<chip>.yaml, _comment_memory, each with its InferenceX run). On
+// the H200 vLLM reads 137.64 GiB free of the 139.8 GiB, 2.16 GiB. SGLang reads the same free figure
+// before it loads the weights (get_available_gpu_memory, tp_worker.py@297e54fd), but no SGLang log
+// states it, so it is vLLM's measurement carried over. A chip with no entry is refused until its
+// figure is measured.
+var sglangContextOverheadGiB = map[string]float64{
+	"h100":        79.19 - 76.0,
+	"h200":        2.16,
+	"b200":        178.35 - 175.93,
+	"b300":        267.69 - 265.24,
+	"gb200-nvl72": 184.0 - 180.15,
+	"gb300":       276.62 - 273.04,
+}
 
 type sglangHost struct{ data *load.Data }
 
@@ -83,8 +92,9 @@ func (h sglangHost) Open(s engine.Spec) (sglangengine.Pool, error) {
 	if err != nil {
 		return sglangengine.Pool{}, err
 	}
-	if in.Chip.Name != "h200" {
-		return sglangengine.Pool{}, fmt.Errorf("sglang engine: the memory CUDA holds before a model loads is measured on the h200 only, not %q (inference-sim/blis-sglang#49)", in.Chip.Name)
+	overhead, ok := sglangContextOverheadGiB[in.Chip.Name]
+	if !ok {
+		return sglangengine.Pool{}, fmt.Errorf("sglang engine: the memory CUDA holds before a model loads is not measured on the chip %q (inference-sim/blis-sglang#49)", in.Chip.Name)
 	}
 	facts, err := sglanglower.ModelFactsOf(in.Model)
 	if err != nil {
@@ -101,7 +111,7 @@ func (h sglangHost) Open(s engine.Spec) (sglangengine.Pool, error) {
 	}
 	return sglangengine.Pool{
 		Kernel: k, Chip: chip, Model: facts, Args: args,
-		PreModelLoadGiB: in.Chip.MemoryGiB - sglangContextOverheadGiB,
+		PreModelLoadGiB: in.Chip.MemoryGiB - overhead,
 		ContextLen:      ctx, VocabSize: in.Model.Global.VocabSize,
 		// The catalog carries no tokenizer. The simulator assigns each request its output and ends
 		// it at the script's end (engine.Request.Output), so the end-of-sequence id is one no script
