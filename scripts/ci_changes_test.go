@@ -19,7 +19,7 @@ import (
 
 const ciModule = "github.com/inference-sim/inference-sim"
 
-var ciGroups = strings.Fields("build lint core cluster kernel workload cmd root scripts llmd bytegate other stack selected actionlint claudemd")
+var ciGroups = strings.Fields("build lint core cluster kernel workload cmd root scripts llmd bytegate other stack selected actionlint claudemd structure substrate vllm sglang")
 
 // changesFor runs the filter on a list of paths and returns the groups it turns on, sorted.
 func changesFor(t *testing.T, args []string, paths ...string) []string {
@@ -57,6 +57,16 @@ func changesFor(t *testing.T, args []string, paths ...string) []string {
 	return on
 }
 
+func withoutGroups(all []string, drop ...string) []string {
+	var out []string
+	for _, g := range all {
+		if !contains(drop, g) {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
 func groupsOf(s string) []string {
 	f := strings.Fields(s)
 	sort.Strings(f)
@@ -73,35 +83,58 @@ func TestCIChangesSampleChangeLists(t *testing.T) {
 		want  []string
 	}{
 		{"a documentation page", []string{"README.md"},
-			groupsOf("core cluster cmd scripts stack")},
+			groupsOf("core cluster cmd scripts stack structure")},
 		{"a test file of the cluster package", []string{"sim/cluster/instance_test.go"},
-			groupsOf("lint cluster cmd")},
+			groupsOf("lint cluster cmd structure")},
 		{"production code of the cluster package", []string{"sim/cluster/instance.go"},
-			groupsOf("build lint cluster cmd root llmd other bytegate selected")},
+			groupsOf("build lint cluster cmd root llmd other bytegate selected structure")},
 		{"production code of the core package", []string{"sim/metrics.go"},
-			groupsOf("build lint core cluster kernel workload cmd root llmd other bytegate selected")},
+			groupsOf("build lint core cluster kernel workload cmd root llmd other bytegate selected structure")},
 		{"a byte gate golden file", []string{"testdata/bytegate/golden/a.json"},
-			groupsOf("bytegate workload cmd")},
+			groupsOf("bytegate workload cmd structure")},
 		{"a kernel fixture", []string{"testdata/kernel/glm5-h200-tp8.yaml"},
-			groupsOf("cmd core cluster kernel other scripts")},
-		{"a workload trace fixture", []string{"testdata/trace-v3/a.csv"}, groupsOf("workload")},
-		{"the stack record", []string{"stack.json"}, groupsOf("cmd other stack selected root")},
-		{"the router test directory only", []string{"sim/llmd/router_test.go"}, groupsOf("lint llmd cmd")},
-		{"a workflow other than ci.yml", []string{".github/workflows/gofmt.yml"}, groupsOf("scripts actionlint")},
-		{"an issue template (data under .github)", []string{".github/ISSUE_TEMPLATE/bug_report.md"}, nil},
-		{"the license", []string{"LICENSE"}, nil},
-		{"a spec document", []string{"specs/001-infra-nodes-gpus-instances/spec.md"}, nil},
-		{"the Dockerfile", []string{"Dockerfile"}, groupsOf("scripts")},
-		{"the size guard script", []string{"scripts/claude-md-size.sh"}, groupsOf("claudemd scripts")},
-		{"a script no job but the scripts package reads", []string{"scripts/archon-build.sh"}, groupsOf("scripts")},
+			groupsOf("cmd core cluster kernel other scripts structure")},
+		{"a workload trace fixture", []string{"testdata/trace-v3/a.csv"}, groupsOf("workload structure")},
+		{"the stack record", []string{"stack.json"}, groupsOf("cmd other stack selected root structure")},
+		{"the router test directory only", []string{"sim/llmd/router_test.go"}, groupsOf("lint llmd cmd structure")},
+		{"a workflow other than ci.yml", []string{".github/workflows/gofmt.yml"}, groupsOf("scripts actionlint structure")},
+		{"an issue template (data under .github)", []string{".github/ISSUE_TEMPLATE/bug_report.md"}, groupsOf("structure")},
+		{"the license", []string{"LICENSE"}, groupsOf("structure")},
+		{"a spec document", []string{"specs/001-infra-nodes-gpus-instances/spec.md"}, groupsOf("structure")},
+		{"the Dockerfile", []string{"Dockerfile"}, groupsOf("scripts structure")},
+		{"the size guard script", []string{"scripts/claude-md-size.sh"}, groupsOf("claudemd scripts structure")},
+		{"a script no job but the scripts package reads", []string{"scripts/archon-build.sh"}, groupsOf("scripts structure")},
 		{"the filter itself", []string{"scripts/ci-changes.sh"}, everything},
 		{"the workflow itself", []string{".github/workflows/ci.yml"}, everything},
 		{"go.sum", []string{"go.sum"}, everything},
 		{"a path no class names", []string{"newdir/file.txt"}, everything},
 		{"two changes add up", []string{"testdata/trace-v3/a.csv", "README.md"},
-			groupsOf("workload core cluster cmd scripts stack")},
+			groupsOf("workload core cluster cmd scripts stack structure")},
+		{"substrate production code runs every job", []string{"substrate/kernel/step.go"}, everything},
+		{"a substrate test file stays in its own group", []string{"substrate/kernel/step_test.go"},
+			groupsOf("lint cmd substrate structure")},
+		{"substrate testdata stays in its own group", []string{"substrate/kernel/testdata/a.json"},
+			groupsOf("substrate structure")},
+		{"a substrate data file runs every job", []string{"substrate/catalog/models/a/graph.yaml"}, everything},
+		{"vllm production code runs everything but the other directories",
+			[]string{"engines/vllm/core/batch.go"}, withoutGroups(everything, "substrate", "sglang")},
+		{"a vllm test file stays in its own group", []string{"engines/vllm/core/batch_test.go"},
+			groupsOf("lint cmd vllm structure")},
+		{"vllm golden data stays in its own group", []string{"engines/vllm/testdata/golden/a.json"},
+			groupsOf("vllm structure")},
+		{"sglang production code runs everything but the other directories",
+			[]string{"engines/sglang/engine.go"}, withoutGroups(everything, "substrate", "vllm")},
+		{"an sglang test file stays in its own group", []string{"engines/sglang/engine_test.go"},
+			groupsOf("lint cmd sglang structure")},
+		{"sglang data outside a testdata directory is production until 2.7 classes it",
+			[]string{"engines/sglang/golden-metrics/a.json"}, withoutGroups(everything, "substrate", "vllm")},
+		{"an engine no class names fans out", []string{"engines/foo/x.go"}, everything},
+		{"a file at engines/ itself fans out", []string{"engines/README.md"}, everything},
+		{"a composite action fans out", []string{".github/actions/go-toolchain/action.yml"}, everything},
+		{"a move from substrate to vllm counts at both ends",
+			[]string{"substrate/a.go", "engines/vllm/a.go"}, everything},
 		{"a move out of a package counts at both ends", []string{"sim/cluster/a.go", "sim/llmd/a.go"},
-			groupsOf("build lint cluster cmd root llmd other bytegate selected")},
+			groupsOf("build lint cluster cmd root llmd other bytegate selected structure")},
 	} {
 		got := changesFor(t, nil, c.paths...)
 		if !sameSet(got, c.want) {

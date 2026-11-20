@@ -24,11 +24,21 @@
 # repository guards scan every Go source). A path under .github/ is NOT "shared": only the
 # workflow files are read, by the scripts tests and actionlint.
 #
+# substrate/, engines/vllm and engines/sglang (the DC3 merge, design v4.2.0 section 3.4) are
+# classed by directory. Their non-test, non-testdata files are imported by the simulator, so a
+# change there runs the jobs that link them: substrate/ runs every group, engines/vllm every group
+# but `substrate` and `sglang`, engines/sglang every group but `substrate` and `vllm`. A test file
+# or a testdata/ file there turns on only its own group (plus lint and cmd for a Go file, which
+# scan every Go source). Any other path under engines/, even a .go file, is unclassified and runs
+# everything. `structure` is the cross-directory checks (import graph, path references, module
+# size): every change runs it, because it reads the whole tree.
+#
 # Groups: build lint core cluster kernel workload cmd root scripts llmd bytegate other stack
-#         selected actionlint claudemd
+#         selected actionlint claudemd structure substrate vllm sglang
 set -euo pipefail
 
-groups="build lint core cluster kernel workload cmd root scripts llmd bytegate other stack selected actionlint claudemd"
+base_groups="build lint core cluster kernel workload cmd root scripts llmd bytegate other stack selected actionlint claudemd"
+groups="$base_groups structure substrate vllm sglang"
 
 all=0
 if [ "${1:-}" = "--all" ]; then all=1; shift; fi
@@ -53,6 +63,7 @@ any_of() { local f=$1 d; shift; for d in "$@"; do "$f" "$d" && return 0; done; r
 classify() {
   local hit=0
   mark() { hit=1; local g; for g in "$@"; do on "$g"; done; }
+  on structure
 
   # -- Go packages: the job that tests the package, plus the jobs whose tests import it. ----------
   # Closures are from `go list -deps -test`; scripts/ci_changes_test.go re-derives them.
@@ -100,6 +111,29 @@ classify() {
   case "$p" in
     *_test.go) mark lint cmd ;;
     *.go)      mark lint cmd build ;;
+  esac
+
+  # -- The merged modules: one directory each (design v4.2.0 section 3.4). ----------------------
+  case "$p" in
+    substrate/*)
+      mark substrate
+      case "$p" in
+        *_test.go|*/testdata/*) ;;
+        *) for g in $groups; do mark "$g"; done ;;
+      esac ;;
+    engines/vllm/*)
+      mark vllm
+      case "$p" in
+        *_test.go|*/testdata/*) ;;
+        *) for g in $base_groups structure; do mark "$g"; done ;;
+      esac ;;
+    engines/sglang/*)
+      mark sglang
+      case "$p" in
+        *_test.go|*/testdata/*) ;;
+        *) for g in $base_groups structure; do mark "$g"; done ;;
+      esac ;;
+    engines/*) return 1 ;;
   esac
 
   # -- Modules and the stack record. -----------------------------------------------------------
