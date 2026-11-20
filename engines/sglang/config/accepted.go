@@ -34,10 +34,15 @@ var acceptedFields = map[string][]any{
 	"disaggregation_mode":             {"null", "prefill", "decode"},
 	"disaggregation_transfer_backend": {"nixl"},
 	"mem_fraction_static":             nil,
-	"speculative_algorithm":           {nil, "EAGLE", "NEXTN"},
-	"speculative_num_steps":           nil,
-	"speculative_eagle_topk":          nil,
-	"speculative_num_draft_tokens":    nil,
+	// EAGLE3 resolves as EAGLE does: both are is_eagle() and run _handle_eagle_family
+	// (speculative_spec_info.py:104-118, :255-266@297e54fd); NEXTN is renamed EAGLE first. The flag
+	// enable_multi_layer_eagle is read by no resolution step modelled here (it selects the worker,
+	// speculative_spec_info.py:354, and a DP-coordination check).
+	"speculative_algorithm":        {nil, "EAGLE", "NEXTN", "EAGLE3"},
+	"speculative_num_steps":        nil,
+	"speculative_eagle_topk":       nil,
+	"speculative_num_draft_tokens": nil,
+	"enable_multi_layer_eagle":     nil,
 	// The InferenceX h200 recipes of DeepSeek-R1 and GLM-5 (oracle cases dsr1-h200-tp8-recipe-*,
 	// glm5-h200-tp8-recipe, dsv3-h200-tp8-fa3-explicit, dsv3-h200-tp1-fusion-flag). Each is either
 	// read by the scheduler or the lowering (fields/status.json cites the traces and tests) or proven
@@ -205,8 +210,8 @@ func checkAccepted(args *ServerArgs, in Input) error {
 	}
 	if args.SpeculativeAlgorithm != nil && !eagleDraftInTarget[in.Model.Architecture] {
 		return &NotModelled{Name: "speculative_algorithm", Value: *args.SpeculativeAlgorithm,
-			Reason: "Resolve models speculative decoding only for a model whose MTP draft ships in its own checkpoint",
-			Issue:  issueRest}
+			Reason: "Resolve models speculative decoding only for a model whose MTP draft ships in its own checkpoint (a separate draft checkpoint, which EAGLE3 normally names, resolves speculative_draft_model_revision and is not modelled)",
+			Issue:  refusalIssue("speculative_algorithm", *args.SpeculativeAlgorithm)}
 	}
 	chips, ok := acceptedModels[in.Model.Architecture]
 	if !ok {

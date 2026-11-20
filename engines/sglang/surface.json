@@ -1588,7 +1588,7 @@
    "name": "EAGLE",
    "site": "speculative/spec_info.py:42",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/68"
   },
   {
    "id": "spec_algo:EAGLE3",
@@ -1596,7 +1596,7 @@
    "name": "EAGLE3",
    "site": "speculative/spec_info.py:43",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/68"
   },
   {
    "id": "spec_algo:FROZEN_KV_MTP",
@@ -1629,7 +1629,7 @@
    "site": "speculative/spec_registry.py:183",
    "alias_of": "EAGLE",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/68"
   },
   {
    "id": "spec_worker:DFlashWorkerV2",
@@ -1674,7 +1674,7 @@
    "site": "speculative/spec_info.py:354",
    "condition": "self.is_eagle() and cfg.enable_multi_layer_eagle",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/68"
   },
   {
    "id": "spec_worker:EAGLEWorkerV2",
@@ -1683,7 +1683,7 @@
    "site": "speculative/spec_info.py:361",
    "condition": "self.is_eagle()",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/68"
   },
   {
    "id": "spec_worker:StandaloneWorkerV2",
@@ -4444,7 +4444,7 @@
    "site": "arg_groups/speculative_hook.py:1087",
    "value": 48,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/68"
   },
   {
    "id": "spec_running_requests:_handle_ngram",

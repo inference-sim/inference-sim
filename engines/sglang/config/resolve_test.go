@@ -205,7 +205,7 @@ func TestResolveRefusalsNameTheIssueOfTheFeature(t *testing.T) {
 		{"pp_max_micro_batch_size", 2, "72"},
 		{"swa_full_tokens_ratio", 0.5, "73"},
 		{"mamba_track_interval", 128, "94"},
-		{"speculative_algorithm", "EAGLE3", "68"},
+		{"speculative_algorithm", "STANDALONE", "68"},
 		{"speculative_algorithm", "DSPARK", "69"},
 		{"speculative_token_map", "map.json", "68"},
 		{"speculative_dspark_block_size", 8, "69"},
