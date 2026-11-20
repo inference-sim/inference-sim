@@ -67,6 +67,9 @@ func dpPaddingOf(k kernel.Kernel, specTokens int) (dpPadding, error) {
 // uniform_decode_query_len tokens (vllm/v1/worker/gpu_worker.py:1376-1382) with no real
 // tokens (num_tokens_unpadded 0), so all of it is pad, padded like any other rank.
 //
+// The experts of an attention-data-parallel group run over every rank's tokens gathered, so each
+// rank's batch states the group's total (Batch.GroupTokens), not dp times its own.
+//
 // Pad tokens are the kernel's Batch.PadTokens: they run every GEMM, collective, MoE dispatch
 // and expert at the padded count, and no attention, logits or sampling.
 func (m *Model) StepTimesAcrossDP(batches [][]*sim.Request) []int64 {
@@ -83,11 +86,16 @@ func (m *Model) StepTimesAcrossDP(batches [][]*sim.Request) []int64 {
 		allDecode = allDecode && (dummy || kbs[i].UniformDecode(m.pad.dummyWidth))
 	}
 	padded := m.pad.ceiling > 0 && maxTokens <= m.pad.ceiling && (!m.pad.decodeOnly || allDecode)
-	out := make([]int64, len(batches))
+	groupTokens := 0
 	for i := range kbs {
 		if padded {
 			kbs[i].PadTokens += maxTokens - kbs[i].PaddedTokens()
 		}
+		groupTokens += kbs[i].PaddedTokens()
+	}
+	out := make([]int64, len(batches))
+	for i := range kbs {
+		kbs[i].GroupTokens = groupTokens
 		out[i] = max(1, ticks(m.k.StepTime(kbs[i]).NoOverlap))
 	}
 	return out
@@ -119,11 +127,16 @@ func (m *Model) StepTimesAcrossDPOfStep(ranks [][]ReqShape, skipDrafts bool) []i
 		allDecode = allDecode && (dummy || kbs[i].UniformDecode(m.pad.dummyWidth))
 	}
 	padded := m.pad.ceiling > 0 && maxTokens <= m.pad.ceiling && (!m.pad.decodeOnly || allDecode)
-	out := make([]int64, len(ranks))
+	groupTokens := 0
 	for i := range kbs {
 		if padded {
 			kbs[i].PadTokens += maxTokens - kbs[i].PaddedTokens()
 		}
+		groupTokens += kbs[i].PaddedTokens()
+	}
+	out := make([]int64, len(ranks))
+	for i := range kbs {
+		kbs[i].GroupTokens = groupTokens
 		out[i] = max(1, ticks(m.k.StepTime(kbs[i]).NoOverlap))
 	}
 	return out
