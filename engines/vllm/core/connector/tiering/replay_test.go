@@ -8,7 +8,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/offloading"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/tiering"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // The replay: each sequence of oracle/scenarios/tiering is run on the port as oracle/run_tiering.py
@@ -432,7 +432,7 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 	}
 	var tr trace
 	for p, v := range map[string]any{scenarioPath: &sq, tracePath: &tr} {
-		b, err := os.ReadFile(p)
+		b, err := testgz.ReadFile(p)
 		if err != nil {
 			t.Fatalf("read %s: %v (record it with oracle/run_tiering.py)", p, err)
 		}

@@ -5,13 +5,13 @@ package pack_test
 import (
 	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/v0_33"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 )
 
@@ -114,7 +114,7 @@ func TestCUDAGraphCaptureSizesProperties(t *testing.T) {
 // max_num_batched_tokens, and stated sizes. A deployment that states neither is the consumer's
 // to resolve, and the pack says so.
 func TestCUDAGraphCaptureSizesAreVLLMs032(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "lower", "testdata", "vllm_lower.json"))
+	raw, err := testgz.ReadFile(filepath.Join("..", "..", "lower", "testdata", "vllm_lower.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

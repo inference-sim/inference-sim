@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
@@ -625,7 +626,7 @@ func TestDifferentialAgainstVLLM(t *testing.T) {
 			var sc scenario
 			readJSON(t, path, &sc)
 			golden := filepath.Join("testdata", "golden", name+".json")
-			if _, err := os.Stat(golden); err != nil {
+			if !testgz.Exists(golden) {
 				t.Fatalf("no golden trace %s: generate it with oracle/run_scheduler.py (see oracle/README.md)", golden)
 			}
 			var want trace
@@ -709,7 +710,7 @@ func mockVersion(t *testing.T) string {
 
 func readJSON(t *testing.T, path string, v any) {
 	t.Helper()
-	raw, err := os.ReadFile(path)
+	raw, err := testgz.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -729,7 +730,7 @@ func TestFuzzCorpusAgainstVLLM(t *testing.T) {
 	if dir == "" {
 		t.Skip("BLIS_VLLM_FUZZ_DIR is unset: the fuzz corpus was NOT checked (CI's oracle job sets it)")
 	}
-	traces, err := filepath.Glob(filepath.Join(dir, "*.trace.json"))
+	traces, err := testgz.Glob(filepath.Join(dir, "*.trace.json"))
 	if err != nil || len(traces) == 0 {
 		t.Fatalf("no traces in %s (%v)", dir, err)
 	}

@@ -719,19 +719,24 @@ jobs:
       # speculative_config.synthetic_acceptance_length, resolved to per-position rates by vLLM's own
       # function over a grid of lengths, valid and not (the sampler that consumes the rates needs a GPU).
       - name: the synthetic acceptance resolutions are vLLM's own
-        run: python -I oracle/synthetic_acceptance/oracle.py vllm-source check core/engineconfig/testdata/synthetic_acceptance.json
+        run: |
+          python3 -I oracle/goldengz.py cat core/engineconfig/testdata/synthetic_acceptance.json > "$RUNNER_TEMP/synthetic_acceptance.json"
+          python -I oracle/synthetic_acceptance/oracle.py vllm-source check "$RUNNER_TEMP/synthetic_acceptance.json"
       # The lowering (core/lower) is held to vLLM's own CUDA-graph capture, dispatch and
       # data-parallel padding code, run unmodified with only the all-reduce supplied (FID-1,
       # FID-8). The committed answers must equal what the pinned release gives now.
       - name: the lowering's expected answers are vLLM's own
-        run: python -I oracle/lower/extract.py vllm-source check core/lower/testdata/vllm_lower.json
+        run: |
+          python3 -I oracle/goldengz.py cat core/lower/testdata/vllm_lower.json > "$RUNNER_TEMP/vllm_lower.json"
+          python -I oracle/lower/extract.py vllm-source check "$RUNNER_TEMP/vllm_lower.json"
       # Which of Muse Spark's three fused kernels vLLM builds for a layout, and at which step sizes
       # (core/lower MuseSparkFusionsFor), from the release's own gating code run on this CPU with
       # the GPU, FlashInfer's MNNVL workspaces and the process group replaced.
       - name: the Muse Spark fusion decisions are vLLM's own
         run: |
           catalog="$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)/catalog/models"
-          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/musefusion/oracle.py vllm-source check core/lower/testdata/muse_fusions.json
+          python3 -I oracle/goldengz.py cat core/lower/testdata/muse_fusions.json > "$RUNNER_TEMP/muse_fusions.json"
+          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/musefusion/oracle.py vllm-source check "$RUNNER_TEMP/muse_fusions.json"
       - name: every replacement the lowering oracle makes is listed
         run: |
           python3 -I oracle/lower/check_replacements.py oracle/lower/extract.py oracle/lower/replacements.json
@@ -817,8 +822,9 @@ jobs:
           HF_HUB_OFFLINE: "1"
         run: |
           mkdir -p oracle/out/metrics-scenarios oracle/out/metrics
-          for g in core/metrics/testdata/golden/*.metrics.json; do
-            cp "oracle/scenarios/$(basename "$g" .metrics.json).json" oracle/out/metrics-scenarios/
+          for g in core/metrics/testdata/golden/*.metrics.json*; do
+            n="${g##*/}"
+            cp "oracle/scenarios/${n%%.metrics.json*}.json" oracle/out/metrics-scenarios/
           done
           python -I oracle/run_metrics.py vllm-source oracle/out/metrics-scenarios oracle/out/metrics
           python3 -I oracle/compare_goldens_metrics.py core/metrics/testdata/golden oracle/out/metrics
@@ -980,11 +986,12 @@ jobs:
           VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
         run: |
           mkdir -p oracle/out/fid5
+          python3 -I oracle/goldengz.py unpack core/connector/offloading/testdata/golden-fid5 "$RUNNER_TEMP/golden-fid5"
           status=0
           python -I oracle/run_kv_interfaces.py vllm-source oracle/out/fid5 oracle/scenarios/offloading oracle/scenarios/multiconnector \
-            --check core/connector/offloading/testdata/golden-fid5 || status=1
+            --check "$RUNNER_TEMP/golden-fid5" || status=1
           python -I oracle/drive_kv_interfaces.py vllm-source oracle/scenarios-fid5 oracle/out/fid5 \
-            --check core/connector/offloading/testdata/golden-fid5 || status=1
+            --check "$RUNNER_TEMP/golden-fid5" || status=1
           exit $status
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()

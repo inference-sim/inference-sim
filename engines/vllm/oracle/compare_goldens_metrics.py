@@ -16,6 +16,10 @@ import json
 import os
 import sys
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import goldengz  # noqa: E402  (oracle/goldengz.py; -I leaves the script directory off sys.path)
+
 
 def first_difference(golden: dict, fresh: dict) -> str:
     if golden["steps"] != fresh["steps"]:
@@ -35,7 +39,7 @@ def first_difference(golden: dict, fresh: dict) -> str:
 
 
 def main(golden_dir: str, fresh_dir: str) -> int:
-    names = sorted(f[: -len(".metrics.json")] for f in os.listdir(golden_dir) if f.endswith(".metrics.json"))
+    names = sorted(f[: -len(".metrics.json")] for f in goldengz.listdir(golden_dir) if f.endswith(".metrics.json"))
     if not names:
         # An empty golden directory compares nothing, which must not read as a pass.
         print(f"{golden_dir}: no metric goldens to compare")
@@ -47,8 +51,7 @@ def main(golden_dir: str, fresh_dir: str) -> int:
             print(f"{name}: no fresh series from vLLM")
             bad += 1
             continue
-        with open(os.path.join(golden_dir, name + ".metrics.json")) as f:
-            golden = json.load(f)
+        golden = goldengz.load(os.path.join(golden_dir, name + ".metrics.json"))
         with open(fresh_path) as f:
             fresh = json.load(f)
         if golden["provenance"]["scenario_sha256"] != fresh["provenance"]["scenario_sha256"]:

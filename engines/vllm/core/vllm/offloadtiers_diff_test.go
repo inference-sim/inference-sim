@@ -17,6 +17,7 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
 	kvtier "github.com/inference-sim/inference-sim/engines/vllm/core/connector/tiering"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
@@ -491,7 +492,7 @@ func TestFSTierEngineAgainstVLLM(t *testing.T) {
 				t.Fatal(err)
 			}
 			var want tierGolden
-			g, err := os.ReadFile(filepath.Join("..", "connector", "tiering", "testdata", "golden-engine", name+".json"))
+			g, err := testgz.ReadFile(filepath.Join("..", "connector", "tiering", "testdata", "golden-engine", name+".json"))
 			if err != nil {
 				t.Fatalf("%v (record it with oracle/run_offloading.py)", err)
 			}

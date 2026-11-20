@@ -27,6 +27,7 @@ its mock version null; its inputs are the committed cases themselves.
 Usage: python -I oracle/gen_block_hashes.py <vllm checkout> <committed json> > <new json>
 """
 
+import gzip
 import hashlib
 import importlib.metadata
 import json
@@ -71,10 +72,17 @@ def cases(committed):
     return out
 
 
+def load_committed(path):
+    """The committed JSON, which is stored as <path>.gz when it is large (core/kv/testdata)."""
+    if not os.path.exists(path):
+        path += ".gz"
+    with gzip.open(path, "rb") if path.endswith(".gz") else open(path, "rb") as f:
+        return json.loads(f.read())
+
+
 def main() -> None:
     vllm_root = sys.argv[1]
-    with open(sys.argv[2]) as f:
-        committed = json.load(f)["cases"]
+    committed = load_committed(sys.argv[2])["cases"]
     from vllm.utils.hashing import sha256  # noqa: E402
     import vllm.v1.core.kv_cache_utils as kcu  # noqa: E402
 

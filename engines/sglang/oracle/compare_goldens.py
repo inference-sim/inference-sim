@@ -16,6 +16,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import traces  # noqa: E402  (oracle/traces.py; -I leaves the script directory off sys.path)
+import goldengz  # noqa: E402  (oracle/goldengz.py)
 
 GOLDEN = os.path.join(HERE, "testdata", "golden")
 SCENARIOS = os.path.join(HERE, "scenarios")
@@ -59,14 +60,13 @@ def main(fresh_dir: str, commit: str, scenarios: str = SCENARIOS, golden_dir: st
     for name in names:
         golden_path = os.path.join(GOLDEN, name + ".trace.json")
         fresh_path = os.path.join(fresh_dir, name + ".trace.json")
-        if not os.path.exists(golden_path):
+        if not goldengz.exists(golden_path):
             bad.append(f"{name}: no golden at oracle/testdata/golden/{name}.trace.json")
             continue
         if not os.path.exists(fresh_path):
             bad.append(f"{name}: the runner wrote no trace")
             continue
-        with open(golden_path) as f:
-            golden = json.load(f)
+        golden = goldengz.load(golden_path)
         with open(fresh_path) as f:
             fresh = json.load(f)
         malformed = [f"{name}: the golden: {p}" for p in traces.trace_problems(golden)]
@@ -85,7 +85,7 @@ def main(fresh_dir: str, commit: str, scenarios: str = SCENARIOS, golden_dir: st
         d = first_difference(golden, fresh)
         if d:
             bad.append(f"{name}: the golden differs from SGLang's output at {d}")
-    for g in sorted(os.listdir(GOLDEN)) if os.path.isdir(GOLDEN) else []:
+    for g in sorted(n[:-3] if n.endswith(".gz") else n for n in os.listdir(GOLDEN)) if os.path.isdir(GOLDEN) else []:
         if g.endswith(".trace.json") and g[: -len(".trace.json")] not in names:
             bad.append(f"oracle/testdata/golden/{g}: no scenario of that name")
     for b in bad:

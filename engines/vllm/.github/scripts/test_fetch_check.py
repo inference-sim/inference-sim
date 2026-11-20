@@ -29,7 +29,7 @@ def sha(text):
 
 
 class Check(unittest.TestCase):
-    def run_check(self, recorded, served):
+    def run_check(self, recorded, served, compressed=False):
         """Exit status and output of check() when the API serves `served` (row -> log text, absent = no log)."""
         m = load()
 
@@ -42,8 +42,13 @@ class Check(unittest.TestCase):
         m.get = get
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "recorded.json")
-            with open(path, "w") as f:
-                json.dump({"runs": [{"row": r, "log_sha256": sha(t)} for r, t in recorded.items()]}, f)
+            doc = json.dumps({"runs": [{"row": r, "log_sha256": sha(t)} for r, t in recorded.items()]})
+            if compressed:
+                with open(path + ".gz", "wb") as f:
+                    f.write(gzip.compress(doc.encode()))
+            else:
+                with open(path, "w") as f:
+                    f.write(doc)
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 status = m.check(path)
@@ -52,6 +57,12 @@ class Check(unittest.TestCase):
     def test_logs_that_still_match_pass(self):
         status, out = self.run_check({1: "alpha", 2: "beta"}, {1: "alpha", 2: "beta"})
         self.assertEqual(status, 0, out)
+
+    def test_a_recorded_file_committed_gzipped_is_read_by_its_plain_name(self):
+        status, out = self.run_check({1: "alpha"}, {1: "alpha"}, compressed=True)
+        self.assertEqual(status, 0, out)
+        status, out = self.run_check({1: "alpha"}, {1: "other"}, compressed=True)
+        self.assertEqual(status, 1)
 
     def test_a_changed_log_fails_and_names_its_row_only(self):
         status, out = self.run_check({1: "alpha", 2: "beta"}, {1: "alpha", 2: "beta, edited"})

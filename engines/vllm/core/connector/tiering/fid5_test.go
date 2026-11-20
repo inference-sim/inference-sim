@@ -7,7 +7,6 @@ package tiering_test
 import (
 	"encoding/hex"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/offloading"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/tiering"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // The FID-5 traces of TieringOffloadingSpec with no secondary tier (core/connector/offloading's
@@ -38,7 +38,7 @@ type fid5Trace struct {
 }
 
 func TestTheTieringManagerWithNoTierAnswersAsVLLMDoes(t *testing.T) {
-	paths, err := filepath.Glob(filepath.Join(fid5Dir, "direct-tiering-*.fid5.json"))
+	paths, err := testgz.Glob(filepath.Join(fid5Dir, "direct-tiering-*.fid5.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestTheTieringManagerWithNoTierAnswersAsVLLMDoes(t *testing.T) {
 	for _, p := range paths {
 		name := strings.TrimSuffix(filepath.Base(p), ".fid5.json")
 		t.Run(name, func(t *testing.T) {
-			raw, err := os.ReadFile(p)
+			raw, err := testgz.ReadFile(p)
 			if err != nil {
 				t.Fatal(err)
 			}

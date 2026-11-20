@@ -44,6 +44,7 @@ import datetime
 import gzip
 import hashlib
 import json
+import os
 import re
 import sys
 import time
@@ -180,14 +181,34 @@ def build(rows, previous, models):
             "runs": sorted(runs, key=lambda r: r["row"])}
 
 
+GZIP_MIN = 16000  # a file this size or larger is committed as <name>.gz (the module stays under 100 MB)
+
+
+def load(path):
+    """The JSON at path, or at path + ".gz" when only that is committed."""
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            return json.loads(f.read())
+    with gzip.open(path + ".gz", "rb") as f:
+        return json.loads(f.read())
+
+
 def dump(obj, path):
-    with open(path, "w") as f:
-        json.dump(obj, f, indent=1, sort_keys=True)
-        f.write("\n")
+    data = (json.dumps(obj, indent=1, sort_keys=True) + "\n").encode()
+    if len(data) < GZIP_MIN:
+        with open(path, "wb") as f:
+            f.write(data)
+        stale = path + ".gz"
+    else:
+        with open(path + ".gz", "wb") as f:
+            f.write(gzip.compress(data, 9, mtime=0))
+        stale = path
+    if os.path.exists(stale):
+        os.remove(stale)
 
 
 def check(path):
-    recorded = json.load(open(path))
+    recorded = load(path)
     bad = []
     with cf.ThreadPoolExecutor(8) as ex:
         for r, digest in ex.map(lambda r: (r, server_log(r["row"])[1]), recorded["runs"]):
@@ -234,14 +255,14 @@ def main():
         if a.rows:
             dump({"models": models, "rows": rows}, a.rows)
     elif a.from_rows:
-        spec = json.load(open(a.from_rows))
+        spec = load(a.from_rows)
         models, rows = spec["models"], spec["rows"]
     else:
         ap.error("give --models, --from-rows or --check")
     previous = {}
     if a.out:
         try:
-            previous = {r["row"]: r for r in json.load(open(a.out))["runs"]}
+            previous = {r["row"]: r for r in load(a.out)["runs"]}
         except (OSError, ValueError, KeyError):
             pass
     out = build(rows, previous, models)

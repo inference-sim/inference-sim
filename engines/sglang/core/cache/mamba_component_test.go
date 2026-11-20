@@ -2,10 +2,11 @@ package cache
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 // MambaComponentGoldenDir holds the traces oracle/run_mamba_component.py records at SGLang's
@@ -29,7 +30,7 @@ func (t *treeSlots) EvictForAlloc(n int) {
 
 func mambaComponentNames(t *testing.T) []string {
 	t.Helper()
-	paths, err := filepath.Glob(filepath.Join(MambaComponentGoldenDir, "*.trace.json"))
+	paths, err := testgz.Glob(filepath.Join(MambaComponentGoldenDir, "*.trace.json"))
 	if err != nil || len(paths) == 0 {
 		t.Fatalf("no trace under %s (%v)", MambaComponentGoldenDir, err)
 	}
@@ -74,7 +75,7 @@ func TestMambaLifecycleAnswersAsSGLang(t *testing.T) {
 			filepath.Join("..", "..", "oracle", "scenarios-mamba-component", name+".json"): &sc,
 			filepath.Join(MambaComponentGoldenDir, name+".trace.json"):                     &tr,
 		} {
-			raw, err := os.ReadFile(path)
+			raw, err := testgz.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
 			}

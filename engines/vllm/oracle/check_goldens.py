@@ -37,6 +37,7 @@ base. --stack-base prints the one to use: the nearest remote branch, other than 
 branch, that is a strict ancestor of head (the branch of the layer this one stands on), else the
 merge-base with origin/main. The range base..head is then what this branch adds to the stack.
 """
+import gzip
 import hashlib
 import json
 import os
@@ -123,16 +124,35 @@ def git(*args: str) -> str:
     return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
 
 
+def logical(path: str) -> str:
+    """A golden of 16000 bytes or more is committed gzip-compressed as <path>.gz; this is <path>."""
+    return path[:-3] if path.endswith(".gz") else path
+
+
+def show(rev: str, path: str) -> str:
+    """The text of the golden at path, in whichever form rev commits it."""
+    for p in (path, logical(path) + ".gz"):
+        r = subprocess.run(["git", "show", f"{rev}:{p}"], capture_output=True)
+        if r.returncode == 0:
+            return (gzip.decompress(r.stdout) if p.endswith(".gz") else r.stdout).decode()
+    return git("show", f"{rev}:{path}")
+
+
+def existed(rev: str, path: str) -> bool:
+    return any(subprocess.run(["git", "cat-file", "-e", f"{rev}:{p}"], capture_output=True).returncode == 0
+               for p in (logical(path), logical(path) + ".gz"))
+
+
 def decisions(rev: str, path: str):
     """Everything a golden records except its provenance, which a refresh may change."""
-    trace = json.loads(git("show", f"{rev}:{path}"))
+    trace = json.loads(show(rev, path))
     trace.pop("provenance", None)
     return trace
 
 
 def decisions_changed(old_rev: str, new_rev: str, path: str) -> bool:
     old, new = decisions(old_rev, path), decisions(new_rev, path)
-    if path in GOLDEN_FILES:
+    if logical(path) in GOLDEN_FILES:
         # Each case is one golden: appending cases adds goldens; changing or removing one does not.
         old_cases, new_cases = old.pop("cases", []), new.pop("cases", [])
         return old != new or new_cases[: len(old_cases)] != old_cases
@@ -140,6 +160,7 @@ def decisions_changed(old_rev: str, new_rev: str, path: str) -> bool:
 
 
 def is_golden(path: str) -> bool:
+    path = logical(path)
     return path in GOLDEN_FILES or (path.endswith(".json") and path.startswith(GOLDEN_DIRS))
 
 
@@ -181,7 +202,7 @@ def unreachable_commits(head: str) -> list[str]:
     for path in git("ls-tree", "-r", "--name-only", head).splitlines():
         if not is_golden(path):
             continue
-        prov = json.loads(git("show", f"{head}:{path}")).get("provenance", {})
+        prov = json.loads(show(head, path)).get("provenance", {})
         commit = prov.get(COMMIT_FIELD)
         if commit is None:
             out.append(f"{path}: its provenance records no {COMMIT_FIELD} (commit_field), so no one can tell "
@@ -238,9 +259,9 @@ def foreign_provenance(base: str, head: str) -> list[str]:
     out = []
     for line in git("diff", "--name-status", "--diff-filter=A", f"{base}..{head}").splitlines():
         status, path = line.split("\t", 1)
-        if not is_golden(path) or path in GOLDEN_FILES:
+        if not is_golden(path) or logical(path) in GOLDEN_FILES or existed(base, path):
             continue
-        prov = json.loads(git("show", f"{head}:{path}")).get("provenance", {})
+        prov = json.loads(show(head, path)).get("provenance", {})
         if prov.get("platform") != CI_PLATFORM:
             out.append(f"{path}: recorded on platform {prov.get('platform')!r}, not CI's {CI_PLATFORM!r} "
                        "(record it with the oracle-traces workflow)")
@@ -275,7 +296,7 @@ def main(base: str, head: str) -> int:
     for d in unguarded(head):
         print(f"{d}: a golden directory oracle/check_goldens.py does not guard; add it to golden_dirs in oracle/harness.json")
         bad = 1
-    tracked = set(git("ls-tree", "-r", "--name-only", head).splitlines())
+    tracked = {logical(p) for p in git("ls-tree", "-r", "--name-only", head).splitlines()}
     for f in GOLDEN_FILES:
         if f not in tracked:
             print(f"{f}: a golden file oracle/harness.json names (golden_files), which {head} does not hold")
@@ -291,12 +312,18 @@ def main(base: str, head: str) -> int:
         bad = 1
     for c in git("rev-list", "--reverse", "--no-merges", f"{base}..{head}").split():
         needs_review = []
-        for line in git("diff-tree", "--no-commit-id", "-r", "-M", "--name-status", c).splitlines():
-            status, *paths = line.split("\t")
+        changes = [line.split("\t") for line in
+                   git("diff-tree", "--no-commit-id", "-r", "-M", "--name-status", c).splitlines()]
+        # A golden stored in the other form (plain <-> .gz) in this commit is the same golden.
+        added = {logical(p[0]) for s, *p in changes if s == "A"}
+        for status, *paths in changes:
             path = paths[0]
             if not is_golden(path):
                 continue
-            if status == "D":
+            if status == "D" and logical(path) in added:
+                if decisions_changed(c + "^", c, logical(path)):
+                    needs_review.append(f"{logical(path)} decisions changed")
+            elif status == "D":
                 needs_review.append(f"{path} deleted")
             elif status.startswith("R"):
                 needs_review.append(f"{path} renamed to {paths[1]}")

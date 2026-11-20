@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 // MambaGoldenDir holds the traces oracle/run_mamba_pools.py records at SGLang's hybrid pools, the
@@ -81,7 +82,7 @@ func loadMamba(t *testing.T, name string) (mambaScenario, mambaTrace) {
 		filepath.Join("..", "..", "oracle", "scenarios-mamba-pools", name+".json"): &sc,
 		filepath.Join(MambaGoldenDir, name+".trace.json"):                          &tr,
 	} {
-		raw, err := os.ReadFile(path)
+		raw, err := testgz.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -94,7 +95,7 @@ func loadMamba(t *testing.T, name string) (mambaScenario, mambaTrace) {
 
 func mambaGoldenNames(t *testing.T) []string {
 	t.Helper()
-	paths, err := filepath.Glob(filepath.Join(MambaGoldenDir, "*.trace.json"))
+	paths, err := testgz.Glob(filepath.Join(MambaGoldenDir, "*.trace.json"))
 	if err != nil || len(paths) == 0 {
 		t.Fatalf("no trace under %s (%v)", MambaGoldenDir, err)
 	}

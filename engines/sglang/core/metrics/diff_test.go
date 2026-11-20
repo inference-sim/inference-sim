@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 	"github.com/inference-sim/inference-sim/engines/sglang/core/sched"
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 // The metrics replay (T6, FID-4): the scenario's requests arrive on the scheduling port, and after
@@ -53,7 +53,7 @@ type scenario struct {
 
 func readJSON(t *testing.T, path string, v any) {
 	t.Helper()
-	b, err := os.ReadFile(path)
+	b, err := testgz.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func build(cfg sched.Config, sampled int64) (*sched.Scheduler, error) {
 
 func TestSeriesEqualSGLangs(t *testing.T) {
 	exact := exactNames(t)
-	files, _ := filepath.Glob(filepath.Join(goldenDir, "*.trace.json"))
+	files, _ := testgz.Glob(filepath.Join(goldenDir, "*.trace.json"))
 	if len(files) == 0 {
 		t.Fatalf("no trace under %s: CI records them (oracle/run_metrics.py)", goldenDir)
 	}

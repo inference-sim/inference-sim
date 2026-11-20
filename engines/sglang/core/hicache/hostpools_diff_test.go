@@ -4,10 +4,11 @@ package hicache
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 // HostPoolsGoldenDir holds the traces oracle/run_host_pools.py records at SGLang's own MHA, MLA and
@@ -72,7 +73,7 @@ func itemOf(a map[string]any) int {
 // device pool's arguments, takes the bytes per token, the slots and the pages SGLang's takes, and
 // a layout the pool cannot lay out is refused where SGLang refuses it, with its message.
 func TestHostPoolSizingIsSGLangs(t *testing.T) {
-	paths, _ := filepath.Glob(filepath.Join(HostPoolsGoldenDir, "*.trace.json"))
+	paths, _ := testgz.Glob(filepath.Join(HostPoolsGoldenDir, "*.trace.json"))
 	if len(paths) == 0 {
 		t.Fatalf("no trace under %s", HostPoolsGoldenDir)
 	}
@@ -82,7 +83,7 @@ func TestHostPoolSizingIsSGLangs(t *testing.T) {
 		var sc hostScenario
 		var tr hostTrace
 		for path, into := range map[string]any{filepath.Join("..", "..", "oracle", "scenarios-host-pools", name+".json"): &sc, p: &tr} {
-			raw, err := os.ReadFile(path)
+			raw, err := testgz.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
 			}

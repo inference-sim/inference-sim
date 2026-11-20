@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // kvStartupTiers are the tolerances a group of recorded runs is held to, in order: the tightest
@@ -51,7 +53,7 @@ type kvStartupFile struct {
 
 func loadKVStartup(t *testing.T) kvStartupFile {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("testdata", "kvstartup", "logged.json"))
+	raw, err := testgz.ReadFile(filepath.Join("testdata", "kvstartup", "logged.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

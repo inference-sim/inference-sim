@@ -16,6 +16,8 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/connector"
 
 	blisvllm "github.com/inference-sim/inference-sim/engines/vllm"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // The registry file validates against blis-schemas' connector-registry schema.
@@ -137,7 +139,7 @@ func earned(root string, m model) []string {
 }
 
 func readJSONFile(path string, v any) error {
-	raw, err := os.ReadFile(path)
+	raw, err := testgz.ReadFile(path)
 	if err != nil {
 		return err
 	}

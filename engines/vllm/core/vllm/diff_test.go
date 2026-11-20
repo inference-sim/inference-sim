@@ -16,6 +16,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
@@ -108,7 +109,7 @@ func TestAdapterAgainstVLLM(t *testing.T) {
 				t.Fatal(err)
 			}
 			var want oracleTrace
-			g, err := os.ReadFile(filepath.Join("..", "sched", "testdata", "golden", name+".json"))
+			g, err := testgz.ReadFile(filepath.Join("..", "sched", "testdata", "golden", name+".json"))
 			if err != nil {
 				t.Fatal(err)
 			}

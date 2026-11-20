@@ -17,6 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/inference-sim/engines/sglang/config"
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 func readYAML(t *testing.T, path string, v any) {
@@ -103,7 +104,7 @@ func (a answerSet) facts(t *testing.T, arch string) config.ModelFacts {
 
 func readAnswers(t *testing.T) answerSet {
 	t.Helper()
-	b, err := os.ReadFile("../config/testdata/serverargs.json")
+	b, err := testgz.ReadFile("../config/testdata/serverargs.json")
 	if err != nil {
 		t.Fatal(err)
 	}

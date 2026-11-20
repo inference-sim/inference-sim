@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 // The HiCache radix cache (cache.RadixCache with L2 attached) answers every call SGLang's
@@ -66,12 +67,12 @@ func loadL2Traces(t *testing.T) map[string]hiTrace {
 	t.Helper()
 	out := loadTraces(t)
 	for _, d := range l2TraceDirs {
-		paths, err := filepath.Glob(filepath.Join(goldenDir, d[0], "*.trace.json"))
+		paths, err := testgz.Glob(filepath.Join(goldenDir, d[0], "*.trace.json"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, p := range paths {
-			raw, err := os.ReadFile(p)
+			raw, err := testgz.ReadFile(p)
 			if err != nil {
 				t.Fatal(err)
 			}

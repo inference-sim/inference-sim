@@ -26,6 +26,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import traces  # noqa: E402  (oracle/traces.py; -I leaves the script directory off sys.path)
+import goldengz  # noqa: E402  (oracle/goldengz.py)
 
 SUFFIX = ".trace.json"
 
@@ -34,7 +35,8 @@ def main(golden_dir: str, fresh_dir: str) -> int:
     if os.environ.get(traces.UPDATE_FLAG) != "1":
         print(traces.REFUSAL, file=sys.stderr)
         return 2
-    names = sorted(f for f in os.listdir(golden_dir) if f.endswith(SUFFIX)) if os.path.isdir(golden_dir) else []
+    names = sorted({f[:-3] if f.endswith(".gz") else f for f in os.listdir(golden_dir)
+                    if f.endswith((SUFFIX, SUFFIX + ".gz"))}) if os.path.isdir(golden_dir) else []
     if not names:
         print(f"{golden_dir}: no goldens")
         return 1
@@ -46,8 +48,7 @@ def main(golden_dir: str, fresh_dir: str) -> int:
             bad += 1
             continue
         gpath = os.path.join(golden_dir, name)
-        with open(gpath) as f:
-            golden = json.load(f)
+        golden = goldengz.load(gpath)
         with open(fresh_path) as f:
             fresh = json.load(f)
         malformed = [f"the golden: {p}" for p in traces.trace_problems(golden)]
@@ -70,8 +71,7 @@ def main(golden_dir: str, fresh_dir: str) -> int:
             bad += 1
             continue
         golden["provenance"] = fp
-        with open(gpath, "w") as f:
-            f.write(traces.dumps(golden))
+        goldengz.store(gpath, traces.dumps(golden))
         refreshed += 1
     print(f"{golden_dir}: {refreshed} provenance block(s) refreshed, {bad} refused")
     return 1 if bad else 0
