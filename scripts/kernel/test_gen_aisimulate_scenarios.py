@@ -81,7 +81,7 @@ def fixture_catalog() -> Path:
     """A catalog holding only the packaging lines this test reads.
 
     This repository carries no catalog, so the test states what the real entries say:
-    gb200-nvl72 and gb300 fix 4 per tray and 72 per rack (blis-substrate catalog/hardware/),
+    gb200-nvl72 and gb300 fix 4 per tray and 72 per rack (the substrate catalog/hardware/),
     and h200 fixes neither.
     """
     root = Path(tempfile.mkdtemp(prefix="gen-catalog-")) / "hardware"

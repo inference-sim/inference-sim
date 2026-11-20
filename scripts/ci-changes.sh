@@ -94,6 +94,7 @@ classify() {
   any_of dep sim/saturation                 && mark cmd root other bytegate
   any_of dep sim/internal/testutil          && mark core cluster llmd
   any_of dep internal/kernelfixtures        && mark cluster kernel
+  any_of dep internal/vllmtest              && mark cluster llmd
   any_of dep internal/stack                 && mark cmd root other bytegate
   any_of dep internal/substratedata         && mark cmd scripts bytegate other
   any_of dep cmd                            && mark root other bytegate

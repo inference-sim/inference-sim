@@ -91,11 +91,11 @@ QUANT = {"fp4": "nvfp4", "fp8": "fp8", "bf16": None, "int4": None}
 # graph states its own MTP head; EAGLE3 runs a separate draft checkpoint.
 UNPRICED_SPECULATORS = {("minimax-m3", "eagle3")}
 
-# The blis-substrate catalog whose hardware/ entries say which chips fix their own packaging:
-# $BLIS_CATALOG, else the catalog/ of a blis-substrate checkout beside this repository.
+# The substrate catalog whose hardware/ entries say which chips fix their own packaging:
+# $BLIS_CATALOG, else the catalog/ of a the substrate checkout beside this repository.
 # --catalog names another.
 DEFAULT_CATALOG = Path(os.environ.get("BLIS_CATALOG") or
-                       Path(__file__).resolve().parents[3] / "blis-substrate" / "catalog")
+                       Path(__file__).resolve().parents[3] / "the substrate" / "catalog")
 
 
 def catalog_packaging(chip: str, catalog: Path) -> dict[str, int]:
@@ -151,7 +151,7 @@ def node_size(dep: dict, catalog: Path) -> tuple[int, bool]:
 # cluster the sweep ran on, which the scenario owns where the catalog leaves it open, not an
 # engine default. What supports it, exactly:
 #   - b200, b300: the catalog entries name the part as the 8-GPU HGX baseboard
-#     (blis-substrate catalog/hardware/b200.yaml: "8-GPU HGX B200 baseboard"; b300.yaml: "HGX
+#     (the substrate catalog/hardware/b200.yaml: "8-GPU HGX B200 baseboard"; b300.yaml: "HGX
 #     B300 system total of 62 TB/s divided by 8 GPUs").
 #   - h100, h200: the catalog entries say SXM (SXM5, NVLink 4) and fix no node size; the
 #     catalog's storage-device note speaks of "a DGX/HGX H100 node" (catalog/devices/
@@ -291,7 +291,7 @@ def main() -> int:
     ap.add_argument("corpus")
     ap.add_argument("-o", "--out", required=True, help="scenario directory")
     ap.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG,
-                    help="blis-substrate catalog whose hardware/ entries fix packaging")
+                    help="the substrate catalog whose hardware/ entries fix packaging")
     ap.add_argument("--check", action="store_true",
                     help="verify the files on disk match what would be generated")
     args = ap.parse_args()
