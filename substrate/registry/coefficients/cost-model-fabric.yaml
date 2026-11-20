@@ -9,8 +9,8 @@
 # rack (gb200-nvl72) is the chip's, not a fabric's, and is not corrected here.
 #
 # None of these is a measurement this project made: ib-400g is `literature` (published
-# nccl-tests results); roce-200g, ib-800g and ethernet-100gbe are `assumed`, each with its
-# range.
+# nccl-tests results); roce-200g, roce-400g, roce-800g, ib-800g and ethernet-100gbe are
+# `assumed`, each with its range.
 kind: CoefficientSet
 name: cost-model-fabric
 coefficients:
@@ -54,3 +54,23 @@ coefficients:
         - {kind: discussion, cite: "https://route179.dev/2026/07/21/dgx-spark-nccl-roce-benchmarking (2026-07-21; page sha256 07379fe826ab5049065f087054d6dab0778ca0526101c47b86c47ded04761baf): 2x DGX Spark RoCEv2, ib_write_bw 98.04 + 98.04 Gb/s, all_gather_perf busbw 24.20 GB/s at 16 GiB", role: supporting}
       rationale: >
         ASSUMED: no public multi-node measurement of a RoCE-200G rail on an HGX host was found, and InferenceX CollectiveX runs no RoCE pool. Taken equal to the ib-400g collective-level fraction, 0.811, on the reasoning that RoCEv2 over a switched Ethernet fabric does not outperform InfiniBand at scale (DeepEP's README: fully tested with InfiniBand, theoretically compatible with RoCE). RANGE 0.70-0.97. The upper end is the one public RoCEv2 measurement found: two DGX Spark (GB10) nodes, cabled directly with no switch, two 100G links merged (NCCL 2.28.9): all_gather busbw 24.2 GB/s at 16 GiB over 25 GB/s nominal = 0.968, and ib_write_bw 2 x 98.04 Gb/s over 200 = 0.980. That is a best case with no switch, two ranks and no congestion, not this fabric, so it bounds the value and does not set it. The lower end allows for congestion and PFC/ECN tuning on a shared lossless Ethernet fabric, which no public figure pins. Replace with a measurement when one exists. Reproduce with scripts/emit_fabric.py.
+  - fabric_bandwidth_efficiency:
+      value: 0.811
+      units: dimensionless
+      method: assumed
+      fitted: false
+      scope: {fabric: [roce-400g]}
+      sources:
+        - {kind: publication, cite: "https://www.nvidia.com/content/dam/en-zz/Solutions/networking/ethernet-adapters/connectx-7-datasheet-Final.pdf (NVIDIA ConnectX-7 datasheet; file sha256 114c55f948c1242677c965c279537d0341f8ac0245e7e442798bb4dbb56b17ec): '1 x 10/25/40/50/100/200/400GbE', 'Up to 400Gb/s total bandwidth', 'RoCE, Zero Touch RoCE'. Line rate only; no throughput figure", role: supporting}
+      rationale: >
+        ASSUMED: no public multi-node measurement of a 400G RoCE rail (ConnectX-7 in Ethernet mode) on an HGX host was found, and this project made none. Taken equal to the ib-400g collective-level fraction, 0.811: the same NIC, the same 50 GB/s nominal rate, NCCL over one NIC per GPU, and no RoCE figure that would move it; as roce-200g, on the reasoning that RoCEv2 over a switched Ethernet fabric does not outperform InfiniBand at scale. Assumed equal to ib-400g; no 400G RoCE measurement. The line rate (50 GB/s per GPU, per direction) is the vendor's: NVIDIA's ConnectX-7 datasheet lists 400GbE and RoCE. RANGE 0.70-0.99: the lower end allows for congestion and PFC/ECN tuning on a shared lossless Ethernet fabric, which no public figure pins; the upper end is the InfiniBand figure's own upper bound (a single GPUDirect RDMA write). Both bounds are judgement, not figures read from a source. Replace with a measurement when one exists. Reproduce with scripts/emit_fabric.py.
+  - fabric_bandwidth_efficiency:
+      value: 0.811
+      units: dimensionless
+      method: assumed
+      fitted: false
+      scope: {fabric: [roce-800g]}
+      sources:
+        - {kind: publication, cite: "https://dam-cdn.nvd.orangelogic.com/AssetLink/1k0p832eq8r5ca0u5383ie5o4tp3bst1.pdf (NVIDIA Blackwell Ultra Datasheet, document 4169750, Oct 2025; file sha256 ccdffc064731cc160016f4c7a77ecfa37983038bcaf60e39190ba4175b39c7c8): GB300 NVL72: 'providing 800 gigabits per second (Gb/s) of network connectivity for each GPU ... RDMA capabilities with either NVIDIA Quantum-X800 InfiniBand or Spectrum-X Ethernet'. Line rate only; no throughput figure; https://networking-docs.nvidia.com/connectx8hw/specifications (ConnectX-8 SuperNIC User Manual, C8180: 'Ethernet 400/200/100 Gb/s' per port, read 2026-11-20; page sha256 558e157865b07d49b0c2b2214f2dac84576c0587e3f452ca909b2d5b997e271a)", role: supporting}
+      rationale: >
+        ASSUMED: no public multi-node measurement of 800 Gb/s per GPU RoCE (ConnectX-8 on Spectrum-X Ethernet) was found, and this project made none. Taken equal to the ib-400g collective-level fraction, 0.811, for the reasons of roce-400g and ib-800g: RoCEv2 does not outperform InfiniBand at scale, and no 800G figure would move it. Assumed equal to ib-400g; no 800G RoCE measurement. The line rate (100 GB/s per GPU, per direction) is the vendor's: NVIDIA's Blackwell Ultra Datasheet states 800 Gb/s of connectivity per GPU, RDMA over InfiniBand or Spectrum-X Ethernet; NVIDIA's ConnectX-8 manual lists Ethernet at up to 400 Gb/s per port, so the 800 Gb/s is two ports per GPU, and the datasheet does not say whether one transfer can use both: if it cannot, one transfer sees half the nominal rate, which the range below covers. RANGE 0.35-0.99: the lower end is one 400 Gb/s port of two carrying a single transfer at the ib-400g fraction (0.5 x 0.811 = 0.41), the upper end the InfiniBand figure's own upper bound. Both bounds are judgement, not figures read from a source. Because the kernel multiplies the nominal rate by this one number, a handoff over roce-800g takes half the time of one over roce-400g for the same bytes. Replace with a measurement when one exists. Reproduce with scripts/emit_fabric.py.

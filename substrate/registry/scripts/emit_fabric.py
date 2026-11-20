@@ -9,7 +9,7 @@ bandwidth.
 THE QUANTITY. `fabric_bandwidth_efficiency`, dimensionless, scoped {fabric: [<networks/ name>]}:
 the payload throughput a transfer over that fabric achieves, divided by the catalog's nominal
 InterNodeBwGBps (line rate / 8, per GPU, per direction: roce-200g 25, ib-400g 50,
-ib-800g 100, ethernet-100gbe 12.5 GB/s). blis-latency-kernel (fabric.go, fabricEfficiencyName) multiplies
+ib-800g 100, roce-400g 50, roce-800g 100, ethernet-100gbe 12.5 GB/s). blis-latency-kernel (fabric.go, fabricEfficiencyName) multiplies
 the NIC rate a P/D handoff or pipeline boundary crosses by it, and scales the intra-to-inter
 ratio of a cross-node collective, and refuses a value outside (0, 1]. The catalog itself
 states only the nominal figure and says the correction belongs here (networks/*.yaml
@@ -44,6 +44,11 @@ ib-800g IS ASSUMED EQUAL TO ib-400g. No public multi-node measurement of Connect
 payload throughput was found, so the entry carries the ib-400g fraction under its own
 `assumed` label, with the line rate cited from NVIDIA's Blackwell Ultra Datasheet.
 
+roce-400g AND roce-800g ARE ASSUMED EQUAL TO ib-400g, as roce-200g is. No public multi-node
+measurement of NCCL or a KV handoff over 400G or 800G RoCE on an HGX or GB host was found.
+Their line rates are cited from NVIDIA's ConnectX-7 datasheet (400GbE, RoCE) and Blackwell
+Ultra Datasheet (800 Gb/s per GPU over Spectrum-X Ethernet), each pinned by file sha256.
+
 roce-200g AND ethernet-100gbe ARE ASSUMED. No public multi-node measurement of an HGX
 RoCE-200G rail or of NCCL over 100 GbE TCP was found. The one public RoCEv2 measurement used
 is a two-node DGX Spark (GB10) pair, cabled directly with no switch, which bounds RoCE from
@@ -53,7 +58,8 @@ Every cited page is pinned by the sha256 of what was read: for a GitHub issue, t
 `body` of each issue or comment the GitHub API returns; for a web page, the bytes served.
 `--verify DIR` recomputes them from DIR/nccl-tests-309-issue.json,
 DIR/nccl-tests-309-comments.json (the GitHub API's JSON) and DIR/route179-dgx-spark.html;
-if DIR/blackwell-ultra-datasheet.pdf is present, its bytes are checked too.
+if DIR/blackwell-ultra-datasheet.pdf or DIR/connectx-7-datasheet.pdf is present, its bytes are
+checked too.
 """
 
 from __future__ import annotations
@@ -100,12 +106,17 @@ NIC_GBPS = 400.0
 ROUTE179 = "https://route179.dev/2026/07/21/dgx-spark-nccl-roce-benchmarking"
 ROUTE179_SHA = "07379fe826ab5049065f087054d6dab0778ca0526101c47b86c47ded04761baf"
 BLACKWELL_ULTRA_SHA = "ccdffc064731cc160016f4c7a77ecfa37983038bcaf60e39190ba4175b39c7c8"
+CX7_DATASHEET = "https://www.nvidia.com/content/dam/en-zz/Solutions/networking/ethernet-adapters/connectx-7-datasheet-Final.pdf"
+CX7_SHA = "114c55f948c1242677c965c279537d0341f8ac0245e7e442798bb4dbb56b17ec"
+CX8_MANUAL = "https://networking-docs.nvidia.com/connectx8hw/specifications"
+CX8_SHA = "558e157865b07d49b0c2b2214f2dac84576c0587e3f452ca909b2d5b997e271a"
 SPARK_ALLGATHER_BUSBW = 24.20   # GB/s, all_gather in-place busbw at 16 GiB, 2 ranks
 SPARK_WRITE_GBPS = 98.04 * 2    # Gb/s, ib_write_bw, two links concurrently
 SPARK_NOMINAL_GBPS = 200.0
 SPARK_TCP_FALLBACK_GBS = 3.0    # GB/s, "~3 GB/s instead of ~20" when NCCL fell back to TCP
 
-NOMINAL = {"roce-200g": 25.0, "ib-400g": 50.0, "ib-800g": 100.0, "ethernet-100gbe": 12.5}
+NOMINAL = {"roce-200g": 25.0, "roce-400g": 50.0, "roce-800g": 100.0, "ib-400g": 50.0,
+           "ib-800g": 100.0, "ethernet-100gbe": 12.5}
 
 HEADER = """\
 # Inter-node fabric bandwidth: the effective / nominal correction per fabric class.
@@ -119,8 +130,8 @@ HEADER = """\
 # rack (gb200-nvl72) is the chip's, not a fabric's, and is not corrected here.
 #
 # None of these is a measurement this project made: ib-400g is `literature` (published
-# nccl-tests results); roce-200g, ib-800g and ethernet-100gbe are `assumed`, each with its
-# range.
+# nccl-tests results); roce-200g, roce-400g, roce-800g, ib-800g and ethernet-100gbe are
+# `assumed`, each with its range.
 kind: CoefficientSet
 name: cost-model-fabric
 coefficients:
@@ -213,6 +224,57 @@ def ib_800g(ib: float) -> dict:
             "sources": [("publication", cite, "supporting")]}
 
 
+def roce_400g(ib: float) -> dict:
+    rat = (
+        f"ASSUMED: no public multi-node measurement of a 400G RoCE rail (ConnectX-7 in "
+        f"Ethernet mode) on an HGX host was found, and this project made none. Taken equal "
+        f"to the ib-400g collective-level fraction, {ib}: the same NIC, the same 50 GB/s "
+        f"nominal rate, NCCL over one NIC per GPU, and no RoCE figure that would move it; "
+        f"as roce-200g, on the reasoning that RoCEv2 over a switched Ethernet fabric does "
+        f"not outperform InfiniBand at scale. Assumed equal to ib-400g; no 400G RoCE "
+        f"measurement. The line rate (50 GB/s per GPU, per direction) is the vendor's: "
+        f"NVIDIA's ConnectX-7 datasheet lists 400GbE and RoCE. RANGE 0.70-0.99: the lower "
+        f"end allows for congestion and PFC/ECN tuning on a shared lossless Ethernet fabric, "
+        f"which no public figure pins; the upper end is the InfiniBand figure's own upper "
+        f"bound (a single GPUDirect RDMA write). Both bounds are judgement, not figures read "
+        f"from a source. Replace with a measurement when one exists.")
+    cite = (f"{CX7_DATASHEET} (NVIDIA ConnectX-7 datasheet; file sha256 {CX7_SHA}): "
+            "'1 x 10/25/40/50/100/200/400GbE', 'Up to 400Gb/s total bandwidth', 'RoCE, Zero "
+            "Touch RoCE'. Line rate only; no throughput figure")
+    return {"fabric": "roce-400g", "value": ib, "method": "assumed", "rationale": rat,
+            "sources": [("publication", cite, "supporting")]}
+
+
+def roce_800g(ib: float) -> dict:
+    rat = (
+        f"ASSUMED: no public multi-node measurement of 800 Gb/s per GPU RoCE (ConnectX-8 on "
+        f"Spectrum-X Ethernet) was found, and this project made none. Taken equal to the "
+        f"ib-400g collective-level fraction, {ib}, for the reasons of roce-400g and ib-800g: "
+        f"RoCEv2 does not outperform InfiniBand at scale, and no 800G figure would move it. "
+        f"Assumed equal to ib-400g; no 800G RoCE measurement. The line rate (100 GB/s per "
+        f"GPU, per direction) is the vendor's: NVIDIA's Blackwell Ultra Datasheet states 800 "
+        f"Gb/s of connectivity per GPU, RDMA over InfiniBand or Spectrum-X Ethernet; "
+        f"NVIDIA's ConnectX-8 manual lists Ethernet at up to 400 Gb/s per port, so the 800 "
+        f"Gb/s is two ports per GPU, and the datasheet does not say whether one transfer "
+        f"can use both: if it cannot, one transfer sees half the nominal rate, which the "
+        f"range below covers. RANGE 0.35-0.99: the lower end is one 400 Gb/s port of two "
+        f"carrying a single transfer at the ib-400g fraction (0.5 x {ib} = {0.5 * ib:.2f}), "
+        f"the upper end the InfiniBand figure's own upper bound. Both bounds are judgement, "
+        f"not figures read from a source. Because the kernel multiplies the nominal rate by "
+        f"this one number, a handoff over roce-800g takes half the time of one over "
+        f"roce-400g for the same bytes. Replace with a measurement when one exists.")
+    cite = ("https://dam-cdn.nvd.orangelogic.com/AssetLink/1k0p832eq8r5ca0u5383ie5o4tp3bst1.pdf "
+            "(NVIDIA Blackwell Ultra Datasheet, document 4169750, Oct 2025; file sha256 "
+            f"{BLACKWELL_ULTRA_SHA}): GB300 NVL72: 'providing 800 gigabits per second (Gb/s) "
+            "of network connectivity for each GPU ... RDMA capabilities with either NVIDIA "
+            "Quantum-X800 InfiniBand or Spectrum-X Ethernet'. Line rate only; no "
+            f"throughput figure; {CX8_MANUAL} (ConnectX-8 SuperNIC User Manual, C8180: "
+            "'Ethernet 400/200/100 Gb/s' per port, read 2026-11-20; page sha256 "
+            f"{CX8_SHA})")
+    return {"fabric": "roce-800g", "value": ib, "method": "assumed", "rationale": rat,
+            "sources": [("publication", cite, "supporting")]}
+
+
 def ethernet_100gbe() -> dict:
     value = 0.5
     rat = (
@@ -253,7 +315,8 @@ def render() -> str:
     fabrics = sorted(p.stem for p in (CATALOG / "networks").glob("*.yaml"))
     ib = ib_400g()
     entries = {"ib-400g": ib, "roce-200g": roce_200g(ib["value"]),
-               "ib-800g": ib_800g(ib["value"]), "ethernet-100gbe": ethernet_100gbe()}
+               "ib-800g": ib_800g(ib["value"]), "ethernet-100gbe": ethernet_100gbe(),
+               "roce-400g": roce_400g(ib["value"]), "roce-800g": roce_800g(ib["value"])}
     if sorted(entries) != fabrics:
         raise SystemExit(f"the vendored catalog's fabrics {fabrics} are not the ones this "
                          f"writer prices {sorted(entries)}; add the new fabric here")
@@ -283,6 +346,12 @@ def verify(d: Path) -> list[str]:
     pdf = d / "blackwell-ultra-datasheet.pdf"   # optional: the line-rate source of ib-800g
     if pdf.exists() and hashlib.sha256(pdf.read_bytes()).hexdigest() != BLACKWELL_ULTRA_SHA:
         bad.append("Blackwell Ultra datasheet")
+    cx7 = d / "connectx-7-datasheet.pdf"
+    if cx7.exists() and hashlib.sha256(cx7.read_bytes()).hexdigest() != CX7_SHA:
+        bad.append("ConnectX-7 datasheet")
+    cx8 = d / "connectx-8-manual.html"
+    if cx8.exists() and hashlib.sha256(cx8.read_bytes()).hexdigest() != CX8_SHA:
+        bad.append("ConnectX-8 manual")
     return bad
 
 
