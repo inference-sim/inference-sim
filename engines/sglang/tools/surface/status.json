@@ -188,7 +188,7 @@
   },
   "engine_setting:SGLANG_HICACHE_NIXL_BACKEND_PLUGIN": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
   },
   "engine_setting:SGLANG_INIT_NEW_TOKEN_RATIO": {
    "status": "refused",

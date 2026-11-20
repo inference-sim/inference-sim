@@ -4322,7 +4322,7 @@
    "kind": "getenv",
    "default": "auto",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
   },
   {
    "id": "pd_allocation_policy:early",
