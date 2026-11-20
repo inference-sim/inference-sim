@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/embed"
+	embed "github.com/llm-d/llm-d-router/blisembed"
 )
 
 // The simulated client of a multi-turn session carries its session the way each session plugin reads
