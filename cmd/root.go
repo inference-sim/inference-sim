@@ -1026,6 +1026,7 @@ var runCmd = &cobra.Command{
 			NewEngine: withPoolChips(engineDriverFactory(scenarioEngine, simulationHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
 				poolChips, scenarioEngine, simulationHorizon, seed, ec.Speculative.Acceptance),
 		}
+		stateInstanceGPUs(&config)
 		// Session callback installation (Constraint 3 fix):
 		// Follow-up collection must be UNCONDITIONAL for saturation analysis correctness.
 		// The TraceV2 export (lines 1582-1601) remains gated on --trace-output, but the
