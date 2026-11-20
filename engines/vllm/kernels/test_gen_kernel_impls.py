@@ -94,9 +94,8 @@ def git_tree(root, files, tag=None):
                           text=True).stdout.strip()
 
 
-def classification(commit):
+def classification():
     return {
-        "upstream": {"tag": "v9.9.9", "commit": commit},
         "archs": {"sm_100a": {}, "sm_90a": {}},
         "libraries": {
             "fastlib": {"pip": "fastlib-python", "requirements": "requirements/cuda.txt", "repo": "https://example.org/fastlib",
@@ -141,14 +140,14 @@ class GenKernelImplsTest(unittest.TestCase):
         files["cmake/external_projects/other.cmake"] = files["cmake/external_projects/other.cmake"].format(
             other_commit=self.other_commit)
         self.commit = git_tree(self.vllm, files)
-        self.cls = classification(self.commit)
+        self.cls = classification()
         self.sources = {"fastlib": self.fastlib, "otherlib": self.other}
 
     def tearDown(self):
         self.tmp.cleanup()
 
-    def generate(self, cls=None):
-        return gen.generate(self.vllm, cls or self.cls, self.sources)
+    def generate(self, cls=None, **kw):
+        return gen.generate(self.vllm, cls or self.cls, self.sources, **kw)
 
     def refused(self, cls):
         with self.assertRaises(gen.Refused) as ctx:
@@ -165,7 +164,7 @@ class GenKernelImplsTest(unittest.TestCase):
         return rows[0]
 
     def test_each_kernel_of_a_listed_backend_is_a_row_per_primitive_and_arch(self):
-        t = self.generate()
+        t = self.generate(tag="v9.9.9")
         got = sorted((r["primitive"], r["library"], r["variant"], r["target_arch"]) for r in t["implementations"])
         self.assertEqual(got, [
             ("attention.decode", "fastlib", "decode_kernel", "sm_100a"),
@@ -232,10 +231,14 @@ class GenKernelImplsTest(unittest.TestCase):
         del cls["backends"]["ROCM_ONLY"]
         self.assertIn("ROCM_ONLY", self.refused(cls))
 
-    def test_a_status_for_a_backend_vllm_lacks_is_refused(self):
+    def test_a_status_for_a_backend_this_commit_lacks_is_left_out_and_reported(self):
         cls = copy.deepcopy(self.cls)
-        cls["backends"]["GONE"] = {"status": "not_cuda", "reason": "x"}
-        self.assertIn("GONE", self.refused(cls))
+        cls["backends"]["GONE"] = {"status": "gap", "issue": "org/repo#8"}
+        with redirect_stderr(io.StringIO()) as err:
+            t = self.generate(cls)
+        self.assertIn("GONE", err.getvalue())
+        self.assertNotIn("GONE", json.dumps(t))
+        self.assertEqual(t, self.generate())
 
     def test_a_backend_the_cuda_platform_selects_cannot_be_not_cuda(self):
         cls = copy.deepcopy(self.cls)
@@ -264,7 +267,6 @@ class GenKernelImplsTest(unittest.TestCase):
         with open(os.path.join(self.vllm, "vllm/v1/attention/backends/fast.py"), "w") as f:
             f.write(body)
         self.git(self.vllm, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-am", "y", "--no-gpg-sign")
-        cls["upstream"]["commit"] = self.git(self.vllm, "rev-parse", "HEAD")
         self.assertIn("never calls plan_helper", self.refused(cls))
 
     def test_a_gate_that_does_not_exist_is_refused(self):
@@ -296,31 +298,38 @@ class GenKernelImplsTest(unittest.TestCase):
         self.sources["otherlib"] = self.fastlib
         self.assertIn(self.other_commit, self.refused(cls))
 
-    def test_a_vllm_tree_at_another_commit_is_refused(self):
-        cls = copy.deepcopy(self.cls)
-        cls["upstream"]["commit"] = "0" * 40
-        self.assertIn("0" * 40, self.refused(cls))
+    def test_a_vllm_tree_at_another_commit_than_asserted_is_refused(self):
+        with self.assertRaises(gen.Refused) as ctx:
+            self.generate(commit="0" * 40)
+        self.assertIn("0" * 40, str(ctx.exception))
+        self.assertEqual(self.generate(commit=self.commit), self.generate())
 
-    def test_a_classification_of_another_release_is_refused(self):
+    def test_any_commit_generates_and_is_named_by_its_tag_or_its_digits(self):
+        self.assertEqual(self.generate()["engine"], {"kind": "vllm", "version": self.commit[:12], "commit": self.commit})
+        self.assertEqual(self.generate(tag="v9.9.9")["engine"], {"kind": "vllm", "version": "9.9.9", "commit": self.commit})
+        subprocess.run(["git", "-C", self.vllm, "tag", "v9.9.8"], check=True, env=GIT_ENV)
+        self.assertEqual(self.generate()["engine"]["version"], "9.9.8")
+        self.edit(self.vllm, "vllm/utils/gate.py", "\n")
+        with self.assertRaises(gen.Refused) as ctx:
+            self.generate(tag="v9.9.8")
+        self.assertIn("not tag v9.9.8", str(ctx.exception))
+
+    def test_the_classification_is_the_same_file_for_every_commit(self):
+        cls = gen.load_classification()
+        self.assertEqual(gen.classification_path(), os.path.join(os.path.dirname(os.path.abspath(__file__)), "attention.json"))
+        self.assertNotIn("upstream", cls)
+        self.assertIn("moe", cls)
+
+    def test_the_classification_beside_a_given_file_is_read_with_its_moe(self):
         path = os.path.join(self.tmp.name, "cls.json")
         with open(path, "w") as f:
             json.dump(self.cls, f)
-        with self.assertRaises(gen.Refused) as ctx:
-            gen.load_classification("v9.9.8", path)
-        self.assertIn("v9.9.9", str(ctx.exception))
-        self.assertEqual(gen.load_classification("v9.9.9", path)["upstream"]["commit"], self.commit)
-
-    def test_a_release_with_no_classification_is_refused(self):
-        with self.assertRaises(gen.Refused) as ctx:
-            gen.load_classification("v0.0.1")
-        self.assertIn("v0.0.1", str(ctx.exception))
-
-    def test_each_releases_classification_is_found_by_its_tag(self):
-        here = os.path.dirname(os.path.abspath(__file__))
-        tags = sorted(d for d in os.listdir(here) if os.path.isfile(os.path.join(here, d, "attention.json")))
-        self.assertTrue(tags, "no classification under kernels/<tag>/")
-        for tag in tags:
-            self.assertEqual(gen.load_classification(tag)["upstream"]["tag"], tag)
+        self.assertNotIn("moe", gen.load_classification(path))
+        with open(os.path.join(self.tmp.name, "moe.json"), "w") as f:
+            json.dump(moe_classification(), f)
+        self.assertEqual(gen.load_classification(path)["moe"], moe_classification())
+        with self.assertRaises(gen.Refused):
+            gen.load_classification(os.path.join(self.tmp.name, "absent.json"))
 
     def test_the_pins_regen_fetches_are_the_ones_vllm_states(self):
         pins = gen.library_pins(self.vllm, self.cls)
@@ -374,8 +383,6 @@ class GenKernelImplsTest(unittest.TestCase):
         with open(os.path.join(root, rel), "a") as f:
             f.write(text)
         commit_all(root, tag=tag)
-        if root == self.vllm:
-            self.cls["upstream"]["commit"] = self.git(self.vllm, "rev-parse", "HEAD")
 
     def hash_of(self, variant, arch):
         return next(r["code_hash"] for r in self.generate()["implementations"]
@@ -510,9 +517,8 @@ MOE_VLLM = {
 }
 
 
-def moe_classification(commit, seen=None):
+def moe_classification(seen=None):
     return {
-        "upstream": {"tag": "v9.9.9", "commit": commit},
         "engine_modules": ["vllm.moe.kern"],
         "seen": seen or {},
         "formats": [{
@@ -537,7 +543,7 @@ def moe_classification(commit, seen=None):
 
 
 class GenMoEKernelImplsTest(unittest.TestCase):
-    """The moe.grouped_gemm rows, from kernels/<tag>/moe.json and vLLM's MoE oracle, over the attention
+    """The moe.grouped_gemm rows, from kernels/moe.json and vLLM's MoE oracle, over the attention
     fixture's trees (its helpers, not its tests)."""
 
     tearDown, generate, refused, git, row = (GenKernelImplsTest.tearDown, GenKernelImplsTest.generate,
@@ -552,8 +558,8 @@ class GenMoEKernelImplsTest(unittest.TestCase):
                 f.write(textwrap.dedent(body).lstrip("\n"))
         commit_all(self.vllm)
         self.commit = self.git(self.vllm, "rev-parse", "HEAD")
-        self.cls = classification(self.commit)
-        self.cls["moe"] = moe_classification(self.commit)
+        self.cls = classification()
+        self.cls["moe"] = moe_classification()
 
     def moe_rows(self, t):
         return sorted((r["selection"], r["library"], r["library_version"], r["variant"], r["target_arch"])

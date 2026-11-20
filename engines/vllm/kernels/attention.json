@@ -1,9 +1,5 @@
 {
   "_comment": "Edited by people; kernels/gen_kernel_impls.py reads it with vLLM's own selection code and refuses a classification that disagrees with it. Each kernel's archs are classified by hand from the gate it cites; the generator checks the gate exists, not what it returns. The module docstring says what comes from where.",
-  "upstream": {
-    "tag": "v0.32.0",
-    "commit": "5df63a7203cdb9328d824a27b682e77c7b9928be"
-  },
   "archs": {
     "sm_90a": {
       "capability": "9.0",
@@ -52,6 +48,10 @@
         {
           "version": "0.6.13",
           "seen_in": "the trtllm-gen prefill sweep's B300, GB200 and GB300 runs (ai-dynamo/aisimulate 2f0f4cd8606d580567b253d02f3d699fe36db865, systems/data/{b300_sxm,gb200,gb300}/attention/vllm/0.25.0/collection_meta.yaml): images vllm/vllm-openai@sha256:e1c1ff1af9a15921bfa11d1d95047258c1797392cdbfa296e7639da446b23f97 and @sha256:2f726db9babd627fb59addaed2038577fc767108680901271b069d91759d1286, whose build configs set FLASHINFER_VERSION=0.6.13"
+        },
+        {
+          "version": "0.7.0.post1",
+          "seen_in": "the GLM-5.3 sparse-MLA sweep's H200 run (ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18, systems/data/h200_sxm/glm53_attention/vllm/0.31.0/collection_meta.yaml): image vllm/vllm-openai@sha256:a4a4c0437bf7240089da5f08aa370c4aee17ae5290f7a3b468825ee26c4c3a6b, whose build config sets FLASHINFER_VERSION=0.7.0.post1"
         }
       ]
     },
@@ -119,7 +119,10 @@
         "scaled_fp8_quant": "quantizes the query to FP8 ahead of the kernel; not an attention primitive",
         "cp_lse_ag_out_rs": "the decode-context-parallel all-gather and reduce-scatter of partial outputs: a collective",
         "dcp_a2a_lse_reduce": "the decode-context-parallel all-to-all of partial outputs: a collective",
-        "torch.ops._C_cache_ops.reshape_and_cache_flash": "writes the KV cache; not an attention primitive"
+        "torch.ops._C_cache_ops.reshape_and_cache_flash": "writes the KV cache; not an attention primitive",
+        "get_device_sm_count": "reads the device's SM count",
+        "get_trtllm_gen_multi_ctas_kv_counter_bytes": "sizes a trtllm-gen workspace counter",
+        "mask_dcp_empty_shards_": "masks the partial outputs of empty decode-context-parallel shards with PyTorch ops; not an attention kernel"
       },
       "jit": {
         "_copy_page_indices_kernel": {
@@ -269,6 +272,10 @@
       "status": "gap",
       "issue": "inference-sim/blis-vllm#151"
     },
+    "FLASH_ATTN_MLA_SPARSE_FA4": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
     "FLEX_ATTENTION": {
       "status": "gap",
       "issue": "inference-sim/blis-vllm#151"
@@ -313,9 +320,21 @@
       "status": "not_cuda",
       "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
     },
+    "ROCM_FLASHMLA_SPARSE_DSV41": {
+      "status": "not_cuda",
+      "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
+    },
+    "ROCM_OCTAVE": {
+      "status": "not_cuda",
+      "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
+    },
     "ROCM_SEGMENTED_ATTN": {
       "status": "not_cuda",
       "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
+    },
+    "STEP5_DSA": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
     },
     "TOKENSPEED_MLA": {
       "status": "gap",
@@ -329,7 +348,8 @@
       "status": "listed",
       "not_kernels": {
         "triton_reshape_and_cache_flash": "writes the KV cache; not an attention primitive",
-        "triton_reshape_and_cache_flash_per_token_head_quant": "writes the KV cache; not an attention primitive"
+        "triton_reshape_and_cache_flash_per_token_head_quant": "writes the KV cache; not an attention primitive",
+        "MAX_3D_QUERY_LEN": "a constant"
       }
     },
     "TRITON_ATTN_DIFFKV": {
