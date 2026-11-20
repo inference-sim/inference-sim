@@ -10,7 +10,7 @@
 # Columns: identifier, status here, "In CI by" here, the layer that closes the difference.
 DEV-8	partial	M2	open
 SUB-18	ci	now	open
-VAL-8	new	M2	open
+VAL-8	partial	M2	open
 X10	ci	now	m3 plan publish (#84: the plan table still lists M1)
 X27	ci	now	m3 plan publish (#84: the plan table still lists M1)
 LIF-4	ci	now	m3 plan publish (#84: the plan table still lists M1)
