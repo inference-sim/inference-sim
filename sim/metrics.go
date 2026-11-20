@@ -38,7 +38,12 @@ type Metrics struct {
 	AllITLs                 IntSeries          // list of all requests' ITL
 	RequestE2Es             map[string]float64 // list of all requests' latencies
 	RequestCompletionTimes  map[string]float64 // list of all requests' completion times in ticks
-	RequestStepCounters     []int              // list of all requests' num of steps between scheduled and finished
+	// RequestPreemptions[id] is the clock, in ticks, of each preemption of request id in the
+	// order they happened. Its lengths sum to PreemptionCount. A request never preempted has no
+	// entry. Observability only: nothing reads it back into the simulation.
+	RequestPreemptions map[string][]int64
+
+	RequestStepCounters []int // list of all requests' num of steps between scheduled and finished
 
 	NumWaitQRequests        []int                     // number of requests in waitQ over different steps
 	NumRunningBatchRequests []int                     // number of request in runningBatch over different steps
@@ -246,6 +251,7 @@ func NewMetrics() *Metrics {
 		RequestE2Es:             make(map[string]float64),
 		RequestCompletionTimes:  make(map[string]float64),
 		RequestSchedulingDelays: make(map[string]int64),
+		RequestPreemptions:      make(map[string][]int64),
 		NumWaitQRequests:        []int{},
 		NumRunningBatchRequests: []int{},
 		Requests:                make(map[string]RequestMetrics),

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -2172,5 +2173,23 @@ func assertParentsHoldNoPromptTokens(t *testing.T, cs *ClusterSimulator) {
 				t.Errorf("parent %s: %s request still holds %d prompt tokens", p.ID, name, len(r.InputTokens))
 			}
 		}
+	}
+}
+
+// A preemption of either sub-request of a disaggregated request is stated on the parent, in time
+// order, so the per-request lists still sum to the preemption count.
+func TestProjectPDMetrics_FoldsSubRequestPreemptionsIntoTheParent(t *testing.T) {
+	m := sim.NewMetrics()
+	m.RequestPreemptions["p_prefill"] = []int64{30}
+	m.RequestPreemptions["p_decode"] = []int64{10, 20}
+	cs := &ClusterSimulator{
+		aggregatedMetrics: m,
+		parentRequests: map[string]*ParentRequest{"p": {ID: "p", PrefillSubReqID: "p_prefill", DecodeSubReqID: "p_decode",
+			OriginalRequest: &sim.Request{}, DecodeSubReq: &sim.Request{}}},
+	}
+	cs.projectPDMetrics()
+	want := map[string][]int64{"p": {10, 20, 30}}
+	if !reflect.DeepEqual(m.RequestPreemptions, want) {
+		t.Errorf("RequestPreemptions = %v, want %v", m.RequestPreemptions, want)
 	}
 }
