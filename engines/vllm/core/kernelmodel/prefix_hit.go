@@ -132,7 +132,7 @@ var v1OnlySpecMethods = []string{"suffix", "custom_class"}
 //     method (:3069-3076);
 //   - no heterogeneous-vocabulary draft (:3081-3082).
 //
-// v0.33.0 dropped the Mamba cache mode from the list, so mamba_cache_mode "all" runs on V2.
+// The Mamba cache mode is not on the list.
 // KV connectors, P/D roles, DP/EP, CUDA graph modes and enforce_eager are not on the list.
 // Three things are outside what a deployment states: the environment variable, and HiSparse
 // and watermarking, which force V2 (:731-746).

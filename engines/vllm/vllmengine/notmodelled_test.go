@@ -150,7 +150,6 @@ var atDefault = map[string]string{
 	"eplb_config.window_size":         "enable_eplb: true\neplb_config: {window_size: 1000}\n",
 	"eplb_config.step_interval":       "enable_eplb: true\neplb_config: {step_interval: 3000}\n",
 	"prefix_cache_retention_interval": "prefix_cache_retention_interval: 0\n",
-	"mamba_cache_mode":                "mamba_cache_mode: none\n",
 }
 
 // noDefaultValue lists the refused keys that vLLM leaves unstated (None), so no stated value is the
@@ -160,6 +159,7 @@ var noDefaultValue = map[string]string{
 	"attention_config.mla_prefill_backend":  "vllm/config/attention.py:81@5df63a72",
 	"speculative_config.kv_cache_dtype":     "vllm/config/speculative.py:428@5df63a72",
 	"prefix_match_unit":                     "vllm/config/cache.py:90@5df63a72",
+	"mamba_cache_mode":                      "removed from vllm/config/cache.py (#63830), so no value is accepted",
 }
 
 // pricedByTheKernel is the allow-list: keys the latency kernel prices through the lowering of the

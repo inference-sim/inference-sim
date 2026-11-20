@@ -36,8 +36,7 @@ type Pack struct {
 	// MambaDTypes are the dtypes a recurrent layer's state may be cached in, the
 	// engine's MambaDType literal. It is a separate list from CacheDTypes: float32, the
 	// common choice for an SSM state, is a member here and not there.
-	MambaDTypes     map[string]bool
-	MambaCacheModes map[string]bool
+	MambaDTypes map[string]bool
 	// MoEBackends are the expert-kernel backends --moe-backend accepts, the engine's
 	// MoEBackend literal, and MegaMoEBackends the subset that runs a model's mega-MoE
 	// path, which DeepSeek-V4.1's sequence-parallelism rule reads.
@@ -53,6 +52,10 @@ type Pack struct {
 	// using them (pplx and naive run as allgather_reducescatter in both registered
 	// releases, vllm/config/parallel.py).
 	DefaultAll2AllBackend string
+	// AutoAll2AllBackend is the backend an unstated or "auto" all2all_backend runs when the
+	// default is "auto" (vllm/config/parallel.py _resolve_all2all_backend). Empty where the
+	// default is a concrete backend.
+	AutoAll2AllBackend    string
 	All2AllBackendRenames map[string]string
 	// SelfCommunicatingMoEBackends are the MoE backends that dispatch and combine tokens inside
 	// their own kernels (the FlashInfer MoE-EP megakernels), which the engine binds to
@@ -175,10 +178,17 @@ func (p *Pack) SequenceParallelMoE(backend string, expertParallel bool, tp, dp i
 }
 
 // EffectiveAll2AllBackend is the backend the engine runs for a stated one: the default
-// for an unstated backend, and the replacement for a renamed one.
+// for an unstated backend, AutoAll2AllBackend for "auto", and the replacement for a renamed
+// one. "auto" is the engine's choice of flashinfer_nvlink_one_sided on GB200, GB300, VR200
+// and a single-node HGX B200 or B300 with expert parallelism and a supported model, which
+// needs the platform and the weight format and is not modelled; every other deployment runs
+// AutoAll2AllBackend.
 func (p *Pack) EffectiveAll2AllBackend(backend string) string {
 	if backend == "" {
-		return p.DefaultAll2AllBackend
+		backend = p.DefaultAll2AllBackend
+	}
+	if backend == "auto" && p.AutoAll2AllBackend != "" {
+		return p.AutoAll2AllBackend
 	}
 	if to, ok := p.All2AllBackendRenames[backend]; ok {
 		return to
@@ -191,7 +201,7 @@ func (p *Pack) EffectiveAll2AllBackend(backend string) string {
 // self-communicating MoE backend is bound to passthrough, which runs no framework all-to-all.
 func (p *Pack) ResolvedAll2AllBackend(backend, moeBackend string) string {
 	eff := p.EffectiveAll2AllBackend(backend)
-	if eff == p.DefaultAll2AllBackend && p.SelfCommunicatingMoEBackends[NormalizeMoEBackend(moeBackend)] {
+	if eff == p.EffectiveAll2AllBackend("") && p.SelfCommunicatingMoEBackends[NormalizeMoEBackend(moeBackend)] {
 		return "passthrough"
 	}
 	return eff

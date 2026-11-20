@@ -505,7 +505,7 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 				"the cudagraph capture ceiling and the MLA context-gather chunk")
 	}
 	p.Batch.Requests = seqs
-	batchedDPMoE := (backend == "deepep_low_latency" || backend == "nixl_ep") &&
+	batchedDPMoE := (backend == "deepep_low_latency" || backend == "nixl_ep" || backend == "alltoall_batched") &&
 		pl.EnableExpertParallel && lay.DP > 1
 	defaultBatched := defaultMaxNumBatchedTokens(c.chip)
 	if batchedDPMoE {

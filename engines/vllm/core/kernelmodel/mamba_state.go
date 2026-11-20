@@ -161,13 +161,10 @@ func planMamba(g *model.Graph, e engineconfig.Engine, env mambaEnv) (*mambaPlan,
 			"vllm/model_executor/layers/mamba/abstract.py:26@5df63a72), which is not modelled", env.dcp, env.pcp)
 	}
 
-	// The cache mode that runs: MambaModelConfig sets "align" when prefix caching is on and "none"
-	// when it is off (config.py:685-709@5df63a72). The mode's values in v0.32.0 are align and none
-	// (vllm/config/cache.py:63), so any other is refused rather than run as one of them.
-	switch e.MambaCacheMode {
-	case "", "none", "align":
-	default:
-		return refuse("mamba_cache_mode %q is not a v0.32.0 mode (align and none, vllm/config/cache.py:63@5df63a72)", e.MambaCacheMode)
+	// The cache mode that runs: a recurrent layer's state is cached when prefix caching is on and
+	// not when it is off. The release has no mamba_cache_mode to state (#63830).
+	if e.MambaCacheMode != "" {
+		return refuse("mamba_cache_mode %q: this release has no mamba_cache_mode; the state is cached when enable_prefix_caching is on", e.MambaCacheMode)
 	}
 	mode := "none"
 	if e.EnablePrefixCaching == nil || *e.EnablePrefixCaching {
