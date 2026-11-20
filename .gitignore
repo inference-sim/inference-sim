@@ -130,7 +130,7 @@ llm-d-routing-sidecar/
 /llm-d/
 sarathi-serve/
 vidur/
-vllm/
+/vllm/
 
 # Plans
 docs/plans/

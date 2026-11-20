@@ -4,7 +4,6 @@ package kernelmodel
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +11,7 @@ import (
 	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // The scenarios under oracle/scenarios/swa state swa_bounded_replay (and the model runner) and
@@ -86,7 +86,7 @@ func TestSWALayoutFollowsTheStatedFieldAsVLLMResolvesIt(t *testing.T) {
 
 func readOracleJSON(t *testing.T, path string, v any) {
 	t.Helper()
-	raw, err := os.ReadFile(path)
+	raw, err := testgz.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}

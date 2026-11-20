@@ -29,6 +29,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import traces  # noqa: E402  (oracle/traces.py; -I leaves the script directory off sys.path)
+import goldengz  # noqa: E402  (oracle/goldengz.py)
 
 
 def pinned_commit(root: str) -> str:
@@ -56,13 +57,11 @@ def goldens(root: str) -> list:
         top = os.path.join(root, d)
         for dirpath, _, names in sorted(os.walk(top)):
             for n in sorted(names):
-                if n.endswith(".json"):
+                if n.endswith((".json", ".json.gz")):
                     path = os.path.join(dirpath, n)
-                    with open(path) as f:
-                        out.append((os.path.relpath(path, root).replace(os.sep, "/"), json.load(f)))
+                    out.append((os.path.relpath(path, root).replace(os.sep, "/"), json.loads(goldengz.read_bytes(path[:-3] if n.endswith(".gz") else path))))
     for rel in cfg["golden_files"]:
-        with open(os.path.join(root, rel)) as f:
-            doc = json.load(f)
+        doc = goldengz.load(os.path.join(root, rel))
         cases = doc.get("cases") if isinstance(doc, dict) else None
         if not isinstance(cases, list):
             out.append((rel, None))

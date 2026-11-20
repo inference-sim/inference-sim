@@ -4,6 +4,16 @@ SGLang v0.5.23's own classes, run on CPU, with only the GPU, the clock, transpor
 environment and the platform replaced (design §7.2, §7.3). The release and commit are
 `Upstream` in [`provenance.go`](../provenance.go).
 
+## Compressed goldens
+
+A golden of 16000 bytes or more is committed as `<name>.gz` (gzip, mtime 0), so the repository's module stays under
+100 MB (`internal/repocheck` `TestModuleZipIsUnder100MB`); a smaller one stays plain. The Go tests read either form through
+`internal/testgz`, and the comparison and provenance scripts through `oracle/goldengz.py`, always by the plain name.
+A runner writes plain files, since a golden records the sha256 of every oracle file its run executed
+(`oracle_inputs`) and a change to a runner would make every golden it produced stale; after a runner or a hand copy has
+written a golden directory, store it in the committed form with `python3 -I oracle/goldengz.py pack <dir>...`
+(`unpack <dir> <copy>` and `cat <file>` give a script that reads the plain name itself a decompressed copy).
+
 ## Environment
 
 SGLang is read from a checkout of the pinned commit, never installed: a runner takes the

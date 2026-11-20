@@ -15,6 +15,7 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
 	"github.com/inference-sim/inference-sim/engines/sglang/config"
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 // fakeKernel is a cost model with fixed resident bytes and a fixed step time; it records the
@@ -43,7 +44,7 @@ func (h fakeHost) Open(engine.Spec) (Pool, error) {
 			Model config.ModelFacts `json:"model_facts"`
 		} `json:"cases"`
 	}
-	b, err := os.ReadFile("../config/testdata/serverargs.json")
+	b, err := testgz.ReadFile("../config/testdata/serverargs.json")
 	if err != nil {
 		return Pool{}, err
 	}

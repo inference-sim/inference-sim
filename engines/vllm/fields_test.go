@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // fields.json is the field list VLM-3 asks for: every configuration field and environment
@@ -53,8 +55,8 @@ func TestTheFieldListLoadsAndNamesThisRelease(t *testing.T) {
 				t.Errorf("%s: trace %q is not a path inside this repository", f.Name, tr)
 				continue
 			}
-			if _, err := os.Stat(tr); err != nil {
-				t.Errorf("%s: trace %q: %v", f.Name, tr, err)
+			if !testgz.Exists(tr) {
+				t.Errorf("%s: trace %q: no such file (or %s.gz)", f.Name, tr, tr)
 			}
 		}
 	}

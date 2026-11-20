@@ -3,7 +3,6 @@ package vllm
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -12,6 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // The adapter's batch queue against vLLM v0.32.0's own EngineCore.step_with_batch_queue. Each
@@ -102,7 +103,7 @@ func TestBatchQueueAgainstVLLM(t *testing.T) {
 
 func readT3(t *testing.T, path string, v any) {
 	t.Helper()
-	raw, err := os.ReadFile(path)
+	raw, err := testgz.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}

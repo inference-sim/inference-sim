@@ -3,12 +3,12 @@ package kernelmodel
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // recordedRun is one InferenceX benchmark row with the block size its run used
@@ -73,7 +73,7 @@ func (a tally) String() string {
 // with a method that builds draft layers; the rows do not record num_spec_tokens, so one token
 // stands for any positive count. The coverage by model is logged.
 func TestResolutionAgainstTheRecordedRuns(t *testing.T) {
-	raw, err := os.ReadFile("testdata/recorded_block_sizes/recorded_block_sizes.json")
+	raw, err := testgz.ReadFile("testdata/recorded_block_sizes/recorded_block_sizes.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestResolutionAgainstTheRecordedRuns(t *testing.T) {
 // repeat fetches; they are checked here offline when the file holds them, and `fetch.py --self-test`
 // checks them against the network.
 func TestRecordedRowsCarryTheirProvenance(t *testing.T) {
-	raw, err := os.ReadFile("testdata/recorded_block_sizes/recorded_block_sizes.json")
+	raw, err := testgz.ReadFile("testdata/recorded_block_sizes/recorded_block_sizes.json")
 	if err != nil {
 		t.Fatal(err)
 	}

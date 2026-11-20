@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 // addressBound is 2^40: no counter, size or index an oracle trace records reaches it, and a
@@ -93,8 +95,8 @@ func TestNoGoldenRecordsAMemoryAddress(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			if !d.IsDir() && strings.HasSuffix(p, ".json") {
-				files = append(files, p)
+			if name := strings.TrimSuffix(p, ".gz"); !d.IsDir() && strings.HasSuffix(name, ".json") {
+				files = append(files, name)
 			}
 			return nil
 		})
@@ -106,7 +108,7 @@ func TestNoGoldenRecordsAMemoryAddress(t *testing.T) {
 		t.Fatal("no golden trace found under oracle/harness.json's golden_dirs")
 	}
 	for _, p := range files {
-		b, err := os.ReadFile(p)
+		b, err := testgz.ReadFile(p)
 		if err != nil {
 			t.Fatal(err)
 		}

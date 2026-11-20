@@ -5,13 +5,13 @@ package sched
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 // The scheduler replay (T2, FID-4): the scenario's requests arrive at the steps it names, and
@@ -58,7 +58,7 @@ type scenario struct {
 
 func readJSON(t *testing.T, path string, v any) {
 	t.Helper()
-	b, err := os.ReadFile(path)
+	b, err := testgz.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func readJSON(t *testing.T, path string, v any) {
 
 func loadGoldens(t *testing.T) map[string]string {
 	t.Helper()
-	files, err := filepath.Glob(filepath.Join(GoldenDir, "*.trace.json"))
+	files, err := testgz.Glob(filepath.Join(GoldenDir, "*.trace.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

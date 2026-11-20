@@ -4,13 +4,13 @@ package lower
 
 import (
 	"encoding/json"
-	"os"
 	"reflect"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
 
 	"github.com/inference-sim/inference-sim/engines/sglang/config"
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 func chipFile(t *testing.T, name string) *hardware.Chip {
@@ -96,7 +96,7 @@ func TestBlackwellDeepSeekResolvesAndLowersTheTRTLLMRunner(t *testing.T) {
 // readAnswersByCase is the model facts of each case of the oracle's answers, by case name.
 func readAnswersByCase(t *testing.T) map[string]config.ModelFacts {
 	t.Helper()
-	b, err := os.ReadFile("../config/testdata/serverargs.json")
+	b, err := testgz.ReadFile("../config/testdata/serverargs.json")
 	if err != nil {
 		t.Fatal(err)
 	}

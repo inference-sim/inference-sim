@@ -21,6 +21,8 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+import goldengz  # noqa: E402
 
 
 def run(cmd, cwd, env=None):
@@ -50,7 +52,7 @@ class CheckGoldensOverThisLayout(unittest.TestCase):
         self.assertTrue(found, "no testdata/golden* directory found; the walk is broken")
         self.assertEqual(sorted(found - set(cfg["golden_dirs"])), [], "golden directories oracle/harness.json does not guard")
         self.assertIn(self.BLOCK_HASHES, cfg["golden_files"])
-        self.assertTrue(os.path.exists(os.path.join(ROOT, self.BLOCK_HASHES)))
+        self.assertTrue(goldengz.exists(os.path.join(ROOT, self.BLOCK_HASHES)))
 
     def test_a_block_hash_change_without_a_trailer_fails(self):
         repo = tempfile.mkdtemp()
@@ -64,8 +66,7 @@ class CheckGoldensOverThisLayout(unittest.TestCase):
         git("init", "-q")
         git("commit", "-q", "--allow-empty", "-m", "root")
         root = git("rev-parse", "HEAD")
-        with open(os.path.join(ROOT, self.BLOCK_HASHES)) as f:
-            doc = json.load(f)
+        doc = goldengz.load(os.path.join(ROOT, self.BLOCK_HASHES))
         self.assertGreater(len(doc["cases"]), 0)
         doc["provenance"] = {**doc.get("provenance", {}), "blis_vllm_commit": root}
         path = os.path.join(repo, self.BLOCK_HASHES)
@@ -209,16 +210,14 @@ class WallClockGauge(unittest.TestCase):
         # vLLM's frontend fills running_lora_adapters and waiting_lora_adapters from
         # update_scheduler_stats (stats.py:696-700@5df63a72); a trace recorded without that call has
         # the empty set alone and compares no adapter label.
-        with open(self.GOLDEN) as f:
-            keys = [k for k in json.load(f)["series"] if k.startswith(self.FAM + "{")]
+        keys = [k for k in goldengz.load(self.GOLDEN)["series"] if k.startswith(self.FAM + "{")]
         self.assertGreaterEqual(len(keys), 3, keys)
         self.assertTrue(any("running_lora_adapters=A," in k for k in keys), keys)
         self.assertTrue(any("running_lora_adapters=B," in k for k in keys), keys)
 
     def test_same_labels_pass_and_changed_labels_fail(self):
         c = self.load("compare_goldens_metrics")
-        with open(self.GOLDEN) as f:
-            keys = sorted(k for k in json.load(f)["series"] if k.startswith(self.FAM + "{"))
+        keys = sorted(k for k in goldengz.load(self.GOLDEN)["series"] if k.startswith(self.FAM + "{"))
         key = next(k for k in keys if "running_lora_adapters=A," in k)
         self.assertEqual(c.first_difference(self.series(key), self.series(key)), "")
         # the same sample under the other adapter's labels is a different label set

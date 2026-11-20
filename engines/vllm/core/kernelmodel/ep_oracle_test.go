@@ -15,6 +15,7 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/v0_33"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // moeCase is one case of core/lower/testdata/vllm_lower.json's moe_parallel section
@@ -37,7 +38,7 @@ type moeCase struct {
 
 func loadMoEOracle(t *testing.T) map[string]moeCase {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "core", "lower", "testdata", "vllm_lower.json"))
+	raw, err := testgz.ReadFile(filepath.Join("..", "..", "core", "lower", "testdata", "vllm_lower.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

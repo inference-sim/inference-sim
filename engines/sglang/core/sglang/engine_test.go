@@ -5,7 +5,6 @@ package sglang
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -18,6 +17,7 @@ import (
 
 	blissglang "github.com/inference-sim/inference-sim/engines/sglang"
 	"github.com/inference-sim/inference-sim/engines/sglang/core/sched"
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 const (
@@ -56,7 +56,7 @@ func load(t *testing.T, name string) (goldenTrace, scenarioFile) {
 	var tr goldenTrace
 	var sc scenarioFile
 	for path, v := range map[string]any{filepath.Join(goldenDir, name+".trace.json"): &tr, filepath.Join(scenarioDir, name+".json"): &sc} {
-		b, err := os.ReadFile(path)
+		b, err := testgz.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -97,7 +97,7 @@ func outputOf(n int, tok int32) []int32 {
 // (each pass completed before the next is scheduled) and in the overlap loop (the next pass is
 // scheduled before the last is completed). The goldens are core/sched's (recorded by CI).
 func TestEnginePassesEqualSGLangs(t *testing.T) {
-	files, _ := filepath.Glob(filepath.Join(goldenDir, "*.trace.json"))
+	files, _ := testgz.Glob(filepath.Join(goldenDir, "*.trace.json"))
 	ran := 0
 	for _, f := range files {
 		name := strings.TrimSuffix(filepath.Base(f), ".trace.json")

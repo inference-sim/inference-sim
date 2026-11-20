@@ -4,13 +4,14 @@ package sglang
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 // scenarioArgs are the ServerArgs an oracle scheduler scenario states (oracle/run_sched.py
@@ -68,7 +69,7 @@ func scenarioArgs(t *testing.T, sc map[string]any) SchedArgs {
 
 func readJSON(t *testing.T, path string) map[string]any {
 	t.Helper()
-	b, err := os.ReadFile(path)
+	b, err := testgz.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +85,7 @@ func readJSON(t *testing.T, path string) map[string]any {
 // scenario's golden trace (oracle/run_sched.py config_of) to be the one derived. The pool sizes
 // and the model's facts are the runtime's, taken from the same recording.
 func TestSchedConfigEqualsWhatSGLangsSchedulerResolved(t *testing.T) {
-	traces, err := filepath.Glob("../sched/testdata/golden-sched/*.trace.json")
+	traces, err := testgz.Glob("../sched/testdata/golden-sched/*.trace.json")
 	if err != nil || len(traces) == 0 {
 		t.Fatalf("no golden scheduler traces: %v", err)
 	}

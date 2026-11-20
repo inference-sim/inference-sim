@@ -68,8 +68,8 @@ jobs:
           python -I oracle/run_lora_cache.py vllm-source oracle/scenarios/lora-cache oracle/out/scenarios-lora-cache
           mkdir -p oracle/out/scenarios-render
           python -I oracle/run_render.py vllm-source oracle/scenarios/render oracle/out/scenarios-render
-          for g in core/metrics/testdata/golden/*.metrics.json; do
-            n=$(basename "$g" .metrics.json)
+          for g in core/metrics/testdata/golden/*.metrics.json*; do
+            n="${g##*/}"; n="${n%%.metrics.json*}"
             python -I oracle/run_metrics.py vllm-source "oracle/scenarios/$n.json" > "oracle/out/scenarios-metrics/$n.metrics.json"
           done
           python -I oracle/run_enginecore.py vllm-source oracle/scenarios-t3 oracle/out/scenarios-t3

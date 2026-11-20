@@ -15,6 +15,7 @@ import (
 	"github.com/inference-sim/inference-sim/engines/vllm/core/engine"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
@@ -820,7 +821,7 @@ func earliestDivergence(want, got trace) string {
 
 func readJSON(t *testing.T, path string, v any) {
 	t.Helper()
-	raw, err := os.ReadFile(path)
+	raw, err := testgz.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -891,7 +892,7 @@ func TestOffloadingFuzzCorpusAgainstVLLM(t *testing.T) {
 	if dir == "" {
 		t.Skip("BLIS_VLLM_OFFLOAD_FUZZ_DIR is unset: the offloading fuzz corpus was NOT checked (CI's oracle job sets it)")
 	}
-	traces, err := filepath.Glob(filepath.Join(dir, "*.trace.json"))
+	traces, err := testgz.Glob(filepath.Join(dir, "*.trace.json"))
 	if err != nil || len(traces) == 0 {
 		t.Fatalf("no traces in %s (%v)", dir, err)
 	}

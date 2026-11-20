@@ -3,7 +3,6 @@ package vllm
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -13,6 +12,8 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 	"gopkg.in/yaml.v3"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // dpGoldenScenario and dpGoldenTrace are oracle/run_dp.py's scenario and vLLM v0.32.0's trace of
@@ -101,7 +102,7 @@ func TestDPGroupAgainstVLLM(t *testing.T) {
 
 func readFile(t *testing.T, path string, v any) {
 	t.Helper()
-	raw, err := os.ReadFile(path)
+	raw, err := testgz.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,6 +13,10 @@ Usage: python3 -I oracle/check_fid5_names.py [<repo root>]
 import os
 import sys
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import goldengz  # noqa: E402  (oracle/goldengz.py; -I leaves the script directory off sys.path)
+
 GOLDEN = "core/connector/offloading/testdata/golden-fid5"
 SOURCES = (("oracle/scenarios/offloading", "recorded-"), ("oracle/scenarios/multiconnector", "recorded-"),
            ("oracle/scenarios-fid5", "direct-"))
@@ -20,9 +24,9 @@ SOURCES = (("oracle/scenarios/offloading", "recorded-"), ("oracle/scenarios/mult
 
 def problems(root: str) -> list:
     golden = os.path.join(root, GOLDEN)
-    if os.path.exists(golden + ".pending.json"):
+    if goldengz.exists(golden + ".pending.json"):
         return []
-    have = {f for f in os.listdir(golden) if f.endswith(".fid5.json")} if os.path.isdir(golden) else set()
+    have = {f for f in goldengz.listdir(golden) if f.endswith(".fid5.json")} if os.path.isdir(golden) else set()
     want = set()
     for d, prefix in SOURCES:
         for f in sorted(os.listdir(os.path.join(root, d))):

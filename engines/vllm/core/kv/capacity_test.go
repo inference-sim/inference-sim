@@ -5,8 +5,9 @@ package kv
 import (
 	"encoding/json"
 	"math"
-	"os"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // ocCapacity is one capacity answer of the oracle's kv_pool cases (oracle/lower/extract.py
@@ -30,7 +31,7 @@ type ocCapacityCase struct {
 
 func loadCapacityOracle(t *testing.T) []ocCapacityCase {
 	t.Helper()
-	raw, err := os.ReadFile("../lower/testdata/vllm_lower.json")
+	raw, err := testgz.ReadFile("../lower/testdata/vllm_lower.json")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,6 +14,7 @@ import (
 	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/v0_33"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // captureOracleCase is one row of core/lower/testdata/vllm_lower.json "capture": a deployment's
@@ -42,7 +43,7 @@ type captureOracleCase struct {
 
 func loadCaptureOracle(t *testing.T) []captureOracleCase {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "core", "lower", "testdata", "vllm_lower.json"))
+	raw, err := testgz.ReadFile(filepath.Join("..", "..", "core", "lower", "testdata", "vllm_lower.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

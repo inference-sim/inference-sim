@@ -4,12 +4,13 @@ package vllmengine
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 )
 
 // startupFigure reads the engine's start-up KV figure, "GPU KV cache size: N tokens" and its
@@ -31,7 +32,7 @@ func startupFigure(t *testing.T, e engine.Engine) (tokens int64, concurrency flo
 // answer for a model length, max_in_flight_tokens, retained tokens and pool of blocks.
 func poolCapacityOracle(t *testing.T, mml, inFlight, retained int, blocks int64) (tokens int64, concurrency float64) {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "core", "lower", "testdata", "vllm_lower.json"))
+	raw, err := testgz.ReadFile(filepath.Join("..", "core", "lower", "testdata", "vllm_lower.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

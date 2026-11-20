@@ -5,13 +5,13 @@ package lower
 import (
 	"encoding/json"
 	"errors"
-	"os"
 	"reflect"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 
 	"github.com/inference-sim/inference-sim/engines/sglang/config"
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 // lowerAnswers is lower/testdata/sglang_lower.json: SGLang's own lowering functions run on each
@@ -54,7 +54,7 @@ type lowerAnswers struct {
 
 func readLower(t *testing.T) lowerAnswers {
 	t.Helper()
-	b, err := os.ReadFile("testdata/sglang_lower.json")
+	b, err := testgz.ReadFile("testdata/sglang_lower.json")
 	if err != nil {
 		t.Fatal(err)
 	}

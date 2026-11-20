@@ -5,11 +5,11 @@ package vllm
 import (
 	"encoding/hex"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 )
 
@@ -20,7 +20,7 @@ import (
 // a request (loraExtraKey, from Adapter and AdapterPath) must reproduce them. That holds when the
 // host sets AdapterPath; without it the name stands in for the path and the hash differs.
 func TestTheLoRABlockKeyIsVLLMsNameAndPath(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "kv", "testdata", "block_hashes.json"))
+	raw, err := testgz.ReadFile(filepath.Join("..", "kv", "testdata", "block_hashes.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

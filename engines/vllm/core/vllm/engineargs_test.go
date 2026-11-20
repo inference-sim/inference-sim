@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
 	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
@@ -109,7 +110,7 @@ func TestEngineArgsAgainstVLLM(t *testing.T) {
 		}
 	}
 	var tr engineArgsTrace
-	raw, err := os.ReadFile("testdata/engineargs.json")
+	raw, err := testgz.ReadFile("testdata/engineargs.json")
 	if err != nil {
 		t.Fatalf("no trace (%v): generate it with oracle/run_engineargs.py", err)
 	}

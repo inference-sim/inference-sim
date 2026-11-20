@@ -980,7 +980,7 @@ def paths_exist(repo, paths, what, errs):
         errs.append("%s: want a non-empty list of repository paths" % what)
         return False
     for p in paths:
-        if p.startswith("/") or ".." in p.split("/") or not os.path.exists(os.path.join(repo, p)):
+        if p.startswith("/") or ".." in p.split("/") or not (os.path.exists(os.path.join(repo, p)) or os.path.exists(os.path.join(repo, p + ".gz"))):
             errs.append("%s: %s is not a path in this repository" % (what, p))
     return True
 

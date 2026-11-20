@@ -206,6 +206,27 @@ class CheckGoldens(unittest.TestCase):
         self.commit("change a decision" + (f"\n\n{trailer}" if trailer else ""))
         return self.check()
 
+    def store_gz(self, obj):
+        """Replace GOLDEN by GOLDEN.gz holding obj, as a golden of 16000 bytes or more is committed."""
+        import gzip
+        if os.path.exists(os.path.join(self.repo, self.GOLDEN)):
+            os.remove(os.path.join(self.repo, self.GOLDEN))
+        with open(os.path.join(self.repo, self.GOLDEN + ".gz"), "wb") as f:
+            f.write(gzip.compress(json.dumps(obj).encode(), mtime=0))
+
+    def test_storing_a_golden_gzip_compressed_needs_no_trailer_and_a_decision_change_in_it_does(self):
+        same = {"provenance": {"engine_commit": self.root, "v": 1}, "steps": [{"a": 1}], "finished": {}}
+        self.store_gz(same)
+        self.commit("store the golden gzip-compressed")
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.base = git(self.repo, "rev-parse", "HEAD")
+        self.store_gz({**same, "steps": [{"a": 9}]})
+        self.commit("change a decision")
+        r = self.check()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("g.json.gz decisions changed without a golden-reviewed: trailer", r.stdout)
+
     def test_a_trailer_naming_the_trace_and_a_reason_allows_the_change(self):
         for name, trailer in [("path", f"golden-reviewed: {self.GOLDEN}: step 0 now schedules 9 tokens, as the upstream does"),
                               ("file name", "golden-reviewed: g.json: step 0 now schedules 9 tokens, as the upstream does")]:

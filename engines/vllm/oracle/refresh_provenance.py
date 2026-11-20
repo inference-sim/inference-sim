@@ -16,9 +16,13 @@ import json
 import os
 import sys
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import goldengz  # noqa: E402  (oracle/goldengz.py; -I leaves the script directory off sys.path)
+
 
 def main(golden_dir: str, fresh_dir: str, suffix: str) -> int:
-    names = sorted(f for f in os.listdir(golden_dir) if f.endswith(".json"))
+    names = sorted(f for f in goldengz.listdir(golden_dir) if f.endswith(".json"))
     if not names:
         print(f"{golden_dir}: no goldens")
         return 1
@@ -31,8 +35,7 @@ def main(golden_dir: str, fresh_dir: str, suffix: str) -> int:
             bad += 1
             continue
         gpath = os.path.join(golden_dir, name)
-        with open(gpath) as f:
-            golden = json.load(f)
+        golden = goldengz.load(gpath)
         with open(fresh_path) as f:
             fresh = json.load(f)
         g = {k: v for k, v in golden.items() if k != "provenance"}
@@ -47,9 +50,7 @@ def main(golden_dir: str, fresh_dir: str, suffix: str) -> int:
             bad += 1
             continue
         golden["provenance"] = fresh["provenance"]
-        with open(gpath, "w") as f:
-            json.dump(golden, f, indent=1, sort_keys=True)
-            f.write("\n")
+        goldengz.store(gpath, json.dumps(golden, indent=1, sort_keys=True) + "\n")
         refreshed += 1
     print(f"{golden_dir}: {refreshed} provenance blocks refreshed, {bad} refused")
     return 1 if bad else 0

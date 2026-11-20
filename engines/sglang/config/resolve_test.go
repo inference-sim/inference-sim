@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/engines/sglang/internal/testgz"
 )
 
 // answers is config/testdata/serverargs.json: SGLang's own resolution of each case of
@@ -30,7 +32,7 @@ type answers struct {
 
 func readAnswers(t *testing.T) answers {
 	t.Helper()
-	b, err := os.ReadFile("testdata/serverargs.json")
+	b, err := testgz.ReadFile("testdata/serverargs.json")
 	if err != nil {
 		t.Fatal(err)
 	}
