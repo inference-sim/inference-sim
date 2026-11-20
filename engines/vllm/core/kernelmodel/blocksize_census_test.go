@@ -27,9 +27,10 @@ import (
 //	resolved     no size was recorded and the resolution gives one; there is nothing to compare it
 //	             with, so this is not a claim about vLLM.
 //
-// Nine of the refused fixtures are hybrid models, which the resolution refuses because their block
-// size is aligned to the recurrent page (interface.py:783-790), and which the v0.32.0 engine also
-// does not build (Model.V032Pieces, hybrid KV groups, blis-vllm#7).
+// No fixture is refused for being a hybrid model: the block size of a model with recurrent layers
+// is aligned to the recurrent page (interface.py:812-816@0fda86a3) and planMamba sizes it, including
+// the head-size-256 attention layers that once were refused (nine fixtures), so Model.V032Pieces
+// names no hybrid-KV-groups piece for them.
 //
 // A v0.32.0 fixture with no block_size line fails the test: the census would otherwise skip it
 // without counting it. A fixture is counted when it states engine: {kind: vllm}.
@@ -260,10 +261,10 @@ func TestBlockSizeResolutionOverTheCensusFixtures(t *testing.T) {
 		// A slice sees part of the fixtures, so its counts are part of the totals; the unsliced run asserts them.
 		return
 	}
-	if nV032 != 679 || nStated != 354 || nRefused != 22 || nResolved != 303 || nHybridPieces != 9 ||
+	if nV032 != 679 || nStated != 354 || nRefused != 13 || nResolved != 312 || nHybridPieces != 0 ||
 		statedClass["reproduced"] != 71 || statedClass["refused"] != 247 || statedClass["differs"] != 36 || len(statedDiffers) != 36 {
 		t.Errorf("the census counts changed: %d fixtures; stated %d (reproduced %d, refused %d, differs %d); no size stated: refused %d (hybrid %d), resolved %d; "+
-			"want 679; 354 (71, 247, 36); 22 (9), 303", nV032, nStated, statedClass["reproduced"], statedClass["refused"], statedClass["differs"],
+			"want 679; 354 (71, 247, 36); 13 (0), 312", nV032, nStated, statedClass["reproduced"], statedClass["refused"], statedClass["differs"],
 			nRefused, nHybridPieces, nResolved)
 	}
 }

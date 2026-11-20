@@ -253,7 +253,7 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 			}
 			if n.AttentionKind == sparseGQA {
 				// Qwen4Exp's QSA layer registers the K/V cache and its indexer's two caches.
-				qr, err := qsaLayerRuns(id, kinds[id], n, tp, engine, false)
+				qr, err := qsaLayerRuns(g, id, kinds[id], n, tp, engine, false)
 				if err != nil {
 					return nil, err
 				}
@@ -310,7 +310,7 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 				}
 				if n.AttentionKind == sparseGQA {
 					// The MTP module's QSA layer registers the caches a target layer does.
-					qr, err := qsaLayerRuns(id, kinds[id], n, tp, engine, true)
+					qr, err := qsaLayerRuns(g, id, kinds[id], n, tp, engine, true)
 					if err != nil {
 						return nil, err
 					}
