@@ -1,0 +1,109 @@
+{
+ "name": "t3-async-maxtokens",
+ "description": "async scheduling with client budgets: no extra step once the step in flight reaches max_tokens.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 128,
+  "enable_prefix_caching": false,
+  "scheduling_policy": "fcfs",
+  "pipeline_parallel_size": 1,
+  "async_scheduling": true,
+  "use_v2_model_runner": false
+ },
+ "requests": [
+  {
+   "id": "a",
+   "arrival_step": 0,
+   "prompt": [
+    26871,
+    27391,
+    30398,
+    46477,
+    16206,
+    33252
+   ],
+   "output": [
+    47196,
+    43107,
+    29919,
+    20686,
+    25507,
+    43601,
+    7527,
+    23855,
+    22741,
+    22295,
+    2278,
+    21043,
+    5421,
+    7691,
+    26334,
+    40044,
+    43526,
+    33715,
+    22828,
+    11892
+   ],
+   "priority": 0,
+   "max_tokens": 3
+  },
+  {
+   "id": "b",
+   "arrival_step": 0,
+   "prompt": [
+    27223,
+    43530,
+    9004,
+    27935,
+    12691
+   ],
+   "output": [
+    32189,
+    32718,
+    45701,
+    48759,
+    49693,
+    30793,
+    43099,
+    37899,
+    15946,
+    21527,
+    33060,
+    29294,
+    26551,
+    44219,
+    23781,
+    8907,
+    7491,
+    45945,
+    7875,
+    32104
+   ],
+   "priority": 0,
+   "max_tokens": 1
+  },
+  {
+   "id": "c",
+   "arrival_step": 0,
+   "prompt": [
+    42136,
+    45438,
+    27669,
+    30619,
+    5712,
+    1675,
+    15402
+   ],
+   "output": [
+    49442,
+    38458,
+    48860,
+    2969
+   ],
+   "priority": 0
+  }
+ ]
+}

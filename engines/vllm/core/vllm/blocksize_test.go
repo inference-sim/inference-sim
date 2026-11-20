@@ -1,0 +1,216 @@
+package vllm
+
+import (
+	"strings"
+	"testing"
+)
+
+// The committed table is the block-size oracle's output (oracle/blocksize/oracle.py): a
+// combination is resolved exactly when vLLM's size is the same under every setting of the facts a
+// CPU cannot discover that agrees with what the oracle assumes for the capability
+// (blockSizes.Assumptions), and that size is the one the resolver returns. A resolved combination
+// carries the assumed facts exactly when its size is not the same under all 16 settings.
+func TestBlockSizeTableIsInternallyConsistent(t *testing.T) {
+	if blockSizes.VLLM != "4ba787ec9959e566d3b587a796dff07673324da5" {
+		t.Errorf("the table is for vLLM %s, not the pinned commit", blockSizes.VLLM)
+	}
+	if len(blockSizes.Facts) < 3 {
+		t.Errorf("the table names %d facts, want the ones the oracle toggles", len(blockSizes.Facts))
+	}
+	for cap, facts := range blockSizes.Assumptions {
+		for f, a := range facts {
+			if _, ok := blockSizes.Facts[f]; !ok || a.Evidence == "" {
+				t.Errorf("capability %s assumes %q (%+v), which is not a fact of the table or has no evidence", cap, f, a)
+			}
+		}
+	}
+	resolved, assumed := 0, 0
+	for _, c := range blockSizes.Combinations {
+		// sameOver is whether every setting that passes keep has one nonzero size.
+		sameOver := func(keep func(setting string) bool) bool {
+			first, same := 0, true
+			for setting, s := range c.ByFacts {
+				if !keep(setting) {
+					continue
+				}
+				if first == 0 {
+					first = s
+				}
+				if s != first || s == 0 {
+					same = false
+				}
+			}
+			return same && first != 0
+		}
+		agrees := func(setting string) bool {
+			for f, a := range blockSizes.Assumptions[c.Capability] {
+				want := "0"
+				if a.Value {
+					want = "1"
+				}
+				if !strings.Contains(","+setting+",", ","+f+"="+want+",") {
+					return false
+				}
+			}
+			return true
+		}
+		same, sameEverywhere := sameOver(agrees), sameOver(func(string) bool { return true })
+		switch {
+		case c.Status == "resolved" && (!same || c.BlockSize == 0 || len(c.Backends) == 0):
+			t.Errorf("%s %s %s resolved to %d but the sizes under the facts are %v", c.Model, c.GPU, c.KVCacheDType, c.BlockSize, c.ByFacts)
+		case c.Status == "refused" && same:
+			t.Errorf("%s %s %s is refused although the size is the same under every setting that agrees with the assumptions: %v", c.Model, c.GPU, c.KVCacheDType, c.ByFacts)
+		case c.Status == "resolved" && sameEverywhere && len(c.AssumedFacts) != 0:
+			t.Errorf("%s %s %s is the same under all 16 settings but states assumed facts %v", c.Model, c.GPU, c.KVCacheDType, c.AssumedFacts)
+		case c.Status == "resolved" && !sameEverywhere && len(c.AssumedFacts) == 0:
+			t.Errorf("%s %s %s rests on an assumption but states none: %v", c.Model, c.GPU, c.KVCacheDType, c.ByFacts)
+		case c.Status == "refused" && len(c.AssumedFacts) != 0:
+			t.Errorf("%s %s %s is refused but states assumed facts %v", c.Model, c.GPU, c.KVCacheDType, c.AssumedFacts)
+		case c.Status == "resolved":
+			resolved++
+			if len(c.AssumedFacts) != 0 {
+				assumed++
+			}
+		}
+	}
+	if resolved == 0 || assumed == 0 {
+		t.Errorf("%d combinations resolve, %d of them by assumption", resolved, assumed)
+	}
+}
+
+// One case per branch of the resolver: a resolved combination returns the oracle's size with a
+// source that cites vLLM; everything else is refused naming issue 68.
+func TestResolveBlockSize(t *testing.T) {
+	base := BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: "auto"}
+	with := func(f func(*BlockSizeInput)) BlockSizeInput { in := base; f(&in); return in }
+	for _, c := range []struct {
+		name string
+		in   BlockSizeInput
+		size int
+		why  string // a fragment of the refusal
+	}{
+		{"dense on Hopper", base, 16, ""},
+		{"dense on Blackwell", with(func(i *BlockSizeInput) { i.Capability = "10.0" }), 16, ""},
+		{"gpt-oss, which has sinks", BlockSizeInput{Model: "gpt-oss-120b", Capability: "10.3", KVCacheDType: "fp8"}, 16, ""},
+		{"MLA on Blackwell is FlashInfer MLA's 32", BlockSizeInput{Model: "deepseek-v3", Capability: "10.0", KVCacheDType: "auto"}, 32, ""},
+		{"MLA on Hopper with fp8 KV still depends on FlashMLA", BlockSizeInput{Model: "deepseek-v3", Capability: "9.0", KVCacheDType: "fp8"}, 0, "flashmla_built"},
+		{"Kimi-K2.5 on Hopper with fp8 KV still depends on FlashMLA", BlockSizeInput{Model: "kimi-k2.5", Capability: "9.0", KVCacheDType: "fp8"}, 0, "flashmla_built"},
+		{"MLA on Hopper with auto KV is FlashAttention MLA's 16, by the FA3 assumption", BlockSizeInput{Model: "deepseek-v3", Capability: "9.0", KVCacheDType: "auto"}, 16, "fa3_available"},
+		{"Kimi-K2.5 on Hopper with auto KV, by the FA3 assumption", BlockSizeInput{Model: "kimi-k2.5", Capability: "9.0", KVCacheDType: "auto"}, 16, "fa3_available"},
+		{"Kimi-K2.5 on Hopper with bfloat16 KV", BlockSizeInput{Model: "kimi-k2.5", Capability: "9.0", KVCacheDType: "bfloat16"}, 16, "fa3_available"},
+		{"Kimi-K2.5 on Blackwell needs no assumption", BlockSizeInput{Model: "kimi-k2.5", Capability: "10.0", KVCacheDType: "auto"}, 32, ""},
+		// Gemma-4 mixes sliding layers (head 256) and full layers (head 512): FlashAttention or FlashInfer
+		// takes both at 16, on Hopper and Blackwell (#68).
+		// Llama-3.3-70B (FP8 and FP4 checkpoints) is Llama-3.1's attention shape: 16 on Hopper and Blackwell.
+		{"Llama-3.3-70B FP8 on Hopper with fp8 KV", BlockSizeInput{Model: "llama-3.3-70b-instruct-fp8", Capability: "9.0", KVCacheDType: "fp8"}, 16, ""},
+		{"Llama-3.3-70B FP4 on Blackwell", BlockSizeInput{Model: "llama-3.3-70b-instruct-fp4", Capability: "10.0", KVCacheDType: "fp8"}, 16, ""},
+		{"Gemma-4 31B on Hopper", BlockSizeInput{Model: "gemma-4-31b-it", Capability: "9.0", KVCacheDType: "auto"}, 16, ""},
+		// The FP8-dynamic checkpoint is a separate catalog model with the same attention layers (only the linear
+		// layers' quantization differs), so it resolves as the BF16 one does (#68).
+		{"Gemma-4 26B-A4B FP8-dynamic on Hopper with fp8 KV", BlockSizeInput{Model: "gemma-4-26b-a4b-it-fp8-dynamic", Capability: "9.0", KVCacheDType: "fp8"}, 16, ""},
+		{"Gemma-4 26B-A4B FP8-dynamic on Hopper with auto KV", BlockSizeInput{Model: "gemma-4-26b-a4b-it-fp8-dynamic", Capability: "9.0", KVCacheDType: "auto"}, 16, ""},
+		{"Gemma-4 26B-A4B FP8-dynamic on Blackwell", BlockSizeInput{Model: "gemma-4-26b-a4b-it-fp8-dynamic", Capability: "10.0", KVCacheDType: "fp8"}, 16, ""},
+		{"Gemma-4 26B-A4B FP8-dynamic text-only drops the multimodal prefix, which the oracle did not run", BlockSizeInput{Model: "gemma-4-26b-a4b-it-fp8-dynamic", Capability: "9.0", KVCacheDType: "auto", LanguageModelOnly: true}, 0, "language_model_only"},
+		{"Gemma-4 26B-A4B on Blackwell with fp8 KV", BlockSizeInput{Model: "gemma-4-26b-a4b-it", Capability: "10.0", KVCacheDType: "fp8"}, 16, ""},
+		// DeepSeek-V4 hands the platform its own backends: the sparse MLA and the indexer take 256, the
+		// sliding-window cache a multiple of 32, the compressor any size, so the smallest all accept is 256.
+		{"DeepSeek-V4 on Blackwell", BlockSizeInput{Model: "deepseek-v4-pro", Capability: "10.0", KVCacheDType: "auto"}, 256, ""},
+		{"DeepSeek-V4 on Hopper with fp8 KV", BlockSizeInput{Model: "deepseek-v4-pro", Capability: "9.0", KVCacheDType: "fp8"}, 256, ""},
+		{"DeepSeek-V4 NVFP4 on B300", BlockSizeInput{Model: "deepseek-v4-pro-nvfp4", Capability: "10.3", KVCacheDType: "auto"}, 256, ""},
+		{"DeepSeek-V4.1 has its own backends", BlockSizeInput{Model: "deepseek-v4.1-flash", Capability: "10.0", KVCacheDType: "auto"}, 0, "deepseek_v41"},
+		{"Gemma-4 text-only drops the multimodal prefix, which the oracle did not run", BlockSizeInput{Model: "gemma-4-31b-it", Capability: "9.0", KVCacheDType: "auto", LanguageModelOnly: true}, 0, "language_model_only"},
+		{"language_model_only changes nothing for a text-only model", BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: "auto", LanguageModelOnly: true}, 16, ""},
+		{"a model the oracle does not resolve", BlockSizeInput{Model: "minimax-m3", Capability: "10.0", KVCacheDType: "fp8"}, 0, "MiniMaxM3SparseBackend"},
+		{"a hybrid model", BlockSizeInput{Model: "qwen3.5-397b-a17b", Capability: "10.0", KVCacheDType: "fp8"}, 0, "hybrid"},
+		{"a model the oracle has never seen", with(func(i *BlockSizeInput) { i.Model = "no-such-model" }), 0, "not a combination the oracle resolves"},
+		{"a KV dtype the oracle has not run", with(func(i *BlockSizeInput) { i.KVCacheDType = "nvfp4" }), 0, "not a combination the oracle resolves"},
+		{"a chip that states no compute capability", with(func(i *BlockSizeInput) { i.Capability = "" }), 0, "ComputeCapability"},
+		{"tensor parallelism wider than the oracle ran", with(func(i *BlockSizeInput) { i.TP = 32 }), 0, "tensor_parallel_size 32"},
+		{"the widest tensor parallelism the oracle ran", with(func(i *BlockSizeInput) { i.TP = MaxBlockSizeTP }), 16, ""},
+		{"a drafter adds layers", with(func(i *BlockSizeInput) { i.Speculative = true }), 0, "drafter"},
+		{"context parallelism", with(func(i *BlockSizeInput) { i.ContextParallel = true }), 0, "context parallelism"},
+		{"use_trtllm_attention stated", with(func(i *BlockSizeInput) { i.UsesTRTLLMAttention = true }), 0, "use_trtllm_attention"},
+		{"mla_prefill_backend stated", with(func(i *BlockSizeInput) { i.MLAPrefillBackend = "FLASHINFER" }), 0, "mla_prefill_backend"},
+		{"an attention environment variable", with(func(i *BlockSizeInput) { i.Env = map[string]string{"VLLM_ATTENTION_BACKEND": "TRITON_ATTN"} }), 0, "VLLM_ATTENTION_BACKEND"},
+		{"an unrelated environment variable is ignored", with(func(i *BlockSizeInput) { i.Env = map[string]string{"VLLM_LOGGING_LEVEL": "DEBUG"} }), 16, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := ResolveBlockSize(c.in)
+			if c.why == "" || c.size > 0 {
+				if err != nil || got.Size != c.size || !strings.Contains(got.Source, "vllm/platforms/interface.py:750-794@4ba787ec") {
+					t.Fatalf("got %+v, %v; want size %d with a cited source", got, err, c.size)
+				}
+				// A size that rests on an assumed fact says so, with its evidence; one that does not, does not.
+				if assumed := strings.Contains(got.Source, "assuming "); assumed != (c.why != "") {
+					t.Errorf("source %q: assumes a fact: %t, want %t", got.Source, assumed, c.why != "")
+				}
+				if c.why != "" && !strings.Contains(got.Source, "assuming "+c.why+": ") {
+					t.Errorf("source %q does not say it assumes %s", got.Source, c.why)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), c.why) || !strings.Contains(err.Error(), BlockSizeIssue) {
+				t.Errorf("err %v, want a refusal containing %q and %s", err, c.why, BlockSizeIssue)
+			}
+		})
+	}
+}
+
+// fp8_e4m3 is vLLM's name for fp8, and bfloat16 and float16 run as auto does where the model is
+// served in bfloat16 (CacheDType, vllm/config/cache.py:39-59). The oracle runs every one of these
+// names through vLLM's own selection, so the table, not an alias in Go, says they resolve alike:
+// each name must give the same answer, resolved or refused, as the name it stands for.
+func TestKVDTypeNamesResolveAsTheOraclesTwoNamesDo(t *testing.T) {
+	alias := map[string]string{"fp8_e4m3": "fp8", "bfloat16": "auto", "float16": "auto"}
+	seen := 0
+	for _, c := range blockSizes.Combinations {
+		base, ok := alias[c.KVCacheDType]
+		if !ok {
+			continue
+		}
+		seen++
+		in := BlockSizeInput{Model: c.Model, Capability: c.Capability, KVCacheDType: c.KVCacheDType}
+		want := BlockSizeInput{Model: c.Model, Capability: c.Capability, KVCacheDType: base}
+		got, gerr := ResolveBlockSize(in)
+		exp, eerr := ResolveBlockSize(want)
+		if (gerr == nil) != (eerr == nil) || (gerr == nil && got.Size != exp.Size) {
+			t.Errorf("%s %s: %s gives %+v, %v but %s gives %+v, %v", c.Model, c.Capability, c.KVCacheDType, got, gerr, base, exp, eerr)
+		}
+	}
+	if seen == 0 {
+		t.Error("the table holds none of fp8_e4m3, bfloat16 or float16")
+	}
+	// The case the review reproduced: llama-3.1-70b-instruct on compute capability 9.0.
+	for _, kv := range []string{"fp8", "fp8_e4m3", "bfloat16", "float16", "auto"} {
+		got, err := ResolveBlockSize(BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: kv})
+		if err != nil || got.Size != 16 {
+			t.Errorf("llama-3.1-70b-instruct, 9.0, %s: %+v, %v; want 16", kv, got, err)
+		}
+	}
+}
+
+// minimax-m2.5-nvfp4 is the same class as minimax-m2.5 with the same attention layer (its config.json,
+// at the revision the catalog pins, states the same heads and head size and no window), and its
+// checkpoint declares an fp8 KV scheme (kv_cache_scheme, read by modelopt.py:344-352 as
+// kv_cache_quant_algo FP8). The table runs every KV dtype name, so the size is the same under auto
+// and fp8, and the nvfp4 rows must equal minimax-m2.5's on every chip and KV dtype name.
+func TestMiniMaxM25NVFP4ResolvesAsMiniMaxM25Does(t *testing.T) {
+	for _, cap := range []string{"9.0", "10.0", "10.3"} {
+		for _, kv := range []string{"auto", "fp8", "fp8_e4m3", "bfloat16", "float16"} {
+			want, werr := ResolveBlockSize(BlockSizeInput{Model: "minimax-m2.5", Capability: cap, KVCacheDType: kv})
+			got, gerr := ResolveBlockSize(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: cap, KVCacheDType: kv})
+			if werr != nil || gerr != nil {
+				t.Errorf("capability %s kv %s: minimax-m2.5 gives %v, minimax-m2.5-nvfp4 gives %v; both must resolve", cap, kv, werr, gerr)
+				continue
+			}
+			if got.Size != want.Size {
+				t.Errorf("capability %s kv %s: minimax-m2.5-nvfp4 resolves to %+v, minimax-m2.5 to %+v", cap, kv, got, want)
+			}
+		}
+	}
+	a, _ := ResolveBlockSize(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: "10.0", KVCacheDType: "auto"})
+	f, _ := ResolveBlockSize(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: "10.0", KVCacheDType: "fp8"})
+	if a.Size != 16 || f.Size != a.Size {
+		t.Errorf("on Blackwell the nvfp4 checkpoint resolves to %d under auto and %d under fp8, want 16 under both", a.Size, f.Size)
+	}
+}

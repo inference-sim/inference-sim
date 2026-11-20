@@ -1,0 +1,27 @@
+# A scenario of the dashboard's scenario writer for one fit unit's recorded run (counts only are kept of the units).
+kind: Scenario
+name: kimi-k2.5-b200-tp8-dp1-2114271cc1
+engine: {kind: vllm, version: 0.33.0}
+model: kimi-k2.5
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+cluster: {hardware: b200, gpus_per_node: 8, nodes: 1}
+---
+kind: Deployment
+name: kimi-k2.5-b200-tp8-dp1-2114271cc1
+pools:
+- role: colocated
+  nodes: 1
+  parallel: {dp: 1, pp: 1, tp: 8}
+  engine:
+    cudagraph_capture_sizes: [1, 2, 4, 8]
+    enable_chunked_prefill: true
+    enable_prefix_caching: false
+    gpu_memory_utilization: 0.95
+    max_cudagraph_capture_size: 8
+    max_model_len: 9416
+    max_num_batched_tokens: 8192
+    max_num_seqs: 4
+    quantization: compressed-tensors
+    compilation_config: {cudagraph_mode: FULL_AND_PIECEWISE}
+    kv_cache_dtype: auto
+router: {endpoint_picker_config: vllm-dp-lb.epp.yaml}

@@ -1,0 +1,423 @@
+{
+ "batches": [
+  {
+   "batch": 0,
+   "preempted": [],
+   "samples": [
+    "a",
+    "b"
+   ],
+   "scheduled": {
+    "a": 6,
+    "b": 5,
+    "c": 5
+   }
+  },
+  {
+   "batch": 1,
+   "preempted": [],
+   "samples": [
+    "a",
+    "c"
+   ],
+   "scheduled": {
+    "a": 1,
+    "c": 2
+   }
+  },
+  {
+   "batch": 2,
+   "preempted": [],
+   "samples": [
+    "a",
+    "c"
+   ],
+   "scheduled": {
+    "a": 1,
+    "c": 1
+   }
+  },
+  {
+   "batch": 3,
+   "preempted": [],
+   "samples": [
+    "c"
+   ],
+   "scheduled": {
+    "c": 1
+   }
+  },
+  {
+   "batch": 4,
+   "preempted": [],
+   "samples": [
+    "c"
+   ],
+   "scheduled": {
+    "c": 1
+   }
+  },
+  {
+   "batch": 5,
+   "preempted": [],
+   "samples": [
+    "c"
+   ],
+   "scheduled": {
+    "c": 1
+   }
+  },
+  {
+   "batch": 6,
+   "preempted": [],
+   "samples": [],
+   "scheduled": {}
+  }
+ ],
+ "finished": {
+  "a": {
+   "output_tokens": 3,
+   "reason": "length",
+   "step": 3
+  },
+  "b": {
+   "output_tokens": 1,
+   "reason": "length",
+   "step": 1
+  },
+  "c": {
+   "output_tokens": 4,
+   "reason": "stop",
+   "step": 5
+  }
+ },
+ "provenance": {
+  "blis_vllm_commit": "e299646714d8134a0eea8409fa6ebeafd9e1af37",
+  "engine": {
+   "async_scheduling": true,
+   "max_concurrent_batches": 2,
+   "pipeline_parallel_size": 1,
+   "scheduler_class": "AsyncScheduler",
+   "use_v2_model_runner": false
+  },
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/9+2ee0b3b47a9c",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "tests.v1.core.utils.CacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)",
+   "nixl._api.nixl_agent (OBJ and UCX backends)",
+   "zmq (pyzmq, as tiering/p2p/control/zmq.py uses it)",
+   "time.monotonic",
+   "vLLM environment variables of a tiering sequence"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "oracle_inputs": {
+   "oracle/mocks.json": "9521f9f69e212f249e79b33614003c43dea5642e45499afa48b893737fc49f9b",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_enginecore.py": "35315709f7f99ceaa0dc0d01ec57997b92524b1825cb990ed27ba8417500461c",
+   "oracle/run_scheduler.py": "8aeea68a1dce3a32b9b8458ce710812c7851769e67bc3cc28414750054916b3a",
+   "oracle/scenarios-t3/t3-async-maxtokens.json": "9f0e6c06bb3f8f1d3b38b514f28a4d91bc9f29678230f78077223b1594df043d"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+  "scenario_sha256": "9f0e6c06bb3f8f1d3b38b514f28a4d91bc9f29678230f78077223b1594df043d",
+  "seed": null,
+  "tier": 3,
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
+ },
+ "steps": [
+  {
+   "blocks": {
+    "a": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "b": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "c": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 6,
+    "b": 5,
+    "c": 5
+   },
+   "finished": [],
+   "free_blocks": 33,
+   "num_running": 3,
+   "num_waiting": 0,
+   "placeholders": {
+    "a": 1,
+    "b": 1,
+    "c": 0
+   },
+   "processed": false,
+   "queue_len": 1,
+   "running": [
+    "a",
+    "b",
+    "c"
+   ],
+   "scheduled_batch": 0,
+   "step": 0
+  },
+  {
+   "blocks": {
+    "a": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "c": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 7,
+    "c": 7
+   },
+   "finished": [
+    "b"
+   ],
+   "free_blocks": 35,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "a": 1,
+    "c": 1
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "a",
+    "c"
+   ],
+   "scheduled_batch": 1,
+   "step": 1
+  },
+  {
+   "blocks": {
+    "a": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ],
+    "c": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "a": 8,
+    "c": 8
+   },
+   "finished": [],
+   "free_blocks": 35,
+   "num_running": 2,
+   "num_waiting": 0,
+   "placeholders": {
+    "a": 1,
+    "c": 1
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "a",
+    "c"
+   ],
+   "scheduled_batch": 2,
+   "step": 2
+  },
+  {
+   "blocks": {
+    "c": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "c": 9
+   },
+   "finished": [
+    "a"
+   ],
+   "free_blocks": 36,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "c": 1
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "c"
+   ],
+   "scheduled_batch": 3,
+   "step": 3
+  },
+  {
+   "blocks": {
+    "c": [
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "computed": {
+    "c": 10
+   },
+   "finished": [],
+   "free_blocks": 36,
+   "num_running": 1,
+   "num_waiting": 0,
+   "placeholders": {
+    "c": 1
+   },
+   "processed": true,
+   "queue_len": 1,
+   "running": [
+    "c"
+   ],
+   "scheduled_batch": 4,
+   "step": 4
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [
+    "c"
+   ],
+   "free_blocks": 39,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 1,
+   "running": [],
+   "scheduled_batch": 5,
+   "step": 5
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [],
+   "free_blocks": 39,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 1,
+   "running": [],
+   "scheduled_batch": 6,
+   "step": 6
+  },
+  {
+   "blocks": {},
+   "computed": {},
+   "finished": [],
+   "free_blocks": 39,
+   "num_running": 0,
+   "num_waiting": 0,
+   "placeholders": {},
+   "processed": true,
+   "queue_len": 0,
+   "running": [],
+   "scheduled_batch": null,
+   "step": 7
+  }
+ ]
+}

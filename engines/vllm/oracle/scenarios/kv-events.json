@@ -1,0 +1,180 @@
+{
+ "name": "kv-events",
+ "description": "KV events on (kv_events_config.enable_kv_cache_events with the null publisher): BlockStored per cached run with its parent hash, tokens and adapter, and BlockRemoved on eviction, against vLLM's own event stream.",
+ "config": {
+  "max_num_seqs": 3,
+  "max_num_batched_tokens": 24,
+  "block_size": 4,
+  "num_blocks": 16,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_events": true,
+  "max_loras": 2
+ },
+ "requests": [
+  {
+   "id": "e0",
+   "arrival_step": 0,
+   "prompt": [
+    805,
+    30775,
+    7367,
+    25745,
+    9232,
+    2836,
+    9090,
+    7370,
+    35076,
+    15192,
+    9149,
+    9661,
+    2171,
+    3973,
+    8951,
+    15150,
+    35106,
+    29344
+   ],
+   "output": [
+    34477,
+    27039,
+    13431,
+    38869,
+    6103
+   ]
+  },
+  {
+   "id": "e1",
+   "arrival_step": 1,
+   "prompt": [
+    805,
+    30775,
+    7367,
+    25745,
+    9232,
+    2836,
+    9090,
+    7370,
+    35076,
+    15192,
+    9149,
+    9661,
+    7743,
+    1335,
+    26408,
+    22383,
+    13009,
+    13496,
+    21648,
+    25687,
+    23914
+   ],
+   "output": [
+    39116,
+    16159,
+    13785,
+    14217,
+    27286,
+    38333,
+    35874
+   ],
+   "lora": "A"
+  },
+  {
+   "id": "e2",
+   "arrival_step": 3,
+   "prompt": [
+    805,
+    30775,
+    7367,
+    25745,
+    9232,
+    2836,
+    9090,
+    7370,
+    35076,
+    15192,
+    9149,
+    9661,
+    3936,
+    3380,
+    11790
+   ],
+   "output": [
+    23299,
+    8831,
+    13361,
+    9675
+   ]
+  },
+  {
+   "id": "e3",
+   "arrival_step": 6,
+   "prompt": [
+    24669,
+    1991,
+    5644,
+    34815,
+    28750,
+    14311,
+    13615,
+    28338,
+    24083,
+    12702,
+    21670,
+    14365,
+    31595,
+    2715,
+    17262,
+    22021,
+    19227,
+    21912,
+    37480,
+    25964,
+    31577,
+    20735
+   ],
+   "output": [
+    13970,
+    6247,
+    20075,
+    11554,
+    36693,
+    35771
+   ],
+   "lora": "B"
+  },
+  {
+   "id": "e4",
+   "arrival_step": 9,
+   "prompt": [
+    805,
+    30775,
+    7367,
+    25745,
+    9232,
+    2836,
+    9090,
+    7370,
+    35076,
+    15192,
+    9149,
+    9661,
+    19339,
+    6130,
+    11376,
+    12635,
+    1885
+   ],
+   "output": [
+    39413,
+    24559,
+    6269
+   ],
+   "lora": "A"
+  }
+ ],
+ "max_steps": 400
+}

@@ -1,0 +1,138 @@
+{
+ "name": "hybrid-swa-mtp-admission",
+ "description": "Hybrid full attention + sliding window (window 8) under a four-module MTP drafter (K=3), a 25-block pool: the window's admission cap counts extra_retained_tokens = 2 (max_admission_blocks_per_request), which decides when the long second request b fits beside a.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 25,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_groups": [
+   {
+    "kind": "full"
+   },
+   {
+    "kind": "sliding_window",
+    "sliding_window": 8
+   }
+  ],
+  "speculative": {
+   "method": "mtp",
+   "num_speculative_tokens": 3,
+   "draft": "mtp-4"
+  }
+ },
+ "requests": [
+  {
+   "id": "a",
+   "arrival_step": 0,
+   "prompt": [
+    35940,
+    48516,
+    6745,
+    22349,
+    22630,
+    22084,
+    29669,
+    8283
+   ],
+   "output": [
+    5854,
+    877,
+    912,
+    805,
+    4275,
+    23609,
+    1566,
+    46696,
+    13127,
+    43558,
+    40083,
+    46349,
+    9331,
+    18337,
+    35543,
+    50256
+   ],
+   "accepted": [
+    0,
+    3,
+    1,
+    0,
+    2,
+    0,
+    0,
+    1,
+    2,
+    3,
+    0,
+    0,
+    0,
+    2,
+    0,
+    2,
+    1,
+    1,
+    3,
+    0
+   ]
+  },
+  {
+   "id": "b",
+   "arrival_step": 1,
+   "prompt": [
+    4222,
+    6840,
+    15736,
+    34192,
+    18644,
+    22032,
+    39112,
+    47246,
+    24096,
+    844,
+    16402,
+    25655,
+    36303,
+    21701,
+    22766,
+    40026,
+    31450,
+    21723,
+    30938,
+    18203,
+    20462,
+    20116,
+    22215,
+    33917,
+    13580,
+    9746,
+    30053,
+    6690,
+    44372,
+    35800,
+    17385,
+    35693,
+    7557,
+    7846
+   ],
+   "output": [
+    2648,
+    38744,
+    50256
+   ],
+   "accepted": [
+    0,
+    3,
+    3,
+    0,
+    1,
+    1
+   ]
+  }
+ ],
+ "max_steps": 200
+}

@@ -1,0 +1,139 @@
+{
+ "name": "dp2-nixl-prefill",
+ "description": "DP 2, both ranks kv_producer. Remote-decode requests on both ranks, their blocks released by the decoder at different delays; p0's prompt takes two chunks, so rank 1 holds p1's blocks while rank 0 still prefills.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "data_parallel_size": 2,
+  "prefill_schedule_interval": 1,
+  "dp_sync_interval": 4,
+  "stats_interval": 1,
+  "connector": {
+   "name": "NixlConnector",
+   "kv_roles": [
+    "kv_producer",
+    "kv_producer"
+   ],
+   "kv_load_failure_policy": "fail",
+   "extra_config": {}
+  }
+ },
+ "requests": [
+  {
+   "id": "p0",
+   "arrival_step": 0,
+   "prompt": [
+    1619,
+    1825,
+    3231,
+    578,
+    3987,
+    2873,
+    3735,
+    1888,
+    1539,
+    3660,
+    3409,
+    3219,
+    1739,
+    1564,
+    1986,
+    2135,
+    1191,
+    809,
+    2157,
+    3238,
+    4448,
+    4512,
+    835,
+    4108,
+    1734,
+    3554,
+    4920,
+    1875,
+    3163,
+    3279
+   ],
+   "output": [
+    2221
+   ],
+   "max_tokens": 1,
+   "remote_decode": true,
+   "send_delay": 2,
+   "rank": 0
+  },
+  {
+   "id": "p1",
+   "arrival_step": 0,
+   "prompt": [
+    105,
+    4907,
+    782,
+    1468,
+    3654,
+    674,
+    3268,
+    4098,
+    4873,
+    1100,
+    819,
+    145,
+    3283,
+    3693
+   ],
+   "output": [
+    1683
+   ],
+   "max_tokens": 1,
+   "remote_decode": true,
+   "send_delay": 6,
+   "rank": 1
+  },
+  {
+   "id": "p2",
+   "arrival_step": 1,
+   "prompt": [
+    254,
+    1718,
+    1656,
+    2545,
+    2429,
+    144
+   ],
+   "output": [
+    620
+   ],
+   "max_tokens": 1,
+   "remote_decode": true,
+   "send_delay": 3,
+   "rank": 0
+  },
+  {
+   "id": "p3",
+   "arrival_step": 5,
+   "prompt": [
+    3215,
+    1881,
+    253,
+    2165,
+    2758,
+    4609,
+    1191,
+    3814,
+    3352
+   ],
+   "output": [
+    1852
+   ],
+   "max_tokens": 1,
+   "remote_decode": true,
+   "send_delay": 1,
+   "rank": 1
+  }
+ ]
+}

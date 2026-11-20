@@ -1,0 +1,301 @@
+{
+ "description": "Virtual time, VLLM_P2P_MAX_PEERS=1 and VLLM_P2P_IDLE_TIMEOUT_S=5: after a P/D fetch from the first prefiller the decoder's only session is idle and holds the one slot, so a request toward a second prefiller MISSes. One advance of exactly 5 s makes the session's last activity equal to now - 5, which counts as idle (<=): the decoder's next poll evicts it, and a request toward the second prefiller opens a session.",
+ "instances": [
+  {
+   "spec": {
+    "name": "TieringOffloadingSpec",
+    "cpu_bytes_to_use": 65536,
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1,
+    "blocks_per_chunk": 1,
+    "extra": {
+     "tier_poll_interval_s": 0,
+     "secondary_tiers": [
+      {
+       "type": "p2p",
+       "host": "127.0.0.1",
+       "port": 5710
+      }
+     ]
+    }
+   }
+  },
+  {
+   "spec": {
+    "name": "TieringOffloadingSpec",
+    "cpu_bytes_to_use": 65536,
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1,
+    "blocks_per_chunk": 1,
+    "extra": {
+     "tier_poll_interval_s": 0,
+     "secondary_tiers": [
+      {
+       "type": "p2p",
+       "host": "127.0.0.1",
+       "port": 5711
+      }
+     ]
+    }
+   }
+  },
+  {
+   "spec": {
+    "name": "TieringOffloadingSpec",
+    "cpu_bytes_to_use": 65536,
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1,
+    "blocks_per_chunk": 1,
+    "extra": {
+     "tier_poll_interval_s": 0,
+     "secondary_tiers": [
+      {
+       "type": "p2p",
+       "host": "127.0.0.1",
+       "port": 5712
+      }
+     ]
+    }
+   }
+  }
+ ],
+ "env": {
+  "VLLM_P2P_MAX_PEERS": 1,
+  "VLLM_P2P_IDLE_TIMEOUT_S": 5
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "inst": 0,
+   "ctx": "p",
+   "params": {
+    "remote_decoder": {
+     "kv_request_id": "v1"
+    }
+   }
+  },
+  {
+   "m": "prepare_store",
+   "inst": 0,
+   "ctx": "p",
+   "keys": [
+    "k1"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "inst": 0,
+   "ctx": "p",
+   "keys": [
+    "k1"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": [
+    "p"
+   ]
+  },
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "d",
+   "params": {
+    "remote_prefiller": {
+     "kv_request_id": "v1",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5710
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": [
+    "d"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d",
+   "key": "k1"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 0,
+   "ctx": "p"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 1,
+   "ctx": "d"
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "e",
+   "params": {
+    "remote_prefiller": {
+     "kv_request_id": "v2",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5712
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "e",
+   "key": "k2"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 1,
+   "ctx": "e"
+  },
+  {
+   "m": "advance",
+   "s": 5.0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "g",
+   "params": {
+    "remote_prefiller": {
+     "kv_request_id": "v3",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5712
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "g",
+   "key": "k2"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": [
+    "g"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 2
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 2
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 2
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 2
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "g",
+   "key": "k2"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 1,
+   "ctx": "g"
+  }
+ ]
+}

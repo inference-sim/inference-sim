@@ -1,0 +1,195 @@
+{
+ "description": "The decoder fetches two chunks but the prefiller stores only one before its request finishes: the stored chunk is written and its store job succeeds; the missing one never comes, so the prefiller sends TransferDone(success=False). The decoder's load fails and its request's p2p lookups MISS from then on.",
+ "instances": [
+  {
+   "spec": {
+    "name": "TieringOffloadingSpec",
+    "cpu_bytes_to_use": 65536,
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1,
+    "blocks_per_chunk": 1,
+    "extra": {
+     "tier_poll_interval_s": 0,
+     "secondary_tiers": [
+      {
+       "type": "p2p",
+       "host": "127.0.0.1",
+       "port": 5710
+      }
+     ]
+    }
+   }
+  },
+  {
+   "spec": {
+    "name": "TieringOffloadingSpec",
+    "cpu_bytes_to_use": 65536,
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1,
+    "blocks_per_chunk": 1,
+    "extra": {
+     "tier_poll_interval_s": 0,
+     "secondary_tiers": [
+      {
+       "type": "p2p",
+       "host": "127.0.0.1",
+       "port": 5711
+      }
+     ]
+    }
+   }
+  }
+ ],
+ "calls": [
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "d",
+   "params": {
+    "remote_prefiller": {
+     "kv_request_id": "x3",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5710
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d",
+   "key": "k2"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": [
+    "d"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_new_request",
+   "inst": 0,
+   "ctx": "p",
+   "params": {
+    "remote_decoder": {
+     "kv_request_id": "x3"
+    }
+   }
+  },
+  {
+   "m": "prepare_store",
+   "inst": 0,
+   "ctx": "p",
+   "keys": [
+    "k1"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "inst": 0,
+   "ctx": "p",
+   "keys": [
+    "k1"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": [
+    "p"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 0,
+   "ctx": "p"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": []
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d",
+   "key": "k2"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "d",
+   "key": "k1"
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 1,
+   "ctx": "d"
+  }
+ ]
+}

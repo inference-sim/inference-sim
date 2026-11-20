@@ -1,0 +1,12 @@
+{
+  "name": "lora-cache-eviction-and-reload",
+  "config": {"max_loras": 2, "max_cpu_loras": 2},
+  "steps": [
+    {"adapters": ["a", "b"]},
+    {"adapters": ["c", "a"]},
+    {"adapters": ["b"]},
+    {"adapters": ["a", "c"]},
+    {"adapters": ["a"]},
+    {"adapters": ["d", "a"]}
+  ]
+}

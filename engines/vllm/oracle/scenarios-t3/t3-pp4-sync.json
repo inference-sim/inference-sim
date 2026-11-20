@@ -1,0 +1,153 @@
+{
+ "name": "t3-pp4-sync",
+ "description": "PP 4 without async scheduling: a batch queue of 4.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 12,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 128,
+  "enable_prefix_caching": false,
+  "scheduling_policy": "fcfs",
+  "pipeline_parallel_size": 4,
+  "async_scheduling": false,
+  "use_v2_model_runner": false
+ },
+ "requests": [
+  {
+   "id": "q0",
+   "arrival_step": 0,
+   "prompt": [
+    21133,
+    2932,
+    22254,
+    37875,
+    14660,
+    27107,
+    34625,
+    3814,
+    36455
+   ],
+   "output": [
+    8569,
+    37658,
+    18297,
+    30602,
+    2056
+   ],
+   "priority": 0
+  },
+  {
+   "id": "q1",
+   "arrival_step": 0,
+   "prompt": [
+    7698,
+    46172,
+    21017,
+    43133,
+    24341,
+    45459,
+    44718,
+    8938,
+    43398,
+    24341,
+    47259
+   ],
+   "output": [
+    7792,
+    23394,
+    12475,
+    42627,
+    32073
+   ],
+   "priority": 0
+  },
+  {
+   "id": "q2",
+   "arrival_step": 1,
+   "prompt": [
+    36650,
+    34011,
+    1668,
+    4753,
+    44755,
+    38021,
+    43680,
+    19517,
+    29394,
+    5501,
+    950,
+    18383,
+    3826
+   ],
+   "output": [
+    20625,
+    45552,
+    33494,
+    37000,
+    21896
+   ],
+   "priority": 0
+  },
+  {
+   "id": "q3",
+   "arrival_step": 1,
+   "prompt": [
+    43200,
+    8183,
+    45415,
+    32742,
+    5764,
+    18330,
+    25390,
+    45712,
+    19209,
+    8578,
+    38728,
+    9993,
+    22267,
+    41226,
+    6268
+   ],
+   "output": [
+    16428,
+    44479,
+    5836,
+    34275,
+    21794
+   ],
+   "priority": 0
+  },
+  {
+   "id": "q4",
+   "arrival_step": 2,
+   "prompt": [
+    9841,
+    39203,
+    7420,
+    15516,
+    12706,
+    13987,
+    22872,
+    5054,
+    44947,
+    19207,
+    3013,
+    43261,
+    40149,
+    16353,
+    49094,
+    25088,
+    28813
+   ],
+   "output": [
+    4010,
+    44027,
+    15847,
+    6993,
+    47138
+   ],
+   "priority": 0
+  }
+ ]
+}

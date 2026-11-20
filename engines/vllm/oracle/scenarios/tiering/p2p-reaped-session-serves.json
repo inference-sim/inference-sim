@@ -1,0 +1,183 @@
+{
+ "description": "Symmetric P2P: the producer's key is still being stored to its CPU tier, so the consumer's LookupMsg is parked HIT_PENDING under a synthetic request. The consumer then dies: the producer's session to it is reaped, and the synthetic request it still owed an on_request_finished is released through the parent at the producer's next serve.",
+ "instances": [
+  {
+   "spec": {
+    "name": "TieringOffloadingSpec",
+    "cpu_bytes_to_use": 65536,
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1,
+    "blocks_per_chunk": 1,
+    "extra": {
+     "tier_poll_interval_s": 0,
+     "secondary_tiers": [
+      {
+       "type": "p2p",
+       "host": "127.0.0.1",
+       "port": 5710
+      }
+     ]
+    }
+   }
+  },
+  {
+   "spec": {
+    "name": "TieringOffloadingSpec",
+    "cpu_bytes_to_use": 65536,
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1,
+    "blocks_per_chunk": 1,
+    "extra": {
+     "tier_poll_interval_s": 0,
+     "secondary_tiers": [
+      {
+       "type": "p2p",
+       "host": "127.0.0.1",
+       "port": 5711
+      }
+     ]
+    }
+   }
+  }
+ ],
+ "calls": [
+  {
+   "m": "on_new_request",
+   "inst": 0,
+   "ctx": "a"
+  },
+  {
+   "m": "prepare_store",
+   "inst": 0,
+   "ctx": "a",
+   "keys": [
+    "k1"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": [
+    "a"
+   ]
+  },
+  {
+   "m": "on_new_request",
+   "inst": 1,
+   "ctx": "c",
+   "params": {
+    "remote_kv_source": {
+     "kv_request_id": "t3",
+     "remote_host": "127.0.0.1",
+     "remote_port": 5710
+    }
+   }
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "c",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": [
+    "c"
+   ]
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 1
+  },
+  {
+   "m": "lookup",
+   "inst": 1,
+   "ctx": "c",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 1,
+   "new": []
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "down",
+   "tier": 1
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "poll_tiers",
+   "inst": 0
+  },
+  {
+   "m": "complete_store",
+   "inst": 0,
+   "ctx": "a",
+   "keys": [
+    "k1"
+   ]
+  },
+  {
+   "m": "on_request_finished",
+   "inst": 0,
+   "ctx": "a"
+  },
+  {
+   "m": "on_schedule_end",
+   "inst": 0,
+   "new": []
+  },
+  {
+   "m": "has_pending_work",
+   "inst": 0
+  }
+ ]
+}

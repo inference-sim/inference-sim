@@ -1,0 +1,20 @@
+blis-vllm
+Copyright 2026 The BLIS authors
+
+This product includes software derived from vLLM (https://github.com/vllm-project/vllm),
+Copyright contributors to the vLLM project, licensed under the Apache License, Version 2.0.
+
+The derived files are Go translations of vLLM's Python engine logic at the release named in
+each file's header (vLLM v0.32.0, commit 5df63a7203cdb9328d824a27b682e77c7b9928be, unless the
+file says otherwise). Each such file starts with:
+
+    // SPDX-License-Identifier: Apache-2.0
+    // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+    // Derived from vllm/<path> at vLLM <tag> (<commit>).
+
+so the upstream file and commit of every ported function can be found and diffed when vLLM
+moves. A file with no such header is original to this repository.
+
+This product also includes software moved from inference-sim
+(https://github.com/inference-sim/inference-sim), licensed under the Apache License,
+Version 2.0. A moved file records the inference-sim commit it was taken from.

@@ -1,0 +1,168 @@
+{
+ "name": "swa-only-window-hit",
+ "description": "A model whose every attention layer is one sliding window (window 8): one KV cache group, so vLLM looks a prefix hit up through SlidingWindowManager (UnitaryKVCacheCoordinator), which needs only the window's blocks. A 10-block pool makes s1 evict the shared prefix's early blocks, so s2's hit is the window's blocks with nulls below them, where a full-attention scan would stop at the first evicted block.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 10,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_groups": [
+   {
+    "kind": "sliding_window",
+    "sliding_window": 8
+   }
+  ]
+ },
+ "requests": [
+  {
+   "id": "s0",
+   "arrival_step": 0,
+   "prompt": [
+    45706,
+    47971,
+    2860,
+    7693,
+    4757,
+    42470,
+    5631,
+    10314,
+    12019,
+    14782,
+    937,
+    39817,
+    18228,
+    4242,
+    4305,
+    23707,
+    39160,
+    34339,
+    30501,
+    22442,
+    17201,
+    30450,
+    23507,
+    16388,
+    12227,
+    37186,
+    24376,
+    12567,
+    22915
+   ],
+   "output": [
+    21279,
+    17525,
+    50256
+   ]
+  },
+  {
+   "id": "s1",
+   "arrival_step": 6,
+   "prompt": [
+    21740,
+    6725,
+    43213,
+    16546,
+    37954,
+    29404,
+    41162,
+    6099,
+    18015,
+    27998,
+    21515,
+    8223,
+    10661,
+    1485,
+    11922,
+    6216,
+    28221,
+    8824
+   ],
+   "output": [
+    20710,
+    50256
+   ]
+  },
+  {
+   "id": "s2",
+   "arrival_step": 14,
+   "prompt": [
+    45706,
+    47971,
+    2860,
+    7693,
+    4757,
+    42470,
+    5631,
+    10314,
+    12019,
+    14782,
+    937,
+    39817,
+    18228,
+    4242,
+    4305,
+    23707,
+    39160,
+    34339,
+    30501,
+    22442,
+    17201,
+    30450,
+    23507,
+    16388,
+    31481,
+    8684,
+    38010,
+    17420,
+    44630,
+    36178
+   ],
+   "output": [
+    7488,
+    3247,
+    50256
+   ]
+  },
+  {
+   "id": "s3",
+   "arrival_step": 15,
+   "prompt": [
+    45706,
+    47971,
+    2860,
+    7693,
+    4757,
+    42470,
+    5631,
+    10314,
+    12019,
+    14782,
+    937,
+    39817,
+    15048,
+    25349,
+    19933,
+    22893,
+    36615,
+    2014,
+    16667,
+    30214,
+    2626,
+    8618,
+    38305,
+    3415,
+    34434,
+    11813
+   ],
+   "output": [
+    31285,
+    50256
+   ]
+  }
+ ],
+ "max_steps": 400
+}

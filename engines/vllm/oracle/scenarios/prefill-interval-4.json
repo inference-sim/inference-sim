@@ -1,0 +1,146 @@
+{
+ "name": "prefill-interval-4",
+ "description": "prefill_schedule_interval 4 under a 16-token budget: a long prompt prefills in chunks, a request that decodes holds later arrivals for four executed steps, and a running prefill chunk is deferred while a decode runs (vllm/v1/core/sched/scheduler.py:395-425, 770-790, 1612-1629@4ba787ec).",
+ "config": {
+  "max_num_seqs": 6,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 120,
+  "max_model_len": 64,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": false,
+  "scheduling_policy": "fcfs",
+  "scheduler_config": {
+   "prefill_schedule_interval": 4
+  }
+ },
+ "requests": [
+  {
+   "id": "p0",
+   "arrival_step": 0,
+   "prompt": [
+    6405,
+    14696,
+    14698,
+    10216,
+    16699,
+    8078,
+    16553,
+    17792
+   ],
+   "output": [
+    7015,
+    17550,
+    18286,
+    8735,
+    1104,
+    1462,
+    13158,
+    15030,
+    3269,
+    5748,
+    8610,
+    8624,
+    2387,
+    15314,
+    14329,
+    15478
+   ]
+  },
+  {
+   "id": "p1",
+   "arrival_step": 1,
+   "prompt": [
+    2116,
+    11778,
+    18699,
+    17303,
+    4794,
+    13073,
+    1761,
+    6072,
+    3898,
+    5091,
+    1640,
+    15848,
+    6278,
+    19088,
+    12236,
+    14151,
+    16882,
+    5951,
+    7124,
+    2216,
+    16399,
+    8696,
+    3445,
+    7467,
+    7834,
+    3324,
+    5013,
+    19354,
+    16608,
+    19315
+   ],
+   "output": [
+    13714,
+    7588,
+    12181,
+    5789,
+    18557,
+    14421,
+    10567,
+    12967
+   ]
+  },
+  {
+   "id": "p2",
+   "arrival_step": 10,
+   "prompt": [
+    15788,
+    17431,
+    13641,
+    11418,
+    16874,
+    13667,
+    9706,
+    1879,
+    4056,
+    6208
+   ],
+   "output": [
+    17253,
+    1092,
+    17106,
+    3297,
+    19036,
+    18110
+   ]
+  },
+  {
+   "id": "p3",
+   "arrival_step": 11,
+   "prompt": [
+    8275,
+    19727,
+    11441,
+    19234,
+    4693,
+    6920,
+    6573,
+    12410,
+    11891,
+    12357,
+    11047,
+    9053
+   ],
+   "output": [
+    4384,
+    6527,
+    3151,
+    6702,
+    15048
+   ]
+  }
+ ]
+}

@@ -1,0 +1,173 @@
+{
+  "_comment": "Edited by people; kernels/gen_kernel_impls.py reads it with vLLM's own MoE oracle and refuses a classification that disagrees with it. The moe.grouped_gemm rows of kernel_impls.json: the kernels vLLM v0.33.0 runs block-FP8 routed experts with, by Fp8MoeBackend member. 'seen' lists the builds AISimulate measured these kernels on, each hashed from its own source, so a coefficient fitted on them can be keyed to the build it ran (D5).",
+  "upstream": {
+    "tag": "v0.33.0",
+    "commit": "4ba787ec9959e566d3b587a796dff07673324da5"
+  },
+  "engine_modules": [
+    "vllm.model_executor.layers.fused_moe.fused_moe"
+  ],
+  "seen": {
+    "vllm-csrc": [
+      {
+        "version": "ced6857afa0ea7b2e3f0846a62e1394e90f15607",
+        "tag": "v0.30.0",
+        "seen_in": "AISimulate's vLLM 0.30.0 MoE sweep on h100 and h200 (ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18, systems/data/{h100_sxm,h200_sxm}/moe/vllm/0.30.0/collection_meta.yaml): image vllm/vllm-openai:v0.30.0@sha256:8a69ffad015f138d7170c4ddc429e230a3bc1c1719f67e14324749df200a4b90"
+      }
+    ],
+    "flashinfer": [
+      {
+        "version": "0.6.18.post1",
+        "seen_in": "AISimulate's vLLM 0.30.0 MoE sweep on h100 and h200 (ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18, systems/data/{h100_sxm,h200_sxm}/moe/vllm/0.30.0/collection_meta.yaml): image vllm/vllm-openai:v0.30.0@sha256:8a69ffad015f138d7170c4ddc429e230a3bc1c1719f67e14324749df200a4b90, whose vLLM pins flashinfer-python==0.6.18.post1 (requirements/cuda.txt:17@ced6857a)"
+      }
+    ]
+  },
+  "formats": [
+    {
+      "selector": {
+        "file": "vllm/model_executor/layers/fused_moe/oracle/fp8.py",
+        "enum": "Fp8MoeBackend",
+        "priorities": "_get_priority_backends",
+        "selection": "fp8 moe backend {backend}"
+      },
+      "backends": {
+        "TRITON": {
+          "status": "listed",
+          "experts": "vllm/model_executor/layers/fused_moe/experts/triton_moe.py",
+          "not_kernels": {
+            "silu_and_mul_per_block_quant": "the activation between the two grouped GEMMs, an elementwise pass",
+            "moe_sum": "the top-k reduction after the second grouped GEMM",
+            "_prepare_expert_assignment": "host-side routing bookkeeping",
+            "_weights_host_resident": "a residency predicate",
+            "invoke_fused_moe_wna16_triton_kernel": "the weight-only int path, not block FP8",
+            "try_get_optimal_moe_config": "picks the kernel's tile configuration from the configs/ tables, which the hash covers"
+          }
+        },
+        "FLASHINFER_CUTLASS": {
+          "status": "listed",
+          "experts": "vllm/model_executor/layers/fused_moe/experts/flashinfer_cutlass_moe.py",
+          "not_kernels": {
+            "has_flashinfer_cutlass_fused_moe": "an availability check"
+          }
+        },
+        "FLASHINFER_TRTLLM": {
+          "status": "gap",
+          "issue": "inference-sim/blis-substrate#150"
+        },
+        "DEEPGEMM": {
+          "status": "gap",
+          "issue": "inference-sim/blis-substrate#150"
+        },
+        "BATCHED_DEEPGEMM": {
+          "status": "gap",
+          "issue": "inference-sim/blis-substrate#150"
+        },
+        "MARLIN": {
+          "status": "gap",
+          "issue": "inference-sim/blis-substrate#150"
+        },
+        "HUMMING": {
+          "status": "gap",
+          "issue": "inference-sim/blis-substrate#150"
+        },
+        "BATCHED_TRITON": {
+          "status": "gap",
+          "issue": "inference-sim/blis-substrate#150"
+        },
+        "VLLM_CUTLASS": {
+          "status": "gap",
+          "issue": "inference-sim/blis-substrate#150"
+        },
+        "BATCHED_VLLM_CUTLASS": {
+          "status": "gap",
+          "issue": "inference-sim/blis-substrate#150"
+        },
+        "HPC": {
+          "status": "gap",
+          "issue": "inference-sim/blis-substrate#150"
+        },
+        "EMULATION": {
+          "status": "gap",
+          "issue": "inference-sim/blis-substrate#150"
+        },
+        "NONE": {
+          "status": "not_lowered",
+          "reason": "no MoE backend: the layer has no routed experts"
+        },
+        "AITER": {
+          "status": "not_cuda",
+          "cuda_gated": true,
+          "reason": "AMD's AITer kernels run on ROCm only"
+        },
+        "AITER_MXFP8": {
+          "status": "not_cuda",
+          "reason": "AMD's AITer MXFP8 kernels on gfx950 only"
+        },
+        "TRITON_MXFP8": {
+          "status": "not_cuda",
+          "reason": "a dot_scaled kernel that lowers to CDNA4 MX matrix cores"
+        },
+        "XPU": {
+          "status": "not_cuda",
+          "cuda_gated": true,
+          "reason": "Intel XPU kernels"
+        },
+        "CPU": {
+          "status": "not_cuda",
+          "cuda_gated": true,
+          "reason": "CPU kernels"
+        },
+        "CPU_W8A8": {
+          "status": "not_cuda",
+          "cuda_gated": true,
+          "reason": "CPU kernels with AMX-FP8"
+        }
+      },
+      "kernels": [
+        {
+          "backend": "TRITON",
+          "library": "vllm-csrc",
+          "variant": "fused_moe_kernel",
+          "call": "invoke_fused_moe_triton_kernel",
+          "archs": [
+            "sm_90a"
+          ],
+          "compiler": "triton",
+          "hash": {
+            "source": [
+              "vllm/model_executor/layers/fused_moe/fused_moe.py",
+              "vllm/model_executor/layers/fused_moe/configs/"
+            ],
+            "engine_source": [
+              "vllm/model_executor/layers/fused_moe/experts/triton_moe.py"
+            ]
+          },
+          "note": "vLLM's Triton fused grouped GEMM (fused_moe_kernel) with its launcher and the tile configurations it reads"
+        },
+        {
+          "backend": "FLASHINFER_CUTLASS",
+          "library": "flashinfer",
+          "variant": "cutlass_fused_moe",
+          "call": "flashinfer_cutlass_fused_moe",
+          "archs": [
+            "sm_90a"
+          ],
+          "compiler": "nvcc",
+          "hash": {
+            "source": [
+              "csrc/fused_moe/cutlass_backend/",
+              "csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels/",
+              "flashinfer/jit/fused_moe.py",
+              "flashinfer/fused_moe/core.py",
+              "3rdparty/cutlass"
+            ],
+            "engine_source": [
+              "vllm/model_executor/layers/fused_moe/experts/flashinfer_cutlass_moe.py"
+            ]
+          },
+          "note": "FlashInfer's CUTLASS fused MoE, JIT-built for SM90 from these sources and the CUTLASS it pins"
+        }
+      ]
+    }
+  ]
+}

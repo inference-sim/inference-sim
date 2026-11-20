@@ -1,0 +1,135 @@
+{
+ "name": "nixl-p-mtp-backoff",
+ "description": "Prefiller with a four-module MTP drafter (K=3): each remote-decode prompt is truncated by the backoff, 2 tokens, and its max_tokens set to 1 (_truncate_request_for_prefill, base_scheduler.py:405-438), so p1, which states no max_tokens and is assigned three tokens, stops at one; a prompt no longer than the backoff is left whole.",
+ "config": {
+  "max_num_seqs": 3,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "speculative": {
+   "method": "mtp",
+   "num_speculative_tokens": 3,
+   "draft": "ernie-mtp-4"
+  },
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_producer",
+   "kv_load_failure_policy": "fail",
+   "extra_config": {}
+  }
+ },
+ "requests": [
+  {
+   "id": "p0",
+   "arrival_step": 0,
+   "prompt": [
+    4334,
+    2926,
+    4799,
+    227,
+    1879,
+    246,
+    3188,
+    2988,
+    529,
+    3475,
+    2509,
+    2795,
+    4733,
+    4151,
+    627,
+    3751,
+    2678,
+    2774
+   ],
+   "output": [
+    2596
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 2
+  },
+  {
+   "id": "p1",
+   "arrival_step": 0,
+   "prompt": [
+    926,
+    4587,
+    4674,
+    4963,
+    4361,
+    1318,
+    4912,
+    707,
+    3733,
+    250,
+    2037,
+    4072,
+    3907
+   ],
+   "output": [
+    4264,
+    331,
+    851
+   ],
+   "remote_decode": true,
+   "send_delay": 1
+  },
+  {
+   "id": "p2",
+   "arrival_step": 1,
+   "prompt": [
+    4522,
+    4597
+   ],
+   "output": [
+    3628
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 1
+  },
+  {
+   "id": "l0",
+   "arrival_step": 1,
+   "prompt": [
+    4334,
+    2926,
+    4799,
+    227,
+    1879,
+    246,
+    3188,
+    2988,
+    529,
+    3475,
+    2509,
+    2795,
+    1086
+   ],
+   "output": [
+    3360,
+    1521,
+    2594,
+    2619,
+    4005,
+    1789
+   ],
+   "accepted": [
+    1,
+    0,
+    0,
+    2,
+    3,
+    3,
+    1,
+    2,
+    3,
+    1
+   ]
+  }
+ ]
+}

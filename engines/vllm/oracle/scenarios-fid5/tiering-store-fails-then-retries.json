@@ -1,0 +1,109 @@
+{
+ "description": "TieringOffloadingSpec with no secondary tiers: a store fails while another of the same request succeeds; the failed key's chunk is freed and the key misses, a retry reuses the freed slot, and the next store must evict. The tiering manager counts one complete_store for each prepare_store that stores anything (vllm/v1/kv_offload/tiering/manager.py:862-865 and 976-983@4ba787ec), as the connector completes each store job once, so the failed key is its own store. The connector's worker never reports a failed store in the oracle's scenarios.",
+ "spec": {
+  "name": "TieringOffloadingSpec",
+  "cpu_bytes_to_use": 49152,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "k1"
+   ]
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "k2",
+    "k3"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "get_stats"
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "k1"
+   ],
+   "success": false
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "k2",
+    "k3"
+   ],
+   "success": true
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k2"
+  },
+  {
+   "m": "get_load_source",
+   "ctx": "a",
+   "key": "k2"
+  },
+  {
+   "m": "get_stats"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "k1",
+    "k4"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "k1",
+    "k4"
+   ],
+   "success": true
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k4"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  },
+  {
+   "m": "has_pending_work"
+  },
+  {
+   "m": "take_events"
+  },
+  {
+   "m": "get_stats"
+  }
+ ]
+}

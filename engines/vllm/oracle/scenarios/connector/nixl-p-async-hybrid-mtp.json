@@ -1,0 +1,181 @@
+{
+ "name": "nixl-p-async-hybrid-mtp",
+ "description": "Prefiller with full attention + a sliding window (8) and a four-module MTP drafter (K=3) under async scheduling: the backoff truncates each remote-decode prompt by 2, held blocks per group until read, a preemption drops its in-flight output.",
+ "config": {
+  "max_num_seqs": 3,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "async_scheduling": true,
+  "num_blocks": 40,
+  "kv_groups": [
+   {
+    "kind": "full"
+   },
+   {
+    "kind": "sliding_window",
+    "sliding_window": 8
+   }
+  ],
+  "speculative": {
+   "method": "mtp",
+   "num_speculative_tokens": 3,
+   "draft": "ernie-mtp-4"
+  },
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_producer",
+   "kv_load_failure_policy": "fail",
+   "extra_config": {}
+  }
+ },
+ "requests": [
+  {
+   "id": "p0",
+   "arrival_step": 0,
+   "prompt": [
+    2151,
+    3370,
+    2101,
+    106,
+    1073,
+    3875,
+    3088,
+    2733,
+    414,
+    4863,
+    517,
+    1079,
+    3350,
+    2078,
+    4913,
+    1996,
+    468,
+    3397
+   ],
+   "output": [
+    2119
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 2
+  },
+  {
+   "id": "p1",
+   "arrival_step": 1,
+   "prompt": [
+    404,
+    730,
+    4995,
+    174,
+    2594,
+    2273,
+    3245,
+    4178,
+    716,
+    3715,
+    4990,
+    1253,
+    940,
+    247,
+    4371,
+    3409,
+    2118
+   ],
+   "output": [
+    770,
+    4405,
+    4053
+   ],
+   "remote_decode": true,
+   "send_delay": 1
+  },
+  {
+   "id": "l0",
+   "arrival_step": 0,
+   "prompt": [
+    2151,
+    3370,
+    2101,
+    106,
+    1073,
+    3875,
+    3088,
+    2733,
+    2383,
+    4769,
+    1338
+   ],
+   "output": [
+    2352,
+    2649,
+    872,
+    2413,
+    2745,
+    3297,
+    1467,
+    3657,
+    846,
+    589,
+    1758,
+    3986
+   ],
+   "accepted": [
+    1,
+    1,
+    3,
+    2,
+    2,
+    1,
+    3,
+    2,
+    0,
+    3,
+    1,
+    0
+   ]
+  },
+  {
+   "id": "l1",
+   "arrival_step": 2,
+   "prompt": [
+    1387,
+    3055,
+    948,
+    4956,
+    1676,
+    4343,
+    181,
+    3085,
+    538,
+    1801,
+    735
+   ],
+   "output": [
+    2912,
+    4809,
+    3701,
+    3991,
+    4310,
+    3675,
+    1940,
+    1627,
+    1091
+   ],
+   "accepted": [
+    1,
+    3,
+    1,
+    1,
+    0,
+    3,
+    1,
+    2,
+    1,
+    0
+   ]
+  }
+ ]
+}

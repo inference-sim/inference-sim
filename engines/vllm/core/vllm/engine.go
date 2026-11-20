@@ -1,0 +1,1276 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+// Derived from vllm/v1/engine/core.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
+// Also vllm/v1/core/sched/scheduler.py (add_request, finish_requests), vllm/v1/engine/input_processor.py
+// (the prompt-length check) and vllm/v1/metrics/loggers.py (the exported families).
+
+// Package vllm is vLLM v0.32.0's engine behind blis-schemas' engine.Engine: core/sched's
+// Scheduler, core/engine's batch queue and core/metrics' stat logger, driven by a simulator
+// through the engine-neutral contract instead of by vLLM's EngineCore loop.
+//
+// The mapping is EngineCore's, split at the points where vLLM blocks on the GPU:
+//
+//   - Schedule is schedule() plus the batch enqueue of step_with_batch_queue
+//     (vllm/v1/engine/core.py:698-760@5df63a72): it runs the scheduler and returns the batch,
+//     which stays in flight until Complete names it.
+//   - Complete is the dequeue and update_from_output (:762-783), given the tokens the batch
+//     sampled. The simulator supplies the step's outcome; the engine samples the request's
+//     assigned output, one token per sampling request plus the drafts the outcome accepted,
+//     the last assigned token as the end-of-sequence token, as the shared GPU mock does
+//     (oracle/mocks.json).
+//   - Finish is finish_requests(ids, FINISHED_ABORTED) (scheduler.py:2649-2712@5df63a72).
+//
+// A scheduling setting this engine does not model is refused when the engine is built
+// (Factory), never ignored; settings that change only cost are the Pricer's: see config.go.
+//
+// Beyond engine.Engine, *Engine and *DPGroup have two optional methods a host reads by type
+// assertion: Assumptions() []string (the pricer's disclosed assumptions) and
+// RecordSelected(*load.Data) (the pricer registers its coefficients with the run's Data).
+package vllm
+
+import (
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"sort"
+	"strconv"
+
+	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/blis-substrate/load"
+
+	core "github.com/inference-sim/blis-vllm/core/engine"
+	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/blis-vllm/core/lora"
+	"github.com/inference-sim/blis-vllm/core/metrics"
+	"github.com/inference-sim/blis-vllm/core/placement"
+	"github.com/inference-sim/blis-vllm/core/sched"
+)
+
+// eosToken is the token the engine samples for a request's last assigned output token, which
+// stops it as vLLM's check_stop does (vllm/v1/core/sched/utils.py:104-107@4ba787ec). It is the
+// shared GPU mock's (tests/v1/core/utils.py:49@4ba787ec) and outside every prompt's
+// vocabulary an engine.Request can carry, so a prompt token can never stop a request.
+const eosToken = int64(1) << 40
+
+// idlePollUs is how long vLLM's engine loop waits before stepping again after a step that ran
+// no model while the scheduler still has requests: time.sleep(0.001)
+// (vllm/v1/engine/core.py:1603-1619@5df63a72). A schedule that preempted can run nothing and
+// still leave work its next schedule admits, so the engine asks to be stepped then.
+const idlePollUs = engine.Duration(1000)
+
+// Pricer prices a batch's forward pass. A simulator supplies the latency kernel's pricing; a
+// diff test supplies fixed durations (#2021 B8).
+type Pricer interface {
+	StepTime(b engine.Batch) engine.Duration
+}
+
+// VerifyingPricer is a Pricer that also says how many of each request's scheduled drafts the
+// verifier runs, for a pool whose runner trims them: DSpark adaptive verification, where vLLM's
+// scheduler still budgets 1 + K tokens a decode and the V2 runner verifies only a
+// confidence-chosen budget of the drafts (get_num_tokens and reallocate_drafts,
+// vllm/v1/worker/gpu/spec_decode/adaptive_verification.py:282-350,392-448@5df63a72).
+// VerifiedDrafts answers for the batch StepTime prices: one entry for each of b.Reqs, or nil
+// when every scheduled draft is verified. The engine caps each request's accepted drafts at its
+// entry (apply).
+type VerifyingPricer interface {
+	Pricer
+	VerifiedDrafts(b engine.Batch) []int
+}
+
+// FixedPricer prices every step at the same duration, for tests and for a behavioural run that
+// holds step time fixed.
+type FixedPricer engine.Duration
+
+// StepTime implements Pricer.
+func (f FixedPricer) StepTime(engine.Batch) engine.Duration { return max(engine.Duration(f), 1) }
+
+// Engine is one vLLM v0.32.0 engine instance.
+type Engine struct {
+	s       *sched.Scheduler
+	core    *core.Core
+	pricer  Pricer
+	metrics *metrics.Model
+
+	reqs map[string]*reqState
+	// hashSeed is the deployment's PYTHONHASHSEED (nil: unset), the root of every request's
+	// block-hash chain.
+	hashSeed *string
+	// servesRender is whether the server answers the router's render calls (ServesRender).
+	servesRender bool
+	// aborted are the requests Finish aborted, or that finished, while a batch in flight scheduled
+	// them: their entries in reqs go once no batch in flight does.
+	aborted map[string]bool
+	// queued reports whether a batch in flight scheduled a request: the adapter's own batches,
+	// or a data-parallel group's iterations when the engine is one of its ranks (DPGroup).
+	queued  func(id string) bool
+	pending []pendingBatch
+	nextID  engine.BatchID
+	// sched holds each in-flight batch's schedule decisions until its metrics step.
+	sched map[int]scheduled
+	// series is the server time series, nil when off (EnableServerSeries).
+	series *serverSeries
+	// adapters numbers LoRA adapters in order of first use (lora_int_id).
+	adapters map[string]int
+	// adapterCache is the worker's LoRA adapter cache (max_cpu_loras, core/lora), nil when LoRA is
+	// off. Each batch that runs makes its adapters resident in it before the step, as the model
+	// runner does (set_active_loras), and adapterEvents holds what that did for the batch most
+	// recently scheduled (AdapterEvents).
+	adapterCache  *lora.Cache
+	adapterEvents []lora.Event
+	// maxLoRAs is max_loras, 0 when LoRA is off; specTokens is num_speculative_tokens.
+	maxLoRAs, specTokens int
+	// async is async scheduling: a decode's drafts are the AsyncScheduler's placeholders, which
+	// the worker fills with its own proposals (async_scheduler.py:25-58@5df63a72).
+	async bool
+	// pp is pipeline_parallel_size: how many stages a batch runs through (StageTimes).
+	pp int
+	// kvCapacity is the KV cache size the engine core logs at start-up (KVCacheCapacity).
+	kvCapacity kv.Capacity
+	// idleWake is when the engine next polls after an empty schedule that left requests, 0
+	// when none is due.
+	idleWake engine.Time
+	// blocked is set while vLLM's busy loop, with a batch queue, would be blocked on the oldest
+	// queued batch's output: no new batch forms until the simulator completes it.
+	blocked bool
+	// queuedEmpty are the IDs of queued schedules that ran no tokens, oldest first, whose outputs
+	// a blocked step applies before the batch it waits on (core/engine's queue order).
+	queuedEmpty []int
+	// gpu is the sampled tokens of the batch being completed, which Core's GPU interface asks
+	// for once per batch.
+	gpu batchOutput
+	// pd is the engine's P/D connector side, nil when it runs none (connector.go).
+	pd *pd
+	// off is the engine's KV offload side, nil when it runs none (offload.go).
+	off *offload
+	// plan is the PoolPlan the engine's transfers are priced against, and at the node and rack its
+	// workers sit on (Plan); both are zero for a pool that states no placement.
+	plan plan.PoolPlan
+	at   plan.Endpoint
+	// frontend and dp are the API-server settings and the ranks behind them that Plan states as the
+	// admission queue (frontend.go).
+	frontend Frontend
+	dp       int
+	// verified are, for each in-flight batch the pricer trims (VerifyingPricer), by core
+	// batch ID, how many drafts each of its requests had verified; apply caps their acceptance
+	// at it and drops the entry.
+	verified map[int]map[string]int
+	// emptyFinished are requests a schedule that ran no tokens finished (a failed load under
+	// kv_load_failure_policy "fail": update_from_output finishes it as an error,
+	// scheduler.py:2306-2325@5df63a72), not yet reported: the next Batch's Finished reports them.
+	emptyFinished []sched.Finished
+}
+
+// reqState is what the engine keeps of a request beside the scheduler's own record.
+type reqState struct {
+	req       engine.Request
+	maxTokens int
+	sampled   int  // assigned output tokens sampled so far
+	finished  bool // the scheduler or Finish ended it
+	// preemptions and emitted are what the finish record reports.
+	preemptions int
+	emitted     int
+	// lookup is the request's last admission lookup, which its batch reports once it runs.
+	lookup lookupInfo
+}
+
+// pendingBatch is one in-flight batch: the contract's ID and core/engine's batch.
+type pendingBatch struct {
+	id engine.BatchID
+	b  core.Batch
+}
+
+// batchOutput is the GPU's answer for the batch being completed.
+type batchOutput struct {
+	tokens map[string][]int64
+	// pd is the engine's connector side, whose pending outcome the worker reports with each
+	// applied output (Transfers); nil when the engine runs none.
+	pd *pd
+	// off is the engine's KV offload side, whose completed jobs the workers report likewise.
+	off *offload
+}
+
+// Output implements core/engine.GPU.
+func (g *batchOutput) Output(core.Batch) map[string][]int64 { return g.tokens }
+
+// newEngine builds an engine from resolved settings.
+func newEngine(st settings, pricer Pricer) (*Engine, error) {
+	if pricer == nil {
+		return nil, fmt.Errorf("vllm: a pricer is required: the latency kernel's, or fixed durations")
+	}
+	// A P/D connector or a KV offload is the engine's kv_transfer_config, which keeps the legacy
+	// block hashes (vllm/config/vllm.py:688-690@4ba787ec).
+	st.sched.KVTransfer = st.connector != nil || st.offload != nil
+	s, err := sched.New(st.sched)
+	if err != nil {
+		return nil, fmt.Errorf("vllm: %w", err)
+	}
+	e := &Engine{
+		frontend: DefaultFrontend(), dp: 1,
+		s: s, pricer: pricer, reqs: map[string]*reqState{}, aborted: map[string]bool{},
+		metrics:  metrics.New(histogramBounds(st.sched.MaxModelLen)),
+		maxLoRAs: st.sched.MaxLoRAs, specTokens: st.sched.Spec.NumTokens, async: st.sched.Async,
+		pp: max(st.sched.DecodeStagger, 1), hashSeed: st.hashSeed, servesRender: st.servesRender, kvCapacity: st.kvCapacity,
+	}
+	if st.maxCPULoRAs > 0 {
+		if e.adapterCache, err = lora.New(st.sched.MaxLoRAs, st.maxCPULoRAs); err != nil {
+			return nil, fmt.Errorf("vllm: %w", err)
+		}
+	}
+	if st.sched.Spec.NumTokens > 0 {
+		// A pool that speculates registers the spec_decode counters (SpecDecodingProm); one that
+		// does not registers none.
+		e.metrics.WithSpeculation(st.sched.Spec.NumTokens)
+	}
+	e.core = &core.Core{Sched: s, QueueSize: st.queueSize, GPU: &e.gpu}
+	// A pool that can start a transfer states each one against its placement (engine.Transfer.Move) and
+	// is priced against the plan built from it, so it must say where it sits.
+	if (st.connector != nil || st.offload != nil) && st.placement == nil {
+		return nil, fmt.Errorf("vllm: a pool with kv_transfer or kv_offload starts KV transfers and must state its " +
+			"placement (the chip, network, layout and node): the transfers are priced against it (engine.Planned)")
+	}
+	if st.placement != nil {
+		e.at = st.placement.Endpoint()
+		e.plan = st.placement.Plan(offloadTiers(st.offload))
+	}
+	if err := e.buildConnectors(s, st); err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+// Plan implements engine.Planned: the PoolPlan the engine's transfers are priced against, the same on
+// every call. It states the pool's placement and its KV tiers (cpu_dram when kv_offload is configured);
+// the lowered layers, KV groups, graphs and memory breakdown are the cost model's resolution, which is not
+// built here (https://github.com/inference-sim/blis-latency-kernel/issues/84), so a pool that states no placement has the empty plan and starts
+// no transfer.
+func (e *Engine) Plan() plan.PoolPlan {
+	p := e.plan
+	p.Tiers = append([]plan.KVTier(nil), p.Tiers...)
+	p.Host.Admission = e.frontend.queue(e.dp)
+	return p
+}
+
+var _ engine.Planned = (*Engine)(nil)
+
+// SetPlacement states where the engine sits, replacing the placement it was built with: the host that builds
+// one engine for each instance states the instance's node (placement.Placeable). The KV tiers are the engine's
+// own and stay. It is refused once a transfer has started, because the transfers started so far were stated
+// against the old place, and a refused placement leaves the engine as it was.
+func (e *Engine) SetPlacement(p placement.Placement) error {
+	if err := p.Validate(); err != nil {
+		return fmt.Errorf("vllm: placement: %w", err)
+	}
+	if e.startedTransfers() {
+		return fmt.Errorf("vllm: placement: the engine has started transfers against its old place")
+	}
+	e.at = p.Endpoint()
+	e.plan = p.Plan(e.plan.Tiers)
+	if e.pd != nil {
+		e.pd.at = e.at
+	}
+	if e.off != nil {
+		e.off.at = e.at
+	}
+	return nil
+}
+
+// startedTransfers reports whether the engine has stated a transfer against its place.
+func (e *Engine) startedTransfers() bool {
+	return (e.pd != nil && *e.pd.next > 0) || (e.off != nil && *e.off.next > 0)
+}
+
+var _ placement.Placeable = (*Engine)(nil)
+
+// PlaceAt implements engine.Placeable, the host's one way to say where an instance runs: the engine takes the
+// node and rack and states its transfers' own end there. The pool's chip, network and layout are the engine's
+// own (its plan), so the endpoint is all the host gives; a node the pool lacks, or a placement after a
+// transfer has started, is refused and leaves the engine as it was. A pool that states no placement and starts
+// no transfer has no place to give: it takes the first node and refuses any other, for it would have to
+// invent the chip and the layout the endpoint is in.
+func (e *Engine) PlaceAt(at plan.Endpoint) error {
+	if e.plan.Hardware == "" {
+		if at != (plan.Endpoint{}) {
+			return fmt.Errorf("vllm: the pool states no placement, so it has no node %d rack %d to be placed at", at.Node, at.Rack)
+		}
+		return nil
+	}
+	return e.SetPlacement(e.placementOf().At(at.Node, at.Rack))
+}
+
+// placementOf is the engine's pool placement as its plan states it: the chip, the network and the layout. The
+// endpoint of the engine itself is not part of it (Placement.At states that).
+func (e *Engine) placementOf() placement.Placement {
+	l := e.plan.Layout
+	return placement.Placement{Hardware: e.plan.Hardware, Fabric: e.plan.Fabric, Tensor: l.Tensor, Pipeline: l.Pipeline,
+		Data: l.Data, Expert: l.Expert, Context: l.Context, RanksPerNode: l.RanksPerNode, Nodes: l.Nodes}
+}
+
+var _ engine.Placeable = (*Engine)(nil)
+
+// histogramBounds are the bucket bounds vLLM v0.32.0 registers for the request-token,
+// iteration-token, n and preemption histograms (vllm/v1/metrics/buckets.py:107-128, 172-240@4ba787ec).
+func histogramBounds(maxModelLen int) []metrics.Bucketed {
+	tokens := build125(maxModelLen)
+	out := []metrics.Bucketed{
+		{Family: "vllm:iteration_tokens_total", Bounds: []float64{1, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384}},
+		{Family: "vllm:request_params_n", Bounds: []float64{1, 2, 5, 10, 20}},
+		{Family: "vllm:request_num_preemptions", Bounds: []float64{1, 2, 3, 4, 5, 10, 20}},
+	}
+	for _, name := range []string{"vllm:request_prompt_tokens", "vllm:request_generation_tokens",
+		"vllm:request_max_num_generation_tokens", "vllm:request_params_max_tokens",
+		"vllm:request_prefill_kv_computed_tokens"} {
+		out = append(out, metrics.Bucketed{Family: name, Bounds: tokens})
+	}
+	return out
+}
+
+// build125 is build_1_2_5_buckets (vllm/v1/metrics/buckets.py:172-203@4ba787ec).
+func build125(maxValue int) []float64 {
+	var out []float64
+	for scale := 1; ; scale *= 10 {
+		for _, m := range []int{1, 2, 5} {
+			if m*scale > maxValue {
+				return out
+			}
+			out = append(out, float64(m*scale))
+		}
+	}
+}
+
+// Add implements engine.Engine: add_request, after the input processor's checks. It refuses a
+// request that cannot exist first, with the error of engine.Request.Validate (an adapter path
+// and no adapter name), as the contract's Add requires.
+func (e *Engine) Add(r engine.Request, now engine.Time) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
+	if p := e.off.peer(); p != nil {
+		p.advance(now)
+		defer p.arm()
+	}
+	if _, dup := e.reqs[r.ID]; dup {
+		return fmt.Errorf("vllm: request %s added twice", r.ID)
+	}
+	maxLen := e.maxModelLen()
+	// The input processor refuses an empty prompt, and one that leaves no room for an output
+	// token (vllm/v1/engine/input_processor.py:565-602@4ba787ec).
+	if len(r.Prompt) == 0 {
+		return fmt.Errorf("vllm: request %s: the prompt cannot be empty", r.ID)
+	}
+	if len(r.Prompt) >= maxLen {
+		return fmt.Errorf("vllm: request %s: the prompt (length %d) plus at least one output token is longer "+
+			"than the maximum model length of %d", r.ID, len(r.Prompt), maxLen)
+	}
+	if r.RemoteDecode {
+		// A P/D proxy sends the prefill leg with max_tokens 1 (vLLM's toy_proxy_server.py:167-169,
+		// llm-d's CapSingleToken): the prefiller samples one token and the decoder generates the
+		// rest. The simulator assigns the leg that token (engine.Request.Output's first).
+		// Its finish is the cap's (length), unless the assigned output is that one token.
+		r.MaxOutputTokens = 1
+	}
+	if len(r.Output) == 0 {
+		return fmt.Errorf("vllm: request %s has no assigned output: a generating request samples at least one token", r.ID)
+	}
+	// An unset max_tokens generates up to max_model_len (input_processor.py:476-480@4ba787ec).
+	maxTokens := r.MaxOutputTokens
+	if maxTokens <= 0 {
+		maxTokens = maxLen - len(r.Prompt)
+	}
+	prompt := make([]int64, len(r.Prompt))
+	for i, t := range r.Prompt {
+		prompt[i] = int64(t)
+	}
+	sr := &sched.Request{ID: r.ID, Priority: r.Priority, ArrivalTime: float64(r.ArrivalTime) / 1e6,
+		Prompt: prompt, MaxTokens: maxTokens, EOS: eosToken}
+	sr.Keys.Seed = e.hashSeed
+	if r.CacheSalt != "" {
+		sr.Keys.CacheSalt = r.CacheSalt
+	}
+	tp, err := e.pd.transferParams(r, e.s.BlockSize())
+	if err != nil {
+		return err
+	}
+	sr.Transfer = tp
+	params, err := e.off.requestParams(r)
+	if err != nil {
+		return err
+	}
+	if r.Adapter != "" {
+		if e.maxLoRAs == 0 {
+			// The input processor refuses an adapter when LoRA is off
+			// (vllm/v1/engine/input_processor.py:278-286@4ba787ec).
+			return fmt.Errorf("vllm: request %s names adapter %q but LoRA is not enabled (max_loras unset)", r.ID, r.Adapter)
+		}
+		// The LoRA block key keys the hash on the adapter's name and path (loraExtraKey).
+		sr.LoRA = e.loraID(r.Adapter)
+		sr.LoRAName = r.Adapter
+		sr.Keys.Extra = loraExtraKey(r.Adapter, r.AdapterPath)
+	}
+	e.off.setParams(r.ID, params)
+	if err := e.s.Add(sr); err != nil {
+		e.off.setParams(r.ID, nil)
+		return fmt.Errorf("vllm: %w", err)
+	}
+	e.reqs[r.ID] = &reqState{req: r, maxTokens: maxTokens}
+	return nil
+}
+
+// loraExtraKey is the LoRA component of a block's hash key: ("lora", lora_name, lora_path), what
+// _gen_lora_extra_hash_keys returns (vllm/v1/core/kv_cache_utils.py:590-607@4ba787ec, the key added
+// to a block's extras at :658). vLLM keys on the name and the path, not on lora_int_id, so
+// re-pointing a name at another adapter does not hit the blocks computed with the first.
+//
+// A LoRARequest always has a path (vllm/lora/request.py:41-42@4ba787ec). An engine.Request from a
+// host that supplies none gets the name in its place: which blocks hit is then unchanged (the key
+// is per adapter either way), but the hash a KV event publishes differs from vLLM's, and
+// docs/feature-matrix.md ("KV events") says so for that case.
+func loraExtraKey(name, path string) []kv.ExtraKey {
+	if path == "" {
+		path = name
+	}
+	return []kv.ExtraKey{{"lora", name, path}}
+}
+
+// loraID is a stable positive lora_int_id per adapter name, in order of first use
+// (vllm/lora/request.py:25, 38-39@4ba787ec requires one above zero).
+func (e *Engine) loraID(name string) int {
+	if e.adapters == nil {
+		e.adapters = map[string]int{}
+	}
+	if id, ok := e.adapters[name]; ok {
+		return id
+	}
+	e.adapters[name] = len(e.adapters) + 1
+	return e.adapters[name]
+}
+
+func (e *Engine) maxModelLen() int {
+	// The scheduler refuses a request past it; the engine needs it for the input checks.
+	return e.s.MaxModelLen()
+}
+
+// Schedule implements engine.Engine.
+//
+// With one batch in flight it is schedule() of EngineCore.step (vllm/v1/engine/core.py:667-697
+// @4ba787ec), and the step completes when the simulator completes its batch.
+//
+// With a batch queue (max_concurrent_batches > 1: async scheduling or PP) it is
+// step_with_batch_queue's first half (core.py:708-770@4ba787ec), run only where vLLM's busy loop
+// would run it. That loop schedules a batch, queues it, and returns without blocking unless the
+// queue is full or nothing more can be scheduled (:764-769). A step that would block waits on
+// the oldest batch's output, and no new batch forms until that batch completes (:770-793). So
+// Schedule returns an empty batch, scheduling nothing, while a step is blocked: the simulator's
+// next Complete ends that step, and its following Schedule call is the loop's next step.
+func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
+	e.off.tick(now)
+	if p := e.off.peer(); p != nil {
+		// The p2p tier's poll thread runs a round when its interval has passed (offloadtiers_p2p.go).
+		p.advance(now)
+		defer p.arm()
+		p.round()
+	}
+	b, err := e.schedule(now)
+	if err == nil {
+		// A WRITE a round started is reported by the first schedule after it, whatever that
+		// schedule ran; a transfer already reported is not reported again.
+		if e.off.peer() != nil {
+			b.TransfersStarted = append(b.TransfersStarted, e.off.peerTransfers()...)
+		}
+		// Requests this decision ended without running them (Batch.Finished): a failed load under
+		// kv_load_failure_policy "fail", finished in update_from_output of a step that ran nothing.
+		b.Finished = append(b.Finished, e.takeEmptyFinished()...)
+	}
+	return b, err
+}
+
+func (e *Engine) schedule(now engine.Time) (engine.Batch, error) {
+	if len(e.pending) >= e.InFlightLimit() {
+		// The contract's capacity is the batches in flight: an empty schedule holds a slot of
+		// vLLM's queue but no forward pass, and is drained before the next batch is completed.
+		return engine.Batch{}, engine.ErrNoCapacity
+	}
+	if e.blocked || e.core.InFlight() >= e.core.QueueSize {
+		// vLLM's loop is blocked on the oldest queued batch, or its queue is full of empty
+		// schedules waiting behind one: no new batch forms until a Complete.
+		return engine.Batch{}, nil
+	}
+	if e.core.QueueSize > 1 {
+		// Each call is one loop step, so a step with nothing to schedule still takes the oldest
+		// queued batch: an empty schedule's output is applied, or the loop blocks on a batch in
+		// flight (core.py:760-766).
+		return e.scheduleQueued(now)
+	}
+	if !e.s.HasRequests() {
+		return engine.Batch{}, nil
+	}
+	cb := e.core.Schedule()
+	return e.admit(cb, now)
+}
+
+// scheduleQueued is one step_with_batch_queue (vllm/v1/engine/core.py:708-820@4ba787ec) up to the
+// point where it waits on a GPU result. The step schedules a batch when the scheduler has
+// requests and queues it. When the queue is then full, or nothing more can be scheduled, it pops
+// the oldest queued batch and waits for that batch's output (:764-776). A schedule that ran no
+// tokens has no forward pass to wait for, so its output is applied at once and the step ends.
+// A batch in flight is waited on: the engine is blocked until the simulator completes it.
+func (e *Engine) scheduleQueued(now engine.Time) (engine.Batch, error) {
+	res, block := e.core.StepBegin()
+	var b engine.Batch
+	executed := false
+	if res.Scheduled != nil {
+		cb := *res.Scheduled
+		var err error
+		if b, err = e.batchOf(cb); err != nil {
+			return engine.Batch{}, err
+		}
+		e.recordSchedule(cb)
+		executed = core.Executed(cb)
+		if executed {
+			e.nextID++
+			b.ID = e.nextID
+			e.pending = append(e.pending, pendingBatch{id: b.ID, b: cb})
+		} else {
+			// It holds a queue slot (vLLM queues its future), but it is not in flight through the
+			// contract: there is nothing to price.
+			e.queuedEmpty = append(e.queuedEmpty, cb.ID)
+			b.ID = 0
+		}
+	}
+	if block {
+		if oldest, ok := e.core.Oldest(); ok && len(e.queuedEmpty) > 0 && oldest.ID == e.queuedEmpty[0] {
+			e.drainEmpty(now)
+		} else {
+			e.blocked = true
+		}
+	}
+	e.idleWake = 0
+	if !executed && e.polls() && len(e.pending) == 0 {
+		// A step that ran no model sleeps 1 ms before the loop steps again
+		// (vllm/v1/engine/core.py:1688-1693@4ba787ec).
+		e.idleWake = now + idlePollUs
+	}
+	return b, nil
+}
+
+// drainEmpty applies the outputs of queued schedules that ran no tokens, oldest first, while the
+// oldest queued batch is one: vLLM's step pops them in turn, each at once.
+func (e *Engine) drainEmpty(at engine.Time) {
+	for len(e.queuedEmpty) > 0 {
+		oldest, ok := e.core.Oldest()
+		if !ok || oldest.ID != e.queuedEmpty[0] {
+			return
+		}
+		e.queuedEmpty = e.queuedEmpty[1:]
+		res := e.core.StepEnd(core.StepResult{})
+		e.emptyFinished = append(e.emptyFinished, res.Finished...)
+		e.finishStep(*res.Processed, nil, nil, res.Finished, at)
+	}
+}
+
+// admit turns one scheduled batch into the contract's, and keeps it in flight if it runs tokens.
+func (e *Engine) admit(cb core.Batch, now engine.Time) (engine.Batch, error) {
+	b, err := e.batchOf(cb)
+	if err != nil {
+		return b, err
+	}
+	e.recordSchedule(cb)
+	if b.Empty() {
+		// A batch that runs nothing is not in flight (the contract), and vLLM's step() makes no
+		// output for it: update_from_output with nothing scheduled changes no request.
+		fins := e.core.Drop(cb)
+		e.emptyFinished = append(e.emptyFinished, fins...)
+		e.finishStep(cb, nil, nil, fins, now)
+		e.idleWake = 0
+		if e.polls() && len(e.pending) == 0 {
+			e.idleWake = now + idlePollUs
+		}
+		return b, nil
+	}
+	e.idleWake = 0
+	e.nextID++
+	b.ID = e.nextID
+	e.pending = append(e.pending, pendingBatch{id: b.ID, b: cb})
+	return b, nil
+}
+
+// batchAdapters is the LoRA adapters of cb's requests, in the batch's order, each request's once
+// for the base model's zero left out.
+func (e *Engine) batchAdapters(cb core.Batch) []int {
+	var out []int
+	for _, id := range cb.Out.Order {
+		if a := e.s.Request(id).LoRA; a > 0 {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// AdapterEvents is what the worker's adapter cache did to run the batch most recently scheduled:
+// each adapter it loaded from storage because the CPU cache (max_cpu_loras) did not hold it, the
+// one it evicted for it, and the GPU slots it filled and freed, in vLLM's order. A host reads it
+// right after Schedule returns, and a cost model prices the loads. It is nil for a batch with no
+// adapter work and on an engine without LoRA.
+func (e *Engine) AdapterEvents() []lora.Event { return e.adapterEvents }
+
+// takeEmptyFinished reports the requests schedules that ran nothing have finished since the last
+// batch returned: their finish records, which go in that batch's Finished, and their entries.
+func (e *Engine) takeEmptyFinished() []engine.Finished {
+	var out []engine.Finished
+	for _, f := range e.emptyFinished {
+		why := engine.FinishStop
+		switch f.Status {
+		case sched.FinishedLength:
+			why = engine.FinishLength
+		case sched.FinishedError:
+			why = engine.FinishError
+		}
+		out = append(out, engine.Finished{ID: f.ID, Reason: why, OutputTokens: f.Output})
+		if e.inFlight(f.ID) {
+			e.aborted[f.ID] = true
+		} else {
+			delete(e.reqs, f.ID)
+		}
+	}
+	e.emptyFinished = nil
+	return out
+}
+
+// batchOf is a scheduled batch in the contract's terms.
+func (e *Engine) batchOf(cb core.Batch) (engine.Batch, error) {
+	b := engine.Batch{}
+	e.noteLookups(cb)
+	for _, id := range cb.Out.Order {
+		r := e.s.Request(id)
+		n := cb.Out.Scheduled[id]
+		computed := r.NumComputed - n
+		sc := engine.Scheduled{ID: id, Tokens: n, Computed: computed, PromptLen: len(r.Prompt),
+			Drafts: len(cb.Out.SpecDecode[id])}
+		if st := e.reqs[id]; st != nil && st.lookup.set && !st.lookup.reported {
+			// A lookup vLLM's prefix-cache stats count: at the request's admission with no
+			// computed tokens, when prefix caching is on (record_prefix_cache_stats,
+			// vllm/v1/core/sched/scheduler.py:1508-1511 and kv_cache_manager.py:251-264@4ba787ec).
+			// A request that waited for an asynchronous load reports it in the batch that first
+			// runs it, with the tokens the KV offload tier supplied (OffloadCachedTokens).
+			sc.CachedTokens = st.lookup.cached
+			sc.PrefixLookup = e.prefixCaching()
+			st.lookup.reported = true
+		}
+		b.Reqs = append(b.Reqs, sc)
+	}
+	if err := e.noteVerified(cb.ID, b); err != nil {
+		return engine.Batch{}, err
+	}
+	e.adapterEvents = nil
+	if e.adapterCache != nil && core.Executed(cb) {
+		// The model runner makes the batch's adapters resident before it runs a forward pass
+		// (set_active_loras, vllm/v1/worker/lora_model_runner_mixin.py:93-111@4ba787ec); a schedule
+		// of no tokens runs none. The scheduler admitted at most max_loras adapters (core/sched),
+		// so the cache cannot refuse the batch.
+		ev, err := e.adapterCache.SetActive(e.batchAdapters(cb))
+		if err != nil {
+			return engine.Batch{}, fmt.Errorf("vllm: %w", err)
+		}
+		e.adapterEvents = ev
+	}
+	// skip_drafts (vllm/v1/core/sched/output.py:334@4ba787ec): the drafter proposes nothing after
+	// this step. On one engine the scheduler's flag is the step's; a DPGroup ANDs its ranks'.
+	b.SkipDrafts = cb.Out.SkipDrafts
+	b.Preempted = append([]string(nil), cb.Out.Preempted...)
+	b.TransfersStarted = e.pd.started(e.s)
+	if e.off != nil {
+		b.TransfersStarted = append(b.TransfersStarted, e.off.started(cb.ID, cb.Out.KVConnectorMetadata)...)
+	}
+	for _, id := range cb.Out.Preempted {
+		e.reqs[id].preemptions++
+	}
+	return b, nil
+}
+
+// noteVerified records, for a batch whose pricer trims the verified drafts (VerifyingPricer),
+// how many drafts each drafting request has verified, which apply caps its acceptance at. A
+// pricer that trims nothing leaves no record, and the cap is the scheduled drafts as before.
+func (e *Engine) noteVerified(id int, b engine.Batch) error {
+	p, ok := e.pricer.(VerifyingPricer)
+	if !ok {
+		return nil
+	}
+	drafting := false
+	for _, r := range b.Reqs {
+		drafting = drafting || r.Drafts > 0
+	}
+	if !drafting {
+		return nil
+	}
+	widths := p.VerifiedDrafts(b)
+	if widths == nil {
+		return nil
+	}
+	if len(widths) != len(b.Reqs) {
+		return fmt.Errorf("vllm: the pricer gave %d verified widths for a batch of %d requests", len(widths), len(b.Reqs))
+	}
+	got := map[string]int{}
+	for i, r := range b.Reqs {
+		if r.Drafts > 0 {
+			got[r.ID] = min(max(widths[i], 0), r.Drafts)
+		}
+	}
+	if e.verified == nil {
+		e.verified = map[int]map[string]int{}
+	}
+	e.verified[id] = got
+	return nil
+}
+
+// StepTime implements engine.Engine.
+func (e *Engine) StepTime(b engine.Batch) engine.Duration { return max(e.pricer.StepTime(b), 1) }
+
+// StagePricer is a Pricer that splits a batch's price by pipeline stage, summing to StepTime.
+type StagePricer interface {
+	StageTimes(b engine.Batch) []engine.Duration
+}
+
+// StageTimes implements engine.Pipelined: the batch's forward pass split by pipeline stage,
+// one entry per stage of pipeline_parallel_size, summing to StepTime. vLLM's batch queue keeps
+// max_concurrent_batches batches in flight so each stage works on one (vllm/config/vllm.py:
+// 577-588, vllm/v1/engine/core.py:708-820@4ba787ec), which a simulator honours by timing each
+// batch through the stages. A pricer that does not split gives one stage, the whole step.
+func (e *Engine) StageTimes(b engine.Batch) []engine.Duration {
+	total := e.StepTime(b)
+	p, ok := e.pricer.(StagePricer)
+	if !ok || e.pp <= 1 {
+		return []engine.Duration{total}
+	}
+	st := p.StageTimes(b)
+	if len(st) != e.pp {
+		return []engine.Duration{total}
+	}
+	var sum engine.Duration
+	for i := range st {
+		st[i] = max(st[i], 1)
+		sum += st[i]
+	}
+	st[len(st)-1] = max(st[len(st)-1]+total-sum, 1)
+	return st
+}
+
+// TransferPricer prices an engine's asynchronous KV transfers to and from an offload tier.
+type TransferPricer interface {
+	TransferTime(t engine.Transfer) engine.Duration
+}
+
+// GroupTransferPricer is a TransferPricer that prices an offload job by its GPU blocks in each
+// KV cache group, groupBlocks in scheduler group order (GPULoadStoreSpec.group_sizes,
+// vllm/v1/kv_offload/base.py:438-469@5df63a72): vLLM's CPU offload worker copies each group's
+// blocks over that group's layers only (gpu_worker.py:395-416), so a hybrid model's job moves
+// fewer bytes than its blocks times the pool's stride.
+type GroupTransferPricer interface {
+	GroupTransferTime(t engine.Transfer, groupBlocks []int) engine.Duration
+}
+
+// TransferTime is how long one of the engine's offload-tier transfers takes, as its pricer
+// prices it (the latency kernel's TierTime for the CPU tier), at least one microsecond; false
+// when the pricer prices none. A simulator reads it by type-asserting
+// interface{ TransferTime(engine.Transfer) (engine.Duration, bool) } on the engine.Engine.
+func (e *Engine) TransferTime(t engine.Transfer) (engine.Duration, bool) {
+	if e.off.isPeerWrite(t.ID) {
+		// A WRITE to a peer is a move between pools: the simulator prices it from its Move.
+		return 0, false
+	}
+	if bytes, tier := e.off.tierBytes(t); tier {
+		return tierTransferTime(e.pricer, t, bytes)
+	}
+	p, ok := e.pricer.(TransferPricer)
+	if !ok {
+		return 0, false
+	}
+	if g, ok := e.pricer.(GroupTransferPricer); ok {
+		if sizes := e.off.groupSizes(t.ID); sizes != nil {
+			return max(g.GroupTransferTime(t, sizes), 1), true
+		}
+	}
+	return max(p.TransferTime(t), 1), true
+}
+
+// Assumptions are the pricer's disclosed assumptions, when it records any: for the latency
+// kernel, that it prices vLLM 0.31.0's engine behaviour for a 0.32.0 scenario. A simulator reads
+// them by type-asserting interface{ Assumptions() []string } on the engine.Engine.
+func (e *Engine) Assumptions() []string {
+	if a, ok := e.pricer.(interface{ Assumptions() []string }); ok {
+		return a.Assumptions()
+	}
+	return nil
+}
+
+// RecordSelected is an optional method. It registers the pricer's selected coefficients with the
+// run-level Data d, so the run's report lists them and says which a priced step read outside
+// the range its fit covered. The pricer's kernel is opened by the engine's build, and the
+// engine that prices the steps is this one, so the host's own kernel never sees them.
+//
+// The host calls it once per engine instance, right after the instance is built, so every
+// pricing kernel (each instance and each prefill or decode pool) is registered once. Records
+// accumulate across kernels in d, and a flag any kernel raises stays raised; a second call for
+// one instance adds nothing, since d keeps one observer per kernel. A pricer
+// that selects nothing records nothing, and a nil d is ignored. A simulator reads it by
+// type-asserting interface{ RecordSelected(*load.Data) } on the engine.Engine.
+func (e *Engine) RecordSelected(d *load.Data) {
+	if d == nil {
+		return
+	}
+	if r, ok := e.pricer.(interface{ RecordSelected(*load.Data) }); ok {
+		r.RecordSelected(d)
+	}
+}
+
+// Complete implements engine.Engine: the batch's output and update_from_output.
+func (e *Engine) Complete(id engine.BatchID, outcome engine.Outcome, end engine.Time) (engine.Result, error) {
+	e.off.tick(end)
+	if p := e.off.peer(); p != nil {
+		p.advance(end)
+		defer p.arm()
+	}
+	res, _, err := e.complete(id, outcome, end)
+	return res, err
+}
+
+// complete is Complete, also returning the scheduler's finish records, which a data-parallel
+// group's wave step reads (DPGroup).
+func (e *Engine) complete(id engine.BatchID, outcome engine.Outcome, end engine.Time) (engine.Result, []sched.Finished, error) {
+	idx := -1
+	for i, p := range e.pending {
+		if p.id == id {
+			idx = i
+			break
+		}
+	}
+	switch {
+	case idx < 0:
+		return engine.Result{}, nil, engine.ErrUnknownBatch
+	case idx > 0:
+		return engine.Result{}, nil, engine.ErrOutOfOrder
+	}
+	pb := e.pending[0]
+	e.pending = e.pending[1:]
+	res, fins := e.apply(pb.b, outcome, end, func() []sched.Finished {
+		if e.core.QueueSize > 1 {
+			// The step that blocked on this batch, or a later one, takes it off the queue
+			// (core.py:760-783): it is the oldest queued batch once the empty schedules queued
+			// ahead of it are applied.
+			e.drainEmpty(end)
+			res := e.core.StepEnd(core.StepResult{})
+			e.blocked = false
+			return res.Finished
+		}
+		return e.core.Complete(pb.b)
+	})
+	return res, fins, nil
+}
+
+// apply is update_from_output of one batch that ran tokens: the GPU's sampled tokens for it,
+// then take, which takes the batch off the queue and applies them, then the result, the
+// metrics step and post_step. A data-parallel rank's batch is applied the same way (DPGroup).
+func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, take func() []sched.Finished) (engine.Result, []sched.Finished) {
+	pb := pendingBatch{b: b}
+	// The GPU's answer: each sampling request's next assigned token, plus the drafts the
+	// outcome accepted (at most the real drafts it verified; a -1 padding draft is always
+	// rejected, while under async scheduling every placeholder is the worker's real draft), the
+	// last assigned token as EOS.
+	tokens := make(map[string][]int64, len(pb.b.Samples))
+	firsts := []string{}
+	emitted := make(map[string]int, len(pb.b.Samples))
+	// sampledReqs lists each request that sampled, with the length of its scheduler-side output
+	// before this step's update, in the batch's order; arena holds every request's sampled tokens
+	// in one array (a request's slice is capped at its own end), instead of one array per request.
+	type sampledReq struct {
+		rid    string
+		before int
+	}
+	sampledReqs := make([]sampledReq, 0, len(pb.b.Samples))
+	arena := make([]int64, 0, len(pb.b.Samples))
+	verified, trimmed := e.verified[b.ID]
+	delete(e.verified, b.ID)
+	for _, rid := range pb.b.Samples {
+		st := e.reqs[rid]
+		if st == nil || st.finished {
+			continue
+		}
+		n := 1
+		if drafts := pb.b.Out.SpecDecode[rid]; len(drafts) > 0 {
+			real := len(drafts)
+			if !e.async {
+				real = 0
+				for _, d := range drafts {
+					if d >= 0 {
+						real++
+					}
+				}
+			}
+			if trimmed {
+				// Under adaptive verification the rejection sampler runs over the compacted
+				// logits, each request's span of cu_num_logits holding only the drafts the
+				// budget admitted (reallocate_drafts, adaptive_verification.py:456-461@4ba787ec),
+				// so it can accept no draft past them (rejection_sampler_utils.py:358-366@4ba787ec).
+				// The scheduler still rolls back the rest of the K it scheduled as rejected
+				// (vllm/v1/core/sched/scheduler.py:2352-2362@4ba787ec).
+				real = min(real, verified[rid])
+			}
+			n += min(max(outcome.Accepted[rid], 0), real)
+		}
+		out := st.req.Output
+		start := len(arena)
+		for j := 0; j < n && st.sampled < len(out); j++ {
+			if st.sampled == len(out)-1 {
+				arena = append(arena, eosToken)
+			} else {
+				arena = append(arena, int64(out[st.sampled]))
+			}
+			st.sampled++
+		}
+		if len(arena) > start {
+			if _, again := tokens[rid]; again {
+				panic("vllm: a request sampled twice in one batch: " + rid)
+			}
+			tokens[rid] = arena[start:len(arena):len(arena)]
+			sampledReqs = append(sampledReqs, sampledReq{rid, len(e.s.Request(rid).Output)})
+		}
+	}
+	e.gpu.tokens = tokens
+	// Each verifying request's drafts for the spec_decode counters: the drafts it was scheduled
+	// (placeholders included, as make_spec_decoding_stats counts len(scheduled_spec_token_ids)),
+	// and those the target accepted, the tokens sampled beyond the one the step always samples
+	// (scheduler.py:2352-2355@4ba787ec), counted before a stop discards any.
+	var drafts []metrics.Draft
+	for _, rid := range pb.b.Out.Order {
+		if d := pb.b.Out.SpecDecode[rid]; len(d) > 0 && len(tokens[rid]) > 0 {
+			drafts = append(drafts, metrics.Draft{Proposed: len(d), Accepted: max(len(tokens[rid])-1, 0)})
+		}
+	}
+	fins := take()
+	e.gpu.tokens = nil
+	res := engine.Result{Emitted: make(map[string]int, len(sampledReqs))}
+	sort.Slice(sampledReqs, func(i, j int) bool { return sampledReqs[i].rid < sampledReqs[j].rid })
+	for _, sr := range sampledReqs {
+		rid := sr.rid
+		r := e.s.Request(rid)
+		if r == nil {
+			continue // stopped: counted from its finish record below
+		}
+		if got := len(r.Output) - sr.before; got > 0 {
+			st := e.reqs[rid]
+			if st.emitted == 0 {
+				firsts = append(firsts, rid)
+			}
+			st.emitted += got
+			emitted[rid] = got
+			res.Emitted[rid] = got
+		}
+	}
+	// A request that stopped took its final tokens with it out of the scheduler's map; count
+	// those from the finish record.
+	for _, f := range fins {
+		st := e.reqs[f.ID]
+		if _, counted := res.Emitted[f.ID]; !counted && st != nil {
+			if got := f.Output - st.emitted; got > 0 {
+				if st.emitted == 0 {
+					firsts = append(firsts, f.ID)
+				}
+				st.emitted += got
+				emitted[f.ID] = got
+				res.Emitted[f.ID] = got
+			}
+		}
+	}
+	sort.Strings(firsts)
+	res.FirstTokens = firsts
+	for _, f := range fins {
+		st := e.reqs[f.ID]
+		st.finished = true
+		why := engine.FinishStop
+		switch f.Status {
+		case sched.FinishedLength:
+			why = engine.FinishLength
+		case sched.FinishedError:
+			why = engine.FinishError
+		}
+		res.Finished = append(res.Finished, engine.Finished{ID: f.ID, Reason: why, OutputTokens: f.Output})
+	}
+	// The events since the last applied result: a schedule that ran no tokens can queue some (a
+	// decoder's admission of a remote prefill allocates the pull's blocks, evicting cached ones),
+	// and vLLM publishes them with that step's update_from_output (scheduler.py:2622-2637
+	// @4ba787ec). The contract carries KV events only in a Result, so they ride the next one, in
+	// order, published that much later.
+	res.KVEvents = kvEvents(e.indexable(e.s.TakeKVEvents()))
+	res.Handoffs = e.pd.handoffs(e.s, fins)
+	e.finishStep(pb.b, emitted, drafts, fins, end)
+	// A request that finished here has had its final step consumed: its result and its metrics
+	// step are recorded, so its entry goes (the scheduler freed its own at the finish). Under a
+	// batch queue a later batch in flight may still name it: then it stays, finished, and its ID
+	// is refused, until that batch completes, as an aborted request does (inFlight).
+	for _, f := range fins {
+		if e.inFlight(f.ID) {
+			e.aborted[f.ID] = true
+		} else {
+			delete(e.reqs, f.ID)
+		}
+	}
+	// An aborted request stayed for the batches it was in flight with; one is gone once none is.
+	for id := range e.aborted {
+		if !e.inFlight(id) {
+			delete(e.reqs, id)
+			delete(e.aborted, id)
+		}
+	}
+	if e.specTokens > 0 && !e.async && len(pb.b.Out.Scheduled) > 0 {
+		// EngineCore.post_step (vllm/v1/engine/core.py:699-706@4ba787ec): without async
+		// scheduling, after a step that ran, the drafter proposes num_speculative_tokens drafts
+		// for every request it ran, as the shared GPU mock does (oracle/mocks.json). Only their
+		// count reaches a decision; their acceptance is the outcome's (#2021 B3). Under async
+		// scheduling post_step proposes nothing: the scheduler set placeholders (core/sched).
+		drafts := map[string][]int64{}
+		for id := range pb.b.Out.Scheduled {
+			drafts[id] = make([]int64, e.specTokens)
+		}
+		e.s.UpdateDrafts(drafts)
+	}
+	return res, fins
+}
+
+// TransferDone implements engine.Engine: a P/D transfer's end, which the worker reports with
+// the next applied output (connector.go). A failed pull ends as the pool's kv_load_failure_policy
+// says: an error finish the next result reports, or a local recompute. An engine with no
+// connector starts none, so every ID
+// is unknown. The simulator steps the engine after a transfer completion at the same instant
+// (the engine package's same-instant order), and that step's output carries it.
+func (e *Engine) TransferDone(id engine.TransferID, ok bool, now engine.Time) error {
+	e.off.tick(now)
+	if p := e.off.peer(); p != nil {
+		p.advance(now)
+		defer p.arm()
+	}
+	if e.off != nil {
+		// The offload's and the P/D connector's transfers are one sequence of IDs (newEngine).
+		if err := e.off.done(id, ok); !errors.Is(err, engine.ErrUnknownTransfer) {
+			return err
+		}
+	}
+	return e.pd.done(id, ok)
+}
+
+// polls reports whether vLLM's loop, after a step that ran no model, would step again with no
+// new input: unfinished requests, or a transfer outcome its next step reports. Finished requests
+// whose blocks the connector holds change nothing until the simulator ends the hold, so they do
+// not keep the engine polling (the wake protocol's "with no new input").
+//
+// Offload jobs in flight do not keep it polling either: vLLM's loop steps every millisecond while
+// has_pending_push_work holds has_requests true (core.py:1688-1693@4ba787ec), but those steps
+// change nothing until a job's completion is reported, and the simulator steps the engine at the
+// TransferDone that reports it. A schedule's flushed jobs and the completions reported before it
+// are taken by its own applied output, so none waits for a poll.
+func (e *Engine) polls() bool { return e.s.HasUnfinished() || e.pd.pending() }
+
+// Finish implements engine.Engine: finish_requests(FINISHED_ABORTED), a no-op for an unknown
+// or finished request, as vLLM's is.
+func (e *Engine) Finish(id string, _ engine.FinishReason, now engine.Time) error {
+	if p := e.off.peer(); p != nil {
+		p.advance(now)
+		defer p.arm()
+	}
+	st, ok := e.reqs[id]
+	if !ok || st.finished {
+		return nil
+	}
+	st.finished = true
+	e.s.Abort([]string{id})
+	e.pd.aborted(id)
+	if e.inFlight(id) {
+		// A batch in flight still names it: its entry goes once that batch completes (apply).
+		e.aborted[id] = true
+	} else {
+		delete(e.reqs, id)
+	}
+	return nil
+}
+
+// inFlight reports whether a batch in flight scheduled the request.
+func (e *Engine) inFlight(id string) bool {
+	if e.queued != nil {
+		return e.queued(id)
+	}
+	for _, p := range e.pending {
+		if _, ok := p.b.Out.Scheduled[id]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// NextWake implements engine.Engine. vLLM v0.32.0's scheduler, without a connector, makes no
+// request wait for an instant; the one wake is its engine loop's poll after a schedule that ran
+// nothing while requests remain and no batch is in flight (idlePollUs), such as a schedule whose
+// only running request preempted itself, which skips the WAITING phase
+// (vllm/v1/core/sched/scheduler.py:1050@4ba787ec) that the next schedule then runs.
+func (e *Engine) NextWake(now engine.Time) (engine.Time, bool) {
+	at, ok := engine.Time(0), false
+	if e.idleWake > now && len(e.pending) == 0 {
+		at, ok = e.idleWake, true
+	}
+	// The p2p tier's next poll round, while it has work and the batch queue has room for the
+	// schedule the wake steps (offloadtiers_p2p.go).
+	if p := e.off.peer(); p != nil && len(e.pending) < e.InFlightLimit() {
+		if w, has := p.wake(now); has && (!ok || w < at) {
+			at, ok = w, true
+		}
+	}
+	return at, ok
+}
+
+// InFlightLimit implements engine.Engine: max_concurrent_batches.
+func (e *Engine) InFlightLimit() int { return max(e.core.QueueSize, 1) }
+
+// RunnerSteps is how many execute_model calls the engine has made: one per schedule, whether
+// or not it ran tokens (core.py:724-729, 667-668@5df63a72). Each call advances a pipeline rank's
+// sampled-token ring before it returns early for a schedule that ran no tokens:
+// update_pp_decode_requests pops the slot pp steps back and reserves one, which stays empty
+// (model_runner.py:1729-1747, pp_utils.py:125-137@5df63a72). So a batch Schedule just returned is
+// runner step RunnerSteps()-1, counting the empty schedules the contract does not put in flight,
+// and a request freed now is freed at runner step RunnerSteps(), the next schedule's
+// finished_req_ids (model_runner.py:1152-1166@5df63a72). It is not part of blis-schemas'
+// contract: a simulator gating a pipelined step on the step pp back looks for it by type
+// assertion.
+func (e *Engine) RunnerSteps() int { return e.core.Schedules() }
+
+// Fields implements engine.Engine: the field list of the release this engine models, fields.json
+// (blisvllm.FieldListJSON). It is parsed once; every call returns that list.
+func (e *Engine) Fields() fields.FieldList { return fieldList }
+
+// Snapshot implements engine.Engine.
+func (e *Engine) Snapshot() engine.State {
+	nr, nw := e.s.Counts()
+	pool := e.s.KV.Pool
+	return engine.State{Waiting: nw, Running: nr, InFlight: len(e.pending),
+		KVBlocksTotal: int64(pool.NumBlocks() - 1), KVBlocksUsed: int64(pool.NumBlocks() - 1 - pool.NumFree()),
+		KVBlockSize: e.s.BlockSize()}
+}
+
+// KVCacheCapacity is the KV cache size this engine core logs at start-up, "GPU KV cache size: N
+// tokens, Maximum concurrency for M tokens per request: Cx" (update_kv_cache_capacity,
+// vllm/v1/core/kv_cache_utils.py:1136-1154@4ba787ec). It is not the pool's blocks times the block
+// size (Snapshot): a request holds blocks in every KV cache group of a hybrid model, so the pool
+// holds that many requests' worth of max_model_len tokens, which the log prints. It is the zero
+// Capacity when the pool's size is not stated. It is not part of the engine contract: a simulator
+// reporting the pool's size as the engine does looks for it by type assertion on
+// interface{ KVCacheCapacity() kv.Capacity }.
+func (e *Engine) KVCacheCapacity() kv.Capacity { return e.kvCapacity }
+
+// EnableKVEvents turns on the engine's KV cache events (kv_events_config.enable_kv_cache_events),
+// which a simulator calls when a router indexes them: each completed batch then reports its
+// prefix-cache changes in Result.KVEvents.
+func (e *Engine) EnableKVEvents() { e.s.EnableKVEvents() }
+
+// KVEventsCarryIdentity reports that the engine's stored blocks name the adapter and the extra
+// keys that keyed their hashes (engine.KVEvent LoRAName, LoRAID and ExtraKeys), so a router
+// indexing them can keep an adapter's blocks apart from the base model's.
+func (e *Engine) KVEventsCarryIdentity() bool { return true }
+
+// KVEventsRefusal reports why a router cannot index this engine's KV events, nil when it can. The
+// router keys every pod's blocks at the engine's block size (llm-d's indexer takes one block size;
+// the simulator's gateway is told the scenario's block_size). A full-attention group at another
+// block size (a packed group, _get_packed_kv_cache_groups, vllm/v1/core/kv_cache_utils.py:
+// 1860-2014@5df63a72) publishes BlockStored at its own block_size, which the router would key
+// wrongly. DeepSeek V4's deployments keep their full-attention group at the engine's block size
+// and are not refused. A simulator reads it by type-asserting interface{ KVEventsRefusal() error }
+// on the engine.Engine and refuses precise-prefix routing.
+func (e *Engine) KVEventsRefusal() error {
+	m := e.s.KV
+	for g := 0; g < m.NumGroups(); g++ {
+		if m.PrefixIndexable(uint32(g)) && m.GroupBlockSize(g) != m.BlockSize() {
+			return fmt.Errorf("vllm: KV cache group %d (full attention) is at block size %d, and the engine at %d: "+
+				"a router keying blocks at the engine's block size cannot index its KV events", g,
+				m.GroupBlockSize(g), m.BlockSize())
+		}
+	}
+	return nil
+}
+
+// indexable keeps the events of the KV cache groups a router's prefix index takes. vLLM
+// publishes every group's events tagged with the group's kind, and llm-d's indexer drops a
+// sliding-window or ring group's stores and removals (pkg/kvevents/pool.go,
+// isPrefixIndexableSpecKind); the contract's KVEvent carries no group, so the engine drops them
+// here instead, leaving the router's index as vLLM's tagged stream leaves it. A window block
+// shares its full-attention block's hash, so a removal passed through would unindex a block the
+// full-attention group still caches.
+func (e *Engine) indexable(evs []kv.Event) []kv.Event {
+	out := evs[:0]
+	for _, ev := range evs {
+		if e.s.KV.PrefixIndexable(ev.Group) {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+// kvEvents is the scheduler's KV events in the contract's form: a hash is vLLM's published
+// 64-bit integer (maybe_convert_block_hash, vllm/v1/core/kv_cache_utils.py:82-85@4ba787ec),
+// written in decimal, one event per block. Each stored block carries what vLLM's BlockStored
+// reports about it: the adapter's name and id, the extra keys that keyed its hash (the adapter's
+// ("lora", name, path) on every block, the cache salt, a plain string, on the request's first), and
+// its group. Only full-attention groups reach here (indexable), so the kind is always
+// full_attention and no sliding window is named. A salt is reported among the extra keys and not in
+// CacheSalt, which is SGLang's field.
+func kvEvents(evs []kv.Event) []engine.KVEvent {
+	var out []engine.KVEvent
+	h := func(b kv.BlockHash) string {
+		if b == nil {
+			return ""
+		}
+		return strconv.FormatUint(binary.BigEndian.Uint64(b[len(b)-8:]), 10)
+	}
+	for _, ev := range evs {
+		parent := h(ev.Parent)
+		for i, bh := range ev.Hashes {
+			ke := engine.KVEvent{Removed: ev.Removed, Hash: h(bh), Parent: parent}
+			g := int(ev.Group)
+			ke.GroupIdx = &g
+			if !ev.Removed {
+				ke.SpecKind = "full_attention"
+				if ev.LoRA != "" {
+					id := ev.LoRAID
+					ke.LoRAID, ke.LoRAName = &id, ev.LoRA
+				}
+				if i < len(ev.Extra) {
+					ke.ExtraKeys = extraKeys(ev.Extra[i])
+				}
+			}
+			if !ev.Removed && ev.BlockSize > 0 && (i+1)*ev.BlockSize <= len(ev.Tokens) {
+				for _, t := range ev.Tokens[i*ev.BlockSize : (i+1)*ev.BlockSize] {
+					ke.Tokens = append(ke.Tokens, int32(t))
+				}
+			}
+			out = append(out, ke)
+			parent = ke.Hash
+		}
+	}
+	return out
+}
+
+// extraKeys is a block's extra keys as vLLM publishes them: the adapter's key as its three
+// strings, the cache salt as a plain string. Nil for none.
+func extraKeys(keys []kv.ExtraKey) []any {
+	var out []any
+	for _, k := range keys {
+		switch {
+		case len(k) == 2 && k[0] == "cache_salt":
+			out = append(out, k[1])
+		default:
+			t := make([]any, len(k))
+			for i, v := range k {
+				t[i] = v
+			}
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+var _ engine.Engine = (*Engine)(nil)

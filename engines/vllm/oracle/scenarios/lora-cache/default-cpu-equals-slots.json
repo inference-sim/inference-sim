@@ -1,0 +1,3 @@
+{"name": "lora-cache-default-cpu-equals-slots", "config": {"max_loras": 3},
+ "steps": [{"adapters": ["a", "b", "c"]}, {"adapters": ["d"]}, {"adapters": ["b", "a"]}, {"adapters": ["c", "d", "a"]},
+           {"adapters": ["a", "a", "a"]}]}

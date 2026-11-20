@@ -1,0 +1,163 @@
+{
+ "name": "nixl-p-async-kv-delivery",
+ "description": "Prefiller under async scheduling: NIXL requires KV delivery on a producer (requires_kv_delivery, kv_connector/v1/base.py:196-206), so a preempted request's in-flight output is dropped, not delivered (drop_stale_output, scheduler.py:839, 2101-2103) and it is readmitted at once (:934); a producer does not defer block frees. A tight pool preempts.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "async_scheduling": true,
+  "num_blocks": 16,
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_producer",
+   "kv_load_failure_policy": "fail",
+   "extra_config": {}
+  }
+ },
+ "requests": [
+  {
+   "id": "p0",
+   "arrival_step": 0,
+   "prompt": [
+    1383,
+    1767,
+    1755,
+    3321,
+    306,
+    2797,
+    4378,
+    415,
+    4794,
+    1462,
+    1173,
+    3157,
+    799,
+    2390
+   ],
+   "output": [
+    762
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 1
+  },
+  {
+   "id": "l0",
+   "arrival_step": 0,
+   "prompt": [
+    4168,
+    3867,
+    1896,
+    3178,
+    3211,
+    456,
+    2437,
+    1798,
+    3691,
+    3919,
+    3257
+   ],
+   "output": [
+    151,
+    694,
+    4626,
+    1,
+    888,
+    3463,
+    978,
+    3297,
+    3706,
+    4898,
+    4789,
+    4089,
+    193,
+    4282,
+    2644,
+    975
+   ]
+  },
+  {
+   "id": "l1",
+   "arrival_step": 1,
+   "prompt": [
+    2323,
+    1983,
+    2021,
+    1732,
+    1430,
+    626,
+    2810,
+    164,
+    4101,
+    4402,
+    1981,
+    1622,
+    4941,
+    3049,
+    2727
+   ],
+   "output": [
+    3181,
+    3393,
+    3811,
+    1401,
+    3236,
+    2327,
+    3967,
+    1906,
+    1674,
+    4570,
+    2207,
+    2463
+   ]
+  },
+  {
+   "id": "p1",
+   "arrival_step": 2,
+   "prompt": [
+    271,
+    3615,
+    713,
+    2226,
+    2728,
+    1921,
+    1599,
+    133,
+    3394
+   ],
+   "output": [
+    1049
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 3
+  },
+  {
+   "id": "l2",
+   "arrival_step": 3,
+   "prompt": [
+    307,
+    1627,
+    4281,
+    724,
+    587,
+    336
+   ],
+   "output": [
+    1187,
+    482,
+    3990,
+    4527,
+    4970,
+    4433,
+    3764,
+    3198,
+    3244,
+    3907
+   ]
+  }
+ ]
+}

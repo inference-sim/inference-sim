@@ -1,0 +1,110 @@
+{
+ "name": "nixl-d-model-len-cap",
+ "description": "The decoder's max_model_len (16) ends a pulled request and a local one by length before their assigned outputs (the GPU mock's EOS) are reached: the connector side's length caps, which the oracle could not reach while it ran at the helper model's 2048 (blis-vllm#20 review I14).",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 16,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_consumer",
+   "kv_load_failure_policy": "recompute",
+   "extra_config": {}
+  }
+ },
+ "requests": [
+  {
+   "id": "d0",
+   "arrival_step": 0,
+   "prompt": [
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20
+   ],
+   "output": [
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1
+  },
+  {
+   "id": "d1",
+   "arrival_step": 1,
+   "prompt": [
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34
+   ],
+   "output": [
+    201,
+    202,
+    203,
+    204,
+    205
+   ],
+   "remote_prefill": true,
+   "recv_delay": 0
+  },
+  {
+   "id": "l0",
+   "arrival_step": 0,
+   "prompt": [
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49
+   ],
+   "output": [
+    301,
+    302,
+    303,
+    304,
+    305,
+    306,
+    307,
+    308,
+    309,
+    310,
+    311,
+    312
+   ]
+  }
+ ],
+ "max_steps": 200
+}
