@@ -1,0 +1,13 @@
+# The pin-by-commit deferral (release plan §3.1: "depending on commit IDs is fine for
+# drafts"). While it holds, the selected-version lint reports the router fork pinned at a
+# pseudo-version (a commit) as deferred and does not fail on it. Only the listed modules are
+# deferred, for at most 30 days from `added`. Every other finding still fails. The tag comes
+# after review and merge; the owning issue tracks the re-pin to a -blis.N tag.
+issue: inference-sim/blis-substrate#14
+added: 2026-11-19
+expires: 2026-12-19
+modules: [llm-d-router]
+reason: >-
+  the router fork is pinned by commit while its change (inference-sim/llm-d-router#24) is in
+  review, and is moved to a -blis.N tag once that pull request is merged and tagged; the engines
+  and the substrate are directories of this module and are not pinned
