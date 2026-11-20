@@ -902,6 +902,11 @@ class GenSurfaceTest(unittest.TestCase):
         self.edit("vllm/v1/request.py", 'self.kv_cache_report_mode = "incremental"', "self.kv_cache_report_mode = mode")
         self.assertIn("kv_cache_report_mode is not set from a string default", self.refusal(good_status()))
 
+    def test_a_report_mode_with_two_defaults_fails(self):
+        self.edit("vllm/v1/request.py", 'self.kv_cache_report_mode = "incremental"',
+                  'self.kv_cache_report_mode = "incremental"\n        self.kv_cache_report_mode = "full"')
+        self.assertIn("has defaults", self.refusal(good_status()))
+
     def test_step_inputs_are_split_by_whether_vllm_handles_them_during_a_step(self):
         got = self.items()
         self.assertEqual(got["step_input_kind:ADD"]["value"], "during_step")
