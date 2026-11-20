@@ -262,6 +262,23 @@ def test_a_failure_names_its_model_once(tmp_path):
     assert "no-config: no config.json" in lines, r.stderr
 
 
+def test_a_known_missing_handler_is_refused_citing_its_issue(tmp_path):
+    """An architecture the catalog's open issues list as unhandled (HYV3, MiMoV2: blis-substrate#317)
+    is refused by name with that issue, and the refusal's other words are the generic one's."""
+    models = tmp_path / "models"
+    for name, arch in (("hy3-fp8", "HYV3ForCausalLM"), ("mimo-v2-flash", "MiMoV2ForCausalLM")):
+        (models / name).mkdir(parents=True)
+        (models / name / "config.json").write_text(json.dumps({"architectures": [arch]}))
+    r = subprocess.run([sys.executable, str(DERIVER), str(tmp_path), "--check"],
+                       capture_output=True, text=True)
+    assert r.returncode != 0
+    lines = r.stderr.splitlines()
+    for name, arch in (("hy3-fp8", "HYV3ForCausalLM"), ("mimo-v2-flash", "MiMoV2ForCausalLM")):
+        assert (f"{name}: no handler for architecture {arch!r} (open issue "
+                "inference-sim/blis-substrate#317); add one rather than letting a default "
+                "misprice the model") in lines, r.stderr
+
+
 @pytest.mark.parametrize("d", model_dirs(), ids=lambda d: d.name)
 def test_layer_count_matches_config(d: Path):
     """Depth must agree with the config, whichever way the config states it.
