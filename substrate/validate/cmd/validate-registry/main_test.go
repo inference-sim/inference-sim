@@ -262,7 +262,7 @@ func TestRunDanglingSymlinkFails(t *testing.T) {
 // coefficients/ taking both .yaml and .yml, case-insensitively. A .yml set, a set in a
 // nested subdirectory, and an upper-case extension must all be found and validated —
 // otherwise this gate could pass over a set the registry's own gate rejects, the exact
-// two-gates-diverge failure the registry CI job (inference-sim/blis-registry#20) exists
+// two-gates-diverge failure the registry CI job exists
 // to prevent.
 func TestRunDiscoversYmlNestedAndUppercase(t *testing.T) {
 	dir := t.TempDir()

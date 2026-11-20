@@ -16,7 +16,7 @@ type LatencyTotals struct {
 	TTFTSumUs float64 // sum over completed requests of time to first token, microseconds
 	ITLSumUs  float64 // sum over completed requests with an ITL sample of mean inter-token latency, microseconds
 	// ITLCount is how many completed requests have an ITL sample: one with fewer than two output
-	// tokens has a TTFT and no inter-token gap (#1894), so ITLCount can be below Completed.
+	// tokens has a TTFT and no inter-token gap, so ITLCount can be below Completed.
 	ITLCount  int
 	InTokens  int64
 	OutTokens int64

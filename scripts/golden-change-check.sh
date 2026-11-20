@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# golden-change-check.sh BASE HEAD < body
+# golden-change-check.sh BASE HEAD < messages
 #
-# A change that moves a byte-gate golden (testdata/bytegate/golden/) is a behaviour change. Its
-# pull request body, read from standard input, must say what moved and why on a line that starts
+# A change that moves a byte-gate golden (testdata/bytegate/golden/) is a behaviour change. The
+# commit messages of the change, read from standard input, must say what moved and why on a line that starts
 # "Golden change:" and is followed by that statement (on the same line or the lines below it up to
 # the next blank line). A diff that leaves the goldens alone needs nothing. Exit 1 names the moved
 # goldens when the statement is missing or empty.
@@ -24,7 +24,7 @@ statement=$(printf '%s\n' "$body" | awk '
 ')
 words=$(printf '%s' "$statement" | wc -w | tr -d ' ')
 if [ "$words" -lt 8 ]; then
-  echo "::error::these byte-gate goldens moved, and the pull request body has no 'Golden change:' statement of what moved and why (at least 8 words):"
+  echo "::error::these byte-gate goldens moved, and no commit message has a 'Golden change:' statement of what moved and why (at least 8 words):"
   printf '%s\n' "$moved"
   exit 1
 fi
