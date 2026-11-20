@@ -1,0 +1,119 @@
+{
+ "description": "A lock is taken on a leaf, and a later insert splits that leaf above it and frees its own slots for the shared part: the release with the old receipt still unlocks the path, and the split's halves evict separately.",
+ "model": "none: the driver builds SGLang's pools and cache from the sequence's cache block",
+ "seed": 0,
+ "cache": {
+  "page_size": 1,
+  "kv_size": 64,
+  "max_num_reqs": 4,
+  "max_context_len": 64,
+  "layer_num": 2,
+  "head_num": 2,
+  "head_dim": 16,
+  "kv_cache_events": true
+ },
+ "calls": [
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 8,
+   "as": "a"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "value": "a"
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "as": "m"
+  },
+  {
+   "on": "cache",
+   "m": "inc_lock_ref",
+   "node": "m",
+   "as": "l"
+  },
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 6,
+   "as": "b"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    1,
+    2,
+    3,
+    20,
+    21,
+    22
+   ],
+   "value": "b"
+  },
+  {
+   "on": "cache",
+   "m": "protected_size"
+  },
+  {
+   "on": "cache",
+   "m": "evictable_size"
+  },
+  {
+   "on": "cache",
+   "m": "evict",
+   "num_tokens": 64
+  },
+  {
+   "on": "cache",
+   "m": "dec_lock_ref",
+   "node": "m",
+   "lock": "l"
+  },
+  {
+   "on": "cache",
+   "m": "evict",
+   "num_tokens": 2
+  },
+  {
+   "on": "cache",
+   "m": "evictable_size"
+  },
+  {
+   "on": "cache",
+   "m": "evict",
+   "num_tokens": 64
+  },
+  {
+   "on": "allocator",
+   "m": "available_size"
+  },
+  {
+   "on": "cache",
+   "m": "take_events"
+  }
+ ]
+}

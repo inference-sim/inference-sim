@@ -1,0 +1,128 @@
+{
+ "exact_series": [
+  "sglang:context_len",
+  "sglang:max_total_num_tokens",
+  "sglang:num_pages",
+  "sglang:page_size",
+  "sglang:prefill_effective_tokens_total",
+  "sglang:realtime_tokens_total",
+  "sglang:num_running_reqs",
+  "sglang:num_queue_reqs",
+  "sglang:num_grammar_queue_reqs",
+  "sglang:cache_hit_rate",
+  "sglang:decode_sum_seq_lens",
+  "sglang:token_usage",
+  "sglang:full_token_usage",
+  "sglang:num_used_tokens",
+  "sglang:kv_available_tokens",
+  "sglang:kv_evictable_tokens",
+  "sglang:kv_used_tokens",
+  "sglang:new_token_ratio",
+  "sglang:num_retracted_reqs",
+  "sglang:num_paused_reqs",
+  "sglang:swa_token_usage",
+  "sglang:mamba_usage",
+  "sglang:swa_available_tokens",
+  "sglang:swa_evictable_tokens",
+  "sglang:swa_used_tokens",
+  "sglang:mamba_available_tokens",
+  "sglang:mamba_evictable_tokens",
+  "sglang:mamba_used_tokens",
+  "sglang:spec_accept_length",
+  "sglang:spec_accept_rate",
+  "sglang:spec_cap_length",
+  "sglang:spec_block_accept_length",
+  "sglang:spec_num_steps",
+  "sglang:spec_num_draft_tokens",
+  "sglang:num_decode_deferred_kv_release_reqs",
+  "sglang:pending_prealloc_token_usage",
+  "sglang:prealloc_full_token_usage",
+  "sglang:prealloc_swa_token_usage",
+  "sglang:num_unique_running_routing_keys",
+  "sglang:num_prefill_bootstrap_queue_reqs",
+  "sglang:num_prefill_inflight_queue_reqs",
+  "sglang:num_decode_prealloc_queue_reqs",
+  "sglang:num_decode_transfer_queue_reqs",
+  "sglang:num_decode_host_receive_queue_reqs"
+ ],
+ "rules": [
+  {
+   "match": "^sglang:(startup_|weight_|graph_memory|kv_cache_memory|cuda_graph|is_cuda_graph|estimated_|process_cpu|forward_execution|func_latency|max_running_requests_under_SLO)",
+   "class": "unavailable",
+   "why": "needs the device, the process or a profiler: a CPU scheduler has none of them"
+  },
+  {
+   "match": "(scheduler_(idle|process_cpu|stage)|queue_time|per_stage|gen_throughput|utilization|fwd_occupancy|e2e_|time_to_first|inter_token|time_per_output|get_loads_duration|_seconds|_latency|_ms$|http_)",
+   "class": "derived",
+   "why": "a duration or rate: the simulator supplies the time"
+  },
+  {
+   "match": "^sglang:(hicache|backup|backuped|prefetch|load_back|evicted|eviction|storage_)",
+   "class": "later",
+   "why": "HiCache tiers, stages S20-S22 (and the storage backends, S23)"
+  },
+  {
+   "match": "^sglang:(streaming_session|num_streaming)",
+   "class": "later",
+   "why": "streaming sessions, blis-sglang#45"
+  },
+  {
+   "match": "^sglang:encoder_",
+   "class": "unavailable",
+   "why": "multimodal encoder disaggregation: no target scenario states it"
+  },
+  {
+   "match": "^sglang:eplb_",
+   "class": "later",
+   "why": "expert-parallel load balancing, S36"
+  },
+  {
+   "match": "^sglang:dp_",
+   "class": "later",
+   "why": "attention data parallelism, S35"
+  },
+  {
+   "match": "^sglang:lora_",
+   "class": "later",
+   "why": "LoRA, blis-sglang#80"
+  },
+  {
+   "match": "^sglang:(grammar_|num_grammar|num_so_)",
+   "class": "later",
+   "why": "grammar-constrained decoding, blis-sglang#81"
+  },
+  {
+   "match": "^sglang:(failed_session|kv_transfer|num_bootstrap|num_transfer|num_prefill_retries|num_decode_host_receive_reqs_total)",
+   "class": "later",
+   "why": "prefill/decode disaggregation transfers, stages S25-S27"
+  },
+  {
+   "match": "^sglang:(max_total_num_tokens_swa|swa_)",
+   "class": "later",
+   "why": "hybrid sliding-window pools, S40"
+  },
+  {
+   "match": "^sglang:(mamba_|hicache_host_mamba)",
+   "class": "unavailable",
+   "why": "state-space (Mamba) pools are refused by name (core/cache)"
+  },
+  {
+   "match": "^sglang:spec_",
+   "class": "later",
+   "why": "speculative decoding, S30"
+  },
+  {
+   "match": "^sglang:(prefill_delayer|routing_key|num_retracted_input|num_retracted_output)",
+   "class": "later",
+   "why": "scheduler counters and distributions not yet ported (listed gap)"
+  },
+  {
+   "match": "^sglang:(num_requests|num_aborted|prompt_tokens|generation_tokens|cached_tokens|uncached_prompt|decode_deferred_kv_release_total)",
+   "class": "later",
+   "why": "TokenizerManager-side request counters: the engine front end, S16"
+  }
+ ],
+ "not_families": {
+  "sglang:num_retracted_requests_total": "a name the collector mentions in a comment or message, not a family it defines"
+ }
+}

@@ -1,0 +1,309 @@
+{
+ "model": "qwen2.5-0.5b",
+ "seed": 0,
+ "page_size": 1,
+ "server_args": {
+  "tp_size": 4
+ },
+ "config": {
+  "class": "Qwen3_5MoeTextConfig",
+  "fields": {
+   "attention_bias": false,
+   "attention_dropout": 0.0,
+   "attn_output_gate": true,
+   "eos_token_id": 248044,
+   "full_attention_interval": 4,
+   "head_dim": 256,
+   "hidden_act": "silu",
+   "hidden_size": 4096,
+   "initializer_range": 0.02,
+   "linear_conv_kernel_dim": 4,
+   "linear_key_head_dim": 128,
+   "linear_num_key_heads": 16,
+   "linear_num_value_heads": 64,
+   "linear_value_head_dim": 128,
+   "max_position_embeddings": 262144,
+   "mlp_only_layers": [],
+   "moe_intermediate_size": 1024,
+   "mtp_num_hidden_layers": 1,
+   "mtp_use_dedicated_embeddings": false,
+   "num_attention_heads": 32,
+   "num_experts": 512,
+   "num_experts_per_tok": 10,
+   "num_hidden_layers": 60,
+   "num_key_value_heads": 2,
+   "rms_norm_eps": 1e-06,
+   "router_aux_loss_coef": 0.001,
+   "shared_expert_intermediate_size": 1024,
+   "use_cache": true,
+   "vocab_size": 248320,
+   "mamba_ssm_dtype": "float32",
+   "rope_parameters": {
+    "mrope_interleaved": true,
+    "mrope_section": [
+     11,
+     11,
+     10
+    ],
+    "rope_type": "default",
+    "rope_theta": 10000000,
+    "partial_rotary_factor": 0.25
+   }
+  }
+ },
+ "description": "SGLang's mamba state budget (_handle_max_mamba_cache) and the request-slot cap (resolve_max_num_reqs) across strategies, speculation, ReplaySSM and explicit sizes.",
+ "pools": [],
+ "calls": [],
+ "budgets": [
+  {
+   "name": "auto-extra-buffer",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "token_capacity": 2000000
+  },
+  {
+   "name": "auto-extra-buffer-unset-mrr",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "token_capacity": 2000000
+  },
+  {
+   "name": "no-buffer",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "mamba_radix_cache_strategy": "no_buffer",
+    "disable_overlap_schedule": true
+   },
+   "context_len": 40960,
+   "token_capacity": 2000000
+  },
+  {
+   "name": "lazy",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "mamba_radix_cache_strategy": "extra_buffer_lazy"
+   },
+   "context_len": 40960,
+   "token_capacity": 2000000
+  },
+  {
+   "name": "no-overlap-extra",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "mamba_radix_cache_strategy": "extra_buffer",
+    "disable_overlap_schedule": true
+   },
+   "context_len": 40960,
+   "token_capacity": 2000000
+  },
+  {
+   "name": "ratio-0.2",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "mamba_full_memory_ratio": 0.2,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "token_capacity": 2000000
+  },
+  {
+   "name": "ratio-0.9-small",
+   "total_rest_memory_gib": 20.0,
+   "server_args": {
+    "max_running_requests": 512,
+    "mamba_full_memory_ratio": 0.9,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "token_capacity": 500000
+  },
+  {
+   "name": "explicit-size",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "max_mamba_cache_size": 96,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "token_capacity": 2000000
+  },
+  {
+   "name": "no-radix-explicit-mrr",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 40,
+    "disable_radix_cache": true,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "token_capacity": 2000000
+  },
+  {
+   "name": "spec-eagle",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "speculative_num_draft_tokens": 4,
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 1,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "spec_algorithm": "EAGLE",
+   "token_capacity": 2000000
+  },
+  {
+   "name": "spec-eagle-explicit-size",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "max_mamba_cache_size": 128,
+    "speculative_num_draft_tokens": 4,
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 1,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "spec_algorithm": "EAGLE",
+   "token_capacity": 2000000
+  },
+  {
+   "name": "spec-eagle-no-radix",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "disable_radix_cache": true,
+    "speculative_num_draft_tokens": 4,
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 1,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "spec_algorithm": "EAGLE",
+   "token_capacity": 2000000
+  },
+  {
+   "name": "spec-replay",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "enable_linear_replayssm_spec": true,
+    "speculative_num_draft_tokens": 4,
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 1,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "spec_algorithm": "EAGLE",
+   "token_capacity": 2000000
+  },
+  {
+   "name": "bf16-state",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "mamba_ssm_dtype": "bfloat16",
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "token_capacity": 2000000
+  },
+  {
+   "name": "bf16-state-spec",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "mamba_ssm_dtype": "bfloat16",
+    "speculative_num_draft_tokens": 4,
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 1,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "spec_algorithm": "EAGLE",
+   "token_capacity": 2000000
+  },
+  {
+   "name": "explicit-zero",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "max_mamba_cache_size": 0,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "token_capacity": 2000000
+  },
+  {
+   "name": "dp2-explicit-size",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "max_mamba_cache_size": 96,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "token_capacity": 2000000,
+   "attn_dp_size": 2
+  },
+  {
+   "name": "dp2-auto",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "token_capacity": 2000000,
+   "attn_dp_size": 2
+  },
+  {
+   "name": "dp2-spec",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 64,
+    "max_mamba_cache_size": 96,
+    "speculative_num_draft_tokens": 4,
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 1,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "spec_algorithm": "EAGLE",
+   "token_capacity": 2000000,
+   "attn_dp_size": 2
+  },
+  {
+   "name": "token-bound",
+   "total_rest_memory_gib": 60.0,
+   "server_args": {
+    "max_running_requests": 4096,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "token_capacity": 300000
+  },
+  {
+   "name": "too-small",
+   "total_rest_memory_gib": 0.05,
+   "server_args": {
+    "max_running_requests": 64,
+    "mamba_radix_cache_strategy": "extra_buffer"
+   },
+   "context_len": 40960,
+   "token_capacity": 100000
+  }
+ ]
+}

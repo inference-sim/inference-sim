@@ -1,0 +1,461 @@
+{
+ "release": "SGLang v0.5.23",
+ "issue": "inference-sim/blis-sglang#44",
+ "classes": [
+  {
+   "class": "DSV4NPUTokenToKVPoolAllocator",
+   "kind": "allocator",
+   "site": "hardware_backend/npu/dsv4/dsv4_allocator.py:104",
+   "status": "refused",
+   "selected_by": "--device npu"
+  },
+  {
+   "class": "DeepSeekV4HiSparseTokenToKVPoolAllocator",
+   "kind": "allocator",
+   "site": "mem_cache/allocator/hisparse.py:302",
+   "status": "refused",
+   "selected_by": "--enable-hisparse with a DeepSeek-V4 model"
+  },
+  {
+   "class": "FloatMultiEndedAllocator",
+   "kind": "allocator",
+   "site": "mem_cache/allocator/unified_sub_pool.py:2204",
+   "status": "refused",
+   "selected_by": "--enable-unified-memory"
+  },
+  {
+   "class": "HiSparseTokenToKVPoolAllocator",
+   "kind": "allocator",
+   "site": "mem_cache/allocator/hisparse.py:22",
+   "status": "refused",
+   "selected_by": "--enable-hisparse"
+  },
+  {
+   "class": "MultiEndedAllocator",
+   "kind": "allocator",
+   "site": "mem_cache/allocator/unified_sub_pool.py:279",
+   "status": "refused",
+   "selected_by": "--enable-unified-memory"
+  },
+  {
+   "class": "NPUPagedTokenToKVPoolAllocator",
+   "kind": "allocator",
+   "site": "hardware_backend/npu/allocator_npu.py:15",
+   "status": "refused",
+   "selected_by": "--device npu"
+  },
+  {
+   "class": "PageInterleavePoolAllocator",
+   "kind": "allocator",
+   "site": "mem_cache/allocator/page_interleave.py:58",
+   "status": "refused",
+   "selected_by": "--enable-kv-cache-sharding"
+  },
+  {
+   "class": "PagedTokenToKVPoolAllocator",
+   "kind": "allocator",
+   "site": "mem_cache/allocator/paged.py:136",
+   "status": "modelled",
+   "port": "PagedAllocator"
+  },
+  {
+   "class": "PureSWATokenToKVPoolAllocator",
+   "kind": "allocator",
+   "site": "mem_cache/allocator/swa.py:727",
+   "status": "refused",
+   "selected_by": "a model whose every layer is sliding-window"
+  },
+  {
+   "class": "SWATokenToKVPoolAllocator",
+   "kind": "allocator",
+   "site": "mem_cache/allocator/swa.py:41",
+   "status": "refused",
+   "selected_by": "a model with sliding-window layers"
+  },
+  {
+   "class": "TokenToKVPoolAllocator",
+   "kind": "allocator",
+   "site": "mem_cache/allocator/token.py:28",
+   "status": "modelled",
+   "port": "TokenAllocator"
+  },
+  {
+   "class": "UnifiedMambaSWATokenToKVPoolAllocator",
+   "kind": "allocator",
+   "site": "mem_cache/allocator/unified_hybrid_swa.py:1340",
+   "status": "refused",
+   "selected_by": "--enable-unified-memory"
+  },
+  {
+   "class": "UnifiedMambaTokenToKVPoolAllocator",
+   "kind": "allocator",
+   "site": "mem_cache/allocator/unified_mamba.py:42",
+   "status": "refused",
+   "selected_by": "--enable-unified-memory"
+  },
+  {
+   "class": "UnifiedSWAAllocatorBase",
+   "kind": "allocator",
+   "site": "mem_cache/allocator/unified_hybrid_swa.py:55",
+   "status": "refused",
+   "selected_by": "--enable-unified-memory"
+  },
+  {
+   "class": "UnifiedSWATokenToKVPoolAllocator",
+   "kind": "allocator",
+   "site": "mem_cache/allocator/unified_hybrid_swa.py:808",
+   "status": "refused",
+   "selected_by": "--enable-unified-memory"
+  },
+  {
+   "class": "BaseSWAKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/base_swa_memory_pool.py:14",
+   "status": "refused",
+   "selected_by": "a model with sliding-window layers"
+  },
+  {
+   "class": "DSATokenToKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/memory_pool.py:5279",
+   "status": "modelled",
+   "port": "DSAPool"
+  },
+  {
+   "class": "DSV4NPUTokenToKVPool",
+   "kind": "kv_pool",
+   "site": "hardware_backend/npu/dsv4/dsv4_memory_pool.py:258",
+   "status": "refused",
+   "selected_by": "--device npu"
+  },
+  {
+   "class": "DeepSeekV4IndexerPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/deepseek_v4_memory_pool.py:545",
+   "status": "refused",
+   "selected_by": "a DeepSeek-V4 model"
+  },
+  {
+   "class": "DeepSeekV4SingleKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/deepseek_v4_memory_pool.py:237",
+   "status": "refused",
+   "selected_by": "a DeepSeek-V4 model"
+  },
+  {
+   "class": "DeepSeekV4TokenToKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/deepseek_v4_memory_pool.py:943",
+   "status": "refused",
+   "selected_by": "a DeepSeek-V4 model"
+  },
+  {
+   "class": "DeepSeekV4UniformFP8KVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/deepseek_v4_memory_pool.py:383",
+   "status": "refused",
+   "selected_by": "a DeepSeek-V4 model"
+  },
+  {
+   "class": "HiSparseC4DevicePool",
+   "kind": "kv_pool",
+   "site": "mem_cache/deepseek_v4_memory_pool.py:437",
+   "status": "refused",
+   "selected_by": "--enable-hisparse with a DeepSeek-V4 model"
+  },
+  {
+   "class": "HiSparseDSATokenToKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/hisparse_memory_pool.py:37",
+   "status": "refused",
+   "selected_by": "--enable-hisparse"
+  },
+  {
+   "class": "HiSparseMHAMainPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/hisparse_memory_pool.py:174",
+   "status": "refused",
+   "selected_by": "--enable-hisparse"
+  },
+  {
+   "class": "HybridLinearKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/memory_pool.py:4228",
+   "status": "refused",
+   "selected_by": "a hybrid linear-attention model"
+  },
+  {
+   "class": "LayerSplitDSATokenToKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/dsa_cache_layer_split.py:194",
+   "status": "refused",
+   "selected_by": "the GLM DSA context-parallel layer split"
+  },
+  {
+   "class": "MHATokenToKOnlyPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/memory_pool.py:5732",
+   "status": "refused",
+   "selected_by": ""
+  },
+  {
+   "class": "MHATokenToKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/memory_pool.py:2184",
+   "status": "modelled",
+   "port": "MHAPool"
+  },
+  {
+   "class": "MHATokenToKVPoolFP4",
+   "kind": "kv_pool",
+   "site": "mem_cache/memory_pool.py:3621",
+   "status": "refused",
+   "selected_by": "an FP4 --kv-cache-dtype"
+  },
+  {
+   "class": "MHATokenToKVPoolMXFP8",
+   "kind": "kv_pool",
+   "site": "mem_cache/memory_pool.py:3847",
+   "status": "refused",
+   "selected_by": "--kv-cache-dtype mxfp8"
+  },
+  {
+   "class": "MLATokenToKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/memory_pool.py:4754",
+   "status": "modelled",
+   "port": "MLAPool"
+  },
+  {
+   "class": "MLATokenToKVPoolFP4",
+   "kind": "kv_pool",
+   "site": "mem_cache/memory_pool.py:5133",
+   "status": "refused",
+   "selected_by": "an FP4 --kv-cache-dtype"
+  },
+  {
+   "class": "MiniMaxM3Nvfp4IndexKPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/minimax_m3_nvfp4_pool.py:123",
+   "status": "refused",
+   "selected_by": "a MiniMax sparse-attention model with NVFP4"
+  },
+  {
+   "class": "MiniMaxM3Nvfp4KVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/minimax_m3_nvfp4_pool.py:603",
+   "status": "refused",
+   "selected_by": "a MiniMax sparse-attention model with NVFP4"
+  },
+  {
+   "class": "MiniMaxM3Nvfp4MainKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/minimax_m3_nvfp4_pool.py:347",
+   "status": "refused",
+   "selected_by": "a MiniMax sparse-attention model with NVFP4"
+  },
+  {
+   "class": "MiniMaxSparseKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/memory_pool.py:5847",
+   "status": "refused",
+   "selected_by": "a MiniMax sparse-attention model"
+  },
+  {
+   "class": "NPUDeepSeekV4IndexerPool",
+   "kind": "kv_pool",
+   "site": "hardware_backend/npu/dsv4/dsv4_memory_pool.py:177",
+   "status": "refused",
+   "selected_by": "--device npu"
+  },
+  {
+   "class": "NPUDeepSeekV4SingleKVPool",
+   "kind": "kv_pool",
+   "site": "hardware_backend/npu/dsv4/dsv4_memory_pool.py:40",
+   "status": "refused",
+   "selected_by": "--device npu"
+  },
+  {
+   "class": "NPUMHATokenToKOnlyPool",
+   "kind": "kv_pool",
+   "site": "hardware_backend/npu/memory_pool_npu.py:496",
+   "status": "refused",
+   "selected_by": "--device npu"
+  },
+  {
+   "class": "NPUMHATokenToKVPool",
+   "kind": "kv_pool",
+   "site": "hardware_backend/npu/memory_pool_npu.py:88",
+   "status": "refused",
+   "selected_by": "--device npu"
+  },
+  {
+   "class": "NPUMLATokenToKVPool",
+   "kind": "kv_pool",
+   "site": "hardware_backend/npu/memory_pool_npu.py:629",
+   "status": "refused",
+   "selected_by": "--device npu"
+  },
+  {
+   "class": "NPUMiniMaxSparseKVPool",
+   "kind": "kv_pool",
+   "site": "hardware_backend/npu/memory_pool_npu.py:603",
+   "status": "refused",
+   "selected_by": "--device npu"
+  },
+  {
+   "class": "NoOpMHATokenToKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/memory_pool.py:3510",
+   "status": "refused",
+   "selected_by": "--prefill-only-disable-kv-cache"
+  },
+  {
+   "class": "PageInterleaveDSATokenToKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/page_interleave_pool.py:937",
+   "status": "refused",
+   "selected_by": "--enable-kv-cache-sharding"
+  },
+  {
+   "class": "PageInterleaveMHATokenToKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/page_interleave_pool.py:595",
+   "status": "refused",
+   "selected_by": "--enable-kv-cache-sharding"
+  },
+  {
+   "class": "PageInterleaveMLATokenToKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/page_interleave_pool.py:694",
+   "status": "refused",
+   "selected_by": "--enable-kv-cache-sharding"
+  },
+  {
+   "class": "PageMajorMHATokenToKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/memory_pool.py:3775",
+   "status": "refused",
+   "selected_by": "the page-major KV layout"
+  },
+  {
+   "class": "QSATokenToKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/qsa_kv_pool.py:48",
+   "status": "refused",
+   "selected_by": "a model with Qwen sparse attention"
+  },
+  {
+   "class": "SWAKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/swa_memory_pool.py:21",
+   "status": "refused",
+   "selected_by": "a model with sliding-window layers"
+  },
+  {
+   "class": "UnifiedDraftKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/unified_draft_pool.py:37",
+   "status": "refused",
+   "selected_by": "--enable-unified-memory with a draft model"
+  },
+  {
+   "class": "UnifiedDraftSWAKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/unified_draft_pool.py:128",
+   "status": "refused",
+   "selected_by": "--enable-unified-memory with a draft model"
+  },
+  {
+   "class": "UnifiedHybridLinearKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/unified_memory_pool.py:1523",
+   "status": "refused",
+   "selected_by": "--enable-unified-memory"
+  },
+  {
+   "class": "UnifiedMHATokenToKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/unified_memory_pool.py:809",
+   "status": "refused",
+   "selected_by": "--enable-unified-memory"
+  },
+  {
+   "class": "UnifiedMLATokenToKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/unified_memory_pool.py:952",
+   "status": "refused",
+   "selected_by": "--enable-unified-memory"
+  },
+  {
+   "class": "UnifiedSWAKVPool",
+   "kind": "kv_pool",
+   "site": "mem_cache/unified_memory_pool.py:1851",
+   "status": "refused",
+   "selected_by": "--enable-unified-memory"
+  },
+  {
+   "class": "_DummyKVCache",
+   "kind": "kv_pool",
+   "site": "hardware_backend/mlx/model_runner_stub.py:43",
+   "status": "refused",
+   "selected_by": "the MLX platform"
+  },
+  {
+   "class": "DSV4NPUReqToTokenPool",
+   "kind": "req_to_token",
+   "site": "hardware_backend/npu/dsv4/dsv4_req_to_token_pool.py:122",
+   "status": "refused",
+   "selected_by": "--device npu"
+  },
+  {
+   "class": "DecodeReqToTokenPool",
+   "kind": "req_to_token",
+   "site": "disaggregation/decode.py:171",
+   "status": "refused",
+   "selected_by": "--disaggregation-mode decode"
+  },
+  {
+   "class": "HybridMambaDecodeReqToTokenPool",
+   "kind": "req_to_token",
+   "site": "disaggregation/decode.py:275",
+   "status": "refused",
+   "selected_by": "--disaggregation-mode decode with a hybrid Mamba model"
+  },
+  {
+   "class": "HybridReqToTokenPool",
+   "kind": "req_to_token",
+   "site": "mem_cache/memory_pool.py:1355",
+   "status": "refused",
+   "selected_by": "a hybrid linear-attention model"
+  },
+  {
+   "class": "MambaPool",
+   "kind": "req_to_token",
+   "site": "mem_cache/memory_pool.py:505",
+   "status": "refused",
+   "selected_by": "a hybrid linear-attention model"
+  },
+  {
+   "class": "MlxAuxiliaryStateReqToTokenPool",
+   "kind": "req_to_token",
+   "site": "hardware_backend/mlx/kv_cache/auxiliary_state.py:218",
+   "status": "refused",
+   "selected_by": "the MLX platform"
+  },
+  {
+   "class": "ReqToTokenPool",
+   "kind": "req_to_token",
+   "site": "mem_cache/memory_pool.py:376",
+   "status": "modelled",
+   "port": "RequestPool"
+  },
+  {
+   "class": "UnifiedHybridReqToTokenPool",
+   "kind": "req_to_token",
+   "site": "mem_cache/unified_memory_pool.py:1357",
+   "status": "refused",
+   "selected_by": "--enable-unified-memory"
+  }
+ ]
+}
