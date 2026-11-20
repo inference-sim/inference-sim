@@ -76,6 +76,184 @@
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
   },
+  "drafter_arch:BailingMoeForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:DeepseekV3ForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:DeepseekV4ForCausalLMDSpark": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:DeepseekV4ForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:Ernie4_5_MoeForCausalLMMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:ExaoneMoEForCausalLMMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:GigaChat35ForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:Glm4MoeForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:Glm4MoeLiteForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:Glm5NextForConditionalGenerationNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:GlmMoeDsaForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:GlmOcrForConditionalGenerationNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:HYV3ForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:HYV4ForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:InklingForConditionalGenerationMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:LongcatFlashForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:MiMoMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:MiMoV2MTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:NemotronHForCausalLMMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:Qwen3MoeForCausalLMMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:Qwen3NextForCausalLMMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:Qwen3_5ForCausalLMMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:Qwen4ExpForCausalLMMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "drafter_arch:Step3p5MTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "engine_setting:SGLANG_CLIP_MAX_NEW_TOKENS_ESTIMATION": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  "engine_setting:SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  "engine_setting:SGLANG_HICACHE_NIXL_BACKEND_PLUGIN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
+  },
+  "engine_setting:SGLANG_INIT_NEW_TOKEN_RATIO": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "engine_setting:SGLANG_MAX_NEW_TOKENS_LIMIT": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  "engine_setting:SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "engine_setting:SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "engine_setting:SGLANG_RETRACT_DECODE_STEPS": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "engine_setting:allow_auto_truncate": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  "engine_setting:chunked_prefill_size": {
+   "status": "modelled",
+   "evidence": [
+    "config/testdata/serverargs.json",
+    "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+   ]
+  },
+  "engine_setting:context_length": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  "engine_setting:disable_overlap_schedule": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "engine_setting:kv_events_config": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  "engine_setting:max_prefill_tokens": {
+   "status": "modelled",
+   "evidence": [
+    "config/testdata/serverargs.json",
+    "core/sched/testdata/golden-sched/max-prefill-tokens-250.trace.json",
+    "core/sched/testdata/golden-sched/max-prefill-tokens.trace.json"
+   ]
+  },
+  "engine_setting:max_running_requests": {
+   "status": "modelled",
+   "evidence": [
+    "config/testdata/serverargs.json",
+    "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+   ]
+  },
+  "engine_setting:mem_fraction_static": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+  },
+  "engine_setting:page_size": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "engine_setting:schedule_conservativeness": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
   "eviction_policy:fifo": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
@@ -476,6 +654,54 @@
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
   },
+  "kv_event_format:default": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "kv_event_format:dynamo": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "kv_event_granularity:page_size": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "kv_event_hash:_NAMESPACE_SEED_TAG": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "kv_event_hash:compute_node_event_hash_values": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "kv_event_hash:compute_node_hash_values": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "kv_event_hash:get_hash_str": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "kv_event_hash:get_storage_hash_str": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "kv_event_hash:hash_str_to_int64": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "kv_event_hash:kv_event_namespace_seed": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "kv_event_hash:namespaced_block_hash": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "kv_event_hash:storage_namespace_seed": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
   "kv_event_medium:CPU_PINNED": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
@@ -489,6 +715,14 @@
    "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
   },
   "kv_event_medium:GPU": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "kv_event_merge:BlockRemoved": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "kv_event_merge:BlockStored": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
   },
@@ -715,6 +949,22 @@
    "reason": "hardware",
    "citation": "python/sglang/srt/hardware_backend/mlx/model_runner_stub.py:43@297e54fd",
    "why": "an Apple MLX class (hardware_backend/mlx); every target chip is CUDA"
+  },
+  "memory_budget:mm_reservation_gb": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+  },
+  "memory_budget:rest_memory": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+  },
+  "memory_budget:returned": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+  },
+  "memory_budget:slack_gb": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
   },
   "metric_family:sglang:backup_bandwidth": {
    "status": "refused",
@@ -1464,6 +1714,54 @@
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
   },
+  "nixl_plugin:3FS": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
+  },
+  "nixl_plugin:GDS": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
+  },
+  "nixl_plugin:GDS_MT": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
+  },
+  "nixl_plugin:OBJ": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
+  },
+  "nixl_plugin:POSIX": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
+  },
+  "overlap_depth:result_queue": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "overlap_disabler:disable_overlap_for_batch": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "overlap_disabler:need_grammar_sync": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "overlap_switch:enable_overlap": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "overlap_switch:enable_overlap_mlx": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "pd_allocation_policy:early": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+  },
+  "pd_allocation_policy:prefill_complete": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+  },
   "req_pool:DSV4NPUReqToTokenPool": {
    "status": "out_of_scope",
    "reason": "hardware",
@@ -1495,6 +1793,14 @@
   "req_pool:UnifiedHybridReqToTokenPool": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  "retraction_policy:length": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "retraction_policy:priority": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/77"
   },
   "schedule_policy:dfs-weight": {
    "status": "refused",
@@ -1531,6 +1837,50 @@
   "schedule_policy:shortest-prefill-first": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "scheduler_loop:event_loop_normal": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "scheduler_loop:event_loop_normal_disagg_decode": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+  },
+  "scheduler_loop:event_loop_normal_disagg_prefill": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+  },
+  "scheduler_loop:event_loop_overlap": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  "scheduler_loop:event_loop_overlap_disagg_decode": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+  },
+  "scheduler_loop:event_loop_overlap_disagg_prefill": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+  },
+  "scheduler_loop:event_loop_overlap_mlx": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  "scheduler_loop:event_loop_pdmux": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+  },
+  "scheduler_loop:event_loop_pp": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "scheduler_loop:event_loop_pp_disagg_decode": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
+  },
+  "scheduler_loop:event_loop_pp_disagg_prefill": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
   },
   "server_args_group:device": {
    "status": "refused",
@@ -1649,6 +1999,26 @@
    "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
   },
   "spec_algo:UNO": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "spec_running_requests:_handle_dflash": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "spec_running_requests:_handle_dspark": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "spec_running_requests:_handle_eagle_family": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "spec_running_requests:_handle_frozen_kv_mtp": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+  },
+  "spec_running_requests:_handle_ngram": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
   },
@@ -1827,6 +2197,14 @@
   "tree_core:rust": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+  },
+  "tree_core_divergence:namespaced-keys": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/55"
+  },
+  "tree_core_divergence:namespaced-keys-dynamo": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-sglang/issues/55"
   },
   "unified_cache_linker:dynamic": {
    "status": "refused",

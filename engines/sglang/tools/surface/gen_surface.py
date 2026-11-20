@@ -76,6 +76,28 @@ under python/sglang/srt/; each item's "site" is the file and line it was read at
                        resolution-step overrides, and each platform class hook
                        (platforms/interface.py get_*_cls).
   server_args_group    each namespace of arg_groups/fields/*.py.
+  engine_setting       the scheduling, admission, output-limit, memory, overlap, KV-event and storage-plugin
+                       settings of SETTINGS (an environ.py variable, a ServerArgs field or an os.getenv
+                       read), each with its default at the pinned commit.
+  pd_allocation_policy each choice of --disaggregation-decode-allocation-policy, the default marked, with
+                       the lines that compare the setting with that choice.
+  retraction_policy    each choice of --retraction-policy, the default marked.
+  tree_core            also: which core is the default (the SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND
+                       declaration in environ.py) and what forces a core (arg_groups/kv_shard_hook.py).
+  tree_core_divergence each difference between the Rust and Python cores that
+                       oracle/treecore-divergences.json records; its status must cite the issue recorded there.
+  spec_running_requests  the max_running_requests each speculative handler of arg_groups/speculative_hook.py
+                       resolves.
+  scheduler_loop       each event loop Scheduler._dispatch_event_loop_once runs, with the condition that selects it.
+  overlap_switch, overlap_depth, overlap_disabler
+                       where the Scheduler sets enable_overlap, how many results the overlap loop holds
+                       (result_queue appends and drains), and each condition is_disable_overlap_for_batch ors.
+  memory_budget        the assignments of KVCacheConfigurator._profile_available_bytes that make the KV budget.
+  nixl_plugin          each NixlBackendSelection plugin, with its rank in auto selection.
+  kv_event_hash        the functions that hash a block for an event or a storage key, with their seed tags.
+  kv_event_granularity, kv_event_merge, kv_event_format
+                       the recorder's page size, the event tails it merges, and the event format choices.
+  drafter_arch         each architecture ModelConfig._config_draft_model rewrites a target to.
   transformers_fallback  each class in the EntryClass of models/transformers.py (route backend_class)
                        and resolve_transformers_arch (model_loader/utils.py), the fallback for an
                        architecture no module of models/ registers (route unregistered_architecture).
@@ -134,6 +156,17 @@ FIELDS_DIR = "arg_groups/fields"
 MODELS_DIR = "models"
 TRANSFORMERS_MODELS = MODELS_DIR + "/transformers.py"
 ARCH_RESOLVER = "model_loader/utils.py"
+ENVIRON = "environ.py"
+SPEC_HOOK = "arg_groups/speculative_hook.py"
+KV_SHARD_HOOK = "arg_groups/kv_shard_hook.py"
+MODEL_CONFIG = "configs/model_config.py"
+NIXL = "mem_cache/storage/nixl/nixl_utils.py"
+SCHEDULER = "managers/scheduler.py"
+EVENTS = "mem_cache/events.py"
+MEM_UTILS = "mem_cache/utils.py"
+DIVERGENCES = "oracle/treecore-divergences.json"
+TREE_CORE_ENV = "SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND"
+PD_POLICY = "disaggregation_decode_allocation_policy"
 
 # A --disaggregation-transfer-backend choice that is not a TransferBackend member, the member the
 # resolution rewrites it to, and the line of the rewrite.
@@ -154,6 +187,49 @@ HICACHE_FIELDS = [
     ("memory.py", "hicache_storage_prefetch_policy"),
     ("memory.py", "hicache_host_memory_mode"),
     ("disagg.py", "disaggregation_decode_retraction_backup"),
+]
+
+# The settings that are surface items (engine_setting): (group, "env", name) for an environment
+# variable of environ.py, (group, "arg", field file, name) for a ServerArgs field, (group, "getenv",
+# file, name) for a variable only an os.getenv call in file reads.
+SETTINGS = [
+    ("admission", "env", "SGLANG_INIT_NEW_TOKEN_RATIO"),
+    ("admission", "env", "SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR"),
+    ("admission", "env", "SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS"),
+    ("admission", "arg", "schedule.py", "schedule_conservativeness"),
+    ("prefill", "arg", "schedule.py", "max_prefill_tokens"),
+    ("prefill", "arg", "schedule.py", "chunked_prefill_size"),
+    ("retraction", "env", "SGLANG_RETRACT_DECODE_STEPS"),
+    ("output_limits", "env", "SGLANG_CLIP_MAX_NEW_TOKENS_ESTIMATION"),
+    ("output_limits", "env", "SGLANG_MAX_NEW_TOKENS_LIMIT"),
+    ("output_limits", "arg", "serving.py", "allow_auto_truncate"),
+    ("output_limits", "arg", "model.py", "context_length"),
+    ("running_requests", "arg", "schedule.py", "max_running_requests"),
+    ("memory_budget", "arg", "schedule.py", "mem_fraction_static"),
+    ("overlap", "arg", "schedule.py", "disable_overlap_schedule"),
+    ("overlap", "env", "SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP"),
+    ("kv_events", "arg", "schedule.py", "page_size"),
+    ("kv_events", "arg", "observability.py", "kv_events_config"),
+    ("storage_plugin", "getenv", NIXL, "SGLANG_HICACHE_NIXL_BACKEND_PLUGIN"),
+]
+
+# Where the P/D allocation policy is read: directories under srt/, scanned for a comparison of the
+# setting with a literal.
+PD_POLICY_DIRS = ["arg_groups", "disaggregation", "managers"]
+
+# The variables _profile_available_bytes assigns that make up the memory budget.
+MEMORY_BUDGET_VARS = ["slack_gb", "mm_reservation_gb", "rest_memory"]
+
+# The functions that hash a KV block for an event or a storage key: (file, function).
+KV_EVENT_HASHES = [
+    (MEM_UTILS, "get_hash_str"),
+    (MEM_UTILS, "storage_namespace_seed"),
+    (MEM_UTILS, "get_storage_hash_str"),
+    (MEM_UTILS, "hash_str_to_int64"),
+    (MEM_UTILS, "compute_node_hash_values"),
+    (MEM_UTILS, "compute_node_event_hash_values"),
+    (KV_EVENTS, "kv_event_namespace_seed"),
+    (KV_EVENTS, "namespaced_block_hash"),
 ]
 
 # The class bases whose subclasses are pool and allocator types, and the category of each.
@@ -665,6 +741,17 @@ def tree_cores(src):
             out.append(item("tree_core", name, TREE_CORES, s.lineno))
     if not out:
         raise GenError("%s: no register_tree_core_backend call" % TREE_CORES)
+    ctor, default, eline = env_decl(src, TREE_CORE_ENV)
+    if default not in [i["name"] for i in out]:
+        raise GenError("%s:%d: the default of %s, %r, is not a registered core" % (ENVIRON, eline, TREE_CORE_ENV, default))
+    forced = [(n.lineno, const_str(n.args[0])) for n in ast.walk(parse(src, KV_SHARD_HOOK))
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "set"
+              and ast.unparse(n.func.value) == "envs." + TREE_CORE_ENV and n.args]
+    for i in out:
+        i["default"] = i["name"] == default
+        i["env"] = TREE_CORE_ENV
+        i["env_site"] = site(ENVIRON, eline)
+        i["forced_by"] = [site(KV_SHARD_HOOK, l) + "=" + v for l, v in forced if v == i["name"]]
     return out
 
 
@@ -996,7 +1083,333 @@ def transformers_fallback(src):
     raise GenError("%s%s: no resolve_transformers_arch" % (SRT, ARCH_RESOLVER))
 
 
-def derive(src):
+# -- the particulars: settings, P/D allocation, tree cores, loops, KV events, memory, drafters ---------
+
+def literal(node):
+    """The Python value of a literal node, else its source text."""
+    try:
+        v = ast.literal_eval(node)
+    except (ValueError, SyntaxError):
+        return ast.unparse(node)
+    return v if isinstance(v, (str, int, float, bool, type(None))) else ast.unparse(node)
+
+
+def env_decl(src, name):
+    """(constructor name, default, line) of an environment variable of environ.py's Envs."""
+    for s in top_class(src, ENVIRON, "Envs").body:
+        if isinstance(s, ast.Assign) and len(s.targets) == 1 and isinstance(s.targets[0], ast.Name) \
+                and s.targets[0].id == name:
+            v = s.value
+            if not (isinstance(v, ast.Call) and isinstance(v.func, ast.Name) and len(v.args) == 1):
+                raise GenError("%s:%d: %s is not declared as Env...(default)" % (ENVIRON, s.lineno, name))
+            return v.func.id, literal(v.args[0]), s.lineno
+    raise GenError("%s: no environment variable %s" % (ENVIRON, name))
+
+
+def getenv_default(src, rel, name):
+    """(default, line) of the single os.getenv(name, default) call in rel."""
+    found = []
+    for n in ast.walk(parse(src, rel)):
+        if isinstance(n, ast.Call) and ast.unparse(n.func) in ("os.getenv", "os.environ.get") and n.args \
+                and const_str(n.args[0]) == name:
+            found.append((literal(n.args[1]) if len(n.args) > 1 else None, n.lineno))
+    if len(found) != 1:
+        raise GenError("%s: %d os.getenv calls of %s, want one" % (rel, len(found), name))
+    return found[0]
+
+
+def field_default(src, fname, field):
+    rel, s = field_decl(src, fname, field)
+    if s.value is None:
+        raise GenError("%s:%d: %s has no default" % (rel, s.lineno, field))
+    return rel, s.lineno, literal(s.value)
+
+
+def engine_settings(src):
+    out = []
+    for group, kind, *rest in SETTINGS:
+        if kind == "getenv":
+            default, line = getenv_default(src, rest[0], rest[1])
+            out.append(item("engine_setting", rest[1], rest[0], line, group=group, kind="getenv", default=default))
+        elif kind == "env":
+            ctor, default, line = env_decl(src, rest[0])
+            out.append(item("engine_setting", rest[0], ENVIRON, line, group=group, kind="env", default=default))
+        else:
+            rel, line, default = field_default(src, rest[0], rest[1])
+            out.append(item("engine_setting", rest[1], rel, line, group=group, kind="arg", default=default))
+    return out
+
+
+def compared_with(src, rel, attr, choices):
+    """{choice: [site, ...]}: the comparisons in rel of an attribute named attr with a choice."""
+    found = {c: [] for c in choices}
+    for n in ast.walk(parse(src, rel)):
+        if isinstance(n, ast.Compare):
+            ops = [n.left] + n.comparators
+            if any(isinstance(o, ast.Attribute) and o.attr == attr for o in ops):
+                for o in ops:
+                    v = const_str(o)
+                    if v in found:
+                        found[v].append(site(rel, n.lineno))
+    return found
+
+
+def pd_allocation(src):
+    rel, fline, choices = field_choices(src, "disagg.py", PD_POLICY)
+    _, _, default = field_default(src, "disagg.py", PD_POLICY)
+    if default not in choices:
+        raise GenError("%s:%d: the default of %s, %r, is not a choice" % (rel, fline, PD_POLICY, default))
+    reads = {c: [] for c in choices}
+    for d in PD_POLICY_DIRS:
+        base = os.path.join(src, SRT, d)
+        try:
+            names = sorted(os.listdir(base))
+        except OSError as e:
+            raise GenError("%s%s: %s" % (SRT, d, e))
+        for root, dirs, files in os.walk(base):
+            dirs.sort()
+            for fn in sorted(files):
+                if not fn.endswith(".py") or fn.startswith("test_"):
+                    continue
+                r = os.path.relpath(os.path.join(root, fn), os.path.join(src, SRT)).replace(os.sep, "/")
+                if PD_POLICY not in read(src, r):
+                    continue
+                for c, sites in compared_with(src, r, PD_POLICY, choices).items():
+                    reads[c] += sites
+    return [item("pd_allocation_policy", c, rel, fline, setting=PD_POLICY, default=(c == default), read_at=reads[c])
+            for c in choices]
+
+
+def retraction_policies(src):
+    rel, fline, choices = field_choices(src, "schedule.py", "retraction_policy")
+    _, _, default = field_default(src, "schedule.py", "retraction_policy")
+    return [item("retraction_policy", c, rel, fline, default=(c == default)) for c in choices]
+
+
+def divergences(src, repo):
+    """The differences between the Rust and Python tree cores that oracle/treecore-divergences.json records."""
+    path = os.path.join(repo, DIVERGENCES)
+    try:
+        with open(path, encoding="utf-8") as f:
+            recorded = json.load(f)["divergences"]
+    except (OSError, ValueError, KeyError) as e:
+        raise GenError("%s: %s" % (DIVERGENCES, e))
+    rust = [i for i in tree_cores(src) if i["name"] == "rust"]
+    if len(rust) != 1:
+        raise GenError("%s: the Rust core is not registered, so no divergence from it can be recorded" % TREE_CORES)
+    out = []
+    for d in recorded:
+        for k in ("sequence", "what", "issue", "why"):
+            if not isinstance(d.get(k), str) or not d[k]:
+                raise GenError("%s: a divergence has no %s" % (DIVERGENCES, k))
+        if not ISSUE.match(d["issue"]):
+            raise GenError("%s: divergence %s names %r, not an issue URL" % (DIVERGENCES, d["sequence"], d["issue"]))
+        out.append(item("tree_core_divergence", d["sequence"], TREE_CORES, int(rust[0]["site"].rsplit(":", 1)[1]),
+                        core="rust", against="python", difference=d["why"], divergence_issue=d["issue"],
+                        recorded_in=DIVERGENCES))
+    return out
+
+
+def spec_defaults(src):
+    """The max_running_requests each speculative handler resolves when none is set."""
+    out = []
+    for fn in parse(src, SPEC_HOOK).body:
+        if not isinstance(fn, ast.FunctionDef):
+            continue
+        for n in ast.walk(fn):
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "declare_resolution":
+                for k in n.keywords:
+                    if k.arg == "max_running_requests":
+                        out.append(item("spec_running_requests", fn.name, SPEC_HOOK, n.lineno, value=literal(k.value)))
+    if not out:
+        raise GenError("%s: no speculative handler resolves max_running_requests" % SPEC_HOOK)
+    return out
+
+
+def dispatch_loops(src):
+    """Each event loop _dispatch_event_loop_once calls, with the conditions that select it."""
+    fn = top_function(src, SCHEDULER, "_dispatch_event_loop_once")
+    out = []
+
+    def walk(stmts, conds):
+        for s in stmts:
+            if isinstance(s, ast.If):
+                t = ast.unparse(s.test)
+                walk(s.body, conds + [t])
+                walk(s.orelse, conds + ["not (%s)" % t])
+            elif isinstance(s, ast.Expr) and isinstance(s.value, ast.Call) and isinstance(s.value.func, ast.Attribute) \
+                    and s.value.func.attr.startswith("event_loop"):
+                out.append(item("scheduler_loop", s.value.func.attr, SCHEDULER, s.lineno, condition=" and ".join(conds)))
+    walk(fn.body, [])
+    if not out:
+        raise GenError("%s: _dispatch_event_loop_once calls no event loop" % SCHEDULER)
+    return out
+
+
+def assigned_in(scope, name):
+    """The (line, source text) of each assignment in scope to a name, or an attribute of that name."""
+    out = []
+    for n in ast.walk(scope):
+        if isinstance(n, ast.Assign):
+            for t in n.targets:
+                if (isinstance(t, ast.Name) and t.id == name) or (isinstance(t, ast.Attribute) and t.attr == name):
+                    out.append((n.lineno, ast.unparse(n.value)))
+    return out
+
+
+def overlap_scheduler(src):
+    cls = top_class(src, SCHEDULER, "Scheduler")
+    out = []
+    for name in ("enable_overlap", "enable_overlap_mlx"):
+        found = assigned_in(cls, name)
+        if len(found) != 1:
+            raise GenError("%s: Scheduler assigns %s %d times, want once" % (SCHEDULER, name, len(found)))
+        out.append(item("overlap_switch", name, SCHEDULER, found[0][0], condition=found[0][1]))
+    loop = method(cls, "event_loop_overlap", SCHEDULER)
+    appends = sum(1 for n in ast.walk(loop) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                  and n.func.attr == "append" and ast.unparse(n.func.value) == "self.result_queue")
+    pops = sum(1 for n in ast.walk(loop) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+               and n.func.id == "pop_and_process")
+    out.append(item("overlap_depth", "result_queue", SCHEDULER, loop.lineno, queue_appends=appends, drain_sites=pops))
+    fn = method(cls, "is_disable_overlap_for_batch", SCHEDULER)
+    ret = [n for n in ast.walk(fn) if isinstance(n, ast.Return)]
+    if len(ret) != 1 or not (isinstance(ret[0].value, ast.BoolOp) and isinstance(ret[0].value.op, ast.Or)
+                             and all(isinstance(v, ast.Name) for v in ret[0].value.values)):
+        raise GenError("%s: is_disable_overlap_for_batch does not return an or of named conditions" % SCHEDULER)
+    for v in ret[0].value.values:
+        found = assigned_in(fn, v.id)
+        if len(found) != 1:
+            raise GenError("%s: is_disable_overlap_for_batch assigns %s %d times, want once" % (SCHEDULER, v.id, len(found)))
+        out.append(item("overlap_disabler", v.id, SCHEDULER, found[0][0], condition=found[0][1]))
+    return out
+
+
+def memory_budget(src):
+    cls = top_class(src, CONFIGURATOR, "KVCacheConfigurator")
+    fn = method(cls, "_profile_available_bytes", CONFIGURATOR)
+    out = []
+    for name in MEMORY_BUDGET_VARS:
+        found = assigned_in(fn, name)
+        if not found:
+            raise GenError("%s: _profile_available_bytes assigns no %s" % (CONFIGURATOR, name))
+        out.append(item("memory_budget", name, CONFIGURATOR, found[0][0], formulas=[f for _, f in found],
+                        lines=[l for l, _ in found]))
+    ret = [n for n in fn.body if isinstance(n, ast.Return)]
+    if len(ret) != 1:
+        raise GenError("%s: _profile_available_bytes does not end in one return" % CONFIGURATOR)
+    out.append(item("memory_budget", "returned", CONFIGURATOR, ret[0].lineno, formulas=[ast.unparse(ret[0].value)]))
+    return out
+
+
+def nixl_plugins(src):
+    cls = top_class(src, NIXL, "NixlBackendSelection")
+    out = []
+    for s in cls.body:
+        if isinstance(s, ast.Assign) and len(s.targets) == 1 and isinstance(s.targets[0], ast.Name) \
+                and s.targets[0].id in ("FILE_PLUGINS", "OBJ_PLUGINS"):
+            kind = "file" if s.targets[0].id == "FILE_PLUGINS" else "object"
+            for rank, name in enumerate(string_list(src, NIXL, s.value, s.targets[0].id)):
+                out.append(item("nixl_plugin", name, NIXL, s.lineno, kind=kind, auto_rank=rank))
+    if not out:
+        raise GenError("%s: NixlBackendSelection lists no plugin" % NIXL)
+    return out
+
+
+def kv_event_particulars(src):
+    out = []
+    for rel, fname in KV_EVENT_HASHES:
+        fn = top_function(src, rel, fname)
+        tags = []
+        for n in ast.walk(fn):
+            if isinstance(n, ast.Constant) and isinstance(n.value, (bytes, str)):
+                t = n.value.decode("latin-1") if isinstance(n.value, bytes) else n.value
+                if t.startswith("sglang-"):
+                    tags.append(t)
+        out.append(item("kv_event_hash", fname, rel, fn.lineno, seed_tags=tags))
+    tag, tline = module_constant(src, KV_EVENTS, "_NAMESPACE_SEED_TAG")
+    if not (isinstance(tag, ast.Constant) and isinstance(tag.value, bytes)):
+        raise GenError("%s:%d: _NAMESPACE_SEED_TAG is not a bytes literal" % (KV_EVENTS, tline))
+    out.append(item("kv_event_hash", "_NAMESPACE_SEED_TAG", KV_EVENTS, tline, seed_tags=[tag.value.decode("latin-1")]))
+    rec = top_class(src, EVENTS, "KVCacheEventRecorder")
+    init = method(rec, "__init__", EVENTS)
+    if "page_size" not in [a.arg for a in init.args.kwonlyargs + init.args.args]:
+        raise GenError("%s: KVCacheEventRecorder takes no page_size" % EVENTS)
+    uses = sorted({n.lineno for n in ast.walk(rec) if isinstance(n, ast.Attribute) and n.attr == "page_size"
+                   and isinstance(n.value, ast.Name) and n.value.id == "self"})
+    out.append(item("kv_event_granularity", "page_size", EVENTS, init.lineno, used_at=[site(EVENTS, l) for l in uses]))
+    enq = method(rec, "enqueue", EVENTS)
+    for n in ast.walk(enq):
+        if isinstance(n, ast.If) and isinstance(n.test, ast.BoolOp) and isinstance(n.test.op, ast.And):
+            names = [c.args[1].id for c in n.test.values if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+                     and c.func.id == "isinstance" and len(c.args) == 2 and isinstance(c.args[1], ast.Name)]
+            if len(names) == 2 and names[0] == names[1]:
+                inner = [b for b in n.body if isinstance(b, ast.If)]
+                out.append(item("kv_event_merge", names[0], EVENTS, n.lineno,
+                                when=ast.unparse(inner[0].test) if inner else "always"))
+    if not any(i["category"] == "kv_event_merge" for i in out):
+        raise GenError("%s: KVCacheEventRecorder.enqueue merges no event" % EVENTS)
+    cfg = top_class(src, KV_EVENTS, "KVEventsConfig")
+    for s in cfg.body:
+        if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name) and s.target.id == "format":
+            ann = s.annotation
+            if not (isinstance(ann, ast.Subscript) and isinstance(ann.value, ast.Name) and ann.value.id == "Literal") or s.value is None:
+                raise GenError("%s:%d: KVEventsConfig.format is not a Literal with a default" % (KV_EVENTS, s.lineno))
+            elts = ann.slice.elts if isinstance(ann.slice, ast.Tuple) else [ann.slice]
+            default = literal(s.value)
+            for e in elts:
+                out.append(item("kv_event_format", const_str(e), KV_EVENTS, s.lineno, default=(const_str(e) == default)))
+            break
+    else:
+        raise GenError("%s: KVEventsConfig has no format" % KV_EVENTS)
+    return out
+
+
+def drafter_architectures(src):
+    """The architecture each target architecture is rewritten to when it is loaded as a draft model."""
+    fn = method(top_class(src, MODEL_CONFIG, "ModelConfig"), "_config_draft_model", MODEL_CONFIG)
+    target = "self.hf_config.architectures[0]"
+    by_name = {}
+
+    def sources(test):
+        out, refs = [], []
+        for c in ast.walk(test):
+            if isinstance(c, ast.Compare) and ast.unparse(c.left) == target:
+                for comp in c.comparators:
+                    if isinstance(comp, (ast.List, ast.Tuple, ast.Set)):
+                        out += [const_str(e) for e in comp.elts if const_str(e)]
+                    elif const_str(comp):
+                        out.append(const_str(comp))
+                    elif isinstance(comp, ast.Name):
+                        refs.append(comp.id)
+        return out, refs
+
+    def walk(stmts, tests):
+        for s in stmts:
+            if isinstance(s, ast.If):
+                walk(s.body, tests + [s.test])
+                walk(s.orelse, tests)
+            elif isinstance(s, (ast.With, ast.For, ast.Try)):
+                walk(s.body, tests)
+            elif isinstance(s, ast.Assign) and len(s.targets) == 1 and ast.unparse(s.targets[0]) == target \
+                    and const_str(s.value):
+                names, refs = [], []
+                for t in tests:
+                    a, b = sources(t)
+                    names += a
+                    refs += b
+                d = by_name.setdefault(const_str(s.value), {"line": s.lineno, "from": set(), "refs": set()})
+                d["from"].update(names)
+                d["refs"].update(refs)
+    walk(fn.body, [])
+    if not by_name:
+        raise GenError("%s: _config_draft_model rewrites no architecture" % MODEL_CONFIG)
+    registered = model_architectures(src)
+    return [item("drafter_arch", name, MODEL_CONFIG, d["line"], target_archs=sorted(d["from"]),
+                 target_arch_lists=sorted(d["refs"]), registered=registered.get(name))
+            for name, d in sorted(by_name.items(), key=lambda kv: kv[1]["line"])]
+
+
+def derive(src, repo="."):
     _TREES.clear()
     _INDEX.clear()
     its = []
@@ -1019,6 +1432,17 @@ def derive(src):
     its += frameworks(src)
     its += extension_points(src)
     its += server_args_groups(src)
+    its += engine_settings(src)
+    its += pd_allocation(src)
+    its += retraction_policies(src)
+    its += divergences(src, repo)
+    its += spec_defaults(src)
+    its += dispatch_loops(src)
+    its += overlap_scheduler(src)
+    its += memory_budget(src)
+    its += nixl_plugins(src)
+    its += kv_event_particulars(src)
+    its += drafter_architectures(src)
     ids = [i["id"] for i in its]
     dup = sorted({i for i in ids if ids.count(i) > 1})
     if dup:
@@ -1065,6 +1489,9 @@ def check_entry(repo, it, st, errs):
         allowed |= {"issue"}
         if not ISSUE.match(str(st.get("issue", ""))):
             errs.append("%s: refused, but issue %r is not a blis-sglang or inference-sim issue URL" % (iid, st.get("issue")))
+        if it["category"] == "tree_core_divergence" and st.get("issue") != it["divergence_issue"]:
+            errs.append("%s: refused with %r, but %s records the divergence under %s"
+                        % (iid, st.get("issue"), DIVERGENCES, it["divergence_issue"]))
     else:
         allowed |= {"reason", "citation"}
         if st.get("reason") not in REASONS:
@@ -1078,7 +1505,7 @@ def check_entry(repo, it, st, errs):
 
 
 def build(src, status, repo):
-    its = derive(src)
+    its = derive(src, repo)
     entries = status.get("items", {})
     errs = []
     known = {i["id"] for i in its}
@@ -1169,7 +1596,7 @@ def main(argv):
         tag, commit = resolve_upstream(a.repo, a.sglang_source, a.upstream_tag, a.upstream_commit)
         UPSTREAM["tag"], UPSTREAM["commit"] = tag, commit
         if a.items:
-            for it in derive(a.sglang_source):
+            for it in derive(a.sglang_source, a.repo):
                 print(it["id"], SRT + it["site"])
             return 0
         if a.status is None:
