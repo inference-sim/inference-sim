@@ -86,14 +86,14 @@ func inkling2KVLayers(g *model.Graph, pool deployment.Pool, engine engineconfig.
 		var attn *model.Node
 		kernel := 0
 		for _, n := range kinds[id].Nodes {
-			switch {
-			case n.Op == model.OpAttention:
+			switch n.Op {
+			case model.OpAttention:
 				if attn != nil {
 					return nil, fmt.Errorf("layer kind %s: two attention nodes in a layer are not mapped", id)
 				}
 				c := n
 				attn = &c
-			case n.Op == model.OpRecurrentUpdate:
+			case model.OpRecurrentUpdate:
 				if n.RecurrentKind != model.RecurrentShortConv || n.ConvKernel <= 0 || kernel != 0 && n.ConvKernel != kernel {
 					return nil, fmt.Errorf("layer kind %s: a recurrent node that is not a short convolution of the layer's one kernel size is not mapped", id)
 				}
