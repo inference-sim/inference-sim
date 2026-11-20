@@ -12339,12 +12339,22 @@
     {
       "name": "abort_on_priority_when_disabled",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#4"
+        "traces": [
+          "core/sched/testdata/golden-sched/priority-disabled.trace.json",
+          "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -12361,12 +12371,23 @@
     {
       "name": "allow_auto_truncate",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#9"
+        "traces": [
+          "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+          "core/sched/testdata/golden-sched/truncate-a.trace.json",
+          "core/sched/testdata/golden-sched/truncate-loose.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -14574,12 +14595,22 @@
     {
       "name": "enable_priority_scheduling",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#4"
+        "traces": [
+          "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+          "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -16290,12 +16321,22 @@
     {
       "name": "max_queued_requests",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#4"
+        "traces": [
+          "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+          "core/sched/testdata/golden-sched/queue-limit.trace.json",
+          "core/sched/testdata/golden-sched/queue-limit-heavy.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -17093,12 +17134,22 @@
     {
       "name": "prefill_max_requests",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#4"
+        "traces": [
+          "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+          "core/sched/testdata/golden-sched/prefill-max.trace.json",
+          "core/sched/testdata/golden-sched/prefill-max-nocache.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -17115,12 +17166,23 @@
     {
       "name": "priority_scheduling_preemption_threshold",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#4"
+        "traces": [
+          "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+          "core/sched/testdata/golden-sched/priority-fcfs.trace.json",
+          "core/sched/testdata/golden-sched/priority-heavy.trace.json",
+          "core/sched/testdata/golden-sched/priority-threshold.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -17335,12 +17397,27 @@
     {
       "name": "retraction_policy",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#4"
+        "traces": [
+          "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+          "core/sched/testdata/golden-sched/retract-priority.trace.json",
+          "core/sched/testdata/golden-sched/retract-priority-lof.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "length",
+          "priority"
+        ],
+        "covered": [
+          "length",
+          "priority"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -17467,23 +17544,66 @@
     {
       "name": "schedule_low_priority_values_first",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#4"
+        "traces": [
+          "core/sched/testdata/golden-sched/priority-fcfs.trace.json",
+          "core/sched/testdata/golden-sched/priority-low-first.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
       "name": "schedule_policy",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#4"
+        "traces": [
+          "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+          "core/sched/testdata/golden-sched/dfs-a.trace.json",
+          "core/sched/testdata/golden-sched/heavy-hrrn.trace.json",
+          "core/sched/testdata/golden-sched/heavy-lof.trace.json",
+          "core/sched/testdata/golden-sched/heavy-lpm.trace.json",
+          "core/sched/testdata/golden-sched/heavy-spf.trace.json",
+          "core/sched/testdata/golden-sched/random-a.trace.json",
+          "core/sched/testdata/golden-sched/routing-a.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "lpm",
+          "random",
+          "fcfs",
+          "dfs-weight",
+          "lof",
+          "priority",
+          "routing-key",
+          "hrrn",
+          "shortest-prefill-first"
+        ],
+        "covered": [
+          "dfs-weight",
+          "fcfs",
+          "hrrn",
+          "lof",
+          "lpm",
+          "random",
+          "routing-key",
+          "shortest-prefill-first"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {

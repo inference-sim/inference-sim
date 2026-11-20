@@ -68,6 +68,17 @@ var acceptedFields = map[string][]any{
 	"mamba_radix_cache_strategy": {"auto", "no_buffer", "extra_buffer", "extra_buffer_lazy"},
 	"mamba_ssm_dtype":            {nil, "float32", "bfloat16", "float16"},
 	"mm_attention_backend":       {nil, "sdpa", "fa3", "fa4", "triton_attn", "flashinfer_cudnn"},
+	// The scheduler's queue, priority, truncation and retraction settings: each is read by the
+	// scheduler port (core/sched) and covered by its oracle goldens (fields/status.json cites them);
+	// no resolution step reads any of them (CheckServerArgs carries the two start-up rules).
+	"enable_priority_scheduling":               nil,
+	"priority_scheduling_preemption_threshold": nil,
+	"schedule_low_priority_values_first":       nil,
+	"abort_on_priority_when_disabled":          nil,
+	"max_queued_requests":                      nil,
+	"prefill_max_requests":                     nil,
+	"allow_auto_truncate":                      nil,
+	"retraction_policy":                        {"length", "priority"},
 }
 
 // refusedFieldIssue names, for a field another open issue covers, that issue instead of the
