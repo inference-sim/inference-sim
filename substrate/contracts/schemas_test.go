@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/check"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
@@ -58,9 +57,29 @@ func bundle() Bundle {
 					Cite: "operator table", Role: vocab.RolePrimary}},
 			}},
 		}},
-		Rules:         testRulesFor,
-		RulesVersions: testRulesVersions,
+		Engine:         testRulesFor,
+		EngineVersions: testEngineVersions,
 	}
+}
+
+// ruleFindings are the report's findings that carry a rule name: the bundle-level notes about
+// the engine (not given, unknown, mismatched, input unchecked), as against the field checks.
+func ruleFindings(rep Report) []validate.Problem {
+	var out []validate.Problem
+	for _, p := range rep.Field.All() {
+		if p.Rule != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func ruleText(rep Report) string {
+	var b strings.Builder
+	for _, p := range ruleFindings(rep) {
+		b.WriteString(p.String() + "\n")
+	}
+	return b.String()
 }
 
 func TestValidBundlePasses(t *testing.T) {
@@ -68,25 +87,22 @@ func TestValidBundlePasses(t *testing.T) {
 	if !rep.OK() {
 		t.Fatalf("a valid bundle was rejected:\n%s", renderAll(rep))
 	}
-	if rep.RulesApplied != "1.0.0" {
-		t.Errorf("RulesApplied = %q, want 1.0.0", rep.RulesApplied)
+	if len(rep.Problems()) != 0 {
+		t.Errorf("a valid bundle carries findings:\n%s", renderAll(rep))
 	}
 }
 
 // TestUnknownEngineVersionIsReported is the property that keeps silence from
-// looking like a pass: a version with no pack must say so.
+// looking like a pass: a version with no engine must say so.
 func TestUnknownEngineVersionIsReported(t *testing.T) {
 	b := bundle()
 	b.Scenario.EngineVersion = "99.0.0"
 	rep := Validate(b)
-	if rep.RulesApplied != "" {
-		t.Errorf("RulesApplied = %q, want empty", rep.RulesApplied)
-	}
-	if len(rep.Rule.All()) == 0 {
+	if len(ruleFindings(rep)) == 0 {
 		t.Fatal("an unknown engine version produced no finding, which is indistinguishable from a checked pass")
 	}
-	if !strings.Contains(rep.Rule.Error(), "no rules pack") {
-		t.Errorf("finding should say no pack applied; got:\n%s", rep.Rule.Error())
+	if !strings.Contains(ruleText(rep), "no engine for engine version") {
+		t.Errorf("finding should say no engine applied; got:\n%s", ruleText(rep))
 	}
 	// It is a warning, not an error: the documents are well formed.
 	if !rep.OK() {
@@ -94,69 +110,62 @@ func TestUnknownEngineVersionIsReported(t *testing.T) {
 	}
 }
 
-// TestRulesDoNotRunOnMalformedDocuments pins the layering: a rule reading a
-// malformed document yields findings that are artifacts of the malformation.
-func TestRulesDoNotRunOnMalformedDocuments(t *testing.T) {
+// TestEngineChecksDoNotRunOnMalformedDocuments pins the layering: the bundle-level engine
+// findings are not reported over a malformed document, where they would be artifacts of it.
+func TestEngineChecksDoNotRunOnMalformedDocuments(t *testing.T) {
 	b := bundle()
 	b.Scenario.Kind = "NotAScenario"
-	b.Deployment.Pools[0].Engine = engineBlock("{backend: telepathy}") // would fire a rule
+	b.Engine, b.EngineVersions = nil, nil // would fire engine-given on a well-formed bundle
 	rep := Validate(b)
 	if rep.Field.OK() {
 		t.Fatal("expected a field problem")
 	}
-	if len(rep.Rule.All()) != 0 {
-		t.Errorf("rules ran over a malformed document:\n%s", rep.Rule.Error())
-	}
-	if rep.RulesApplied != "" {
-		t.Errorf("RulesApplied = %q, want empty", rep.RulesApplied)
+	if len(ruleFindings(rep)) != 0 {
+		t.Errorf("engine findings reported over a malformed document:\n%s", ruleText(rep))
 	}
 }
 
-// TestLayersAreDistinguishable: a caller must be able to tell a malformed document
-// from one that a particular engine would refuse.
-func TestLayersAreDistinguishable(t *testing.T) {
+// TestEngineRefusalIsAFieldProblem: an engine refuses a block as a field problem at the
+// deployment's path, so a caller sees it as the document being wrong, not as a note.
+func TestEngineRefusalIsAFieldProblem(t *testing.T) {
 	b := bundle()
 	b.Deployment.Pools[0].Engine = engineBlock("{backend: telepathy}")
 	rep := Validate(b)
-	if !rep.Field.OK() {
-		t.Fatalf("field layer should pass; got:\n%s", rep.Field.Error())
+	if rep.OK() {
+		t.Fatal("an unknown backend should fail validation")
 	}
-	if rep.Rule.OK() {
-		t.Fatal("rule layer should fail on an unknown backend")
+	found := false
+	for _, p := range rep.Field.Errors() {
+		found = found || (p.Path == "deployment.pools[0].engine.backend" && strings.Contains(p.Message, "telepathy"))
 	}
-	for _, p := range rep.Rule.Errors() {
-		if p.Rule == "" {
-			t.Errorf("rule finding carries no rule name: %s", p)
-		}
+	if !found {
+		t.Errorf("want a field error at deployment.pools[0].engine.backend naming the backend; got:\n%s", renderAll(rep))
 	}
 }
 
-// TestEngineRulesAreRequired: a scenario names an engine release, and this schema holds the
-// pools' engine blocks unopened, so without the release's rules nothing checks them. A bundle
-// with a scenario and no rules is refused, by a named rule, rather than passed unchecked.
-func TestEngineRulesAreRequired(t *testing.T) {
+// TestEngineIsRequired: a scenario names an engine release, and this schema holds the
+// pools' engine blocks unopened, so without the release's checker nothing checks them. A bundle
+// with a scenario and no engine is refused, by a named finding, rather than passed unchecked.
+func TestEngineIsRequired(t *testing.T) {
 	b := bundle()
-	b.Rules, b.RulesVersions = nil, nil
+	b.Engine, b.EngineVersions = nil, nil
 	b.Deployment.Pools[0].Engine = engineBlock("{block_size: -1, backend: telepathy}")
 	rep := Validate(b)
 	if rep.OK() {
-		t.Fatal("a bundle with no engine rules passed")
-	}
-	if rep.RulesApplied != "" {
-		t.Errorf("RulesApplied = %q, want empty", rep.RulesApplied)
+		t.Fatal("a bundle with no engine passed")
 	}
 	found := false
-	for _, p := range rep.Rule.Errors() {
-		if p.Rule == "engine-rules-given" && strings.Contains(p.Message, `"1.0.0"`) {
+	for _, p := range rep.Field.Errors() {
+		if p.Rule == "engine-given" && strings.Contains(p.Message, `"1.0.0"`) {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("want an engine-rules-given error naming the release; got:\n%s", renderAll(rep))
+		t.Errorf("want an engine-given error naming the release; got:\n%s", renderAll(rep))
 	}
-	// A bundle with no scenario names no release and needs no rules.
+	// A bundle with no scenario names no release and needs no engine.
 	if rep := Validate(Bundle{Chip: b.Chip}); !rep.OK() {
-		t.Errorf("a chip-only bundle needs no engine rules:\n%s", renderAll(rep))
+		t.Errorf("a chip-only bundle needs no engine:\n%s", renderAll(rep))
 	}
 }
 
@@ -200,8 +209,8 @@ func TestEngineBlockIsCheckedByTheRules(t *testing.T) {
 	if rep.Field.OK() || !strings.Contains(rep.Field.Error(), "blok_size") {
 		t.Errorf("an unknown engine key passed the field layer:\n%s", renderAll(rep))
 	}
-	if len(rep.Rule.All()) != 0 {
-		t.Errorf("rules ran over an engine block that does not decode:\n%s", rep.Rule.Error())
+	if len(ruleFindings(rep)) != 0 {
+		t.Errorf("engine findings reported over an engine block that does not decode:\n%s", ruleText(rep))
 	}
 }
 
@@ -218,12 +227,9 @@ func TestDeploymentWithoutScenarioIsRejected(t *testing.T) {
 	if rep.Field.OK() {
 		t.Fatal("a deployment with no scenario should be a field problem, not a pass")
 	}
-	if rep.RulesApplied != "" {
-		t.Errorf("RulesApplied = %q, want empty when no scenario is present", rep.RulesApplied)
-	}
 
 	// The mirror: a scenario with no deployment is a complete problem and still validates.
-	if rep := Validate(Bundle{Scenario: b.Scenario, Rules: testRulesFor}); !rep.OK() {
+	if rep := Validate(Bundle{Scenario: b.Scenario, Engine: testRulesFor}); !rep.OK() {
 		t.Fatalf("a scenario with no deployment should pass:\n%s", renderAll(rep))
 	}
 }
@@ -234,8 +240,8 @@ func TestPartialBundlesValidate(t *testing.T) {
 	if !rep.OK() {
 		t.Fatalf("a chip-only bundle was rejected:\n%s", renderAll(rep))
 	}
-	if rep.RulesApplied != "" {
-		t.Error("no scenario means no rules should apply")
+	if len(rep.Problems()) != 0 {
+		t.Errorf("no scenario means no engine findings:\n%s", renderAll(rep))
 	}
 }
 
@@ -311,96 +317,85 @@ func renderAll(r Report) string {
 	return b.String()
 }
 
-// fakeRules is an EngineRules that records the version it was asked for and reports one rule
-// finding, so a test can tell the caller's rules ran. It takes every engine block as valid.
-type fakeRules struct {
-	rules.EngineRules
-	version string
-}
+// fakeEngine is an EngineChecker that records the version it was asked for and takes every
+// engine block as valid.
+type fakeEngine struct{ version string }
 
-func (f fakeRules) EngineVersion() string { return f.version }
-func (f fakeRules) Check(rules.Input) *rules.Problems {
-	p := &validate.Problems{}
-	p.RuleErrorf("caller-rule", "the caller's rules ran for %s", f.version)
-	return p
+func (f fakeEngine) EngineVersion() string { return f.version }
+func (f fakeEngine) CheckEngineBlock(string, deployment.EngineBlock) *validate.Problems {
+	return nil
 }
-func (f fakeRules) CheckEngineBlock(string, deployment.EngineBlock) *rules.Problems { return nil }
-func (f fakeRules) DraftTokens(deployment.EngineBlock) int                          { return 0 }
-func (f fakeRules) CheckConnectorOptions(string, deployment.EngineBlock) *rules.Problems {
+func (f fakeEngine) DraftTokens(deployment.EngineBlock) int { return 0 }
+func (f fakeEngine) CheckConnectorOptions(string, deployment.EngineBlock) *validate.Problems {
 	return nil
 }
 
-// The caller's rules are what run: asked for the scenario's release, their findings reported,
-// and a release they do not know reported rather than passed in silence.
-func TestValidate_RunsTheCallersRules(t *testing.T) {
+// refusingEngine refuses every engine block, so a test can tell the caller's checker ran.
+type refusingEngine struct{ fakeEngine }
+
+func (f refusingEngine) CheckEngineBlock(at string, _ deployment.EngineBlock) *validate.Problems {
+	p := &validate.Problems{}
+	p.Field(at+".engine", "the caller's engine ran for %s", f.version)
+	return p
+}
+
+// The caller's engine is what runs: asked for the scenario's release, its findings reported,
+// and a release it does not know reported rather than passed in silence.
+func TestValidate_RunsTheCallersEngine(t *testing.T) {
 	var asked string
 	b := bundle()
-	b.Rules = func(v string) rules.EngineRules { asked = v; return fakeRules{version: v} }
+	b.Engine = func(v string) EngineChecker { asked = v; return refusingEngine{fakeEngine{version: v}} }
 	rep := Validate(b)
-	if asked != "1.0.0" || rep.RulesApplied != "1.0.0" {
-		t.Fatalf("asked %q, applied %q; want the scenario's 1.0.0", asked, rep.RulesApplied)
+	if asked != "1.0.0" {
+		t.Fatalf("asked %q; want the scenario's 1.0.0", asked)
 	}
-	if !strings.Contains(rep.Rule.Error(), "the caller's rules ran for 1.0.0") {
-		t.Errorf("the caller's rules did not run:\n%s", rep.Rule.Error())
+	if !strings.Contains(rep.Field.Error(), "the caller's engine ran for 1.0.0") {
+		t.Errorf("the caller's engine did not run:\n%s", rep.Field.Error())
 	}
 
-	b.Rules = func(string) rules.EngineRules { return nil }
-	b.RulesVersions = func() []string { return []string{"1.1.0"} }
+	b.Engine = func(string) EngineChecker { return nil }
+	b.EngineVersions = func() []string { return []string{"1.1.0"} }
 	rep = Validate(b)
-	if rep.RulesApplied != "" || !strings.Contains(rep.Rule.Error(), "no rules pack") ||
-		!strings.Contains(rep.Rule.Error(), "[1.1.0]") {
-		t.Errorf("a version the caller's rules do not know: applied %q, findings:\n%s", rep.RulesApplied, rep.Rule.Error())
+	if !strings.Contains(ruleText(rep), "no engine for engine version") || !strings.Contains(ruleText(rep), "[1.1.0]") {
+		t.Errorf("a version the caller's engine does not know; findings:\n%s", ruleText(rep))
 	}
 }
 
-// nilCheckRules says "no findings" the usual Go way, with a nil Problems.
-type nilCheckRules struct{ fakeRules }
+// ptrEngine is a checker of a pointer type, as an engine module's own may be.
+type ptrEngine struct{ fakeEngine }
 
-func (nilCheckRules) Check(rules.Input) *rules.Problems { return nil }
+func (r *ptrEngine) EngineVersion() string { return r.version }
 
-// ptrRules is a rules type of a pointer type, as an engine model's own rules may be.
-type ptrRules struct{ fakeRules }
-
-func (r *ptrRules) EngineVersion() string             { return r.version }
-func (r *ptrRules) Check(rules.Input) *rules.Problems { return &validate.Problems{} }
-
-// The caller's rules are held to the contract: a report whose rule layer is never nil, an
-// unknown release named as unknown whatever the rules' concrete type, and rules answering for a
-// release other than the scenario's refused rather than applied.
-func TestValidate_HoldsTheCallersRulesToTheContract(t *testing.T) {
+// The caller's engine is held to the contract: an unknown release named as unknown whatever
+// the checker's concrete type, and a checker answering for a release other than the
+// scenario's refused rather than applied.
+func TestValidate_HoldsTheCallersEngineToTheContract(t *testing.T) {
 	b := bundle()
-	b.Rules = func(v string) rules.EngineRules { return nilCheckRules{fakeRules{version: v}} }
+	var typedNil *ptrEngine
+	b.Engine, b.EngineVersions = func(string) EngineChecker { return typedNil }, nil
 	rep := Validate(b)
-	if rep.Rule == nil || !rep.OK() || rep.RulesApplied != "1.0.0" || len(rep.Problems()) != 0 {
-		t.Errorf("rules whose Check returns nil: rule layer %v, applied %q; want an empty layer and 1.0.0", rep.Rule, rep.RulesApplied)
+	if !strings.Contains(ruleText(rep), "no engine for engine version") || !rep.OK() {
+		t.Errorf("a typed nil checker must read as unknown; findings:\n%s", ruleText(rep))
 	}
-
-	var typedNil *ptrRules
-	b.Rules, b.RulesVersions = func(string) rules.EngineRules { return typedNil }, nil
-	rep = Validate(b)
-	if rep.RulesApplied != "" || !strings.Contains(rep.Rule.Error(), "no rules pack") || !rep.OK() {
-		t.Errorf("a typed nil rules value must read as unknown: applied %q, findings:\n%s", rep.RulesApplied, rep.Rule.Error())
-	}
-	// With no RulesVersions the finding names no registered versions, rather than an empty list
-	// that would read as a rules source holding none.
-	if strings.Contains(rep.Rule.Error(), "Registered versions") {
-		t.Errorf("no RulesVersions: the finding must not list registered versions:\n%s", rep.Rule.Error())
+	// With no EngineVersions the finding names no registered versions, rather than an empty list
+	// that would read as an engine source holding none.
+	if strings.Contains(ruleText(rep), "Registered versions") {
+		t.Errorf("no EngineVersions: the finding must not list registered versions:\n%s", ruleText(rep))
 	}
 
 	for _, answered := range []string{"1.1.0", ""} {
-		b.Rules = func(string) rules.EngineRules { return fakeRules{version: answered} }
+		b.Engine = func(string) EngineChecker { return refusingEngine{fakeEngine{version: answered}} }
 		rep = Validate(b)
-		if rep.OK() || rep.RulesApplied != "" {
-			t.Errorf("rules answering for %q to a 1.0.0 scenario: OK %v, applied %q; want a refusal and nothing applied",
-				answered, rep.OK(), rep.RulesApplied)
+		if rep.OK() {
+			t.Errorf("a checker answering for %q to a 1.0.0 scenario: OK; want a refusal", answered)
 		}
 		for _, frag := range []string{"engine-version-matches", `"1.0.0"`, `"` + answered + `"`} {
-			if !strings.Contains(rep.Rule.Error(), frag) {
-				t.Errorf("rules answering for %q: the refusal must name %s; findings:\n%s", answered, frag, rep.Rule.Error())
+			if !strings.Contains(ruleText(rep), frag) {
+				t.Errorf("a checker answering for %q: the refusal must name %s; findings:\n%s", answered, frag, ruleText(rep))
 			}
 		}
-		if strings.Contains(rep.Rule.Error(), "caller's rules ran") {
-			t.Errorf("rules answering for %q were run against a 1.0.0 scenario", answered)
+		if strings.Contains(rep.Field.Error(), "caller's engine ran") {
+			t.Errorf("a checker answering for %q was run against a 1.0.0 scenario", answered)
 		}
 	}
 }

@@ -33,11 +33,6 @@ type EngineRules interface {
 	// EngineVersion is the release the rules describe, such as "1.2.0".
 	EngineVersion() string
 
-	// Check runs every rule of the release over a document set.
-	Check(in Input) *Problems
-	// RuleNames returns the release's rule names, sorted.
-	RuleNames() []string
-
 	// CheckEngineBlock is the release's field checks of one pool's engine block, which this
 	// schema holds unopened: whether the block decodes, and the bounds its own types
 	// declare. at is the pool's path within the deployment, such as "pools[0]", and each

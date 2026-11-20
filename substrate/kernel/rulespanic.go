@@ -29,16 +29,6 @@ func (r panicTagged) EngineVersion() string {
 	return r.EngineRules.EngineVersion()
 }
 
-func (r panicTagged) Check(in rules.Input) *rules.Problems {
-	defer tag()
-	return r.EngineRules.Check(in)
-}
-
-func (r panicTagged) RuleNames() []string {
-	defer tag()
-	return r.EngineRules.RuleNames()
-}
-
 func (r panicTagged) SpeculativeMethodAccepted(method string) bool {
 	defer tag()
 	return r.EngineRules.SpeculativeMethodAccepted(method)

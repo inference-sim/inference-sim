@@ -17,8 +17,6 @@ import (
 type inertRules struct{}
 
 func (inertRules) EngineVersion() string                                           { return "inert" }
-func (inertRules) Check(rules.Input) *rules.Problems                               { return &rules.Problems{} }
-func (inertRules) RuleNames() []string                                             { return nil }
 func (inertRules) CheckEngineBlock(string, deployment.EngineBlock) *rules.Problems { return nil }
 func (inertRules) CheckConnectorOptions(string, deployment.EngineBlock) *rules.Problems {
 	return nil

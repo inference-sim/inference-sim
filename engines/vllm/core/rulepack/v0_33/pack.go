@@ -314,12 +314,12 @@ func Pack() *pack.Pack {
 	return p
 }
 
-func ruleList(p *pack.Pack) []rules.Rule {
-	return []rules.Rule{
+func ruleList(p *pack.Pack) []pack.Rule {
+	return []pack.Rule{
 		{
 			Name:    "all2all-backend-known",
 			Because: "an unrecognized backend name would be priced with the default volume basis, which differs by a factor of top_k; an accepted name the engine replaces (pplx, naive) is priced as what runs, which the warning names",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
 					if e.All2AllBackend == "" {
 						return
@@ -339,7 +339,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "allreduce-backend-known",
 			Because: "the backend decides whether a reduction consumes SMs or the NIC, so an unknown name leaves the cost on no resource",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
 					if e.AllReduceBackend == "" {
 						return
@@ -355,7 +355,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "enum-values-known",
 			Because: "graph mode, cache dtype, mamba cache dtype and mode, MoE backend and scheduler policy each change a cost term, and the engine types each as a closed literal, refusing any other value",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
 					check := func(field, value string, allowed map[string]bool) {
 						if value == "" || allowed[value] {
@@ -380,7 +380,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "speculative-method-known",
 			Because: "an unknown draft method cannot be priced, and the draft pass of an MoE target is a second MoE rather than a scalar multiplier",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
 					if e.Speculative == nil {
 						return
@@ -403,7 +403,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "dcp-comm-backend-known",
 			Because: "the engine types this setting as a closed literal and refuses any other name at startup",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
 					if e.DCPCommBackend != "" && !p.DCPCommBackends[e.DCPCommBackend] {
 						out.RuleErrorf("dcp-comm-backend-known",
@@ -420,7 +420,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 				"a name a plugin could register, which vllm serve does before it parses the flag, is a warning, and " +
 				"one no plugin can register, because MLAPrefillBackendEnum.register refuses a name that is not a " +
 				"Python identifier (vllm/v1/attention/backends/mla/prefill/registry.py:85-86@5df63a72), is an error",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				known := set(mlaPrefillBackends...)
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
 					name := strings.ToUpper(e.MLAPrefillBackend)
@@ -445,7 +445,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 			Because: "decode-context parallelism reuses the tensor-parallel ranks when prefill-context parallelism is off, " +
 				"so the engine refuses a dcp that does not divide tp at startup; with prefill-context parallelism on, dcp " +
 				"must be off, span the pcp axis, or span the whole tp x pcp block (vllm/config/parallel.py:590-599@5df63a72)",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				forEachPool(in, func(at string, pool engineconfig.Pool) {
 					pl := pool.Parallel
 					tp, pcp, dcp := pl.TP, max(pl.PCP, 1), max(pl.DCP, 1)
@@ -467,7 +467,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "cp-kv-cache-interleave-fits-block",
 			Because: "with decode-context parallelism on and no NixlConnector configured, this release asserts at startup that block_size is at least, and divisible by, cp_kv_cache_interleave_size (vllm/config/vllm.py validate_block_size), so a layout breaking it does not start; unlike v0.29.0, any other connector leaves the assert in force. The block size it checks is the smallest prefix-cacheable KV cache group's, which can be a model's own window-cache page size rather than the stated one",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				// Only where the assert is certain to run on the values stated:
 				//   - a NixlConnector, directly or as a MultiConnector child, skips the
 				//     assert, and the schema cannot see a MultiConnector's children, so
@@ -519,7 +519,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "expert-divisibility-under-eplb",
 			Because: "with load balancing on, the engine asserts that the expert-parallel width divides the physical expert count, so an indivisible layout does not start",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				if in.Model == nil {
 					return
 				}
@@ -549,7 +549,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "expert-imbalance-without-eplb",
 			Because: "without load balancing an indivisible split is legal but uneven, and the resulting static imbalance is a step-time term rather than an error; a width larger than the expert count leaves ranks with no experts, which is an error",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				if in.Model == nil {
 					return
 				}
@@ -583,7 +583,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "custom-allreduce-reachable",
 			Because: "the SM-consuming kernel supports only certain rank counts and only within one node absent multi-node NVLink, so a request outside those falls back to the NIC",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				// The node size is the cluster's resolved packaging (the scenario's, or the
 				// chip's catalog entry's), not the scenario's field, which is zero where the
 				// scenario leaves it to the catalog.
@@ -612,7 +612,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "offload-spec-known",
 			Because: "the spec decides whether a fetch consumes SMs or a copy engine, which is the only way the offload path enters step time",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				if in.Deployment == nil {
 					return
 				}
@@ -628,7 +628,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "quantization-known",
 			Because: "the served weight format sets weight-read bytes, compute peak and the GEMM efficiency envelope at once, so a misspelled in-tree method is priced against three wrong constants; it is a warning because the engine admits out-of-tree methods this set cannot enumerate",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
 					if e.Quantization == "" || p.Quantizations[e.Quantization] {
 						return
@@ -642,7 +642,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "connector-known",
 			Because: "the connector names the offload/PD-transfer implementation whose spec decides whether a fetch consumes SMs or a copy engine, so an unknown name leaves the transfer on no modeled resource; a warning because the KV connector registry is extensible out of tree",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				if in.Deployment == nil {
 					return
 				}
@@ -665,7 +665,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "eviction-policy-known",
 			Because: "a supplied name the engine does not recognize does not silently fall back — CachePolicyFactory.get_cache_policy_cls raises ValueError at launch unless cache_policy_module_path names an out-of-tree policy; this rule catches that typo earlier, as a warning, while still permitting a real out-of-tree name the set cannot enumerate",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				if in.Deployment == nil {
 					return
 				}
@@ -683,7 +683,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "mamba-cache-mode-matches-model",
 			Because: "a cache mode for recurrent layers on a model with none is a setting with no effect, and its absence on a model with them leaves the state unsized",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				if in.Model == nil {
 					return
 				}
@@ -703,7 +703,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "dbo-thresholds-stated-when-enabled",
 			Because: "which threshold applies turns on batch uniformity, and an unstated threshold silently takes a default that differs by 16x between the two",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
 					if e.DBO == nil || !e.DBO.Enabled {
 						return
@@ -720,7 +720,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "dbo-thresholds-at-least-microbatches",
 			Because: "with dual-batch overlap on, this release refuses a decode or prefill token threshold below its two microbatches at startup (vllm/config/parallel.py: \"must be at least the number of microbatches\")",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				const microbatches = 2 // num_ubatches is 2 whenever enable_dbo is set
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
 					if e.DBO == nil || !e.DBO.Enabled {
@@ -751,7 +751,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 				"prefill-context parallelism (:370-377), reports supports_kv_connector False (:205-206), accepts only " +
 				"MultipleOf(16) kernel block sizes (:188-190), and requires a BF16 or FP8-e4m3 main KV cache (:361-368); " +
 				"a graph that names no Qwen4Exp architecture is not checked (vLLM v0.33.0, 4ba787ec9959e566d3b587a796dff07673324da5)",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				if in.Model == nil || !qwen4ExpArchitectures[in.Model.Global.Architecture] {
 					return
 				}
@@ -791,7 +791,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "engram-excludes-dbo",
 			Because: "this release refuses dual-batch overlap and microbatching at startup for a DeepseekV41ForCausalLM with Engram layers (vllm/config/vllm.py: \"DeepSeek V4.1 Engram does not support DBO or microbatching\"); a graph with Engram lookups that names no architecture draws a warning, since the refusal turns on the architecture",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				if !modelHasEngram(in) {
 					return
 				}
@@ -818,7 +818,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "engram-config-valid",
 			Because: "this release refuses an Engram config at startup on a model without Engram layers or of an architecture outside _NGRAM_LAYER_FIELDS, dp_shared_memory without cpu_offload or with one data-parallel rank, and use_thp without cpu_offload or with dp_shared_memory (vllm/config/engram.py); a graph with Engram lookups that names no architecture draws a warning, since the refusal turns on the architecture",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				forEachPool(in, func(at string, pool engineconfig.Pool) {
 					ec := pool.Engine.EngramConfig
 					if ec == nil {
@@ -865,7 +865,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "cache-record-dtypes-known",
 			Because: "a cache's per-dtype record is looked up by the cache dtype the engine runs, so an entry keyed by a name this release does not accept, or by auto, which always resolves to a concrete dtype, can never be read, and a misspelled nvfp4_ds_mla would leave its cache priced at the default record",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				if in.Model == nil {
 					return
 				}
@@ -893,7 +893,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "engram-residency-default",
 			Because: "a graph states where an Engram table lives when the deployment leaves cpu_offload alone, and this release's default is cpu_offload true, host memory (vllm/config/engram.py); a graph stating the other residency would price every such deployment against the wrong memory",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				if in.Model == nil {
 					return
 				}
@@ -916,7 +916,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "deepseek-v41-refuses-mtp",
 			Because: "this release refuses a multi-token-prediction draft for DeepSeek-V4.1 at startup: it rewrites every MTP-family method name to mtp, rewrites the V4.1 draft config to deepseek_mtp, and then raises \"DeepSeek V4.1 has no classic-MTP draft\" (vllm/config/speculative.py); dspark is the method it serves. A launch escapes only where the draft model's path (containing eagle-, eagle3, dflash or dspark) or its own configuration (a DSpark, DFlash, Medusa or MLP-speculator draft) selects another method first, which a deployment does not record",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				if in.Model == nil || in.Model.Global.Architecture != rules.ArchDeepseekV41 {
 					return
 				}
@@ -941,7 +941,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "max-model-len-within-context-window",
 			Because: "this release refuses a stated max_model_len above the window it derives from the model configuration, unless the configuration's model_max_length admits it or VLLM_ALLOW_LONG_MAX_MODEL_LEN is set (vllm/config/model.py); a warning because the schema sees neither",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				if in.Model == nil || in.Model.Global.ContextWindow < 1 {
 					return
 				}
@@ -958,7 +958,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "sequence-parallel-architecture-known",
 			Because: "a graph's sequence_parallel emit conditions and under_sequence_parallel splits are decided by its architecture's own code, so on an architecture this release has no such rule for they never apply and the graph prices tensor parallelism alone",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				if in.Model == nil {
 					return
 				}
@@ -985,7 +985,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "model-sequence-parallel-collectives",
 			Because: "an architecture that decides its own sequence parallelism never consults the engine-wide sequence-parallel-MoE rule -- DeepSeek-V4.1 passes its own _use_sequence_parallel to its MoE and shared expert, and FusedMoE then skips the final tensor-parallel all-reduce (vllm/model_executor/layers/fused_moe/runner/moe_runner.py, \"Skipped when sequence-parallel is active\") -- so a decoder-layer reduction conditioned on that rule fires or not on the wrong layouts; and a plain tensor-parallel all-reduce inside a decoder layer is replaced under the model's sequence parallelism, which shards the residual stream by token",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				if in.Model == nil {
 					return
 				}
@@ -1015,7 +1015,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "moe-ep-backend-binds-passthrough",
 			Because: "this release binds all2all_backend passthrough (no framework all-to-all) to the MoE backends that dispatch and combine themselves, the FlashInfer MoE-EP megakernels, and refuses at startup any other explicit all2all_backend beside one and passthrough beside any other MoE backend (vllm/config/kernel.py:194-227@5df63a72), so such a pool does not run; left at the default, the backend is rebound to passthrough, which prices no all-to-all",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
 					moe := pack.NormalizeMoEBackend(e.MoEBackend)
 					selfCommunicating := moe == "flashinfer_moe_ep_cutedsl" || moe == "flashinfer_moe_ep_mega_deep_gemm"
@@ -1039,7 +1039,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "flashinfer-mega-deep-gemm-model",
 			Because: "this release refuses moe_backend flashinfer_moe_ep_mega_deep_gemm at startup for a model that is not DeepSeek-V4 or DeepSeek-V4.1 (validate_flashinfer_moe_ep_model, vllm/config/kernel.py:230-241@5df63a72, called from set_platform_defaults, :443-446), so such a pool does not run; a graph that names no architecture draws a warning, since the refusal turns on the architecture",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				if in.Model == nil {
 					return
 				}
@@ -1067,7 +1067,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "eplb-needs-expert-parallelism",
 			Because: "this release refuses expert-parallel load balancing at startup without enable_expert_parallel, and with tensor, prefill-context and data parallelism all 1, because the expert-parallel group spans their product (vllm/config/parallel.py:559-581@5df63a72), so such a pool does not run; it also refuses num_redundant_experts without EPLB (:583-589)",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				forEachPool(in, func(at string, pool engineconfig.Pool) {
 					e, pl := pool.Engine, pool.Parallel
 					on := e.EPLB != nil && e.EPLB.Enabled
@@ -1091,7 +1091,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "moonep-requirements",
 			Because: "this release refuses the moonep all2all backend at startup for a quantized model, a model whose runtime dtype is not BF16, and with EPLB (vllm/config/vllm.py), so such a pool does not run; an FP16 checkpoint is a warning, since --dtype bfloat16 casts it and a deployment does not record the dtype; the refusal of a non-linear expert placement needs no check, because a deployment cannot state one and the default is linear",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
 					if e.All2AllBackend != "moonep" {
 						return
@@ -1124,7 +1124,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "sequence-parallel-moe-implied",
 			Because: "on this backend with tensor and data parallelism both above one, the engine makes the MoE input sequence-parallel, which replaces the layer's all-reduce with a different pair of collectives",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				// A model that decides its own sequence parallelism never consults the
 				// engine-wide rule, so the rule says nothing about it.
 				if in.Model != nil {
@@ -1147,7 +1147,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "data-parallel-load-balancing",
 			Because: "this release refuses external data-parallel load balancing for a model without experts and hybrid without data_parallel_size_local, switches hybrid with one rank per node to external, and runs hybrid with every rank on one node as internal (vllm/engine/arg_utils.py create_engine_config); the mode decides which endpoints a router can choose between",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				forEachPool(in, func(at string, pool engineconfig.Pool) {
 					pl := pool.Parallel
 					stated := pl.DataParallelLoadBalancing.Mode()
@@ -1177,7 +1177,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "long-prefill-threshold-within-max-model-len",
 			Because: "this release refuses at startup a long_prefill_token_threshold greater than max_model_len (vllm/config/scheduler.py verify_max_model_len)",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
 					n, ok := e.MaxModelLen.Stated()
 					if ok && e.LongPrefillTokenThreshold > n {
@@ -1191,7 +1191,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name:    "cudagraph-capture-sizes",
 			Because: "this release refuses a stated max_cudagraph_capture_size that is not the largest of the stated cudagraph_capture_sizes it keeps, caps the maximum at max_num_batched_tokens, drops sizes above it, and truncates a maximum off its capture stride to the largest size it generates (vllm/config/vllm.py _set_cudagraph_sizes); a step larger than the size that runs is executed eager, so the size that runs is the one to price",
-			Check: func(in rules.Input, out *rules.Problems) {
+			Check: func(in pack.Input, out *rules.Problems) {
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
 					stated := e.MaxCUDAGraphCaptureSize != nil || e.CUDAGraphCaptureSizes != nil
 					if !stated {
@@ -1237,7 +1237,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 	}
 }
 
-func forEachPool(in rules.Input, fn func(at string, pool engineconfig.Pool)) {
+func forEachPool(in pack.Input, fn func(at string, pool engineconfig.Pool)) {
 	if in.Deployment == nil {
 		return
 	}
@@ -1252,7 +1252,7 @@ func forEachPool(in rules.Input, fn func(at string, pool engineconfig.Pool)) {
 	}
 }
 
-func forEachEngine(in rules.Input, fn func(at string, e engineconfig.Engine)) {
+func forEachEngine(in pack.Input, fn func(at string, e engineconfig.Engine)) {
 	forEachPool(in, func(at string, pool engineconfig.Pool) { fn(at, pool.Engine) })
 }
 
@@ -1290,7 +1290,7 @@ func itoa(i int) string {
 // declares. Where layers differ it is the target's count, as for DeepSeek-V4.1, whose
 // draft layers carry 128 experts beside the target's 384. A draft's own, smaller count
 // is not checked.
-func totalExperts(in rules.Input) int {
+func totalExperts(in pack.Input) int {
 	if in.Model == nil {
 		return 0
 	}
@@ -1360,7 +1360,7 @@ func pdConnectorOf(t *deployment.PDTransfer) string {
 // residency the engine's Engram config controls. With the architecture, it is the
 // schema's statement of the engine's test for the DBO refusal (a DeepseekV41ForCausalLM
 // with engram_layer_ids); alone it is also true of other models EngramConfig governs.
-func modelHasEngram(in rules.Input) bool {
+func modelHasEngram(in pack.Input) bool {
 	if in.Model == nil {
 		return false
 	}
@@ -1376,7 +1376,7 @@ func modelHasEngram(in rules.Input) bool {
 // modelQuantizedDType returns a sub-16-bit storage format the checkpoint uses, if any:
 // such a checkpoint carries a quantization config, which sets the engine's quantization
 // whether or not the deployment states one.
-func modelQuantizedDType(in rules.Input) (model.DType, bool) {
+func modelQuantizedDType(in pack.Input) (model.DType, bool) {
 	if in.Model == nil {
 		return "", false
 	}
@@ -1393,7 +1393,7 @@ func modelQuantizedDType(in rules.Input) (model.DType, bool) {
 	return found, found != ""
 }
 
-func modelHasRecurrent(in rules.Input) bool {
+func modelHasRecurrent(in pack.Input) bool {
 	if in.Model == nil {
 		return false
 	}

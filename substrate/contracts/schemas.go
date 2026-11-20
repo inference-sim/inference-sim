@@ -1,15 +1,12 @@
-// Package blisschemas is the entry point: it composes field-level validation with
-// version-scoped rule validation over a complete set of documents.
+// Package contracts is the entry point: it composes field-level validation over a complete
+// set of documents.
 //
-// The two layers stay visible in the result. A Report separates field problems from
-// rule problems, because the two need different responses: a field problem is a
-// malformed document and always the author's to fix, where a rule problem may mean
-// the document is right and the engine version is wrong, or that a rule needs
-// updating for a release it has not seen.
-//
-// Field validation runs first and rule validation only if it passes. A rule reading
-// a malformed document produces findings that are artifacts of the malformation, and
-// a reader cannot tell those from real ones.
+// A document is checked here for what it is: counts positive, arithmetic closing, every
+// enumerated value one the schema knows. Whether a PARTICULAR engine release would run it is
+// not asked here: that is the engine module's refusal (SUB-12's engine layer), made when the
+// engine lowers the deployment. The one thing an engine contributes to this validator is the
+// reading of what the schema holds unopened (a pool's engine block, an offload's connector
+// options), through EngineChecker.
 package contracts
 
 import (
@@ -17,7 +14,6 @@ import (
 	"reflect"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/check"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
@@ -52,45 +48,58 @@ type Bundle struct {
 	ReplayWorkload *workload.CatalogReplay
 	Evaluation     *evaluation.Run
 
-	// Rules looks up the engine rules for the scenario's engine_version: the caller's, from the
-	// engine model that owns the release, for this schema registers none (GOAL.md phase 2b). It
-	// is required whenever the bundle carries a scenario: a pool's engine block is opaque here,
-	// so its checks and every version-scoped rule are the rules', and a bundle validated with
-	// none would pass unchecked. Rules that answer for another release are refused
-	// (engine-version-matches), never applied.
-	Rules func(version string) rules.EngineRules
-	// RulesVersions lists the versions Rules answers, for the finding when it answers none.
-	// nil with Rules set: the finding says only that the version is unknown, listing none.
-	RulesVersions func() []string
+	// Engine looks up the engine's reading of the documents this schema holds unopened, for
+	// the scenario's engine_version: the caller's, from the engine module that owns the
+	// release, for this schema registers none. It is required whenever the bundle carries a
+	// scenario: a pool's engine block is opaque here, so its checks are the engine's, and a
+	// bundle validated with none would pass unchecked. A checker that answers for another
+	// release is refused (engine-version-matches), never applied.
+	Engine func(version string) EngineChecker
+	// EngineVersions lists the versions Engine answers, for the finding when it answers none.
+	// nil with Engine set: the finding says only that the version is unknown, listing none.
+	EngineVersions func() []string
 	// Result is a simulator run's predicted output, validated field by field together with
-	// the input it embeds. Rules do not run on that embedded input: to rule-check it, pass
-	// &Result.Input.Scenario and &Result.Input.Deployment as Scenario and Deployment too.
-	// With Rules set, a Result and no Scenario, the rule layer warns (result-input-rules)
-	// rather than read as a rule-checked pass.
+	// the input it embeds. The engine's checks do not run on that embedded input: to apply
+	// them, pass &Result.Input.Scenario and &Result.Input.Deployment as Scenario and
+	// Deployment too. With Engine set, a Result and no Scenario, the report warns
+	// (result-input-engine) rather than read as an engine-checked pass.
 	Result *result.Result
 }
 
-// Report is the outcome of validating a bundle, with the two layers kept apart.
+// EngineChecker is the engine module's reading of what this schema holds unopened. The
+// engine owns the release, so a pool's engine block and an offload's connector options are
+// opened by it, and a document it refuses is refused by the engine that would not run it.
+type EngineChecker interface {
+	// EngineVersion is the release the checker describes, such as "1.2.0".
+	EngineVersion() string
+	// CheckEngineBlock is the engine's field checks of one pool's engine block: whether the
+	// block decodes, and the bounds its own types declare. at is the pool's path within the
+	// deployment, such as "pools[0]", and each finding is at a path below at + ".engine".
+	CheckEngineBlock(at string, b deployment.EngineBlock) *validate.Problems
+	// CheckConnectorOptions is the engine's checks of an offload's connector options. at is
+	// the offload block's path, "offload", and each finding is at a path below
+	// at + ".connector_options".
+	CheckConnectorOptions(at string, b deployment.EngineBlock) *validate.Problems
+	// DraftTokens is the speculative tokens a pool's engine block drafts per step, zero when
+	// it drafts none or does not decode.
+	DraftTokens(b deployment.EngineBlock) int
+}
+
+// Report is the outcome of validating a bundle.
 type Report struct {
 	// Field holds structural problems: malformed documents, unrecognized vocabulary,
-	// arithmetic that does not close. These are version-independent.
+	// arithmetic that does not close, and the engine's reading of its own blocks.
 	Field *validate.Problems
-	// Rule holds version-scoped problems, each attributed to a named rule.
-	Rule *validate.Problems
-	// RulesApplied is the engine version whose pack ran, empty if none did.
-	RulesApplied string
 }
 
-// OK reports whether nothing failed in either layer.
-func (r Report) OK() bool { return r.Field.OK() && r.Rule.OK() }
+// OK reports whether nothing failed.
+func (r Report) OK() bool { return r.Field.OK() }
 
-// Problems returns every finding from both layers, field problems first.
-func (r Report) Problems() []validate.Problem {
-	return append(r.Field.All(), r.Rule.All()...)
-}
+// Problems returns every finding.
+func (r Report) Problems() []validate.Problem { return r.Field.All() }
 
-// Validate checks a bundle: every present document field-by-field, then the
-// version-scoped rules if the field layer passed.
+// Validate checks a bundle: every present document field-by-field, and the engine's reading
+// of the blocks this schema holds unopened.
 func Validate(b Bundle) Report {
 	field := &validate.Problems{}
 
@@ -131,13 +140,13 @@ func Validate(b Bundle) Report {
 				Storage:     b.Scenario.Cluster.Storage,
 			}))
 	}
-	// The engine rules the scenario's release selects, nil when the caller gave none or they
-	// know no such release. A pool's engine block is opaque to this schema, so its field checks
-	// are the release's (EngineRules.CheckEngineBlock) and run in the field layer, under the
-	// same deployment paths a field check of the deployment reports at.
-	var er rules.EngineRules
-	if b.Scenario != nil && b.Rules != nil {
-		if er = b.Rules(b.Scenario.EngineRelease()); isNilRules(er) {
+	// The engine checker the scenario's release selects, nil when the caller gave none or it
+	// knows no such release. A pool's engine block is opaque to this schema, so its checks
+	// are the engine's (EngineChecker.CheckEngineBlock) and run here, under the same
+	// deployment paths a field check of the deployment reports at.
+	var er EngineChecker
+	if b.Scenario != nil && b.Engine != nil {
+		if er = b.Engine(b.Scenario.EngineRelease()); isNilChecker(er) {
 			er = nil
 		}
 	}
@@ -205,69 +214,51 @@ func Validate(b Bundle) Report {
 		field.Merge("evaluation", b.Evaluation.Validate())
 	}
 
-	rep := Report{Field: field, Rule: &validate.Problems{}}
-	// Rules read a document assuming it is well formed. Running them over a
-	// malformed one yields findings that are consequences of the malformation, which
-	// a reader cannot separate from genuine rule violations.
+	// The engine's checks need the documents to be well formed, and findings about a
+	// malformed one are consequences of the malformation.
 	if !field.OK() {
-		return rep
+		return Report{Field: field}
 	}
-	if b.Result != nil && b.Rules != nil && b.Scenario == nil {
-		rep.Rule.RuleWarnf("result-input-rules",
-			"the result's embedded input was not rule-checked: pass its scenario and deployment as "+
-				"Bundle.Scenario and Bundle.Deployment to apply the engine rules to them")
+	if b.Result != nil && b.Engine != nil && b.Scenario == nil {
+		field.RuleWarnf("result-input-engine",
+			"the result's embedded input was not engine-checked: pass its scenario and deployment as "+
+				"Bundle.Scenario and Bundle.Deployment to apply the engine's checks to them")
 	}
 	if b.Scenario != nil {
-		in := rules.Input{Scenario: b.Scenario, Deployment: b.Deployment, Model: b.Model, Packaging: pk}
-		if b.Rules == nil {
-			// A scenario names an engine release, and its engine blocks and version-scoped rules
-			// are that release's to check. With no rules given nothing would check them, and a
-			// bundle that only looks valid because its checks were skipped must not pass.
-			rep.Rule.RuleErrorf("engine-rules-given",
-				"no engine rules were given for engine version %q: pass the release's rules "+
-					"(Bundle.Rules) from the engine model that owns it; nothing was rule-checked",
+		if b.Engine == nil {
+			// A scenario names an engine release, and its engine blocks are that release's to
+			// check. With no checker given nothing would check them, and a bundle that only
+			// looks valid because its checks were skipped must not pass.
+			field.RuleErrorf("engine-given",
+				"no engine checker was given for engine version %q: pass the release's checker "+
+					"(Bundle.Engine) from the engine module that owns it; nothing was engine-checked",
 				b.Scenario.EngineRelease())
-			return rep
-		}
-		if er == nil {
-			// The same finding as a version with no rules: it has not been rule-checked, and
-			// saying nothing would read as a pass.
-			p := &validate.Problems{}
-			if b.RulesVersions != nil {
-				p.RuleWarnf("engine-version-known",
-					"no rules pack for engine version %q; field validation passed but no version-specific rule was applied. Registered versions: %v",
-					b.Scenario.EngineRelease(), b.RulesVersions())
+		} else if er == nil {
+			// Not engine-checked, and saying nothing would read as a pass.
+			if b.EngineVersions != nil {
+				field.RuleWarnf("engine-version-known",
+					"no engine for engine version %q; field validation passed but the engine's checks were not applied. Registered versions: %v",
+					b.Scenario.EngineRelease(), b.EngineVersions())
 			} else {
-				p.RuleWarnf("engine-version-known",
-					"no rules pack for engine version %q; field validation passed but no version-specific rule was applied",
+				field.RuleWarnf("engine-version-known",
+					"no engine for engine version %q; field validation passed but the engine's checks were not applied",
 					b.Scenario.EngineRelease())
 			}
-			rep.Rule = p
-			return rep
-		}
-		// Rules for another release are never applied to this one: a lookup that falls back to
-		// a nearby release would pass a scenario its own release refuses (rules.go's package
-		// comment).
-		if v := er.EngineVersion(); v != b.Scenario.EngineRelease() {
-			rep.Rule.RuleErrorf("engine-version-matches",
-				"the engine rules looked up for engine version %q are for %q; no rule was applied",
+		} else if v := er.EngineVersion(); v != b.Scenario.EngineRelease() {
+			// A checker for another release is never applied to this one: a lookup that falls
+			// back to a nearby release would pass a scenario its own release refuses.
+			field.RuleErrorf("engine-version-matches",
+				"the engine looked up for engine version %q is for %q; its checks were not applied",
 				b.Scenario.EngineRelease(), v)
-			return rep
 		}
-		// A Check that finds nothing may say so with a nil Problems; the report keeps its empty
-		// layer, so OK and Problems never meet a nil.
-		if p := er.Check(in); p != nil {
-			rep.Rule = p
-		}
-		rep.RulesApplied = b.Scenario.EngineRelease()
 	}
-	return rep
+	return Report{Field: field}
 }
 
-// isNilRules reports whether er is nil or holds a nil pointer, map, slice, func or channel of
-// any rules type: what a lookup returns, typed, for a version it does not know. A forwarding
+// isNilChecker reports whether er is nil or holds a nil pointer, map, slice, func or channel of
+// any checker type: what a lookup returns, typed, for a version it does not know. A forwarding
 // value around a nil is not nil here, and fails when it is asked.
-func isNilRules(er rules.EngineRules) bool {
+func isNilChecker(er EngineChecker) bool {
 	if er == nil {
 		return true
 	}
@@ -284,7 +275,7 @@ func isNilRules(er rules.EngineRules) bool {
 // workload shape's or catalog replay's. Acceptance at one K says nothing exact about another, so a value is never
 // rescaled. A value with no speculating pool to apply to is a warning, since it is inert
 // rather than wrong.
-func checkAcceptanceK(p *validate.Problems, b Bundle, er rules.EngineRules) {
+func checkAcceptanceK(p *validate.Problems, b Bundle, er EngineChecker) {
 	type stated struct {
 		path string
 		v    *acceptance.Value
@@ -321,8 +312,8 @@ func checkAcceptanceK(p *validate.Problems, b Bundle, er rules.EngineRules) {
 		return
 	}
 	if er == nil {
-		// Which pools speculate is in their engine blocks, which only the release's rules read;
-		// without them the check cannot run, and the rule layer reports why.
+		// Which pools speculate is in their engine blocks, which only the engine reads;
+		// without it the check cannot run, and Validate reports why.
 		return
 	}
 	speculates := false

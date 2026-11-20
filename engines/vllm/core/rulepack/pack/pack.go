@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
@@ -131,7 +130,7 @@ type Pack struct {
 	KVCachePacking KVCachePacking
 
 	// Rules are the checks themselves.
-	Rules []rules.Rule
+	Rules []Rule
 }
 
 // Names returns the pack's rule names, sorted. Tests use it to assert that a rule

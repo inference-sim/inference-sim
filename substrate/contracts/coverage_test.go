@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
@@ -137,7 +136,7 @@ func corpus(name string, nodes, gpusPerNode int, fabric string,
 	if mutate != nil {
 		mutate(s, d)
 	}
-	return Bundle{Scenario: s, Deployment: d, Rules: openAnyEngine}
+	return Bundle{Scenario: s, Deployment: d, Engine: openAnyEngine}
 }
 
 func pool(role deployment.Role, nodes int, pl deployment.Parallelism,
@@ -263,11 +262,9 @@ func TestCorpusDeploymentsAreExpressible(t *testing.T) {
 	}
 }
 
-// anyEngine is an engine's rules that open any engine block: what the corpus cases need, whose
+// anyEngine is an engine checker that opens any engine block: what the corpus cases need, whose
 // engine blocks are written for a release this schema does not know. Field expressibility is
-// the schema's to check; whether a release accepts the block is the release's rules'.
-type anyEngine struct{ fakeRules }
+// the schema's to check; whether a release accepts the block is the release's.
+type anyEngine struct{ fakeEngine }
 
-func openAnyEngine(v string) rules.EngineRules { return anyEngine{fakeRules{version: v}} }
-
-func (anyEngine) Check(rules.Input) *rules.Problems { return nil }
+func openAnyEngine(v string) EngineChecker { return anyEngine{fakeEngine{version: v}} }

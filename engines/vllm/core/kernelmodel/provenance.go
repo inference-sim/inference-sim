@@ -5,8 +5,8 @@ package kernelmodel
 import (
 	"sort"
 
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
 	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
 	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
@@ -36,10 +36,13 @@ type ruleReport struct {
 // Inputs a caller assembled by hand, which then report nothing.
 func reportRules(in latencykernel.Inputs) ruleReport {
 	var r ruleReport
-	if in.Rules == nil {
+	// The rules are the release's own (pack.RuleSet): rules of an engine that states none
+	// (a value that is not a RuleSet) report nothing skipped.
+	set, ok := in.Rules.(pack.RuleSet)
+	if !ok {
 		return r
 	}
-	for _, name := range in.Rules.RuleNames() {
+	for _, name := range set.RuleNames() {
 		if !enforcedRules[name] {
 			r.skipped = append(r.skipped, name)
 		}
@@ -53,7 +56,7 @@ func reportRules(in latencykernel.Inputs) ruleReport {
 			pk = &p
 		}
 	}
-	problems := in.Rules.Check(rules.Input{Scenario: in.Scenario, Deployment: in.Deployment, Model: in.Model, Packaging: pk})
+	problems := set.Check(pack.Input{Scenario: in.Scenario, Deployment: in.Deployment, Model: in.Model, Packaging: pk})
 	var all []sim.RuleFinding
 	for _, p := range problems.All() {
 		all = append(all, sim.RuleFinding{

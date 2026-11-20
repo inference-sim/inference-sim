@@ -1,10 +1,9 @@
 package contracts
 
 import (
-	"sort"
+	"slices"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/check"
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"gopkg.in/yaml.v3"
 )
@@ -18,21 +17,17 @@ type testEngine struct {
 	DraftTokens          int     `yaml:"draft_tokens"`
 }
 
-// testRules is an engine release's rules as a caller supplies them (Bundle.Rules): they open
-// a pool's engine block (CheckEngineBlock), report how many tokens it drafts (DraftTokens), and
-// refuse a backend outside the release's set as a named rule. Every other method is the
-// embedded nil interface's, which a test that reached it would fail on.
+// testRules is an engine release's checker as a caller supplies it (Bundle.Engine): it opens a
+// pool's engine block (CheckEngineBlock), refuses a backend outside the release's set there,
+// and reports how many tokens the block drafts (DraftTokens).
 type testRules struct {
-	rules.EngineRules
 	version  string
 	backends []string
 }
 
 func (r testRules) EngineVersion() string { return r.version }
 
-func (r testRules) RuleNames() []string { return []string{"backend-known"} }
-
-func (r testRules) CheckEngineBlock(at string, b deployment.EngineBlock) *rules.Problems {
+func (r testRules) CheckEngineBlock(at string, b deployment.EngineBlock) *validate.Problems {
 	p := &validate.Problems{}
 	var e testEngine
 	if err := b.Decode(&e); err != nil {
@@ -46,10 +41,13 @@ func (r testRules) CheckEngineBlock(at string, b deployment.EngineBlock) *rules.
 		(e.GPUMemoryUtilization < 0 || e.GPUMemoryUtilization > 1) {
 		p.Field(at+".engine.gpu_memory_utilization", "must lie in [0, 1] (0 means unset), got %v", e.GPUMemoryUtilization)
 	}
+	if e.Backend != "" && !slices.Contains(r.backends, e.Backend) {
+		p.Field(at+".engine.backend", "%q is not accepted by engine %s (accepted: %v)", e.Backend, r.version, r.backends)
+	}
 	return p
 }
 
-func (r testRules) CheckConnectorOptions(at string, b deployment.EngineBlock) *rules.Problems {
+func (r testRules) CheckConnectorOptions(at string, b deployment.EngineBlock) *validate.Problems {
 	p := &validate.Problems{}
 	var o struct {
 		BlocksPerChunk int `yaml:"blocks_per_chunk"`
@@ -72,30 +70,8 @@ func (r testRules) DraftTokens(b deployment.EngineBlock) int {
 	return e.DraftTokens
 }
 
-func (r testRules) Check(in rules.Input) *rules.Problems {
-	p := &validate.Problems{}
-	if in.Deployment == nil {
-		return p
-	}
-	known := map[string]bool{}
-	for _, b := range r.backends {
-		known[b] = true
-	}
-	for i, pool := range in.Deployment.Pools {
-		var e testEngine
-		if pool.Engine.Decode(&e) != nil || e.Backend == "" || known[e.Backend] {
-			continue
-		}
-		names := append([]string(nil), r.backends...)
-		sort.Strings(names)
-		p.RuleErrorf("backend-known", "pools[%d].engine.backend: %q is not accepted by engine %s (accepted: %v)",
-			i, e.Backend, r.version, names)
-	}
-	return p
-}
-
 // testRulesFor is a caller's lookup over the test engine's releases.
-func testRulesFor(version string) rules.EngineRules {
+func testRulesFor(version string) EngineChecker {
 	switch version {
 	case "1.0.0", "1.1.0":
 		return testRules{version: version, backends: []string{"fast", "slow"}}
@@ -103,8 +79,8 @@ func testRulesFor(version string) rules.EngineRules {
 	return nil
 }
 
-// testRulesVersions is the releases testRulesFor answers.
-func testRulesVersions() []string { return []string{"1.0.0", "1.1.0"} }
+// testEngineVersions is the releases testRulesFor answers.
+func testEngineVersions() []string { return []string{"1.0.0", "1.1.0"} }
 
 // engineBlock is a pool's engine block as a document states it.
 func engineBlock(doc string) deployment.EngineBlock {

@@ -22,8 +22,8 @@ func TestEngineRulesAnswersFromThePack(t *testing.T) {
 			if r.EngineVersion() != p.Version {
 				t.Errorf("EngineVersion() = %q, want %q", r.EngineVersion(), p.Version)
 			}
-			if !reflect.DeepEqual(r.RuleNames(), p.Names()) {
-				t.Errorf("RuleNames() = %v, want %v", r.RuleNames(), p.Names())
+			if !reflect.DeepEqual(p.RuleNames(), p.Names()) {
+				t.Errorf("RuleNames() = %v, want %v", p.RuleNames(), p.Names())
 			}
 			var want []string
 			for m, ok := range p.SpeculativeMethods {
@@ -77,11 +77,11 @@ func TestEngineRulesAnswersFromThePack(t *testing.T) {
 // A rule written against the exported Problems alias is a rule this package runs: what lets
 // a pack live in another module.
 func TestARuleCanBeWrittenOutsideThePackage(t *testing.T) {
-	p := &pack.Pack{Version: "test", Rules: []rules.Rule{{
+	p := &pack.Pack{Version: "test", Rules: []pack.Rule{{
 		Name: "always", Because: "a test",
-		Check: func(_ rules.Input, out *rules.Problems) { out.RuleWarnf("always", "fired") },
+		Check: func(_ pack.Input, out *rules.Problems) { out.RuleWarnf("always", "fired") },
 	}}}
-	all := p.Check(rules.Input{}).All()
+	all := p.Check(pack.Input{}).All()
 	if len(all) != 1 || all[0].Rule != "always" {
 		t.Fatalf("Check found %v, want the one finding the rule reports", all)
 	}

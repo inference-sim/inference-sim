@@ -15,7 +15,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/rules"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/engine"
@@ -965,21 +966,21 @@ var blockShapes = []struct {
 }
 
 // checkRulesWith is checkRules for a given rules pack.
-func checkRulesWith(pack rules.EngineRules, e engineconfig.Engine, pp int) error {
+func checkRulesWith(rs pack.RuleSet, e engineconfig.Engine, pp int) error {
 	block, err := engineconfig.Encode(e)
 	if err != nil {
 		return fmt.Errorf("vllm: encoding the engine block: %w", err)
 	}
-	var first []rules.Problem       // the first shape's errors, in the order the pack reports them
+	var first []validate.Problem    // the first shape's errors, in the order the pack reports them
 	in := map[string]map[int]bool{} // an error's key: the shapes that reported it
 	for i, shape := range blockShapes {
-		doc := rules.Input{Deployment: &deployment.Deployment{Pools: []deployment.Pool{{
+		doc := pack.Input{Deployment: &deployment.Deployment{Pools: []deployment.Pool{{
 			Role: deployment.RoleColocated,
 			Parallel: deployment.Parallelism{TP: shape.tp, PP: max(pp, 1), DP: shape.dp,
 				EnableExpertParallel: shape.expertParallel},
 			Engine: block,
 		}}}}
-		for _, p := range pack.Check(doc).Errors() {
+		for _, p := range rs.Check(doc).Errors() {
 			key := p.Rule + "\x00" + p.Message
 			if in[key] == nil {
 				in[key] = map[int]bool{}
@@ -1001,7 +1002,7 @@ func checkRulesWith(pack rules.EngineRules, e engineconfig.Engine, pp int) error
 	if len(lines) == 0 {
 		return nil
 	}
-	return fmt.Errorf("vllm: the engine block fails vLLM %s's rules: %s", pack.EngineVersion(),
+	return fmt.Errorf("vllm: the engine block fails vLLM %s's rules: %s", rs.EngineVersion(),
 		strings.Join(lines, "; "))
 }
 

@@ -450,7 +450,7 @@ func TestFactoryRulesIgnoreClausesOnUnstatedWidths(t *testing.T) {
 		{"refused at pp 1, stated 1", 1, func(pl deployment.Parallelism) bool { return pl.PP == 1 }, true},
 	} {
 		fires := c.fires
-		probe := &pack.Pack{Version: "0.32.0", Rules: []rules.Rule{{Name: "probe", Check: func(in rules.Input, out *rules.Problems) {
+		probe := &pack.Pack{Version: "0.32.0", Rules: []pack.Rule{{Name: "probe", Check: func(in pack.Input, out *rules.Problems) {
 			if fires(in.Deployment.Pools[0].Parallel) {
 				out.RuleErrorf("probe", "pools[0].engine: refused")
 			}

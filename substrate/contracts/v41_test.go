@@ -266,11 +266,8 @@ func TestV41BundleValidates(t *testing.T) {
 		Parallel: deployment.Parallelism{TP: 8, PP: 1, DP: 1},
 		Engine:   engineBlock("{backend: fast, draft_tokens: 5}"),
 	}}}
-	rep := Validate(Bundle{Scenario: s, Deployment: d, Model: g, Rules: testRulesFor})
+	rep := Validate(Bundle{Scenario: s, Deployment: d, Model: g, Engine: testRulesFor})
 	requireSilent(t, "v41", rep)
-	if rep.RulesApplied != "1.0.0" {
-		t.Errorf("RulesApplied = %q, want 1.0.0", rep.RulesApplied)
-	}
 }
 
 // A cache must say whether its layer owns it: an omitted owned would read as a reader and
