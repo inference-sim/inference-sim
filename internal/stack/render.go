@@ -30,35 +30,16 @@ var blockRE = regexp.MustCompile(`(?s)<!-- BEGIN GENERATED from stack\.json: ([a
 
 const endMarker = "<!-- END GENERATED -->"
 
-// substrateRef is what a checkout names: the tag, or the full commit of a pseudo-version.
-func (s *Stack) substrateRef() (string, error) {
-	m, ok := s.Module(SubstrateModule)
-	if !ok {
-		return "", fmt.Errorf("stack.json names no %s", SubstrateModule)
-	}
-	if m.Commit != "" {
-		return m.Commit, nil
-	}
-	return m.Version, nil
-}
-
 // Block is the generated text of one block kind, ending in a newline.
 func (s *Stack) Block(kind string) (string, error) {
-	ref, err := s.substrateRef()
-	if err != nil {
-		return "", err
-	}
-	sub, _ := s.Module(SubstrateModule)
 	switch kind {
 	case "data-checkout":
 		return "```bash\n" +
-			"git clone https://github.com/inference-sim/blis-substrate.git\n" +
-			"git -C blis-substrate checkout " + ref + "\n" +
-			"export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)\n" +
+			"export BLIS_CATALOG=$PWD/substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)\n" +
 			"```\n", nil
 	case "toolchain":
 		return "Requires Go " + strings.TrimPrefix(s.Toolchain, "go") +
-			", the toolchain blis-substrate's contracts/toolchain names at the pinned release.\n", nil
+			", the toolchain substrate/contracts/toolchain names.\n", nil
 	case "versions":
 		var b strings.Builder
 		b.WriteString("| Component | Version | Commit |\n|---|---|---|\n")
@@ -73,7 +54,6 @@ func (s *Stack) Block(kind string) (string, error) {
 		fmt.Fprintf(&b, "| %s (router) | `%s` | %s |\n", s.Router.Kind, s.Router.Version, short(s.Router.Commit))
 		fmt.Fprintf(&b, "| llm-d guides | | %s |\n", short(s.GuidesCommit))
 		fmt.Fprintf(&b, "| Go toolchain | `%s` | |\n", s.Toolchain)
-		_ = sub
 		return b.String(), nil
 	}
 	return "", fmt.Errorf("unknown generated block %q", kind)

@@ -3,21 +3,6 @@
   "toolchain": "go1.27.2",
   "modules": [
     {
-      "path": "github.com/inference-sim/blis-sglang",
-      "version": "v0.5.23-blis.1.0.20261118162946-03d72d6fc3bf",
-      "commit": "03d72d6fc3bf697ba5d9472115760b44286a5677"
-    },
-    {
-      "path": "github.com/inference-sim/blis-substrate",
-      "version": "v0.15.1-0.20261118162118-b6748ca9d757",
-      "commit": "b6748ca9d757f149ba760cf821f96feed3bbf5bf"
-    },
-    {
-      "path": "github.com/inference-sim/blis-vllm",
-      "version": "v0.33.0-blis.1.0.20261118171935-af87ac53acaf",
-      "commit": "af87ac53acafd7e642fb13b86e2cd6585396e085"
-    },
-    {
       "path": "github.com/inference-sim/llm-d-router",
       "version": "v1.0.0-blis.5.0.20261120000708-4b04f777213f",
       "commit": "4b04f777213f5f030df136d54bc9e2e5bbe6cb57",

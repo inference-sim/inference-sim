@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 
-	"github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts"
 )
 
 // repoRoot is the inference-sim repository root; this file is <root>/internal/stack/.
@@ -23,7 +23,7 @@ func repoRoot(t *testing.T) string {
 }
 
 // The committed go.mod passes the selected-version lint (X11).
-func TestGoModHasOnlyTheRouterReplaceAndEngineExcludes(t *testing.T) {
+func TestGoModHasOnlyTheRouterReplace(t *testing.T) {
 	findings, err := CheckGoMod(repoRoot(t))
 	if err != nil {
 		t.Fatal(err)
@@ -38,13 +38,15 @@ func TestGoModLintCatchesEachBadForm(t *testing.T) {
 	const head = "module github.com/inference-sim/inference-sim\n\ngo 1.27.2\n\n"
 	const good = "replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.3\n"
 	for name, body := range map[string]string{
-		"no replace":                 "",
-		"a second replace":           good + "replace github.com/inference-sim/blis-vllm => ../blis-vllm\n",
-		"a directory replace":        "replace github.com/llm-d/llm-d-router => ../llm-d-router\n",
-		"a fork at a plain tag":      "replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0\n",
-		"another module":             "replace github.com/inference-sim/blis-substrate => github.com/x/y v1.0.0-blis.1\n",
-		"an exclude of a -blis tag":  good + "exclude github.com/inference-sim/blis-vllm v0.32.0-blis.1\n",
-		"an exclude of a non-engine": good + "exclude github.com/inference-sim/blis-substrate v0.11.0\n",
+		"no replace":              "",
+		"a second replace":        good + "replace github.com/inference-sim/blis-vllm => ../blis-vllm\n",
+		"a directory replace":     "replace github.com/llm-d/llm-d-router => ../llm-d-router\n",
+		"a fork at a plain tag":   "replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0\n",
+		"another module":          "replace github.com/inference-sim/blis-substrate => github.com/x/y v1.0.0-blis.1\n",
+		"an exclude":              good + "exclude github.com/x/y v0.32.0\n",
+		"a retired substrate":     good + "require github.com/inference-sim/blis-substrate v0.11.0\n",
+		"a retired vllm engine":   good + "require github.com/inference-sim/blis-vllm v0.33.0\n",
+		"a retired sglang engine": good + "require github.com/inference-sim/blis-sglang v0.5.23\n",
 	} {
 		f, err := modfile.Parse("go.mod", []byte(head+body), nil)
 		if err != nil {
@@ -54,7 +56,7 @@ func TestGoModLintCatchesEachBadForm(t *testing.T) {
 			t.Errorf("%s: not caught", name)
 		}
 	}
-	f, err := modfile.Parse("go.mod", []byte(head+good+"exclude github.com/inference-sim/blis-vllm v0.32.0\n"), nil)
+	f, err := modfile.Parse("go.mod", []byte(head+good), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,12 +72,12 @@ func TestGoModLintCatchesEachBadForm(t *testing.T) {
 	}
 }
 
-// The toolchain the build runs is the substrate's contracts/toolchain, and no module in the
+// The toolchain the build runs is substrate/contracts/toolchain, and no module in the
 // build declares a go version above it (LIF-2).
-func TestTheToolchainIsTheSubstrates(t *testing.T) {
+func TestTheToolchainIsContractsToolchain(t *testing.T) {
 	want := contracts.Toolchain()
 	if got := runtime.Version(); got != want {
-		t.Errorf("go version is %s; contracts/toolchain at the selected substrate says %s (set GOTOOLCHAIN=%s)", got, want, want)
+		t.Errorf("go version is %s; substrate/contracts/toolchain says %s (set GOTOOLCHAIN=%s)", got, want, want)
 	}
 	findings, err := CheckGoVersions(repoRoot(t), want)
 	if err != nil {
@@ -89,38 +91,20 @@ func TestTheToolchainIsTheSubstrates(t *testing.T) {
 	}
 }
 
-// inference-sim's own substrate requirement is the version its build selects, so no engine or
-// router release can change the simulator's data (design §3.2, LIF-2).
-func TestTheSubstrateRequirementIsTheSelectedVersion(t *testing.T) {
-	root := repoRoot(t)
-	b, err := os.ReadFile(filepath.Join(root, "go.mod"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	f, err := modfile.Parse("go.mod", b, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var required string
-	for _, r := range f.Require {
-		if r.Mod.Path == SubstrateModule {
-			required = r.Mod.Version
-			if r.Indirect {
-				t.Errorf("go.mod requires %s as indirect; inference-sim imports it directly", SubstrateModule)
-			}
-		}
-	}
-	mods, err := listModules(root)
+// The module's requirements name none of the retired repositories: their code is in this module,
+// so a build cannot link a second copy (the one-module premise of M3.2).
+func TestNoRetiredRepositoryIsInTheBuild(t *testing.T) {
+	mods, err := listModules(repoRoot(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, m := range mods {
-		if m.Path == SubstrateModule && m.Version != required {
-			t.Errorf("go.mod requires %s %s, the build selects %s; re-pin the simulator first", SubstrateModule, required, m.Version)
+		if retired(m.Path) {
+			t.Errorf("the build selects %s %s; its code is now in this module", m.Path, m.Version)
 		}
 	}
-	if required == "" {
-		t.Errorf("go.mod does not require %s", SubstrateModule)
+	if !retired("github.com/inference-sim/blis-vllm/core") || retired("github.com/inference-sim/inference-sim") {
+		t.Error("retired() does not separate the retired repositories from this module")
 	}
 }
 
@@ -140,15 +124,15 @@ func TestStackJSONMatchesTheBuild(t *testing.T) {
 	if d := Diff(committed, built); len(d) > 0 {
 		t.Errorf("stack.json does not match the build; run go run ./internal/stack/cmd/stackgen:\n  %s", strings.Join(d, "\n  "))
 	}
-	if len(built.Modules) < 3 {
-		t.Errorf("the record names %d BLIS modules; want the substrate, the engine and the router fork", len(built.Modules))
+	if len(built.Modules) != 1 || built.Modules[0].Path != RouterFork {
+		t.Errorf("the record names %v; the router fork is the only BLIS module besides this one", built.Modules)
 	}
 }
 
 // Diff sees each kind of drift.
 func TestDiffSeesEachDrift(t *testing.T) {
 	base := Stack{Kind: Kind, Toolchain: "go1.27.2", GuidesCommit: strings.Repeat("a", 40),
-		Modules: []Module{{Path: SubstrateModule, Version: "v0.11.0"}},
+		Modules: []Module{{Path: RouterModule, Version: "v1.0.0-blis.3"}},
 		Engines: []Upstream{{Kind: "vllm", Version: "0.32.0", Commit: "c"}},
 		Router:  Upstream{Kind: "llm-d", Version: "1.0.0", Commit: "r"}}
 	clone := func(f func(*Stack)) *Stack {
@@ -164,8 +148,8 @@ func TestDiffSeesEachDrift(t *testing.T) {
 	for name, f := range map[string]func(*Stack){
 		"toolchain":      func(s *Stack) { s.Toolchain = "go1.27.3" },
 		"guides":         func(s *Stack) { s.GuidesCommit = strings.Repeat("b", 40) },
-		"module version": func(s *Stack) { s.Modules[0].Version = "v0.11.1" },
-		"extra module":   func(s *Stack) { s.Modules = append(s.Modules, Module{Path: VLLMModule, Version: "v0.32.0-blis.2"}) },
+		"module version": func(s *Stack) { s.Modules[0].Version = "v1.0.0-blis.4" },
+		"extra module":   func(s *Stack) { s.Modules = append(s.Modules, Module{Path: "github.com/x/y", Version: "v0.32.0"}) },
 		"engine":         func(s *Stack) { s.Engines[0].Version = "0.31.0" },
 		"extra engine":   func(s *Stack) { s.Engines = append(s.Engines, Upstream{Kind: "sglang"}) },
 		"router":         func(s *Stack) { s.Router.Version = "1.0.1" },
@@ -192,85 +176,5 @@ func TestGuidesLockIsOneFullCommit(t *testing.T) {
 		if _, err := ReadGuidesLock(p); (err == nil) != ok {
 			t.Errorf("%q: err = %v, want ok %v", body, err, ok)
 		}
-	}
-}
-
-// Every workflow installs Go with the substrate's go-toolchain action at the commit this build pins:
-// stack.json's substrate commit, which is go.mod's selected version. The action reads
-// contracts/toolchain at that commit, so a workflow still naming an older one installs the toolchain
-// of an older substrate than the one the build links (LIF-2). A re-pin moves them together.
-func TestEveryWorkflowInstallsGoWithTheActionAtTheSubstratePin(t *testing.T) {
-	root := repoRoot(t)
-	committed, err := Read(filepath.Join(root, "stack.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	sub, ok := committed.Module("github.com/inference-sim/blis-substrate")
-	if !ok || len(sub.Commit) != 40 {
-		t.Fatalf("stack.json names no 40-hex substrate commit: %+v", sub)
-	}
-	files, err := filepath.Glob(filepath.Join(root, ".github", "workflows", "*.yml"))
-	if err != nil || len(files) == 0 {
-		t.Fatalf("no workflow files found: %v", err)
-	}
-	const action = "inference-sim/blis-substrate/.github/actions/go-toolchain@"
-	uses := 0
-	for _, f := range files {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for i, line := range strings.Split(string(b), "\n") {
-			_, rest, found := strings.Cut(line, action)
-			if !found {
-				continue
-			}
-			uses++
-			if got := strings.Fields(rest)[0]; got != sub.Commit {
-				t.Errorf("%s:%d installs Go with the action at %s, but this build pins the substrate at %s (stack.json)",
-					filepath.Base(f), i+1, got, sub.Commit)
-			}
-		}
-	}
-	if uses == 0 {
-		t.Error("non-vacuity: no workflow installs Go with the substrate's go-toolchain action")
-	}
-}
-
-// The shared BLIS checks (blis.yml) run the substrate's reusable workflows by commit, and the selected-version lint inside them reads
-// its module-lint deferral from the checkout at substrate-ref. A workflow or ref at an older substrate than the one this build pins
-// lints the selected versions against that older deferral (it lacked a module a later pin added): the workflow commits and
-// substrate-ref are stack.json's substrate commit, and a re-pin moves them with it (LIF-2).
-func TestTheSharedChecksRunAtTheSubstratePin(t *testing.T) {
-	root := repoRoot(t)
-	committed, err := Read(filepath.Join(root, "stack.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	sub, ok := committed.Module("github.com/inference-sim/blis-substrate")
-	if !ok || len(sub.Commit) != 40 {
-		t.Fatalf("stack.json names no 40-hex substrate commit: %+v", sub)
-	}
-	b, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "blis.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	refs := 0
-	for i, line := range strings.Split(string(b), "\n") {
-		var got string
-		if _, rest, found := strings.Cut(line, "inference-sim/blis-substrate/.github/workflows/shared-"); found {
-			_, got, _ = strings.Cut(rest, ".yml@")
-		} else if _, rest, found := strings.Cut(line, "substrate-ref:"); found {
-			got = rest
-		} else {
-			continue
-		}
-		refs++
-		if got = strings.Fields(got + " x")[0]; got != sub.Commit {
-			t.Errorf("blis.yml:%d runs the shared checks at %s, but this build pins the substrate at %s (stack.json)", i+1, got, sub.Commit)
-		}
-	}
-	if refs != 4 {
-		t.Errorf("non-vacuity: blis.yml names the substrate commit %d times, want 4 (two reusable workflows, two substrate-ref values)", refs)
 	}
 }

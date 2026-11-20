@@ -1,5 +1,5 @@
-// Package stack builds stack.json: the record of every BLIS module and upstream release a
-// build of inference-sim selects, its Go toolchain, and the llm-d guides commit (design SIM-3,
+// Package stack builds stack.json: the record of every BLIS module (the router fork) and
+// upstream release a build of inference-sim selects, its Go toolchain, and the llm-d guides commit (design SIM-3,
 // LIF-2, LIF-6). stack.json is one of the few files that states a version (X23); the
 // documents that mention one are rendered from it.
 //
@@ -22,11 +22,10 @@ import (
 	"golang.org/x/mod/module"
 )
 
-// The module paths the record names.
+// The module paths the record names. The substrate and both engines are packages of the
+// simulator's own module, so the record names the router fork alone among the BLIS modules.
 const (
 	SimulatorModule = "github.com/inference-sim/inference-sim"
-	SubstrateModule = "github.com/inference-sim/blis-substrate"
-	VLLMModule      = "github.com/inference-sim/blis-vllm"
 	// RouterModule is llm-d's module path, which the fork keeps (X11).
 	RouterModule = "github.com/llm-d/llm-d-router"
 	// RouterFork is the module the one replace directive substitutes for RouterModule.
@@ -39,8 +38,8 @@ const Kind = "Stack"
 // Stack is stack.json.
 type Stack struct {
 	Kind string `json:"kind"`
-	// Toolchain is the Go toolchain the build uses, as go1.N.M. It equals the substrate's
-	// contracts/toolchain (LIF-2).
+	// Toolchain is the Go toolchain the build uses, as go1.N.M. It equals
+	// substrate/contracts/toolchain (LIF-2).
 	Toolchain string `json:"toolchain"`
 	// Modules are the BLIS modules the build selects, sorted by path.
 	Modules []Module `json:"modules"`
@@ -76,7 +75,7 @@ type Upstream struct {
 
 // Inputs are what Build reads besides the module graph. Engines are passed in, not
 // discovered, because each engine module states its own upstream record in Go (for vLLM,
-// blisvllm.Upstream), and this package must not import an engine (X3: one build site).
+// the vLLM engine's Upstream), and this package must not import an engine (X3: one build site).
 type Inputs struct {
 	// Root is the inference-sim repository root: where go.mod and guides.lock are, and the
 	// directory the go command runs in.
