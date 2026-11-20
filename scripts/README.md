@@ -4,6 +4,37 @@ Reproducible analysis scripts for BLIS. Each script runs `blis` end-to-end and
 emits a single CSV summary alongside per-run raw outputs, so anyone can
 re-validate a published claim without manually reconstructing the command set.
 
+## archon-build.sh — clone and build the pinned archon-go binary
+
+Clones `archon-go` at a pinned version and builds it, so the `archon.yml` and
+`deliver-verify.yml` workflows can obtain the binary the same way (`ARCHON_BIN=$(scripts/archon-build.sh)`).
+
+```bash
+# Use the version pinned in .archon-version at the repo root
+ARCHON_BIN=$(scripts/archon-build.sh)
+
+# Or override with an explicit version (an existing git branch/tag)
+ARCHON_BIN=$(scripts/archon-build.sh v0.5.0)
+```
+
+| Argument | Meaning |
+|---|---|
+| `[version]` | optional git branch/tag to build; when omitted, falls back to `.archon-version` at the repo root |
+
+The built binary path is printed on **stdout**; every diagnostic (`Building…`, the `git clone`
+output, `Built: …`) goes to **stderr**. That split is deliberate: it is what lets a caller do
+`ARCHON_BIN=$(scripts/archon-build.sh)` and capture only the path. Mixing a diagnostic into
+stdout would silently corrupt `ARCHON_BIN`, so keep new output on the correct stream. The path
+is emitted with `printf '%s\n'` rather than `echo`, so no shell's `echo` variant (`xpg_echo`)
+can reinterpret a backslash in it. The build root is `$RUNNER_TEMP` when set and `/tmp`
+otherwise; the single-line capture above is exact for any build root free of newline and
+control bytes, which both of those are. A build root containing a literal newline cannot
+survive `$(…)` capture at all, so the script does not attempt to paper over one.
+
+Exits non-zero when no version can be resolved — no argument given **and** no `.archon-version`
+present — rather than building an arbitrary default. Requires `git` and a `go` toolchain new
+enough for the selected Archon ref's `go.mod` (the pinned `v0.5.0` declares `go 1.26.3`).
+
 ## archon-review.sh — `/archon-pr-review` review step
 
 Runs `archon-go pr-review` and composes the PR comment. Called by
