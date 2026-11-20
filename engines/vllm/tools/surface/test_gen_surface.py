@@ -8,6 +8,7 @@ import copy
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -418,6 +419,51 @@ class GenSurfaceTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(json.loads(out)["upstream"]["tag"], "v0.33.0")
 
+    def git_checkout(self):
+        """Makes the synthetic vLLM tree a git checkout of its own and returns its HEAD."""
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",
+                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com")
+        for args in (["init", "-q"], ["add", "-A"], ["-c", "commit.gpgsign=false", "commit", "-q", "-m", "x"]):
+            subprocess.run(["git", "-C", self.tree.src, *args], check=True, env=env, capture_output=True)
+        return subprocess.run(["git", "-C", self.tree.src, "rev-parse", "HEAD"], check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def test_a_checkout_at_another_commit_is_generated_for_that_commit(self):
+        head = self.git_checkout()
+        manifest = os.path.join(self.tree.tmp.name, "other-manifest.json")
+        with open(manifest, "w", encoding="utf-8") as f:
+            json.dump(dict(MANIFEST, vllm="9.9.9"), f)
+        s = good_status()
+        s["items"]["speculative_method:deepseek_mtp"]["citation"] = "vllm/config/speculative.py:2@" + head[:8]
+        code, out, err = run(self.tree, s, "--manifest", manifest)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["upstream"], {"name": "vllm", "tag": head[:12], "commit": head})
+        code, out, err = run(self.tree, s, "--manifest", manifest, "--upstream-tag", "v9.9.9")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["upstream"], {"name": "vllm", "tag": "v9.9.9", "commit": head})
+
+    def test_a_tag_alone_names_the_checkouts_commit(self):
+        head = self.git_checkout()
+        code, _, err = run(self.tree, good_status(), "--upstream-tag", "v9.9.9",
+                           "--manifest", os.path.join(self.tree.repo, "oracle/metrics/manifest.json"))
+        self.assertEqual(code, 1)
+        self.assertIn("is not vllm/<path>:<lines>@" + head[:8], err)
+
+    def test_a_commit_the_checkout_is_not_at_fails(self):
+        self.git_checkout()
+        code, _, err = run(self.tree, good_status(), "--upstream-commit", "4ba787ec995" + "0" * 29)
+        self.assertEqual(code, 1)
+        self.assertIn("the vLLM checkout is at", err)
+
+    def test_an_unnamed_commit_with_the_pinned_manifest_fails(self):
+        # The repository's manifest is for the pinned release; it cannot stand for another commit.
+        head = self.git_checkout()
+        s = good_status()
+        s["items"]["speculative_method:deepseek_mtp"]["citation"] = "vllm/config/speculative.py:2@" + head[:8]
+        code, _, err = run(self.tree, s)
+        self.assertEqual(code, 1)
+        self.assertIn("oracle/metrics/manifest.json is for vLLM 0.32.0", err)
+
     def test_the_release_is_read_through_provenance_gos_references(self):
         # v0.33.0's provenance.go names the release once, in internal/upstream (X23).
         self.tree.write(self.tree.repo, "provenance.go", PROVENANCE_INDIRECT)
@@ -425,6 +471,14 @@ class GenSurfaceTest(unittest.TestCase):
         code, out, err = run(self.tree, good_status(), "--upstream-tag", "v0.32.0",
                              "--upstream-commit", "5df63a7203cdb9328d824a27b682e77c7b9928be")
         self.assertEqual(code, 0, err)
+        self.assertEqual(gen_surface.provenance_upstream(self.tree.repo),
+                         ("v0.33.0", "4ba787ec9959e566d3b587a796dff07673324da5"))
+
+    def test_the_in_tree_module_path_is_read_too(self):
+        in_tree = "github.com/inference-sim/inference-sim/engines/vllm/"
+        self.tree.write(self.tree.repo, "provenance.go",
+                        PROVENANCE_INDIRECT.replace("github.com/inference-sim/blis-vllm/", in_tree))
+        self.tree.write(self.tree.repo, "internal/upstream/upstream.go", UPSTREAM_GO)
         self.assertEqual(gen_surface.provenance_upstream(self.tree.repo),
                          ("v0.33.0", "4ba787ec9959e566d3b587a796dff07673324da5"))
 
@@ -436,11 +490,6 @@ class GenSurfaceTest(unittest.TestCase):
         self.tree.write(self.tree.repo, "internal/upstream/upstream.go", UPSTREAM_GO.replace("4ba787ec", "4ba787"))
         with self.assertRaisesRegex(gen_surface.GenError, "40-hex"):
             gen_surface.provenance_upstream(self.tree.repo)
-
-    def test_a_half_named_release_fails(self):
-        code, _, err = run(self.tree, good_status(), "--upstream-tag", "v0.33.0")
-        self.assertEqual(code, 1)
-        self.assertIn("go together", err)
 
     def test_check_fails_on_drift_and_passes_when_current(self):
         code, out, err = run(self.tree, good_status())

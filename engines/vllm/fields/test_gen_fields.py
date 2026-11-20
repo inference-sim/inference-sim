@@ -275,6 +275,15 @@ class GenFieldsTest(unittest.TestCase):
         self.move_cli_args()
         self.assertEqual(gen_fields.config_names(self.src), CONFIG)
 
+    def test_frontend_args_are_read_wherever_the_commit_keeps_cli_args(self):
+        old = os.path.join(self.src, "vllm/entrypoints/launchers/cli_args.py")
+        new = os.path.join(self.src, "vllm/entrypoints/serve/deep/cli_args.py")
+        os.makedirs(os.path.dirname(new))
+        os.rename(old, new)
+        # A cli_args.py that does not define FrontendArgs is not the one.
+        self.write({"vllm/entrypoints/other/cli_args.py": "def helper():\n    pass\n"})
+        self.assertEqual(gen_fields.config_names(self.src), CONFIG)
+
     def test_a_tree_with_no_or_two_cli_args_stops_the_generator(self):
         self.write({"vllm/entrypoints/common/cli_args.py": "class FrontendArgs:\n    port: int = 1\n"})
         with self.assertRaises(SystemExit) as e:

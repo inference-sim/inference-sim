@@ -8,8 +8,8 @@ VAL-8). Its type, validator and hash rule are blis-substrate's contracts/spec/ke
 test (kernel_impls_test.go) loads the committed file with that loader, which recomputes every
 hash, so this script and the rule cannot drift apart.
 
-WHAT COMES FROM vLLM, AND WHAT FROM kernels/<tag>/attention.json.
-  From the vLLM release's own source, at the tag --upstream names, read with the ast module (vLLM is
+WHAT COMES FROM vLLM, AND WHAT FROM kernels/attention.json.
+  From the vLLM checkout's own source, read with the ast module (vLLM is
   not imported):
     - the attention backends, every member of AttentionBackendEnum
       (vllm/v1/attention/backends/registry.py), and the module of each;
@@ -26,21 +26,21 @@ WHAT COMES FROM vLLM, AND WHAT FROM kernels/<tag>/attention.json.
     - the git object id of every source path a kernel's hash covers;
     - the SHA-256 the library records for a precompiled kernel package (FlashInfer's
       flashinfer/artifacts.py, CheckSumHash), for a kernel that ships only as a binary.
-  From kernels/<tag>/attention.json, which people edit, also the library versions runs of the release
+  From kernels/attention.json, which people edit, also the library versions runs of the release
   were seen with (a library's "seen" list, each citing the run record that shows the version); each
   is listed unpinned, with its kernels hashed from that version's own source (design 6.2).
-  From kernels/<tag>/attention.json, which people edit: the status of each backend, and for each kernel
+  From kernels/attention.json, which people edit: the status of each backend, and for each kernel
   of a listed backend its library, variant, primitives, architectures, gate and hash inputs.
 
 The script refuses to write a table when the classification and the source disagree: an
-AttentionBackendEnum member with no status or a status for one that does not exist; a backend the
+AttentionBackendEnum member with no status; a backend the
 CUDA platform selects marked as not running on CUDA; a name a listed backend imports from a kernel
 library that the classification neither lists as a kernel nor as not one, or one it lists that the
 module no longer imports; a kernel never called in its backend's module; a gate function that does
-not exist; a checkout at another commit or version than the pin. So the table is complete for the
+not exist; a library checkout at another commit or version than vLLM's pin of it. So the table is complete for the
 backends it lists by construction, and a backend it does not list is a gap with an issue.
 
-THE MoE ROWS (kernels/<tag>/moe.json, optional). The moe.grouped_gemm rows come from the same
+THE MoE ROWS (kernels/moe.json, optional). The moe.grouped_gemm rows come from the same
 checks over vLLM's MoE oracle instead of the attention registry: every member of the oracle's
 backend Enum (Fp8MoeBackend for block FP8) has a status, a backend the oracle ranks on its own is
 not marked as off CUDA without the gate that keeps it there (cuda_gated), every name a listed
@@ -50,11 +50,14 @@ engine_modules) is a kernel or classified as not one, and each kernel is called 
 an earlier vLLM release by its tag, each hashed from its own source and, for a vLLM release, with
 that release's own dispatch files and compiler.
 
-ONE CLASSIFICATION PER RELEASE. kernels/<tag>/attention.json classifies the vLLM release <tag>
-(v0.32.0, v0.33.0); --upstream names the tag, and the generator refuses a classification of another
-tag or a source tree at another commit. A new release gets its own classification: copy the
-nearest one, set its tag and commit, and run the generator against the new source, which names
-every backend and import that has to be classified.
+ONE CLASSIFICATION FOR EVERY COMMIT. kernels/attention.json and kernels/moe.json classify the
+backends and kernels by name, not a release: the generator runs over any vLLM commit (design X9,
+12.4). The commit is the checkout's HEAD; --commit asserts it, and --upstream names it (default: the
+release tag at HEAD, else its first 12 digits). A backend or kernel the classification does not
+know, an import it does not classify, or a kernel its backend no longer calls is refused, naming
+it: that is the list of what a new commit needs classified, and the classification is edited in
+place. A status for a backend the commit's enum no longer has is reported on stderr and left out of
+the table, so an older commit generates too.
 
 Usage (kernels/regen.py does all of it, fetching the sources, in one command):
     python3 -I kernels/gen_kernel_impls.py <vllm-source> --upstream v0.33.0 \\
@@ -392,9 +395,9 @@ def artifact_checksum(root, rel, artifact):
 # ---------------------------------------------------------------------------------------------
 
 
-def classification_path(tag):
-    """The classification of the vLLM release tag: kernels/<tag>/attention.json."""
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), tag, "attention.json")
+def classification_path():
+    """The classification, which is the same for every commit: kernels/attention.json."""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "attention.json")
 
 
 def library_pins(vllm, cls):
@@ -419,7 +422,7 @@ def library_pins(vllm, cls):
         for v in lib.get("seen", []):
             out[f"{name}@{v['version']}"] = (v["version"], v.get("seen_in", ""), lib["repo"],
                                              lib.get("tag_format", "v{version}").format(version=v["version"]))
-    # The builds the MoE kernels were measured on (kernels/<tag>/moe.json "seen"): a library
+    # The builds the MoE kernels were measured on (kernels/moe.json "seen"): a library
     # version, or for the engine's own kernels an earlier vLLM release, fetched at its tag.
     for name, vs in sorted((cls.get("moe") or {}).get("seen", {}).items()):
         lib = cls["libraries"].get(name)
@@ -480,9 +483,24 @@ def hash_inputs(vllm, cls, k, lib_name, root, engine_lib):
     return basis, sorted(set(inputs))
 
 
-def generate(vllm, cls, sources):
-    up = cls["upstream"]
-    commit = at_pin(vllm, f"vLLM {up['tag']}", commit=up["commit"])
+def commit_name(vllm, commit, tag=None):
+    """The name of the vLLM commit: tag when given (the checkout's own tag of that name, if it has
+    one, must be at the commit), else the release tag at the commit, else its first 12 digits."""
+    if tag is not None:
+        r = subprocess.run(["git", "-C", vllm, "rev-parse", "--verify", "-q", f"refs/tags/{tag}^{{commit}}"],
+                           capture_output=True, text=True)
+        if r.returncode == 0 and r.stdout.strip() != commit:
+            raise Refused(f"{vllm} is at {commit}, not tag {tag} ({r.stdout.strip()})")
+        return tag
+    r = subprocess.run(["git", "-C", vllm, "describe", "--tags", "--exact-match", "--match", "v[0-9]*", commit],
+                       capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else commit[:12]
+
+
+def generate(vllm, cls, sources, tag=None, commit=None):
+    """The table for the vLLM checkout at its HEAD; commit, when given, is the commit it must be at."""
+    commit = at_pin(vllm, "vLLM", commit=commit)
+    tag = commit_name(vllm, commit, tag)
 
     archs = cls["archs"]
     libs = {}
@@ -528,7 +546,9 @@ def generate(vllm, cls, sources):
     for b in sorted(set(enum) - set(backends)):
         raise Refused(f"AttentionBackendEnum.{b} has no status in the classification")
     for b in sorted(set(backends) - set(enum)):
-        raise Refused(f"the classification gives a status to {b}, which AttentionBackendEnum does not have")
+        print(f"gen_kernel_impls: kernels/attention.json classifies {b}, which this commit's AttentionBackendEnum "
+              f"does not have; left out", file=sys.stderr)
+    backends = {b: st for b, st in backends.items() if b in enum}
     for b, st in sorted(backends.items()):
         if st["status"] not in STATUSES:
             raise Refused(f"{b}: status {st['status']!r} is not one of {sorted(STATUSES)}")
@@ -644,7 +664,7 @@ def generate(vllm, cls, sources):
     gaps = sorted(by.values(), key=gkey)
     return {
         "kind": "KernelImplTable",
-        "engine": {"kind": "vllm", "version": up["tag"].removeprefix("v"), "commit": commit},
+        "engine": {"kind": "vllm", "version": tag.removeprefix("v"), "commit": commit},
         "primitives": sorted(PRIMITIVES | ({MOE_PRIMITIVE} if cls.get("moe") else set())),
         "archs": sorted(archs),
         "gaps": [{"primitive": g["primitive"], "selection": g["selection"],
@@ -684,7 +704,7 @@ def named_in(vllm, rel, func, enum):
 
 def generate_moe(vllm, cls, libs, sources, commit, engine_lib):
     """The moe.grouped_gemm rows: every kernel the release runs routed experts with for the
-    weight formats kernels/<tag>/moe.json classifies, by MoE backend (an Enum of vLLM's MoE
+    weight formats kernels/moe.json classifies, by MoE backend (an Enum of vLLM's MoE
     oracle). The same checks as the attention table: every member has a status, a backend the
     oracle ranks on its own is not marked as not running on CUDA, every name a listed backend's
     experts module imports from a kernel module is classified, and each kernel is called there.
@@ -700,7 +720,9 @@ def generate_moe(vllm, cls, libs, sources, commit, engine_lib):
         for b in sorted(set(members) - set(backends)):
             raise Refused(f"{sel['enum']}.{b} has no status in moe.json")
         for b in sorted(set(backends) - set(members)):
-            raise Refused(f"moe.json gives a status to {b}, which {sel['enum']} does not have")
+            print(f"gen_kernel_impls: kernels/moe.json classifies {b}, which this commit's {sel['enum']} does "
+                  f"not have; left out", file=sys.stderr)
+        backends = {b: st for b, st in backends.items() if b in members}
         kernels_by_backend = {}
         for k in fmt["kernels"]:
             kernels_by_backend.setdefault(k["backend"], []).append(k)
@@ -800,34 +822,30 @@ def render(table):
     return json.dumps(table, indent=2, ensure_ascii=False) + "\n"
 
 
-def load_classification(tag, path=None):
-    """The classification for the vLLM release tag (kernels/<tag>/attention.json unless path is
-    given). It must name the same tag: a table is generated for one release."""
-    path = path or classification_path(tag)
+def load_classification(path=None):
+    """The classification (kernels/attention.json unless path is given), with kernels/moe.json
+    beside it as cls["moe"] when it exists."""
+    path = path or classification_path()
     if not os.path.exists(path):
-        raise Refused(f"no classification for vLLM {tag}: {path} does not exist; copy the nearest release's and "
-                      f"run the generator against {tag}'s source, which names every backend and import to classify")
+        raise Refused(f"no classification: {path} does not exist")
     with open(path, encoding="utf-8") as f:
         cls = json.load(f)
-    if cls["upstream"].get("tag") != tag:
-        raise Refused(f"{path} classifies vLLM {cls['upstream'].get('tag')}, not {tag}")
     mpath = os.path.join(os.path.dirname(path), "moe.json")
     if os.path.exists(mpath):
         with open(mpath, encoding="utf-8") as f:
-            moe = json.load(f)
-        if moe["upstream"] != cls["upstream"]:
-            raise Refused(f"{mpath} classifies {moe['upstream']}, and {path} {cls['upstream']}")
-        cls["moe"] = moe
+            cls["moe"] = json.load(f)
     return cls
 
 
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("vllm_source")
-    ap.add_argument("--upstream", required=True, metavar="TAG",
-                    help="the vLLM release tag the source is checked out at, such as v0.33.0")
+    ap.add_argument("--upstream", metavar="TAG",
+                    help="the name of the checked-out commit, such as v0.33.0 (default: its release tag, else "
+                    "its first 12 digits)")
+    ap.add_argument("--commit", metavar="SHA", help="the commit the checkout must be at (default: any)")
     ap.add_argument("--classification", metavar="FILE",
-                    help="the classification to use instead of kernels/<TAG>/attention.json")
+                    help="the classification to use instead of kernels/attention.json")
     ap.add_argument("--source", action="append", default=[], metavar="LIBRARY=DIR",
                     help="a library's source checkout at vLLM's pin")
     ap.add_argument("--check", metavar="FILE", help="compare with FILE instead of writing")
@@ -839,8 +857,8 @@ def main(argv):
             ap.error(f"--source {s}: want LIBRARY=DIR")
         sources[name] = d
     try:
-        cls = load_classification(args.upstream, args.classification)
-        out = render(generate(args.vllm_source, cls, sources))
+        cls = load_classification(args.classification)
+        out = render(generate(args.vllm_source, cls, sources, args.upstream, args.commit))
     except Refused as e:
         print(f"gen_kernel_impls: {e}", file=sys.stderr)
         return 1

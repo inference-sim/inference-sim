@@ -36,7 +36,7 @@ func ArchOf(major, minor int) string { return fmt.Sprintf("sm_%d%da", major, min
 func AttentionSelection(backend string) string { return "attention backend " + backend }
 
 // MoESelection is the selection kernel_impls.json lists an MoE backend's kernels under, for a weight
-// format's backend Enum member (kernels/<tag>/moe.json): "fp8 moe backend TRITON".
+// format's backend Enum member (kernels/moe.json): "fp8 moe backend TRITON".
 func MoESelection(format, member string) string { return format + " moe backend " + member }
 
 // Implementation states the kernel implementation a lowered operation runs: the build of the
