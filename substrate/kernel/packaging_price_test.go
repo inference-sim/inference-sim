@@ -49,8 +49,13 @@ func (inertRules) ResolveDPLoadBalancing(deployment.Parallelism) deployment.DPLo
 	return deployment.DPLBInternal
 }
 
-// priceOnGB200 prices one decode step of Muse Spark (a model with a decode-sharded
-// projection gated by min_tokens_across_nodes) at tensor-parallel width tp over a GB200
+// spansHosts reports whether a pool's tensor-parallel group sits on more than one node (host),
+// whatever links join its ranks: the packaging fact the engine reads to decide its layout.
+func spansHosts(k *Kernel) bool {
+	return k.layout.GPUsPerNode > 0 && max(k.layout.TP, 1) > k.layout.GPUsPerNode
+}
+
+// priceOnGB200 prices one decode step of Muse Spark at tensor-parallel width tp over a GB200
 // NVL72 pool. legacy true is the packaging before the catalog owned it: 8 GPUs to a node
 // and no rack tier, built from a copy of the entry (the scenario then states 8, which the
 // real entry would refuse). legacy false is the entry's own 4 per tray and 72 per rack, with
@@ -106,9 +111,7 @@ pools:
 	return k.StepTime(b), k
 }
 
-// Muse Spark's decode-sharded projections shard from min_tokens_across_nodes tokens when the
-// TP group spans nodes (the catalog graph states 32). A batch of this many decode requests
-// is at or above it; fewTokens is below it.
+// The decode batches the packaging tests price: a few requests and many.
 const (
 	manyTokens = 64
 	fewTokens  = 4
@@ -122,9 +125,9 @@ const (
 func TestTP8OnAnNVL72PoolPricesTheSameUnderEitherPackaging(t *testing.T) {
 	old, kOld := priceOnGB200(t, 8, manyTokens, true)
 	now, kNow := priceOnGB200(t, 8, manyTokens, false)
-	if kOld.tpSpansHosts() || !kNow.tpSpansHosts() {
+	if spansHosts(kOld) || !spansHosts(kNow) {
 		t.Fatalf("tpSpansHosts: old packaging %v, entry's %v; want false then true (the setup changed)",
-			kOld.tpSpansHosts(), kNow.tpSpansHosts())
+			spansHosts(kOld), spansHosts(kNow))
 	}
 	if old.NoOverlap != now.NoOverlap || old.Overlap != now.Overlap {
 		t.Errorf("TP8 prices %v/%v (no overlap/overlap) on 8 per node and %v/%v on 4 per tray in a 72-GPU rack; want equal",
@@ -152,40 +155,4 @@ func TestTP16OnAnNVL72PoolLeavesTheNICForNVLink(t *testing.T) {
 	}
 	t.Logf("TP16, %d decode tokens: %v (NIC %v) on 8 per node, %v on 4 per tray in a 72-GPU rack",
 		manyTokens, old.NoOverlap, old.PerResource[kernel.ResourceNIC], now.NoOverlap)
-}
-
-// tpSpansHosts BECOMES TRUE AT TP8, AND THAT GATES min_tokens_across_nodes. The engine tests
-// a TP group's hosts, not its links (tp_group_spans_nodes), so two trays of one rack span
-// nodes. A step below the graph's min_tokens_across_nodes then does not shard the replicated
-// projections, where on 8 per node it did. A step at or above the minimum is unaffected
-// (the equal-price test above).
-func TestTP8OnAnNVL72PoolGatesDecodeShardingOnMinTokensAcrossNodes(t *testing.T) {
-	d, err := load.Embedded()
-	if err != nil {
-		t.Fatal(err)
-	}
-	g, err := d.Model("muse-spark-open-816b-a42b-nvfp4")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var min int
-	for _, l := range g.LayerKinds {
-		for _, n := range l.Nodes {
-			if n.ShardedAtDecode != nil && n.ShardedAtDecode.MinTokensAcrossNodes > min {
-				min = n.ShardedAtDecode.MinTokensAcrossNodes
-			}
-		}
-	}
-	if min <= fewTokens || min > manyTokens {
-		t.Fatalf("the graph's min_tokens_across_nodes is %d; the test's %d and %d tokens must straddle it",
-			min, fewTokens, manyTokens)
-	}
-	old, _ := priceOnGB200(t, 8, fewTokens, true)
-	now, _ := priceOnGB200(t, 8, fewTokens, false)
-	if old.NoOverlap == now.NoOverlap {
-		t.Errorf("a %d-token TP8 step below min_tokens_across_nodes %d prices %v under both packagings; "+
-			"want the spanning group to lose the decode sharding", fewTokens, min, old.NoOverlap)
-	}
-	t.Logf("TP8, %d decode tokens (min_tokens_across_nodes %d): %v on 8 per node, %v on 4 per tray",
-		fewTokens, min, old.NoOverlap, now.NoOverlap)
 }

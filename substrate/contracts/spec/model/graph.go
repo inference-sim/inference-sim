@@ -378,21 +378,6 @@ type Speculator struct {
 	SharesTargetHead bool `yaml:"shares_target_head,omitempty"`
 }
 
-// ShardedAtDecode is when a replicated GEMM's output columns split over the tensor-parallel
-// ranks (Node.ShardedAtDecode). Both bounds are on the step's scheduled tokens.
-type ShardedAtDecode struct {
-	// CapabilityFamily is the CUDA compute-capability major version from which the engine
-	// shards: 10 for SM100 and later (has_device_capability(100)).
-	CapabilityFamily int `yaml:"capability_family"`
-	// MaxTokens is the largest step that shards; a larger one runs the GEMM whole.
-	MaxTokens int `yaml:"max_tokens"`
-	// MinTokensAcrossNodes is the smallest step that shards when the tensor-parallel group
-	// spans nodes, where the gather crosses the fabric: Muse Spark's unpooler shards from
-	// 32 tokens then (_MULTI_NODE_SHARDED_UNPOOLER_MIN_TOKENS, model.py:154, 535-539). Zero
-	// means from one token.
-	MinTokensAcrossNodes int `yaml:"min_tokens_across_nodes,omitempty"`
-}
-
 // Drafting is how a speculator's stack produces its draft tokens.
 type Drafting string
 
@@ -540,18 +525,6 @@ type Node struct {
 	// target's LM head and embedding (dspark.py: "load_dspark_model always aliases the
 	// target's"), so pricing the draft's own copies would count each twice.
 	Aliases string `yaml:"aliases,omitempty"`
-
-	// ShardedAtDecode, on a replicated GEMM (tp: replicated), says the engine splits its output
-	// columns over the tensor-parallel ranks for a small step and gathers them back, holding the
-	// whole weight on every rank: each rank computes n/tp columns and an all-gather over TP of
-	// the step's rows x n output at the activation width reassembles them. Absent means the
-	// GEMM runs whole on every rank at every step. Muse Spark's MoE pooler and unpooler are
-	// such ReplicatedLinears on Blackwell with tensor parallelism and no data parallelism, at
-	// 256 tokens or fewer (shard_pooler / shard_unpooler, _SHARDED_PROJECTION_MAX_TOKENS,
-	// vllm/models/muse_spark/nvidia/model.py:151, 505-523, 635-660 at vllm-project/vllm
-	// 0f6b2619). The condition is the model code's, so a consumer reads it from the
-	// architecture and the layout; this field only marks the GEMMs it applies to.
-	ShardedAtDecode *ShardedAtDecode `yaml:"sharded_at_decode,omitempty"`
 
 	// GEMM and GroupedGEMM.
 	N int `yaml:"n,omitempty"`

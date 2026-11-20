@@ -585,7 +585,7 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 	if p.MoE.Experts, err = expertsKernel(g, &c, eng.MoEBackend); err != nil {
 		return nil, err
 	}
-	p.MoE.Fused = in.Rules.MegaMoEBackend(eng.MoEBackend)
+	p.DecodeShards = decodeShards(arch, c.family, lay, in.Rules.MegaMoEBackend(eng.MoEBackend))
 	if r, why := routingMode(g, &c, eng.MoEBackend); r != plan.RoutingNotStated || why != "" {
 		p.MoE.Routing = r
 		if why != "" {

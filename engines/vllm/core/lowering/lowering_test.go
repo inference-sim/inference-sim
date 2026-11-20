@@ -401,13 +401,6 @@ func TestTheLoweringResolvesEverySettingTheKernelPrices(t *testing.T) {
 					t.Errorf("MoE.RedundantExperts %d, want 0", l.Plan.MoE.RedundantExperts)
 				}
 			}},
-		{"the mega-MoE backend fuses the dispatch and the experts", v41dp,
-			vllmsettings.Settings{CacheDType: "fp8", MoEBackend: "deep_gemm_mega_moe"},
-			func(t *testing.T, l *plan.Lowered) {
-				if !l.Plan.MoE.Fused {
-					t.Error("MoE.Fused false, want true")
-				}
-			}},
 		{"DeepSeek-V4.1 splits its residual stream across the tensor-parallel ranks", v41sp,
 			vllmsettings.Settings{CacheDType: "fp8"},
 			func(t *testing.T, l *plan.Lowered) {

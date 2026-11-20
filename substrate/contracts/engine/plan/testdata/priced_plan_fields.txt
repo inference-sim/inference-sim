@@ -46,7 +46,6 @@ GraphPolicy.Decode # kernel: TestEachResolvedPlanSettingMovesAPrice
 GraphPolicy.Other # kernel: TestEachResolvedPlanSettingMovesAPrice
 MoEPlan.Dispatch # kernel: TestEachResolvedPlanSettingMovesAPrice
 MoEPlan.Experts # kernel: TestEachResolvedPlanSettingMovesAPrice
-MoEPlan.Fused # kernel: TestEachResolvedPlanSettingMovesAPrice
 MoEPlan.RedundantExperts # kernel: TestEachResolvedPlanSettingMovesAPrice
 MoEPlan.Routing # kernel: TestEachResolvedPlanSettingMovesAPrice
 PoolPlan.Batch # kernel: TestEachResolvedPlanSettingMovesAPrice
@@ -71,6 +70,10 @@ PoolPlan.Launches # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCha
 LaunchChange.FromTokens # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCharged
 LaunchChange.ToTokens # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCharged
 LaunchChange.PerLayer # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCharged
+PoolPlan.DecodeShards # kernel: TestADecodeShardThePlanStatesSplitsTheGEMMItNamesForTheStepsItCovers
+DecodeShard.Role # kernel: TestADecodeShardThePlanStatesSplitsTheGEMMItNamesForTheStepsItCovers
+DecodeShard.FromTokens # kernel: TestADecodeShardThePlanStatesSplitsTheGEMMItNamesForTheStepsItCovers
+DecodeShard.ToTokens # kernel: TestADecodeShardThePlanStatesSplitsTheGEMMItNamesForTheStepsItCovers
 Transfer.Nodes # envtest: TestNodeAndGroupMovesChangeTheReferenceDemand
 Transfer.Groups # envtest: TestNodeAndGroupMovesChangeTheReferenceDemand
 NodeMove.From # envtest: TestNodeAndGroupMovesChangeTheReferenceDemand

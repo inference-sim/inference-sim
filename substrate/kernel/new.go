@@ -390,6 +390,7 @@ func construct(in Inputs) (*Kernel, error) {
 				"tower, and the encoder work a multimodal request adds, are not priced")
 	}
 
+	shardedRoles := map[string]bool{}
 	built, err := price.BuildPlanWith(in.Model, emitter{k.layout}, price.PlanOptions{
 		WeightBytesPerParam: func(n model.Node) float64 {
 			return weightBytesPerParam(in.Model, n, served)
@@ -400,11 +401,28 @@ func construct(in Inputs) (*Kernel, error) {
 		// Expert selection is a launch of its own on a modular experts backend
 		// (vllm/model_executor/layers/fused_moe/runner/moe_runner.py:620-643@4ba787ec).
 		RoutingLaunch: k.low.MoE.Routing == plan.RoutingSeparate,
+		DecodeShard: func(n model.Node) (price.TokenRange, bool) {
+			for _, d := range k.low.DecodeShards {
+				if d.Role == n.Role {
+					shardedRoles[d.Role] = true
+					return price.TokenRange{From: int(d.FromTokens), To: int(d.ToTokens)}, true
+				}
+			}
+			return price.TokenRange{}, false
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("planning the model graph: %w", err)
 	}
 	k.plan = built
+	// A role the engine splits that no replicated GEMM of the model has is a table that has
+	// drifted from the graph; pricing it as though it split would hide that.
+	for _, d := range k.low.DecodeShards {
+		if !shardedRoles[d.Role] {
+			return nil, fmt.Errorf("the plan says the engine splits role %q at decode (Plan.DecodeShards), "+
+				"but no replicated GEMM of the model has that role", d.Role)
+		}
+	}
 	// A layer cannot launch fewer kernels than none: the engine's fused kernels replace nodes
 	// the layer has.
 	for _, c := range k.low.Launches {

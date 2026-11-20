@@ -123,10 +123,14 @@ type PlannedGEMM struct {
 	// Format is the weight format the GEMM computes from, which selects its compute rate.
 	Format Format
 	// ShardedAtDecode is a replicated GEMM whose output columns the engine splits over the
-	// tensor-parallel ranks for a small step (blis-schemas Node.ShardedAtDecode), nil for
+	// tensor-parallel ranks for the steps in the range (PlanOptions.DecodeShard), nil for
 	// every other. It is never fused with a neighbour.
-	ShardedAtDecode *model.ShardedAtDecode
+	ShardedAtDecode *TokenRange
 }
+
+// TokenRange is the steps, by their scheduled tokens, that a GEMM is split for: both bounds
+// included.
+type TokenRange struct{ From, To int }
 
 // Format is the weight format a GEMM computes from: the dtype and, for a block-scaled
 // format, how many elements share one scale. The two together decide which kernel the
@@ -156,6 +160,10 @@ type PlanOptions struct {
 	// RoutingLaunch is true when expert selection is a launch of its own in each routed MoE
 	// layer (plan.RoutingSeparate): every routed GroupedGEMM then counts one more kernel.
 	RoutingLaunch bool
+	// DecodeShard is the range of steps the engine splits a replicated GEMM node's output
+	// columns over the tensor-parallel ranks for, false for a node it does not split. Nil
+	// splits none.
+	DecodeShard func(model.Node) (TokenRange, bool)
 }
 
 // PlannedLayer is one layer kind with its multiplicity and its pre-summed work.
@@ -819,8 +827,13 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 				N: n.N, K: n.K, FLOPsPerToken: f, ShardN: shardN,
 				Replicated: n.TP == model.TPReplicated, TokenSharded: tokenSharded,
 				WeightBytes: resident, WeightReadBytes: read, Format: o.Format(n),
-				MHCFn: mhcFn.MatchString(n.Role), ShardedAtDecode: n.ShardedAtDecode,
+				MHCFn:  mhcFn.MatchString(n.Role),
 				Router: routedExperts > 0 && n.N == routedExperts && n.K == hidden,
+			}
+			if o.DecodeShard != nil && g.Replicated {
+				if r, ok := o.DecodeShard(n); ok {
+					g.ShardedAtDecode = &r
+				}
 			}
 			// Fuse into the previous GEMM when the engine would. vLLM concatenates
 			// column-parallel projections that share an input ALONG THE OUTPUT

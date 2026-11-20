@@ -95,6 +95,23 @@ type PoolPlan struct {
 	// which fusions run for its version, chip, layout and the step's size, so the cost model
 	// counts launches from the graph and adds what the engine states (SUB-6). Empty is no change.
 	Launches []LaunchChange
+	// DecodeShards are the replicated GEMMs of the model graph whose output columns the engine
+	// splits over the tensor-parallel ranks, and the steps it does so for. Which GEMMs a layout
+	// shards, and when, is the engine's lowering of the model (SUB-15), so the graph states only
+	// that a GEMM is replicated and the engine names the ones it splits. Empty is none.
+	DecodeShards []DecodeShard
+}
+
+// DecodeShard is one replicated GEMM the engine splits over the tensor-parallel ranks for a step
+// of between FromTokens and ToTokens scheduled tokens, both included. Each rank holds the whole
+// weight, computes its tp-th of the output columns, and an all-gather over the tensor-parallel
+// group of the step's rows by the GEMM's output width at the activation width reassembles them.
+// A step outside the range runs the GEMM whole on every rank.
+type DecodeShard struct {
+	// Role is the graph role of the node (model.Node.Role), a replicated GEMM (tp: replicated)
+	// of the pool's model. Every GEMM of the model with that role is split.
+	Role                 string
+	FromTokens, ToTokens units.Tokens
 }
 
 // LaunchChange is the change the engine's fused kernels make to each layer's launches in a step

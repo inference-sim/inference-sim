@@ -6245,19 +6245,17 @@ def test_muse_spark_attention_cannot_replicate_a_kv_head(tmp_path):
         _derive_raw(bad, tmp_path, MUSE_DSPARK.name)
 
 
-def test_muse_spark_pooler_and_unpooler_shard_at_decode_on_blackwell():
-    """On SM100 and later with TP and no DP, a step of at most 256 tokens computes the MoE
-    pooler's and unpooler's output columns a TP slice at a time and all-gathers them
-    (shard_pooler / shard_unpooler, _SHARDED_PROJECTION_MAX_TOKENS,
-    vllm/models/muse_spark/nvidia/model.py:151, 505-523, 635-660@0f6b2619); the unpooler only
-    from 32 tokens when the TP group spans nodes (:154, 535-539). Both stay replicated GEMMs."""
+def test_muse_spark_pooler_and_unpooler_are_replicated_and_state_no_decode_split():
+    """The MoE pooler and unpooler are replicated GEMMs. Whether the engine splits their
+    output columns over TP for a small step is its lowering (SUB-15), so no node of the
+    graph states a decode split, a chip family or a token bound."""
     for m in (MUSE, MUSE_NVFP4):
         for k in graph_of(m)["layer_kinds"]:
             pool, unpool = _node(k, "routed_expert_down_proj"), _node(k, "routed_expert_up_proj")
             assert pool["tp"] == unpool["tp"] == "replicated"
-            assert pool["sharded_at_decode"] == {"capability_family": 10, "max_tokens": 256}
-            assert unpool["sharded_at_decode"] == {"capability_family": 10, "max_tokens": 256,
-                                                   "min_tokens_across_nodes": 32}
+            for n in (pool, unpool):
+                assert "sharded_at_decode" not in n
+                assert not {"capability_family", "max_tokens", "min_tokens_across_nodes"} & n.keys()
 
 
 def _pin_one(tmp_path):
