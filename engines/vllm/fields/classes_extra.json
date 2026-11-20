@@ -411,7 +411,7 @@
  "stream_interval": {
   "sites": [
    {
-    "at": "vllm/v1/engine/output_processor.py:379",
+    "at": "vllm/v1/engine/output_processor.py:382",
     "expr": "self.stream_interval > 1",
     "op": "Gt",
     "values": [
