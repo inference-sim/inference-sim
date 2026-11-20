@@ -1710,6 +1710,58 @@
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/7"
   },
+  "transformers_fallback:TransformersEmbeddingModel": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersForSequenceClassification": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMoEEmbeddingModel": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMoEForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMoEForSequenceClassification": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalEmbeddingModel": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalForSequenceClassification": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalMoEEmbeddingModel": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalMoEForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalMoEForSequenceClassification": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:auto": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
   "tree_attachment:init_cache_linker": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/9"

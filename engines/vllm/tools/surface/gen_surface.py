@@ -59,6 +59,11 @@ What is read, by category (each item's "site" is the file and line it was read a
                        offloading manager, spec and worker, the CPU tier's cache policy, the
                        tiering layer's parent and secondary-tier managers, and the backpressure
                        policy and detector.
+  transformers_fallback  every entry of vllm/model_executor/models/registry.py's _VLLM_MODELS whose
+                       module is "transformers": a backend class (route backend_class), an
+                       architecture the registry sends to one (route architecture, with its
+                       backend), and the fallback for an unregistered architecture
+                       (_try_resolve_transformers, route unregistered_architecture).
   metric_family        every family of oracle/metrics/manifest.json, which cmd/metricsmanifest
                        generates from every Prometheus constructor in the pinned source and CI checks
                        current in the same job.
@@ -88,7 +93,7 @@ import sys
 # provenance.go's Upstream record (the one place the version is written, X23); --upstream-tag and
 # --upstream-commit name another. Set by main before anything is derived.
 UPSTREAM = {"tag": None, "commit": None}
-ISSUE = re.compile(r"^https://github\.com/inference-sim/blis-vllm/issues/[0-9]+$")
+ISSUE = re.compile(r"^https://github\.com/inference-sim/(blis-vllm|inference-sim)/issues/[0-9]+$")
 
 
 def citation_rule():
@@ -173,6 +178,7 @@ OFFLOAD_BASE = "vllm/v1/kv_offload/base.py"
 KV_EVENTS = "vllm/distributed/kv_events.py"
 KV_SPECS = "vllm/v1/core/single_type_kv_cache_manager.py"
 CONNECTOR_BASE = KC + "/v1/base.py"
+REGISTRY = "vllm/model_executor/models/registry.py"
 
 # The framework files of §7.6 and the abstract classes each defines.
 FRAMEWORK_FILES = [
@@ -573,6 +579,87 @@ def metric_families(repo, manifest=None):
     return out
 
 
+LITERAL_NODES = (ast.Dict, ast.Tuple, ast.List, ast.Constant, ast.Name, ast.Load, ast.Store, ast.DictComp,
+                 ast.comprehension, ast.Compare, ast.Eq, ast.NotEq, ast.In, ast.NotIn, ast.BoolOp, ast.And, ast.Or,
+                 ast.Attribute, ast.Call, ast.UnaryOp, ast.Not)
+
+
+def pure_table(node):
+    """Whether an expression is a literal table: containers, constants, names, comparisons, and
+    the .items() of another table (a ** of a comprehension builds some of the registry's tables)."""
+    for n in ast.walk(node):
+        if not isinstance(n, LITERAL_NODES):
+            return False
+        if isinstance(n, ast.Call) and not (isinstance(n.func, ast.Attribute) and n.func.attr == "items" and not n.args):
+            return False
+        if isinstance(n, ast.Attribute) and n.attr != "items":
+            return False
+    return True
+
+
+def registry_models(src):
+    """{architecture: (module, class, line)} of _VLLM_MODELS, the registry's table.
+
+    The registry is read with the ast module, and only its literal tables are evaluated: those
+    assignments whose value is containers, constants and the .items() of another table. The line
+    is where the architecture is a key of a literal table."""
+    tree = parse(src, REGISTRY)
+    ns, lines = {}, {}
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign) and isinstance(stmt.targets[0], ast.Name):
+            name, value = stmt.targets[0].id, stmt.value
+        elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name) and stmt.value is not None:
+            name, value = stmt.target.id, stmt.value
+        else:
+            continue
+        if not isinstance(value, ast.Dict) or not pure_table(value):
+            ns.pop(name, None)
+            continue
+        for n in ast.walk(value):
+            if isinstance(n, ast.Dict):
+                for k, v in zip(n.keys, n.values):
+                    if k is not None and const_str(k) is not None and isinstance(v, ast.Tuple):
+                        lines[const_str(k)] = k.lineno
+        try:
+            ns[name] = eval(compile(ast.Expression(value), REGISTRY, "eval"), {"__builtins__": {}}, ns)
+        except Exception:
+            ns.pop(name, None)
+    table = ns.get("_VLLM_MODELS")
+    if not isinstance(table, dict):
+        raise GenError("%s: _VLLM_MODELS is not a table of literals" % REGISTRY)
+    out = {}
+    for arch, v in table.items():
+        if not (isinstance(v, tuple) and len(v) == 2 and all(isinstance(e, str) for e in v)):
+            raise GenError("%s: %s is not (\"module\", \"Class\")" % (REGISTRY, arch))
+        out[arch] = (v[0], v[1], lines.get(arch))
+    return out
+
+
+def model_architectures(src):
+    """{architecture: "native" | "transformers"}: how vLLM resolves each architecture it registers.
+    An architecture it does not register is run through the Transformers backend, or refused,
+    depending on the model's config."""
+    return {arch: "transformers" if module == "transformers" else "native"
+            for arch, (module, _, _) in registry_models(src).items()}
+
+
+def transformers_fallback(src):
+    out = []
+    for arch, (module, cls, line) in registry_models(src).items():
+        if module == "transformers":
+            if arch == cls:
+                out.append(item("transformers_fallback", arch, REGISTRY, line, route="backend_class"))
+            else:
+                out.append(item("transformers_fallback", arch, REGISTRY, line, route="architecture", backend=cls))
+    for node in ast.walk(parse(src, REGISTRY)):
+        if isinstance(node, ast.FunctionDef) and node.name == "_try_resolve_transformers":
+            out.append(item("transformers_fallback", "auto", REGISTRY, node.lineno, route="unregistered_architecture"))
+            break
+    else:
+        raise GenError("%s: no _try_resolve_transformers" % REGISTRY)
+    return out
+
+
 def derive(src, repo, manifest=None):
     its = []
     its += connectors(src)
@@ -590,6 +677,7 @@ def derive(src, repo, manifest=None):
     its += scheduler_policies(src)
     its += path_loaders(src)
     its += frameworks(src)
+    its += transformers_fallback(src)
     its += metric_families(repo, manifest)
     ids = [i["id"] for i in its]
     dup = sorted({i for i in ids if ids.count(i) > 1})
@@ -634,7 +722,7 @@ def check_entry(repo, it, st, errs):
     elif status == "refused":
         allowed |= {"issue", "refusal"}
         if not ISSUE.match(str(st.get("issue", ""))):
-            errs.append("%s: refused, but issue %r is not a blis-vllm issue URL" % (iid, st.get("issue")))
+            errs.append("%s: refused, but issue %r is not a blis-vllm or inference-sim issue URL" % (iid, st.get("issue")))
         if "refusal" in st and st["refusal"] not in REFUSALS:
             errs.append("%s: refusal %r is not one of %s" % (iid, st["refusal"], ", ".join(REFUSALS)))
     else:

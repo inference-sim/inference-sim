@@ -317,6 +317,32 @@ FILES = {
         def register_resolution_hook(name):
             pass
     """,
+    "models/llama.py": """
+        class LlamaForCausalLM:
+            pass
+        class LlamaModel:
+            pass
+        EntryClass = [LlamaForCausalLM, LlamaModel]
+    """,
+    "models/mixtral.py": """
+        class MixtralForCausalLM:
+            pass
+        EntryClass = MixtralForCausalLM
+    """,
+    "models/transformers.py": """
+        class TransformersForCausalLM:
+            pass
+        class TransformersMoEForCausalLM:
+            pass
+        EntryClass = [
+            TransformersForCausalLM,
+            TransformersMoEForCausalLM,
+        ]
+    """,
+    "model_loader/utils.py": """
+        def resolve_transformers_arch(model_config, architectures):
+            return []
+    """,
 }
 
 ISSUE = "https://github.com/inference-sim/blis-sglang/issues/3"
@@ -395,6 +421,8 @@ class TestItems(Base):
             "spec_worker:EAGLEWorkerV2": "speculative/spec_info.py:5",
             "metric_family:sglang:ttft_seconds": "observability/metrics_collector.py:7",
             "extension_point:Platform.get_kv_pool_cls": "platforms/interface.py:2",
+            "transformers_fallback:TransformersMoEForCausalLM": "models/transformers.py:7",
+            "transformers_fallback:auto": "model_loader/utils.py:1",
         }
         for iid, s in want.items():
             self.assertIn(iid, by_id)
@@ -433,6 +461,33 @@ class TestItems(Base):
     def test_a_collections_counter_is_not_a_metric_and_a_wrapper_is_allowed(self):
         names = [i["name"] for i in self.derive() if i["category"] == "metric_family"]
         self.assertEqual(names, ["sglang:num_running_reqs", "sglang:ttft_seconds"])
+
+
+class TestModelArchitectures(Base):
+    def test_a_class_in_the_transformers_module_is_a_fallback_and_any_other_is_native(self):
+        write_tree(self.src, self.files)
+        self.assertEqual(gen_surface.model_architectures(self.src), {
+            "LlamaForCausalLM": "native", "LlamaModel": "native", "MixtralForCausalLM": "native",
+            "TransformersForCausalLM": "transformers", "TransformersMoEForCausalLM": "transformers"})
+        by_id = {i["id"]: i for i in gen_surface.derive(self.src) if i["category"] == "transformers_fallback"}
+        self.assertEqual({k: v["route"] for k, v in by_id.items()}, {
+            "transformers_fallback:TransformersForCausalLM": "backend_class",
+            "transformers_fallback:TransformersMoEForCausalLM": "backend_class",
+            "transformers_fallback:auto": "unregistered_architecture"})
+
+    def test_an_entry_class_that_is_not_a_name_fails(self):
+        self.files["models/llama.py"] = "EntryClass = [make_class()]\n"
+        write_tree(self.src, self.files)
+        with self.assertRaisesRegex(gen_surface.GenError, "EntryClass names something other than classes by name"):
+            gen_surface.model_architectures(self.src)
+
+    def test_a_release_whose_transformers_module_registers_nothing_fails(self):
+        self.files["models/transformers.py"] = "class TransformersForCausalLM:\n    pass\n"
+        self.fails("no EntryClass")
+
+    def test_a_release_without_the_fallback_function_fails(self):
+        self.files["model_loader/utils.py"] = "def other():\n    pass\n"
+        self.fails("no resolve_transformers_arch")
 
 
 class TestKnownBad(Base):
@@ -518,7 +573,7 @@ class TestStatuses(Base):
     def test_a_refusal_needs_a_blis_sglang_issue(self):
         status = self.all_refused()
         status["items"]["tree_core:python"] = {"status": "refused", "issue": "https://github.com/inference-sim/blis-vllm/issues/1"}
-        self.fails(r"tree_core:python: refused, but issue .* is not a blis-sglang issue URL", status)
+        self.fails(r"tree_core:python: refused, but issue .* is not a blis-sglang or inference-sim issue URL", status)
 
     def test_modelled_needs_a_scenario_and_a_framework_needs_its_traces(self):
         status = self.all_refused()

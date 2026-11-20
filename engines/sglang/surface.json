@@ -8,7 +8,7 @@
  "sites_under": "python/sglang/srt/",
  "counts": {
   "out_of_scope": 18,
-  "refused": 420
+  "refused": 433
  },
  "items": [
   {
@@ -1836,6 +1836,123 @@
    "site": "disaggregation/kv_events.py:744",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+  },
+  {
+   "id": "transformers_fallback:TransformersForCausalLM",
+   "category": "transformers_fallback",
+   "name": "TransformersForCausalLM",
+   "site": "models/transformers.py:1673",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMoEForCausalLM",
+   "category": "transformers_fallback",
+   "name": "TransformersMoEForCausalLM",
+   "site": "models/transformers.py:1674",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMultiModalForCausalLM",
+   "category": "transformers_fallback",
+   "name": "TransformersMultiModalForCausalLM",
+   "site": "models/transformers.py:1675",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMultiModalMoEForCausalLM",
+   "category": "transformers_fallback",
+   "name": "TransformersMultiModalMoEForCausalLM",
+   "site": "models/transformers.py:1676",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersEmbeddingModel",
+   "category": "transformers_fallback",
+   "name": "TransformersEmbeddingModel",
+   "site": "models/transformers.py:1677",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMoEEmbeddingModel",
+   "category": "transformers_fallback",
+   "name": "TransformersMoEEmbeddingModel",
+   "site": "models/transformers.py:1678",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMultiModalEmbeddingModel",
+   "category": "transformers_fallback",
+   "name": "TransformersMultiModalEmbeddingModel",
+   "site": "models/transformers.py:1679",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMultiModalMoEEmbeddingModel",
+   "category": "transformers_fallback",
+   "name": "TransformersMultiModalMoEEmbeddingModel",
+   "site": "models/transformers.py:1680",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersForSequenceClassification",
+   "category": "transformers_fallback",
+   "name": "TransformersForSequenceClassification",
+   "site": "models/transformers.py:1681",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMoEForSequenceClassification",
+   "category": "transformers_fallback",
+   "name": "TransformersMoEForSequenceClassification",
+   "site": "models/transformers.py:1682",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMultiModalForSequenceClassification",
+   "category": "transformers_fallback",
+   "name": "TransformersMultiModalForSequenceClassification",
+   "site": "models/transformers.py:1683",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:TransformersMultiModalMoEForSequenceClassification",
+   "category": "transformers_fallback",
+   "name": "TransformersMultiModalMoEForSequenceClassification",
+   "site": "models/transformers.py:1684",
+   "route": "backend_class",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "transformers_fallback:auto",
+   "category": "transformers_fallback",
+   "name": "auto",
+   "site": "model_loader/utils.py:111",
+   "route": "unregistered_architecture",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
   },
   {
    "id": "metric_family:sglang:backup_bandwidth",
