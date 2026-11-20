@@ -89,6 +89,7 @@ inference-sim:
   "sim: TestINV1Accounted": ["test (core packages,*"]
   "sim/llmd: TestSupportedTypesAreHostedByTheFork": ["test (llm-d router,*"]
   "cmd: TestRunCmd_KernelBackend_ScenarioRefusals": ["test (workload & cmd,*"]
+  "internal/val8: TestEveryKeyedEntryIsSelectedOrPublished": ["test (other packages,*"]
   "sim/llmd: TestStartupRefusalMessages": ["test (llm-d router,*"]
   "sim/cluster: TestPDContention_*": ["test (cluster (heavy),*"]
   "cmd: TestScenarioRouterInputs_MapsTheRouterBlock": ["test (workload & cmd,*"]

@@ -79,7 +79,7 @@ classify() {
   any_of own sim/llmd                       && mark llmd
   any_of own internal/bytegate              && mark bytegate
   any_of own internal/invariantscan internal/kernelfixtures internal/stack internal/stack/cmd/stackgen \
-         internal/stack/cmd/versions-doc internal/substratedata sim/check sim/saturation && mark other
+         internal/stack/cmd/versions-doc internal/substratedata internal/val8 sim/check sim/saturation && mark other
 
   # The stack job runs internal/stack's tests and its two generators.
   case "$p" in internal/stack/*) mark stack ;; esac
