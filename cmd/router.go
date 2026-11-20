@@ -324,6 +324,8 @@ func newGateway(in routerInputs, model string, adapters ...string) *llmd.Gateway
 		KVEventDelayUs:   in.KVEventDelayUs,
 		Seed:             in.Seed,
 		Logger:           routerLogger(),
+		// nothing downstream of the router's decision is recorded unless the run traces decisions
+		SkipRouterForOneEndpoint: !routerDecisionsRecorded(),
 	})
 }
 
@@ -423,4 +425,11 @@ func (s *routerLogSink) format(msg string, err error, kv []any) string {
 		fmt.Fprintf(&b, " %v=%v", all[i], all[i+1])
 	}
 	return b.String()
+}
+
+// routerDecisionsRecorded reports whether the run records the router's decisions (the decision trace, with or without counterfactual
+// candidates, or the trace export): then the scores the router gave are read, so a run that skips the router for a one-endpoint
+// pool would differ from one that does not.
+func routerDecisionsRecorded() bool {
+	return traceLevel != "" && traceLevel != "none" || counterfactualK > 0 || summarizeTrace || traceOutput != ""
 }
