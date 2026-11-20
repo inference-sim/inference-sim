@@ -2812,6 +2812,40 @@
             "Set": "cost-model-host-overheads"
           }
         ],
+        "memory": {
+          "block_size_tokens": 16,
+          "cuda_graph_in_budget": true,
+          "gpus_per_replica": 2,
+          "kv_blocks": 268883,
+          "kv_bytes_per_block": 147456,
+          "num_gpu_blocks": 268884,
+          "per_gpu": {
+            "activation_peak_bytes": 872415232,
+            "budget_bytes": 78226826204,
+            "comm_buffers_bytes": 0,
+            "cuda_graph_bytes": 858783744,
+            "device_total_bytes": 85029158917,
+            "engine_buffers_bytes": 0,
+            "eplb_redundant_bytes": 0,
+            "kv_pool_bytes": 39648582364,
+            "lora_reserved_bytes": 0,
+            "non_torch_in_budget_bytes": 0,
+            "weights_bytes": 36847044864
+          },
+          "per_replica": {
+            "activation_peak_bytes": 1744830464,
+            "budget_bytes": 156453652408,
+            "comm_buffers_bytes": 0,
+            "cuda_graph_bytes": 1717567488,
+            "device_total_bytes": 170058317834,
+            "engine_buffers_bytes": 0,
+            "eplb_redundant_bytes": 0,
+            "kv_pool_bytes": 79297164728,
+            "lora_reserved_bytes": 0,
+            "non_torch_in_budget_bytes": 0,
+            "weights_bytes": 73694089728
+          }
+        },
         "method_counts": {
           "assumed": 44,
           "measured": 114,
