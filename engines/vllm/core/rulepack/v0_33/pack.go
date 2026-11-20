@@ -63,6 +63,13 @@ const ArchGlmMoeDsa = "GlmMoeDsaForCausalLM"
 // (PixtralForConditionalGeneration with a mistral_large_4 text model).
 const ArchPixtral = "PixtralForConditionalGeneration"
 
+// ArchGlm5NextCausal and ArchGlm5NextConditional are the two architectures GLM-5.3-Flash's
+// cache-dtype hook is registered under (vllm/model_executor/models/config.py:1894-1895@0fda86a3).
+const (
+	ArchGlm5NextCausal      = "Glm5NextForCausalLM"
+	ArchGlm5NextConditional = "Glm5NextForConditionalGeneration"
+)
+
 // Version is the engine release this pack describes.
 const Version = upstream.Version
 
@@ -221,6 +228,15 @@ func Pack() *pack.Pack {
 			// fp8 included, is not "auto" and runs as stated. GLM-5, 5.2, 5.2-fp8 and 5.3 are this class.
 			ArchGlmMoeDsa: {
 				{CapabilityFamily: 10, Requested: []string{"auto"}, ResolvesTo: "fp8_e4m3"},
+			},
+			// Glm5NextModelConfig.verify_and_update_config (vllm/model_executor/models/config.py:209-224
+			// @0fda86a3): an "auto" cache dtype becomes plain "fp8" on CUDA capability family 100 for a
+			// checkpoint that states index_topk, which every GLM-5.3-Flash checkpoint does.
+			ArchGlm5NextCausal: {
+				{CapabilityFamily: 10, Requested: []string{"auto"}, ResolvesTo: "fp8"},
+			},
+			ArchGlm5NextConditional: {
+				{CapabilityFamily: 10, Requested: []string{"auto"}, ResolvesTo: "fp8"},
 			},
 			// MistralLarge4ForCausalLM.verify_and_update_config (vllm/model_executor/models/config.py:147-178
 			// @0fda86a3, reached through PixtralForConditionalGenerationConfig for a mistral_large_4 text

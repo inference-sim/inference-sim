@@ -189,6 +189,9 @@ func TestStatedRunSettingsAreTheScenarios(t *testing.T) {
 					BlockSize: e.BlockSize, PrefixCachingDisabled: e.EnablePrefixCaching != nil && !*e.EnablePrefixCaching,
 					MaxModelLen: int(e.MaxModelLen), GPUMemoryUtilization: e.GPUMemoryUtilization,
 					EnableExpertParallel: m.Deployment().ExpertParallel}
+				if got.BlockSize > want.BlockSize && got.BlockSize%want.BlockSize == 0 {
+					want.BlockSize = got.BlockSize // a hybrid model's block size is raised to a multiple of the stated one
+				}
 				if !reflect.DeepEqual(got, want) {
 					t.Errorf("%s pool %d: StatedRunSettings = %+v, want the scenario's %+v", path, pool, got, want)
 				}

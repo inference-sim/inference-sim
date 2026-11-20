@@ -355,7 +355,10 @@ func (r Report) Result() result.SelectedEntries {
 			if out.ClosenessVersion != 0 {
 				c.KernelImpls, c.FitRange, c.CI95 = s.KernelImpls, s.FitRange, s.CI95
 				c.CodeIDs = s.CodeIDs
-				c.Primitive, c.Priced, c.KernelMatch, c.MeasuredOn = s.Primitive, s.Priced, s.Match, s.MeasuredOn
+				c.Primitive, c.KernelMatch, c.MeasuredOn = s.Primitive, s.Match, s.MeasuredOn
+				if s.Match == coefficient.KernelExact {
+					c.Priced = s.Priced
+				}
 				c.Extrapolated, c.Unidentified = s.Extrapolated, s.Unidentified
 			}
 			out.Coefficients = append(out.Coefficients, c)

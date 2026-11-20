@@ -436,6 +436,20 @@ func TestAnUnkeyedEntryNamesNoPricedImplementation(t *testing.T) {
 	}
 }
 
+// A lookup hands an unkeyed entry the implementations that run for its primitive too, since the
+// entry applies to any of them; the report names none, for it was not shown to match one.
+func TestAnUnkeyedEntryDropsTheImplementationsThatRanForItsPrimitive(t *testing.T) {
+	d, _ := Embedded()
+	impl := coefficient.KernelImpl{Library: "flashinfer", Variant: "fa3", CodeHash: strings.Repeat("a", 64)}
+	d.RecordEntry("cost-model-primitives", gemmFor(), "gemm", []coefficient.KernelImpl{impl}, coefficient.KernelUnkeyed, false)
+	d.RecordImplementations(map[string][]coefficient.KernelImpl{"gemm": {impl}})
+	se := d.Report().Result()
+	c := se.Coefficients[0]
+	if len(c.Priced) != 0 || c.KernelMatch != coefficient.KernelUnkeyed {
+		t.Errorf("priced %v, match %q", c.Priced, c.KernelMatch)
+	}
+}
+
 // A router_differs relies on the table's entry at the build of the router the run used. The
 // entry maps the router only at the builds it lists: the same router and mode at another build
 // is refused, as are a missing entry, another router's entry and another policy.
