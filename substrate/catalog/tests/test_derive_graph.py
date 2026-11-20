@@ -7207,7 +7207,7 @@ def test_the_graphs_that_state_a_scale_are_the_block_scaled_ones():
     block = {"elements": 16384, "bytes": 4}
     assert {n for n, sc in scaled.items() if sc == block} == {
         "deepseek-r1-0528", "deepseek-v3", "glm-5", "glm-5.1-fp8", "glm-5.2-fp8", "glm-5.3", "glm-5.3-flash",
-        "minimax-m2.5", "minimax-m2.7", "qwen3.5-397b-a17b-fp8", "qwen3.8-flash-next-fp8"}
+        "minimax-m2.5", "minimax-m2.7", "mistral-large-4-1t-a52b", "qwen3.5-397b-a17b-fp8", "qwen3.8-flash-next-fp8"}
     assert {n for n, sc in scaled.items() if sc != block} == {
         "minimax-m3-mxfp8", "minimax-m3-nvfp4", "minimax-m3.1-flash", "minimax-m3.1-flash-dspark",
         "deepseek-v4.1-flash"}
@@ -10220,3 +10220,332 @@ def test_the_mla_prefill_widths_come_from_the_config(tmp_path):
     text_config(bumped)["v_head_dim"] = 64
     g = _derive_raw(bumped, tmp_path, "kimi-k2.5")
     assert {(a["prefill_qk_head_dim"], a["prefill_v_head_dim"]) for a in _attention_nodes(g) if a["kind"] == "mla"} == {(192, 64)}, t.get("v_head_dim")
+
+
+# --- Inkling-2-Small (Inkling2ForConditionalGeneration) ---------------------------------------
+
+def _inkling2_cfg(**edit) -> dict:
+    """Inkling-2-Small's structure at a small size: twelve layers of which the sixth and twelfth
+    attend over the whole context, and a DSpark drafter."""
+    text = {
+        "hidden_size": 256, "num_hidden_layers": 12, "vocab_size": 1000, "num_attention_heads": 4,
+        "num_key_value_heads": 2, "head_dim": 32, "d_rel": 8, "rel_extent": 64, "q_bias": False,
+        "o_bias": False, "torch_dtype": "bfloat16", "local_layer_ids": [i for i in range(12) if i % 6 != 5],
+        "sconv_kernel_size": 4, "swa_head_dim": 32, "swa_num_attention_heads": 4,
+        "swa_num_key_value_heads": 2, "sliding_window_size": 64, "n_layers_per_attn_res_block": 6,
+        "n_routed_experts": 8, "num_experts_per_tok": 2, "n_shared_experts": 0, "intermediate_size": 64,
+    }
+    text.update(edit)
+    return {"architectures": ["Inkling2ForConditionalGeneration"], "text_config": text,
+            "mtp_config": {"hidden_size": 256, "num_hidden_layers": 5, "num_attention_heads": 4,
+                           "num_key_value_heads": 2, "head_dim": 32, "intermediate_size": 512,
+                           "q_bias": False, "o_bias": False, "local_layer_ids": [0, 1, 3, 4],
+                           "sliding_window_size": 64, "block_size": 8, "markov_rank": 16,
+                           "markov_head_type": "rnn_hidden", "target_layer_ids": [5, 11]},
+            "quantization_config": {"quant_method": "modelopt", "quant_algo": "NVFP4"}}
+
+
+def _inkling2_headers(mxfp8_from: int = 10, layers: int = 12, hidden: int = 256, nq: int = 4, nkv: int = 2,
+                      dh: int = 32, d_rel: int = 8, experts: int = 8, inner: int = 64, vocab: int = 1000) -> dict:
+    bf = lambda *shape: {"dtype": "BF16", "shape": list(shape)}
+    h = {"model.llm.unembed.weight": bf(vocab, hidden)}
+    for i in range(layers):
+        p = f"model.llm.layers.{i}."
+        h.update({p + "attn.wq_du.weight": bf(nq * dh, hidden), p + "attn.wk_dv.weight": bf(nkv * dh, hidden),
+                  p + "attn.wv_dv.weight": bf(nkv * dh, hidden), p + "attn.wr_du.weight": bf(nq * d_rel, hidden),
+                  p + "attn.gate_attn.weight": bf(nq * dh, hidden), p + "attn.attn_sink_proj.weight": bf(nq, hidden),
+                  p + "attn.wo_ud.weight": bf(hidden, nq * dh), p + "mlp.gate.weight": bf(experts, hidden)})
+        e = p + "mlp.experts."
+        if i < mxfp8_from:
+            h.update({e + "w13_weight": {"dtype": "U8", "shape": [experts, 2 * inner, hidden // 2]},
+                      e + "w13_weight_scale": {"dtype": "F8_E4M3", "shape": [experts, 2 * inner, hidden // 16]},
+                      e + "w2_weight": {"dtype": "U8", "shape": [experts, hidden, inner // 2]},
+                      e + "w2_weight_scale": {"dtype": "F8_E4M3", "shape": [experts, hidden, inner // 16]}})
+        else:
+            h.update({e + "w13_weight": {"dtype": "F8_E4M3", "shape": [experts, 2 * inner, hidden]},
+                      e + "w13_weight_scale": {"dtype": "U8", "shape": [experts, 2 * inner, hidden // 32]},
+                      e + "w2_weight": {"dtype": "F8_E4M3", "shape": [experts, hidden, inner]},
+                      e + "w2_weight_scale": {"dtype": "U8", "shape": [experts, hidden, inner // 32]}})
+    return h
+
+
+def _inkling2_derive(tmp_path, raw=None, headers="default"):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps(raw or _inkling2_cfg()))
+    return derive_graph.derive(p, "inkling2-test", headers=_inkling2_headers() if headers == "default" else headers)
+
+
+def test_inkling2_each_layer_prices_the_expert_width_its_headers_store(tmp_path):
+    g = _inkling2_derive(tmp_path)
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    seq = layer_sequence(g["stack"])
+    assert len(seq) == 12
+    assert [kid.split("_")[1] for kid in seq] == ["nvfp4"] * 10 + ["mxfp8"] * 2
+    assert [kid.split("_")[0] for kid in seq] == ["swa"] * 5 + ["full"] + ["swa"] * 5 + ["full"]
+    nv, mx = _node(kinds["swa_nvfp4"], "experts"), _node(kinds["swa_mxfp8"], "experts")
+    assert nv["weight_dtype"] == "nvfp4" and "weight_scale" not in nv
+    assert (mx["weight_dtype"], mx["weight_scale"]) == ("fp8", {"elements": 32, "bytes": 1})
+    # The config states one algorithm; every other weight is the base width.
+    assert _node(kinds["swa_nvfp4"], "wo_ud")["weight_dtype"] == "bf16"
+    assert _node(kinds["swa_nvfp4"], "router")["weight_dtype"] == "bf16"
+
+
+def test_inkling2_a_full_layer_projects_from_three_norms_and_a_local_one_fuses_them(tmp_path):
+    g = _inkling2_derive(tmp_path)
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    fused = _node(kinds["swa_nvfp4"], "qkvr_gate_sink_proj")
+    assert (fused["n"], fused["k"]) == (2 * 4 * 32 + 4 * 8 + 4 + 2 * 2 * 32, 256)
+    full = kinds["full_nvfp4"]
+    assert "qkvr_gate_sink_proj" not in [n.get("role") for n in full["nodes"]]
+    assert _node(full, "q_gate_sink_proj")["n"] == fused["n"] - 2 * 2 * 32
+    assert (_node(full, "k_proj")["n"], _node(full, "k_tap_proj")["n"]) == (2 * 32, 4 * 2)
+    attn = lambda k: [n for n in kinds[k]["nodes"] if n["op"] == "Attention"][0]
+    assert (attn("swa_nvfp4")["kind"], attn("swa_nvfp4")["window"]) == ("swa", 64)
+    assert attn("full_nvfp4")["kind"] == "gqa" and "window" not in attn("full_nvfp4")
+
+
+def test_inkling2_attn_res_mix_reads_the_stack_mean_of_completed_blocks(tmp_path):
+    g = _inkling2_derive(tmp_path)
+    mix = _node({k["id"]: k for k in g["layer_kinds"]}["swa_nvfp4"], "attn_res_mix")
+    # Layers 0-5 read one completed block and the running one, layers 6-11 two: 1.5 on average,
+    # plus the vector written.
+    assert mix["bytes_per_token"] == round((1.5 + 1) * 256 * 2)
+
+
+def test_inkling2_dspark_drafter_is_its_own_speculator(tmp_path):
+    g = _inkling2_derive(tmp_path)
+    s = g["speculator"]
+    assert (s["method"], s["drafting"], s["num_spec_tokens"]) == ("dspark", "parallel_block", 7)
+    assert s["aux_hidden_state_layers"] == [5, 11]
+    assert layer_sequence(s["stack"]) == ["dspark_swa", "dspark_swa", "dspark_full", "dspark_swa", "dspark_swa"]
+    assert layer_sequence(s["context_stack"]) == ["dspark_context_mix"] + ["dspark_context"] * 5
+    assert _node({"nodes": s["head"]}, "dspark_lm_head")["aliases"] == "head.lm_head"
+    assert _node({"nodes": s["sequential_head"]}, "markov_rnn_proj")["k"] == 2 * 16
+
+
+@pytest.mark.parametrize("edit,match", [
+    (lambda h: h.__setitem__("model.llm.layers.3.mlp.experts.w13_weight_scale",
+                             {"dtype": "F8_E4M3", "shape": [8, 128, 17]}), "layer 3 w13 scale"),
+    (lambda h: h.__setitem__("model.llm.layers.3.mlp.experts.w13_weight", {"dtype": "BF16", "shape": [8, 128, 256]}),
+     "neither NVFP4 nor MXFP8"),
+    (lambda h: h.__setitem__("model.llm.layers.3.attn.wq_du.weight", {"dtype": "F8_E4M3", "shape": [128, 256]}),
+     "layer 3 attn.wq_du.weight"),
+    (lambda h: h.pop("model.llm.layers.7.mlp.experts.w2_weight"), "no expert weights for layer 7"),
+])
+def test_inkling2_refuses_headers_that_contradict_the_config(tmp_path, edit, match):
+    h = _inkling2_headers()
+    edit(h)
+    with pytest.raises(deriver().DeriveError, match=match):
+        _inkling2_derive(tmp_path, headers=h)
+
+
+def test_inkling2_refuses_to_guess_the_expert_width_without_headers(tmp_path):
+    with pytest.raises(deriver().DeriveError, match="shard headers"):
+        _inkling2_derive(tmp_path, headers=None)
+
+
+# --- Mistral-Large-4 (params.json) --------------------------------------------------------------
+# The real params.json is hash-only (X12) and is not committed. This is a scaled-down document with
+# the real key set: 8 layers, layer 0 dense, layers 3 and 7 NoPE, layers 4-7 reuse the indexer.
+
+def _mistral_params(**edit) -> dict:
+    p = json.loads(r"""{
+ "dim": 256,
+ "n_layers": 8,
+ "head_dim": 128,
+ "hidden_dim": 512,
+ "n_heads": 4,
+ "n_kv_heads": 4,
+ "rope_theta": 10000.0,
+ "norm_eps": 1e-05,
+ "vocab_size": 1000,
+ "tied_embeddings": false,
+ "max_position_embeddings": 4096,
+ "ragged_attention": null,
+ "nope": "rope,rope,rope,nope",
+ "softmax_tanh_gating": 30.0,
+ "llama_4_scaling": null,
+ "q_lora_rank": null,
+ "qk_rope_head_dim": 64,
+ "qk_nope_head_dim": 64,
+ "kv_lora_rank": 128,
+ "v_head_dim": 128,
+ "ssmax_scaling": true,
+ "lerope": true,
+ "dsa": {
+  "topk": 16,
+  "n_heads": 2,
+  "head_dim": 32,
+  "rope_head_dim": 64,
+  "match_nope": true,
+  "ssmax_scaling": true,
+  "norm_eps": 1e-06,
+  "sharing": "full,full,full,full,shared,shared,shared,shared",
+  "fp8_indexer": true,
+  "fp8_kv_cache": true
+ },
+ "quantization": {
+  "qscheme_act": "BLOCK",
+  "qformat_weight": "fp8_e4m3",
+  "qdynamic_act": true,
+  "qscheme_weight": "BLOCK",
+  "use_ue8m0_for_qscales": true,
+  "block_size_out": 128,
+  "block_size_in": 128,
+  "quantize_kv_a": false
+ },
+ "yarn": {
+  "original_max_position_embeddings": 512,
+  "factor": 2048,
+  "apply_scale": false,
+  "beta": 32,
+  "alpha": 1
+ },
+ "kv_sharing": {
+  "source_layers_str": "0,1,2,3,4,5,6,3"
+ },
+ "moe": {
+  "expert_parallel": 1,
+  "expert_model_parallel": 1,
+  "route_every_n": 1,
+  "first_k_dense_replace": 1,
+  "num_experts": 8,
+  "num_experts_per_tok": 4,
+  "num_expert_groups": 1,
+  "num_expert_groups_per_tok": 1,
+  "routed_scale": 1.0,
+  "expert_hidden_dim": 128,
+  "num_shared_experts": 1
+ },
+ "vision_encoder": {
+  "image_token_id": 10,
+  "image_break_token_id": 12,
+  "image_end_token_id": 13,
+  "intermediate_size": 128,
+  "num_hidden_layers": 2,
+  "num_attention_heads": 2,
+  "mm_projector_id": "patch_merge",
+  "spatial_merge_size": 2,
+  "hidden_size": 64,
+  "num_channels": 3,
+  "image_size": 1540,
+  "max_image_size": 1540,
+  "patch_size": 14,
+  "rope_theta": 10000.0,
+  "add_pre_mm_projector_layer_norm": true,
+  "adapter_bias": false
+ },
+ "mtp": {
+  "n_layers": 3,
+  "depth": 3,
+  "ragged_attention": "64,64,64",
+  "target_activation_layers": "1,3,5",
+  "norm_strategy": "eagle",
+  "dspark": {
+   "markov_rank": 512,
+   "head_type": "rnn",
+   "draft_input": "position_specific"
+  }
+ }
+}""")
+    for key, value in edit.items():
+        p[key] = value
+    return p
+
+
+def _mistral_derive(tmp_path, params=None):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    p = tmp_path / "params.json"
+    p.write_text(json.dumps(params or _mistral_params()))
+    return derive_graph.derive(p, "mistral-test")
+
+
+def _mistral_kind(g, kid):
+    return next(k for k in g["layer_kinds"] if k["id"] == kid)
+
+
+def test_mistral_params_json_is_read_and_its_source_is_recorded(tmp_path):
+    g = _mistral_derive(tmp_path)
+    assert g["derived_from"]["format"] == "mistral_params_json"
+    seq = layer_sequence(g["stack"])
+    assert len(seq) == 8 and seq[0].startswith("dense_") and all(k.startswith("moe_") for k in seq[1:])
+
+
+def test_mistral_nope_layers_have_no_rope_key_and_share_layers_own_no_cache(tmp_path):
+    g = _mistral_derive(tmp_path)
+    seq = layer_sequence(g["stack"])
+    assert [i for i, k in enumerate(seq) if "_nope_" in k] == [3, 7]
+    assert [i for i, k in enumerate(seq) if k.endswith("_sidx")] == [4, 5, 6, 7]
+    nodes = {n.get("role", n.get("name")): n for n in _mistral_kind(g, seq[7])["nodes"]}
+    assert "kv_a_proj" not in nodes and "index_wq_b" not in nodes
+    assert nodes["q_proj"]  # a sharer still projects its own queries
+    attn = next(n for n in _mistral_kind(g, seq[7])["nodes"] if n["op"] == "Attention")
+    assert attn["caches"][0]["owned"] is False
+
+
+def test_mistral_cache_records_are_the_mla_latent_and_the_indexer_key(tmp_path):
+    g = _mistral_derive(tmp_path)
+    owner = _mistral_kind(g, "moe_rope_own_idx")
+    kv = next(n for n in owner["nodes"] if n["op"] == "Attention" and n["caches"][0]["name"] == "kv")
+    idx = next(n for n in owner["nodes"] if n["op"] == "Attention" and n["caches"][0]["name"] == "index")
+    # fp8_ds_mla: the fp8 latent (128), one fp32 scale per 128 of it, the rope part in bf16 (64 * 2).
+    assert kv["caches"][0]["bytes_per_entry"] == 128 + 4 + 2 * 64
+    assert kv["caches"][0]["bytes_by_cache_dtype"] == {"auto": 2 * (128 + 64)}
+    assert idx["caches"][0]["bytes_per_entry"] == 32 + 4
+
+
+def test_mistral_fp8_params_quantization_is_remapped_to_block_fp8_with_bf16_exceptions(tmp_path):
+    g = _mistral_derive(tmp_path)
+    assert (g["global"]["weight_dtype"], g["global"]["weight_scale"]) == ("fp8", {"elements": 16384, "bytes": 4})
+    moe = _mistral_kind(g, "moe_rope_own_idx")
+    by = {n.get("role"): n for n in moe["nodes"]}
+    for role in ("kv_a_proj", "kv_b_proj", "router", "index_wk_weights_proj"):
+        assert by[role]["weight_dtype"] == "bf16", role
+    assert "weight_dtype" not in by["q_proj"]
+
+
+@pytest.mark.parametrize("edit,match", [
+    ({"surprise_key": 1}, "surprise_key"),
+    ({"q_lora_rank": 1536}, "q_lora_rank"),
+    ({"tied_embeddings": True}, "tied"),
+])
+def test_mistral_params_refuses_what_it_does_not_price(tmp_path, edit, match):
+    with pytest.raises(Exception, match=match):
+        _mistral_derive(tmp_path, _mistral_params(**edit))
+
+
+def test_mistral_drafter_is_one_kind_per_layer_and_its_context_reads_the_layers_weights(tmp_path):
+    g = _mistral_derive(tmp_path)
+    s = g["speculator"]
+    assert (s["method"], s["drafting"], s["num_spec_tokens"]) == ("dspark", "parallel_block", 3)
+    assert s["aux_hidden_state_layers"] == [2, 4, 6]
+    assert layer_sequence(s["stack"]) == ["dspark_0", "dspark_1", "dspark_2"]
+    ctx = [n for n in _mistral_kind(g, "dspark_context")["nodes"] if n.get("aliases")]
+    assert [n["aliases"] for n in ctx] == [f"dspark_{d}.kv_a_proj" for d in range(3)]
+    assert all("weight_dtype" not in n and "weight_scale" not in n for n in ctx)
+    assert _node({"nodes": s["head"]}, "dspark_lm_head")["aliases"] == "head.lm_head"
+    assert _node({"nodes": s["sequential_head"]}, "joint_proj")["k"] == 256 + 2 * 512
+
+
+def test_mistral_modelopt_mixed_precision_must_name_exactly_the_modules_it_quantizes(tmp_path):
+    q = {"quant_algo": "MIXED_PRECISION", "producer": {"name": "modelopt"},
+         "quantized_layers": {"model.layers.0.self_attn.q_proj": {"quant_algo": "FP8_PB_WO"}}}
+    p = _mistral_params(quantization=q)
+    with pytest.raises(Exception, match="quantized_layers"):
+        _mistral_derive(tmp_path, p)
+
+
+@pytest.mark.parametrize("model,layers_indexed,sharers", [
+    ("mistral-large-4-1t-a52b", 44, 9),
+    ("mistral-large-4-1t-a52b-nvfp4", 44, 9),
+])
+def test_mistral_large4_committed_graphs_census(model, layers_indexed, sharers):
+    g = yaml.safe_load((Path(__file__).resolve().parents[1] / "models" / model / "graph.yaml").read_text())
+    seq = layer_sequence(g["stack"])
+    assert len(seq) == 72
+    assert sum(k.endswith("_idx") for k in seq) == layers_indexed
+    assert sum("_share_" in k for k in seq) == sharers
+    assert g["derived_from"]["format"] == "mistral_params_json"

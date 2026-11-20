@@ -93,7 +93,9 @@ func stackNodes(g *model.Graph, stack model.Stack, f func(kind string, n model.N
 
 // hasRecurrent is whether the target's stack holds a recurrent layer.
 func hasRecurrent(g *model.Graph) bool {
-	if g == nil {
+	if g == nil || isInkling2(g) {
+		// Inkling 2's short convolutions are not Mamba states: each layer's four streams live in
+		// a sliding-window cache of the layer (inkling2KVLayers), so no Mamba page is aligned.
 		return false
 	}
 	found := false

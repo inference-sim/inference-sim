@@ -36,11 +36,13 @@
  },
  "extra_env": [
   "DYN_REQUEST_PLANE_CODEC",
+  "GLOO_SOCKET_IFNAME",
   "MC_ENABLE_DEST_DEVICE_AFFINITY",
   "MC_SLICE_SIZE",
   "MC_WORKERS_PER_CTX",
   "NCCL_MNNVL_ENABLE",
   "NCCL_P2P_LEVEL",
+  "NCCL_SOCKET_IFNAME",
   "NCCL_WATCHDOG_TIMEOUT",
   "NVSHMEM_QP_DEPTH",
   "PYTHONNOUSERSITE",
@@ -51,6 +53,7 @@
   "UCX_MAX_RMA_RAILS",
   "UCX_MAX_RNDV_RAILS",
   "UCX_MEMTYPE_REG_WHOLE",
+  "UCX_NET_DEVICES",
   "UCX_RNDV_SCHEME",
   "UCX_TLS",
   "VLLM_MXFP4_USE_MARLIN",
@@ -6138,6 +6141,15 @@
    },
    "status": "not_modelled"
   },
+  "env:GLOO_SOCKET_IFNAME": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
   "env:GPU_PINNED_MIN_XFER_SIZE": {
    "estimation": {
     "rule": "none"
@@ -6761,6 +6773,15 @@
    },
    "status": "not_modelled"
   },
+  "env:NCCL_SOCKET_IFNAME": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
   "env:NCCL_SOCKET_NTHREADS": {
    "estimation": {
     "rule": "none"
@@ -7348,6 +7369,15 @@
       ]
      }
     ]
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
+  "env:UCX_NET_DEVICES": {
+   "estimation": {
+    "rule": "none"
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#62"

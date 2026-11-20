@@ -59,6 +59,10 @@ import (
 // (vllm/model_executor/models/config.py:1078@5df63a72).
 const ArchGlmMoeDsa = "GlmMoeDsaForCausalLM"
 
+// ArchPixtral is the architecture string Mistral-Large-4's checkpoints declare
+// (PixtralForConditionalGeneration with a mistral_large_4 text model).
+const ArchPixtral = "PixtralForConditionalGeneration"
+
 // Version is the engine release this pack describes.
 const Version = upstream.Version
 
@@ -217,6 +221,17 @@ func Pack() *pack.Pack {
 			// fp8 included, is not "auto" and runs as stated. GLM-5, 5.2, 5.2-fp8 and 5.3 are this class.
 			ArchGlmMoeDsa: {
 				{CapabilityFamily: 10, Requested: []string{"auto"}, ResolvesTo: "fp8_e4m3"},
+			},
+			// MistralLarge4ForCausalLM.verify_and_update_config (vllm/model_executor/models/config.py:147-178
+			// @0fda86a3, reached through PixtralForConditionalGenerationConfig for a mistral_large_4 text
+			// model): an "auto" cache dtype becomes fp8_ds_mla on CUDA when the checkpoint declares
+			// fp8_kv_cache (both Mistral-Large-4 checkpoints do), on every compute capability; an explicit
+			// `bfloat16` opts out and becomes "auto". Any other stated dtype runs as stated.
+			ArchPixtral: {
+				{CapabilityFamily: 9, Requested: []string{"auto"}, ResolvesTo: "fp8_ds_mla"},
+				{CapabilityFamily: 10, Requested: []string{"auto"}, ResolvesTo: "fp8_ds_mla"},
+				{CapabilityFamily: 9, Requested: []string{"bfloat16"}, ResolvesTo: "auto"},
+				{CapabilityFamily: 10, Requested: []string{"bfloat16"}, ResolvesTo: "auto"},
 			},
 		},
 
