@@ -1,0 +1,246 @@
+# The ledger's data sources (design §10.1), each pinned to an exact revision (D3), with its
+# licence (X12, D6). A source is redistributable, and its artefacts may be committed, only when
+# its licence.spdx is on the allow-list (contracts/vocab/licence.go) and it lists no
+# restriction. Nothing else grants it, so write an entry with care:
+#
+#   - Record the licence that governs the DATA, not the code that produces it or the
+#     repository that hosts it. A repository's LICENSE file covers its code unless it says
+#     otherwise; a dataset's README or card, or a separate data licence, is the evidence for
+#     the data.
+#   - Quote each file at a commit or dataset revision, never a branch: the URL, the file's
+#     SHA-256, the lines and the quotation.
+#   - Set spdx only to a licence that actually covers the data. When no file states terms for
+#     the data, or the terms are unclear, set spdx to NOASSERTION, which is not on the
+#     allow-list, say why in note, and quote any statement that narrows what may be done under
+#     restrictions. The artefacts then stay out of the repository.
+#   - When in doubt, commit only identifiers and hashes, as the unit lists do.
+#   - Discuss anything unclear with the person you are working with, and record the conclusion
+#     in the entry's note.
+kind: LedgerSources
+sources:
+  - id: inferencex
+    title: SemiAnalysis InferenceX end-to-end serving benchmarks, weekly database dump
+    revision:
+      kind: release_assets
+      url: https://github.com/SemiAnalysisAI/InferenceX-app/releases/tag/db-dump/2026-09-28
+      ref: db-dump/2026-09-28
+      commit: 62b23b23cfda3841fd358c316d95f839d56e121b
+      # The SHA-256 of each part, as the release's SHA256SUMS states them
+      # (SHA256SUMS: 458f8273c09aa72f7b35af9f5e71aafe8daf9654755f2c0bb7c8383a7d0c8616).
+      assets:
+        - {name: inferencex-2026-09-28.dump.zst.part00, sha256: 391a8eb04272f582a619d56b3e7d54f37bbc518b1588271ac79c48b9167a5218}
+        - {name: inferencex-2026-09-28.dump.zst.part01, sha256: e19591b304b0a4ed7dc2a2e50ff2de669f7ef406433f2d6a25076d33e48dc56e}
+        - {name: inferencex-2026-09-28.dump.zst.part02, sha256: 69bbf33c3e69883daacfff91185e7ab1948ae493a124d6d11ad4cb80a1f6bc50}
+        - {name: inferencex-2026-09-28.dump.zst.part03, sha256: 0fc485570acfbf6d33d8ce116723e14d8a333c0a86749e9ba97a88ec6fd0dd68}
+        - {name: inferencex-2026-09-28.dump.zst.part04, sha256: 1d011f90d6c7350bd0efcce0a621bc78933ed4383275149f69eb852331002942}
+        - {name: inferencex-2026-09-28.dump.zst.part05, sha256: 241dedad17e03857ea17319d43a27c02631fbeecb8a95fbdebca3d3710d9356e}
+        - {name: inferencex-2026-09-28.dump.zst.part06, sha256: 36e8ab27a6789a4cfdfc1d4d7e8e36d812316820b45ed6241c9b11c6bb39144a}
+        - {name: inferencex-2026-09-28.dump.zst.part07, sha256: d5fafc5847800c11e4483768fcc01cca8a7f5551e09fe1a2e0f0ab2aa114fb08}
+        - {name: inferencex-2026-09-28.dump.zst.part08, sha256: a13173e2c159af0b8caed5f369f2a66b1ffe4695da87d51d810087c66c930c80}
+        - {name: inferencex-2026-09-28.dump.zst.part09, sha256: 1baf3b1a0b91191524ebc18ca27a0167f9f1d6d69eba154267300cab961c842b}
+        - {name: inferencex-2026-09-28.dump.zst.part10, sha256: 9204d96b8c33fbf4f2b0ef2feb474ea89d74866027273579875318d4e213fd56}
+        - {name: inferencex-2026-09-28.dump.zst.part11, sha256: 98de047e9bc7cdb89d5ab800a614f0b4b8720b640518b61db30facf47d572a54}
+        - {name: inferencex-2026-09-28.dump.zst.part12, sha256: 3d87bab8fdbf6df8bef808c5595c3e74abacac644947d362612b5784e24fc651}
+        - {name: inferencex-2026-09-28.dump.zst.part13, sha256: ed3dbe7969ae4b4744f65d478ef282a6c7f10af0c47828bf5ae5e644638972c5}
+        - {name: inferencex-2026-09-28.dump.zst.part14, sha256: 5295bb87107352b98307e7a4055274a1efcaaada1f39643d66d646a2b8003e65}
+        - {name: inferencex-2026-09-28.dump.zst.part15, sha256: d206b2d3c9678e985e6fc1a3f80067eedc421accce72937da753e2e54e833883}
+        - {name: inferencex-2026-09-28.dump.zst.part16, sha256: c560093df925f66245bbb22c2e6833782f9c7083ccb7bfd2150da50791158882}
+    units: units/inferencex.jsonl.gz
+    # Records InferenceX published after the pinned dump, pinned by record id and by the SHA-256
+    # of each record's content (D3). The ingest tool fetches them from the API, refuses any
+    # whose content differs, and adds their units to the one unit list; no value is committed
+    # (X12). Add one with `ledger pin-supplement`; remove it when a pinned revision holds its
+    # records. The licence entry below covers them, as it does the dump.
+    supplements:
+      - id: h200-dsv41flash-vllm-v0-33-0
+        kind: api_records
+        url: https://inferencex.semianalysis.com/api/v1/benchmarks?model=DeepSeek-V4.1-Flash
+        run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/42341901521/attempts/1
+        records:
+          - {id: 447774, sha256: 3683c15db69e29532a1db00f92a7066e2e9020ae6de38611d68a3016e5701401}
+          - {id: 447775, sha256: 36e7bbe46eec5cb678be75b88d22021e5e61ea5e12fa479e71a2f6e9f7cb1fd2}
+          - {id: 447776, sha256: cb9ab431b79cecb05b2d6bc3a678ddd8aed5ab9f4f29efb04abb122ff9a4abcb}
+          - {id: 447777, sha256: bdc1674ab31fd96d8dad705b18e54ef51e2a1b7895a0af48b477b07c7d4082c3}
+          - {id: 447778, sha256: 054c7efdb8122d5efe00a3234c0b4aa7d7db939b96c812478477cb773b8b16c0}
+          - {id: 447779, sha256: 664704fddad0072d3bccf7a288e22e1d4c39835de64d6707b2b20f41ea15841e}
+          - {id: 447780, sha256: 9a5856b38796f16c98bcda94318c4b64d890e80cafea050c3e33e176cc9f9546}
+          - {id: 447781, sha256: 18e4dfaaf61426bf4dfdadf42ccf124700bafe93b9b10dc55566326b416d6d9b}
+          - {id: 447782, sha256: 35afd786168b952e49409820d6daff5373654b6843e1738cf4f923c4649c2910}
+          - {id: 447783, sha256: 36018ede0680a0df9f430bf122af47b05305dafee6449e9b24e0d921a937bf01}
+          - {id: 447784, sha256: 03b64996819bba0145e36f1ef51432cc66762f139c84ff5ea77ebc28882724ba}
+          - {id: 447785, sha256: 1d1424c550d1b3ce6a77976bd8b30fe37e26c3c7608138883796e2e04cdfa801}
+          - {id: 447786, sha256: 3c8444f75b299d71c8f0189e3c364fc3239e3184ac9e68b8d71e92ad998c9410}
+          - {id: 447787, sha256: c4ebfd91805bc6c3e9806e0a3ffce0f5e2b8a5def0ecfc654df042c7680f38cf}
+          - {id: 447788, sha256: 00f1ad17e3a923e52b17a2784f71b5b865af0f0439ac4046d34039c22fd6dcc7}
+          - {id: 447789, sha256: 59f12344295e7667f7fdc9529b3d66c6d2e67941361f3375ec342121f59275f8}
+    licence:
+      # The benchmarks are run by SemiAnalysisAI/InferenceX, whose licence file is Apache-2.0.
+      # The dump is published by SemiAnalysisAI/InferenceX-app, whose licence file is GPL-3.0.
+      # Neither file speaks of the benchmark results themselves, and no other terms for the
+      # data were found. The unit list commits identifying fields and hashes, not measured
+      # values.
+      spdx: NOASSERTION
+      evidence:
+        - url: https://github.com/SemiAnalysisAI/InferenceX/blob/522f0e9f1f3fad73d4c918e33262af5e2f4b71f3/LICENSE
+          sha256: de5f554688f5c9d4339131b598759fa3151d41adf5dec3104dccaa0ebbbe0602
+          lines: "189-191"
+          quote: >-
+            Copyright 2025 SemiAnalysis LLC, Advanced Micro Devices, NVIDIA CORPORATION /
+            Licensed under the Apache License, Version 2.0 (the "License");
+        - url: https://github.com/SemiAnalysisAI/InferenceX-app/blob/62b23b23cfda3841fd358c316d95f839d56e121b/LICENSE
+          sha256: 3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986
+          lines: "1-2"
+          quote: "GNU GENERAL PUBLIC LICENSE / Version 3, 29 June 2007"
+      note: >-
+        The code that runs the benchmarks is Apache-2.0 and the repository that publishes the
+        dump is GPL-3.0; neither licence file states terms for the benchmark results, so the
+        data's licence is NOASSERTION and its values are never committed. The unit lists hold
+        identifiers and hashes only.
+
+  - id: aisimulate
+    title: NVIDIA AISimulate operator sweeps (ai-dynamo/aisim, aisim_core/systems/data)
+    revision:
+      kind: git_commit
+      url: https://github.com/ai-dynamo/aisim/tree/6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18
+      ref: 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18
+    status: >-
+      No unit list yet. The sweeps are reachable from CI (registry's rederive.yml checks them out
+      at this commit, 2,353 files under python/aisim/src/aisim_core/systems/data/, the path since
+      the rename from ai-dynamo/aisimulate), but the ingest tool for AISimulate is not written; the
+      registry's fitting scripts read the sweeps directly until it is. One table is read at another
+      commit: the DeepSeek-V4.1 FlashMLA sparse decode kernel table dsv4_hca_attn_module_perf at
+      2f0f4cd8606d580567b253d02f3d699fe36db865, the last commit that has it (retired at e8cbe2dc;
+      its successor times the whole attention module).
+    # The end-to-end accuracy artifact kernel/scripts/extract_aisimulate_e2e.py reads, pinned to
+    # one run (D3). The extractor refuses a summary.json whose SHA-256, run id, attempt, evaluated
+    # commit or release tag differs from kernel/scripts/aisimulate_e2e.pin.json, which a test
+    # requires to equal this entry. Its predictions are NVIDIA's; its measured values come from
+    # InferenceX through the Hugging Face dataset ai-dynamo/aisim-infx-cache at revision
+    # 37cdb0319a7e695f560e43ba79441dcea6029374 (the summary's snapshot.measurement_source_url and
+    # release_tag), which is not publicly readable: its card answered 401 on 2026-11-16, so its
+    # terms cannot be read. The summary's campaign status is complete. GitHub keeps the
+    # artifact until expires_at, 2027-02-12: a copy of summary.json is authentic if its SHA-256
+    # below matches, so it can be archived anywhere.
+    artifacts:
+      - id: e2e-accuracy-web
+        used_by: kernel/scripts/extract_aisimulate_e2e.py, which turns summary.json into the shape-only per-point corpus (103 sweeps, 561 points of the artifact's 1,753)
+        revision:
+          kind: workflow_artifact
+          url: https://github.com/ai-dynamo/aisim/actions/runs/43584761964
+          ref: "43584761964"
+          run_attempt: 1
+          commit: a4bbb52b3adebc57c5cb264a6924e82e02af676b
+          artifact: e2e-accuracy-web-0d6e4079e36703eb
+          assets:
+            - {name: e2e-accuracy-web-0d6e4079e36703eb.zip, sha256: 47c03314e552b442e6716fd0fdc0b865ee031d391b39b14d066f23592f775aaa}
+            - {name: summary.json, sha256: d5012fef06f4e63abebf0cdb43104b699c303f937b77d0de9ba0db6b2350b8c2}
+            - {name: qualification.json, sha256: c0f02e05e70fc8f05c257726b2d5e0a9e631e7a2353b57f015f791737e4bedfb}
+    licence:
+      spdx: Apache-2.0
+      evidence:
+        - url: https://github.com/ai-dynamo/aisim/blob/6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18/LICENSE
+          sha256: f6e57785dee0efcfffbb547e06f5fc8c4257ee1cbd16aa5afeb5df3ae6d1de02
+          lines: "10-11"
+          quote: >-
+            Except for the third-party material identified in that notice file, this codebase is
+            licensed under the Apache License 2.0 as described below.
+      restrictions:
+        # The end-to-end artifact pinned above carries measured values taken from InferenceX,
+        # whose results have no stated terms (the inferencex source). The quoted field is in
+        # summary.json (SHA-256 below), produced by the run at this commit.
+        - url: https://github.com/ai-dynamo/aisim/commit/a4bbb52b3adebc57c5cb264a6924e82e02af676b
+          sha256: d5012fef06f4e63abebf0cdb43104b699c303f937b77d0de9ba0db6b2350b8c2
+          lines: "snapshot.measurement_source"
+          quote: "SemiAnalysis InferenceX"
+      note: >-
+        Lines 3-8 of the same file except one vendored config.json, which is MIT. At the
+        artifact's commit and at the earlier sweep pin 2f0f4cd8 the LICENSE differs only in that
+        file's path (sha256 705c9170b57de145adccf1ec113a553ba08d7effab219aad84953c508f5ffe92 at
+        2f0f4cd8). GitHub reports the repository's licence as NOASSERTION because of that
+        preamble. The restriction is not AISimulate's own: the end-to-end artifact holds
+        measured values from InferenceX, whose terms for results are unstated, through a
+        dataset whose terms cannot be read, so the entry is not redistributable and its values
+        are not committed (decided with the maintainer, 2026-11-12).
+
+  - id: aisimulate-fpm
+    title: NVIDIA forward-pass dataset on Hugging Face (nvidia/aisimulate-fpm-dataset)
+    revision:
+      kind: hf_dataset_revision
+      url: https://huggingface.co/datasets/nvidia/aisimulate-fpm-dataset/tree/dbfcdd9eb62ea733efbc3f0cbd78277f2960061a
+      ref: dbfcdd9eb62ea733efbc3f0cbd78277f2960061a
+    status: >-
+      No unit list yet. The dataset is public and reachable from CI at this revision, but the
+      ingest tool for forward-pass cells is not written. Its own README restricts redistribution
+      (below), so its records are not committed in any case.
+    licence:
+      spdx: Apache-2.0
+      evidence:
+        - url: https://huggingface.co/datasets/nvidia/aisimulate-fpm-dataset/blob/dbfcdd9eb62ea733efbc3f0cbd78277f2960061a/LICENSE
+          sha256: 705c9170b57de145adccf1ec113a553ba08d7effab219aad84953c508f5ffe92
+          lines: "10-11"
+          quote: >-
+            Except for the third-party material identified in that notice file, this codebase is
+            licensed under the Apache License 2.0 as described below.
+        - url: https://huggingface.co/datasets/nvidia/aisimulate-fpm-dataset/blob/dbfcdd9eb62ea733efbc3f0cbd78277f2960061a/README.md
+          sha256: 4249776faf17fe716780fc846197e516b1ba27591f9151a41240351d390c4b12
+          lines: "17"
+          quote: "license: apache-2.0"
+      restrictions:
+        - url: https://huggingface.co/datasets/nvidia/aisimulate-fpm-dataset/blob/dbfcdd9eb62ea733efbc3f0cbd78277f2960061a/README.md
+          sha256: 4249776faf17fe716780fc846197e516b1ba27591f9151a41240351d390c4b12
+          lines: "209-210"
+          quote: >-
+            The repository must remain private. Retained provenance contains internal paths and
+            network metadata, and the source has no approved redistribution license.
+      note: >-
+        The LICENSE file is the AISimulate code licence, word for word (same SHA-256). The README
+        says the dataset has no approved redistribution licence, although the dataset is public at
+        this revision.
+
+  - id: configiq
+    title: Red Hat configiq performance data, aggregate GuideLLM measurements of upstream vLLM releases (Hugging Face)
+    revision:
+      kind: hf_dataset_revision
+      url: https://huggingface.co/datasets/redhat-performance/configiq-performance-upstream-data/tree/21cc6eb06b1934485a83b17a93e634ef38b5799e
+      ref: 21cc6eb06b1934485a83b17a93e634ef38b5799e
+      # The SHA-256 of each file the ingest tool reads. ledger ingest-configiq refuses a
+      # download whose files differ, and checks the export against manifest.json's own
+      # per-file hashes and row counts.
+      assets:
+        - {name: manifest.json, sha256: ceb8e5a853a41b87a57a353f37634c86ddcc68fcca7e76ea78ef295f301036b4}
+        - {name: pairs/deepseek_ai_deepseek_v4_pro__h200/ground_truth.parquet, sha256: b1bf0c6e99e6e9e2c3a813763b4a3a3ab3d190cd0eca3e297c0c337745f33b91}
+        - {name: pairs/google_gemma_4_31b_it__b200/ground_truth.parquet, sha256: 9aaebd2c07623596e1b78d15b6ce48771d3afbc2dcd4a76d9f06029a79289560}
+        - {name: pairs/google_gemma_4_31b_it__h200/ground_truth.parquet, sha256: 43af1d71e8fa4735111922429b9cc4c89d1585327ba204e4740bf978627f8f1f}
+        - {name: pairs/moonshotai_kimi_k2_5__h200/ground_truth.parquet, sha256: ee37f1c4c6181a2cb2df2f35c16076476adca6c73b00715e67ded71319b30c49}
+        - {name: pairs/moonshotai_kimi_k3__mi355x/ground_truth.parquet, sha256: 70994994847a53d3b06a4421ee1cd280b8c752e46f70f60bb9bf4d337489f3e4}
+        - {name: pairs/nvidia_nvidia_nemotron_3_super_120b_a12b_fp8__b200/ground_truth.parquet, sha256: db434672774b6aaefc028cadaabe732a033e1bb55b1b03bf4959a15b4ff09cf1}
+        - {name: pairs/nvidia_nvidia_nemotron_3_super_120b_a12b_fp8__h200/ground_truth.parquet, sha256: b8bde9e52e71e00bcec0eb1f3e869e728718c34649de12c253db3f1756ebe905}
+        - {name: pairs/openai_gpt_oss_120b__b200/ground_truth.parquet, sha256: 503c64fbce196680a8e7d011f2e0ed85255969cb2f08089118a6a6d2b353c1ac}
+        - {name: pairs/openai_gpt_oss_120b__h200/ground_truth.parquet, sha256: c81c785e289488502d95b32448c81360a02cf3b9e7a3b47bb254c2cb921b137f}
+        - {name: pairs/openai_gpt_oss_120b__mi300x/ground_truth.parquet, sha256: c836e4bda35d6e5d54b7fff1e371f17860ff140adf7687c1a20688a6228a2ab0}
+        - {name: pairs/openai_gpt_oss_120b__mi355x/ground_truth.parquet, sha256: 4f97901f45069607e0cda9b889256c7b01c3b62c53fe6fc0d5875f4813621c21}
+        - {name: pairs/redhatai_gemma_4_26b_a4b_it__h200/ground_truth.parquet, sha256: 0b0fede74ab8de82d62a939ced0f16eb1f3999b99ca5597cea7044de02d438db}
+        - {name: pairs/redhatai_gemma_4_26b_a4b_it_fp8_dynamic__h200/ground_truth.parquet, sha256: 3fa504e4bba979b5c1ab9ba7eb796458e1534e40451c9d142a660791128264b3}
+        - {name: pairs/redhatai_gemma_4_26b_a4b_it_fp8_dynamic__mi355x/ground_truth.parquet, sha256: cfa3e117cfddb82a66800649467fb194e8a829225c9357b332d4a9fb7a73b4af}
+        - {name: README.md, sha256: 88208d4328e4e95f8cb0c6244c09dcfb949b7b991fe28d86fec29fe15b210081}
+        - {name: schema.json, sha256: 965c9e5ccefa49a288f1f568dd5a0d68301965f7630594ef0b85b3465df2147e}
+    units: units/configiq.jsonl.gz
+    licence:
+      # The dataset card states the licence; there is no LICENSE file. CC-BY-4.0 permits
+      # redistribution with attribution, but X12 commits only derived values, so the unit list
+      # holds identifying fields and hashes, as for InferenceX, and tests use synthetic rows.
+      spdx: CC-BY-4.0
+      evidence:
+        - url: https://huggingface.co/datasets/redhat-performance/configiq-performance-upstream-data/blob/21cc6eb06b1934485a83b17a93e634ef38b5799e/README.md
+          sha256: 88208d4328e4e95f8cb0c6244c09dcfb949b7b991fe28d86fec29fe15b210081
+          lines: "2"
+          quote: "license: cc-by-4.0"
+        - url: https://huggingface.co/datasets/redhat-performance/configiq-performance-upstream-data/blob/21cc6eb06b1934485a83b17a93e634ef38b5799e/README.md
+          sha256: 88208d4328e4e95f8cb0c6244c09dcfb949b7b991fe28d86fec29fe15b210081
+          lines: "17"
+          quote: "- License: CC BY 4.0"
+      note: >-
+        Aggregate rows only: the card says the dataset excludes run IDs, timestamps and raw
+        runtime arguments, and it holds no per-request data, so a unit is one configuration at
+        one concurrency with each measurement of it, and the dashboard compares it on
+        percentiles. Its measured values are not committed (X12).

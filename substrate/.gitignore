@@ -1,0 +1,11 @@
+# Each directory keeps the .gitignore it had as its own repository. This file covers the
+# repository root. Patterns are anchored, so none can match a data file below.
+.DS_Store
+/.venv/
+/.idea/
+/.vscode/
+/site/
+/scratch/
+/local/
+.pytest_cache/
+__pycache__/

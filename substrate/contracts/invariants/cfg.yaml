@@ -1,0 +1,163 @@
+# The CFG invariants: blis-config-search (BLIS target design §5).
+#
+# One record per invariant, in the format of design §13.1. This file is the source of truth:
+# the design's appendix, each repository's AGENTS.md section, the pull-request checklist and
+# the release plan's status table are generated from it (go run ./tools/invariants render).
+# Edit a record here, never a rendered copy. contracts/invariants/doc.go describes every field.
+
+- id: CFG-1
+  section: §5
+  statement: >-
+    One pin file names the simulator release, and every report states it. A committed report uses
+    that release's embedded data; exploratory runs with other data are labelled experimental and are
+    never committed as reports.
+  scope:
+  - blis-config-search
+  checks:
+  - repo: blis-config-search
+    check: Scripts/test_build.py
+    runs: pull_request
+    status: ci
+    test: scripts/test_build.py
+  - repo: blis-config-search
+    check: Workflows that stop if the cloned commit differs from the pinned one
+    runs: pull_request
+    status: ci
+    test: 'checks.yml: pin guard on the cloned commit'
+  review: null
+  status: ci
+  target:
+    status: ci
+    milestone: null
+- id: CFG-2
+  section: §5
+  statement: >-
+    Everything after the specification is deterministic and produced by a bot. Comparisons between
+    arms follow DEV-11.
+  scope:
+  - blis-config-search
+  checks:
+  - repo: blis-config-search
+    check: Scripts/test_experiment.py
+    runs: pull_request
+    status: ci
+    test: scripts/test_experiment.py
+  - repo: blis-config-search
+    check: Reports arrive only through the bot's pull request
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 3
+  note: one seed per run is checked; shared seeds across arms and replications are new
+- id: CFG-3
+  section: §5
+  statement: >-
+    Settings are the named engine's own settings, read from the simulator. No list of settings is
+    copied by hand.
+  scope:
+  - blis-config-search
+  checks:
+  - repo: blis-config-search
+    check: >-
+      The checks workflow fetches the pinned engine field list (scripts/fetch_fields.py) and runs
+      validate_experiment.py --fields on every experiment; scripts/test_experiment.py asserts that
+      settings come from `blis fields` and fails on a copied settings list
+    runs: pull_request
+    status: ci
+    test: scripts/test_experiment.py
+    known_bad: scripts/test_experiment.py
+  - repo: blis-config-search
+    check: >-
+      The engine-block name table in scripts/settings.py is removed, so the repository holds no copy
+      of any settings list (#103)
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 4
+  note: the field list is read from the simulator today; the engine-block name table in scripts/settings.py (#103, open) is the copy that remains
+- id: CFG-4
+  section: §5
+  statement: >-
+    A specification ranks and checks configurations on any metric of the metric registry, at any
+    scope (§8.7). Examples are the p95 time to first token for the whole cluster, the largest p99
+    time to first token over instances, and output tokens per second per accelerator for one pool.
+    Every metric it uses has one definition in the metric registry, shared by the search, the
+    ranking and the report (DEV-8), and every figure states its metric, scope and aggregate. A run
+    that is overloaded or incomplete is never ranked (DEV-10).
+  scope:
+  - blis-config-search
+  checks:
+  - repo: blis-config-search
+    check: 'Regression tests: worst-instance checks'
+    runs: pull_request
+    status: ci
+    test: scripts/test_experiment.py
+  - repo: blis-config-search
+    check: 'Regression tests: the metric registry and the overload rule'
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 3
+  note: >-
+    worst-instance checks run on whole-run figures; registry metrics and scopes in M2, the overload
+    rule with the steady-state detector in M3 (DEV-10)
+- id: CFG-5
+  section: §5
+  statement: >-
+    A search varies only settings that the engine's field list marks as modelled at the pinned release.
+    A ranking states the least trusted coefficient method and, from the dashboard's published summary
+    at the release its pin file names, the grades of the dashboard points in the lanes it relies on,
+    and a recommendation in a lane with no G1 or G2 points is labelled an extrapolation, with that
+    lane's measured error. A speculative-decoding arm states its acceptance in its scenario (D8).
+    The value comes from the substrate's profiles, read through inference-sim acceptance, which runs
+    D8's lookup, or from another cited measurement. The report names the source and each key field
+    in which it differs from the arm.
+  scope:
+  - blis-config-search
+  checks:
+  - repo: blis-config-search
+    check: A specification check against inference-sim fields
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: The report schema
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: CFG-6
+  section: §5
+  statement: >-
+    Everything the pinned simulator can run is a knob a specification can sweep: each setting the
+    engine’s field list marks as modelled, and each scenario field the simulator reads, such as
+    pools and their hardware, parallel layout, KV tiers and connectors, speculation, router plugins
+    and workload. A knob that a search cannot vary is listed with its reason, such as a value fixed
+    by the deployment being searched. The list of knobs is generated from the simulator at the
+    pinned release, never written by hand (CFG-3).
+  scope:
+  - blis-config-search
+  checks:
+  - repo: blis-config-search
+    check: >-
+      A generated knob table, built from inference-sim fields and the scenario schema of the pinned
+      release, and a test that fails when a modelled setting or a scenario field has neither a sweep key
+      nor a listed reason, with a scenario field added to the schema as its known-bad input
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3

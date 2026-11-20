@@ -1,0 +1,9 @@
+name: kimi-k2.5
+source:
+  provider: huggingface
+  repo: moonshotai/Kimi-K2.5
+  revision: 4d01dfe0332d63057c186e0b262165819efb6611
+  retrieved: 2026-10-02
+licence:
+  id: LicenseRef-modified-mit
+  evidence: https://huggingface.co/moonshotai/Kimi-K2.5/raw/4d01dfe0332d63057c186e0b262165819efb6611/README.md

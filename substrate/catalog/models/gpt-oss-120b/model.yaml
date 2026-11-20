@@ -1,0 +1,9 @@
+name: gpt-oss-120b
+source:
+  provider: huggingface
+  repo: openai/gpt-oss-120b
+  revision: b5c939de8f754692c1647ca79fbf85e8c1e70f8a
+  retrieved: 2026-09-30
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/openai/gpt-oss-120b/raw/b5c939de8f754692c1647ca79fbf85e8c1e70f8a/README.md

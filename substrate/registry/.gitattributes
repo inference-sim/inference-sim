@@ -1,0 +1,4 @@
+# Keep authored YAML diffs readable and stable across platforms.
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.py   text eol=lf

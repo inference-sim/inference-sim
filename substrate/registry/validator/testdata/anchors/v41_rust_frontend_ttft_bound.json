@@ -1,0 +1,250 @@
+{
+ "procedure": "per-row client export of the sixteen DeepSeek-V4.1-Flash H200 vLLM v0.33.0 agentic rows (InferenceX run 42341901521, Rust front end, fastokens), development split validation; only the rows at concurrency <= 8 are vendored, with the TTFT and input-length percentiles the bound reads; the artifacts expire about 2027-02-07 and are not redistributed",
+ "source": "SemiAnalysisAI/InferenceX Actions run 42341901521, attempt 1; frozen pull manifest sha256 9e9588ad78ee04870416a0992c2e8eaba865fbf98e7f9b806bfef67eaca32a36 (accuracy-dashboard docs/m2/h200-v033)",
+ "units": {
+  "ttft_ms": "ms",
+  "isl_tokens": "prompt tokens"
+ },
+ "rows": [
+  {
+   "point_id": "8b96c15329f3335e1162a747353dbc815ef67c0fd1efb0190f7cc53d746d035d",
+   "split": "validation",
+   "gpus": 4,
+   "concurrency": 1,
+   "requests": 283,
+   "client_export_sha256": "619a34545d78582b01ef080cc40a7a15b5186e8fd3a5337febfddcb1831652d5",
+   "ttft_ms": {
+    "p1": 173.066,
+    "p5": 214.647,
+    "p10": 228.966,
+    "p25": 277.613,
+    "p50": 355.47,
+    "p75": 409.725,
+    "p90": 560.872,
+    "p95": 1142.023,
+    "p99": 2779.195
+   },
+   "isl_tokens": {
+    "p1": 3304.5,
+    "p5": 61452.1,
+    "p10": 69996.4,
+    "p25": 118060.0,
+    "p50": 325202.0,
+    "p75": 406478.5,
+    "p90": 516411.8,
+    "p95": 545073.7,
+    "p99": 563658.8
+   }
+  },
+  {
+   "point_id": "3116bed5d8f72db749d8d4e89a73b289e21aa349aeed5e36925133c854b7c710",
+   "split": "validation",
+   "gpus": 4,
+   "concurrency": 2,
+   "requests": 457,
+   "client_export_sha256": "24dc20a1c14a7f655bfa8bd81d0f0c3e5777de3da28c2d29809726eb932dcacd",
+   "ttft_ms": {
+    "p1": 174.927,
+    "p5": 185.666,
+    "p10": 194.872,
+    "p25": 219.898,
+    "p50": 291.668,
+    "p75": 380.86,
+    "p90": 575.916,
+    "p95": 1022.942,
+    "p99": 3184.255
+   },
+   "isl_tokens": {
+    "p1": 13083.0,
+    "p5": 18843.0,
+    "p10": 24412.4,
+    "p25": 61538.0,
+    "p50": 135724.0,
+    "p75": 337845.0,
+    "p90": 423551.8,
+    "p95": 482619.0,
+    "p99": 525056.0
+   }
+  },
+  {
+   "point_id": "b96ebf8ccc3bea07ced8d205da373e2839879d686ff59e2d06d41e4a401d6756",
+   "split": "validation",
+   "gpus": 4,
+   "concurrency": 4,
+   "requests": 643,
+   "client_export_sha256": "494ed2b85a7dd3e0c29c3b5dbd1bc470cda2ce6b6bb0141aaf207330b327af44",
+   "ttft_ms": {
+    "p1": 169.772,
+    "p5": 184.849,
+    "p10": 193.267,
+    "p25": 210.363,
+    "p50": 263.646,
+    "p75": 399.362,
+    "p90": 567.43,
+    "p95": 900.258,
+    "p99": 2416.695
+   },
+   "isl_tokens": {
+    "p1": 2981.4,
+    "p5": 18159.8,
+    "p10": 24199.2,
+    "p25": 55238.5,
+    "p50": 116871.0,
+    "p75": 249037.0,
+    "p90": 517914.4,
+    "p95": 580167.8,
+    "p99": 644498.0
+   }
+  },
+  {
+   "point_id": "11f675127407822def06e2d39c62056447eb3e87f0cc30c7c13871edc80b3aba",
+   "split": "validation",
+   "gpus": 4,
+   "concurrency": 8,
+   "requests": 1341,
+   "client_export_sha256": "fcd57755f3adf771c9bf561366b7f4ad67d0f01c4195357266e5435a0eecf40c",
+   "ttft_ms": {
+    "p1": 191.262,
+    "p5": 204.392,
+    "p10": 211.859,
+    "p25": 228.496,
+    "p50": 259.334,
+    "p75": 389.158,
+    "p90": 551.27,
+    "p95": 850.133,
+    "p99": 2083.626
+   },
+   "isl_tokens": {
+    "p1": 17191.2,
+    "p5": 33051.0,
+    "p10": 45167.0,
+    "p25": 67534.0,
+    "p50": 107990.0,
+    "p75": 173612.0,
+    "p90": 364829.0,
+    "p95": 477274.0,
+    "p99": 569336.8
+   }
+  },
+  {
+   "point_id": "142137230da17df78dd416be019cf4d0e7fbad19c071c9c8319812294d6f886c",
+   "split": "validation",
+   "gpus": 8,
+   "concurrency": 1,
+   "requests": 290,
+   "client_export_sha256": "20bdc3400e038890bd0d45c857568d4bac421a0865bb222d419bbe05b75bd6c8",
+   "ttft_ms": {
+    "p1": 183.487,
+    "p5": 215.306,
+    "p10": 232.525,
+    "p25": 265.02,
+    "p50": 356.391,
+    "p75": 408.312,
+    "p90": 455.468,
+    "p95": 741.862,
+    "p99": 1587.015
+   },
+   "isl_tokens": {
+    "p1": 3529.0,
+    "p5": 62507.3,
+    "p10": 70496.5,
+    "p25": 119429.5,
+    "p50": 331194.5,
+    "p75": 416685.5,
+    "p90": 526360.6,
+    "p95": 555316.8,
+    "p99": 577129.8
+   }
+  },
+  {
+   "point_id": "c2940b93e2e13ab7845919f18c9073be3ec5563c68cb9f45347effe174f7bfbd",
+   "split": "validation",
+   "gpus": 8,
+   "concurrency": 2,
+   "requests": 486,
+   "client_export_sha256": "e5ad7471bfd6866e19a20db6b90a979f728f2226606aafac96f72b0f0b5e72c5",
+   "ttft_ms": {
+    "p1": 179.129,
+    "p5": 186.73,
+    "p10": 195.481,
+    "p25": 217.488,
+    "p50": 272.499,
+    "p75": 354.706,
+    "p90": 457.723,
+    "p95": 686.566,
+    "p99": 1779.088
+   },
+   "isl_tokens": {
+    "p1": 7533.9,
+    "p5": 18950.0,
+    "p10": 25418.0,
+    "p25": 63598.0,
+    "p50": 148406.5,
+    "p75": 299492.2,
+    "p90": 391441.0,
+    "p95": 443015.2,
+    "p99": 496152.7
+   }
+  },
+  {
+   "point_id": "7b425f12b17a90dd7e07f70a1a453697ea571fbea7558458a3985c979086a32f",
+   "split": "validation",
+   "gpus": 8,
+   "concurrency": 4,
+   "requests": 658,
+   "client_export_sha256": "4cb04fbc9674f7d9a5114d6993a44ae1589cdfe7024b92e4dde1051b6809eecb",
+   "ttft_ms": {
+    "p1": 180.797,
+    "p5": 189.406,
+    "p10": 198.199,
+    "p25": 213.496,
+    "p50": 255.3,
+    "p75": 371.962,
+    "p90": 475.242,
+    "p95": 572.991,
+    "p99": 1444.021
+   },
+   "isl_tokens": {
+    "p1": 2982.6,
+    "p5": 18201.3,
+    "p10": 24427.3,
+    "p25": 56640.5,
+    "p50": 115968.5,
+    "p75": 249212.5,
+    "p90": 518664.6,
+    "p95": 582395.4,
+    "p99": 647035.9
+   }
+  },
+  {
+   "point_id": "404552b1a7d9e694edc2765fafe00cf1f46705b4f3b0d1ac75fed754fcc8f9aa",
+   "split": "validation",
+   "gpus": 8,
+   "concurrency": 8,
+   "requests": 1373,
+   "client_export_sha256": "c3eb835b40c1f94d6b8031e50bec092b8a5f575fe182c454fe53ec322ef37553",
+   "ttft_ms": {
+    "p1": 192.61,
+    "p5": 205.329,
+    "p10": 211.926,
+    "p25": 227.521,
+    "p50": 249.147,
+    "p75": 342.14,
+    "p90": 439.464,
+    "p95": 572.153,
+    "p99": 1121.483
+   },
+   "isl_tokens": {
+    "p1": 17703.2,
+    "p5": 33094.4,
+    "p10": 45401.2,
+    "p25": 67817.0,
+    "p50": 107462.0,
+    "p75": 171406.0,
+    "p90": 364299.4,
+    "p95": 478921.6,
+    "p99": 568208.4
+   }
+  }
+ ]
+}

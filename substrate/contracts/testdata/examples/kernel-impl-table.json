@@ -1,0 +1,155 @@
+{
+  "kind": "KernelImplTable",
+  "engine": {
+    "kind": "vllm",
+    "version": "0.32.0",
+    "commit": "5df63a7203cdb9328d824a27b682e77c7b9928be"
+  },
+  "primitives": [
+    "attention.decode",
+    "attention.prefill"
+  ],
+  "archs": [
+    "sm_100a"
+  ],
+  "gaps": [
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASHINFER_MLA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHINFER",
+      "library": "vllm-csrc",
+      "variant": "_trtllm_prefill_attn_kvfp8_dequant",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHINFER_MLA",
+      "issue": "inference-sim/blis-vllm#151"
+    }
+  ],
+  "libraries": [
+    {
+      "name": "flashinfer",
+      "version": "0.7.0.post1",
+      "pinned": true,
+      "pin": "requirements/cuda.txt:13@5df63a72",
+      "origin": "https://github.com/flashinfer-ai/flashinfer 946200de1ae94fc93fdd0926f0a13afd1fa7f0f1"
+    }
+  ],
+  "implementations": [
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASHINFER",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "trtllm_batch_decode_with_kv_cache",
+      "target_arch": "sm_100a",
+      "hash_basis": "binary",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "TRTLLM_GEN_FMHA checksums.txt sha256:d79b5c51fc8597fac57dae0da4afa114fb2014575e4ec3df099ad856d97cabc3",
+        "csrc/fmhaReduction.cu blob 7d938d88e132427f7403b86e306c00df73939a7f",
+        "csrc/nv_internal/tensorrt_llm/common/sageQuant.cu blob d874293272c3436fde0b4633a2d9b79881e7e465",
+        "csrc/trtllm_fmha_kernel_launcher.cu blob f2f23d35e6f476b1e5078179c40634daa55fe02b",
+        "csrc/trtllm_sage_quant.cu blob 7a5dea42dd81c1266062f5fcfba56528928914bc",
+        "csrc/tvm_ffi_utils.h blob 20ff58edc1d8910531c3dcc49e03a5dc165f881d",
+        "flashinfer/artifacts.py blob 80eaf203ab7666feb795888a4b44ea34bad44340",
+        "flashinfer/decode.py blob 5404dd10b3d0dea115f156c58ee56c3b20aab103",
+        "flashinfer/jit/attention/modules.py blob 603171cea67bb2ce152eb4443b6fcfc8ca663883",
+        "flashinfer/jit/attention/utils.py blob 1358dcbdcdf7ec032624a046940f908b1c943e43",
+        "flashinfer/jit/attention/variants.py blob 3716134d0464de0ab080ee019132fcd9ba622d28",
+        "flashinfer/prefill.py blob 9f77971b5aab35499213fbbbff4b50d5c9cad631",
+        "flashinfer/utils.py blob 2d2ad6c577c5d40075943268c3cefa47133b09d2",
+        "include/flashinfer/allocator.h blob 2d9f8f423fc7ebdb8c1e9142701e7ab9ad6ce7d1",
+        "include/flashinfer/cubin_loader.h blob 39c2616b7fcf6ac2e2852e234be0877b4e3abddc",
+        "include/flashinfer/exception.h blob aaaa2b5b3e51d6274cb97087c346d69ffa6a8683",
+        "include/flashinfer/layout.cuh blob aeaf26b580c753293773b0c73d45a3badacee720",
+        "include/flashinfer/math.cuh blob f06ae0feb9ab8c87857728f103f1559d4fd466f6",
+        "include/flashinfer/trtllm/common.h blob 6392e618da5122f03275b38d49a606c692a391d9",
+        "include/flashinfer/trtllm/common/cudaBf16Fallbacks.cuh blob 993038aa7fbd74a8f40645caec68775163f20e7e",
+        "include/flashinfer/trtllm/common/cudaBf16Wrapper.h blob fb2a89af5cd609bc1231ec28bf9f567d6c1e4b7a",
+        "include/flashinfer/trtllm/common/cudaFp8Utils.h blob 02efb1c995a0d905d86aa7a8de85da5f69dd4f1b",
+        "include/flashinfer/trtllm/common/cudaTypeUtils.cuh blob ee963b2e7b3f98c6d0564c8745b63e400cd12659",
+        "include/flashinfer/trtllm/common/cudaUtils.h blob 29711dd61e669f14b60582029189dddb9ac9f86d",
+        "include/flashinfer/trtllm/common/sageQuant.h blob 756b7c8d71116e7ce0969b9f6412e9fe063cad04",
+        "include/flashinfer/trtllm/fmha/decoder_impl_common.h blob 95a0be9c4fcab5a1de03b10e99e19730c8c7645d",
+        "include/flashinfer/trtllm/fmha/decoder_params.h blob 3d9cc7fc29beb94c7537dbeb0af6bdc3f78fe4ba",
+        "include/flashinfer/trtllm/fmha/fmhaKernels.cuh blob e449fadb79ce526da5a696174e51b4ae2007bdba",
+        "include/flashinfer/trtllm/fmha/fmhaReduction.h blob 5ff7dfb755915632c526e383359a5f2324253b45",
+        "include/flashinfer/trtllm/fmha/fmhaRunner.cuh blob 6a4b9e5175cceaafa37e03224c030324e1f937d8",
+        "include/flashinfer/trtllm/fmha/fmhaRunnerParams.h blob 18721ace5b0d6e3b4daba31f1a27b6e23f5d968b",
+        "include/flashinfer/trtllm/fmha/kernelParams.h blob 6a3983c0f3876c5311edd26a305e4c8529e0c761",
+        "include/flashinfer/trtllm/fmha/kernelUtils.h blob 64505142dea8464771f500e04578e36387b3729f",
+        "include/flashinfer/trtllm/fmha/lse.cuh blob ad4d68a5d21befe6bc9b30b8fe51cbce5072fc8d",
+        "include/flashinfer/utils.cuh blob 54a01e9e21d099e397298759efa0bf92cee4f723",
+        "vllm:vllm/utils/flashinfer.py blob 69401febea96654571167d81966abb7fcc73919e"
+      ],
+      "code_hash": "5beb7f7b3bc288ec5c7f09168bf16d5a945ee1f2d7f4fc6bb268734ac085caaf",
+      "toolkit": "cuda 13.0.3 launcher, precompiled kernels",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/utils/flashinfer.py:648@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:2582@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHINFER",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "trtllm_batch_context_with_kv_cache",
+      "target_arch": "sm_100a",
+      "hash_basis": "binary",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "TRTLLM_GEN_FMHA checksums.txt sha256:d79b5c51fc8597fac57dae0da4afa114fb2014575e4ec3df099ad856d97cabc3",
+        "csrc/fmhaReduction.cu blob 7d938d88e132427f7403b86e306c00df73939a7f",
+        "csrc/nv_internal/tensorrt_llm/common/sageQuant.cu blob d874293272c3436fde0b4633a2d9b79881e7e465",
+        "csrc/trtllm_fmha_kernel_launcher.cu blob f2f23d35e6f476b1e5078179c40634daa55fe02b",
+        "csrc/trtllm_sage_quant.cu blob 7a5dea42dd81c1266062f5fcfba56528928914bc",
+        "csrc/tvm_ffi_utils.h blob 20ff58edc1d8910531c3dcc49e03a5dc165f881d",
+        "flashinfer/artifacts.py blob 80eaf203ab7666feb795888a4b44ea34bad44340",
+        "flashinfer/decode.py blob 5404dd10b3d0dea115f156c58ee56c3b20aab103",
+        "flashinfer/jit/attention/modules.py blob 603171cea67bb2ce152eb4443b6fcfc8ca663883",
+        "flashinfer/jit/attention/utils.py blob 1358dcbdcdf7ec032624a046940f908b1c943e43",
+        "flashinfer/jit/attention/variants.py blob 3716134d0464de0ab080ee019132fcd9ba622d28",
+        "flashinfer/prefill.py blob 9f77971b5aab35499213fbbbff4b50d5c9cad631",
+        "flashinfer/utils.py blob 2d2ad6c577c5d40075943268c3cefa47133b09d2",
+        "include/flashinfer/allocator.h blob 2d9f8f423fc7ebdb8c1e9142701e7ab9ad6ce7d1",
+        "include/flashinfer/cubin_loader.h blob 39c2616b7fcf6ac2e2852e234be0877b4e3abddc",
+        "include/flashinfer/exception.h blob aaaa2b5b3e51d6274cb97087c346d69ffa6a8683",
+        "include/flashinfer/layout.cuh blob aeaf26b580c753293773b0c73d45a3badacee720",
+        "include/flashinfer/math.cuh blob f06ae0feb9ab8c87857728f103f1559d4fd466f6",
+        "include/flashinfer/trtllm/common.h blob 6392e618da5122f03275b38d49a606c692a391d9",
+        "include/flashinfer/trtllm/common/cudaBf16Fallbacks.cuh blob 993038aa7fbd74a8f40645caec68775163f20e7e",
+        "include/flashinfer/trtllm/common/cudaBf16Wrapper.h blob fb2a89af5cd609bc1231ec28bf9f567d6c1e4b7a",
+        "include/flashinfer/trtllm/common/cudaFp8Utils.h blob 02efb1c995a0d905d86aa7a8de85da5f69dd4f1b",
+        "include/flashinfer/trtllm/common/cudaTypeUtils.cuh blob ee963b2e7b3f98c6d0564c8745b63e400cd12659",
+        "include/flashinfer/trtllm/common/cudaUtils.h blob 29711dd61e669f14b60582029189dddb9ac9f86d",
+        "include/flashinfer/trtllm/common/sageQuant.h blob 756b7c8d71116e7ce0969b9f6412e9fe063cad04",
+        "include/flashinfer/trtllm/fmha/decoder_impl_common.h blob 95a0be9c4fcab5a1de03b10e99e19730c8c7645d",
+        "include/flashinfer/trtllm/fmha/decoder_params.h blob 3d9cc7fc29beb94c7537dbeb0af6bdc3f78fe4ba",
+        "include/flashinfer/trtllm/fmha/fmhaKernels.cuh blob e449fadb79ce526da5a696174e51b4ae2007bdba",
+        "include/flashinfer/trtllm/fmha/fmhaReduction.h blob 5ff7dfb755915632c526e383359a5f2324253b45",
+        "include/flashinfer/trtllm/fmha/fmhaRunner.cuh blob 6a4b9e5175cceaafa37e03224c030324e1f937d8",
+        "include/flashinfer/trtllm/fmha/fmhaRunnerParams.h blob 18721ace5b0d6e3b4daba31f1a27b6e23f5d968b",
+        "include/flashinfer/trtllm/fmha/kernelParams.h blob 6a3983c0f3876c5311edd26a305e4c8529e0c761",
+        "include/flashinfer/trtllm/fmha/kernelUtils.h blob 64505142dea8464771f500e04578e36387b3729f",
+        "include/flashinfer/trtllm/fmha/lse.cuh blob ad4d68a5d21befe6bc9b30b8fe51cbce5072fc8d",
+        "include/flashinfer/utils.cuh blob 54a01e9e21d099e397298759efa0bf92cee4f723",
+        "vllm:vllm/utils/flashinfer.py blob 69401febea96654571167d81966abb7fcc73919e"
+      ],
+      "code_hash": "c36d4a36aea4f5eb170c3b425fa6d4e301cfbeb77d395a0c505dddb77dd1f8ce",
+      "toolkit": "cuda 13.0.3 launcher, precompiled kernels",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/utils/flashinfer.py:648@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:2362@5df63a72"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+name: gemma-4-31b-it
+source:
+  provider: huggingface
+  repo: google/gemma-4-31B-it
+  revision: 842da3794eaa0b77d5f08bae87a17459d91ff475
+  retrieved: 2026-11-16
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/google/gemma-4-31B-it/raw/842da3794eaa0b77d5f08bae87a17459d91ff475/README.md

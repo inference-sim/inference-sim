@@ -1,0 +1,9 @@
+name: gemma-4-26b-a4b-it
+source:
+  provider: huggingface
+  repo: RedHatAI/gemma-4-26B-A4B-it
+  revision: 34fc8922ace8cb18f43a9f06624b8c1fe14b0655
+  retrieved: 2026-11-16
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/RedHatAI/gemma-4-26B-A4B-it/raw/34fc8922ace8cb18f43a9f06624b8c1fe14b0655/README.md

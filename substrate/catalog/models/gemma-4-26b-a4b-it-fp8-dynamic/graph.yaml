@@ -1,0 +1,333 @@
+kind: ModelGraph
+name: gemma-4-26b-a4b-it-fp8-dynamic
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 9781d0d5918127cc95a0a9f76040ea11c6dfd356e18a2db8ab1fdc2e2941dd42
+  deriver_version: 1
+global:
+  hidden_size: 2816
+  vocab_size: 262144
+  tie_word_embeddings: true
+  weight_dtype: fp8
+  architecture: Gemma4ForConditionalGeneration
+layer_kinds:
+- id: swa_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 8192
+    k: 2816
+  - op: Elementwise
+    role: qkv_norm_rope
+    bytes_per_token: 32768
+  - op: Attention
+    holds_engine_kv: true
+    kind: swa
+    n_q: 16
+    n_kv: 8
+    d_h: 256
+    window: 1024
+  - op: GEMM
+    role: o_proj
+    n: 2816
+    k: 4096
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: Elementwise
+    role: pre_ffn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 4224
+    k: 2816
+  - op: GEMM
+    role: mlp_down
+    n: 2816
+    k: 2112
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_mlp_norm
+  - op: Elementwise
+    role: router_norm
+  - op: GEMM
+    role: router
+    n: 128
+    k: 2816
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: pre_experts_norm
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 704
+    k: 2816
+    experts: 128
+    top_k: 8
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: moe_out
+    emit: tensor_parallel_unless_sp_moe
+  - op: Elementwise
+    role: post_experts_norm
+  - op: Elementwise
+    role: post_ffn_norm
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
+  - - 18
+    - 19
+- id: full_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 10240
+    k: 2816
+  - op: Elementwise
+    role: qkv_norm_rope
+    bytes_per_token: 40960
+  - op: Attention
+    holds_engine_kv: true
+    kind: gqa
+    n_q: 16
+    n_kv: 2
+    d_h: 512
+  - op: GEMM
+    role: o_proj
+    n: 2816
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: Elementwise
+    role: pre_ffn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 4224
+    k: 2816
+  - op: GEMM
+    role: mlp_down
+    n: 2816
+    k: 2112
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_mlp_norm
+  - op: Elementwise
+    role: router_norm
+  - op: GEMM
+    role: router
+    n: 128
+    k: 2816
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: pre_experts_norm
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 704
+    k: 2816
+    experts: 128
+    top_k: 8
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: moe_out
+    emit: tensor_parallel_unless_sp_moe
+  - op: Elementwise
+    role: post_experts_norm
+  - op: Elementwise
+    role: post_ffn_norm
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
+  - - 18
+    - 19
+stack:
+  pattern:
+  - swa_moe
+  - swa_moe
+  - swa_moe
+  - swa_moe
+  - swa_moe
+  - full_moe
+  repeat: 5
+modality: multimodal
+encoder:
+  towers:
+  - modality: image
+    input:
+      patch_size: 16
+      channels: 3
+      fixed_rows: 2520
+    merge_ratio: 9
+    output_hidden_size: 2816
+    max_output_tokens: 280
+    parallel: replicated
+    weight_dtype: bf16
+    embedding:
+    - op: gemm
+      role: patch_embed
+      n: 1152
+      k: 768
+      tp: replicated
+    - op: elementwise
+      role: pos_embed
+      bytes_per_row: 4608
+      params: 23592960
+    layer_kinds:
+    - id: vit_block
+      nodes:
+      - op: elementwise
+        role: norms
+        bytes_per_row: 18432
+        params: 4752
+        tp: replicated
+      - op: gemm
+        role: qkv
+        n: 3456
+        k: 1152
+        tp: replicated
+      - op: attention
+        role: attention
+        n_heads: 16
+        d_h: 72
+        tp: replicated
+      - op: gemm
+        role: o_proj
+        n: 1152
+        k: 1152
+        tp: replicated
+      - op: gemm
+        role: gate_up
+        n: 8608
+        k: 1152
+        tp: replicated
+      - op: elementwise
+        role: act
+        bytes_per_row: 25824
+        tp: replicated
+      - op: gemm
+        role: down
+        n: 1152
+        k: 4304
+        tp: replicated
+    stack:
+      pattern:
+      - vit_block
+      repeat: 27
+    projector:
+    - op: elementwise
+      role: standardize
+      bytes_per_row: 4608
+      params: 2304
+      rows: output_tokens
+    - op: gemm
+      role: embed_vision
+      n: 2816
+      k: 1152
+      tp: replicated
+      rows: output_tokens
+embedding:
+- op: Gather
+  role: embed_tokens
+  rows: 262144
+  row_bytes: 5632
+  rows_per_token: 1
+  out_bytes_per_token: 5632
+  shard: rows
+- op: AllReduce
+  role: embed_out
+  emit: tensor_parallel
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 262144
+  k: 2816
+  aliases: embedding.embed_tokens

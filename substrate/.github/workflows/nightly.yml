@@ -1,0 +1,65 @@
+name: nightly
+
+# blis-substrate's own nightly jobs (design §13.4), beside the shared nightly checks that
+# blis.yml calls:
+#
+#   status     the status page: each gate's last real run, a gate older than seven days
+#              shown as failing, and every invariant with a check here (X16)
+#   known-bad  every check's known-bad input, run by its test, which fails if the check
+#              stopped refusing it (X18)
+#   method-error  the typical error of each method, leaving one chip out (VAL-5)
+#
+
+on:
+  schedule:
+    - cron: "53 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  status:
+    name: status page (X16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/go-toolchain
+      - name: Render the status page, and fail on a stale or failing gate
+        run: go run ./tools/prcheck status -repo "${{ github.repository }}" -out "$RUNNER_TEMP/status.md"
+      - name: Publish the page, whatever the result
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "$RUNNER_TEMP/status.md"
+          cat "$RUNNER_TEMP/status.md" >> "$GITHUB_STEP_SUMMARY"
+
+  known-bad:
+    name: known-bad inputs (X18)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/go-toolchain
+      - run: go run ./tools/prcheck knownbad
+
+  method-error:
+    name: method error, one chip left out (VAL-5)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/go-toolchain
+      - name: The report
+        run: go run ./ledger/cmd/ledger method-error -candidate "${{ github.sha }}" -out "$RUNNER_TEMP/method-error.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: method-error
+          path: ${{ runner.temp }}/method-error.json

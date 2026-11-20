@@ -1,0 +1,196 @@
+name: acceptance refresh
+
+# Keeps the acceptance profiles current with InferenceX (design §12.2, D8). Each day it finds the
+# last InferenceX commit that changed a golden acceptance curve, moves the pin to it
+# (scripts/refresh_inferencex_curves.py rewrites validator/testdata/inferencex/curves.json and
+# INFERENCEX_SHA in rederive.yml) and regenerates acceptance/inferencex-golden-al.yaml. No
+# InferenceX file is committed (X12). When the output changes it opens a draft pull request whose
+# body passes the description checks (X14); the pull request's own CI runs the emitter's
+# --check, which stays the drift gate. A new curve whose model and drafter resolve in the
+# catalog arrives in that pull request with no script edit; one that does not is named, with
+# its reason, in the set's caveats. A refresh that would drop a profile a transfer fills fails.
+#
+# Two jobs. `refresh` reads and parses the fetched data with a read-only token, and hands its
+# diff on as an artifact. `open` holds the write token, applies that diff to a fresh checkout,
+# pushes only refs/heads/bump/inferencex-curves-*, and opens the pull request.
+#
+# Token: a pull request opened with the default GITHUB_TOKEN starts no workflows, so its
+# required checks would never report. `open` therefore needs the PIN_BOT_TOKEN secret (contents
+# and pull-requests write), and fails without it.
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: acceptance-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.refresh.outputs.changed }}
+      sha: ${{ steps.refresh.outputs.sha }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Full history of the curve directory only, to find the last commit that changed it.
+      - name: Check out InferenceX (the golden curves only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: SemiAnalysisAI/InferenceX
+          path: inferencex
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+          sparse-checkout: |
+            inferencex-e2e/infx/golden_al_distribution
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      - name: Install the emitter's dependencies
+        run: pip install --require-hashes -r registry/scripts/requirements.txt
+
+      - name: Move the pin to the last commit that changed a curve
+        id: refresh
+        run: |
+          set -euo pipefail
+          dir=inferencex-e2e/infx/golden_al_distribution
+          sha="$(git -C inferencex log -1 --format=%H -- "$dir")"
+          date="$(git -C inferencex log -1 --format=%cs -- "$dir")"
+          git -C inferencex checkout -q "$sha"
+          out="$(python3 -I registry/scripts/refresh_inferencex_curves.py "$PWD/inferencex/$dir" "$sha" "$date")"
+          echo "$out"
+          if [ "$out" = "unchanged" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The regenerated set, checked against the same checkout before anything is opened.
+          INFERENCEX_GOLDEN="$PWD/inferencex/$dir" python3 -I registry/scripts/emit_acceptance_profiles.py --check
+          (cd registry && INFERENCEX_GOLDEN="$PWD/../inferencex/$dir" python3 -m pytest -q \
+            validator/test_acceptance_profiles.py validator/test_refresh_inferencex_curves.py)
+          git diff --binary -- registry .github/workflows/rederive.yml > "$RUNNER_TEMP/refresh.patch"
+          { echo "changed=true"; echo "sha=$sha"; } >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/go-toolchain
+        if: steps.refresh.outputs.changed == 'true'
+
+      - name: The regenerated set validates
+        if: steps.refresh.outputs.changed == 'true'
+        run: go run ./validate/cmd/validate-registry registry
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.refresh.outputs.changed == 'true'
+        with:
+          name: refresh-patch
+          path: ${{ runner.temp }}/refresh.patch
+          retention-days: 3
+
+  open:
+    needs: refresh
+    if: needs.refresh.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.PIN_BOT_TOKEN }}
+    steps:
+      - name: The bot token is present
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "the PIN_BOT_TOKEN secret is missing: a pull request opened with GITHUB_TOKEN starts no checks (X16)" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ secrets.PIN_BOT_TOKEN }}
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: refresh-patch
+          path: ${{ runner.temp }}/patch
+
+      - name: Open the pull request
+        env:
+          SHA: ${{ needs.refresh.outputs.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "not a commit: $SHA" >&2; exit 1; }
+          short="${SHA:0:12}"
+          branch="bump/inferencex-curves-$short"
+          if [ -n "$(gh pr list --head "$branch" --state all --json number --jq '.[].number')" ]; then
+            echo "$branch already has a pull request"
+            exit 0
+          fi
+          git apply "$RUNNER_TEMP/patch/refresh.patch"
+          git config user.name "blis-substrate-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add -A registry .github/workflows/rederive.yml
+          git commit -q -m "Move the InferenceX golden-curve pin to $short
+
+          Opened by acceptance-refresh.yml: refresh_inferencex_curves.py moved
+          validator/testdata/inferencex/curves.json and rederive.yml's INFERENCEX_SHA to
+          InferenceX $short, the last commit that changed a curve, and regenerated
+          acceptance/inferencex-golden-al.yaml."
+          git push origin "HEAD:refs/heads/$branch"
+          {
+            echo "## Summary"
+            echo
+            echo "Moves the InferenceX golden-curve pin to [\`$short\`](https://github.com/SemiAnalysisAI/InferenceX/commit/$SHA), the last InferenceX commit that changed a curve, and regenerates \`registry/acceptance/inferencex-golden-al.yaml\`."
+            echo
+            echo "## Change class"
+            echo
+            echo "- [ ] Verification"
+            echo "- [x] Validation: it changes the acceptance profiles, an input model."
+            echo
+            echo "## Invariants"
+            echo
+            echo "- D8"
+            echo "- SUB-4"
+            echo "- X12"
+            echo
+            echo "## Tests"
+            echo
+            echo "The refresh job ran \`emit_acceptance_profiles.py --check\`, the acceptance tests and \`validate-registry\` against the new pin before opening this; this pull request's CI runs them again."
+            echo
+            echo "## Evidence"
+            echo
+            echo "Review the diff of the caveats: a curve listed under \"Not carried\" usually needs a catalog entry."
+            echo
+            echo '```'
+            git diff --stat HEAD~1
+            echo '```'
+            echo
+            echo "## Depends on"
+            echo
+            echo "None."
+            echo
+            echo "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+          } > "$RUNNER_TEMP/body.md"
+          gh pr create --draft --base main --head "$branch" \
+            --title "Move the InferenceX golden-curve pin to $short" --body-file "$RUNNER_TEMP/body.md"
+          new_url="$(gh pr view "$branch" --json url --jq .url)"
+          # An older refresh pull request is superseded: say so on it rather than closing one a
+          # person may have pushed to.
+          gh pr list --state open --json number,headRefName \
+            --jq '.[] | select(.headRefName | startswith("bump/inferencex-curves-")) | select(.headRefName != "'"$branch"'") | .number' |
+          while read -r n; do
+            gh pr comment "$n" --body "Superseded by $new_url. Close this one unless it carries changes that should move over."
+          done

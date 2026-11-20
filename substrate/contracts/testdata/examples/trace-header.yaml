@@ -1,0 +1,13 @@
+trace_version: 4
+time_unit: microseconds
+mode: generated
+workload_seed: 42
+goodput_slo_targets:
+  critical:
+    ttft_ms: 500
+    itl_ms: 50
+max_nodes_spanned: 2
+router:
+  epp_flags:
+    - --pool-name=llama
+  seed: 42

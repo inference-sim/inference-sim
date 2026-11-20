@@ -1,0 +1,9 @@
+name: qwen3-14b
+source:
+  provider: huggingface
+  repo: Qwen/Qwen3-14B
+  revision: 40c069824f4251a91eefaf281ebe4c544efd3e18
+  retrieved: 2026-09-16
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/Qwen/Qwen3-14B/raw/40c069824f4251a91eefaf281ebe4c544efd3e18/README.md
