@@ -20,7 +20,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	blisschemas "github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/embed"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
@@ -28,6 +27,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	"github.com/inference-sim/blis-substrate/load"
+	embed "github.com/llm-d/llm-d-router/blisembed"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"

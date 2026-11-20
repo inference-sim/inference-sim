@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/embed"
+	embed "github.com/llm-d/llm-d-router/blisembed"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
@@ -271,7 +271,7 @@ func TestCheckMetricFlags(t *testing.T) {
 // TestSignalPolicyRefusesThroughTheRouter: a type the fork can host but BLIS's signal policy
 // refuses (agent identity: the simulated workload carries none) is refused at startup
 // with BLIS's reason; that the router consults the policy before the plugin's constructor runs is
-// the fork's guarantee (its pkg/embed tests and blis-schemas embedtest).
+// the fork's guarantee (its pkg/embed tests and blisembed/embedtest).
 func TestSignalPolicyRefusesThroughTheRouter(t *testing.T) {
 	config := "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n- type: agent-identity\n- type: max-score-picker\n- type: single-profile-handler\nschedulingProfiles:\n- name: default\n  plugins:\n  - pluginRef: max-score-picker\n"
 	err := refusal(t, testDeployment(2), config, nil)
