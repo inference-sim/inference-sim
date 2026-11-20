@@ -62,12 +62,38 @@ func cloneBackports(bs []Backport) []Backport {
 	return out
 }
 
+// backportScope is the model code a backport may change, relative to the vLLM repository root:
+// the model directories and architecture registry (vllm/model_executor/models/), the config
+// parsers and the model-architecture config convertor (vllm/transformers_utils/). A name ending
+// in "/" is a directory, any other name one file. A commit that changes anything else is not a
+// backport: moving the pin carries it (design 12.5, FID-14).
+var backportScope = []string{
+	"vllm/model_executor/models/",
+	"vllm/transformers_utils/configs/",
+	"vllm/transformers_utils/config.py",
+	"vllm/transformers_utils/config_parser_base.py",
+	"vllm/transformers_utils/model_arch_config_convertor.py",
+}
+
+// BackportScope returns the paths a backport may change; see backportScope.
+func BackportScope() []string { return append([]string(nil), backportScope...) }
+
+func inBackportScope(p string) bool {
+	for _, s := range backportScope {
+		if p == s || (strings.HasSuffix(s, "/") && strings.HasPrefix(p, s)) {
+			return true
+		}
+	}
+	return false
+}
+
 var hexCommit = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // BackportProblems lists what is wrong with a list of backports recorded against the pinned
 // commit: a commit that is not a full 40-hex id, the pin itself or a commit listed twice, an empty
 // subject, no architecture or no path, an architecture listed twice, and a path that is empty,
-// absolute, not clean or outside vllm/. An empty result means the record is well formed.
+// absolute, not clean, outside vllm/ or outside the model code a backport carries
+// (BackportScope). An empty result means the record is well formed.
 // Whether a commit is newer than the pin and changes only the paths listed is checked against a
 // vLLM checkout, not here.
 func BackportProblems(bs []Backport, pin string) []string {
@@ -104,8 +130,12 @@ func BackportProblems(bs []Backport, pin string) []string {
 			bad = append(bad, at+": no path, so the change it makes is not recorded")
 		}
 		for _, p := range b.Paths {
-			if p == "" || path.IsAbs(p) || path.Clean(p) != p || !strings.HasPrefix(p, "vllm/") {
+			switch {
+			case p == "" || path.IsAbs(p) || path.Clean(p) != p || !strings.HasPrefix(p, "vllm/"):
 				bad = append(bad, fmt.Sprintf("%s: path %q is not a clean path under vllm/", at, p))
+			case !inBackportScope(p):
+				bad = append(bad, fmt.Sprintf("%s: path %q is outside the model code a backport carries (%s)",
+					at, p, strings.Join(backportScope, ", ")))
 			}
 		}
 	}

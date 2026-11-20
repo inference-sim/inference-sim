@@ -30,7 +30,13 @@ inference-sim's.
   variable the release reads, with its status (`modelled` with evidence, `inert`, or
   `not_modelled` citing an open issue), written from `fields/status.json` and vLLM's own source.
   `surface.json` lists every connector, tier, speculative method, policy and KV-cache spec type
-  with its status; `kernel_impls.json` lists the kernel implementations the release can run, with
+  with its status, and also the tuned-MoE selection rule and device files, the engine defaults,
+  the KV-event emitters and report modes, the async-scheduling and step-input mechanisms, the
+  step order and the platform preferences. An item's `value` is the comparable fact read from the
+  source; when it differs between two commits the upgrade report lists the item under `changed`
+  and the earlier status does not carry over. A backport may change only model code
+  (`upstream.BackportScope`: model directories, the architecture registry, config classes,
+  config parsers and the model-architecture config convertor). `kernel_impls.json` lists the kernel implementations the release can run, with
   the code hash the coefficient registry keys its entries by. All three are generated and CI
   checks they are current.
 

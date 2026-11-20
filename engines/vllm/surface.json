@@ -6,9 +6,9 @@
   "commit": "0fda86a35419c9c70dbfada224c838c10fbb62ad"
  },
  "counts": {
-  "modelled": 68,
+  "modelled": 80,
   "out_of_scope": 42,
-  "refused": 205
+  "refused": 311
  },
  "items": [
   {
@@ -1838,6 +1838,1593 @@
    "route": "unregistered_architecture",
    "status": "refused",
    "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  {
+   "id": "moe_tuned_rule:config_file_name",
+   "category": "moe_tuned_rule",
+   "name": "config_file_name",
+   "site": "vllm/model_executor/layers/fused_moe/fused_moe.py:1286",
+   "value": "f'E={E},N={N},device_name={device_name}{dtype_selector}{block_shape_selector}.json'",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_rule:device_alias",
+   "category": "moe_tuned_rule",
+   "name": "device_alias",
+   "site": "vllm/model_executor/layers/fused_moe/fused_moe.py:1280",
+   "value": {
+    "when": "'H200' in device_name.split('_')",
+    "sets": [
+     "device_name = 'NVIDIA_H200'"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_rule:batch_invariant_bypass",
+   "category": "moe_tuned_rule",
+   "name": "batch_invariant_bypass",
+   "site": "vllm/model_executor/layers/fused_moe/fused_moe.py:1308",
+   "value": {
+    "when": "envs.VLLM_BATCH_INVARIANT",
+    "then": [
+     "return None"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_rule:down_projection_suffix",
+   "category": "moe_tuned_rule",
+   "name": "down_projection_suffix",
+   "site": "vllm/model_executor/layers/fused_moe/fused_moe.py:1315",
+   "value": {
+    "when": "down_moe",
+    "then": [
+     "json_file_name = json_file_name.removesuffix('.json') + '_down.json'"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_rule:user_folder",
+   "category": "moe_tuned_rule",
+   "name": "user_folder",
+   "site": "vllm/model_executor/layers/fused_moe/fused_moe.py:1321",
+   "value": "envs.VLLM_TUNED_CONFIG_FOLDER",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_rule:default_folder",
+   "category": "moe_tuned_rule",
+   "name": "default_folder",
+   "site": "vllm/model_executor/layers/fused_moe/fused_moe.py:1328",
+   "value": "os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', json_file_name)",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_rule:closest_batch",
+   "category": "moe_tuned_rule",
+   "name": "closest_batch",
+   "site": "vllm/model_executor/layers/fused_moe/fused_moe.py:1629",
+   "value": "min(configs.keys(), key=lambda x: abs(x - M))",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_rule:override",
+   "category": "moe_tuned_rule",
+   "name": "override",
+   "site": "vllm/model_executor/layers/fused_moe/fused_moe.py:1619",
+   "value": "get_config()",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_rule:default_heuristic",
+   "category": "moe_tuned_rule",
+   "name": "default_heuristic",
+   "site": "vllm/model_executor/layers/fused_moe/fused_moe.py:1658",
+   "value": "get_default_config(M, E, N, w1_shape[2], top_k, dtype, block_shape)",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_rule:device_name_source",
+   "category": "moe_tuned_rule",
+   "name": "device_name_source",
+   "site": "vllm/utils/platform_utils.py:73",
+   "value": [
+    "name = current_platform.get_device_name(device_id)",
+    "name = re.sub('[\\\\s/]+', '_', name)"
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:AMD_Instinct_MI300X",
+   "category": "moe_tuned_device",
+   "name": "AMD_Instinct_MI300X",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=128,N=1024,device_name=AMD_Instinct_MI300X,dtype=fp8_w8a8.json:1",
+   "value": {
+    "files": 35,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:AMD_Instinct_MI308X",
+   "category": "moe_tuned_device",
+   "name": "AMD_Instinct_MI308X",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=128,N=768,device_name=AMD_Instinct_MI308X.json:1",
+   "value": {
+    "files": 1,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:AMD_Instinct_MI325X",
+   "category": "moe_tuned_device",
+   "name": "AMD_Instinct_MI325X",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=128,N=1024,device_name=AMD_Instinct_MI325X,dtype=fp8_w8a8.json:1",
+   "value": {
+    "files": 20,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:AMD_Instinct_MI325_OAM",
+   "category": "moe_tuned_device",
+   "name": "AMD_Instinct_MI325_OAM",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=256,N=1024,device_name=AMD_Instinct_MI325_OAM,dtype=fp8_w8a8,block_shape=[128,128].json:1",
+   "value": {
+    "files": 3,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:AMD_Instinct_MI350X",
+   "category": "moe_tuned_device",
+   "name": "AMD_Instinct_MI350X",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=384,N=256,device_name=AMD_Instinct_MI350X,dtype=int4_w4a16,backend=flydsl.json:1",
+   "value": {
+    "files": 3,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:AMD_Instinct_MI350_OAM",
+   "category": "moe_tuned_device",
+   "name": "AMD_Instinct_MI350_OAM",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=160,N=192,device_name=AMD_Instinct_MI350_OAM,dtype=fp8_w8a8.json:1",
+   "value": {
+    "files": 5,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:AMD_Instinct_MI355X",
+   "category": "moe_tuned_device",
+   "name": "AMD_Instinct_MI355X",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=384,N=256,device_name=AMD_Instinct_MI355X,dtype=int4_w4a16,backend=flydsl.json:1",
+   "value": {
+    "files": 3,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:AMD_Instinct_MI355_OAM",
+   "category": "moe_tuned_device",
+   "name": "AMD_Instinct_MI355_OAM",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=160,N=384,device_name=AMD_Instinct_MI355_OAM,dtype=fp8_w8a8.json:1",
+   "value": {
+    "files": 4,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:AMD_Radeon_R9700",
+   "category": "moe_tuned_device",
+   "name": "AMD_Radeon_R9700",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=128,N=512,device_name=AMD_Radeon_R9700,dtype=fp8_w8a8,block_shape=[128,128].json:1",
+   "value": {
+    "files": 2,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:Intel(R)_Arc(TM)_Pro_B60_Graphics",
+   "category": "moe_tuned_device",
+   "name": "Intel(R)_Arc(TM)_Pro_B60_Graphics",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=10,N=512,device_name=Intel(R)_Arc(TM)_Pro_B60_Graphics.json:1",
+   "value": {
+    "files": 12,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:Intel(R)_Arc(TM)_Pro_B70_Graphics",
+   "category": "moe_tuned_device",
+   "name": "Intel(R)_Arc(TM)_Pro_B70_Graphics",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=10,N=512,device_name=Intel(R)_Arc(TM)_Pro_B70_Graphics.json:1",
+   "value": {
+    "files": 15,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_A100-SXM4-40GB",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_A100-SXM4-40GB",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=16,N=1344,device_name=NVIDIA_A100-SXM4-40GB.json:1",
+   "value": {
+    "files": 3,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_A100-SXM4-80GB",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_A100-SXM4-80GB",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=1,N=14336,device_name=NVIDIA_A100-SXM4-80GB,dtype=int8_w8a16.json:1",
+   "value": {
+    "files": 32,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_A100_80GB_PCIe",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_A100_80GB_PCIe",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=256,N=512,device_name=NVIDIA_A100_80GB_PCIe.json:1",
+   "value": {
+    "files": 1,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_A800-SXM4-80GB",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_A800-SXM4-80GB",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=160,N=192,device_name=NVIDIA_A800-SXM4-80GB.json:1",
+   "value": {
+    "files": 6,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_B200",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_B200",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=128,N=1856,device_name=NVIDIA_B200.json:1",
+   "value": {
+    "files": 35,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_B300_SXM6_AC",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_B300_SXM6_AC",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=160,N=192,device_name=NVIDIA_B300_SXM6_AC,dtype=fp8_w8a8.json:1",
+   "value": {
+    "files": 3,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_GB10",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_GB10",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=256,N=512,device_name=NVIDIA_GB10,dtype=fp8_w8a8,block_shape=[128,128].json:1",
+   "value": {
+    "files": 2,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_GB200",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_GB200",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=128,N=384,device_name=NVIDIA_GB200,dtype=fp8_w8a8,block_shape=[128,128].json:1",
+   "value": {
+    "files": 11,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_GeForce_RTX_4090",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_GeForce_RTX_4090",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=64,N=640,device_name=NVIDIA_GeForce_RTX_4090,dtype=fp8_w8a8.json:1",
+   "value": {
+    "files": 2,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_H100",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_H100",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=128,N=1024,device_name=NVIDIA_H100,dtype=fp8_w8a8.json:1",
+   "value": {
+    "files": 5,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_H100_80GB_HBM3",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_H100_80GB_HBM3",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=1,N=1792,device_name=NVIDIA_H100_80GB_HBM3,dtype=int8_w8a16.json:1",
+   "value": {
+    "files": 62,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_H100_PCIe",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_H100_PCIe",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=64,N=768,device_name=NVIDIA_H100_PCIe,dtype=fp8_w8a8,block_shape=[128,128].json:1",
+   "value": {
+    "files": 1,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_H20",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_H20",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=128,N=192,device_name=NVIDIA_H20.json:1",
+   "value": {
+    "files": 20,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_H20-3e",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_H20-3e",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=128,N=192,device_name=NVIDIA_H20-3e.json:1",
+   "value": {
+    "files": 13,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_H200",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_H200",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=1,N=3072,device_name=NVIDIA_H200,dtype=int8_w8a16.json:1",
+   "value": {
+    "files": 55,
+    "down_files": 2
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_H800",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_H800",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=128,N=192,device_name=NVIDIA_H800,dtype=fp8_w8a8.json:1",
+   "value": {
+    "files": 1,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_L20",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_L20",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=256,N=256,device_name=NVIDIA_L20,dtype=fp8_w8a8,block_shape=[128,128].json:1",
+   "value": {
+    "files": 1,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_L20Y",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_L20Y",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=256,N=128,device_name=NVIDIA_L20Y,dtype=fp8_w8a8,block_shape=[128,128].json:1",
+   "value": {
+    "files": 1,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_L4",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_L4",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=128,N=384,device_name=NVIDIA_L4,dtype=fp8_w8a8,block_shape=[128,128].json:1",
+   "value": {
+    "files": 1,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_L40S",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_L40S",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=128,N=1856,device_name=NVIDIA_L40S.json:1",
+   "value": {
+    "files": 4,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_RTX_PRO_6000_Blackwell_Server_Edition",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_RTX_PRO_6000_Blackwell_Server_Edition",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=20,N=1536,device_name=NVIDIA_RTX_PRO_6000_Blackwell_Server_Edition,dtype=fp8_w8a8.json:1",
+   "value": {
+    "files": 4,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:NVIDIA_RTX_PRO_6000_Blackwell_Workstation_Edition",
+   "category": "moe_tuned_device",
+   "name": "NVIDIA_RTX_PRO_6000_Blackwell_Workstation_Edition",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=128,N=704,device_name=NVIDIA_RTX_PRO_6000_Blackwell_Workstation_Edition,dtype=fp8_w8a8.json:1",
+   "value": {
+    "files": 2,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "moe_tuned_device:Radeon_8060S_Graphics",
+   "category": "moe_tuned_device",
+   "name": "Radeon_8060S_Graphics",
+   "site": "vllm/model_executor/layers/fused_moe/configs/E=128,N=768,device_name=Radeon_8060S_Graphics,dtype=int4_w4a16.json:1",
+   "value": {
+    "files": 1,
+    "down_files": 0
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2103",
+   "why": "the per-device tuned fused-MoE configuration is not selected or hashed into the kernel's CodeHash (design 9.2, G1); the Result carries no G1 data yet"
+  },
+  {
+   "id": "engine_default:CacheConfig.block_size",
+   "category": "engine_default",
+   "name": "CacheConfig.block_size",
+   "site": "vllm/config/cache.py:188",
+   "value": null,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2290",
+   "why": "unset at v0.33.0 and at the pin; the default it resolves to differs between them (DEFAULT_BLOCK_SIZE 16, then 64) and the goldens state block_size"
+  },
+  {
+   "id": "engine_default:CacheConfig.gpu_memory_utilization",
+   "category": "engine_default",
+   "name": "CacheConfig.gpu_memory_utilization",
+   "site": "vllm/config/cache.py:216",
+   "value": null,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2290",
+   "why": "a value that differs between vLLM v0.33.0, which the goldens were recorded at, and the pin; the port to the pin (#2290) re-records it"
+  },
+  {
+   "id": "engine_default:CacheConfig.cache_dtype",
+   "category": "engine_default",
+   "name": "CacheConfig.cache_dtype",
+   "site": "vllm/config/cache.py:245",
+   "value": "auto",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/55",
+   "why": "no golden trace shows the default of kv_cache_dtype (fields.json: modelled)"
+  },
+  {
+   "id": "engine_default:CacheConfig.enable_prefix_caching",
+   "category": "engine_default",
+   "name": "CacheConfig.enable_prefix_caching",
+   "site": "vllm/config/cache.py:267",
+   "value": true,
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden/meta-more-kv-small.json",
+    "core/sched/testdata/golden/prefix-cache.json"
+   ]
+  },
+  {
+   "id": "engine_default:CacheConfig.prefix_caching_hash_algo",
+   "category": "engine_default",
+   "name": "CacheConfig.prefix_caching_hash_algo",
+   "site": "vllm/config/cache.py:269",
+   "value": "sha256",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/55",
+   "why": "fields.json does not model prefix_caching_hash_algo"
+  },
+  {
+   "id": "engine_default:CacheConfig.num_gpu_blocks_override",
+   "category": "engine_default",
+   "name": "CacheConfig.num_gpu_blocks_override",
+   "site": "vllm/config/cache.py:261",
+   "value": null,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/55",
+   "why": "fields.json does not model num_gpu_blocks_override"
+  },
+  {
+   "id": "engine_default:CacheConfig.kv_cache_memory_bytes",
+   "category": "engine_default",
+   "name": "CacheConfig.kv_cache_memory_bytes",
+   "site": "vllm/config/cache.py:378",
+   "value": null,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/55",
+   "why": "no golden trace shows the default of kv_cache_memory_bytes (fields.json: modelled)"
+  },
+  {
+   "id": "engine_default:CacheConfig.mamba_block_size",
+   "category": "engine_default",
+   "name": "CacheConfig.mamba_block_size",
+   "site": "vllm/config/cache.py:303",
+   "value": null,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/59",
+   "why": "fields.json does not model mamba_block_size"
+  },
+  {
+   "id": "engine_default:CacheConfig.DEFAULT_BLOCK_SIZE",
+   "category": "engine_default",
+   "name": "CacheConfig.DEFAULT_BLOCK_SIZE",
+   "site": "vllm/config/cache.py:185",
+   "value": 64,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2290",
+   "why": "a value that differs between vLLM v0.33.0, which the goldens were recorded at, and the pin; the port to the pin (#2290) re-records it"
+  },
+  {
+   "id": "engine_default:CacheConfig.DEFAULT_GPU_MEMORY_UTILIZATION",
+   "category": "engine_default",
+   "name": "CacheConfig.DEFAULT_GPU_MEMORY_UTILIZATION",
+   "site": "vllm/config/cache.py:186",
+   "value": 0.92,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2290",
+   "why": "a value that differs between vLLM v0.33.0, which the goldens were recorded at, and the pin; the port to the pin (#2290) re-records it"
+  },
+  {
+   "id": "engine_default:CacheConfig.resolved_gpu_memory_utilization",
+   "category": "engine_default",
+   "name": "CacheConfig.resolved_gpu_memory_utilization",
+   "site": "vllm/config/cache.py:490",
+   "value": [
+    {
+     "when": [
+      "self.gpu_memory_utilization is not None"
+     ],
+     "returns": "self.gpu_memory_utilization"
+    },
+    {
+     "when": [
+      "not (self.gpu_memory_utilization is not None)",
+      "self.enable_extensible_kv_cache"
+     ],
+     "returns": "1.0"
+    },
+    {
+     "when": [
+      "not (self.gpu_memory_utilization is not None)",
+      "not (self.enable_extensible_kv_cache)"
+     ],
+     "returns": "self.DEFAULT_GPU_MEMORY_UTILIZATION"
+    }
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2290",
+   "why": "a value that differs between vLLM v0.33.0, which the goldens were recorded at, and the pin; the port to the pin (#2290) re-records it"
+  },
+  {
+   "id": "engine_default:SchedulerConfig.max_num_batched_tokens",
+   "category": "engine_default",
+   "name": "SchedulerConfig.max_num_batched_tokens",
+   "site": "vllm/config/scheduler.py:47",
+   "value": 2048,
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden/long-prefill-chunks.json",
+    "core/sched/testdata/golden/meta-larger-budget-large.json"
+   ]
+  },
+  {
+   "id": "engine_default:SchedulerConfig.max_num_seqs",
+   "category": "engine_default",
+   "name": "SchedulerConfig.max_num_seqs",
+   "site": "vllm/config/scheduler.py:61",
+   "value": 128,
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden/knob-max-active-seqs.json",
+    "core/sched/testdata/golden/preempt-fcfs.json"
+   ]
+  },
+  {
+   "id": "engine_default:SchedulerConfig.enable_chunked_prefill",
+   "category": "engine_default",
+   "name": "SchedulerConfig.enable_chunked_prefill",
+   "site": "vllm/config/scheduler.py:160",
+   "value": true,
+   "status": "modelled",
+   "evidence": [
+    "core/engine/testdata/golden/t3-chunked-prefill-off-async-v2.json",
+    "core/engine/testdata/golden/t3-chunked-prefill-off-async.json",
+    "core/sched/testdata/golden/chunked-prefill-off-long-prefill.json",
+    "core/sched/testdata/golden/chunked-prefill-off-prefix-cache.json",
+    "core/sched/testdata/golden/chunked-prefill-off.json"
+   ]
+  },
+  {
+   "id": "engine_default:SchedulerConfig.policy",
+   "category": "engine_default",
+   "name": "SchedulerConfig.policy",
+   "site": "vllm/config/scheduler.py:195",
+   "value": "fcfs",
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/hybrid-swa.json",
+    "core/sched/testdata/golden/hybrid-swa.json"
+   ]
+  },
+  {
+   "id": "engine_default:SchedulerConfig.long_prefill_token_threshold",
+   "category": "engine_default",
+   "name": "SchedulerConfig.long_prefill_token_threshold",
+   "site": "vllm/config/scheduler.py:104",
+   "value": 0,
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden/long-prefill-chunks.json"
+   ]
+  },
+  {
+   "id": "engine_default:SchedulerConfig.prefill_schedule_interval",
+   "category": "engine_default",
+   "name": "SchedulerConfig.prefill_schedule_interval",
+   "site": "vllm/config/scheduler.py:239",
+   "value": 1,
+   "status": "modelled",
+   "evidence": [
+    "core/engine/testdata/golden-dp-async/dp2-throttle-async.json",
+    "core/engine/testdata/golden-dp/dp2-throttle.json"
+   ]
+  },
+  {
+   "id": "engine_default:SchedulerConfig.async_scheduling",
+   "category": "engine_default",
+   "name": "SchedulerConfig.async_scheduling",
+   "site": "vllm/config/scheduler.py:270",
+   "value": null,
+   "status": "modelled",
+   "evidence": [
+    "core/engine/testdata/golden-dp-async/dp2-throttle-async.json",
+    "core/engine/testdata/golden/t3-async.json"
+   ]
+  },
+  {
+   "id": "engine_default:SchedulerConfig.async_scheduling_depth",
+   "category": "engine_default",
+   "name": "SchedulerConfig.async_scheduling_depth",
+   "site": "vllm/config/scheduler.py:275",
+   "value": 2,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2290",
+   "why": "a value that differs between vLLM v0.33.0, which the goldens were recorded at, and the pin; the port to the pin (#2290) re-records it"
+  },
+  {
+   "id": "engine_default:SchedulerConfig.stream_interval",
+   "category": "engine_default",
+   "name": "SchedulerConfig.stream_interval",
+   "site": "vllm/config/scheduler.py:284",
+   "value": 1,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/55",
+   "why": "no golden trace shows the default of stream_interval (fields.json: proven_inert)"
+  },
+  {
+   "id": "engine_default:SchedulerConfig.DEFAULT_MAX_NUM_BATCHED_TOKENS",
+   "category": "engine_default",
+   "name": "SchedulerConfig.DEFAULT_MAX_NUM_BATCHED_TOKENS",
+   "site": "vllm/config/scheduler.py:40",
+   "value": 2048,
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden/long-prefill-chunks.json",
+    "core/sched/testdata/golden/meta-larger-budget-large.json"
+   ]
+  },
+  {
+   "id": "engine_default:SchedulerConfig.DEFAULT_MAX_NUM_BATCHED_TOKENS_FOR_BATCHED_DP",
+   "category": "engine_default",
+   "name": "SchedulerConfig.DEFAULT_MAX_NUM_BATCHED_TOKENS_FOR_BATCHED_DP",
+   "site": "vllm/config/scheduler.py:41",
+   "value": 256,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/55",
+   "why": "no golden trace shows the default of DEFAULT_MAX_NUM_BATCHED_TOKENS_FOR_BATCHED_DP (fields.json: no entry)"
+  },
+  {
+   "id": "engine_default:SchedulerConfig.DEFAULT_MAX_NUM_SEQS",
+   "category": "engine_default",
+   "name": "SchedulerConfig.DEFAULT_MAX_NUM_SEQS",
+   "site": "vllm/config/scheduler.py:42",
+   "value": 128,
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden/knob-max-active-seqs.json",
+    "core/sched/testdata/golden/preempt-fcfs.json"
+   ]
+  },
+  {
+   "id": "engine_default:KVEventsConfig.enable_kv_cache_events",
+   "category": "engine_default",
+   "name": "KVEventsConfig.enable_kv_cache_events",
+   "site": "vllm/config/kv_events.py:14",
+   "value": false,
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden/kv-events.json"
+   ]
+  },
+  {
+   "id": "engine_default:KVEventsConfig.publisher",
+   "category": "engine_default",
+   "name": "KVEventsConfig.publisher",
+   "site": "vllm/config/kv_events.py:19",
+   "value": null,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "why": "fields.json does not model kv_events_config.publisher"
+  },
+  {
+   "id": "engine_default:KVEventsConfig.endpoint",
+   "category": "engine_default",
+   "name": "KVEventsConfig.endpoint",
+   "site": "vllm/config/kv_events.py:23",
+   "value": "tcp://*:5557",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "why": "fields.json does not model kv_events_config.endpoint"
+  },
+  {
+   "id": "engine_default:KVEventsConfig.replay_endpoint",
+   "category": "engine_default",
+   "name": "KVEventsConfig.replay_endpoint",
+   "site": "vllm/config/kv_events.py:27",
+   "value": null,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "why": "fields.json does not model kv_events_config.replay_endpoint"
+  },
+  {
+   "id": "engine_default:KVEventsConfig.buffer_steps",
+   "category": "engine_default",
+   "name": "KVEventsConfig.buffer_steps",
+   "site": "vllm/config/kv_events.py:31",
+   "value": 10000,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "why": "fields.json does not model kv_events_config.buffer_steps"
+  },
+  {
+   "id": "engine_default:KVEventsConfig.hwm",
+   "category": "engine_default",
+   "name": "KVEventsConfig.hwm",
+   "site": "vllm/config/kv_events.py:38",
+   "value": 100000,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "why": "fields.json does not model kv_events_config.hwm"
+  },
+  {
+   "id": "engine_default:KVEventsConfig.max_queue_size",
+   "category": "engine_default",
+   "name": "KVEventsConfig.max_queue_size",
+   "site": "vllm/config/kv_events.py:43",
+   "value": 100000,
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "why": "fields.json does not model kv_events_config.max_queue_size"
+  },
+  {
+   "id": "engine_default:KVEventsConfig.topic",
+   "category": "engine_default",
+   "name": "KVEventsConfig.topic",
+   "site": "vllm/config/kv_events.py:47",
+   "value": "",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "why": "fields.json does not model kv_events_config.topic"
+  },
+  {
+   "id": "kv_event_emitter:cache_full_blocks",
+   "category": "kv_event_emitter",
+   "name": "cache_full_blocks",
+   "site": "vllm/v1/core/block_pool.py:317",
+   "value": {
+    "event": "BlockStored",
+    "when": [
+     "self.enable_kv_cache_events",
+     "not (num_cached_blocks >= num_full_blocks)"
+    ],
+    "called_from": [
+     "vllm/v1/core/single_type_kv_cache_manager.py::MambaManager.cache_blocks_on_free",
+     "vllm/v1/core/single_type_kv_cache_manager.py::SingleTypeKVCacheManager.cache_blocks",
+     "vllm/v1/hisparse/coordinator.py::HiSparseCoordinator._publish_detached_blocks"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2290",
+   "why": "the pin adds a caller (MambaManager.cache_blocks_on_free) that the v0.33.0 golden, which carries stored events from the full-attention callers, does not cover"
+  },
+  {
+   "id": "kv_event_emitter:emit_cached_block_events",
+   "category": "kv_event_emitter",
+   "name": "emit_cached_block_events",
+   "site": "vllm/v1/core/block_pool.py:445",
+   "value": {
+    "event": "BlockStored",
+    "when": [
+     "not (not self.enable_kv_cache_events or num_cached_blocks == 0)",
+     "not (not cached_hashes)"
+    ],
+    "called_from": [
+     "vllm/v1/core/kv_cache_coordinator.py::KVCacheCoordinator.emit_cached_block_events"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "why": "no golden trace carries this emission"
+  },
+  {
+   "id": "kv_event_emitter:cache_partial_block",
+   "category": "kv_event_emitter",
+   "name": "cache_partial_block",
+   "site": "vllm/v1/core/block_pool.py:555",
+   "value": {
+    "event": "BlockStored",
+    "when": [
+     "self.enable_kv_cache_events and (not already_cached)",
+     "not (block.is_null)"
+    ],
+    "called_from": [
+     "vllm/v1/core/single_type_kv_cache_manager.py::FullAttentionManager._cache_partial_tail_block",
+     "vllm/v1/core/single_type_kv_cache_manager.py::MambaManager._cache_partial_tail_block"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "why": "no golden trace carries this emission"
+  },
+  {
+   "id": "kv_event_emitter:_emit_block_removed_events",
+   "category": "kv_event_emitter",
+   "name": "_emit_block_removed_events",
+   "site": "vllm/v1/core/block_pool.py:633",
+   "value": {
+    "event": "BlockRemoved",
+    "when": [
+     "not (not self.enable_kv_cache_events)"
+    ],
+    "called_from": []
+   },
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/kv-events.json",
+    "core/sched/testdata/golden/kv-events.json"
+   ],
+   "why": "the golden carries removed events"
+  },
+  {
+   "id": "kv_event_emitter:reset_prefix_cache",
+   "category": "kv_event_emitter",
+   "name": "reset_prefix_cache",
+   "site": "vllm/v1/core/block_pool.py:899",
+   "value": {
+    "event": "AllBlocksCleared",
+    "when": [
+     "self.enable_kv_cache_events",
+     "not (num_used_blocks != 1)"
+    ],
+    "called_from": [
+     "vllm/v1/core/kv_cache_coordinator.py::KVCacheCoordinator.reset_prefix_cache",
+     "vllm/v1/simple_kv_offload/manager.py::SimpleCPUOffloadScheduler.reset"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "why": "emits AllBlocksCleared, which no simulated run calls"
+  },
+  {
+   "id": "kv_report_mode:full",
+   "category": "kv_report_mode",
+   "name": "full",
+   "site": "vllm/v1/core/kv_cache_manager.py:324",
+   "value": {
+    "default": false,
+    "when": "num_new_computed_tokens > 0 and self.enable_kv_cache_events and (getattr(request, 'kv_cache_report_mode', 'incremental') == 'full')",
+    "on_cache_hit": [
+     "self.coordinator.emit_cached_block_events"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "why": "kv_cache_report_mode is a per-request field that fields.json does not model"
+  },
+  {
+   "id": "kv_report_mode:incremental",
+   "category": "kv_report_mode",
+   "name": "incremental",
+   "site": "vllm/v1/request.py:137",
+   "value": {
+    "default": true,
+    "on_cache_hit": []
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "why": "kv_cache_report_mode is a per-request field that fields.json does not model"
+  },
+  {
+   "id": "step_input_kind:ADD",
+   "category": "step_input_kind",
+   "name": "ADD",
+   "site": "vllm/v1/engine/__init__.py:382",
+   "value": "during_step",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_input_kind:ABORT",
+   "category": "step_input_kind",
+   "name": "ABORT",
+   "site": "vllm/v1/engine/__init__.py:383",
+   "value": "during_step",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_input_kind:START_DP_WAVE",
+   "category": "step_input_kind",
+   "name": "START_DP_WAVE",
+   "site": "vllm/v1/engine/__init__.py:384",
+   "value": "after_step",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_input_kind:UTILITY",
+   "category": "step_input_kind",
+   "name": "UTILITY",
+   "site": "vllm/v1/engine/__init__.py:385",
+   "value": "after_step",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_input_kind:EXECUTOR_FAILED",
+   "category": "step_input_kind",
+   "name": "EXECUTOR_FAILED",
+   "site": "vllm/v1/engine/__init__.py:387",
+   "value": "during_step",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_input_kind:WAKEUP",
+   "category": "step_input_kind",
+   "name": "WAKEUP",
+   "site": "vllm/v1/engine/__init__.py:389",
+   "value": "during_step",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_input_read:EngineCoreProc._process_input_queue:get#1",
+   "category": "step_input_read",
+   "name": "EngineCoreProc._process_input_queue:get#1",
+   "site": "vllm/v1/engine/core.py:1860",
+   "value": {
+    "filtered_by_step_kind": false,
+    "when": []
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_input_read:EngineCoreProc._process_input_queue:get_nowait#1",
+   "category": "step_input_read",
+   "name": "EngineCoreProc._process_input_queue:get_nowait#1",
+   "site": "vllm/v1/engine/core.py:1872",
+   "value": {
+    "filtered_by_step_kind": false,
+    "when": []
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_input_read:EngineCoreProc._wait_for_output:queue#1",
+   "category": "step_input_read",
+   "name": "EngineCoreProc._wait_for_output:queue#1",
+   "site": "vllm/v1/engine/core.py:1963",
+   "value": {
+    "filtered_by_step_kind": true,
+    "when": [
+     "poll is not None and wait_briefly is not None"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_input_read:EngineCoreProc._wait_for_output:get_nowait#1",
+   "category": "step_input_read",
+   "name": "EngineCoreProc._wait_for_output:get_nowait#1",
+   "site": "vllm/v1/engine/core.py:1967",
+   "value": {
+    "filtered_by_step_kind": true,
+    "when": [
+     "poll is not None and wait_briefly is not None",
+     "pending_inputs"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "async_depth:max_concurrent_batches",
+   "category": "async_depth",
+   "name": "max_concurrent_batches",
+   "site": "vllm/config/vllm.py:648",
+   "value": [
+    {
+     "when": [
+      "self.scheduler_config.async_scheduling"
+     ],
+     "returns": "pp_size + self.scheduler_config.async_scheduling_depth - 1"
+    },
+    {
+     "when": [
+      "not (self.scheduler_config.async_scheduling)"
+     ],
+     "returns": "pp_size"
+    }
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "async_depth:batch_queue_enabled",
+   "category": "async_depth",
+   "name": "batch_queue_enabled",
+   "site": "vllm/v1/engine/core.py:235",
+   "value": {
+    "when": "self.batch_queue_size > 1"
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "async_depth:step_function",
+   "category": "async_depth",
+   "name": "step_function",
+   "site": "vllm/v1/engine/core.py:265",
+   "value": "self.step if self.batch_queue is None else self.step_with_batch_queue",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "async_default:async_scheduling=False if self.model_config is not None and self.model_config.runner_type == 'pooling'",
+   "category": "async_default",
+   "name": "async_scheduling=False if self.model_config is not None and self.model_config.runner_type == 'pooling'",
+   "site": "vllm/config/vllm.py:1754",
+   "value": {
+    "when": [
+     "self.model_config is not None and self.model_config.runner_type == 'pooling'"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "async_default:async_scheduling=False if not executor_supports_async_sched",
+   "category": "async_default",
+   "name": "async_scheduling=False if not executor_supports_async_sched",
+   "site": "vllm/config/vllm.py:1761",
+   "value": {
+    "when": [
+     "not (self.model_config is not None and self.model_config.runner_type == 'pooling')",
+     "not executor_supports_async_sched"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "async_default:async_scheduling=False if uses_rocm_deepep_ht_dbo",
+   "category": "async_default",
+   "name": "async_scheduling=False if uses_rocm_deepep_ht_dbo",
+   "site": "vllm/config/vllm.py:1768",
+   "value": {
+    "when": [
+     "not (self.model_config is not None and self.model_config.runner_type == 'pooling')",
+     "not (not executor_supports_async_sched)",
+     "uses_rocm_deepep_ht_dbo"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "async_default:async_scheduling=True otherwise",
+   "category": "async_default",
+   "name": "async_scheduling=True otherwise",
+   "site": "vllm/config/vllm.py:1770",
+   "value": {
+    "when": [
+     "not (self.model_config is not None and self.model_config.runner_type == 'pooling')",
+     "not (not executor_supports_async_sched)",
+     "not (uses_rocm_deepep_ht_dbo)"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "async_placeholder:scheduler_output.pending_structured_output_tokens",
+   "category": "async_placeholder",
+   "name": "scheduler_output.pending_structured_output_tokens",
+   "site": "vllm/v1/core/sched/async_scheduler.py:57",
+   "value": {
+    "op": "=",
+    "expr": "pending_structured_output_tokens"
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "async_placeholder:scheduler_output.has_structured_output_spec_decode",
+   "category": "async_placeholder",
+   "name": "scheduler_output.has_structured_output_spec_decode",
+   "site": "vllm/v1/core/sched/async_scheduler.py:60",
+   "value": {
+    "op": "=",
+    "expr": "structured_output_spec_decode"
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "async_placeholder:request.num_output_placeholders",
+   "category": "async_placeholder",
+   "name": "request.num_output_placeholders",
+   "site": "vllm/v1/core/sched/async_scheduler.py:45",
+   "value": {
+    "op": "+=",
+    "expr": "self.num_sampled_tokens_per_step + cur_num_spec_tokens"
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "async_placeholder:request.num_output_placeholder_steps",
+   "category": "async_placeholder",
+   "name": "request.num_output_placeholder_steps",
+   "site": "vllm/v1/core/sched/async_scheduler.py:48",
+   "value": {
+    "op": "+=",
+    "expr": "1"
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "async_placeholder:request.spec_token_ids",
+   "category": "async_placeholder",
+   "name": "request.spec_token_ids",
+   "site": "vllm/v1/core/sched/async_scheduler.py:51",
+   "value": {
+    "op": "=",
+    "expr": "spec_token_placeholders"
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "async_placeholder:request.next_decode_eligible_step",
+   "category": "async_placeholder",
+   "name": "request.next_decode_eligible_step",
+   "site": "vllm/v1/core/sched/async_scheduler.py:55",
+   "value": {
+    "op": "=",
+    "expr": "self.current_step + self.decode_stagger"
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_order:self.scheduler.schedule#1",
+   "category": "step_order",
+   "name": "self.scheduler.schedule#1",
+   "site": "vllm/v1/engine/core.py:786",
+   "value": {
+    "position": 1,
+    "when": [
+     "self.deferred_step is None and self.scheduler.has_requests()"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_order:self.model_executor.execute_model#1",
+   "category": "step_order",
+   "name": "self.model_executor.execute_model#1",
+   "site": "vllm/v1/engine/core.py:788",
+   "value": {
+    "position": 2,
+    "when": [
+     "self.deferred_step is None and self.scheduler.has_requests()"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_order:self.model_executor.sample_tokens#1",
+   "category": "step_order",
+   "name": "self.model_executor.sample_tokens#1",
+   "site": "vllm/v1/engine/core.py:812",
+   "value": {
+    "position": 3,
+    "when": [
+     "self.deferred_step is None and self.scheduler.has_requests()",
+     "not (self.is_pooling_model or not model_executed)",
+     "not scheduler_output.pending_structured_output_tokens"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_order:batch_queue.appendleft#1",
+   "category": "step_order",
+   "name": "batch_queue.appendleft#1",
+   "site": "vllm/v1/engine/core.py:822",
+   "value": {
+    "position": 4,
+    "when": [
+     "self.deferred_step is None and self.scheduler.has_requests()",
+     "self.deferred_step is None"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_order:batch_queue.pop#1",
+   "category": "step_order",
+   "name": "batch_queue.pop#1",
+   "site": "vllm/v1/engine/core.py:837",
+   "value": {
+    "position": 5,
+    "when": []
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_order:self._wait_for_output#1",
+   "category": "step_order",
+   "name": "self._wait_for_output#1",
+   "site": "vllm/v1/engine/core.py:839",
+   "value": {
+    "position": 6,
+    "when": []
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_order:self._process_aborts_queue#1",
+   "category": "step_order",
+   "name": "self._process_aborts_queue#1",
+   "site": "vllm/v1/engine/core.py:849",
+   "value": {
+    "position": 7,
+    "when": []
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_order:self.scheduler.update_from_output#1",
+   "category": "step_order",
+   "name": "self.scheduler.update_from_output#1",
+   "site": "vllm/v1/engine/core.py:850",
+   "value": {
+    "position": 8,
+    "when": []
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_order:self.model_executor.sample_tokens#2",
+   "category": "step_order",
+   "name": "self.model_executor.sample_tokens#2",
+   "site": "vllm/v1/engine/core.py:881",
+   "value": {
+    "position": 9,
+    "when": [
+     "self.deferred_step is not None and (not any((so.shares_requests_with(self.deferred_step[0]) for _, so, _ in batch_queue)))"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "step_order:batch_queue.appendleft#2",
+   "category": "step_order",
+   "name": "batch_queue.appendleft#2",
+   "site": "vllm/v1/engine/core.py:882",
+   "value": {
+    "position": 10,
+    "when": [
+     "self.deferred_step is not None and (not any((so.shares_requests_with(self.deferred_step[0]) for _, so, _ in batch_queue)))"
+    ]
+   },
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
+  },
+  {
+   "id": "platform_preference:_get_backend_priorities",
+   "category": "platform_preference",
+   "name": "_get_backend_priorities",
+   "site": "vllm/platforms/cuda.py:82",
+   "value": [
+    {
+     "when": [
+      "use_mla",
+      "device_capability.major == 10"
+     ],
+     "returns": "[AttentionBackendEnum.FLASHINFER_MLA, AttentionBackendEnum.TOKENSPEED_MLA, AttentionBackendEnum.CUTLASS_MLA, AttentionBackendEnum.FLASH_ATTN_MLA, AttentionBackendEnum.FLASHMLA, AttentionBackendEnum.TRITON_MLA, *sparse_backends]"
+    },
+    {
+     "when": [
+      "use_mla",
+      "not (device_capability.major == 10)",
+      "device_capability.major == 12"
+     ],
+     "returns": "[AttentionBackendEnum.TRITON_MLA, AttentionBackendEnum.FLASHINFER_MLA_SPARSE_SM120]"
+    },
+    {
+     "when": [
+      "use_mla",
+      "not (device_capability.major == 10)",
+      "not (device_capability.major == 12)"
+     ],
+     "returns": "[AttentionBackendEnum.FLASH_ATTN_MLA, AttentionBackendEnum.FLASHMLA, AttentionBackendEnum.FLASHINFER_MLA, AttentionBackendEnum.TRITON_MLA, *sparse_tail]"
+    },
+    {
+     "when": [
+      "not (use_mla)",
+      "device_capability.major == 10 and (not use_non_causal)"
+     ],
+     "returns": "[*([AttentionBackendEnum.TRITON_FLASHINFER] if use_mm_prefix else []), AttentionBackendEnum.FLASHINFER, AttentionBackendEnum.FLASH_ATTN, AttentionBackendEnum.TRITON_ATTN, AttentionBackendEnum.FLEX_ATTENTION, AttentionBackendEnum.TURBOQUANT]"
+    },
+    {
+     "when": [
+      "not (use_mla)",
+      "not (device_capability.major == 10 and (not use_non_causal))"
+     ],
+     "returns": "[*([AttentionBackendEnum.TRITON_FLASH_ATTN] if device_capability.major == 9 and use_mm_prefix else []), AttentionBackendEnum.FLASH_ATTN, AttentionBackendEnum.FLASHINFER, AttentionBackendEnum.TRITON_ATTN, AttentionBackendEnum.FLEX_ATTENTION, AttentionBackendEnum.TURBOQUANT]"
+    }
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/68",
+   "why": "the oracle's faked-device CUDA platform record is at v0.33.0 and not re-run at the pin (#2290)"
+  },
+  {
+   "id": "platform_preference:CudaPlatformBase.get_valid_backends",
+   "category": "platform_preference",
+   "name": "CudaPlatformBase.get_valid_backends",
+   "site": "vllm/platforms/cuda.py:419",
+   "value": [
+    {
+     "when": [],
+     "returns": "(valid_backends_priorities, invalid_reasons)"
+    }
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/68",
+   "why": "the oracle's faked-device CUDA platform record is at v0.33.0 and not re-run at the pin (#2290)"
+  },
+  {
+   "id": "platform_preference:Platform._preferred_block_size_for_backends",
+   "category": "platform_preference",
+   "name": "Platform._preferred_block_size_for_backends",
+   "site": "vllm/platforms/interface.py:711",
+   "value": [
+    {
+     "when": [
+      "len(backend_classes) == 1"
+     ],
+     "returns": "backend_classes[0].get_preferred_block_size(default_block_size)"
+    },
+    {
+     "when": [
+      "all((b.supports_block_size(default_block_size) for b in backend_classes))",
+      "all((p == chosen for p in preferences)) and all((b.supports_block_size(chosen) for b in backend_classes))"
+     ],
+     "returns": "chosen"
+    },
+    {
+     "when": [
+      "all((b.supports_block_size(default_block_size) for b in backend_classes))"
+     ],
+     "returns": "default_block_size"
+    },
+    {
+     "when": [
+      "all((b.supports_block_size(candidate) for b in backend_classes))"
+     ],
+     "returns": "candidate"
+    }
+   ],
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/68",
+   "why": "the oracle's faked-device CUDA platform record is at v0.33.0 and not re-run at the pin (#2290)"
   },
   {
    "id": "metric_family:vllm:<kvcr DURATION_METRIC>",
