@@ -1,0 +1,81 @@
+kind: ModelGraph
+name: llama-3.3-70b-instruct-fp4
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: e7cbee89103cc488ef55c142c2a2a376ea00ce67b49c3ae9282d944107d97c33
+  deriver_version: 1
+global:
+  hidden_size: 8192
+  vocab_size: 128256
+  tie_word_embeddings: false
+  weight_dtype: bf16
+  architecture: LlamaForCausalLM
+layer_kinds:
+- id: dense
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 10240
+    k: 8192
+    weight_dtype: nvfp4
+  - op: Attention
+    holds_engine_kv: true
+    kind: gqa
+    n_q: 64
+    n_kv: 8
+    d_h: 128
+  - op: GEMM
+    role: o_proj
+    n: 8192
+    k: 8192
+    weight_dtype: nvfp4
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 57344
+    k: 8192
+    weight_dtype: nvfp4
+  - op: GEMM
+    role: mlp_down
+    n: 8192
+    k: 28672
+    weight_dtype: nvfp4
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+stack:
+  pattern:
+  - dense
+  repeat: 80
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 128256
+  k: 8192
+  weight_dtype: bf16

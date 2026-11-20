@@ -118,7 +118,7 @@ type matrixClass struct {
 var matrixClasses = []matrixClass{
 	{id: "block_size_multiple", re: regexp.MustCompile(`block_size \d+ on a .*a stated size must be a multiple`), step: "block",
 		why: "the stated block size is not a multiple of the attention kernel's block"},
-	{id: "capacity", re: regexp.MustCompile(`does not fit [\d.]+ GiB devices|No available memory for the cache blocks|larger than the available KV c|per-rank fixed occupancy`), step: "tp",
+	{id: "capacity", re: regexp.MustCompile(`does not fit [\d.]+ GiB devices|No available memory for the cache blocks|loaded weights leave no GPU memory for the KV cache|larger than the available KV c|per-rank fixed occupancy`), step: "tp",
 		why: "the model does not fit the device at this tensor-parallel size"},
 	{id: "kv_heads_not_divisible", re: regexp.MustCompile(`does not divide the \d+ KV heads of`), step: "tp",
 		why: "the tensor-parallel size does not divide the KV head count of a projection that cannot replicate a head"},
@@ -126,6 +126,8 @@ var matrixClasses = []matrixClass{
 		why: "the tensor-parallel size does not divide the head count"},
 	{id: "sglang_pd_not_modelled", re: regexp.MustCompile(`prefill/decode disaggregation is not modelled yet \(inference-sim/blis-sglang#\d+\)`), defect: true,
 		why: "the SGLang engine does not model prefill/decode disaggregation"},
+	{id: "sglang_pd_not_placeable", re: regexp.MustCompile(`the engine does not implement engine\.Placeable`), defect: true, issue: "inference-sim/blis-sglang#64",
+		why: "the SGLang engine does not model prefill/decode disaggregation, so a pool of several nodes is refused at placement before a request is"},
 	{id: "sglang_not_lowered", re: regexp.MustCompile(`\(inference-sim/blis-sglang#\d+\)`), defect: true,
 		why: "the SGLang engine does not lower this architecture, chip or setting"},
 	{id: "recurrent_sparse_mla", re: regexp.MustCompile(`sparse_mla attention beside recurrent layers is not mapped`), defect: true,
@@ -257,7 +259,7 @@ var matrixFatal = regexp.MustCompile(`level=(fatal|error) .*msg=(.*)$`)
 
 // matrixEngineRefused is an engine's refusal of a request, which a run reports as dropped
 // requests rather than a startup failure (SGLang prefill/decode disaggregation).
-var matrixEngineRefused = regexp.MustCompile(`the engine refused it: ([^\n]*?): request \S+"?\s`)
+var matrixEngineRefused = regexp.MustCompile(`(?m)the engine refused it: (.*?)(?:: request \S+)?"?$`)
 var matrixScenarioPrefix = regexp.MustCompile(`scenario \\?"[^ ]*?\\?": |[a-z0-9._-]+-tp\d+-b\d+\.yaml: `)
 
 // run simulates a cell. A failure to start the process is a test failure; the process refusing
@@ -837,13 +839,22 @@ func TestClusterMatrix_EveryCellSimulatesOrIsRefusedWithItsReason(t *testing.T) 
 }
 
 func TestClusterMatrix_ReadsAnEngineRefusalOfARequest(t *testing.T) {
-	line := `time="2026-11-20T16:12:07-05:00" level=warning msg="dropping request request_1_prefill: the engine refused it: sglang: prefill/decode disaggregation is not modelled yet (inference-sim/blis-sglang#64): request request_1_prefill"` + "\n"
-	m := matrixEngineRefused.FindStringSubmatch(line)
-	if m == nil {
-		t.Fatal("the refusal is not read")
-	}
-	cls, issue, known := classify(m[1])
-	if !known || !cls.defect || issue != "inference-sim/blis-sglang#64" {
-		t.Errorf("classified %q as %+v, issue %q", m[1], cls.id, issue)
+	for _, tc := range []struct{ line, reason, issue string }{
+		{`time="2026-11-20T16:12:07-05:00" level=warning msg="dropping request request_1_prefill: the engine refused it: sglang: prefill/decode disaggregation is not modelled yet (inference-sim/blis-sglang#64): request request_1_prefill"` + "\n",
+			"sglang: prefill/decode disaggregation is not modelled yet (inference-sim/blis-sglang#64)", "inference-sim/blis-sglang#64"},
+		{`time="2026-11-20T18:20:38-05:00" level=warning msg="dropping request request_0: the engine refused it: refused: sched: a prompt token outside the vocabulary is not modelled (inference-sim/blis-sglang#56)"` + "\n",
+			"refused: sched: a prompt token outside the vocabulary is not modelled (inference-sim/blis-sglang#56)", "inference-sim/blis-sglang#56"},
+	} {
+		m := matrixEngineRefused.FindStringSubmatch(tc.line)
+		if m == nil {
+			t.Fatalf("the refusal is not read: %s", tc.line)
+		}
+		if m[1] != tc.reason {
+			t.Errorf("read %q, want %q", m[1], tc.reason)
+		}
+		cls, issue, known := classify(m[1])
+		if !known || !cls.defect || issue != tc.issue {
+			t.Errorf("classified %q as %+v, issue %q", m[1], cls.id, issue)
+		}
 	}
 }

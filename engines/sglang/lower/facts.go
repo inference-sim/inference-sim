@@ -20,10 +20,12 @@ import (
 // this figure, not the catalog's GiB, in get_device_memory_capacity (utils/common.py@297e54fd), so
 // a chip with no entry is refused rather than converted by a guess.
 var chipMemoryMiB = map[string]float64{
-	"H100": 81559,
-	"H200": 143771,
-	"B200": 183359,
-	"B300": 275040,
+	"H100":        81559,
+	"H200":        143771,
+	"B200":        183359,
+	"B300":        275040,
+	"GB200-NVL72": 189471,
+	"GB300":       284208,
 }
 
 // ChipOf is the chip as SGLang's resolution reads it: the compute capability from the catalog chip
@@ -72,6 +74,12 @@ type archFacts struct {
 func ptr[T any](v T) *T { return &v }
 
 var archTable = map[string]archFacts{
+	// The dense decoder-only architectures: SGLang's resolution has no model override for them
+	// (arg_groups/model_overrides/ names none), so the oracle's cases on them are the check.
+	"LlamaForCausalLM":      {modelType: "llama"},
+	"Qwen2ForCausalLM":      {modelType: "qwen2"},
+	"Qwen3ForCausalLM":      {modelType: "qwen3"},
+	"MistralForCausalLM":    {modelType: "mistral"},
 	"DeepseekV3ForCausalLM": {modelType: "deepseek_v3", asymmetricKV: true, fp8Block: []int{128, 128}},
 	"GlmMoeDsaForCausalLM":  {modelType: "glm_moe_dsa", dsa: true, dsaIndexKpool: ptr(1), fp8Block: []int{128, 128}},
 	// Qwen3.5 (qwen35.go): a hybrid of Gated DeltaNet and attention layers with a vision tower.
@@ -113,6 +121,17 @@ func ModelFactsOf(g *model.Graph) (config.ModelFacts, error) {
 	// TestBlackwellModelFactsMatchTheOracle holds the four catalog graphs of DeepSeek-R1 and GLM-5
 	// to the oracle's reading of the header.
 	f.HasFP8WeightsInCheckpoint = arch == "DeepseekV3ForCausalLM" && g.Global.WeightDType == model.DTypeFP8
+	if t.fp8Block == nil {
+		var mixed model.DType
+		g.EachNode(func(_ string, n model.Node) {
+			if n.WeightDType != "" && n.WeightDType != g.Global.WeightDType {
+				mixed = n.WeightDType
+			}
+		})
+		if mixed != "" {
+			return config.ModelFacts{}, &NotLowered{Name: "a " + string(mixed) + " weight_dtype on nodes of a " + string(g.Global.WeightDType) + " graph (the checkpoint's quantization method is not read from the graph)", Issue: issueLower}
+		}
+	}
 	switch g.Global.WeightDType {
 	case model.DTypeBF16:
 	case model.DTypeFP8:

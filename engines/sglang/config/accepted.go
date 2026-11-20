@@ -164,6 +164,9 @@ func refusalIssue(name string, v any) string {
 // model fact HasFP8WeightsInCheckpoint.
 var acceptedModels = map[string][]int{
 	"Qwen2ForCausalLM":                   {9, 10},
+	"Qwen3ForCausalLM":                   {9, 10},
+	"LlamaForCausalLM":                   {9, 10},
+	"MistralForCausalLM":                 {9, 10},
 	"GlmMoeDsaForCausalLM":               {9, 10},
 	"DeepseekV3ForCausalLM":              {9, 10},
 	"DeepseekV4ForCausalLM":              {9, 10},
