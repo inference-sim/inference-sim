@@ -40,7 +40,10 @@ const Kind = "Result"
 // rows, and replaced metric_defs by registry identifiers. Version 3 requires each figure to
 // state its scope, and its member and aggregate where it has them (DEV-8, design §8.7): a
 // version 2 figure states none, and a definition is never inferred, so it is not read.
-const SchemaVersion = 3
+// Version 4 requires the estimate: how many replications the figures come from and, for one
+// replication, the statement that they carry no interval (DEV-11, design §8.8). A version 3
+// document states none, and it is not read.
+const SchemaVersion = 4
 
 // Result is one simulator run's predicted output.
 type Result struct {
@@ -69,6 +72,10 @@ type Result struct {
 	// RevisionChanges lists each component whose revision differs from RerunOf's. Empty
 	// unless RerunOf is set.
 	RevisionChanges []RevisionChange `yaml:"revision_changes,omitempty"`
+
+	// Estimate states how many replications the figures come from and whether they carry an
+	// interval (DEV-11, design §8.8).
+	Estimate Estimate `yaml:"estimate"`
 
 	// Window is the measured window as it fell in this run.
 	Window Window `yaml:"window"`
@@ -103,6 +110,21 @@ type Result struct {
 	// Runtime is the only part of the document that depends on the host or the wall
 	// clock. Determinism and round-trip comparisons skip it.
 	Runtime *Runtime `yaml:"runtime,omitempty"`
+}
+
+// NoIntervalStatement is Estimate.NoInterval for one replication.
+const NoIntervalStatement = "one replication: the figures are point estimates with no interval, so the randomness of the workload is not covered"
+
+// Estimate states what the run's figures are estimates from (design §8.8, DEV-11). One
+// replication is the default for every run: its figures are point estimates and the
+// document says they have no interval, rather than leaving the interval out unremarked.
+type Estimate struct {
+	// Replications is the number of independent replications (runs with different scenario
+	// seeds) the figures come from.
+	Replications int `yaml:"replications"`
+	// NoInterval is the statement that the figures carry no interval, and which uncertainty
+	// that leaves out. It is present exactly when the figures carry none.
+	NoInterval string `yaml:"no_interval,omitempty"`
 }
 
 // Engine is the engine a run used: its kind and the upstream commit it models (LIF-6). The

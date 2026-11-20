@@ -43,6 +43,7 @@ func (r *Result) Validate() *validate.Problems {
 	r.Frame.validate(p)
 	r.Revisions.validate(p)
 	r.validateRerun(p)
+	r.Estimate.validate(p)
 	r.Window.validate(p)
 	r.validateMetrics(p)
 	r.Requests.validate(p)
@@ -1043,3 +1044,13 @@ func (c SelectedCoefficient) validatePriced(p *validate.Problems, at string, mar
 }
 
 var phaseSlug = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+
+func (e Estimate) validate(p *validate.Problems) {
+	if e.Replications != 1 {
+		p.Field("estimate.replications", "must be 1, got %d: only a single replication is described so far", e.Replications)
+		return
+	}
+	if e.NoInterval == "" {
+		p.Field("estimate.no_interval", "required for one replication: the statement that the figures carry no interval (DEV-11)")
+	}
+}

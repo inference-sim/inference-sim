@@ -1256,7 +1256,7 @@ func TestLoadResultReadsJSONAndYAMLStrictly(t *testing.T) {
 
 	dir := t.TempDir()
 	y := filepath.Join(dir, "r.yaml")
-	if err := os.WriteFile(y, []byte("kind: Result\nschema_version: 3\nname: x\nmetrics: {ttft_p99_ms: {value: 1, samples: 3, scope: cluster}}\n"), 0o644); err != nil {
+	if err := os.WriteFile(y, []byte("kind: Result\nschema_version: 4\nname: x\nmetrics: {ttft_p99_ms: {value: 1, samples: 3, scope: cluster}}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if r, err := LoadResult(y); err != nil || r.Metrics["ttft_p99_ms"].Value != 1 {
