@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -70,7 +69,7 @@ func toString(v any) string {
 // own settings carry the same values, so the scheduler runs the batch the cost model prices.
 func TestAnEngineBuildsFromAnUnstatedDeploymentWithOneSetOfValues(t *testing.T) {
 	Register()
-	// block_size resolves from the oracle's table as recorded; the pin's refusal is held below.
+	// block_size resolves from the oracle's table as recorded at v0.33.0 (default 16), the figures this test compares with.
 	t.Cleanup(kernelmodel.ReadBlockSizeTableAsRecorded())
 	const fixture = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
 	roots := scenarioWithout(t, fixture, "block_size", "max_num_seqs", "max_num_batched_tokens", "gpu_memory_utilization")
@@ -101,14 +100,26 @@ func TestAnEngineBuildsFromAnUnstatedDeploymentWithOneSetOfValues(t *testing.T) 
 	}
 }
 
-// The block-size oracle's table is from another commit than the pin, so an unstated block_size is
-// refused naming the issue that re-runs it, rather than resolved to a size the pin may not pick.
-func TestAnUnstatedBlockSizeIsRefusedWhileTheOracleTableIsFromAnotherCommit(t *testing.T) {
+// The block-size oracle's table is recorded at the pin, so an unstated block_size resolves to the size
+// the pinned vLLM picks (default 64, vllm/config/cache.py:185@0fda86a3) and the engine builds with it
+// (blis-vllm#68), instead of being refused.
+func TestAnUnstatedBlockSizeResolvesAtThePin(t *testing.T) {
 	Register()
 	roots := scenarioWithout(t, "gpt-oss-120b-h200-fp4-vllm-tp4.yaml", "block_size")
-	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: roots})
-	if err == nil || !strings.Contains(err.Error(), "block_size") || !strings.Contains(err.Error(), "blis-vllm/issues/68") {
-		t.Errorf("an unstated block_size: err %v, want a refusal naming block_size and issues/68", err)
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: roots, Pool: 0}
+	if _, err := engine.New(spec); err != nil {
+		t.Fatalf("an unstated block_size: %v", err)
+	}
+	p, err := open(spec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := p.model.Engine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.BlockSize != 64 {
+		t.Errorf("block_size = %d, want 64 (the pin's default; gpt-oss-120b on SM9x prefers it)", e.BlockSize)
 	}
 }
 

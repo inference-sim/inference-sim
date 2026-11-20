@@ -13,9 +13,12 @@ import (
 // (blockSizes.Assumptions), and that size is the one the resolver returns. A resolved combination
 // carries the assumed facts exactly when its size is not the same under all 16 settings.
 func TestBlockSizeTableIsInternallyConsistent(t *testing.T) {
-	if blockSizes.VLLM != "4ba787ec9959e566d3b587a796dff07673324da5" {
-		t.Errorf("the table is for vLLM %s, not the oracle commit", blockSizes.VLLM)
-	}
+	t.Run("pin", func(t *testing.T) { checkTableConsistency(t, blockSizes, false) })
+	t.Run("recorded", func(t *testing.T) { checkTableConsistency(t, recordedBlockSizes, true) })
+}
+
+func checkTableConsistency(t *testing.T, blockSizes blockSizeFile, wantAssumed bool) {
+	t.Helper()
 	if len(blockSizes.Facts) < 3 {
 		t.Errorf("the table names %d facts, want the ones the oracle toggles", len(blockSizes.Facts))
 	}
@@ -75,14 +78,14 @@ func TestBlockSizeTableIsInternallyConsistent(t *testing.T) {
 			}
 		}
 	}
-	if resolved == 0 || assumed == 0 {
-		t.Errorf("%d combinations resolve, %d of them by assumption", resolved, assumed)
+	if resolved == 0 || (assumed == 0) == wantAssumed {
+		t.Errorf("%d combinations resolve, %d of them by assumption; want assumptions: %t", resolved, assumed, wantAssumed)
 	}
 }
 
 // One case per branch of the resolver: a resolved combination returns the oracle's size with a
 // source that cites vLLM; everything else is refused naming issue 68.
-func TestResolveBlockSize(t *testing.T) {
+func TestResolveBlockSizeAsRecorded(t *testing.T) {
 	base := BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: "auto"}
 	with := func(f func(*BlockSizeInput)) BlockSizeInput { in := base; f(&in); return in }
 	for _, c := range []struct {
@@ -137,7 +140,7 @@ func TestResolveBlockSize(t *testing.T) {
 		{"an unrelated environment variable is ignored", with(func(i *BlockSizeInput) { i.Env = map[string]string{"VLLM_LOGGING_LEVEL": "DEBUG"} }), 16, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			got, err := ResolveBlockSizeFromTable(c.in)
+			got, err := ResolveBlockSizeAsRecorded(c.in)
 			if c.why == "" || c.size > 0 {
 				if err != nil || got.Size != c.size || !strings.Contains(got.Source, "vllm/platforms/interface.py:750-794@4ba787ec") {
 					t.Fatalf("got %+v, %v; want size %d with a cited source", got, err, c.size)
@@ -165,7 +168,7 @@ func TestResolveBlockSize(t *testing.T) {
 func TestKVDTypeNamesResolveAsTheOraclesTwoNamesDo(t *testing.T) {
 	alias := map[string]string{"fp8_e4m3": "fp8", "bfloat16": "auto", "float16": "auto"}
 	seen := 0
-	for _, c := range blockSizes.Combinations {
+	for _, c := range recordedBlockSizes.Combinations {
 		base, ok := alias[c.KVCacheDType]
 		if !ok {
 			continue
@@ -173,8 +176,8 @@ func TestKVDTypeNamesResolveAsTheOraclesTwoNamesDo(t *testing.T) {
 		seen++
 		in := BlockSizeInput{Model: c.Model, Capability: c.Capability, KVCacheDType: c.KVCacheDType}
 		want := BlockSizeInput{Model: c.Model, Capability: c.Capability, KVCacheDType: base}
-		got, gerr := ResolveBlockSizeFromTable(in)
-		exp, eerr := ResolveBlockSizeFromTable(want)
+		got, gerr := ResolveBlockSizeAsRecorded(in)
+		exp, eerr := ResolveBlockSizeAsRecorded(want)
 		if (gerr == nil) != (eerr == nil) || (gerr == nil && got.Size != exp.Size) {
 			t.Errorf("%s %s: %s gives %+v, %v but %s gives %+v, %v", c.Model, c.Capability, c.KVCacheDType, got, gerr, base, exp, eerr)
 		}
@@ -184,7 +187,7 @@ func TestKVDTypeNamesResolveAsTheOraclesTwoNamesDo(t *testing.T) {
 	}
 	// The case the review reproduced: llama-3.1-70b-instruct on compute capability 9.0.
 	for _, kv := range []string{"fp8", "fp8_e4m3", "bfloat16", "float16", "auto"} {
-		got, err := ResolveBlockSizeFromTable(BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: kv})
+		got, err := ResolveBlockSizeAsRecorded(BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: kv})
 		if err != nil || got.Size != 16 {
 			t.Errorf("llama-3.1-70b-instruct, 9.0, %s: %+v, %v; want 16", kv, got, err)
 		}
@@ -199,8 +202,8 @@ func TestKVDTypeNamesResolveAsTheOraclesTwoNamesDo(t *testing.T) {
 func TestMiniMaxM25NVFP4ResolvesAsMiniMaxM25Does(t *testing.T) {
 	for _, cap := range []string{"9.0", "10.0", "10.3"} {
 		for _, kv := range []string{"auto", "fp8", "fp8_e4m3", "bfloat16", "float16"} {
-			want, werr := ResolveBlockSizeFromTable(BlockSizeInput{Model: "minimax-m2.5", Capability: cap, KVCacheDType: kv})
-			got, gerr := ResolveBlockSizeFromTable(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: cap, KVCacheDType: kv})
+			want, werr := ResolveBlockSizeAsRecorded(BlockSizeInput{Model: "minimax-m2.5", Capability: cap, KVCacheDType: kv})
+			got, gerr := ResolveBlockSizeAsRecorded(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: cap, KVCacheDType: kv})
 			if werr != nil || gerr != nil {
 				t.Errorf("capability %s kv %s: minimax-m2.5 gives %v, minimax-m2.5-nvfp4 gives %v; both must resolve", cap, kv, werr, gerr)
 				continue
@@ -210,28 +213,163 @@ func TestMiniMaxM25NVFP4ResolvesAsMiniMaxM25Does(t *testing.T) {
 			}
 		}
 	}
-	a, _ := ResolveBlockSizeFromTable(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: "10.0", KVCacheDType: "auto"})
-	f, _ := ResolveBlockSizeFromTable(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: "10.0", KVCacheDType: "fp8"})
+	a, _ := ResolveBlockSizeAsRecorded(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: "10.0", KVCacheDType: "auto"})
+	f, _ := ResolveBlockSizeAsRecorded(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: "10.0", KVCacheDType: "fp8"})
 	if a.Size != 16 || f.Size != a.Size {
 		t.Errorf("on Blackwell the nvfp4 checkpoint resolves to %d under auto and %d under fp8, want 16 under both", a.Size, f.Size)
 	}
 }
 
-// The table is the oracle's output at the commit it records; a build that models another commit
-// refuses an unstated block_size citing #68 rather than read rows resolved from another default.
-func TestResolveBlockSizeRefusesWhenTheTableIsFromAnotherCommit(t *testing.T) {
-	in := BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: "auto"}
-	if _, err := ResolveBlockSizeFromTable(in); err != nil {
-		t.Fatalf("the table's own row for %+v: %v", in, err)
-	}
-	_, err := ResolveBlockSize(in)
-	if blockSizes.VLLM == upstream.Commit {
-		if err != nil {
-			t.Fatalf("the table is recorded at the pin, but ResolveBlockSize refuses: %v", err)
+// Each table is the oracle's output at the commit it records, and records the default block size
+// that commit starts the selection from (CacheConfig.DEFAULT_BLOCK_SIZE, vllm/config/cache.py:185).
+// The embedded pin table is the one for the commit this build models; the recorded one is for the
+// release the committed run logs come from.
+func TestTablesRecordTheirCommitAndDefaultBlockSize(t *testing.T) {
+	for _, c := range []struct {
+		name         string
+		table        blockSizeFile
+		commit       string
+		defaultBlock int
+	}{
+		{"pin", blockSizes, upstream.Commit, 64},
+		{"recorded", recordedBlockSizes, upstream.OracleCommit, 16},
+	} {
+		if c.table.VLLM != c.commit || c.table.DefaultBlockSize != c.defaultBlock {
+			t.Errorf("%s table: vLLM %s default %d; want %s default %d", c.name, c.table.VLLM, c.table.DefaultBlockSize, c.commit, c.defaultBlock)
 		}
-		return
 	}
-	if err == nil || !strings.Contains(err.Error(), blockSizes.VLLM) || !strings.Contains(err.Error(), BlockSizeIssue) {
-		t.Fatalf("ResolveBlockSize = %v, want a refusal naming the table's commit %s and %s", err, blockSizes.VLLM, BlockSizeIssue)
+}
+
+// One case per branch of the resolver at the pin: a resolved combination returns the size vLLM's
+// own selection gives from the pin's default of 64, with a source that cites the pin; everything
+// else is refused naming issue 68.
+func TestResolveBlockSizeAtThePin(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		in   BlockSizeInput
+		size int
+		why  string // a fragment of the refusal
+	}{
+		{"dense on Hopper", BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: "auto"}, 64, ""},
+		{"dense on Blackwell with fp8 KV", BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "10.0", KVCacheDType: "fp8"}, 64, ""},
+		{"gpt-oss on B300", BlockSizeInput{Model: "gpt-oss-120b", Capability: "10.3", KVCacheDType: "fp8"}, 64, ""},
+		{"MLA on Blackwell", BlockSizeInput{Model: "deepseek-v3", Capability: "10.0", KVCacheDType: "auto"}, 64, ""},
+		{"MLA on Hopper with fp8 KV needs no FlashMLA fact once the default is 64", BlockSizeInput{Model: "deepseek-v3", Capability: "9.0", KVCacheDType: "fp8"}, 64, ""},
+		{"Kimi-K2.5 on Hopper with auto KV", BlockSizeInput{Model: "kimi-k2.5", Capability: "9.0", KVCacheDType: "auto"}, 64, ""},
+		{"Gemma-4 on Hopper", BlockSizeInput{Model: "gemma-4-31b-it", Capability: "9.0", KVCacheDType: "auto"}, 64, ""},
+		{"DeepSeek-V4's backends accept 256 at the smallest", BlockSizeInput{Model: "deepseek-v4-pro", Capability: "10.0", KVCacheDType: "auto"}, 256, ""},
+		{"DeepSeek-V4 NVFP4 on B300", BlockSizeInput{Model: "deepseek-v4-pro-nvfp4", Capability: "10.3", KVCacheDType: "auto"}, 256, ""},
+		{"the widest tensor parallelism the oracle ran", BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: "auto", TP: MaxBlockSizeTP}, 64, ""},
+		{"minimax-m3 picks its sparse backend outside the selector", BlockSizeInput{Model: "minimax-m3", Capability: "10.0", KVCacheDType: "fp8"}, 0, "MiniMaxM3SparseBackend"},
+		{"DeepSeek-V4.1 has its own backends", BlockSizeInput{Model: "deepseek-v4.1-flash", Capability: "10.0", KVCacheDType: "auto"}, 0, "deepseek_v41"},
+		{"a hybrid model is aligned to the recurrent page", BlockSizeInput{Model: "qwen3.5-397b-a17b", Capability: "10.0", KVCacheDType: "fp8"}, 0, "hybrid"},
+		{"a model the oracle has never seen", BlockSizeInput{Model: "no-such-model", Capability: "9.0", KVCacheDType: "auto"}, 0, "not a combination the oracle resolves"},
+		{"a chip that states no compute capability", BlockSizeInput{Model: "llama-3.1-70b-instruct", KVCacheDType: "auto"}, 0, "ComputeCapability"},
+		{"tensor parallelism wider than the oracle ran", BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: "auto", TP: 32}, 0, "tensor_parallel_size 32"},
+		{"a drafter adds layers", BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: "auto", Speculative: true}, 0, "drafter"},
+		{"context parallelism", BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: "auto", ContextParallel: true}, 0, "context parallelism"},
+		{"an attention environment variable", BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: "auto", Env: map[string]string{"VLLM_ATTENTION_BACKEND": "TRITON_ATTN"}}, 0, "VLLM_ATTENTION_BACKEND"},
+		{"Gemma-4 text-only drops the multimodal prefix, which the oracle did not run", BlockSizeInput{Model: "gemma-4-31b-it", Capability: "9.0", KVCacheDType: "auto", LanguageModelOnly: true}, 0, "language_model_only"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := ResolveBlockSize(c.in)
+			if c.why == "" {
+				if err != nil || got.Size != c.size {
+					t.Fatalf("got %+v, %v; want size %d", got, err, c.size)
+				}
+				for _, want := range []string{"vllm/platforms/interface.py:796-810@0fda86a3", "vllm/config/cache.py:185@0fda86a3", "_preferred_block_size_for_backends :710-776"} {
+					if !strings.Contains(got.Source, want) {
+						t.Errorf("source %q does not cite %s", got.Source, want)
+					}
+				}
+				if strings.Contains(got.Source, "4ba787ec") || strings.Contains(got.Source, "v0.33.0") || strings.Contains(got.Source, "assuming ") {
+					t.Errorf("source %q cites another commit or rests on an assumed fact; the pin's rows need none", got.Source)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), c.why) || !strings.Contains(err.Error(), BlockSizeIssue) {
+				t.Errorf("err %v, want a refusal containing %q and %s", err, c.why, BlockSizeIssue)
+			}
+		})
+	}
+}
+
+// fp8_e4m3, bfloat16 and float16 resolve as the names they stand for at the pin too: the table
+// runs every name through vLLM's own selection, so no alias in Go is needed (CacheDType,
+// vllm/config/cache.py:39-59).
+func TestKVDTypeNamesResolveAsTheirAliasAtThePin(t *testing.T) {
+	alias := map[string]string{"fp8_e4m3": "fp8", "bfloat16": "auto", "float16": "auto"}
+	seen := 0
+	for _, c := range blockSizes.Combinations {
+		base, ok := alias[c.KVCacheDType]
+		if !ok {
+			continue
+		}
+		seen++
+		got, gerr := ResolveBlockSize(BlockSizeInput{Model: c.Model, Capability: c.Capability, KVCacheDType: c.KVCacheDType})
+		exp, eerr := ResolveBlockSize(BlockSizeInput{Model: c.Model, Capability: c.Capability, KVCacheDType: base})
+		if (gerr == nil) != (eerr == nil) || (gerr == nil && got.Size != exp.Size) {
+			t.Errorf("%s %s: %s gives %+v, %v but %s gives %+v, %v", c.Model, c.Capability, c.KVCacheDType, got, gerr, base, exp, eerr)
+		}
+	}
+	if seen == 0 {
+		t.Error("the pin table holds none of fp8_e4m3, bfloat16 or float16")
+	}
+}
+
+// The two tables differ in one input only, CacheConfig.DEFAULT_BLOCK_SIZE (16 recorded, 64 at the
+// pin; the selection code is the same). So for every combination in both: the backends are the
+// same, and where both resolve, the pin's size is a multiple of the recorded one (a backend that
+// accepts 16 or 32 accepts the 64 it is now offered, and 64 is a multiple of both) and no smaller.
+// A combination the recorded table refuses may resolve at the pin, never the reverse.
+func TestPinAndRecordedTablesDifferOnlyByTheDefault(t *testing.T) {
+	type key struct{ model, gpu, cap, kv string }
+	rec := map[key]blockSizeCombination{}
+	for _, c := range recordedBlockSizes.Combinations {
+		rec[key{c.Model, c.GPU, c.Capability, c.KVCacheDType}] = c
+	}
+	if len(rec) != len(recordedBlockSizes.Combinations) || len(blockSizes.Combinations) != len(rec) {
+		t.Fatalf("%d pin and %d recorded combinations (%d distinct recorded): the grids must match", len(blockSizes.Combinations), len(recordedBlockSizes.Combinations), len(rec))
+	}
+	changed, refusedNowResolved := 0, 0
+	for _, p := range blockSizes.Combinations {
+		r, ok := rec[key{p.Model, p.GPU, p.Capability, p.KVCacheDType}]
+		if !ok {
+			t.Errorf("%s %s %s is at the pin and not in the recorded table", p.Model, p.GPU, p.KVCacheDType)
+			continue
+		}
+		if p.Path != r.Path || strings.Join(p.Backends, ",") != strings.Join(r.Backends, ",") {
+			t.Errorf("%s %s %s: the pin selects %v by %s, the recorded table %v by %s", p.Model, p.GPU, p.KVCacheDType, p.Backends, p.Path, r.Backends, r.Path)
+		}
+		switch {
+		case r.Status == "resolved" && p.Status != "resolved":
+			t.Errorf("%s %s %s resolves as recorded and is refused at the pin", p.Model, p.GPU, p.KVCacheDType)
+		case r.Status == "refused" && p.Status == "resolved":
+			refusedNowResolved++
+		case r.Status == "resolved":
+			if p.BlockSize < r.BlockSize || p.BlockSize%r.BlockSize != 0 {
+				t.Errorf("%s %s %s: pin %d against recorded %d, want a multiple", p.Model, p.GPU, p.KVCacheDType, p.BlockSize, r.BlockSize)
+			}
+			if p.BlockSize != r.BlockSize {
+				changed++
+			}
+		}
+	}
+	if changed == 0 || refusedNowResolved == 0 {
+		t.Errorf("%d combinations changed size and %d went from refused to resolved; the default change should move some of each", changed, refusedNowResolved)
+	}
+}
+
+// The pin's resolver refuses a table recorded at another commit, naming both it and #68, rather
+// than serve rows resolved from another default. (A build that moves the pin must re-run
+// oracle/blocksize.)
+func TestResolveBlockSizeRefusesATableFromAnotherCommit(t *testing.T) {
+	in := BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: "auto"}
+	if got, err := resolveAtCommit(blockSizes, upstream.Commit, in); err != nil || got.Size != 64 {
+		t.Fatalf("the pin table at the pin: %+v, %v", got, err)
+	}
+	_, err := resolveAtCommit(recordedBlockSizes, upstream.Commit, in)
+	if err == nil || !strings.Contains(err.Error(), recordedBlockSizes.VLLM) || !strings.Contains(err.Error(), BlockSizeIssue) {
+		t.Fatalf("resolveAtCommit = %v, want a refusal naming the table's commit %s and %s", err, recordedBlockSizes.VLLM, BlockSizeIssue)
 	}
 }
