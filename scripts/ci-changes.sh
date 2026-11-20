@@ -167,6 +167,14 @@ classify() {
     scripts/*)                            mark scripts ;;
     tools/validation/*)                   mark cmd ;;
     tools/*)                              mark kernel ;;
+    # An engine's oracle and mutation workflows (and the actions only they use) are the engine's own
+    # tooling: they select that engine's jobs, and the actionlint and scripts jobs that read them.
+    .github/workflows/oracle-vllm.yml|.github/workflows/oracle-traces-vllm.yml|.github/workflows/mutation-vllm.yml|\
+    .github/actions/oracle-env-vllm/*|.github/actions/oracle-fuzz-vllm/*)
+                                          mark vllm scripts actionlint ;;
+    .github/workflows/oracle-sglang.yml|.github/workflows/mutation-sglang.yml|\
+    .github/actions/oracle-env-sglang/*)
+                                          mark sglang scripts actionlint ;;
     .github/workflows/*|.github/actionlint.yaml) mark scripts actionlint ;;
     # Read by the scripts package's tests (archon_workflow, dockerfile_go_version, pr_review).
     Dockerfile|k8s/*|.github/archon-trigger-anchor.patch|.archon-version)
