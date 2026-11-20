@@ -1,6 +1,6 @@
 {
   "kind": "Result",
-  "schema_version": 3,
+  "schema_version": 4,
   "name": "llama-3.1-8b-h100-tp2-dp4.c64-s1",
   "engine": { "kind": "vllm", "version": "0.32.0", "commit": "4ba787ec9959e566d3b587a796dff07673324da5" },
   "data": {
@@ -87,6 +87,7 @@
     "router": "v1.0.0-blis.2",
     "engine_module": "v0.32.0-blis.2"
   },
+  "estimate": { "replications": 1, "no_interval": "one replication: the figures are point estimates with no interval, so the randomness of the workload is not covered" },
   "window": { "start_us": 210000, "end_us": 3210000, "duration_s": 3, "requests": 4 },
   "metrics": {
     "e2e_mean_ms": { "value": 2904.7, "samples": 4, "scope": "cluster" },

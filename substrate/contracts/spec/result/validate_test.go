@@ -80,6 +80,7 @@ func valid() *Result {
 			Metrics:    []string{"tpot_mean_ms", "ttft_p99_ms"},
 		},
 		Revisions: Revisions{Simulator: "v0.16.0", Substrate: "v0.11.0"},
+		Estimate:  Estimate{Replications: 1, NoInterval: NoIntervalStatement},
 		Window:    Window{StartUs: 1_000_000, EndUs: 4_000_000, DurationS: 3, Requests: 2},
 		Metrics: map[string]Figure{
 			"ttft_p99_ms":  {Value: 431.5, Samples: 2, Scope: metrics.ScopeCluster},
@@ -132,8 +133,12 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		msg    string
 	}{
 		{"wrong kind", func(r *Result) { r.Kind = "SimResult" }, "kind", "must be"},
-		{"old schema version", func(r *Result) { r.SchemaVersion = 1 }, "schema_version", "must be 3"},
+		{"old schema version", func(r *Result) { r.SchemaVersion = 1 }, "schema_version", "must be 4"},
 		{"name not a slug", func(r *Result) { r.Name = "Has Spaces" }, "name", "slug"},
+
+		// estimate (DEV-11): one replication states that it has no interval
+		{"no replications", func(r *Result) { r.Estimate = Estimate{} }, "estimate.replications", "must be 1"},
+		{"point estimate silent about its interval", func(r *Result) { r.Estimate.NoInterval = "" }, "estimate.no_interval", "no interval"},
 
 		// engine (SIM-1)
 		{"engine without kind", func(r *Result) { r.Engine.Kind = "" }, "engine.kind", "required"},

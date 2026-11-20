@@ -793,6 +793,21 @@
       ],
       "type": "object"
     },
+    "result.Estimate": {
+      "additionalProperties": false,
+      "properties": {
+        "no_interval": {
+          "type": "string"
+        },
+        "replications": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "replications"
+      ],
+      "type": "object"
+    },
     "result.Figure": {
       "additionalProperties": false,
       "properties": {
@@ -1458,6 +1473,9 @@
         "engine": {
           "$ref": "#/$defs/result.Engine"
         },
+        "estimate": {
+          "$ref": "#/$defs/result.Estimate"
+        },
         "frame": {
           "$ref": "#/$defs/result.Frame"
         },
@@ -1581,7 +1599,7 @@
           "$ref": "#/$defs/result.Runtime"
         },
         "schema_version": {
-          "const": 3
+          "const": 4
         },
         "selected_entries": {
           "$ref": "#/$defs/result.SelectedEntries"
@@ -1593,6 +1611,7 @@
       "required": [
         "data",
         "engine",
+        "estimate",
         "frame",
         "input",
         "kind",
