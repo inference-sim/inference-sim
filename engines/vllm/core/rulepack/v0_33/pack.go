@@ -192,6 +192,13 @@ func Pack() *pack.Pack {
 		// fp8_ds_mla otherwise. SM120 runs a plain-row FlashInfer cache, which no
 		// resolution here describes.
 		//
+		// Known gap at the engine head: the SM100 default is mega attention only with no LoRA
+		// configured (vllm/models/deepseek_v41/nvidia/model.py, "vllm_config.lora_config is None
+		// and DeepseekV4MegaAttnAttention.is_available_for"); a LoRA deployment falls through to
+		// FlashMLA, whose record is fp8_ds_mla. ResolveCacheDType is the substrate contract and
+		// takes no LoRA argument, so a LoRA deployment of this architecture on SM100 resolves to
+		// nvfp4_ds_mla here where the engine runs fp8_ds_mla. Ported from source; no oracle run.
+		//
 		// TPDivides 8 is DeepSeek-V4.1-Flash's configuration, o_groups 8 over 64 heads:
 		// mega attention needs tp to divide both and to leave 8 heads per group
 		// (flash_mla_mega_attn.py is_available_for), which every width dividing 8 does
@@ -1369,10 +1376,16 @@ func modelHasRecurrent(in pack.Input) bool {
 // effectiveBlocks is the block size validate_block_size reads, as the set it may be. This
 // release replaces the stated block size with the smallest page size among the KV cache
 // groups that take part in prefix caching (vllm/v1/engine/core.py). A kv or index cache
-// with its own page size always does; a state cache never does; a window cache does unless
-// bounded replay is on, which needs the V2 model runner and no prefill-context
-// parallelism (vllm/models/deepseek_v41/attention.py). Under prefill-context parallelism
-// it certainly takes part; otherwise either answer is possible.
+// with its own page size always does; a state cache never does (a circular buffer opts out
+// of prefix caching); a window cache does unless bounded replay is on
+// (SlidingWindowManager.prefix_cacheable is "not bounded_replay"). Bounded replay is
+// DeepSeek-V4.1's default (cache_config.swa_bounded_replay), turned off there with
+// prefill-context parallelism and no prefix caching, and on ROCm off a CDNA 3 or 4
+// (vllm/models/deepseek_v41/attention.py); the head has no runner gate left, Model Runner V1
+// being removed. Under prefill-context parallelism it is taken to take part; otherwise either
+// answer is possible. When no group participates the engine takes the minimum over all groups,
+// which a model with only non-participating caches does not reach here (its KV and index
+// caches participate).
 func effectiveBlocks(g *model.Graph, stated, pcp int) []int {
 	sure, window := stated, stated
 	g.EachNode(func(_ string, n model.Node) {

@@ -1017,10 +1017,10 @@ func TestMoEBackendNormalizationMatchSource(t *testing.T) {
 // WindowPagesPerRequest's formula is the engine's per-request admission cap.
 func TestWindowPagesMatchSource(t *testing.T) {
 	root := vllmSource(t)
-	src := readSource(t, root, "vllm", "v1", "kv_cache_interface.py")
+	src := readSource(t, root, "vllm", "v1", "core", "single_type_kv_cache_manager.py")
 	for _, want := range []string{
-		"self.sliding_window - 1 + self.extra_retained_tokens + max_in_flight_tokens,",
-		"return cdiv(num_tokens, self.block_size) + 1",
+		"params.sliding_window\n            - 1\n            + params.extra_retained_tokens\n            + max_in_flight_tokens,\n            max_model_len,",
+		"return cdiv(num_tokens, block_size) + 1",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("the window admission cap changed: %q is gone", want)
@@ -1033,7 +1033,7 @@ func TestWindowPagesMatchSource(t *testing.T) {
 func TestEffectiveBlockMatchSource(t *testing.T) {
 	root := vllmSource(t)
 	src := readSource(t, root, "vllm", "v1", "engine", "core.py")
-	for _, want := range []string{"if g.kv_cache_spec.prefix_cacheable", "vllm_config.cache_config.block_size = min(", "vllm_config.validate_block_size()"} {
+	for _, want := range []string{"g.block_size for g in kv_cache_groups if g.prefix_cacheable", "vllm_config.cache_config.block_size = min(", "else [g.block_size for g in kv_cache_groups]", "vllm_config.validate_block_size()"} {
 		if !strings.Contains(src, want) {
 			t.Errorf("the block-size replacement changed: %q is gone", want)
 		}
@@ -1058,7 +1058,7 @@ func TestCacheDTypeResolutionsMatchSource(t *testing.T) {
 		{mega, "the SM100 requirement", "if not current_platform.is_device_capability_family(100):"},
 		{mega, "the width rule", "if n_heads % tp_size or n_groups % tp_size:"},
 		{mega, "the group rule", "return n_local_heads // n_local_groups == WV_GROUP_SIZE"},
-		{sel, "mega attention as the default", "if DeepseekV4MegaAttnAttention.is_available_for(vllm_config):"},
+		{sel, "mega attention as the default", "vllm_config.lora_config is None and DeepseekV4MegaAttnAttention.is_available_for("},
 	} {
 		if !strings.Contains(c.src, c.text) {
 			t.Errorf("%s changed: %q is gone", c.what, c.text)
