@@ -16,16 +16,61 @@
 package rulepack
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/v0_33"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
 )
 
-// Packs returns a fresh copy of every pack, by version.
+// Patch changes a fresh pack as the model code of one backport does (upstream.Backport): it adds
+// the entries for the backport's architectures and changes nothing a model of another
+// architecture reads.
+type Patch func(*pack.Pack)
+
+// patches are the patches of the backports the Upstream record lists, by commit. The pin has no
+// backport (upstream.Backports), so it has none.
+var patches = map[string]Patch{}
+
+// WithBackports returns p with the patch of each backport in bs applied, in order. A backport
+// with no patch in byCommit is an error, as is a patch for a commit bs does not list: the record
+// and the rules agree, or the build is refused.
+func WithBackports(p *pack.Pack, bs []upstream.Backport, byCommit map[string]Patch) (*pack.Pack, error) {
+	listed := map[string]bool{}
+	for _, b := range bs {
+		listed[b.Commit] = true
+		patch, ok := byCommit[b.Commit]
+		if !ok {
+			return nil, fmt.Errorf("backport %s (%s) has no patch in the rules", b.Commit, b.Subject)
+		}
+		patch(p)
+	}
+	for c := range byCommit {
+		if !listed[c] {
+			return nil, fmt.Errorf("the rules patch commit %s, which the Upstream record does not list as a backport", c)
+		}
+	}
+	return p, nil
+}
+
+// Patches returns the patches of the build's backports, by commit.
+func Patches() map[string]Patch {
+	out := make(map[string]Patch, len(patches))
+	for c, p := range patches {
+		out[c] = p
+	}
+	return out
+}
+
+// Packs returns a fresh copy of every pack, by version, with the build's backports applied.
 func Packs() map[string]*pack.Pack {
+	p, err := WithBackports(v0_33.Pack(), upstream.Backports(), patches)
+	if err != nil {
+		panic("rulepack: " + err.Error())
+	}
 	return map[string]*pack.Pack{
-		v0_33.Version: v0_33.Pack(),
+		v0_33.Version: p,
 	}
 }
 
