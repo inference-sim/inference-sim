@@ -19,7 +19,7 @@ from the requirements.
 | Host and cluster | `lib/gpu_profiles.yaml` (environment, Docker or Kubernetes) | the runner definition | the runner definition |
 
 Note 1. Of the 7,795 rows, 218 have an image tag that is a bare 40-digit commit, which is what
-`ledger/vllmperf.ImageCommit` accepts. Another 3,091 name a full commit with a suffix
+`ImageCommit` in `ledger/vllmperf/vllmperf.go` accepts. Another 3,091 name a full commit with a suffix
 (`<sha>-x86_64`, 2,015 rows; `nightly-<sha>`, 1,076 rows) and are left out as `no_commit_in_image`.
 Rows tagged `<sha>-rocm100` or `<sha>-rocm` (2,580) and `<sha>-v0.33.0` or `<sha>-v0.31.0` (234) also
 name a commit. 1,153 rows are tagged `nightly`, and about 500 more carry a release, branch, build or
