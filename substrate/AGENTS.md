@@ -53,6 +53,9 @@ go run ./tools/prcheck docrefs
   the command), when an engine's `code_paths.json` changes. The tables are regenerated from the
   engine's pinned release by `tools/codepaths/regen.py`. This repository names no path of an
   engine module (X7).
+- The registry's copy of each engine's kernel-implementation table, with
+  `tools/kernelimpls/export_kernel_impls.py` (its docstring gives the command), when an engine's
+  `kernel_impls.json` changes.
 - The issue the change closes, named on a `Closes` line; an issue cited as a gap stays open until
   the change that removes its last citation (X28).
 
@@ -279,7 +282,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: Operator-level gates in blis-substrate
 - **VAL-7** (new; target ci by M2) A coefficient is a measured constant of a law the kernel evaluates, not a correction for one model.
   - `new`, pull_request: Ratchet test
-- **VAL-8** (new; target ci by M2) A lookup matches a coefficient only for the exact kernel implementation that runs.
+- **VAL-8** (partial; target ci by M2) A lookup matches a coefficient only for the exact kernel implementation that runs.
   - `new`, pull_request: The cost model's lookup, which has no fallback to a sibling implementation
   - `new`, pull_request: A test that lists entries matching neither condition, which are removed in the next substrate release
 - **VAL-9** (new; target ci by M2) A coefficient states what its measurement includes: device time only or host issue time as well, captured or eager execution, and which harness collected it.
