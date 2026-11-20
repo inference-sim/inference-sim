@@ -154,6 +154,14 @@
           ],
           "issue": "inference-sim/blis-vllm#151",
           "note": "the Triton kernel that dequantizes an FP8 KV cache before trtllm-gen prefill"
+        },
+        {
+          "call": "BatchPrefillWithCausalBidirectionalRangesWrapper",
+          "primitives": [
+            "attention.prefill"
+          ],
+          "issue": "inference-sim/inference-sim#2290",
+          "note": "the prefill wrapper that serves a multimodal model's bidirectional mm-prefix ranges (vllm/v1/attention/backends/flashinfer.py, _native_mm_prefix)"
         }
       ]
     },
@@ -191,6 +199,10 @@
         }
       }
     },
+    "FLASHINFER_TS": {
+      "status": "gap",
+      "issue": "inference-sim/inference-sim#2290"
+    },
     "FLASHMLA": {
       "status": "gap",
       "issue": "inference-sim/blis-vllm#151"
@@ -222,13 +234,12 @@
         "flash_attn_supports_quant_query_input": "a selection predicate",
         "flash_attn_supports_kv_cache_dtype": "a selection predicate",
         "is_fa_version_supported": "a selection predicate",
-        "uses_fa4_hd256_kernel": "a selection predicate",
-        "FA4_HD256_PAGE_SIZE": "a constant",
         "scalar_to_ssa": "a CuTe DSL helper",
         "ssa_to_scalar": "a CuTe DSL helper",
         "reshape_and_cache_flash": "writes the KV cache; not an attention primitive",
         "cp_lse_ag_out_rs": "the decode-context-parallel all-gather and reduce-scatter of partial outputs: a collective",
-        "dcp_a2a_lse_reduce": "the decode-context-parallel all-to-all of partial outputs: a collective"
+        "dcp_a2a_lse_reduce": "the decode-context-parallel all-to-all of partial outputs: a collective",
+        "BIN_BATCH_SEARCH_THRESH": "a constant: the batch size above which FA4 searches bins"
       },
       "jit": {
         "_load_q_range": {
@@ -284,6 +295,10 @@
       "status": "gap",
       "issue": "inference-sim/blis-vllm#151"
     },
+    "KIMI_K3_KV_BALANCED_MLA": {
+      "status": "gap",
+      "issue": "inference-sim/inference-sim#2290"
+    },
     "MINIMAX_M3_SPARSE": {
       "status": "gap",
       "issue": "inference-sim/blis-vllm#151"
@@ -328,6 +343,10 @@
       "status": "not_cuda",
       "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
     },
+    "ROCM_RDNA_ATTN": {
+      "status": "not_cuda",
+      "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
+    },
     "ROCM_SEGMENTED_ATTN": {
       "status": "not_cuda",
       "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
@@ -349,7 +368,8 @@
       "not_kernels": {
         "triton_reshape_and_cache_flash": "writes the KV cache; not an attention primitive",
         "triton_reshape_and_cache_flash_per_token_head_quant": "writes the KV cache; not an attention primitive",
-        "MAX_3D_QUERY_LEN": "a constant"
+        "MAX_3D_QUERY_LEN": "a constant",
+        "init_rht_signs": "pre-builds the sign table of the INT4 KV cache's Hadamard transform; runs no attention kernel"
       }
     },
     "TRITON_ATTN_DIFFKV": {
