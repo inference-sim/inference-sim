@@ -17,10 +17,10 @@ func bundle() Bundle {
 	return Bundle{
 		Scenario: &scenario.Scenario{
 			Kind: "Scenario", Name: "granite-230b-h200-tp8",
-			Model:         "granite-5-230b",
-			Coefficients:  []string{"cost-model-primitives-h200"},
-			EngineVersion: "1.0.0",
-			Cluster:       scenario.Cluster{Hardware: "h200", Nodes: 1, GPUsPerNode: 8},
+			Model:        "granite-5-230b",
+			Coefficients: []string{"cost-model-primitives-h200"},
+			Engine:       &scenario.Engine{Kind: "vllm", Version: "1.0.0"},
+			Cluster:      scenario.Cluster{Hardware: "h200", Nodes: 1, GPUsPerNode: 8},
 		},
 		Deployment: &deployment.Deployment{
 			Kind: "Deployment", Name: "granite-230b-h200-tp8",
@@ -96,7 +96,7 @@ func TestValidBundlePasses(t *testing.T) {
 // looking like a pass: a version with no engine must say so.
 func TestUnknownEngineVersionIsReported(t *testing.T) {
 	b := bundle()
-	b.Scenario.EngineVersion = "99.0.0"
+	b.Scenario.Engine.Version = "99.0.0"
 	rep := Validate(b)
 	if len(ruleFindings(rep)) == 0 {
 		t.Fatal("an unknown engine version produced no finding, which is indistinguishable from a checked pass")

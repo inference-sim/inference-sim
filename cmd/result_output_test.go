@@ -303,7 +303,7 @@ func TestResult_InputRecordsWhatTheRunWasGiven(t *testing.T) {
 		t.Errorf("input.policy = %v, want the bundle verbatim", in.Policy)
 	}
 	if r.Revisions.Simulator == "" || r.Revisions.Substrate == "" || r.Engine.Kind != "vllm" ||
-		r.Engine.Version != in.Scenario.EngineRelease() {
+		r.Engine.Version != builtEngines()["vllm"].Version || r.Engine.Commit != builtEngines()["vllm"].Commit {
 		t.Errorf("revisions %+v, engine %+v", r.Revisions, r.Engine)
 	}
 	if r.Data.Catalog.Hash == "" || r.Data.Registry.Hash == "" || r.Data.Build == "" {

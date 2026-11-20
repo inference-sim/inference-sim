@@ -30,7 +30,7 @@ kind: Scenario
 name: granite-230b-h200-tp8
 model: granite-5-230b
 coefficients: [cost-model-primitives-h200]
-engine_version: "0.29.0"
+engine: {kind: vllm}
 workload:
   shape: chatbot
 cluster:
@@ -75,13 +75,41 @@ cluster:
 // the strict loader, and the loaded scenario must validate. A tag error anywhere in the
 // nested trace reference would leave a zero value the type system cannot catch, which is
 // the one failure this package exists to rule out.
+// A scenario states no engine release (LIF-6): the build fixes it, so the key is an unknown
+// field, written either way a scenario could carry it.
+func TestLoadScenarioRefusesAnEngineRelease(t *testing.T) {
+	const tail = `
+workload:
+  shape: chatbot
+cluster:
+  hardware: h200
+  nodes: 1
+  gpus_per_node: 8
+`
+	head := "kind: Scenario\nname: s\nmodel: granite-5-230b\ncoefficients: [cost-model-primitives-h200]\n"
+	for name, engine := range map[string]string{
+		"inline":     "engine: {kind: vllm, version: \"0.33.0\"}\n",
+		"block":      "engine:\n  kind: vllm\n  version: \"0.33.0\"\n",
+		"top level":  "engine: {kind: vllm}\nengine_version: \"0.33.0\"\n",
+		"top-only-v": "engine_version: \"0.33.0\"\n",
+	} {
+		_, err := LoadScenario(write(t, "s.yaml", head+engine+tail))
+		if err == nil || !strings.Contains(err.Error(), "not found in type") {
+			t.Errorf("%s: err = %v, want the unknown-field refusal", name, err)
+		}
+	}
+	if _, err := LoadScenario(write(t, "s.yaml", head+"engine: {kind: vllm}\n"+tail)); err != nil {
+		t.Errorf("a scenario naming the kind alone: %v", err)
+	}
+}
+
 func TestLoadScenarioWithTraceBinding(t *testing.T) {
 	path := write(t, "s.yaml", `
 kind: Scenario
 name: granite-230b-h200-replay
 model: granite-5-230b
 coefficients: [cost-model-primitives-h200]
-engine_version: "0.29.0"
+engine: {kind: vllm}
 workload:
   trace:
     data: traces/agentic-run.csv
@@ -213,7 +241,7 @@ kind: Scenario
 name: typo
 model: granite-5-230b
 coefficients: [c]
-engine_version: "0.29.0"
+engine: {kind: vllm}
 workload:
 `+tc.traceYAML+`
 cluster:

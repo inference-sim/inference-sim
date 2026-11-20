@@ -258,7 +258,7 @@ func TestV41BundleValidates(t *testing.T) {
 	g := v41(t)
 	s := &scenario.Scenario{
 		Kind: "Scenario", Name: "v41", Model: "deepseek-v4.1-flash",
-		Coefficients: []string{"c"}, EngineVersion: "1.0.0",
+		Coefficients: []string{"c"}, Engine: &scenario.Engine{Kind: "vllm", Version: "1.0.0"},
 		Cluster: scenario.Cluster{Hardware: "h200", Nodes: 1, GPUsPerNode: 8},
 	}
 	d := &deployment.Deployment{Kind: "Deployment", Name: "v41", Pools: []deployment.Pool{{

@@ -201,6 +201,8 @@ func markRerun(r *result.Result) {
 		{"simulator", old.Revisions.Simulator, r.Revisions.Simulator},
 		{"substrate", old.Revisions.Substrate, r.Revisions.Substrate},
 		{"router", old.Revisions.Router, r.Revisions.Router},
+		{"llm_d", old.Revisions.LLMD, r.Revisions.LLMD},
+		{"engine", old.Engine.Commit, r.Engine.Commit},
 		{"engine_module", old.Revisions.EngineModule, r.Revisions.EngineModule},
 		{"catalog", old.Data.Catalog.CombinedHash, r.Data.Catalog.CombinedHash},
 		{"registry", old.Data.Registry.CombinedHash, r.Data.Registry.CombinedHash},

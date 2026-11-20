@@ -12,7 +12,6 @@ kind: Scenario
 name: kimi-k3-h100-nospec
 engine:
   kind: vllm
-  version: "0.33.0"
 
 model: kimi-k3
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

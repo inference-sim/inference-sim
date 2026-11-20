@@ -55,7 +55,7 @@ func run(t *testing.T, d *deployment.Deployment, g *model.Graph) *validate.Probl
 	}
 	s := &scenario.Scenario{
 		Kind: "Scenario", Name: "t", Model: "moe-224e",
-		Coefficients: []string{"c"}, EngineVersion: Version,
+		Coefficients: []string{"c"}, Engine: &scenario.Engine{Kind: "vllm", Version: Version},
 		Cluster: scenario.Cluster{Hardware: "h200", Nodes: nodes, GPUsPerNode: 8},
 	}
 	// The node size reaches the rules as the cluster's resolved packaging, as

@@ -7,7 +7,7 @@
 #     --workload-spec examples/capabilities/spill-workload.yaml --horizon 25000000
 kind: Scenario
 name: obj-tier
-engine: {kind: vllm, version: "0.33.0"}
+engine: {kind: vllm}
 
 model: llama-3.1-70b-instruct
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-offload-tiers]

@@ -49,7 +49,7 @@ type Bundle struct {
 	Evaluation     *evaluation.Run
 
 	// Engine looks up the engine's reading of the documents this schema holds unopened, for
-	// the scenario's engine_version: the caller's, from the engine module that owns the
+	// the engine release the scenario runs under: the caller's, from the engine module that owns the
 	// release, for this schema registers none. It is required whenever the bundle carries a
 	// scenario: a pool's engine block is opaque here, so its checks are the engine's, and a
 	// bundle validated with none would pass unchecked. A checker that answers for another

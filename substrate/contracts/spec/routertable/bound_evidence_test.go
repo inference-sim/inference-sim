@@ -337,7 +337,7 @@ func TestTheBoundsNameTheDeploymentTheSweepRan(t *testing.T) {
 			decode = par(p)
 		}
 	}
-	engine, fabric := docs[0]["engine_version"].(string), docs[0]["cluster"].(map[string]any)["fabric"].(string)
+	fabric := docs[0]["cluster"].(map[string]any)["fabric"].(string)
 	for name, e := range loadCommitted(t) {
 		if e.Bound == nil {
 			continue
@@ -350,9 +350,9 @@ func TestTheBoundsNameTheDeploymentTheSweepRan(t *testing.T) {
 			if !strings.Contains(text, "\nmodel: "+g.Model+"\n") || !strings.Contains(text, "  hardware: "+g.Hardware+"\n") {
 				t.Errorf("%s ratios[%d]: the regime names %s on %s, which scenario.yaml does not run", name, i, g.Model, g.Hardware)
 			}
-			if g.EngineVersion != engine || g.Fabric != fabric || g.Prefill != prefill || g.Decode != decode {
-				t.Errorf("%s ratios[%d]: the regime names engine %s, fabric %s, prefill %+v, decode %+v; scenario.yaml runs %s, %s, %+v, %+v",
-					name, i, g.EngineVersion, g.Fabric, g.Prefill, g.Decode, engine, fabric, prefill, decode)
+			if g.Fabric != fabric || g.Prefill != prefill || g.Decode != decode {
+				t.Errorf("%s ratios[%d]: the regime names fabric %s, prefill %+v, decode %+v; scenario.yaml runs %s, %+v, %+v",
+					name, i, g.Fabric, g.Prefill, g.Decode, fabric, prefill, decode)
 			}
 		}
 	}

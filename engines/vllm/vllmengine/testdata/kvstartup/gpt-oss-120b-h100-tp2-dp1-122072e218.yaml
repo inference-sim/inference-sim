@@ -1,7 +1,7 @@
 # A scenario of the dashboard's scenario writer for one fit unit's recorded run (counts only are kept of the units).
 kind: Scenario
 name: gpt-oss-120b-h100-tp2-dp1-122072e218
-engine: {kind: vllm, version: 0.33.0}
+engine: {kind: vllm}
 model: gpt-oss-120b
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
 cluster: {hardware: h100, gpus_per_node: 8, nodes: 1}

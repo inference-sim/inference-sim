@@ -172,14 +172,23 @@ func Read(path string) (*Stack, error) {
 	if err != nil {
 		return nil, err
 	}
+	s, err := Parse(b)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return s, nil
+}
+
+// Parse decodes the bytes of a stack.json, refusing unknown keys.
+func Parse(b []byte) (*Stack, error) {
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	var s Stack
 	if err := dec.Decode(&s); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, err
 	}
 	if s.Kind != Kind {
-		return nil, fmt.Errorf("%s: kind %q, want %q", path, s.Kind, Kind)
+		return nil, fmt.Errorf("kind %q, want %q", s.Kind, Kind)
 	}
 	return &s, nil
 }

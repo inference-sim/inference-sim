@@ -10,8 +10,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
 )
 
 // The census of X19/VLM-1 over the committed fixtures (kerneltests/testdata/direct and
@@ -34,8 +32,7 @@ import (
 // does not build (Model.V032Pieces, hybrid KV groups, blis-vllm#7).
 //
 // A v0.32.0 fixture with no block_size line fails the test: the census would otherwise skip it
-// without counting it. A fixture's release is read as the kernel reads it (Scenario.EngineRelease),
-// so one that writes engine: {kind, version} is counted.
+// without counting it. A fixture is counted when it states engine: {kind: vllm}.
 
 // statedDiffers are the stated fixtures whose resolved size differs from the stated one, keyed by
 // path under kerneltests/testdata, with the reason. Every one is a minimax-m2.5 deployment on
@@ -134,8 +131,7 @@ func TestCensusSlicesPartitionTheFixtures(t *testing.T) {
 func TestBlockSizeResolutionOverTheCensusFixtures(t *testing.T) {
 	stated := regexp.MustCompile(`(?m)^# block_size (\d+): stated by the run\.$`)
 	strip := regexp.MustCompile(`(?m)^\s*block_size:\s*\d+\s*\n`)
-	v := regexp.QuoteMeta(vllm.Version)
-	release := regexp.MustCompile(`(?m)^(?:engine_version:\s*"?` + v + `"?|\s+version:\s*"?` + v + `"?)\s*$`)
+	release := regexp.MustCompile(`(?m)^engine:\s*\{kind:\s*vllm\}\s*$`)
 	modelOf := regexp.MustCompile(`(?m)^model: (\S+)`)
 	var files []string
 	for _, d := range []string{"direct", "aisimulate"} {

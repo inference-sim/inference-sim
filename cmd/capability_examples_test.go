@@ -155,20 +155,21 @@ func withoutOffload(t *testing.T, file string) string {
 	return exampleVariant(t, file, raw[i:], "\n")
 }
 
-// Engine selection (SIM-1): the scenario names `engine: {kind, version}` and the build runs the
-// release it names. An older vLLM release, an unregistered kind and the retired engine_version
-// field are each refused by name, with the release the build does run.
-func TestCapabilityExample_EngineIsSelectedByKindAndVersion(t *testing.T) {
+// Engine selection (SIM-1, LIF-6): the scenario names `engine: {kind}` and the build runs the
+// release and commit it fixes. A stated version, an unregistered kind and the retired
+// engine_version field are each refused by name.
+func TestCapabilityExample_EngineIsSelectedByKind(t *testing.T) {
 	t.Parallel()
 	args := []string{"run", "--scenario", "session-load-only.yaml", "--num-instances", "4", "--rate", "20", "--num-requests", "8"}
 	ok := capExampleRun(t, capExamplesDir, args...)
-	if e, _ := ok.doc["engine"].(map[string]any); e["version"] != "0.33.0" || e["kind"] != "vllm" {
-		t.Errorf("the Result names engine %v, want vllm 0.33.0", e)
+	built := builtEngines()["vllm"]
+	if e, _ := ok.doc["engine"].(map[string]any); e["kind"] != "vllm" || e["version"] != built.Version || e["commit"] != built.Commit {
+		t.Errorf("the Result names engine %v, want vllm %s at %s", e, built.Version, built.Commit)
 	}
-	const engine = `engine: {kind: vllm, version: "0.33.0"}`
+	const engine = `engine: {kind: vllm}`
 	for _, tc := range []struct{ name, edit, want string }{
-		{"older vLLM", `engine: {kind: vllm, version: "0.32.0"}`, "this build runs vllm 0.33.0"},
-		{"unregistered kind", `engine: {kind: tensorrt-llm, version: "0.5.23"}`, "this build runs the kinds sglang, vllm"},
+		{"a stated version", `engine: {kind: vllm, version: "0.33.0"}`, "field engine.version"},
+		{"unregistered kind", `engine: {kind: tensorrt-llm}`, "this build runs the kinds sglang, vllm"},
 		{"retired field", engine + "\nengine_version: \"0.33.0\"", "engine_version"},
 	} {
 		stderr := capExampleFails(t, exampleVariant(t, "session-load-only.yaml", engine, tc.edit), args...)

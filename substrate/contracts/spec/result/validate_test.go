@@ -30,7 +30,7 @@ func valid() *Result {
 		Kind:          Kind,
 		SchemaVersion: SchemaVersion,
 		Name:          "llama-h100-tp2.c64-s1",
-		Engine:        Engine{Kind: "vllm", Version: "0.32.0"},
+		Engine:        Engine{Kind: "vllm", Version: "0.32.0", Commit: strings.Repeat("a", 40)},
 		Data: Data{
 			Catalog:  DataSource{Source: SourceEmbedded, Hash: hashA, CombinedHash: hashA},
 			Registry: DataSource{Source: SourcePath, Hash: hashB, CombinedHash: hashB},
@@ -47,7 +47,7 @@ func valid() *Result {
 			Scenario: scenario.Scenario{
 				Kind: "Scenario", Name: "llama-3.1-8b-on-h100", Model: "llama-3.1-8b-instruct",
 				Coefficients: []string{"cost-model-primitives"},
-				Engine:       &scenario.Engine{Kind: "vllm", Version: "0.32.0"},
+				Engine:       &scenario.Engine{Kind: "vllm"},
 				Cluster:      scenario.Cluster{Hardware: "h100", Nodes: 1, GPUsPerNode: 8},
 			},
 			Deployment: deployment.Deployment{
@@ -138,11 +138,8 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		// engine (SIM-1)
 		{"engine without kind", func(r *Result) { r.Engine.Kind = "" }, "engine.kind", "required"},
 		{"engine without version", func(r *Result) { r.Engine.Version = "" }, "engine.version", "required"},
-		{"engine other than the scenario's release", func(r *Result) { r.Engine.Version = "0.31.0" }, "engine.version", "scenario names"},
+		{"engine commit not a full SHA", func(r *Result) { r.Engine.Commit = "b582592" }, "engine.commit", "40 lowercase hex"},
 		{"engine other than the scenario's kind", func(r *Result) { r.Engine.Kind = "sglang" }, "engine.kind", "input.scenario.engine.kind"},
-		{"engine other than the deprecated engine_version", func(r *Result) {
-			r.Input.Scenario.Engine, r.Input.Scenario.EngineVersion = nil, "0.31.0"
-		}, "engine.version", "scenario names"},
 
 		// data (design §3.3, X8)
 		{"catalog without source", func(r *Result) { r.Data.Catalog.Source = "" }, "data.catalog.source", "required"},
@@ -459,16 +456,6 @@ func TestFullResultPasses(t *testing.T) {
 	}
 	if p := r.Validate(); !p.OK() {
 		t.Fatalf("a full result must validate:\n%s", p.Error())
-	}
-}
-
-// TestDeprecatedEngineVersionStillReads: until M4 a scenario may name its release only by
-// engine_version (plan §3.3); the Result's engine must equal it.
-func TestDeprecatedEngineVersionStillReads(t *testing.T) {
-	r := valid()
-	r.Input.Scenario.Engine, r.Input.Scenario.EngineVersion = nil, "0.32.0"
-	if p := r.Validate(); !p.OK() {
-		t.Fatalf("a scenario with only engine_version must validate:\n%s", p.Error())
 	}
 }
 

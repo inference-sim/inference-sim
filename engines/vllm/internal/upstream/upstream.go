@@ -6,7 +6,7 @@
 package upstream
 
 const (
-	// Version is the release's version, as a scenario's engine.version states it.
+	// Version is the release's version, as stack.json and the Result's engine.version state it.
 	Version = "0.33.0"
 	// Tag is the release's git tag.
 	Tag = "v0.33.0"

@@ -14,7 +14,7 @@ const bundleScenario = `kind: Scenario
 name: granite-230b-h200-tp8
 model: granite-5-230b
 coefficients: [cost-model-primitives-h200]
-engine_version: "0.32.0"
+engine: {kind: vllm}
 workload:
   shape: chatbot
 cluster:
@@ -42,7 +42,7 @@ func TestLoadBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadBundle: %v", err)
 	}
-	if sc.Name != "granite-230b-h200-tp8" || sc.EngineVersion != "0.32.0" || sc.Cluster.Hardware != "h200" {
+	if sc.Name != "granite-230b-h200-tp8" || sc.Engine == nil || sc.Engine.Kind != "vllm" || sc.Cluster.Hardware != "h200" {
 		t.Errorf("scenario did not parse: %+v", sc)
 	}
 	if len(dep.Pools) != 1 || dep.Pools[0].Parallel.TP != 8 {

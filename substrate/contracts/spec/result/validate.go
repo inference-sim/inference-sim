@@ -20,6 +20,7 @@ var (
 	slug       = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 	lowerHex64 = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	releaseTag = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+	commitSHA  = regexp.MustCompile(`^[0-9a-f]{40}$`)
 )
 
 // Validate performs field-level validation of a Result on its own: its shape, its
@@ -92,10 +93,10 @@ func (r *Result) validateEngine(p *validate.Problems) {
 	if e.Version == "" {
 		p.Field("engine.version", "required: the upstream release the engine models")
 	}
-	sc := r.Input.Scenario
-	if v := sc.EngineRelease(); v != "" && e.Version != "" && v != e.Version {
-		p.Field("engine.version", "is %q but the scenario names release %q: the run models the release its scenario names", e.Version, v)
+	if e.Commit != "" && !commitSHA.MatchString(e.Commit) {
+		p.Field("engine.commit", "must be the full upstream commit the engine models, 40 lowercase hex digits, got %q", e.Commit)
 	}
+	sc := r.Input.Scenario
 	if sc.Engine != nil && sc.Engine.Kind != "" && e.Kind != "" && sc.Engine.Kind != e.Kind {
 		p.Field("engine.kind", "is %q but input.scenario.engine.kind is %q", e.Kind, sc.Engine.Kind)
 	}
@@ -537,7 +538,7 @@ func (v Revisions) validate(p *validate.Problems) {
 func (r *Result) revisionOf(component string) (string, bool) {
 	v := map[string]string{
 		"simulator": r.Revisions.Simulator, "substrate": r.Revisions.Substrate,
-		"router": r.Revisions.Router, "engine_module": r.Revisions.EngineModule,
+		"router": r.Revisions.Router, "llm_d": r.Revisions.LLMD, "engine": r.Engine.Commit, "engine_module": r.Revisions.EngineModule,
 		"catalog": r.Data.Catalog.CombinedHash, "registry": r.Data.Registry.CombinedHash,
 	}
 	s, known := v[component]
@@ -560,10 +561,10 @@ func (r *Result) validateRerun(p *validate.Problems) {
 		at := fmt.Sprintf("revision_changes[%d]", i)
 		own, ok := r.revisionOf(c.Component)
 		known := c.Component == "simulator" || c.Component == "substrate" || c.Component == "router" ||
-			c.Component == "engine_module" || c.Component == "catalog" || c.Component == "registry"
+			c.Component == "llm_d" || c.Component == "engine" || c.Component == "engine_module" || c.Component == "catalog" || c.Component == "registry"
 		switch {
 		case !known:
-			p.Field(at+".component", "%q is not simulator, substrate, router, engine_module, catalog or registry", c.Component)
+			p.Field(at+".component", "%q is not simulator, substrate, router, llm_d, engine, engine_module, catalog or registry", c.Component)
 		case seen[c.Component]:
 			p.Field(at+".component", "%q is listed twice", c.Component)
 		case c.From == c.To:

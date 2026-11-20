@@ -16,7 +16,7 @@ import (
 
 const replayScenario = `kind: Scenario
 name: replay
-engine_version: "%s"
+engine: {kind: vllm}
 model: deepseek-v4.1-flash
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
 cluster:
@@ -46,17 +46,17 @@ pools:
       speculative_config: {method: dspark, num_speculative_tokens: 5}
 %s`
 
-// openReplay opens DeepSeek-V4.1-Flash on H200 at tensor parallel 8 under the given release, with
+// openReplay opens DeepSeek-V4.1-Flash on H200 at tensor parallel 8 with
 // extra lines in its engine block.
-func openReplay(t testing.TB, release, extra string) (*Model, error) {
+func openReplay(t testing.TB, extra string) (*Model, error) {
 	t.Helper()
-	return openReplayAt(t, release, 8, 1, extra)
+	return openReplayAt(t, 8, 1, extra)
 }
 
-func openReplayAt(t testing.TB, release string, tp, dp int, extra string) (*Model, error) {
+func openReplayAt(t testing.TB, tp, dp int, extra string) (*Model, error) {
 	t.Helper()
 	dir := t.TempDir()
-	body := fmt.Sprintf(replayScenario, release, tp, dp, extra)
+	body := fmt.Sprintf(replayScenario, tp, dp, extra)
 	if err := os.WriteFile(filepath.Join(dir, "replay.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -65,11 +65,11 @@ func openReplayAt(t testing.TB, release string, tp, dp int, extra string) (*Mode
 	return OpenPool("replay.yaml", r, 0)
 }
 
-func mustReplay(t testing.TB, release, extra string) *Model {
+func mustReplay(t testing.TB, extra string) *Model {
 	t.Helper()
-	m, err := openReplay(t, release, extra)
+	m, err := openReplay(t, extra)
 	if err != nil {
-		t.Fatalf("%s %q: %v", release, extra, err)
+		t.Fatalf("%q: %v", extra, err)
 	}
 	return m
 }
@@ -94,7 +94,7 @@ const replayOff = "      swa_bounded_replay: false\n"
 // A prefill chunk is cheaper than the same chunk on the pool that runs every layer on every token,
 // by the layers after the last KV layer on the rows they do not run.
 func TestAPrefillChunkIsPricedOnTheTrailingRowsOfTheLayersAfterTheLastKVLayer(t *testing.T) {
-	trimmed, full := mustReplay(t, "0.33.0", ""), mustReplay(t, "0.33.0", replayOff)
+	trimmed, full := mustReplay(t, ""), mustReplay(t, replayOff)
 	big := []ReqShape{replayChunk(8192, 0)}
 	a, b := trimmed.StepTimeOfShapes(big), full.StepTimeOfShapes(big)
 	if a >= b || float64(a) > 0.85*float64(b) {
@@ -106,7 +106,7 @@ func TestAPrefillChunkIsPricedOnTheTrailingRowsOfTheLayersAfterTheLastKVLayer(t 
 // the chunk, and a long context behind the chunk costs the kept rows far less than it costs the
 // layers run on every row.
 func TestTheSavingGrowsWithTheChunkAndTheContextBehindIt(t *testing.T) {
-	trimmed, full := mustReplay(t, "0.33.0", ""), mustReplay(t, "0.33.0", replayOff)
+	trimmed, full := mustReplay(t, ""), mustReplay(t, replayOff)
 	price := func(m *Model, c ReqShape) int64 { return m.StepTimeOfShapes([]ReqShape{c}) }
 	saved := func(c ReqShape) float64 { return float64(price(full, c) - price(trimmed, c)) }
 	s2k, s8k := saved(replayChunk(2048, 0)), saved(replayChunk(8192, 0))
@@ -126,7 +126,7 @@ func TestTheSavingGrowsWithTheChunkAndTheContextBehindIt(t *testing.T) {
 // A request that has a cached prefix schedules the hit's 128-token rewind and the tokens after it,
 // and keeps the last 128 of those; each request in a step keeps its own.
 func TestACachedPrefixRequestKeepsItsOwnLastRows(t *testing.T) {
-	trimmed, full := mustReplay(t, "0.33.0", ""), mustReplay(t, "0.33.0", replayOff)
+	trimmed, full := mustReplay(t, ""), mustReplay(t, replayOff)
 	hit := replayChunk(128+3000, 300_000-128)
 	small := replayChunk(90, 0)
 	step := []ReqShape{hit, small}
@@ -149,7 +149,7 @@ func TestACachedPrefixRequestKeepsItsOwnLastRows(t *testing.T) {
 // A decode step keeps every row of every request, so the replay changes nothing for it. A small
 // chunk that a piecewise graph covers, below the trim threshold, keeps the whole batch too.
 func TestADecodeStepAndASmallGraphedStepAreNotTrimmed(t *testing.T) {
-	trimmed, full := mustReplay(t, "0.33.0", ""), mustReplay(t, "0.33.0", replayOff)
+	trimmed, full := mustReplay(t, ""), mustReplay(t, replayOff)
 	for name, step := range map[string][]ReqShape{
 		"sixteen decodes":                   replayDecodes(16),
 		"a 300-token chunk (graphed)":       {replayChunk(300, 0)},
@@ -170,19 +170,19 @@ func TestADecodeStepAndASmallGraphedStepAreNotTrimmed(t *testing.T) {
 // one large size launches the 128 kept rows at that size, which costs more than the default
 // sizes' 128, and a size above max_num_batched_tokens is refused as vLLM refuses it.
 func TestTheStatedReplayGraphSizesPadTheTrimmedBatch(t *testing.T) {
-	def := mustReplay(t, "0.33.0", "")
-	padded := mustReplay(t, "0.33.0", "      compilation_config: {decoder_replay_cudagraph_capture_sizes: [4096]}\n")
+	def := mustReplay(t, "")
+	padded := mustReplay(t, "      compilation_config: {decoder_replay_cudagraph_capture_sizes: [4096]}\n")
 	step := []ReqShape{replayChunk(8192, 0)}
 	if a, b := padded.StepTimeOfShapes(step), def.StepTimeOfShapes(step); a <= b {
 		t.Errorf("rows padded to a 4096-row graph price %d us, to the default 128 %d us", a, b)
 	}
 	// Rows beyond the largest size run eager, at their own size: a size no batch fits prices as
 	// the default sizes' largest does not.
-	small := mustReplay(t, "0.33.0", "      compilation_config: {decoder_replay_cudagraph_capture_sizes: [64]}\n")
+	small := mustReplay(t, "      compilation_config: {decoder_replay_cudagraph_capture_sizes: [64]}\n")
 	if a, b := small.StepTimeOfShapes(step), def.StepTimeOfShapes(step); a != b {
 		t.Errorf("128 kept rows with only a 64-row graph price %d us, in a 128-row graph %d us; both launch 128 rows", a, b)
 	}
-	_, err := openReplay(t, "0.33.0", "      compilation_config: {decoder_replay_cudagraph_capture_sizes: [16384]}\n")
+	_, err := openReplay(t, "      compilation_config: {decoder_replay_cudagraph_capture_sizes: [16384]}\n")
 	if err == nil || !strings.Contains(err.Error(), "decoder_replay_cudagraph_capture_sizes") {
 		t.Errorf("a size above max_num_batched_tokens: %v", err)
 	}
@@ -192,15 +192,15 @@ func TestTheStatedReplayGraphSizesPadTheTrimmedBatch(t *testing.T) {
 // data-parallel pool, whose replay batch is agreed across ranks, and a pool that turns SWA bounded
 // replay off.
 func TestAPoolThatCannotReplayDisclosesWhy(t *testing.T) {
-	on := mustReplay(t, "0.33.0", "")
+	on := mustReplay(t, "")
 	if got := strings.Join(on.EngineAssumptions(), "\n"); !strings.Contains(got, "decoder_replay = on") {
 		t.Errorf("a pool that replays does not say so: %s", got)
 	}
-	no := mustReplay(t, "0.33.0", replayOff)
+	no := mustReplay(t, replayOff)
 	if got := strings.Join(no.EngineAssumptions(), "\n"); !strings.Contains(got, "decoder_replay = off: SWA bounded replay is off") {
 		t.Errorf("a pool with bounded replay off does not say why: %s", got)
 	}
-	dp, err := openReplayAt(t, "0.33.0", 4, 2, "")
+	dp, err := openReplayAt(t, 4, 2, "")
 	if err != nil {
 		t.Skipf("a data-parallel V4.1 pool does not open here: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestAPoolThatCannotReplayDisclosesWhy(t *testing.T) {
 // Pricing a step leaves the caller's requests as they were: the model states the rows on a batch of
 // its own.
 func TestPricingAStepDoesNotChangeTheCallersRequests(t *testing.T) {
-	m := mustReplay(t, "0.33.0", "")
+	m := mustReplay(t, "")
 	step := []ReqShape{replayChunk(4096, 0), replayChunk(60, 0)}
 	want := append([]ReqShape(nil), step...)
 	first := m.StepTimeOfShapes(step)
@@ -231,8 +231,8 @@ func TestPricingAStepDoesNotChangeTheCallersRequests(t *testing.T) {
 // replays the 752 graph and keeps the whole batch, and one more token replays the 768 graph and trims
 // (model_state.py:455-460).
 func TestAPiecewiseStepTrimsByTheSizeOfTheGraphItIsPaddedTo(t *testing.T) {
-	trimmed := mustReplay(t, "0.33.0", "      max_cudagraph_capture_size: 2048\n")
-	full := mustReplay(t, "0.33.0", "      max_cudagraph_capture_size: 2048\n"+replayOff)
+	trimmed := mustReplay(t, "      max_cudagraph_capture_size: 2048\n")
+	full := mustReplay(t, "      max_cudagraph_capture_size: 2048\n"+replayOff)
 	for _, c := range []struct {
 		tokens int
 		trims  bool

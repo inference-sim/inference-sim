@@ -15,7 +15,7 @@ func scenarioWith(nodes, gpusPerNode int,
 	pools ...deployment.Pool) (*scenario.Scenario, *deployment.Deployment) {
 	return &scenario.Scenario{
 			Kind: "Scenario", Name: "t", Model: "m",
-			Coefficients: []string{"c"}, EngineVersion: "0.29.0",
+			Coefficients: []string{"c"}, Engine: &scenario.Engine{Kind: "vllm", Version: "0.29.0"},
 			Cluster: scenario.Cluster{
 				Hardware: "h", Nodes: nodes, GPUsPerNode: gpusPerNode,
 			},

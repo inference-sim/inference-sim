@@ -127,10 +127,11 @@ func ExampleValidate_problems() {
 }
 
 // ExampleValidate_rules shows an engine problem: the documents are well formed, but the engine
-// version they name would refuse them.
+// release the build runs would refuse them.
 func ExampleValidate_rules() {
 	s := must(contracts.LoadScenario("testdata/examples/scenario.yaml"))
 	d := must(contracts.LoadDeployment("testdata/examples/deployment.yaml"))
+	s.Engine.Version = "0.29.0" // the release the build runs; a scenario states none
 	// --8<-- [start:rules]
 	setEngineKey(&d.Pools[0], "cache_dtype", "fp8_e4m3fn") // not a name the release accepts
 

@@ -6,7 +6,7 @@
 # nominal roce-200g; no H100 deployment records its NIC speed.
 kind: Scenario
 name: deepseek-v4.1-flash-h100-1p1d-dspark5-cpu1t
-engine: {kind: vllm, version: "0.33.0"}
+engine: {kind: vllm}
 
 model: deepseek-v4.1-flash
 # The workload's category and thinking mode select the registry's DSpark acceptance profile for

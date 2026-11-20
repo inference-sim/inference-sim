@@ -72,7 +72,9 @@ func TestTheEngineReleasePricedIsDisclosed(t *testing.T) {
 	declared := func(v string) bool {
 		t.Helper()
 		sc := *in.Scenario
-		sc.EngineVersion = v
+		e := *sc.Engine
+		e.Version = v
+		sc.Engine = &e
 		in2 := in
 		in2.Scenario = &sc
 		k, err := newKernel(in2)

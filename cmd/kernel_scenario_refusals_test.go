@@ -235,31 +235,27 @@ func TestRunCmd_TheSchedulingPolicyIsTheScenariosAlone(t *testing.T) {
 	}
 }
 
-// LIF-6, per engine kind: a scenario naming an engine release other than the one this build
-// runs is refused before anything runs. The message names the release asked for, the one this
-// build runs, and the newest inference-sim release that runs the one asked for, or says that
-// none does. The closest accepted scenario, the same file naming vllm 0.33.0, runs (SIM-9).
-// The accepted scenario names its engine with engine: {kind, version}; each case replaces that
-// block with its own statement (engine_select.go).
-func TestRunCmd_RefusesAnEngineReleaseItDoesNotRun(t *testing.T) {
+// LIF-6, per engine kind: a scenario states no engine release, the build fixes it. A scenario
+// stating one is refused before anything runs, with a message naming the field and the commit
+// this build runs; one naming a kind this build does not register is refused too. The closest
+// accepted scenario, the same file naming the kind alone, runs (SIM-9). Each case replaces the
+// fixture's engine block with its own statement (engine_select.go).
+func TestRunCmd_RefusesAStatedEngineRelease(t *testing.T) {
+	built := builtEngines()["vllm"]
 	cases := []struct {
 		name, edit string
 		want       []string
 	}{
-		{"vllm 0.29.0, last run by v0.15.0", `engine: {kind: vllm, version: "0.29.0"}`,
-			[]string{"names engine vllm 0.29.0", "this build runs vllm 0.33.0", "newest inference-sim release that runs it is v0.15.0"}},
-		{"vllm 0.31.0, last run by v0.15.0", `engine: {kind: vllm, version: "0.31.0"}`,
-			[]string{"names engine vllm 0.31.0", "this build runs vllm 0.33.0", "newest inference-sim release that runs it is v0.15.0"}},
-		{"vllm 0.32.0, last run by v0.17.0", `engine: {kind: vllm, version: "0.32.0"}`,
-			[]string{"names engine vllm 0.32.0", "this build runs vllm 0.33.0", "newest inference-sim release that runs it is v0.17.0"}},
-		{"vllm 0.34.0, run by no release", `engine: {kind: vllm, version: "0.34.0"}`,
-			[]string{"names engine vllm 0.34.0", "this build runs vllm 0.33.0", "no inference-sim release runs it"}},
-		{"a kind this build does not register", `engine: {kind: tensorrt-llm, version: "0.18.0"}`,
+		{"the release this build runs", `engine: {kind: vllm, version: "` + built.Version + `"}`,
+			[]string{"field engine.version", "not found in type scenario.Engine", built.Commit}},
+		{"another release", `engine: {kind: vllm, version: "0.29.0"}`,
+			[]string{`engine.version \"0.29.0\"`, "the inference-sim release that runs it"}},
+		{"a kind this build does not register", `engine: {kind: tensorrt-llm}`,
 			[]string{`names engine kind \"tensorrt-llm\"`, "this build runs the kinds sglang, vllm"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			dir := writeColocatedVariant(t, "engine:\n  kind: vllm\n  version: \"0.33.0\"\n", c.edit+"\n")
+			dir := writeColocatedVariant(t, "engine:\n  kind: vllm\n", c.edit+"\n")
 			_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
 				"--rate", "4", "--num-requests", "4", "--seed", "1")
 			if err == nil {
@@ -277,7 +273,7 @@ func TestRunCmd_RefusesAnEngineReleaseItDoesNotRun(t *testing.T) {
 		stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
 			"--rate", "4", "--num-requests", "4", "--seed", "1")
 		if err != nil || !completedIs(stdout, 4) {
-			t.Fatalf("vllm 0.33.0 must run: %v\n%s", err, lastLines(stderr, 3))
+			t.Fatalf("a scenario naming the kind alone must run: %v\n%s", err, lastLines(stderr, 3))
 		}
 	})
 }
@@ -300,7 +296,8 @@ func TestRunCmd_A032ScenarioRunsThroughTheEngineContract(t *testing.T) {
 	}
 }
 
-// The Result records the engine the scenario selected, by kind and upstream release (SIM-1).
+// The Result records the engine the scenario selected, by kind, and the upstream release and
+// commit the build runs (SIM-1, LIF-6).
 func TestRunCmd_TheResultRecordsTheSelectedEngine(t *testing.T) {
 	{
 		dir := writeColocatedVariant(t)
@@ -309,8 +306,9 @@ func TestRunCmd_TheResultRecordsTheSelectedEngine(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%v\n%s", err, lastLines(stderr, 3))
 		}
-		if e := parseResult(t, stdout).Engine; e.Kind != "vllm" || e.Version != "0.33.0" {
-			t.Errorf("engine = %+v, want vllm 0.33.0", e)
+		built := builtEngines()["vllm"]
+		if e := parseResult(t, stdout).Engine; e.Kind != "vllm" || e.Version != built.Version || e.Commit != built.Commit {
+			t.Errorf("engine = %+v, want vllm %s at %s", e, built.Version, built.Commit)
 		}
 	}
 }
@@ -611,19 +609,18 @@ func TestRunCmd_A032DataParallelGroupRendersOnOneAPIServerPerRank(t *testing.T) 
 	}
 }
 
-// SIM-1: a scenario that names its engine with engine_version, the field engine: {kind, version}
-// replaced, is refused before anything runs, with a message naming the replacement and the
-// release it stated. The fixture states engine: {kind, version} and runs (the closest accepted
-// scenario, SIM-9); this variant states the removed field instead.
+// SIM-1: a scenario that names its engine with engine_version, a field no scenario has, is
+// refused before anything runs, with a message naming the field and the engine block that
+// replaces it. The fixture states engine: {kind} and runs (the closest accepted scenario,
+// SIM-9); this variant adds the removed field.
 func TestRunCmd_EngineVersionIsRefusedNamingTheEngineBlock(t *testing.T) {
-	dir := writeColocatedVariant(t, "engine:\n  kind: vllm\n  version: \"0.33.0\"\n", "engine_version: \"0.33.0\"\n")
+	dir := writeColocatedVariant(t, "engine:\n  kind: vllm\n", "engine:\n  kind: vllm\nengine_version: \"0.33.0\"\n")
 	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
 		"--rate", "4", "--num-requests", "4", "--seed", "1")
 	if err == nil {
 		t.Fatalf("a scenario stating engine_version ran:\n%s", lastLines(stdout, 5))
 	}
-	for _, want := range []string{`states engine_version \"0.33.0\"`, "was removed in " + flagsRemovedIn,
-		`state engine: {kind: vllm, version: \"0.33.0\"} instead`} {
+	for _, want := range []string{"field engine_version not found", "engine: {kind: vllm}"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("the refusal must contain %q; stderr:\n%s", want, lastLines(stderr, 6))
 		}
@@ -631,6 +628,6 @@ func TestRunCmd_EngineVersionIsRefusedNamingTheEngineBlock(t *testing.T) {
 	accepted := writeColocatedVariant(t)
 	if out, accErr, err := runKernelCLI(t, "run", "--scenarios", accepted, "--scenario", "variant.yaml",
 		"--rate", "4", "--num-requests", "4", "--seed", "1"); err != nil || !completedIs(out, 4) {
-		t.Fatalf("the same scenario stating engine: {kind, version} must run: %v\n%s", err, lastLines(accErr, 5))
+		t.Fatalf("the same scenario stating engine: {kind} must run: %v\n%s", err, lastLines(accErr, 5))
 	}
 }

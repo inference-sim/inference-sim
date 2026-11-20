@@ -6,7 +6,7 @@
 # that vLLM v0.33.0 serves when the launch states none. Only the part's fabric and node size are named substitutions.
 kind: Scenario
 name: @NAME@
-engine: {kind: vllm, version: "@ENGINE@"}
+engine: {kind: vllm}
 model: @MODEL@
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
 cluster:

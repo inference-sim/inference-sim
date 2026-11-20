@@ -15,10 +15,10 @@ import (
 // resolves real names, not just that it runs.
 func scenarioRef() *scenario.Scenario {
 	return &scenario.Scenario{
-		Kind:          "Scenario",
-		Name:          "ref",
-		Model:         "deepseek-v3",
-		EngineVersion: "0.29.0",
+		Kind:   "Scenario",
+		Name:   "ref",
+		Model:  "deepseek-v3",
+		Engine: &scenario.Engine{Kind: "vllm", Version: "0.29.0"},
 		Cluster: scenario.Cluster{
 			Hardware:    "h200",
 			Fabric:      "ib-400g",

@@ -178,12 +178,12 @@ func perturbationScenariosFor(t *testing.T, d *load.Data, m, c, offload, sets st
 			if ch != nil && ch.GPUsPerNode > 0 {
 				packaging = ""
 			}
-			body := fmt.Sprintf("kind: Scenario\nname: p\nmodel: %s\ncoefficients: %s\nengine_version: \"0.32.0\"\ncluster:\n  hardware: %s\n  fabric: ib-400g\n  nodes: %d\n%s---\nkind: Deployment\nname: d\npools:\n  - role: colocated\n    nodes: %d\n    parallel: {tp: %d, pp: 1, dp: %d, enable_expert_parallel: %t%s}\n%s", m, sets, c, nodes, packaging, nodes, tp, dp, ep, ctxPar(lay), offload)
+			body := fmt.Sprintf("kind: Scenario\nname: p\nmodel: %s\ncoefficients: %s\nengine: {kind: vllm}\ncluster:\n  hardware: %s\n  fabric: ib-400g\n  nodes: %d\n%s---\nkind: Deployment\nname: d\npools:\n  - role: colocated\n    nodes: %d\n    parallel: {tp: %d, pp: 1, dp: %d, enable_expert_parallel: %t%s}\n%s", m, sets, c, nodes, packaging, nodes, tp, dp, ep, ctxPar(lay), offload)
 			dir := t.TempDir()
 			if err := os.WriteFile(filepath.Join(dir, "s.yaml"), []byte(body), 0o644); err != nil {
 				return nil, err
 			}
-			r := Repos{Scenarios: dir, Data: d, Rules: func(string) enginefacts.EngineRules { return windowedRules{} },
+			r := Repos{Scenarios: dir, Data: d, Release: "0.33.0", Rules: func(string) enginefacts.EngineRules { return windowedRules{} },
 				DraftModel: noDrafter, Lower: lowerTo(8192, st.block, 0, st.edit)}
 			in, err := OpenInputs("s.yaml", r, 0)
 			if err != nil {

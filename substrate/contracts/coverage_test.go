@@ -127,8 +127,8 @@ func corpus(name string, nodes, gpusPerNode int, fabric string,
 	mutate func(*scenario.Scenario, *deployment.Deployment)) Bundle {
 	s := &scenario.Scenario{
 		Kind: "Scenario", Name: name, Model: "granite-5-230b",
-		Coefficients:  []string{"cost-model-primitives-h200"},
-		EngineVersion: "1.0.0",
+		Coefficients: []string{"cost-model-primitives-h200"},
+		Engine:       &scenario.Engine{Kind: "vllm", Version: "1.0.0"},
 		Cluster: scenario.Cluster{Hardware: "h200", Fabric: fabric,
 			Nodes: nodes, GPUsPerNode: gpusPerNode},
 	}

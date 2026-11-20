@@ -45,7 +45,7 @@ func (f Factory) New(s engine.Spec) (engine.Engine, error) {
 		return nil, fmt.Errorf("vllm: spec kind %q is not %q", s.Kind, Kind)
 	}
 	if s.UpstreamVersion != Version {
-		return nil, fmt.Errorf("vllm: this build models vLLM %s; engine_version %q is refused",
+		return nil, fmt.Errorf("vllm: this build models vLLM %s; release %q is refused",
 			Version, s.UpstreamVersion)
 	}
 	pricer := func() (Pricer, error) {
