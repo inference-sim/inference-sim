@@ -254,6 +254,13 @@ func TestTheLoweringResolvesEverySettingTheKernelPrices(t *testing.T) {
 					t.Errorf("Batch.Tokens %d, want 256", l.Plan.Batch.Tokens)
 				}
 			}},
+		{"an unstated token budget is 256 under the batched all-to-all backend", moe,
+			vllmsettings.Settings{All2AllBackend: "alltoall_batched"},
+			func(t *testing.T, l *plan.Lowered) {
+				if l.Plan.Batch.Tokens != 256 {
+					t.Errorf("Batch.Tokens %d, want 256", l.Plan.Batch.Tokens)
+				}
+			}},
 		{"stated limits are kept", dense, vllmsettings.Settings{MaxNumSeqs: 48, MaxNumBatchedTokens: 4096},
 			func(t *testing.T, l *plan.Lowered) {
 				if l.Plan.Batch.Requests != 48 || l.Plan.Batch.Tokens != 4096 {

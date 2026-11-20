@@ -91,7 +91,7 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 		DeviceMemoryBytes:   int64(in.Chip.MemoryGiB * float64(int64(1)<<30)),
 		DeviceName:          in.Chip.Name,
 		// use_batched_dp_moe (vllm/config/parallel.py:792-801@5df63a72).
-		BatchedDPMoE: (backend == "deepep_low_latency" || backend == "nixl_ep") &&
+		BatchedDPMoE: (backend == "deepep_low_latency" || backend == "nixl_ep" || backend == "alltoall_batched") &&
 			pool.Parallel.EnableExpertParallel && pool.Parallel.DP > 1,
 		// The deployment schema has no performance_mode, so it is vLLM's default, balanced
 		// (vllm/config/vllm.py:433@5df63a72).

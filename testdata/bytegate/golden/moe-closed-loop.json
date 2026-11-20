@@ -2824,7 +2824,7 @@
         },
         "skipped_rule_findings": [
           {
-            "message": "pools[0].engine.quantization: \"nvfp4\" is not an in-tree method of engine 0.33.0; if it is an out-of-tree method this is expected, otherwise check the spelling. In-tree methods are [auto_awq auto_gptq awq awq_marlin compressed-tensors deepseek_v4_fp8 experts_int8 fbgemm_fp8 fp8 fp8_per_block fp8_per_channel fp8_per_tensor fp_quant gpt_oss_mxfp4 gptq gptq_marlin humming inc int8_per_channel_weight_only modelopt modelopt_fp4 modelopt_mixed modelopt_mxfp8 moe_wna16 mxfp4 mxfp8 nvfp4_per_token online quark torchao]",
+            "message": "pools[0].engine.quantization: \"nvfp4\" is not an in-tree method of engine 0.33.0; if it is an out-of-tree method this is expected, otherwise check the spelling. In-tree methods are [auto_awq auto_gptq awq awq_marlin compressed-tensors deepseek_v4_fp8 experts_int8 fbgemm_fp8 fp8 fp8_per_block fp8_per_channel fp8_per_tensor gpt_oss_mxfp4 gptq gptq_marlin humming inc inkling2 int8_per_channel_weight_only lut_b_moe modelopt modelopt_fp4 modelopt_int8 modelopt_mixed modelopt_mxfp8 moe_wna16 mxfp4 mxfp4_hadamard32 mxfp8 nvfp4_per_token nvfp4_weight_only online quark torchao w4afp8]",
             "rule": "quantization-known",
             "severity": "warning"
           }

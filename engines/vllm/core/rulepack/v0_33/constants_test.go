@@ -16,7 +16,8 @@ func TestAll2AllBackendMembership(t *testing.T) {
 		"allgather_reducescatter", "deepep_high_throughput", "deepep_low_latency",
 		"deepep_v2", "flashinfer_all2allv", "flashinfer_nvlink_one_sided",
 		"flashinfer_nvlink_two_sided", "mori_high_throughput", "mori_low_latency",
-		"moonep", "naive", "nixl_ep", "passthrough", "pplx",
+		"mori", "moonep", "naive", "nixl_ep", "passthrough", "pplx",
+		"alltoall_batched", "auto",
 	}
 	assertSet(t, "All2AllBackends", Pack().All2AllBackends, want)
 }
@@ -28,7 +29,7 @@ func TestSPMoEBackendMembership(t *testing.T) {
 	want := []string{
 		"allgather_reducescatter", "deepep_high_throughput", "deepep_low_latency",
 		"deepep_v2", "flashinfer_nvlink_one_sided", "mori_high_throughput",
-		"mori_low_latency", "nixl_ep", "passthrough",
+		"mori_low_latency", "mori", "nixl_ep", "passthrough",
 	}
 	p := Pack()
 	if p.SPMoEBackends["moonep"] {
@@ -56,17 +57,14 @@ func TestSmallVocabularies(t *testing.T) {
 	assertSet(t, "CUDAGraphModes", p.CUDAGraphModes,
 		[]string{"FULL", "FULL_AND_PIECEWISE", "FULL_DECODE_ONLY", "NONE",
 			"PIECEWISE"})
-	// v0.32.0 dropped "all" (vllm/config/cache.py:63@5df63a72).
-	assertSet(t, "MambaCacheModes", p.MambaCacheModes,
-		[]string{"align", "none"})
 	assertSet(t, "DCPCommBackends", p.DCPCommBackends,
 		[]string{"a2a", "ag_rs"})
-	// Twenty-two cache dtypes: v0.32.0's nineteen and the three ROCm octave dtypes.
-	if len(p.CacheDTypes) != 22 {
-		t.Errorf("CacheDTypes: size = %d, want 22", len(p.CacheDTypes))
+	// Twenty-three cache dtypes: the previous release's twenty-two and mxfp4_mla.
+	if len(p.CacheDTypes) != 23 {
+		t.Errorf("CacheDTypes: size = %d, want 23", len(p.CacheDTypes))
 	}
 	for _, want := range []string{"auto", "fp8", "nvfp4", "fp8_ds_mla", "nvfp4_ds_mla",
-		"int8_per_token_head", "turboquant_k8v4", "ultraquant_4bit", "octave_k3v3_compact"} {
+		"int8_per_token_head", "turboquant_k8v4", "ultraquant_4bit", "octave_k3v3_compact", "mxfp4_mla"} {
 		if !p.CacheDTypes[want] {
 			t.Errorf("CacheDTypes: missing %q", want)
 		}
@@ -75,24 +73,27 @@ func TestSmallVocabularies(t *testing.T) {
 		[]string{"fcfs", "priority"})
 	assertSet(t, "OffloadSpecs", p.OffloadSpecs,
 		[]string{"CPUOffloadingSpec", "TieringOffloadingSpec"})
-	// Thirty quantization methods and seventeen connectors. As with the cache dtypes the
+	// Thirty-five quantization methods and eighteen connectors. As with the cache dtypes the
 	// count is the guard: a narrower set warns on an in-tree method or connector the
 	// engine ships, which trains a reader to ignore the warning. The members spot-checked
 	// are the ones the report corpus and offload paths exercise.
-	if len(p.Quantizations) != 30 {
-		t.Errorf("Quantizations: size = %d, want 30", len(p.Quantizations))
+	if len(p.Quantizations) != 35 {
+		t.Errorf("Quantizations: size = %d, want 35", len(p.Quantizations))
 	}
 	for _, want := range []string{"fp8", "compressed-tensors", "gptq_marlin",
-		"deepseek_v4_fp8", "mxfp4"} {
+		"deepseek_v4_fp8", "mxfp4", "w4afp8", "modelopt_int8"} {
 		if !p.Quantizations[want] {
 			t.Errorf("Quantizations: missing %q", want)
 		}
 	}
-	if len(p.Connectors) != 17 {
-		t.Errorf("Connectors: size = %d, want 17", len(p.Connectors))
+	if p.Quantizations["fp_quant"] {
+		t.Error("fp_quant left the QuantizationMethods literal")
+	}
+	if len(p.Connectors) != 18 {
+		t.Errorf("Connectors: size = %d, want 18", len(p.Connectors))
 	}
 	for _, want := range []string{"NixlConnector", "HiSparseConnector", "LMCacheConnectorV1",
-		"OffloadingConnector", "MultiConnector"} {
+		"OffloadingConnector", "MultiConnector", "UMBPStoreConnector"} {
 		if !p.Connectors[want] {
 			t.Errorf("Connectors: missing %q", want)
 		}
@@ -138,54 +139,47 @@ func TestNumericConstants(t *testing.T) {
 	}
 }
 
-// The async-compatible subset must be a subset of the accepted methods; otherwise a
-// method could be async-compatible and simultaneously unrecognized.
-func TestAsyncCompatibleSpecIsASubset(t *testing.T) {
+// With the V1 model runner gone, async scheduling stays enabled for every speculative
+// method (vllm/config/vllm.py no longer has the V1 runner's incompatibilities), so the
+// async-compatible set is the accepted set. A method accepted but absent from it would be
+// priced with the host term exposed that the engine hides.
+func TestAsyncCompatibleSpecIsEveryAcceptedMethod(t *testing.T) {
 	p := Pack()
-	for m := range p.AsyncCompatibleSpec {
-		if !p.SpeculativeMethods[m] {
-			t.Errorf("%q is async-compatible but not an accepted method", m)
+	assertSet(t, "AsyncCompatibleSpec", p.AsyncCompatibleSpec, keysOf(p.SpeculativeMethods))
+	for _, m := range []string{"ngram", "suffix", "dflash", "dfly", "ngram_gpu", "draft_model", "dspark"} {
+		if compatible, known := p.AsyncCompatibleSpeculative(m); !known || !compatible {
+			t.Errorf("%q keeps async scheduling: compatible=%v known=%v", m, compatible, known)
 		}
 	}
-	// ngram is accepted and is NOT async-compatible on the V1 runner, which is the case
-	// that makes the distinction worth encoding (medusa was the example until v0.33.0
-	// removed it).
-	if !p.SpeculativeMethods["ngram"] {
-		t.Error("ngram should be an accepted method")
-	}
-	if p.AsyncCompatibleSpec["ngram"] {
-		t.Error("ngram disables async scheduling on the V1 runner, so it is not in the subset")
+	if p.AsyncCompatibleSpec["custom_class"] || p.SpeculativeMethods["custom_class"] {
+		t.Error("custom_class left the SpeculativeMethod literal")
 	}
 }
 
-// The speculative sets are the engine's whole literal, not a curated subset: 38 accepted
-// methods and 35 that keep async scheduling on the V1 runner (v0.33.0: medusa and
-// mlp_speculator removed, step5_mtp added). The members spot-checked are the ones the
-// v0.31 campaign models need: DeepSeek-V4.1's dspark and GLM-5.3-Flash's glm5_next_mtp,
-// which v0.29.0 does not accept.
+// The speculative sets are the engine's whole literal, not a curated subset: 39 accepted
+// methods (custom_class removed, dfly and nemotron3_5_transcribe_mtp added), every one of
+// which keeps async scheduling on. The members spot-checked are the ones the v0.31
+// campaign models need: DeepSeek-V4.1's dspark and GLM-5.3-Flash's glm5_next_mtp, which
+// v0.29.0 does not accept.
 func TestSpeculativeMethods(t *testing.T) {
 	p := Pack()
-	if len(p.SpeculativeMethods) != 38 {
-		t.Errorf("SpeculativeMethods: size = %d, want 38", len(p.SpeculativeMethods))
+	if len(p.SpeculativeMethods) != 39 {
+		t.Errorf("SpeculativeMethods: size = %d, want 39", len(p.SpeculativeMethods))
 	}
-	if len(p.AsyncCompatibleSpec) != 35 {
-		t.Errorf("AsyncCompatibleSpec: size = %d, want 35", len(p.AsyncCompatibleSpec))
-	}
-	for _, m := range []string{"dspark", "glm5_next_mtp", "mtp", "deepseek_mtp", "suffix"} {
+	for _, m := range []string{"dspark", "glm5_next_mtp", "mtp", "deepseek_mtp", "suffix",
+		"dfly", "nemotron3_5_transcribe_mtp"} {
 		if !p.SpeculativeMethods[m] {
 			t.Errorf("%q should be accepted", m)
 		}
 	}
-	for _, m := range []string{"dspark", "glm5_next_mtp", "ngram_gpu", "draft_model", "dflash"} {
-		if !p.AsyncCompatibleSpec[m] {
-			t.Errorf("%q keeps async scheduling", m)
-		}
+}
+
+func keysOf(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
 	}
-	for _, m := range []string{"ngram", "suffix", "custom_class", "mlp_speculator"} {
-		if p.AsyncCompatibleSpec[m] {
-			t.Errorf("%q disables async scheduling", m)
-		}
-	}
+	return out
 }
 
 func assertSet(t *testing.T, name string, got map[string]bool, want []string) {

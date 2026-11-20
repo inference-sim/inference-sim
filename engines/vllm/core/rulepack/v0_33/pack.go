@@ -78,7 +78,7 @@ var mtpMethods = []string{"deepseek_mtp", "dots3_note_mtp", "mimo_mtp", "mimo_v2
 	"exaone_moe_mtp", "exaone4_5_mtp", "qwen3_next_mtp", "qwen4_exp_mtp", "qwen3_5_mtp",
 	"longcat_flash_mtp", "bailing_hybrid_v3_mtp", "minimax_m3_mtp", "bailing_hybrid_mtp",
 	"mtp", "kimi_k3_mtp", "pangu_ultra_moe_mtp", "step3p5_mtp", "step5_mtp", "hy_v3_mtp", "hy_v4_mtp",
-	"gemma4_mtp", "inkling_mtp", "glm5_next_mtp"}
+	"gemma4_mtp", "inkling_mtp", "glm5_next_mtp", "nemotron3_5_transcribe_mtp"}
 
 // mlaPrefillBackends are the in-tree members of the engine's MLAPrefillBackendEnum
 // (vllm/v1/attention/backends/mla/prefill/registry.py:37-65@5df63a72). attention_config parses
@@ -88,7 +88,7 @@ var mtpMethods = []string{"deepseek_mtp", "dots3_note_mtp", "mimo_mtp", "mimo_v2
 // the flag (vllm/engine/arg_utils.py:3202-3204@5df63a72), so a name outside this set may be a
 // plugin's. CUSTOM is the member an out-of-tree backend can take instead.
 var mlaPrefillBackends = []string{"FLASH_ATTN", "FLASHINFER", "TRTLLM_RAGGED", "TOKENSPEED_MLA",
-	"ROCM_AITER_FA", "CPU", "ZEN_CPU", "CUSTOM"}
+	"ROCM_AITER_FA", "ROCM_AITER_FLYDSL_FP8", "CPU", "ZEN_CPU", "CUSTOM"}
 
 // pythonIdentifier reports whether name could be a Python identifier, which
 // MLAPrefillBackendEnum.register requires of a backend a plugin adds
@@ -120,20 +120,21 @@ func Pack() *pack.Pack {
 	p := &pack.Pack{
 		Version: Version,
 
-		// Transcribed from the engine's All2AllBackend literal. Fourteen members:
-		// v0.31.0's thirteen and passthrough. A name outside this set is priced with the
-		// wrong volume basis.
+		// Transcribed from the engine's All2AllBackend literal. Seventeen members:
+		// the previous fourteen and alltoall_batched, auto and mori. A name outside this
+		// set is priced with the wrong volume basis.
 		All2AllBackends: set("naive", "allgather_reducescatter", "pplx",
 			"deepep_high_throughput", "deepep_low_latency", "deepep_v2",
 			"flashinfer_all2allv", "flashinfer_nvlink_one_sided",
 			"flashinfer_nvlink_two_sided", "mori_high_throughput",
-			"mori_low_latency", "moonep", "nixl_ep", "passthrough"),
+			"mori_low_latency", "mori", "moonep", "nixl_ep", "alltoall_batched",
+			"passthrough", "auto"),
 		// The subset for which the engine makes the MoE input sequence-parallel,
 		// which replaces the layer's all-reduce with a reduce-scatter/all-gather
 		// pair. passthrough joined it in this release; moonep is not a member.
 		SPMoEBackends: set("allgather_reducescatter", "deepep_high_throughput",
 			"deepep_low_latency", "deepep_v2", "flashinfer_nvlink_one_sided",
-			"mori_high_throughput", "mori_low_latency", "nixl_ep", "passthrough"),
+			"mori_high_throughput", "mori_low_latency", "mori", "nixl_ep", "passthrough"),
 
 		// The engine exposes no allreduce-backend name; see v0_29. Unchanged.
 		AllReduceBackends: set("custom", "nccl"),
@@ -151,14 +152,13 @@ func Pack() *pack.Pack {
 			"fp8_e5m2", "fp8_inc", "fp8_ds_mla", "nvfp4_ds_mla", "turboquant_k8v4",
 			"turboquant_4bit_nc", "turboquant_k3v4_nc", "turboquant_3bit_nc",
 			"octave_k3v4", "octave_k3v3", "octave_k3v3_compact", "ultraquant_4bit", "int4_per_token_head", "int8_per_token_head",
-			"fp8_per_token_head", "nvfp4", "nvfp4_4over6"),
+			"fp8_per_token_head", "nvfp4", "nvfp4_4over6", "mxfp4_mla"),
 
 		DCPCommBackends: set("ag_rs", "a2a"),
 
 		// The MambaDType literal: a recurrent state's cache dtype is checked against
 		// this, not against CacheDTypes, which lacks float32.
-		MambaDTypes:     set("auto", "float32", "float16", "bfloat16"),
-		MambaCacheModes: set("none", "align"),
+		MambaDTypes: set("auto", "float32", "float16", "bfloat16"),
 
 		// The MoEBackend literal of vllm/config/kernel.py (:122-146@4ba787ec; v0.33.0 adds
 		// aiter_triton_mxfp4_mxfp4, ROCm), and its MEGA_MOE_BACKENDS
@@ -167,7 +167,7 @@ func Pack() *pack.Pack {
 			"flashinfer_trtllm", "flashinfer_cutlass", "flashinfer_cutedsl", "flashinfer_moe_ep_cutedsl",
 			"flashinfer_b12x", "b12x", "flashinfer_moe_ep_mega_deep_gemm",
 			"marlin", "humming", "triton_unfused", "aiter", "aiter_mega_moe", "aiter_triton_mxfp4_bf16", "aiter_triton_mxfp4_mxfp4",
-			"flydsl", "hpc", "emulation", "rdna3"),
+			"flydsl", "hpc", "emulation", "rdna3", "rdna3_int4_int8"),
 		MegaMoEBackends: set("deep_gemm_mega_moe", "flashinfer_moe_ep_cutedsl",
 			"flashinfer_moe_ep_mega_deep_gemm"),
 
@@ -236,38 +236,38 @@ func Pack() *pack.Pack {
 		// v0.33.0 removed medusa and mlp_speculator (the SpeculativeMethod literal,
 		// vllm/config/speculative.py:74-82@4ba787ec).
 		SpeculativeMethods: set(append([]string{"ngram",
-			"draft_model", "suffix", "custom_class", "eagle", "eagle3",
-			"extract_hidden_states", "dflash", "ngram_gpu", "dspark"},
+			"draft_model", "suffix", "eagle", "eagle3",
+			"extract_hidden_states", "dflash", "dfly", "ngram_gpu", "dspark"},
 			mtpMethods...)...),
-		// Methods that leave async scheduling enabled: the EAGLE family (every MTP name
-		// and dflash among them), ngram_gpu, draft_model and dspark -- the set
-		// vllm/config/vllm.py admits when async scheduling is requested and keeps
-		// enabled when it is left to the engine. Any other method disables it when it is
-		// left to the engine, which moves the host term from hidden to exposed, and is
-		// refused at startup when it is requested. Pipeline parallelism above one
-		// also disables it on the V1 runner in this release, which is the resolver's
-		// to report rather than a property of the method.
-		AsyncCompatibleSpec: set(append([]string{"eagle", "eagle3",
-			"extract_hidden_states", "dflash", "ngram_gpu", "draft_model", "dspark"},
+		// Methods that leave async scheduling enabled: every accepted one. The V1 model runner,
+		// whose async-scheduling incompatibilities named a speculative method, is removed;
+		// vllm/config/vllm.py resolves async_scheduling without reading the speculative config,
+		// so a method no longer moves the host term from hidden to exposed.
+		AsyncCompatibleSpec: set(append([]string{"ngram",
+			"draft_model", "suffix", "eagle", "eagle3",
+			"extract_hidden_states", "dflash", "dfly", "ngram_gpu", "dspark"},
 			mtpMethods...)...),
 
 		OffloadSpecs: set("CPUOffloadingSpec", "TieringOffloadingSpec"),
 
-		// The QuantizationMethods literal, unchanged from v0.29.0.
-		Quantizations: set("awq", "auto_awq", "fp8", "fbgemm_fp8", "fp_quant", "modelopt",
+		// The QuantizationMethods literal: the previous release's without fp_quant, and with
+		// inkling2, lut_b_moe, modelopt_int8, mxfp4_hadamard32, nvfp4_weight_only and w4afp8.
+		Quantizations: set("awq", "auto_awq", "fp8", "fbgemm_fp8", "modelopt",
 			"modelopt_fp4", "modelopt_mxfp8", "modelopt_mixed", "auto_gptq", "gptq",
 			"gptq_marlin", "awq_marlin", "humming", "compressed-tensors", "experts_int8",
 			"quark", "moe_wna16", "torchao", "inc", "mxfp4", "gpt_oss_mxfp4",
 			"deepseek_v4_fp8", "online", "fp8_per_tensor", "fp8_per_block",
-			"fp8_per_channel", "int8_per_channel_weight_only", "nvfp4_per_token", "mxfp8"),
+			"fp8_per_channel", "int8_per_channel_weight_only", "nvfp4_per_token", "mxfp8",
+			"inkling2", "lut_b_moe", "modelopt_int8", "mxfp4_hadamard32", "nvfp4_weight_only", "w4afp8"),
 
-		// The KVConnectorFactory registrations: v0.29.0's sixteen and HiSparseConnector.
+		// The KVConnectorFactory registrations: v0.29.0's sixteen, HiSparseConnector and
+		// UMBPStoreConnector.
 		Connectors: set("DecodeBenchConnector", "ExampleConnector",
 			"ExampleHiddenStatesConnector", "FlexKVConnectorV1", "HF3FSKVConnector",
 			"HiSparseConnector", "LMCacheConnectorV1", "LMCacheMPConnector",
 			"MoRIIOConnector", "MooncakeConnector", "MooncakeStoreConnector",
 			"MultiConnector", "NixlConnector", "NixlPullConnector", "NixlPushConnector",
-			"OffloadingConnector", "SimpleCPUOffloadConnector"),
+			"OffloadingConnector", "SimpleCPUOffloadConnector", "UMBPStoreConnector"),
 
 		EvictionPolicies: set("lru", "arc"),
 
@@ -286,7 +286,8 @@ func Pack() *pack.Pack {
 		// all2all_backend: All2AllBackend = "allgather_reducescatter" (vllm/config/parallel.py),
 		// and the two accepted names it replaces with that one ("has been removed. Falling
 		// back to 'allgather_reducescatter'").
-		DefaultAll2AllBackend: "allgather_reducescatter",
+		DefaultAll2AllBackend: "auto",
+		AutoAll2AllBackend:    "allgather_reducescatter",
 		All2AllBackendRenames: map[string]string{
 			"pplx": "allgather_reducescatter", "naive": "allgather_reducescatter",
 			// A deprecated alias: the CUDA communicator runs it as flashinfer_nvlink_two_sided
@@ -296,7 +297,8 @@ func Pack() *pack.Pack {
 
 		// _NGRAM_LAYER_FIELDS (vllm/config/engram.py), and EngramConfig.cpu_offload: bool = True.
 		EngramArchitectures: set(enginefacts.ArchDeepseekV41, "Qwen4ExpForCausalLM",
-			"Qwen4ExpForConditionalGeneration"),
+			"Qwen4ExpForConditionalGeneration", "HYV4FlashForCausalLM",
+			"HYV4FlashVLForConditionalGeneration"),
 		EngramCPUOffloadDefault: true,
 
 		// get_kv_cache_groups (vllm/v1/core/kv_cache_utils.py:2300-2398): one uniform-type
@@ -373,7 +375,6 @@ func ruleList(p *pack.Pack) []pack.Rule {
 					check("mamba_cache_dtype", e.MambaCacheDType, p.MambaDTypes)
 					check("mamba_ssm_cache_dtype", e.MambaSSMCacheDType, p.MambaDTypes)
 					check("moe_backend", pack.NormalizeMoEBackend(e.MoEBackend), p.MoEBackends)
-					check("mamba_cache_mode", e.MambaCacheMode, p.MambaCacheModes)
 					check("scheduling_policy", e.SchedulingPolicy, p.SchedulerPolicies)
 				})
 			},
@@ -683,20 +684,13 @@ func ruleList(p *pack.Pack) []pack.Rule {
 		},
 		{
 			Name:    "mamba-cache-mode-matches-model",
-			Because: "a cache mode for recurrent layers on a model with none is a setting with no effect, and its absence on a model with them leaves the state unsized",
+			Because: "this release has no mamba_cache_mode: Mamba prefix caching follows enable_prefix_caching (vllm/config/cache.py, #63830), and the engine's argument parser has no --mamba-cache-mode, so a stated mode does not start",
 			Check: func(in pack.Input, out *validate.Problems) {
-				if in.Model == nil {
-					return
-				}
-				hasRecurrent := modelHasRecurrent(in)
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
-					if e.MambaCacheMode != "" && !hasRecurrent {
-						out.RuleWarnf("mamba-cache-mode-matches-model",
-							"%s.engine.mamba_cache_mode is set but the model has no recurrent layer, so it has no effect", at)
-					}
-					if e.MambaCacheMode == "" && hasRecurrent {
-						out.RuleWarnf("mamba-cache-mode-matches-model",
-							"%s.engine: the model has recurrent layers but no mamba_cache_mode is stated, so whether their state is fixed or context-proportional is unresolved", at)
+					if e.MambaCacheMode != "" {
+						out.RuleErrorf("mamba-cache-mode-matches-model",
+							"%s.engine.mamba_cache_mode %q: engine %s has no mamba_cache_mode; whether a recurrent layer's state is cached follows enable_prefix_caching",
+							at, e.MambaCacheMode, p.Version)
 					}
 				})
 			},
@@ -1021,7 +1015,7 @@ func ruleList(p *pack.Pack) []pack.Rule {
 					// so those start beside an EP megakernel, as the default does.
 					a2a := p.EffectiveAll2AllBackend(e.All2AllBackend)
 					switch {
-					case selfCommunicating && a2a != "passthrough" && a2a != p.DefaultAll2AllBackend:
+					case selfCommunicating && a2a != "passthrough" && a2a != p.EffectiveAll2AllBackend(""):
 						out.RuleErrorf("moe-ep-backend-binds-passthrough",
 							"%s.engine: moe_backend %q dispatches and combines itself; engine %s refuses it beside all2all_backend %q (leave all2all_backend unset)",
 							at, moe, p.Version, e.All2AllBackend)

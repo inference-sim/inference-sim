@@ -70,22 +70,22 @@ func TestMambaCacheModeIsComparedWithTheResolvedDefault(t *testing.T) {
 	}
 }
 
-// resolve reaches the same answer from a whole engine block: a Mamba model that states none with
-// prefix caching on builds, where the initializer-based predicate it replaces would have accepted it
-// only by accident, and a Mamba model that states align with prefix caching off builds too.
+// resolve reaches the answer from a whole engine block. The release has no mamba_cache_mode, so a
+// Mamba model builds with it unstated, prefix caching on or off, and any stated mode is refused.
 func TestResolveAppliesTheMambaCheckToAMambaModel(t *testing.T) {
 	for _, c := range []struct {
 		mamba bool
 		extra string
 		ok    bool
 	}{
-		{true, "mamba_cache_mode: none\n", true},
-		{true, "mamba_cache_mode: align\n", true},
-		{true, "mamba_cache_mode: align\nenable_prefix_caching: false\n", true},
+		{true, "", true},
+		{true, "enable_prefix_caching: false\n", true},
+		{true, "mamba_cache_mode: none\n", false},
+		{true, "mamba_cache_mode: align\n", false},
+		{true, "mamba_cache_mode: align\nenable_prefix_caching: false\n", false},
 		{false, "mamba_cache_mode: align\n", false},
 	} {
-		extra := strings.ReplaceAll(c.extra, "\n", "\n")
-		cfg, err := decodeConfig(block(t, extra))
+		cfg, err := decodeConfig(block(t, c.extra))
 		if err != nil {
 			t.Fatal(err)
 		}
