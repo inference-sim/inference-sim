@@ -10,8 +10,8 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/ledger/configiq"
 )
 
-// PinnedRevision is the dataset revision the ledger names for configiq (M3.2 Table W row 17),
-// and PinnedUnits the units its ingest produces.
+// The dataset revision the ledger names for configiq (M3.2 Table W row 17), and the number of
+// units its ingest produces.
 const (
 	pinnedRevision = "21cc6eb06b1934485a83b17a93e634ef38b5799e"
 	pinnedUnits    = 1702
