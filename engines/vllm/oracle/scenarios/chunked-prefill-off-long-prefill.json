@@ -1,6 +1,6 @@
 {
  "name": "chunked-prefill-off-long-prefill",
- "description": "enable_chunked_prefill false with long_prefill_token_threshold 16 and priority scheduling: the cap still limits a prompt to 16 tokens a step (scheduler.py:1157-1158), and a request waits when its capped chunk does not fit the step's remaining budget (:1161), where chunked prefill would schedule the part that fits.",
+ "description": "enable_chunked_prefill false with long_prefill_token_threshold 16 and priority scheduling: the threshold does not apply (the scheduler caps a prefill with it only when chunked prefill is on), so a prompt is scheduled whole, and a request waits when its whole prompt does not fit the step's remaining budget.",
  "config": {
   "max_num_seqs": 6,
   "max_num_batched_tokens": 64,

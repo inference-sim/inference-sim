@@ -58,6 +58,9 @@ type oracleTrace struct {
 		VLLMCommit     string `json:"vllm_commit"`
 		ScenarioSHA256 string `json:"scenario_sha256"`
 		MockVersion    string `json:"mock_version"`
+		// DerivedFromSource marks a trace no oracle run produced (see core/sched's checkProvenance).
+		DerivedFromSource string `json:"derived_from_source"`
+		OracleRun         *bool  `json:"oracle_run"`
 	} `json:"provenance"`
 	Steps []struct {
 		Scheduled map[string]int `json:"scheduled"`
@@ -84,6 +87,10 @@ var adapterGoldens = []string{
 	// at the start of their step.
 	"chunked-prefill-off", "chunked-prefill-off-long-prefill",
 }
+
+// derivedAtCommit is the vLLM main head the rules were ported to (row 3d); a golden marked
+// derived_from_source was read from that source, not recorded from it (core/sched's derivedAtCommit).
+const derivedAtCommit = "0fda86a35419c9c70dbfada224c838c10fbb62ad"
 
 func TestAdapterAgainstVLLM(t *testing.T) {
 	var mocks struct {
@@ -117,9 +124,16 @@ func TestAdapterAgainstVLLM(t *testing.T) {
 				t.Fatal(err)
 			}
 			sum := sha256.Sum256(raw)
+			wantCommit, wantVersion := upstream.Commit, Version
+			if want.Provenance.DerivedFromSource != "" {
+				if want.Provenance.OracleRun == nil || *want.Provenance.OracleRun {
+					t.Fatalf("golden %s is derived from source and must record oracle_run false", name)
+				}
+				wantCommit, wantVersion = derivedAtCommit, derivedAtCommit[:12]
+			}
 			if want.Provenance.ScenarioSHA256 != hex.EncodeToString(sum[:]) ||
-				want.Provenance.VLLMCommit != upstream.Commit ||
-				strings.SplitN(want.Provenance.VLLMVersion, "+", 2)[0] != Version ||
+				want.Provenance.VLLMCommit != wantCommit ||
+				strings.SplitN(want.Provenance.VLLMVersion, "+", 2)[0] != wantVersion ||
 				want.Provenance.MockVersion != mockVersion {
 				t.Fatalf("golden provenance %+v does not match this scenario, vLLM %s and mock %s",
 					want.Provenance, Version, mockVersion)

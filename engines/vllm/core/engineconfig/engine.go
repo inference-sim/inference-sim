@@ -154,7 +154,8 @@ type Engine struct {
 	// token budget and stall the decodes beside it. Zero, the default, leaves prefills
 	// uncapped. The engine refuses one above max_model_len (vllm/config/scheduler.py
 	// verify_max_model_len), and whether a request alone in the batch is exempt is a
-	// release fact (rules.Pack.LongPrefillExemptsLoneRequest).
+	// release fact (rules.Pack.LongPrefillExemptsLoneRequest). The scheduler applies the cap
+	// only with enable_chunked_prefill on; with it off a prompt is scheduled whole.
 	//
 	// The field name follows the engine's CLI flag (--long-prefill-token-threshold).
 	LongPrefillTokenThreshold int `yaml:"long_prefill_token_threshold,omitempty"`
