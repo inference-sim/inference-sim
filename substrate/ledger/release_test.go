@@ -75,7 +75,7 @@ func writeLists(t *testing.T, dir string, lists map[Role]*Published) {
 	}
 }
 
-// The release gate (D7, COV-2, D1): a release carries all three published lists, and the fit and
+// The release gate (D7, COV-2, D1): a release carries both published lists, and the fit and
 // anchor lists each hold a unit. A tree with no lists, with an empty set of lists, or with an
 // empty anchor or fit list is not releasable, and the release job refuses to write one. Each
 // case is a known-bad input; the good case is the lists the release job itself wrote.
@@ -116,12 +116,11 @@ func TestReleaseRefusesAnEmptyPublishedSet(t *testing.T) {
 		"no list at all":  {func(m map[Role]*Published) { clear(m) }, "fit list is not published"},
 		"an empty anchor": {func(m map[Role]*Published) { m[RoleAnchor].Units = []string{} }, "anchor list holds no unit"},
 		"an empty fit":    {func(m map[Role]*Published) { m[RoleFit].Units = nil }, "fit list holds no unit"},
-		"three empty lists": {func(m map[Role]*Published) {
-			m[RoleFit].Units, m[RoleAnchor].Units, m[RoleReport].Units = []string{}, []string{}, []string{}
+		"two empty lists": {func(m map[Role]*Published) {
+			m[RoleFit].Units, m[RoleAnchor].Units = []string{}, []string{}
 		}, "anchor list holds no unit"},
-		"a missing anchor":    {func(m map[Role]*Published) { delete(m, RoleAnchor) }, "holds 2 of the three"},
-		"a missing report":    {func(m map[Role]*Published) { delete(m, RoleReport) }, "holds 2 of the three"},
-		"a missing fit alone": {func(m map[Role]*Published) { delete(m, RoleFit) }, "holds 2 of the three"},
+		"a missing anchor":    {func(m map[Role]*Published) { delete(m, RoleAnchor) }, "holds 1 of the two"},
+		"a missing fit alone": {func(m map[Role]*Published) { delete(m, RoleFit) }, "holds 1 of the two"},
 	} {
 		d, _, _ := releaseLedger(t, 200)
 		writeLists(t, d, clone(c.mut))
@@ -144,11 +143,6 @@ func TestReleaseRefusesAnEmptyPublishedSet(t *testing.T) {
 		t.Errorf("a tree with no lists was releasable: %v", err)
 	}
 
-	// An empty report list is allowed: the partition gives the report role no cut-points.
-	if err := CheckReleasable(clone(func(m map[Role]*Published) { m[RoleReport].Units = []string{} })); err != nil {
-		t.Errorf("an empty report list was refused: %v", err)
-	}
-
 	// The release job writes no empty fit or anchor list: units that all draw one role.
 	var onlyFit []Unit
 	for i := 0; len(onlyFit) < 5; i++ {
@@ -163,7 +157,7 @@ func TestReleaseRefusesAnEmptyPublishedSet(t *testing.T) {
 }
 
 // A published file that is present but empty fails the load itself, not only the release gate:
-// three empty lists drawn under the right seed were valid before.
+// empty lists drawn under the right seed were valid before.
 func TestPublishedCheckRefusesEmptyFitAndAnchor(t *testing.T) {
 	dir, _, units := releaseLedger(t, 10)
 	cfg, err := LoadConfig(dir)
@@ -180,8 +174,5 @@ func TestPublishedCheckRefusesEmptyFitAndAnchor(t *testing.T) {
 		if err := mk(r, units[0].UnitID).Check(r, cfg); err != nil {
 			t.Errorf("a %s list of one unit was refused: %v", r, err)
 		}
-	}
-	if err := mk(RoleReport).Check(RoleReport, cfg); err != nil {
-		t.Errorf("an empty report list was refused: %v", err)
 	}
 }

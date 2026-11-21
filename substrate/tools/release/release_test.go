@@ -965,8 +965,8 @@ func TestEngineSetNeedsTheInferenceSimCheckout(t *testing.T) {
 }
 
 // ledgerFiles writes a small data ledger into a staged tip: one source with three units and,
-// unless fit and anchor are both nil, the three published lists. fit and anchor name units by
-// the index digit, "0" to "2"; the report list is empty.
+// unless fit and anchor are both nil, the two published lists. fit and anchor name units by
+// the index digit, "0" to "2".
 func ledgerFiles(t *testing.T, r *repo, fit, anchor []string) {
 	t.Helper()
 	seed := strings.Repeat("ab", 32)
@@ -1039,7 +1039,6 @@ sources:
 		}
 		r.write("catalog/ledger/published/fit.yaml", list("fit", resolve(fit)))
 		r.write("catalog/ledger/published/anchor.yaml", list("anchor", resolve(anchor)))
-		r.write("catalog/ledger/published/report.yaml", list("report", nil))
 	}
 }
 

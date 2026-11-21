@@ -23,7 +23,7 @@
 //	    ledger/sglangtraces/export.py printed.
 //	ledger check [-release] DIR
 //	    Load and check every committed ledger file (D3, D4, D6). With -release, also require
-//	    the three published lists a release carries, the fit and anchor lists nonempty.
+//	    the two published lists a release carries, the fit and anchor lists nonempty.
 //	ledger check-generated -rows R -partition P DIR
 //	    Regenerate into a scratch directory and require each generated file to equal the
 //	    committed one byte for byte (D4).
@@ -468,7 +468,7 @@ func seedFromEnv() (string, error) {
 
 func cmdRelease(args []string, stdout io.Writer) error {
 	fs := flags("release")
-	out := fs.String("out", "", "directory to write fit.yaml, anchor.yaml and report.yaml into")
+	out := fs.String("out", "", "directory to write fit.yaml and anchor.yaml into")
 	if err := parse(fs, args, 1, "release -out DIR LEDGER"); err != nil {
 		return err
 	}
@@ -500,8 +500,8 @@ func cmdRelease(args []string, stdout io.Writer) error {
 			return err
 		}
 	}
-	_, _ = fmt.Fprintf(stdout, "published %d fit, %d anchor and %d report units\n",
-		len(lists[ledger.RoleFit].Units), len(lists[ledger.RoleAnchor].Units), len(lists[ledger.RoleReport].Units))
+	_, _ = fmt.Fprintf(stdout, "published %d fit and %d anchor units\n",
+		len(lists[ledger.RoleFit].Units), len(lists[ledger.RoleAnchor].Units))
 	return nil
 }
 
@@ -607,10 +607,10 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
-// published reads the three published lists, if the release job has written them.
+// published reads the two published lists, if the release job has written them.
 func published(dir string) (map[string]bool, error) {
 	out := map[string]bool{}
-	for _, r := range []ledger.Role{ledger.RoleFit, ledger.RoleAnchor, ledger.RoleReport} {
+	for _, r := range []ledger.Role{ledger.RoleFit, ledger.RoleAnchor} {
 		p := filepath.Join(dir, ledger.DirPublished, string(r)+".yaml")
 		raw, err := os.ReadFile(p)
 		if errors.Is(err, os.ErrNotExist) {

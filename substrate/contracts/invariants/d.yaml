@@ -108,7 +108,7 @@
     test: 'ledger: TestCheckAgainstBase'
   - repo: blis-substrate
     check: >-
-      A check that no committed file lists roles, other than the three published lists that the release
+      A check that no committed file lists roles, other than the two published lists that the release
       job writes and the legacy labels in legacy-map.yaml
     runs: pull_request
     status: ci
@@ -218,7 +218,7 @@
     test: 'ledger: TestLintWorkflows'
   - repo: blis-substrate
     check: >-
-      The three published lists are read back and checked against the ledger that drew them: the
+      The two published lists are read back and checked against the ledger that drew them: the
       seed hash and partition version it records, units that exist, one role per unit
     runs: pull_request
     status: ci
@@ -226,7 +226,7 @@
     known_bad: 'ledger: TestPublishedListsAreCheckedAgainstTheLedger'
   - repo: blis-substrate
     check: >-
-      A release carries all three published lists with the fit and anchor lists nonempty; the
+      A release carries both published lists, each nonempty; the
       release job, the ledger check and the release tool refuse otherwise
     runs: pull_request
     status: ci

@@ -64,7 +64,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # The release job (D7): computes the three published lists from the ledger at main. The
+  # The release job (D7): computes the two published lists from the ledger at main. The
   # release bot commits them in the release pull request; nothing here pushes.
   release:
     if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.job == 'release') || github.event_name == 'schedule')
@@ -79,7 +79,7 @@ jobs:
           ref: main
           persist-credentials: false
       - uses: ./.github/actions/go-toolchain
-      - name: Compute fit, anchor and report
+      - name: Compute fit and anchor
         env:
           LEDGER_SEED: ${{ secrets.LEDGER_SEED }}
         run: go run ./ledger/cmd/ledger release -out "$RUNNER_TEMP/published" catalog/ledger
