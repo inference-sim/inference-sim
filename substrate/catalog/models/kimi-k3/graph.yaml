@@ -11,6 +11,7 @@ global:
   tie_word_embeddings: false
   weight_dtype: bf16
   architecture: KimiK3ForConditionalGeneration
+  context_window: 1048576
 layer_kinds:
 - id: kda_moe
   nodes:
