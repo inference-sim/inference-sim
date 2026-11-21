@@ -357,6 +357,18 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      # cmd's recipe-preset test (cmd/recipe_presets_test.go) reads the vLLM recipes at the commit
+      # the engine models. An absent source is a failure, not a skip (X16): VLLM_SOURCE_REQUIRED is
+      # set below for the cmd shards. The commit is the vLLM commit stack.json names.
+      - name: Check out the vLLM recipes at the modelled commit (the cmd recipe-preset test reads them)
+        if: steps.gate.outputs.run == 'true' && matrix.group == 'cmd'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: vllm-project/vllm
+          ref: 0fda86a35419c9c70dbfada224c838c10fbb62ad
+          path: upstream/vllm
+          sparse-checkout: recipes/models
+
       - name: Setup Go
         if: steps.gate.outputs.run == 'true'
         uses: ./.github/actions/go-toolchain
@@ -386,6 +398,9 @@ jobs:
           # concurrent compile and test jobs instead of one per CPU keep the runner responsive.
           GOFLAGS: -modcacherw -p=2
           REQUIRE_NODE: "1"
+          # Read only by cmd's recipe-preset test; elsewhere unset.
+          VLLM_SOURCE: ${{ matrix.group == 'cmd' && format('{0}/upstream/vllm', github.workspace) || '' }}
+          VLLM_SOURCE_REQUIRED: ${{ matrix.group == 'cmd' && '1' || '' }}
         run: |
           # A diagnostic for the runner kills of the heavy leg (exit 143, "The runner has received
           # a shutdown signal", 4 to 6 minutes into compiling and running ./cmd): memory and load
