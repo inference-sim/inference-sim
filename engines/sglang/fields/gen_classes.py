@@ -57,6 +57,22 @@ def _load_sibling(name):
 
 gf = _load_sibling("gen_fields")
 
+
+def _load_goldengz():
+    """oracle/goldengz.py, which reads a committed trace as the file or as its gzip (-I keeps the
+    script's directory off sys.path, so it is loaded by path)."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "oracle", "goldengz.py")
+    spec = importlib.util.spec_from_file_location("goldengz", path)
+    if spec is None or spec.loader is None:
+        raise SystemExit("gen_classes: cannot load %s" % path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["goldengz"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+goldengz = _load_goldengz()
+
 LIMITS = (
     "Comparisons are found where the field, or a name the same function assigned from it, is compared "
     "with a literal: ==, !=, <, <=, >, >=, in, not in, is None, is not None, and a bare truth test. A "
@@ -208,14 +224,14 @@ def stated_values(repo, field, evidence):
     proof = evidence.get("proof", "")
     if proof.endswith(".json"):
         try:
-            for pr in read_json(os.path.join(repo, proof)).get("probes", []):
+            for pr in goldengz.load(os.path.join(repo, proof)).get("probes", []):
                 out.append((pr["value"], proof))
         except (OSError, ValueError, KeyError):
             pass
     for tr in evidence.get("traces", []):
         try:
-            doc = read_json(os.path.join(repo, tr))
-        except (OSError, ValueError):
+            doc = goldengz.load(os.path.join(repo, tr))
+        except (OSError, EOFError, ValueError):
             continue
         todo = [doc]
         while todo:
