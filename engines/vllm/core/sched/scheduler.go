@@ -346,6 +346,17 @@ func New(cfg Config) (*Scheduler, error) {
 	// num_prefill_lookahead_tokens tokens after it, and the scheduler then turns the drop off
 	// (Scheduler.__init__, vllm/v1/core/sched/scheduler.py:243-248@4ba787ec): the trailing block
 	// is safe to reuse once its hash covers what the drafter reads past it.
+	//
+	// Known deviation from the pinned vLLM (0fda86a3): it removed the EAGLE block drop and hashes
+	// the lookahead on every path, kv_transfer_config included (vllm/config/vllm.py:745-754,
+	// vllm/v1/worker/gpu/spec_decode/speculator_config.py:145-150). This port keeps the drop beside
+	// a connector, so with an MTP or EAGLE drafter and an offload tier every request loads the shared
+	// prefix's last block from the tier, and the connector holds each
+	// request behind the previous one's load of that same chunk (_chunks_being_loaded,
+	// offloading/scheduler.py:681-701): the scheduling delay of such a run is multiplied. With the
+	// drop off in this port the delay returns to the no-tier value. Closing it is the port of that
+	// removal through the scheduler, the KV manager, the offload connector's drafter group and
+	// their vLLM oracle scenarios, not a local change.
 	lookahead := 0
 	if cfg.Spec.EagleBlockDrop && cfg.EnablePrefixCaching && !cfg.KVTransfer {
 		lookahead = cfg.Spec.PrefillLookahead

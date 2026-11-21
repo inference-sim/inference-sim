@@ -175,10 +175,11 @@ func (k *Kernel) liftDraftPasses(d *price.DraftPlan, drafter string) error {
 //
 // The draft passes run at the requests' own draft rows plus the pad the engine states for the
 // drafter (Batch.DraftPaddedTokens). vLLM's drafters coordinate their own padded count across the
-// data-parallel group (coordinate_batch_across_dp, e.g. vllm/v1/spec_decode/dflash.py:230-261 at
-// v0.31.0), which depends on every rank's draft batch, so it is the engine's to state and not the
-// target's pad (Batch.PadTokens). A caller that states none prices the draft at its own rows, as
-// before.
+// data-parallel group, apart from the target's: the drafter's batch is the group's largest request
+// count times its query rows per request, uniform on every rank and never eager-by-sync
+// (_build_uniform_batch_dp_sync, vllm/v1/worker/gpu/spec_decode/speculator.py:747-765 at 0fda86a3).
+// It depends on every rank's batch, so it is the engine's to state and not the target's pad
+// (Batch.PadTokens). A caller that states none prices the draft at its own rows, as before.
 func (k *Kernel) priceDraft(b kernel.Batch, s *stepShape,
 	perResource *[numResources]float64) (float64, int) {
 	d := k.plan.Draft
@@ -219,7 +220,10 @@ func (k *Kernel) priceDraft(b kernel.Batch, s *stepShape,
 			perResource[r] += per[r]
 		}
 	}
-	if len(drafting) == 0 {
+	// A rank with no request to draft still launches the drafter when the group's agreed width
+	// (Batch.DraftPaddedTokens) is stated: vLLM's idle rank runs the dummy propose so the
+	// data-parallel group stays in step (model_runner.py:1014-1051 at 0fda86a3), all of it pad.
+	if len(drafting) == 0 && b.DraftPaddedTokens <= 0 {
 		if k.draftFirstPass {
 			// No pass is charged below, but the first one was launched: its layers and lookup,
 			// not its head.
@@ -276,7 +280,7 @@ func (k *Kernel) priceDraft(b kernel.Batch, s *stepShape,
 		}
 	}
 
-	if d.SequentialHead.Count > 0 {
+	if d.SequentialHead.Count > 0 && len(drafting) > 0 {
 		for i := range drafting {
 			drafting[i].Scheduled = 1
 		}
