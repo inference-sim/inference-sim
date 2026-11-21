@@ -57,14 +57,14 @@ Examples:
 
 ## Extending Latency Pricing
 
-Latency pricing is not extended in this repository. BLIS takes every step time, memory figure, P/D transfer time, offload tier transfer time and host overhead from `blis-latency-kernel` (adapter blis-vllm `compat/kernelmodel`); there is no `LatencyModel` factory or backend flag to add a case to.
+Latency pricing is not extended in this repository. BLIS takes every step time, memory figure, P/D transfer time, offload tier transfer time and host overhead from `blis-latency-kernel` (adapter `engines/vllm/core/kernelmodel`); there is no `LatencyModel` factory or backend flag to add a case to.
 
 - **A new pricing term, engine feature or model shape** → change `blis-latency-kernel`, release it, and bump the pinned module version in `go.mod`.
 - **New or refitted coefficients** → publish them in blis-substrate's `registry/` and name the coefficient sets in the scenario's `coefficients:` list.
 - **A new model, chip, fabric or storage device** → add it to blis-substrate's `catalog/`.
 - **A new scenario or engine-setting field** → change the format in `blis-schemas` first.
 
-On the BLIS side, a new kernel capability usually needs only the adapter in blis-vllm `compat/kernelmodel` and the scenario-to-`SimConfig` wiring (blis-vllm `compat/build`, called from `cmd/engine_build.go`). See the design (https://inference-sim.github.io/blis-design/).
+On the BLIS side, a new kernel capability usually needs only the adapter in `engines/vllm/core/kernelmodel` and the scenario-to-`SimConfig` wiring (`engines/vllm/core/build`, called from `cmd/engine_build.go`). See the design (https://inference-sim.github.io/blis-design/).
 
 ## Adding New Batch Formation Strategies
 
@@ -108,7 +108,7 @@ Examples:
 
 To add a new field to the per-request rows of the Result (`request_rows`):
 
-1. **Add field to `Request`** in blis-vllm `compat/engine/request.go` (runtime state, zero-value safe; `sim.Request` is an alias of it). When constructing `Request` structs, use `RequestState` typed constants (`StateQueued`, `StateRunning`, `StateCompleted`) — never bare strings.
+1. **Add field to `Request`** in `sim/request.go` (runtime state, zero-value safe). When constructing `Request` structs, use `RequestState` typed constants (`StateQueued`, `StateRunning`, `StateCompleted`) — never bare strings.
 2. **Record it**: a tag known when the request is created goes in `RequestFact` (`sim/cluster/fates.go`, set by `noteFacts`); a value the engine produces goes in `RequestMetrics` (`sim/metrics_utils.go`, propagated by `NewRequestMetrics()` or set where the engine records it).
 3. **State it in the row**: `requestRows` (`cmd/result_rows.go`) copies it onto the `result.RequestRow`. A member the row does not have is a blis-substrate change (`contracts/spec/result`), released and repinned in `go.mod`.
 4. **Document it** in the Per-Request Rows table of `docs/guide/results.md`.

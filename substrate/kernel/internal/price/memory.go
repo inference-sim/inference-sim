@@ -37,7 +37,7 @@ import "math"
 // states; see Kernel.lift in the root package). COVERAGE LIMIT: per-token-head quantization adds
 // two fp32 scales a token (vllm/model_executor/layers/attention/mla_attention.py:1580-1593), so
 // the engine's lowering refuses those cache dtypes rather than hand the kernel a width it does
-// not describe (for vLLM, blis-vllm's compat/lowering); padded pages are sized by
+// not describe (for vLLM, engines/vllm/core/lowering); padded pages are sized by
 // their own specs (vllm/v1/kv_cache_interface.py:527-536), and a compressed cache (a
 // compress_ratio layer) holds fewer states than tokens. Neither is modelled HERE: a graph
 // that states its caches (blis-schemas model.Cache) is sized from them in the root package

@@ -47,7 +47,7 @@ func RequireBlis(path string) error {
 }
 
 // writeScenarioVariant writes the scenario file src to dst with its single pool's run settings
-// replaced by pc's, through blis-vllm (compat/build.ScenarioVariant), which owns the engine
+// replaced by pc's, through the engine's build package (engines/vllm/core/build.ScenarioVariant), which owns the engine
 // block: max_num_seqs, max_num_batched_tokens, block_size, enable_prefix_caching,
 // max_model_len, gpu_memory_utilization, parallel.enable_expert_parallel and, when the run
 // passed one, max_cudagraph_capture_size. Everything else is carried over as the committed file

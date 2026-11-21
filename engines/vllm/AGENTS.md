@@ -47,7 +47,7 @@ In short:
 - **Process checks.** the repository-root `.github/workflows/blis.yml` runs the shared checks;
   `.github/workflows/private-names.yml` is the name scan. The section below and
   `.github/pull_request_template.md` are generated from the invariant registry
-  (`go run github.com/inference-sim/blis-substrate/tools/invariants agents -repo blis-vllm`,
+  (`go run ./substrate/tools/invariants agents -repo blis-vllm`,
   and `template`); CI checks them.
 
 <!-- BEGIN GENERATED: invariants (go run ./tools/invariants render; do not edit) -->

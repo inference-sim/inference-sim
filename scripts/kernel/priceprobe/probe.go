@@ -4,8 +4,8 @@
 // checkout, and reports the difference (release plan §3.3, "their price changes are
 // reported").
 //
-// It uses only kernel APIs both builds have (blis-vllm compat/kernelmodel's Open and
-// Kernel(), the contracts kernel's StepTime, SequenceVariableBytes and FixedBytes), so this
+// It uses only kernel APIs both builds have (kernelmodel's Open and
+// Kernel(): blis-vllm compat/kernelmodel at v0.15.0, engines/vllm/core/kernelmodel here, the contracts kernel's StepTime, SequenceVariableBytes and FixedBytes), so this
 // file builds in both. repos.go, the one file that differs, builds the adapter's roots: from
 // directories at v0.15.0, through the substrate's loader here. The steps are those the vLLM engine's own fixture move reported
 // (the vLLM engine fe56e4b): decode batches of 1, 32 and 256 sequences at context 4096, one

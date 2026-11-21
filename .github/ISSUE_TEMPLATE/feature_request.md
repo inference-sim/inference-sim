@@ -20,7 +20,7 @@ Describe the capability you'd like. Include a CLI example if applicable:
 - [ ] Core simulator (`sim/`)
 - [ ] Cluster simulation (`sim/cluster/`)
 - [ ] Workload generation (`sim/workload/`)
-- [ ] KV cache (an engine repository: blis-vllm `compat/kv`)
+- [ ] KV cache (the vLLM engine: `engines/vllm/core/kv`)
 - [ ] Decision tracing (`sim/trace/`)
 - [ ] CLI (`cmd/`)
 - [ ] New package needed
