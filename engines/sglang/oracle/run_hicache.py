@@ -115,7 +115,7 @@ def build_hicache(cfg: dict, h: dict, storage_dir: str):
     if (h["io_backend"], h["mem_layout"]) != ("direct", "layer_first"):
         raise SystemExit("the oracle runs HiCache's direct io backend on the layer_first layout only: the "
                          "kernel backend and the other layouts need CUDA kernels it cannot run; they are "
-                         "HiCache L2's to trace (inference-sim/blis-sglang#38)")
+                         "HiCache L2's to trace (inference-sim/inference-sim#2341)")
     page = cfg["page_size"]
     args = hicache_server_args(page, h, storage_dir)
     set_global_server_args_for_scheduler(args)
@@ -366,7 +366,7 @@ def record_scenario(sglang_root: str, path: str) -> dict:
         raise SystemExit(f"{path}: a HiCache scenario names its HiCache settings in a \"hicache\" block")
     if scenario["hicache"].get("storage_backend") not in (None, "file"):
         raise SystemExit(f"{path}: the oracle runs the file storage backend only; HiCache L3 traces the others "
-                         "(inference-sim/blis-sglang#40)")
+                         "(inference-sim/inference-sim#2342)")
     store = None
     if scenario["hicache"].get("storage_backend"):
         # The scheduler process keeps no SGLANG_* variable, so the file backend's directory is

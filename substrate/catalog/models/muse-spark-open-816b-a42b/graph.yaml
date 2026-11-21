@@ -449,7 +449,7 @@ encoder:
   omitted:
   - modality: audio
     reason: a ConvNeXt-style stack with depthwise convolutions, which have no primitive
-    issue: inference-sim/blis-substrate#275
+    issue: inference-sim/inference-sim#2474
 embedding:
 - op: Gather
   role: embed_tokens

@@ -3,7 +3,7 @@ package cmd
 // The Result document (#1871): what `blis run` and `blis replay` print. stdout is exactly one
 // blis-schemas Result (spec/result), JSON by default and YAML with --format yaml; --output
 // writes the same bytes to a file. --view summary renders the plain-text sections the
-// commands used to print, from the document, to stderr. Design of record: inference-sim/blis-substrate#154,
+// commands used to print, from the document, to stderr. Design of record: inference-sim/inference-sim#2467,
 // sections A and D.
 //
 // Every number here is read from the run's metrics; nothing is computed twice. The document

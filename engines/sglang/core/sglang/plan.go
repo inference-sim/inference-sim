@@ -217,7 +217,7 @@ type PoolInput struct {
 // sizes only; the caller adds the model's facts.
 func PoolPlan(k kernel.Kernel, in PoolInput) (Runtime, error) {
 	if in.AttnDPSize > 1 {
-		return Runtime{}, fmt.Errorf("sglang: pool sizing under DP attention is not modelled (inference-sim/blis-sglang#70)")
+		return Runtime{}, fmt.Errorf("sglang: pool sizing under DP attention is not modelled (inference-sim/inference-sim#2356)")
 	}
 	const gib = float64(1 << 30)
 	weights := float64(k.FixedBytes().Weights) / gib

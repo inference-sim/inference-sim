@@ -117,7 +117,7 @@ ENV = ["NCCL_MAX_CTAS", "SOME_OTHER", "VLLM_A", "VLLM_B"]
 
 
 def entry():
-    return {"status": "not_modelled", "evidence": {"issue": "inference-sim/blis-vllm#1"},
+    return {"status": "not_modelled", "evidence": {"issue": "inference-sim/inference-sim#2481"},
             "estimation": {"rule": "none"}}
 
 

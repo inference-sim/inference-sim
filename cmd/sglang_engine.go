@@ -94,7 +94,7 @@ func (h sglangHost) Open(s engine.Spec) (sglangengine.Pool, error) {
 	}
 	overhead, ok := sglangContextOverheadGiB[in.Chip.Name]
 	if !ok {
-		return sglangengine.Pool{}, fmt.Errorf("sglang engine: the memory CUDA holds before a model loads is not measured on the chip %q (inference-sim/blis-sglang#49)", in.Chip.Name)
+		return sglangengine.Pool{}, fmt.Errorf("sglang engine: the memory CUDA holds before a model loads is not measured on the chip %q (inference-sim/inference-sim#2344)", in.Chip.Name)
 	}
 	facts, err := sglanglower.ModelFactsOf(in.Model)
 	if err != nil {
@@ -144,13 +144,13 @@ var sglangSpeculation struct {
 
 // sglangSpeculationRefusal is the refusal for an acceptance flag on an SGLang scenario that
 // speculates: the host resolves acceptance from the vLLM-form speculative block the twin
-// carries, which states no drafts, so it cannot resolve this scenario's (inference-sim/blis-sglang#68).
+// carries, which states no drafts, so it cannot resolve this scenario's (inference-sim/inference-sim#2355).
 func sglangSpeculationRefusal(flag string) error {
 	drafts := ""
 	if sglangSpeculation.Drafts > 0 {
 		drafts = fmt.Sprintf(", %d drafts", sglangSpeculation.Drafts)
 	}
-	return fmt.Errorf("--%s: scenario %q speculates through the SGLang engine (speculative_algorithm %s%s), and the host cannot yet resolve an SGLang scenario's acceptance (inference-sim/blis-sglang#68)",
+	return fmt.Errorf("--%s: scenario %q speculates through the SGLang engine (speculative_algorithm %s%s), and the host cannot yet resolve an SGLang scenario's acceptance (inference-sim/inference-sim#2355)",
 		flag, kernelScenario, sglangSpeculation.Algorithm, drafts)
 }
 
@@ -207,7 +207,7 @@ func adoptSGLangTwin() error {
 				}
 				ctx, ok := blk["context_length"]
 				if !ok {
-					return fmt.Errorf("scenario %s: the SGLang engine block must state context_length: the catalog graph carries no context window (inference-sim/blis-sglang#49)", real)
+					return fmt.Errorf("scenario %s: the SGLang engine block must state context_length: the catalog graph carries no context window (inference-sim/inference-sim#2344)", real)
 				}
 				// The adapter needs a block size for a sparse-MLA model; the twin states SGLang's
 				// page_size when the block does, else 64, the page SGLang resolves for DSA models.
@@ -324,9 +324,9 @@ func (s *sglangKernelSet) get(pool int) *latencykernel.Kernel {
 func sglangTwinSubstitutions() []sim.Substitution {
 	return []sim.Substitution{
 		{Setting: "host_side_facts", Stated: "the SGLang engine block", Priced: "a vLLM-form twin of the scenario",
-			Reason: "the host takes the model, hardware, parallelism and request-bounding facts through the vLLM engine's adapter, which decodes only a vLLM engine block; the engine itself, its KV pool and its step pricing are SGLang's (inference-sim/blis-sglang#49)"},
+			Reason: "the host takes the model, hardware, parallelism and request-bounding facts through the vLLM engine's adapter, which decodes only a vLLM engine block; the engine itself, its KV pool and its step pricing are SGLang's (inference-sim/inference-sim#2344)"},
 		{Setting: "host_overheads", Stated: "SGLang's API-server and detokenizer path", Priced: "the registry's engine-independent host-overhead coefficients",
-			Reason: "post_decode_fixed_overhead and output_token_processing_time are read from the registry's cost-model-host-overheads set, measured under vLLM's server; no SGLang-specific measurement exists (inference-sim/blis-sglang#49)"},
+			Reason: "post_decode_fixed_overhead and output_token_processing_time are read from the registry's cost-model-host-overheads set, measured under vLLM's server; no SGLang-specific measurement exists (inference-sim/inference-sim#2344)"},
 	}
 }
 

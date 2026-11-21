@@ -15,7 +15,7 @@ import (
 // while it ran a scenario, and the driver's in orderings the scheduler does not make. The calls
 // the cache makes in turn are SGLang's too, in order and with the same answers: at the tree core,
 // at the allocator and at the request pool. The tree core's own calls at TreeComponent are checked
-// only through those answers (https://github.com/inference-sim/blis-sglang/issues/57). The
+// only through those answers (https://github.com/inference-sim/inference-sim/issues/2347). The
 // allocator and the request pool are stand-ins that answer as the trace says SGLang's did; their
 // own ports are checked against the same traces where they are built. A call SGLang raised on
 // must make the port panic.

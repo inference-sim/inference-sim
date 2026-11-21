@@ -16,7 +16,7 @@ import (
 )
 
 // An offload block whose connector options state only vLLM's p2p tier resolves to its CPU tier:
-// the v0.33.0 engine builds the p2p tier itself (blis-vllm#204), so the offload the simulator
+// the v0.33.0 engine builds the p2p tier itself (inference-sim/inference-sim#2439), so the offload the simulator
 // prices is the CPU tier the block states. Before, any connector option was refused, so a p2p
 // deployment could not run. A block stating any other option alongside is still refused, naming it.
 func TestAP2PTierOnlyConnectorOptionsResolveToTheCPUTier(t *testing.T) {

@@ -227,7 +227,7 @@ func resolveKVOffloadTier(index int, tb KVOffloadTierBlock, devices map[string]K
 	}
 	tier.Type = *tb.Type
 	if tier.Type != "fs" {
-		return tier, fmt.Errorf("kv_offload: secondary_tiers[%d].type=%q is not supported in BLIS yet (only \"fs\" is representable; obj/p2p/example tiers have no faithful config mapping — obj: https://github.com/inference-sim/blis-vllm/issues/63, p2p: https://github.com/inference-sim/blis-vllm/issues/13)", index, tier.Type)
+		return tier, fmt.Errorf("kv_offload: secondary_tiers[%d].type=%q is not supported in BLIS yet (only \"fs\" is representable; obj/p2p/example tiers have no faithful config mapping — obj: https://github.com/inference-sim/blis-vllm/issues/63, p2p: https://github.com/inference-sim/inference-sim/issues/2484)", index, tier.Type)
 	}
 
 	// root_dir: required for fs.

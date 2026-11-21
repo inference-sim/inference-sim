@@ -12,7 +12,7 @@ import (
 )
 
 // envIssue is the open issue that models the environment variables the engine reads no value of.
-const envIssue = "inference-sim/blis-sglang#9"
+const envIssue = "inference-sim/inference-sim#2460"
 
 // EnvFrom is the environment a pool states in its engine block's env map: the process environment
 // SGLang's scheduler settings read, from base, with each variable the map names set as SGLang's
@@ -60,7 +60,7 @@ func EnvFrom(base Env, raw map[string]any) (Env, error) {
 		case "SGLANG_RADIX_FORCE_MISS":
 			var on bool
 			if on, err = envBool(name, text); err == nil && on {
-				err = fmt.Errorf("environment variable %s=%s is not modelled: it forces every prefix-cache match to miss (mem_cache/common.py:240, schedule_policy.py:375@297e54fd) (inference-sim/blis-sglang#3)", name, text)
+				err = fmt.Errorf("environment variable %s=%s is not modelled: it forces every prefix-cache match to miss (mem_cache/common.py:240, schedule_policy.py:375@297e54fd) (inference-sim/inference-sim#2449)", name, text)
 			}
 		default:
 			err = fmt.Errorf("environment variable %s is not modelled (%s)", name, envIssue)

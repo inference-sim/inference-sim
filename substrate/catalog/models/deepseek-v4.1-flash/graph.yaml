@@ -2414,7 +2414,7 @@ encoder:
   omitted:
   - modality: image
     reason: the tower's stored dtype is not stated by config.json and no safetensors headers are pinned
-    issue: inference-sim/blis-substrate#277
+    issue: inference-sim/inference-sim#2475
 embedding:
 - op: Gather
   role: embed_tokens

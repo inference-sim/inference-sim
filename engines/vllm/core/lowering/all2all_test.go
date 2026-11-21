@@ -9,7 +9,7 @@ import (
 	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
 )
 
-// The plan states the all-to-all the engine runs, not the name it was given (blis-vllm#75): a
+// The plan states the all-to-all the engine runs, not the name it was given (inference-sim/inference-sim#2429): a
 // deprecated alias is the backend it runs as, an unstated backend beside a MoE backend that
 // dispatches itself is passthrough, and passthrough runs no framework all-to-all, so the cost
 // model prices no dispatch for it. Any other backend is named by itself, for the cost model to

@@ -12,7 +12,7 @@ import (
 // names and the workload spec an option names. So --from-result reproduces the run with neither
 // passed again: the spec file is deleted and the router file is in no directory the
 // reproduction is given, and the new Result equals the original outside runtime and rerun_of.
-// A trace or a corpus stays a sha256 only (Principle 6 of blis-substrate#154), so no held file
+// A trace or a corpus stays a sha256 only (Principle 6 of inference-sim/inference-sim#2467), so no held file
 // is bulk data.
 func TestFromResult_NeedsNoInputFilePassedAgain(t *testing.T) {
 	dir := t.TempDir()

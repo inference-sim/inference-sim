@@ -92,7 +92,7 @@ func TestEncoderValidatorRejectsEachMalformation(t *testing.T) {
 			g.Encoder.Omitted = []OmittedTower{{Modality: TowerAudio, Reason: "x", Issue: "see the tracker"}}
 		}, "issue"},
 		{"omitted tower under the multimodal modality", func(g *Graph) {
-			g.Encoder.Omitted = []OmittedTower{{Modality: TowerAudio, Reason: "x", Issue: "inference-sim/blis-substrate#275"}}
+			g.Encoder.Omitted = []OmittedTower{{Modality: TowerAudio, Reason: "x", Issue: "inference-sim/inference-sim#2474"}}
 		}, "omits a tower"},
 		{"no omitted tower under the text-decoder modality", func(g *Graph) { g.Modality = ModalityTextDecoderOfMultimodal }, "must state"},
 		{"multimodal with no encoder", func(g *Graph) { g.Encoder = nil }, "encoder section"},
@@ -132,7 +132,7 @@ func TestEncoderOmittedAudioWithIssueValidates(t *testing.T) {
 	g := multimodalGraph(kimiTower())
 	g.Modality = ModalityTextDecoderOfMultimodal
 	g.Encoder.Omitted = []OmittedTower{{Modality: TowerAudio, Reason: "depthwise convolution has no primitive",
-		Issue: "inference-sim/blis-substrate#275"}}
+		Issue: "inference-sim/inference-sim#2474"}}
 	if p := g.Validate(); !p.OK() {
 		t.Fatalf("a graph that omits an audio tower with an issue was rejected:\n%s", p.Error())
 	}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-term non-KV memory, fitted to vLLM's own start-up decomposition on fit units (inference-sim/blis-substrate#76).
+"""Per-term non-KV memory, fitted to vLLM's own start-up decomposition on fit units (inference-sim/inference-sim#2375).
 
     python scripts/fit_memory_startup.py            # print the fits, rewrite the memory set
     python scripts/fit_memory_startup.py --check    # exit 1 if the set would change
@@ -241,7 +241,7 @@ def fit(table: dict) -> dict:
 CATALOG_PART = {"gb200": "gb200-nvl72"}
 
 
-# Why each model's terms are its own (inference-sim/blis-substrate#294 seeks the general form). Every
+# Why each model's terms are its own (inference-sim/inference-sim#2409 seeks the general form). Every
 # one of these models logs the same FlashInfer allreduce-norm fusion workspace (mnnvl backend), so the
 # per-model differences lie in what only that model runs.
 MECHANISM = {
@@ -254,12 +254,12 @@ MECHANISM = {
     "minimax-m3-mxfp8": ("its EAGLE3 drafter (method eagle3 in every fitted run), whose forward and graphs share "
                          "the profile, and its block-sparse attention"),
 }
-GENERAL_FORM = "inference-sim/blis-substrate#294"
+GENERAL_FORM = "inference-sim/inference-sim#2409"
 
 # Groups whose entries could not be checked out of sample, because no published anchor unit of the
 # same (model, part, tp) prints the decomposition. Each per-model entry lands only once it improves
 # its own term on that model's anchor units (the coordinator's guard for the single-model exception;
-# the check is recorded on blis-substrate#76); these stay a recorded result until an anchor covers them.
+# the check is recorded on inference-sim/inference-sim#2375); these stay a recorded result until an anchor covers them.
 UNCHECKED = {("deepseek-v4.1-flash", "gb300", 2)}
 
 

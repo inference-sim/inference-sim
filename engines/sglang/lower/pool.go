@@ -276,7 +276,7 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 		p.InFlight = 2
 	}
 
-	// Speculative decoding at top-k 1 (inference-sim/blis-sglang#68): a chain of speculative_num_steps
+	// Speculative decoding at top-k 1 (inference-sim/inference-sim#2355): a chain of speculative_num_steps
 	// drafts, verified in one target pass. The draft passes are the engine's execution decisions and are
 	// stated here, so the cost model prices what it is told and guesses none (SUB-6).
 	if first, passes, ok := DraftPasses(a); ok {
@@ -286,7 +286,7 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 			note("enable_multi_layer_eagle", "true",
 				"the multi-layer drafter runs its passes in _draft_extend_for_decode (speculative/multi_layer_eagle_worker_v2.py:814@297e54fd), a path "+
 					"DraftPolicy cannot state; its draft passes are priced as a single-layer chain's, which "+
-					"under-prices them (inference-sim/blis-sglang#68)")
+					"under-prices them (inference-sim/inference-sim#2355)")
 		}
 		note("speculative_first_draft_chain", "prefill_step",
 			"the first draft chain of a request runs after its prefill in SGLang's draft-extend pass; it is priced "+

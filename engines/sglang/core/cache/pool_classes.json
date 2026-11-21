@@ -1,6 +1,6 @@
 {
  "release": "SGLang v0.5.23",
- "issue": "inference-sim/blis-sglang#44",
+ "issue": "inference-sim/inference-sim#2343",
  "classes": [
   {
    "class": "DSV4NPUTokenToKVPoolAllocator",

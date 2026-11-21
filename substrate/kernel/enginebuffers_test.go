@@ -11,7 +11,7 @@ import (
 // An engine that states a per-rank GPU buffer in its plan has it come out of the KV budget: the
 // budget is what the part allows minus FixedBytes().Total(). The case is vLLM's draft-logits
 // buffer under probabilistic draft sampling, max_num_seqs x K x vocab x the head's 2 bytes
-// (inference-sim/blis-substrate#164).
+// (inference-sim/inference-sim#2398).
 func TestAStatedGPUBufferShrinksTheKVBudgetByItsBytes(t *testing.T) {
 	d, err := load.Embedded()
 	if err != nil {

@@ -15,7 +15,7 @@ import (
 // one ServerArgs setting selects, the issue the list cites is the issue the refusal of that setting
 // at that value cites. Items an externally loaded class or file selects ("dynamic" storage, a
 // customized dispatcher) are not selected by a value of a closed set and are left to their parent
-// issue (blis-sglang#9).
+// issue (inference-sim/inference-sim#2460).
 func TestSurfaceListCitesTheIssueTheSettingRefusalCites(t *testing.T) {
 	raw, err := os.ReadFile("../surface.json")
 	if err != nil {

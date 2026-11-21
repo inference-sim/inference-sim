@@ -13,7 +13,7 @@ import (
 )
 
 // issueHybrid is the issue that models the hybrid (Gated DeltaNet plus attention) model's cache.
-const issueHybrid = "inference-sim/blis-sglang#94"
+const issueHybrid = "inference-sim/inference-sim#2366"
 
 // lowerRecurrent states, for a model with recurrent layers, the width of the recurrent state's
 // element and how many states a request keeps.

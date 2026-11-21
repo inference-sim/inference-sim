@@ -10,7 +10,7 @@
 //	    Also, per commit, merge commits included: a good signature, an author who is a
 //	    maintainer or a Signed-off-by line of one, exactly one Assisted-by and one Signed-off-by
 //	    line. The integrator runs it on each integration head before another repository pins it
-//	    (inference-sim/blis-substrate#335).
+//	    (inference-sim/inference-sim#2415).
 //	prcheck workflows [-dir .github]
 //	    X21, X22, X16: actions pinned by commit, pip --require-hashes, no ignored exit
 //	    codes, no skipped tests in a job, gate trigger paths as declared.

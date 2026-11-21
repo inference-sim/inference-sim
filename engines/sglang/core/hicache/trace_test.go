@@ -792,8 +792,8 @@ func (r *replay) driven(c cache.Call) bool {
 
 // refused is each controller method the port refuses, with why.
 var refused = map[string]string{
-	"submit_prefetch":      "HiCache L3 storage prefetch (inference-sim/blis-sglang#40)",
-	"allocate_storage_hit": "HiCache L3 storage prefetch (inference-sim/blis-sglang#40)",
+	"submit_prefetch":      "HiCache L3 storage prefetch (inference-sim/inference-sim#2342)",
+	"allocate_storage_hit": "HiCache L3 storage prefetch (inference-sim/inference-sim#2342)",
 }
 
 // threadBodies are the controller's thread bodies, which only the runner calls.
@@ -964,10 +964,10 @@ func (r *replay) call(c cache.Call) error {
 		switch c.Method {
 		case "write":
 			if r.arg(c, "extra_pools") != nil {
-				return fmt.Errorf("a write with side pools is not modelled (inference-sim/blis-sglang#74)")
+				return fmt.Errorf("a write with side pools is not modelled (inference-sim/inference-sim#2360)")
 			}
 			if r.arg(c, "start_owner") != nil {
-				return fmt.Errorf("a write with a page-interleaved shard owner is not modelled (inference-sim/blis-sglang#44)")
+				return fmt.Errorf("a write with a page-interleaved shard owner is not modelled (inference-sim/inference-sim#2343)")
 			}
 			flush, _ := r.arg(c, "flush").(bool)
 			node, _ := r.arg(c, "node_id").(float64)
@@ -976,7 +976,7 @@ func (r *replay) call(c cache.Call) error {
 			}
 		case "load":
 			if r.arg(c, "extra_pools") != nil || r.arg(c, "device_indices") != nil || r.arg(c, "anchor_indices") != nil {
-				return fmt.Errorf("a load into caller-owned slots or with side pools is not modelled (inference-sim/blis-sglang#74)")
+				return fmt.Errorf("a load into caller-owned slots or with side pools is not modelled (inference-sim/inference-sim#2360)")
 			}
 			node, _ := r.arg(c, "node_id").(float64)
 			if d, ok := ctrl.Load(ints(r.arg(c, "host_indices")), optInt(r.arg(c, "priority")), int64(node)); ok {
@@ -999,7 +999,7 @@ func (r *replay) call(c cache.Call) error {
 			got = ctrl.HasInflightDeviceTransfers()
 		case "write_storage":
 			if r.arg(c, "extra_pools") != nil {
-				return fmt.Errorf("a storage backup with side pools is not modelled (inference-sim/blis-sglang#74)")
+				return fmt.Errorf("a storage backup with side pools is not modelled (inference-sim/inference-sim#2360)")
 			}
 			got = ctrl.WriteStorage(ints(r.arg(c, "host_indices")), ints(r.arg(c, "token_ids")), strs(r.arg(c, "hash_value")),
 				strs(r.arg(c, "prefix_keys")))
@@ -1011,7 +1011,7 @@ func (r *replay) call(c cache.Call) error {
 			}
 		case "append_host_mem_release":
 			if r.arg(c, "extra_pools") != nil && len(r.arg(c, "extra_pools").([]any)) > 0 {
-				return fmt.Errorf("side-pool releases are not modelled (inference-sim/blis-sglang#74)")
+				return fmt.Errorf("side-pool releases are not modelled (inference-sim/inference-sim#2360)")
 			}
 			ctrl.AppendHostMemRelease(ints(r.arg(c, "host_indices")))
 		case "parse_storage_backend_extra_config":

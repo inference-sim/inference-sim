@@ -1467,7 +1467,7 @@ func (e *transferEnvironment) pullDemand(p plan.PoolPlan, t plan.Transfer) (kern
 // peer's pool numbering: in a colocated run the engine's own pool, in a disaggregated run the
 // other pool (placement of the opposite pool).
 //
-// Named limit (blis-vllm#204): a WRITE between two instances of one pool in a disaggregated run
+// Named limit (inference-sim/inference-sim#2439): a WRITE between two instances of one pool in a disaggregated run
 // is read as crossing to the other pool, because a Move names an endpoint and not its pool.
 //
 // Between different global nodes the WRITE crosses the fabric: the kernel's PDTransferDemand links
@@ -1673,7 +1673,7 @@ func requireWeightSource(tier string, def *engineModel, variants map[string]*poo
 	}
 }
 
-// Peer endpoints: where each instance sits, for the engines that send it KV (blis-vllm#204). They are
+// Peer endpoints: where each instance sits, for the engines that send it KV (inference-sim/inference-sim#2439). They are
 // here, with every other use of the vLLM engine, because only this file reaches it.
 
 // peerEndpoint is where each instance's workers sit, in the numbering of its own pool, for an

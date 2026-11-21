@@ -15,10 +15,10 @@ import (
 // moves an obj job as one NIXL OBJ transfer through host memory with an S3 client (design §6.1:
 // the storage form over tcp, to a catalog storage device reached over the network). No dataset the
 // engine may fit from measures an object store's latency or bandwidth, so the device and its
-// coefficients are scenario inputs: a tier that names no device_class is refused (blis-vllm#184).
+// coefficients are scenario inputs: a tier that names no device_class is refused (inference-sim/inference-sim#2436).
 
 // objIssue is the obj tier's pricing inputs.
-const objIssue = issueBase + "184"
+const objIssue = issueSim + "2436"
 
 // objKeys are the obj tier's keys in secondary_tiers (ObjectStoreSecondaryTierManager.__init__,
 // tiering/obj/manager.py:106-117@4ba787ec), and device_class, the simulator's. type is the
@@ -65,7 +65,7 @@ func buildObj(i int, raw map[string]any, topBackpressure map[string]any, chunkBy
 		}
 	}
 	if raw["backpressure"] != nil || topBackpressure != nil {
-		return nil, at("store backpressure is not modelled (%s)", issueBase+"13")
+		return nil, at("store backpressure is not modelled (%s)", issueSim+"2484")
 	}
 	store, ok := raw["store_config"].(map[string]any)
 	if !ok {

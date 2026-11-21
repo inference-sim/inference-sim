@@ -4,7 +4,7 @@
     python scripts/fit_blackwell_fp8_grouped_ramp.py            # print the fits, rewrite the file
     python scripts/fit_blackwell_fp8_grouped_ramp.py --check    # exit 1 if the file would change
 
-WHY THIS FAMILY EXISTS (inference-sim/blis-substrate#112, #121). Block-FP8 routed experts on a
+WHY THIS FAMILY EXISTS (inference-sim/blis-substrate#112, inference-sim/inference-sim#2385). Block-FP8 routed experts on a
 Blackwell part had no grouped ramp: the kernel priced them on the dense FP8 linear ramp (gemm_*_fp8),
 the whole expert's FLOPs on every tensor-parallel rank, with no floor. With the tensor-parallel
 division (#112) that composition prices MiniMax-M2.5's routed layer at 7 us for one token on B200

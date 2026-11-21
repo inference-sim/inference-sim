@@ -32,7 +32,7 @@ import (
 // before the schedule that the oracle's worker reports it at), and settles the second itself
 // (settleTiers), because the engine reports a tier job as a transfer with the first schedule after the
 // job was submitted, so a job the step's output submitted would otherwise finish a step later than the
-// oracle's does (blis-vllm#190 names that substitution; offloadtiers_test.go drives the transfers).
+// oracle's does (inference-sim/inference-sim#2437 names that substitution; offloadtiers_test.go drives the transfers).
 
 // tierScenario is the part of an offloading scenario this driver reads.
 type tierScenario struct {

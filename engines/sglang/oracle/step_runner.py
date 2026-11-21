@@ -45,7 +45,7 @@ a copy's duration is the simulator's to price.
 
 # Thread targets the oracle refuses to start, each with its open issue (X28).
 REFUSED = {"pp_prefetch_command_thread_func": "the PP prefetch ticket thread runs only with buffer_only host memory "
-           "and pipeline parallelism, which is not modelled (inference-sim/blis-sglang#8)"}
+           "and pipeline parallelism, which is not modelled (inference-sim/inference-sim#2456)"}
 
 # The modules whose names the runner replaces, and the names.
 THREAD_MODULES = ("sglang.srt.managers.cache_controller", "sglang.srt.mem_cache.hybrid_cache.hybrid_cache_controller")

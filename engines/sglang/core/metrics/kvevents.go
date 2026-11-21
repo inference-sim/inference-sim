@@ -33,7 +33,7 @@ func appendEvent(b []byte, e cache.Event) []byte {
 	switch e.Type {
 	case "BlockStored":
 		if e.LoraID != nil {
-			panic("a BlockStored event with a LoRA adapter is not modelled (inference-sim/blis-sglang#80)")
+			panic("a BlockStored event with a LoRA adapter is not modelled (inference-sim/inference-sim#2457)")
 		}
 		n := 6 // type, block_hashes, parent_block_hash, token_ids, block_size, lora_id
 		for _, set := range []bool{e.Medium != "", e.CacheSalt != nil, e.SessionID != nil, e.LoraName != nil} {

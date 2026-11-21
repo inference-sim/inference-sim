@@ -53,7 +53,7 @@ func loadCapacityOracle(t *testing.T) []ocCapacityCase {
 // The size an engine core logs at start-up, "GPU KV cache size: N tokens", is vLLM's
 // get_kv_cache_capacity over the pool: the pool's blocks over the blocks one max_model_len request
 // holds across the KV cache groups, times max_model_len. It is not the pool's blocks times the block
-// size, which is 6 to 23 times larger for a DeepSeek-V4 model (blis-vllm#129): that is the figure
+// size, which is 6 to 23 times larger for a DeepSeek-V4 model (inference-sim/inference-sim#2431): that is the figure
 // the Result carried as the engine's KV capacity. The expected numbers are vLLM v0.33.0's own, from
 // oracle/lower/extract.py over DeepSeek-V4-Pro's and V4.1-Flash's registered spec classes, for two
 // model lengths, four in-flight budgets (a synchronous and an asynchronous batch queue at several

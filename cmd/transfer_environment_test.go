@@ -153,7 +153,7 @@ func TestTransferEnvironment_RefusesWhatItCannotPrice(t *testing.T) {
 
 // Moves in one pool, stated on two nodes (the muse-spark arm D engine spans both): the copy is
 // priced for the one node the engine states, on that node's link, and costs the same on either
-// (blis-substrate#48). The engine's workers on every node copy their own shard at once; the
+// (inference-sim/inference-sim#2369). The engine's workers on every node copy their own shard at once; the
 // boundary has one From and one To, and the retired path priced one rate for the whole copy.
 func TestTransferEnvironment_ACopyOnAPoolOfTwoNodesIsPricedOnTheNodeTheEngineNames_substrate48(t *testing.T) {
 	m := openScenarioModel(t, "../testdata/scenarios/muse-spark", "muse-h100-roce-armD.yaml")
@@ -176,7 +176,7 @@ func TestTransferEnvironment_ACopyOnAPoolOfTwoNodesIsPricedOnTheNodeTheEngineNam
 
 // A hybrid model's KV groups hold different bytes a block, and vLLM copies each group's blocks
 // over that group's layers only. plan.Transfer has one token count, so the Environment prices
-// the blocks at the pool's page size, the one rule it can express (blis-substrate#49). For the
+// the blocks at the pool's page size, the one rule it can express (inference-sim/inference-sim#2370). For the
 // shipped hybrid scenario that equals the retired group-sized price (the byte gate's runs and the
 // body's evidence compare whole runs); this test names the rule so that a boundary that grows
 // per-group sizes changes it on purpose.

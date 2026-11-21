@@ -321,7 +321,7 @@ pools:
 // the dtype the QSA layer reads (cache_dtype, qsa.py:361-368), the indexer's two are bf16 or
 // indexer_kv_dtype -- so the pool's page bytes are the specs' and none is derived from the memory
 // model's bytes, which count the graph's stated caches at a width the TP split does not give
-// (blis-vllm#310). Laws at every tensor-parallel size the model shards to: it opens, no cache is
+// (inference-sim/inference-sim#2491). Laws at every tensor-parallel size the model shards to: it opens, no cache is
 // left without an element size, the main cache's follows cache_dtype, and the pool's bytes a
 // block do not depend on the memory model's page.
 func TestQwen4ExpPoolPageIsTheSpecsAndNotTheMemoryModels(t *testing.T) {

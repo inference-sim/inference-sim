@@ -12,7 +12,7 @@ import (
 	"github.com/inference-sim/inference-sim/engines/sglang/core/sched"
 )
 
-// Speculative decoding at top-k 1 as the contract sees it (S30, inference-sim/blis-sglang#68).
+// Speculative decoding at top-k 1 as the contract sees it (S30, inference-sim/inference-sim#2355).
 
 func specEngine(t *testing.T, steps int, mutate func(*sched.Config)) *Engine {
 	t.Helper()

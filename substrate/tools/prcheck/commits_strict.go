@@ -7,7 +7,7 @@ import (
 
 // StrictCommitPolicy returns the findings of `prcheck commits -strict` for one commit. It is the
 // check the integrator runs on an integration head before any other repository pins it, because
-// a pin names a commit that is then fixed for good (inference-sim/blis-substrate#335). It adds
+// a pin names a commit that is then fixed for good (inference-sim/inference-sim#2415). It adds
 // to CommitPolicy, which it does not replace:
 //
 //   - the commit carries a good signature (Signature is git's %G? letter, G);

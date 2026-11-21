@@ -84,7 +84,7 @@ func (cs *ClusterSimulator) registerPeer(inst *InstanceSimulator) {
 // one it states; an instance with no single hostname (none stated, or one spanning nodes) keeps it
 // too, and registerPeer refuses two instances that then share one. A refused address stops the run.
 //
-// Named substitution (blis-vllm#204): this stands for the per-node VLLM_P2P_SIDE_CHANNEL_HOST a
+// Named substitution (inference-sim/inference-sim#2439): this stands for the per-node VLLM_P2P_SIDE_CHANNEL_HOST a
 // deployment sets, and for the distinct side-channel port each engine of one node is given.
 func (cs *ClusterSimulator) assignPeerAddr(inst *InstanceSimulator) {
 	host := inst.endpointTopology.Hostname

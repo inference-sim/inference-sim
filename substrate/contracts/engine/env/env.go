@@ -52,8 +52,8 @@ type Environment interface {
 //
 // The demand is for the one move Move states. That is exact for a pool on one node and for a
 // model with one KV group. For a pool that spans nodes it is the demand on the node Move names
-// (inference-sim/blis-substrate#48), and for a hybrid model it is sized from Move.Tokens, not
-// from the blocks each KV group moves (inference-sim/blis-substrate#49); both are deferred to M3.
+// (inference-sim/inference-sim#2369), and for a hybrid model it is sized from Move.Tokens, not
+// from the blocks each KV group moves (inference-sim/inference-sim#2370); both are deferred to M3.
 //
 // It refuses a transfer whose report and Move disagree (engine.Transfer.Validate) and a move
 // the plan cannot make (plan.PoolPlan.CheckTransfer), so a transfer that was never connected

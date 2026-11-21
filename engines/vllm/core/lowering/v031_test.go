@@ -1,7 +1,7 @@
 // Original to blis-vllm.
 // Moved from blis-substrate's kernel tests (kernel/sparse_mla_test.go, int4_test.go and
 // refusals_v41_test.go, served_test.go, namedrafter_test.go and internal/resolve/layout_test.go at 00817b10798cbc00f560e51921c30c7084fa5e0c) with the resolution they test
-// (blis-substrate#58).
+// (inference-sim/inference-sim#2479).
 
 package lowering
 

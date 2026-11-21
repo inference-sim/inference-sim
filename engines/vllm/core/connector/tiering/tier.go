@@ -233,7 +233,7 @@ type JobResult struct {
 	TransferBytes int64
 	// TransferTime is transfer_time in seconds, when HasTransferTime (unset is None, a tier that does
 	// not time its jobs). The fs tier times its jobs; the port's is zero, as the host's pool is not
-	// the simulator's (blis-vllm#190).
+	// the simulator's (inference-sim/inference-sim#2437).
 	TransferTime    float64
 	HasTransferTime bool
 }

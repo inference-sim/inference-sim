@@ -120,7 +120,7 @@ func TestChunkedPrefillOffRefusals(t *testing.T) {
 	}
 }
 
-// A KV transfer connector no longer refuses chunked prefill off (inference-sim/blis-vllm#214): the scheduler's
+// A KV transfer connector no longer refuses chunked prefill off (inference-sim/inference-sim#2440): the scheduler's
 // decision does not depend on the connector, and the NIXL scenarios run with it off match vLLM
 // (core/connector/nixl, nixl-chunked-off-*). A prefiller, a decoder and kv_both all build, and the
 // first step is the one without a connector: the prompt that fits is scheduled whole, the one that does not

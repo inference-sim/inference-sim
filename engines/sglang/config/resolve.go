@@ -298,7 +298,7 @@ func deref(p any) any {
 
 // run is run_resolution_pipeline (pipeline.py:20-377), in its order. A step that changes no
 // field for any input Resolve accepts (accepted.go) is named in a comment rather than ported;
-// SGLang's start-up checks in those steps are not yet ported either (inference-sim/blis-sglang#49).
+// SGLang's start-up checks in those steps are not yet ported either (inference-sim/inference-sim#2344).
 func (r *resolver) run() {
 	r.handleDeprecatedDPAttention()
 	// handle_mega_moe, handle_return_hidden_states_mode, handle_media_url_security (it declares

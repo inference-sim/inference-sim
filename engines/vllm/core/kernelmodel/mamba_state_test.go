@@ -247,7 +247,7 @@ func TestRecurrentLayersRefuseWhatTheyDoNotMap(t *testing.T) {
 		{"sparse attention beside", hybridGraph(mamba2, &swa), engineconfig.Engine{BlockSize: 16}, 8, 1, "sparse_mla attention beside recurrent layers"},
 		{"attention caches", hybridGraph(mamba2, &cached), engineconfig.Engine{BlockSize: 16}, 8, 1, "stating caches"},
 		{"head size 512, block stated", hybridGraph(mamba2, &wider), engineconfig.Engine{BlockSize: 16}, 8, 1, "attention head size 512"},
-		{"head size 512, block unstated", hybridGraph(mamba2, &wider), engineconfig.Engine{}, 8, 1, "blis-vllm/issues/68"},
+		{"head size 512, block unstated", hybridGraph(mamba2, &wider), engineconfig.Engine{}, 8, 1, "inference-sim/issues/2425"},
 		{"packed cache dtype", hybridGraph(mamba2, &gqa), engineconfig.Engine{BlockSize: 16, CacheDType: "nvfp4"}, 8, 1, `cache_dtype "nvfp4"`},
 		{"mla block off the multiple", hybridGraph(kda, &mla), engineconfig.Engine{BlockSize: 200}, 8, 1, "block_size 200 beside MLA"},
 		{"none mode, no window", hybridGraph(kda, &mla), engineconfig.Engine{EnablePrefixCaching: &off}, 8, 1, "mamba_cache_mode none"},

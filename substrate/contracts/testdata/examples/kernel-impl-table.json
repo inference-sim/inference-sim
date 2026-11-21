@@ -16,19 +16,19 @@
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASHINFER_MLA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASHINFER",
       "library": "vllm-csrc",
       "variant": "_trtllm_prefill_attn_kvfp8_dequant",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASHINFER_MLA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     }
   ],
   "libraries": [

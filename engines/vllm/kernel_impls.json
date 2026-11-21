@@ -19,49 +19,49 @@
     {
       "primitive": "attention.decode",
       "selection": "attention backend B12X",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend CUTLASS_MLA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend CUTLASS_MSA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASHINFER",
       "library": "flashinfer",
       "variant": "BatchAttentionWithAttentionSinkWrapper",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASHINFER_MLA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASHINFER_MLA_SPARSE",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASHINFER_MLA_SPARSE_DSV4",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASHINFER_MLA_SPARSE_DSV41",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASHINFER_MLA_SPARSE_SM120",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
@@ -71,64 +71,64 @@
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASHMLA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASHMLA_MEGA_ATTN_DSV41",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASHMLA_SPARSE",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASHMLA_SPARSE_DSV4",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASHMLA_SPARSE_DSV41",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASH_ATTN",
       "library": "vllm-flash-attn",
       "variant": "_flash_attn_fwd_combine",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASH_ATTN_DIFFKV",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASH_ATTN_MLA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASH_ATTN_MLA_SPARSE",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLASH_ATTN_MLA_SPARSE_FA4",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend FLEX_ATTENTION",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend HPC_ATTN",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
@@ -138,74 +138,74 @@
     {
       "primitive": "attention.decode",
       "selection": "attention backend MINIMAX_M3_SPARSE",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend STEP5_DSA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend TOKENSPEED_MLA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend TRITON_ATTN_DIFFKV",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend TRITON_FLASHINFER",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend TRITON_FLASH_ATTN",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend TRITON_MLA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend TRITON_MSA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend TURBOQUANT",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.decode",
       "selection": "attention backend ULTRAQUANT",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend B12X",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend CUTLASS_MLA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend CUTLASS_MSA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASHINFER",
       "library": "flashinfer",
       "variant": "BatchAttentionWithAttentionSinkWrapper",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
@@ -219,39 +219,39 @@
       "selection": "attention backend FLASHINFER",
       "library": "vllm-csrc",
       "variant": "_trtllm_prefill_attn_kvfp8_dequant",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASHINFER",
       "library": "vllm-csrc",
       "variant": "merge_attn_states",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASHINFER_MLA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASHINFER_MLA_SPARSE",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASHINFER_MLA_SPARSE_DSV4",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASHINFER_MLA_SPARSE_DSV41",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASHINFER_MLA_SPARSE_SM120",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
@@ -261,64 +261,64 @@
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASHMLA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASHMLA_MEGA_ATTN_DSV41",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASHMLA_SPARSE",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASHMLA_SPARSE_DSV4",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASHMLA_SPARSE_DSV41",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASH_ATTN",
       "library": "vllm-csrc",
       "variant": "merge_attn_states",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASH_ATTN_DIFFKV",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASH_ATTN_MLA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASH_ATTN_MLA_SPARSE",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLASH_ATTN_MLA_SPARSE_FA4",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend FLEX_ATTENTION",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend HPC_ATTN",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
@@ -328,107 +328,107 @@
     {
       "primitive": "attention.prefill",
       "selection": "attention backend MINIMAX_M3_SPARSE",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend STEP5_DSA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend TOKENSPEED_MLA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend TRITON_ATTN_DIFFKV",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend TRITON_FLASHINFER",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend TRITON_FLASH_ATTN",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend TRITON_MLA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend TRITON_MSA",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend TURBOQUANT",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "attention.prefill",
       "selection": "attention backend ULTRAQUANT",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     {
       "primitive": "moe.grouped_gemm",
       "selection": "fp8 moe backend BATCHED_DEEPGEMM",
-      "issue": "inference-sim/blis-substrate#150"
+      "issue": "inference-sim/inference-sim#2394"
     },
     {
       "primitive": "moe.grouped_gemm",
       "selection": "fp8 moe backend BATCHED_TRITON",
-      "issue": "inference-sim/blis-substrate#150"
+      "issue": "inference-sim/inference-sim#2394"
     },
     {
       "primitive": "moe.grouped_gemm",
       "selection": "fp8 moe backend BATCHED_VLLM_CUTLASS",
-      "issue": "inference-sim/blis-substrate#150"
+      "issue": "inference-sim/inference-sim#2394"
     },
     {
       "primitive": "moe.grouped_gemm",
       "selection": "fp8 moe backend DEEPGEMM",
-      "issue": "inference-sim/blis-substrate#150"
+      "issue": "inference-sim/inference-sim#2394"
     },
     {
       "primitive": "moe.grouped_gemm",
       "selection": "fp8 moe backend EMULATION",
-      "issue": "inference-sim/blis-substrate#150"
+      "issue": "inference-sim/inference-sim#2394"
     },
     {
       "primitive": "moe.grouped_gemm",
       "selection": "fp8 moe backend FLASHINFER_MOE_EP_CUTEDSL",
-      "issue": "inference-sim/blis-substrate#150"
+      "issue": "inference-sim/inference-sim#2394"
     },
     {
       "primitive": "moe.grouped_gemm",
       "selection": "fp8 moe backend FLASHINFER_TRTLLM",
-      "issue": "inference-sim/blis-substrate#150"
+      "issue": "inference-sim/inference-sim#2394"
     },
     {
       "primitive": "moe.grouped_gemm",
       "selection": "fp8 moe backend HPC",
-      "issue": "inference-sim/blis-substrate#150"
+      "issue": "inference-sim/inference-sim#2394"
     },
     {
       "primitive": "moe.grouped_gemm",
       "selection": "fp8 moe backend HUMMING",
-      "issue": "inference-sim/blis-substrate#150"
+      "issue": "inference-sim/inference-sim#2394"
     },
     {
       "primitive": "moe.grouped_gemm",
       "selection": "fp8 moe backend MARLIN",
-      "issue": "inference-sim/blis-substrate#150"
+      "issue": "inference-sim/inference-sim#2394"
     },
     {
       "primitive": "moe.grouped_gemm",
       "selection": "fp8 moe backend VLLM_CUTLASS",
-      "issue": "inference-sim/blis-substrate#150"
+      "issue": "inference-sim/inference-sim#2394"
     }
   ],
   "libraries": [

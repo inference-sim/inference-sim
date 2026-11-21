@@ -37,9 +37,9 @@ func TestEnvFromRefusesWhatItCannotHonourByName(t *testing.T) {
 		v     any
 		issue string
 	}{
-		"SGLANG_ENABLE_JIT_DEEPGEMM":                 {"false", "#9"},
-		"SGLANG_RADIX_FORCE_MISS":                    {"true", "#3"},
-		"SGLANG_SOMETHING_ELSE":                      {"1", "#9"},
+		"SGLANG_ENABLE_JIT_DEEPGEMM":                 {"false", "#2460"},
+		"SGLANG_RADIX_FORCE_MISS":                    {"true", "#2449"},
+		"SGLANG_SOMETHING_ELSE":                      {"1", "#2460"},
 		"SGLANG_RETRACT_DECODE_STEPS":                {"1.5", "integer"},
 		"SGLANG_INIT_NEW_TOKEN_RATIO":                {"0x1p-1", "float"},
 		"SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR":          {"0X.8", "float"},

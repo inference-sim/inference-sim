@@ -262,7 +262,7 @@ func TestRaisingMemoryUtilizationNeverLowersTheSequenceCeiling(t *testing.T) {
 // occupancy the pool subtracts is the kernel's own estimate and differs from the engine's, and
 // nothing here localizes the difference or asserts its sign beyond these figures. That gap is
 // not the admission sizing this test pins; the test logs it, and
-// https://github.com/inference-sim/blis-vllm/issues/73 tracks making it an asserted, measured
+// https://github.com/inference-sim/inference-sim/issues/2427 tracks making it an asserted, measured
 // figure.
 func TestKVCapacityMatchesTheEnginesLoggedFigure(t *testing.T) {
 	const (

@@ -107,7 +107,7 @@ type Request struct {
 	TenantID string // Client/tenant identifier (empty for legacy workloads)
 	SLOClass string // "critical", "standard", "sheddable", "batch", "background" (empty = default)
 	// KVTransferParams is the request's kv_transfer_params, as JSON, for an engine whose connector reads
-	// them (vLLM's p2p KV tier: remote_decoder, remote_prefiller). Empty for none (blis-vllm#204).
+	// them (vLLM's p2p KV tier: remote_decoder, remote_prefiller). Empty for none (inference-sim/inference-sim#2439).
 	KVTransferParams string
 	SessionID        string  // Multi-turn session link (empty for single-turn)
 	RoundIndex       int     // Round within session (0-based)
