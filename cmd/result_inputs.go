@@ -336,7 +336,7 @@ func instanceGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (gpu
 // prefix-cache hit rate, the acceptance record and the server series), under each pool role
 // its resolved prefix-cache record, and under "instances" each instance's own figures by id.
 func engineSection(m *sim.Metrics, sum sim.MeasuredSummary, raw *cluster.RawMetrics, series *sim.ServerSeriesOutput,
-	prefix map[string]sim.PrefixCacheRecord, acceptance *sim.AcceptanceRecord, perInstance map[string]any, agentic any) map[string]any {
+	prefix map[string]sim.PrefixCacheRecord, acceptance *sim.AcceptanceRecord, poolAcceptance map[string]*sim.AcceptanceRecord, perInstance map[string]any, agentic any) map[string]any {
 	c := map[string]any{
 		"preemptions":                        m.PreemptionCount,
 		"kv_allocation_failures":             m.KVAllocationFailures,
@@ -397,6 +397,16 @@ func engineSection(m *sim.Metrics, sum sim.MeasuredSummary, raw *cluster.RawMetr
 	}
 	for role, rec := range prefix {
 		out[role] = map[string]any{"prefix_cache": toGeneric(rec)}
+	}
+	// Pools that draft differently each state their own acceptance (inference-sim#2125); the
+	// cluster states none then, as there is no one acceptance of the run.
+	for role, rec := range poolAcceptance {
+		section, _ := out[role].(map[string]any)
+		if section == nil {
+			section = map[string]any{}
+			out[role] = section
+		}
+		section["acceptance"] = toGeneric(rec)
 	}
 	return out
 }

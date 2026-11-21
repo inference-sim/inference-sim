@@ -426,7 +426,7 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 		t.Parallel()
 		const draft = "      speculative_config: {method: mtp, num_speculative_tokens: 3}\n"
 		// The decode pool runs a smaller engine than the prefill pool: fewer sequences and
-		// less of its memory for KV. Both draft (speculation must agree across a handoff).
+		// less of its memory for KV. Both draft (here the same speculation; pools may also differ, TestPDPools_).
 		variant := func(decodeSeqs string) string {
 			return writeScenarioVariant(t,
 				"      compilation_config: {cudagraph_mode: PIECEWISE}\n  - role: decode", "      compilation_config: {cudagraph_mode: PIECEWISE}\n"+draft+"  - role: decode",

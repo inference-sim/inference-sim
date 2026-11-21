@@ -184,3 +184,34 @@ func TestAcceptanceRequestNamesThePoolsDrafter(t *testing.T) {
 		t.Errorf("the request %+v, want Drafter some-drafter and the target's Architecture", seen)
 	}
 }
+
+// A command-line acceptance is stated once for the run, at the first pool's draft length. A
+// pool drafting another length restates the same rate or length at its own K (inference-sim#2125);
+// the resolver would otherwise refuse the value for a K it was not stated at. The override the
+// caller holds is left as given, since other pools read it.
+func TestAcceptanceCLIValueIsRestatedAtThePoolsOwnK(t *testing.T) {
+	in, e := museAdaptiveInputs(t)
+	var seen *acceptance.Request
+	orig := resolveRequest
+	resolveRequest = func(r acceptance.Request) (acceptance.Resolution, error) {
+		seen = &r
+		return orig(r)
+	}
+	defer func() { resolveRequest = orig }()
+	poolK := e.Speculative.NumSpecTokens
+	l := 1.5
+	stated := cliLength(poolK+2, &l) // the run's value, stated at some other pool's K
+	got, err := resolveAcceptance(in, e, repos().Data, AcceptanceOverrides{CLI: stated})
+	if err != nil {
+		t.Fatalf("a command-line length stated at K=%d was refused for a pool drafting %d: %v", poolK+2, poolK, err)
+	}
+	if got.AcceptanceLength != l {
+		t.Errorf("AL %v, want the command line's %v", got.AcceptanceLength, l)
+	}
+	if seen == nil || seen.CLI == nil || seen.CLI.NumSpecTokens != poolK {
+		t.Errorf("the request carried the command-line value at %+v, want it at the pool's K=%d", seen, poolK)
+	}
+	if stated.NumSpecTokens != poolK+2 {
+		t.Errorf("the caller's override was rewritten to K=%d; other pools read it", stated.NumSpecTokens)
+	}
+}
