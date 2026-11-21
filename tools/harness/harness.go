@@ -277,7 +277,8 @@ func scaled(v int64, factor float64) int64 {
 // scheduling, the router's default admission), that is:
 //
 //   - the KV cache's block-hash map, which keeps the hashes of released blocks
-//     (blis-vllm compat/kv/cache.go ReleaseKVBlocks). It is read for cross-request reuse only when prefix
+//     (the engine's block pool, engines/vllm/core/kv/pool.go, which keeps a freed block's hash until
+//     the block is reused). It is read for cross-request reuse only when prefix
 //     caching is enabled (sim/batch_formation.go skips GetCachedBlocks when
 //     PrefixCachingDisabled); there is no offload tier to read it otherwise. The only main
 //     request whose prompt it holds is request 0: the others share no prefix with it;

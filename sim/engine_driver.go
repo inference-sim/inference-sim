@@ -1058,14 +1058,13 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 			firstStep = true
 		}
 		if n > 0 {
-			// A step emitting n tokens is one ITL entry, as the compatibility engine's
-			// executeBatchStep records it: the step's advance since the request's last emitting
-			// step plus n tokens of output processing (currStepAdvance + NumNewTokens x OTPT,
-			// blis-vllm compat/engine/engine.go:996). The first token's own OTPT is TTFT's.
+			// A step emitting n tokens is one ITL entry: the step's advance since the
+			// request's last emitting step plus n tokens of output processing (end - lastEnd +
+			// n x OutputTokenProcessingTime). The first token's own output processing is TTFT's.
 			gap := end - r.lastEnd + int64(n)*d.cfg.OutputTokenProcessingTime
 			if d.cfg.ResumeGapFromLastToken && r.resumed {
 				// A resumed prefill's sampled token: its gap runs from the last token emitted
-				// before the preemption (compat/engine/engine.go:969-976).
+				// before the preemption.
 				last := r.req.ArrivalTime + r.req.FirstTokenTime
 				for _, v := range r.req.ITL {
 					last += v

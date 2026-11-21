@@ -16,9 +16,9 @@ import (
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
-// This package's tests build every instance's engine as `blis run` builds a 0.29/0.31 one (cmd's
-// compatEngineFactory): the compatibility engine behind engine.Engine (the vLLM engine
-// compat/contract), driven by a sim.EngineDriver. A test describes the engine with compat's own
+// This package's tests build every instance's engine as `blis run` builds a vLLM one (cmd's
+// compatEngineFactory): the v0.33.0 engine (internal/vllmtest, which builds engines/vllm/core/vllm)
+// behind engine.Engine, driven by a sim.EngineDriver. A test describes the engine with its own
 // configuration (cengine.SimConfig, which test files may name), and compatDeployment turns it
 // into the cluster's deployment.
 
@@ -93,7 +93,7 @@ func engineConfigIn(c sim.InstanceConfig) simConfig {
 }
 
 // compatEngineFactory builds each instance's compatibility engine behind engine.Engine, as cmd's
-// compatEngineFactory does: one compat/contract.Engine per instance, or, for a run of
+// compatEngineFactory does: one engine.Engine per instance, or, for a run of
 // lockstepRanks consecutive instances, one DPGroup whose rank views the instances drive, rank 0's
 // driver stepping the group.
 func compatEngineFactory(pd bool) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {

@@ -42,7 +42,7 @@ import (
 )
 
 // The one place inference-sim builds the vLLM engine (#2021 B2). The engine's configuration -- the
-// scenario's engine-side blocks -- is decoded and resolved by blis-vllm's compat/build, which cmd
+// scenario's engine-side blocks -- is decoded and resolved by the engine's build package (engines/vllm/core/build), which cmd
 // calls only from here, handing the inputs over unread. A refusal comes back as an error; the CLI boundary turns it into the fatal exit.
 
 // resolveKVOffloadConfig resolves the run's KV offload from the scenario's offload block
@@ -455,8 +455,8 @@ func (p *kernelPools) environmentOf(c sim.InstanceConfig, colocated *kernelmodel
 var wrapEnvironment = func(e env.Environment) env.Environment { return e }
 
 // defaultDPLoadBalancing is vLLM's default DP load-balancing mode, which a pool that states no
-// parallel.data_parallel_load_balancing runs (sim.DPLoadBalancingInternal, from the vLLM engine
-// compat/dplb).
+// parallel.data_parallel_load_balancing runs (sim.DPLoadBalancingInternal, defined in
+// sim/dp_modes.go; the engine's balancer is engines/vllm/core/engine/dp.go).
 const defaultDPLoadBalancing = sim.DPLoadBalancingInternal
 
 // adoptFirstPoolEngine takes the run's engine from the first pool's kernel
