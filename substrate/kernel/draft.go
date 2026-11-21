@@ -93,7 +93,7 @@ func (k *Kernel) liftDraft(c *resolve.Coefficients, inferred func(price.PlannedL
 			}
 			per := inferred(l)
 			kv[i].inferred = per
-			for _, t := range k.cacheTerms(layerCaches(l), l.Count) {
+			for _, t := range k.cacheTerms(layerCaches(l), l.Count, -1) {
 				t.draft = true
 				k.caches = append(k.caches, t)
 			}

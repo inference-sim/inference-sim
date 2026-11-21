@@ -78,6 +78,17 @@ type cacheTerm struct {
 	count int
 	// draft is a speculator layer's cache, resident only while the deployment speculates.
 	draft bool
+	// layer is the plan layer kind that owns it, to split the terms by pipeline stage; unused
+	// for a draft term, which the last stage holds.
+	layer int
+}
+
+// statedCaches is the caches a graph states as one rank holds them: every term and the pool
+// they are drawn from over the whole model, or, under pipeline parallelism, over one stage's
+// layers (liftStageCaches).
+type statedCaches struct {
+	terms []cacheTerm
+	pool  *kvPool
 }
 
 // layerCaches returns every cache a layer's attention kernels state, owned or read.
@@ -90,7 +101,7 @@ func layerCaches(l price.PlannedLayer) []price.PlannedCache {
 }
 
 // cacheTerms resolves the caches a layer owns, count times over.
-func (k *Kernel) cacheTerms(stated []price.PlannedCache, count int) []cacheTerm {
+func (k *Kernel) cacheTerms(stated []price.PlannedCache, count, layer int) []cacheTerm {
 	var out []cacheTerm
 	for _, c := range stated {
 		if !c.Owned {
@@ -107,7 +118,7 @@ func (k *Kernel) cacheTerms(stated []price.PlannedCache, count int) []cacheTerm 
 			page = math.Ceil(page/float64(a)) * float64(a)
 		}
 		out = append(out, cacheTerm{cache: c.Cache, entryBytes: c.EntryBytes, block: block,
-			pageBytes: page, count: count})
+			pageBytes: page, count: count, layer: layer})
 	}
 	return out
 }
@@ -187,17 +198,40 @@ func (k *Kernel) resolveKVPool() error {
 		if t.draft && !k.speculating {
 			continue
 		}
-		c := t.cache
-		c.BytesPerEntry, c.BytesByCacheDType, c.BlockSize = t.entryBytes, nil, t.block
 		for j := 0; j < t.count; j++ {
-			name := fmt.Sprintf("%d.%s.%d", i, c.Name, j)
-			layers = append(layers, enginefacts.KVCacheLayer{Name: name, Cache: c})
-			term[name] = i
+			l := packLayer(i, j, t)
+			layers = append(layers, l)
+			term[l.Name] = i
 		}
 	}
 	if len(layers) == 0 {
 		return nil
 	}
+	g, err := k.packCaches(layers)
+	if err != nil {
+		k.assume("kv_cache_grouping", "per cache",
+			"the stated caches are sized at their own pages rather than in the engine's "+
+				"shared block pool, because the rules pack cannot group them: "+err.Error())
+		return nil
+	}
+	pool := k.poolOf(g, term)
+	if err := k.checkPages(g, term); err != nil {
+		return err
+	}
+	k.kvPool = pool
+	return nil
+}
+
+// packLayer is the j-th layer of term i as the rules pack reads it, at the record and block the
+// kernel sizes it at.
+func packLayer(i, j int, t cacheTerm) enginefacts.KVCacheLayer {
+	c := t.cache
+	c.BytesPerEntry, c.BytesByCacheDType, c.BlockSize = t.entryBytes, nil, t.block
+	return enginefacts.KVCacheLayer{Name: fmt.Sprintf("%d.%s.%d", i, c.Name, j), Cache: c}
+}
+
+// packCaches groups the layers through the rules pack.
+func (k *Kernel) packCaches(layers []enginefacts.KVCacheLayer) (enginefacts.KVCacheGrouping, error) {
 	// No block-stride alignment: the one a V4.1 backend states is the indexer's under
 	// indexer_sparse_logits, off by default (vllm/config/attention.py:89;
 	// vllm/models/deepseek_v41/attention.py:1186-1191), and the deployment cannot state it.
@@ -205,16 +239,14 @@ func (k *Kernel) resolveKVPool() error {
 	// two above K + 1) rows (vllm/models/deepseek_v41/compressor.py:147-149), which the
 	// graph's fixed entry count states only for K below 7.
 	spec := k.numSpecTokens()
-	g, err := k.rules.KVCacheGroups(enginefacts.KVCacheGroupsInput{
+	return k.rules.KVCacheGroups(enginefacts.KVCacheGroupsInput{
 		Layers: layers, EngineBlockSize: k.blockSize, CacheDType: k.cacheDType,
 		NumSpecTokens: &spec,
 	})
-	if err != nil {
-		k.assume("kv_cache_grouping", "per cache",
-			"the stated caches are sized at their own pages rather than in the engine's "+
-				"shared block pool, because the rules pack cannot group them: "+err.Error())
-		return nil
-	}
+}
+
+// poolOf is a grouping's pool: its groups, each carried by its first layer's term.
+func (k *Kernel) poolOf(g enginefacts.KVCacheGrouping, term map[string]int) *kvPool {
 	pool := &kvPool{bytesPerBlock: float64(g.BytesPerBlock)}
 	for _, gr := range g.Groups {
 		if len(gr.Layers) == 0 {
@@ -224,9 +256,14 @@ func (k *Kernel) resolveKVPool() error {
 		pool.groups = append(pool.groups, poolGroup{cache: t.cache, block: gr.BlockSize,
 			draft: t.draft})
 	}
-	// The pack pages each cache from the same record the kernel sizes it at, so the two must
-	// agree. A state cache is the exception: its ring's rows follow the deployment's K in
-	// the pack, and the pool charges it one block whatever its page.
+	return pool
+}
+
+// checkPages refuses a grouping that pages a cache other than as the kernel does. The pack
+// pages each cache from the same record the kernel sizes it at, so the two must agree. A state
+// cache is the exception: its ring's rows follow the deployment's K in the pack, and the pool
+// charges it one block whatever its page.
+func (k *Kernel) checkPages(g enginefacts.KVCacheGrouping, term map[string]int) error {
 	for name, page := range g.PageBytes {
 		t := k.caches[term[name]]
 		if t.cache.Kind == model.CacheState {
@@ -237,7 +274,6 @@ func (k *Kernel) resolveKVPool() error {
 				"%.0f B", t.cache.Name, page, want)
 		}
 	}
-	k.kvPool = pool
 	return nil
 }
 
@@ -257,6 +293,11 @@ func (t cacheTerm) growing() bool {
 // cacheVariableBytes is what the context-growing caches hold for a sequence of tokens, after
 // decode-context parallelism's shard of the token count.
 func (k *Kernel) cacheVariableBytes(tokens int) float64 {
+	return k.variableBytesOf(k.rankMemory().caches, tokens)
+}
+
+// variableBytesOf is cacheVariableBytes over one rank's stated caches.
+func (k *Kernel) variableBytesOf(c statedCaches, tokens int) float64 {
 	// An entry is not divided across tensor-parallel ranks, and decode-context parallelism
 	// gives each rank 1/dcp of the entries (blis-schemas model.Cache,
 	// vllm/v1/kv_cache_interface.py max_num_blocks_per_req).
@@ -264,7 +305,7 @@ func (k *Kernel) cacheVariableBytes(tokens int) float64 {
 	if k.layout.DCP > 1 {
 		local = (tokens + k.layout.DCP - 1) / k.layout.DCP
 	}
-	if p := k.kvPool; p != nil && tokens > 0 {
+	if p := c.pool; p != nil && tokens > 0 {
 		var blocks int
 		for _, g := range p.groups {
 			if g.cache.Kind == model.CacheKV || g.cache.Kind == model.CacheIndex {
@@ -274,7 +315,7 @@ func (k *Kernel) cacheVariableBytes(tokens int) float64 {
 		return float64(blocks) * p.bytesPerBlock
 	}
 	var total float64
-	for _, t := range k.caches {
+	for _, t := range c.terms {
 		if !t.growing() || (t.draft && !k.speculating) {
 			continue
 		}
@@ -374,7 +415,8 @@ func (k *Kernel) ringTransferBytes(tokens int) float64 {
 
 // statedBoundedBytesUpTo is cacheBoundedBytesUpTo's share for the caches a graph states.
 func (k *Kernel) statedBoundedBytesUpTo(inFlight, extraRetained, tokens int) float64 {
-	if p := k.kvPool; p != nil {
+	c := k.rankMemory().caches
+	if p := c.pool; p != nil {
 		var blocks int
 		for _, g := range p.groups {
 			switch g.cache.Kind {
@@ -390,7 +432,7 @@ func (k *Kernel) statedBoundedBytesUpTo(inFlight, extraRetained, tokens int) flo
 		return float64(blocks) * p.bytesPerBlock
 	}
 	var total float64
-	for _, t := range k.caches {
+	for _, t := range c.terms {
 		if t.draft && !k.speculating {
 			continue
 		}
