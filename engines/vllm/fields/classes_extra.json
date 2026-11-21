@@ -223,6 +223,20 @@
    }
   ]
  },
+ "speculative_config.draft_sample_method": {
+  "stated": [
+   {
+    "trace": "core/build/acceptance_realisation_test.go",
+    "values": ["greedy"],
+    "why": "TestARunAtAProfilesSettingsOnVLLMMatchesExactly states greedy beside standard verification, and finds a run at DeepSeek-V4-Pro MTP's collection settings match its acceptance profile exactly, as one that states neither does"
+   },
+   {
+    "trace": "core/build/acceptance_realisation_test.go",
+    "values": ["probabilistic"],
+    "why": "TestARunsSamplerAndVerifierReachTheLookup resolves DeepSeek-V4.1-Flash's acceptance with probabilistic drafting and block verification and finds an exact match, and with neither stated finds the profile of other settings: the draft sampler selects the acceptance profile the run uses"
+   }
+  ]
+ },
  "speculative_config.synthetic_acceptance_length": {
   "stated": [
    {

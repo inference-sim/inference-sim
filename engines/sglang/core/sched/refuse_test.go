@@ -28,10 +28,10 @@ func TestUnmodelledSettingsAreRefusedByName(t *testing.T) {
 		{"interval", func(c *Config) { c.PrefillDecodeInterval = 4 }, "prefill-decode interval"},
 		{"pp", func(c *Config) { c.PPSize = 2 }, "pipeline parallelism"},
 		{"retraction policy", func(c *Config) { c.RetractionPolicy = "fifo" }, "does not exist"},
-		{"unknown", func(c *Config) { c.Policy = "nope" }, "unknown schedule_policy"},
+		{"unknown", func(c *Config) { c.Policy = "nope" }, "Unknown schedule_policy: policy='nope'"},
 		{"tree", func(c *Config) { c.TreeCache = "HiRadixCache" }, "HiRadixCache"},
 		{"allocator", func(c *Config) { c.Allocator = "SWATokenToKVPoolAllocator" }, "SWATokenToKVPoolAllocator"},
-		{"spf without cache", func(c *Config) { c.Policy = "shortest-prefill-first"; c.Disable = true }, "without prefix caching"},
+		{"spf without cache", func(c *Config) { c.Policy = "shortest-prefill-first"; c.Disable = true }, "Unknown schedule_policy: policy='shortest-prefill-first'"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

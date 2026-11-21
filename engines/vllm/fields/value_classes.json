@@ -12497,6 +12497,109 @@
     "name": "scheduling_policy"
    }
   },
+  "speculative_config.draft_sample_method": {
+   "value_classes": {
+    "type": "enumerated",
+    "values": [
+     "greedy",
+     "probabilistic"
+    ],
+    "covered": [
+     "greedy",
+     "probabilistic"
+    ]
+   },
+   "basis": {
+    "kind": "enumerated",
+    "classes": [
+     {
+      "values": [
+       "greedy"
+      ],
+      "compared_at": [
+       "vllm/v1/worker/gpu/spec_decode/extract_hidden_states.py:24"
+      ],
+      "covered_by": [
+       "core/build/acceptance_realisation_test.go"
+      ]
+     },
+     {
+      "values": [
+       "probabilistic"
+      ],
+      "compared_at": [
+       "vllm/config/vllm.py:1447",
+       "vllm/models/deepseek_v41/nvidia/dspark.py:422",
+       "vllm/v1/worker/gpu/spec_decode/speculator.py:263",
+       "vllm/v1/worker/gpu/spec_decode/speculator.py:584"
+      ],
+      "covered_by": [
+       "core/build/acceptance_realisation_test.go"
+      ]
+     }
+    ],
+    "enumeration": [
+     "greedy",
+     "probabilistic"
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/config/vllm.py:1447",
+      "expr": "speculative_config.draft_sample_method != \"probabilistic\"",
+      "op": "NotEq",
+      "values": [
+       "probabilistic"
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v41/nvidia/dspark.py:422",
+      "expr": "spec_config.draft_sample_method == \"probabilistic\"",
+      "op": "Eq",
+      "values": [
+       "probabilistic"
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu/spec_decode/extract_hidden_states.py:24",
+      "expr": "vllm_config.speculative_config.draft_sample_method != \"greedy\"",
+      "op": "NotEq",
+      "values": [
+       "greedy"
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu/spec_decode/speculator.py:263",
+      "expr": "self.speculative_config.draft_sample_method == \"probabilistic\"",
+      "op": "Eq",
+      "values": [
+       "probabilistic"
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu/spec_decode/speculator.py:584",
+      "expr": "self.speculative_config.draft_sample_method == \"probabilistic\"",
+      "op": "Eq",
+      "values": [
+       "probabilistic"
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": "greedy",
+      "trace": "core/build/acceptance_realisation_test.go",
+      "reviewed": true
+     },
+     {
+      "value": "probabilistic",
+      "trace": "core/build/acceptance_realisation_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "speculative_config.draft_sample_method"
+   }
+  },
   "speculative_config.enable_adaptive_verification": {
    "value_classes": {
     "type": "boolean",

@@ -35,7 +35,10 @@ const waitingQueuePrefixMatchMax = 128
 
 // validatePolicy is _validate_and_adjust_policy (:324-344): a disabled tree cache turns every
 // cache-aware policy into fcfs, except that shortest-prefill-first is refused there. A name
-// SGLang does not know is refused as SGLang refuses it.
+// SGLang does not know is refused as SGLang refuses it. The ValueError that
+// shortest-prefill-first raises without a prefix cache (:332-336) is caught by the except at :340,
+// and the retry as a cache-agnostic policy fails, so the refusal a user sees is the one at :344
+// (ValueError: Unknown schedule_policy: policy='shortest-prefill-first').
 func validatePolicy(name string, treeDisabled bool) (Policy, error) {
 	switch Policy(name) {
 	case LPM, HRRN, DFSWeight:
@@ -45,13 +48,23 @@ func validatePolicy(name string, treeDisabled bool) (Policy, error) {
 		return Policy(name), nil
 	case ShortestPrefillFirst:
 		if treeDisabled {
-			return "", fmt.Errorf("sched: SGLang refuses shortest-prefill-first without prefix caching (schedule_policy.py:332-336@297e54fd)")
+			return "", unknownPolicy(name)
 		}
 		return ShortestPrefillFirst, nil
 	case FCFS, LOF, Random, RoutingKey:
 		return Policy(name), nil
 	}
-	return "", fmt.Errorf("sched: unknown schedule_policy %q", name)
+	return "", unknownPolicy(name)
+}
+
+// unknownPolicy is the ValueError at schedule_policy.py:344@297e54fd, `f"Unknown schedule_policy:
+// {policy=}"`, with Python's repr of the name.
+func unknownPolicy(name string) error {
+	quote := "'"
+	if strings.Contains(name, "'") && !strings.Contains(name, `"`) {
+		quote = `"`
+	}
+	return fmt.Errorf("sched: SGLang refuses this configuration: Unknown schedule_policy: policy=%s%s%s", quote, name, quote)
 }
 
 func (p Policy) cacheAware() bool {

@@ -291,6 +291,42 @@ func TestCheckServerArgsRefusesWhatSGLangRefusesOfThePrioritySettings(t *testing
 	}
 }
 
+// The pair --radix-eviction-policy tlru with enable_flexkv is one SGLang refuses at tree-cache
+// creation (mem_cache/registry.py:261-271@297e54fd): FlexKVRadixCache is not a UnifiedRadixCache.
+// Each member alone, and the pair where FlexKV is not the tree selected (the radix cache disabled,
+// LMCache on, the unified cache's external linker on), is not that refusal: Resolve refuses the
+// members as not modelled instead.
+func TestResolveRefusesTlruWithFlexKVAsSGLangDoes(t *testing.T) {
+	c := readAnswers(t).Cases[0]
+	const want = "--radix-eviction-policy tlru requires UnifiedRadixCache, but tree_cache is FlexKVRadixCache. " +
+		"Drop the flag or the option that selected another tree cache for this model."
+	resolve := func(extra map[string]any) error {
+		args := map[string]any{"model_path": "<model>"}
+		for k, v := range extra {
+			args[k] = v
+		}
+		_, err := Resolve(Input{Args: args, Chip: c.Chip, Model: c.ModelFacts})
+		return err
+	}
+	var up *UpstreamRefusal
+	err := resolve(map[string]any{"radix_eviction_policy": "tlru", "enable_flexkv": true})
+	if !errors.As(err, &up) || up.Message != want || !strings.HasSuffix(up.Site, "registry.py:create_tree_cache") {
+		t.Errorf("tlru with flexkv: got %v, want SGLang's refusal %q", err, want)
+	}
+	for name, extra := range map[string]map[string]any{
+		"tlru alone":                   {"radix_eviction_policy": "tlru"},
+		"flexkv alone":                 {"enable_flexkv": true},
+		"the radix cache disabled":     {"radix_eviction_policy": "tlru", "enable_flexkv": true, "disable_radix_cache": true},
+		"lmcache selected":             {"radix_eviction_policy": "tlru", "enable_flexkv": true, "enable_lmcache": true},
+		"the external linker selected": {"radix_eviction_policy": "tlru", "enable_flexkv": true, "enable_unified_cache_external_linker": true},
+	} {
+		var nm *NotModelled
+		if err := resolve(extra); errors.As(err, &up) || !errors.As(err, &nm) {
+			t.Errorf("%s: got %v, want a NotModelled refusal, not SGLang's pair refusal", name, err)
+		}
+	}
+}
+
 // A server's record of its resolved arguments states custom_weight_loader as an empty list; SGLang's
 // resolution gives an unset field the same value, so it is not a setting and resolves like the unset
 // one. A real loader is still refused.
