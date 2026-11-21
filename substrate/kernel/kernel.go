@@ -782,9 +782,8 @@ func (k *Kernel) groupSize(group price.GroupAxis) (int, bool) {
 	// collective should arrive here as a refusal rather than as a silently tensor-parallel
 	// price.
 	//
-	// This is the half of the resolve.Emits/Recognizes pair that a bare default would
-	// have left out: that pair exists so an unrecognized condition can be refused rather
-	// than quietly answered, and a width is no different.
+	// An unrecognized width is refused rather than quietly answered, as a collective the
+	// plan does not state is (SUB-6).
 	return 0, false
 }
 
@@ -1202,8 +1201,8 @@ func pcpCausalPairs(sched, prefix, pcp, dcp int) float64 {
 // stack against an assertion the engine would not have started under.
 //
 // An unrecognized kind returns false, which over-prices rather than under-prices. That is
-// the same direction resolve.Emits takes for a condition it cannot answer: silently
-// dropping a cost is the failure mode worth refusing.
+// the same direction the plan builder takes for a collective the plan does not state:
+// silently dropping a cost is the failure mode worth refusing.
 func dcpShardsKV(kind model.AttentionKind) bool {
 	switch kind {
 	case model.AttentionGQA, model.AttentionMLA, model.AttentionSparseMLA:

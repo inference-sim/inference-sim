@@ -397,7 +397,7 @@ func construct(in Inputs) (*Kernel, error) {
 	for _, r := range k.low.TokenShardedRoles {
 		tokenShardedRoles[r] = true
 	}
-	built, err := price.BuildPlanWith(in.Model, emitter{k.layout}, price.PlanOptions{
+	built, err := price.BuildPlanWith(in.Model, newEmitter(k.low.Collectives.Runs), price.PlanOptions{
 		WeightBytesPerParam: func(n model.Node) float64 {
 			return weightBytesPerParam(in.Model, n, served)
 		},
@@ -687,11 +687,33 @@ func clonePool(p deployment.Pool) deployment.Pool {
 	return p
 }
 
-// emitter adapts a layout to the plan builder's interface.
-type emitter struct{ l resolve.Layout }
+// emitter answers the plan builder from what the engine stated: whether each collective node of
+// the graph runs (Plan.Collectives.Runs). The cost model evaluates no condition of its own.
+type emitter struct{ runs map[collectiveKey]bool }
 
-func (e emitter) Emits(c model.EmitCondition) bool      { return e.l.Emits(c) }
-func (e emitter) Recognizes(c model.EmitCondition) bool { return resolve.Recognizes(c) }
+type collectiveKey struct{ section, op, role string }
+
+func newEmitter(runs []plan.CollectiveRun) emitter {
+	e := emitter{runs: make(map[collectiveKey]bool, len(runs))}
+	for _, r := range runs {
+		e.runs[collectiveKey{r.Section, r.Op, r.Role}] = r.Runs
+	}
+	return e
+}
+
+func (e emitter) Runs(section string, n model.Node) (bool, error) {
+	if !n.Op.Collective() {
+		return false, fmt.Errorf("a %s node (role %q) in %s carries the condition %q, and no engine "+
+			"decides whether work that is not a collective runs", n.Op, n.Role, section, n.Emit)
+	}
+	r, ok := e.runs[collectiveKey{section, string(n.Op), n.Role}]
+	if !ok {
+		return false, fmt.Errorf("the plan states no decision (Plan.Collectives.Runs) for the %s node "+
+			"with role %q in %s, so pricing it would either drop a cost or invent one (SUB-6)",
+			n.Op, n.Role, section)
+	}
+	return r, nil
+}
 
 // lift copies the coefficients the hot path needs into fields, so a step reads a struct
 // rather than hashing strings. Each lookup that has no default is required: a rate the

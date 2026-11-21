@@ -32,6 +32,11 @@ CacheFormat.TrackingSlots # kernel: TestEachResolvedPlanSettingMovesAPrice
 CollectivePlan.AllReduce # kernel: TestEachResolvedPlanSettingMovesAPrice
 CollectivePlan.SequenceParallelModel # kernel: TestEachResolvedPlanSettingMovesAPrice
 CollectivePlan.SequenceParallelMoE # kernel: TestEachResolvedPlanSettingMovesAPrice
+CollectivePlan.Runs # kernel: TestACollectiveThePlanSaysDoesNotRunIsNotPriced
+CollectiveRun.Op # kernel: TestACollectiveThePlanSaysDoesNotRunIsNotPriced
+CollectiveRun.Role # kernel: TestACollectiveThePlanSaysDoesNotRunIsNotPriced
+CollectiveRun.Runs # kernel: TestACollectiveThePlanSaysDoesNotRunIsNotPriced
+CollectiveRun.Section # kernel: TestACollectiveThePlanSaysDoesNotRunIsNotPriced
 DecodeContextPlan.Combine # kernel: TestEachResolvedPlanSettingMovesAPrice
 DecodeContextPlan.Interleave # kernel: TestEachResolvedPlanSettingMovesAPrice
 DraftPolicy.OwnWorkspace # kernel: TestEachResolvedPlanSettingMovesAPrice

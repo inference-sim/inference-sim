@@ -576,7 +576,12 @@ func TestChangingALabelChangesNoPriceOrIsListed(t *testing.T) {
 				}
 				in := c.in
 				in.Model = &g
-				k, err := New(in)
+				// The plan names a collective by its role, so the decisions are stated again for the
+				// renamed graph: the engine would state them for it, by the same conditions.
+				low := cloneLowered(*in.Lowered)
+				low.Plan.Collectives.Runs = nil
+				in.Lowered = &low
+				k, err := New(completeRuns(in))
 				if err != nil {
 					failed[i] = fmt.Sprintf("%s with every role renamed: %v", c.label, err)
 					continue

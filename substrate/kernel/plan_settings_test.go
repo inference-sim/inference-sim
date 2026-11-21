@@ -54,13 +54,14 @@ func noDrafter(*deployment.Deployment, int) (string, error) { return "", nil }
 // lowerTo is a Repos.Lower that hands every pool fixtureLowered with the context bound, the page
 // size and the memory share a test states, edited further by f.
 func lowerTo(maxContext, page int, util float64, f ...func(*plan.Lowered)) func(Inputs) (*plan.Lowered, error) {
-	return func(Inputs) (*plan.Lowered, error) {
+	return func(in Inputs) (*plan.Lowered, error) {
 		l := fixtureLowered()
 		l.Plan.MaxContext, l.Plan.PageTokens, l.Plan.MemoryFraction = units.Tokens(maxContext), units.Tokens(page), util
 		for _, e := range f {
 			e(&l)
 		}
-		return &l, nil
+		in.Lowered = &l
+		return completeRuns(in).Lowered, nil
 	}
 }
 
@@ -97,7 +98,10 @@ func planCase(t *testing.T, d *load.Data, modelName, chip string, nodes int, par
 	}
 	r := Repos{Scenarios: dir, Data: d, Release: "0.33.0", Rules: func(string) enginefacts.EngineRules { return planRules{} },
 		DraftModel: noDrafter,
-		Lower:      func(Inputs) (*plan.Lowered, error) { return &low, nil }}
+		Lower: func(in Inputs) (*plan.Lowered, error) {
+			in.Lowered = &low
+			return completeRuns(in).Lowered, nil
+		}}
 	in, err := OpenInputs("s.yaml", r, 0)
 	if err != nil {
 		t.Fatalf("%s on %s (%s): %v", modelName, chip, parallel, err)

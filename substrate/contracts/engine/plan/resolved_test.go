@@ -22,7 +22,11 @@ func TestValidateResolvedRefusesEachMeaninglessSettingByName(t *testing.T) {
 		Drafts:        DraftPolicy{RetainedTokens: 2}, InFlight: 2,
 		Launches:          []LaunchChange{{FromTokens: 1, ToTokens: 128, PerLayer: -3}, {FromTokens: 129, ToTokens: 256, PerLayer: -2}},
 		DecodeShards:      []DecodeShard{{Role: "pooler", FromTokens: 1, ToTokens: 256}, {Role: "unpooler", FromTokens: 32, ToTokens: 256}},
-		TokenShardedRoles: []string{"router", "experts"}}
+		TokenShardedRoles: []string{"router", "experts"},
+		Collectives: CollectivePlan{Runs: []CollectiveRun{
+			{Section: LayerSection("dense"), Op: "AllReduce", Role: "attn_out", Runs: true},
+			{Section: LayerSection("dense"), Op: "AllReduce", Role: "mlp_out"},
+			{Section: SectionHead, Op: "AllGather", Role: "logits", Runs: true}}}}
 	if err := ok.ValidateResolved(); err != nil {
 		t.Fatalf("a plan of meaningful values is refused: %v", err)
 	}
@@ -66,6 +70,12 @@ func TestValidateResolvedRefusesEachMeaninglessSettingByName(t *testing.T) {
 		{"DecodeShards[0] covers 0 to 256", func(p *PoolPlan) { p.DecodeShards[0].FromTokens = 0 }},
 		{"DecodeShards[1] covers 300 to 256", func(p *PoolPlan) { p.DecodeShards[1].FromTokens = 300 }},
 		{"DecodeShards[1] names role \"pooler\", which DecodeShards[0] already does", func(p *PoolPlan) { p.DecodeShards[1].Role = "pooler" }},
+		{"Collectives.Runs[0] names no section or no op", func(p *PoolPlan) { p.Collectives.Runs[0].Section = "" }},
+		{"Collectives.Runs[0] names no section or no op", func(p *PoolPlan) { p.Collectives.Runs[0].Op = "" }},
+		{"Collectives.Runs[1] names op \"GEMM\", which is not a collective", func(p *PoolPlan) { p.Collectives.Runs[1].Op = "GEMM" }},
+		{"Collectives.Runs[1] names AllReduce \"attn_out\" in \"layer:dense\", which Collectives.Runs[0] already does", func(p *PoolPlan) {
+			p.Collectives.Runs[1].Role = "attn_out"
+		}},
 		{"TokenShardedRoles[0] names no role", func(p *PoolPlan) { p.TokenShardedRoles[0] = "" }},
 		{"TokenShardedRoles[1] names role \"router\", which TokenShardedRoles[0] already does", func(p *PoolPlan) { p.TokenShardedRoles[1] = "router" }},
 	} {
@@ -73,6 +83,7 @@ func TestValidateResolvedRefusesEachMeaninglessSettingByName(t *testing.T) {
 		p.Launches = slices.Clone(ok.Launches)
 		p.DecodeShards = slices.Clone(ok.DecodeShards)
 		p.TokenShardedRoles = slices.Clone(ok.TokenShardedRoles)
+		p.Collectives.Runs = slices.Clone(ok.Collectives.Runs)
 		c.edit(&p)
 		err := p.ValidateResolved()
 		if err == nil || !strings.Contains(err.Error(), c.field) {

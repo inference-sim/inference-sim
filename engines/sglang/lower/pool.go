@@ -346,6 +346,11 @@ func Lower(a *config.ServerArgs, g *model.Graph, chip *hardware.Chip) (*plan.Low
 					"2048 tokens; the first layer's input norm follows no all-reduce and is counted as fused too")
 		}
 	}
+	runs, err := collectiveRuns(a, g)
+	if err != nil {
+		return nil, err
+	}
+	p.Collectives.Runs = runs
 	return out, nil
 }
 
