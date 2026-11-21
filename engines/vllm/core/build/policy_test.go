@@ -11,6 +11,7 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // vendoredRepos are the kernel repos with this module's vendored scenarios (testdata/scenarios,
@@ -213,5 +214,55 @@ func TestShapeOfReadsEachPoolsLongPrefillThreshold(t *testing.T) {
 	if len(sh.LongPrefillTokenThresholds) != 2 || sh.LongPrefillTokenThresholds[0] != 512 ||
 		sh.LongPrefillTokenThresholds[1] != 256 {
 		t.Errorf("ShapeOf's thresholds are %v, want each pool's own [512 256]", sh.LongPrefillTokenThresholds)
+	}
+}
+
+// A P/D pool's data-parallel group is one engine behind vLLM's internal balancer, one endpoint.
+// A pool whose stated mode exposes more than one endpoint (external, or hybrid with fewer ranks
+// per node than the group, which vLLM runs as external for one rank per node) would be accepted
+// and run as that single endpoint, the stated mode ignored: it is refused naming the pool, the
+// field and the mode (inference-sim#1988). Each pool resolves its own mode, so the other pool
+// stays free to state internal.
+func TestPoolEngineKnobs_ManyEndpointPoolRefused(t *testing.T) {
+	const (
+		dp2    = poolTP4DP2
+		tp8dp2 = "      tp: 8\n      pp: 1\n      dp: 2\n      enable_expert_parallel: true\n"
+		tp2dp8 = "      tp: 2\n      pp: 1\n      dp: 8\n      enable_expert_parallel: true\n"
+	)
+	for _, c := range []struct {
+		name                            string
+		prefillParallel, decodeParallel string
+		role                            deployment.Role
+		refused                         bool
+		field                           string
+	}{
+		{"external at dp 2", poolTP8DP1, dp2 + "      data_parallel_load_balancing: external\n", deployment.RoleDecode, true, "external"},
+		{"hybrid, one rank per node, runs external", tp8dp2 + "      data_parallel_load_balancing: hybrid\n      dp_local: 1\n", poolTP8DP1, deployment.RolePrefill, true, "hybrid"},
+		{"hybrid, four of eight ranks per node", tp2dp8 + "      data_parallel_load_balancing: hybrid\n      dp_local: 4\n", poolTP8DP1, deployment.RolePrefill, true, "hybrid"},
+		{"hybrid, every rank on one node, is internal", poolTP8DP1, dp2 + "      data_parallel_load_balancing: hybrid\n      dp_local: 2\n", deployment.RoleDecode, false, ""},
+		{"internal at dp 2", dp2 + "      data_parallel_load_balancing: internal\n", poolTP8DP1, deployment.RolePrefill, false, ""},
+	} {
+		repos := vendoredRepos(t)
+		repos.Scenarios = unequalDP(t, c.prefillParallel, c.decodeParallel)
+		m := openRole(t, repos, c.role)
+		_, _, err := PoolEngineKnobs("variant.yaml", m, EngineKnobFlags{})
+		_, serr := PoolSettingsOf("variant.yaml", m, 0, runconfig.KVPrefixHit{}, EngineKnobFlags{})
+		if !c.refused {
+			if err != nil || serr != nil {
+				t.Errorf("%s: %v / %v; want it accepted", c.name, err, serr)
+			}
+			continue
+		}
+		for _, got := range []error{err, serr} {
+			if got == nil {
+				t.Errorf("%s: accepted; its stated mode would be ignored", c.name)
+				continue
+			}
+			for _, frag := range []string{`"variant.yaml"`, string(c.role) + " pool", "parallel.data_parallel_load_balancing", c.field} {
+				if !strings.Contains(got.Error(), frag) {
+					t.Errorf("%s: refusal %q must name %q", c.name, got, frag)
+				}
+			}
+		}
 	}
 }
