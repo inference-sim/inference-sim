@@ -140,6 +140,11 @@
   "kind": "numeric",
   "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
  },
+ "VLLM_USE_V2_MODEL_RUNNER": {
+  "kind": "enumerated",
+  "values": ["1"],
+  "why": "vLLM accepts the value 1 and raises for every other (vllm/platforms/interface.py validate_environ), so the one class is the one value that starts"
+ },
  "HF_HUB_CACHE": {
   "kind": "enumerated",
   "values": ["/hf_hub_cache"],

@@ -59,7 +59,8 @@
   "UCX_RNDV_SCHEME",
   "UCX_TLS",
   "VLLM_MXFP4_USE_MARLIN",
-  "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8"
+  "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
+  "VLLM_USE_V2_MODEL_RUNNER"
  ],
  "dynamic_reads": {
   "vllm/config/utils.py: envs.is_set(env_name)": {
@@ -10583,6 +10584,15 @@
     "issue": "inference-sim/blis-vllm#53"
    },
    "status": "not_modelled"
+  },
+  "env:VLLM_USE_V2_MODEL_RUNNER": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "proof": "oracle/inertness/VLLM_USE_V2_MODEL_RUNNER.json"
+   },
+   "status": "proven_inert"
   },
   "env:VLLM_V1_OUTPUT_PROC_CHUNK_SIZE": {
    "estimation": {

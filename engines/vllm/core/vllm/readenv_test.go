@@ -39,3 +39,19 @@ func TestTheEngineAcceptsTheModelCacheLocationVariablesItProvesInert(t *testing.
 		t.Errorf("HF_HOME, which no proof covers, must still be refused by name, got %v", err)
 	}
 }
+
+// vLLM's platform environment check (vllm/platforms/interface.py validate_environ, called from
+// EngineArgs.create_engine_config) accepts VLLM_USE_V2_MODEL_RUNNER=1 with a warning that it is
+// redundant, and raises for every other value because Model Runner V1 has been removed. The engine
+// resolves 1 to the V2 runner and refuses every other value, as vLLM does.
+func TestTheV2RunnerEnvKeyIsOneOrRefused(t *testing.T) {
+	if _, err := build(t, "use_v2_model_runner: null\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"1\"}\n")(); err != nil {
+		t.Errorf("VLLM_USE_V2_MODEL_RUNNER=1 is refused: %v", err)
+	}
+	for _, v := range []string{"0", "true", "2", ""} {
+		_, err := build(t, "use_v2_model_runner: null\nenv: {VLLM_USE_V2_MODEL_RUNNER: \""+v+"\"}\n")()
+		if err == nil || !strings.Contains(err.Error(), "no longer supported") {
+			t.Errorf("VLLM_USE_V2_MODEL_RUNNER=%q: err %v, want vLLM's refusal (no longer supported)", v, err)
+		}
+	}
+}

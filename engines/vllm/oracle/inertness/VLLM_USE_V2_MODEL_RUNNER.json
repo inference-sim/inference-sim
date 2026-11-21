@@ -1,0 +1,63 @@
+{
+ "field": "VLLM_USE_V2_MODEL_RUNNER",
+ "kind": "named",
+ "release": "0.34.0+0fda86a35419 0fda86a35419c9c70dbfada224c838c10fbb62ad",
+ "claim": "Reviewed static fact, not a run of vLLM's code: at this release vLLM's serving process (vllm/, csrc/, rust/) names VLLM_USE_V2_MODEL_RUNNER only in vllm/platforms/interface.py Platform.validate_environ, which EngineArgs.create_engine_config calls once at start-up (vllm/engine/arg_utils.py, before any request). The release removed Model Runner V1 and the variable from vllm/envs.py, so nothing reads its value to choose a runner. validate_environ raises ValueError for a value other than 1 (\"no longer supported: Model Runner V1 has been removed\") and, for 1, logs that it is redundant and continues. A stated 1 therefore leaves every decision of the process as an unstated variable would; any other value stops the start-up, which the engine reproduces by refusing it.",
+ "argument": "reviewed_static_fact",
+ "names": [
+  "VLLM_USE_V2_MODEL_RUNNER"
+ ],
+ "sites": {
+  "VLLM_USE_V2_MODEL_RUNNER": [
+   {
+    "file": "vllm/platforms/interface.py",
+    "line": 1672,
+    "text": "if env == \"VLLM_USE_V2_MODEL_RUNNER\":",
+    "role": "load"
+   },
+   {
+    "file": "vllm/platforms/interface.py",
+    "line": 1675,
+    "text": "f\"VLLM_USE_V2_MODEL_RUNNER={value} is no longer supported: \"",
+    "role": "load"
+   },
+   {
+    "file": "vllm/platforms/interface.py",
+    "line": 1679,
+    "text": "\"VLLM_USE_V2_MODEL_RUNNER=1 is redundant and can be unset: \"",
+    "role": "load"
+   }
+  ]
+ },
+ "probes": [
+  {
+   "label": "1, the only value vLLM accepts",
+   "value": "1"
+  }
+ ],
+ "result": {
+  "vllm_commit": "0.34.0+0fda86a35419 0fda86a35419c9c70dbfada224c838c10fbb62ad",
+  "files_scanned": 5312,
+  "occurrences": {
+   "VLLM_USE_V2_MODEL_RUNNER": [
+    {
+     "file": "vllm/platforms/interface.py",
+     "line": 1672,
+     "role": "load"
+    },
+    {
+     "file": "vllm/platforms/interface.py",
+     "line": 1675,
+     "role": "load"
+    },
+    {
+     "file": "vllm/platforms/interface.py",
+     "line": 1679,
+     "role": "load"
+    }
+   ]
+  },
+  "problems": [],
+  "verdict": "inert"
+ }
+}
