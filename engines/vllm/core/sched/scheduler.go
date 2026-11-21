@@ -489,8 +489,8 @@ func (s *Scheduler) SetConnector(c Connector, conf ConnectorConfig) error {
 // drafters): both modelled connectors state all three, so it applies to a connector not yet
 // ported, which the tier-4 connector work covers.
 const (
-	connectorGroupIssue      = "https://github.com/inference-sim/blis-vllm/issues/7"
-	connectorCapabilityIssue = "https://github.com/inference-sim/blis-vllm/issues/4"
+	connectorGroupIssue      = "https://github.com/inference-sim/inference-sim/issues/2597"
+	connectorCapabilityIssue = "https://github.com/inference-sim/inference-sim/issues/2596"
 )
 
 // Counts is get_request_counts: (running, waiting) (scheduler.py:2608-2610).

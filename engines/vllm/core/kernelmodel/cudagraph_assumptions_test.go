@@ -40,7 +40,7 @@ func openWithEngineLines(t *testing.T, path string, lines ...string) *Model {
 // vLLM 0.31.0 policy, which agrees with 0.32.0's on the default, on the two forced-off cases and
 // on the sizes, and differs where 0.32.0 lowers a mode against the attention backend. The
 // difference is disclosed as an assumption that names the field, the stated value and
-// blis-vllm#78, for the point's substitution list; unstated and NONE disclose nothing.
+// inference-sim/inference-sim#2626, for the point's substitution list; unstated and NONE disclose nothing.
 func TestStatedCUDAGraphSettingsDiscloseTheKernelsPolicy(t *testing.T) {
 	const fixture = "kerneltests/testdata/aisimulate/llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml"
 	mine := func(m *Model) (out []string) {
@@ -63,8 +63,8 @@ func TestStatedCUDAGraphSettingsDiscloseTheKernelsPolicy(t *testing.T) {
 		t.Fatalf("a deployment that states both discloses %q, want one assumption for each, naming the value", got)
 	}
 	for _, a := range got {
-		if !strings.Contains(a, "blis-vllm#78") || !strings.Contains(a, "0.31.0") || !strings.Contains(a, "0.32.0") {
-			t.Errorf("the assumption %q does not name the policies and blis-vllm#78", a)
+		if !strings.Contains(a, "inference-sim/inference-sim#2626") || !strings.Contains(a, "0.31.0") || !strings.Contains(a, "0.32.0") {
+			t.Errorf("the assumption %q does not name the policies and inference-sim/inference-sim#2626", a)
 		}
 	}
 }

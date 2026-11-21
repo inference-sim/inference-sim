@@ -14,7 +14,7 @@ import (
 
 // The memory a rank holds inside the KV budget besides its weights, as the kernel plans it, against
 // what vLLM's own start-up decomposition logged for the same deployment (inference-sim/blis-substrate
-// #76). vLLM subtracts the non-torch growth and the peak activation, and its logged peak activation
+// #2375). vLLM subtracts the non-torch growth and the peak activation, and its logged peak activation
 // already holds the CUDA-graph estimate (vllm/v1/worker/gpu_worker.py:720-756@v0.33.0), so the logged
 // figure is peak activation + (consumed memory - Model loading took). The units are fit-role
 // InferenceX start-ups of Kimi-K2.5-NVFP4 on B300 at TP4, vLLM 0.26.1rc1, whose derived figures the

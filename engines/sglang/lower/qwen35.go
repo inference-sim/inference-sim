@@ -35,7 +35,7 @@ const issueHybrid = "inference-sim/inference-sim#2366"
 // 2 otherwise. The plan's page-aligned word prices 2 (memory.go RecurrentStateBytes: two pages
 // plus speculation and prefill checkpoints), so it is one state short with overlap, and it states
 // neither the snapshot interval (mamba_track_interval) nor the pool's share of the cache budget.
-// The pool is refused by name until the scheduler's side of it is lowered (#94).
+// The pool is refused by name until the scheduler's side of it is lowered (#2366).
 func lowerRecurrent(a *config.ServerArgs, g *model.Graph, c *plan.CacheFormat, note func(name, value, reason string)) error {
 	var graphDType model.DType
 	mixed := false

@@ -173,8 +173,8 @@ func TestSetConnectorRefusesWhatItDoesNotModel(t *testing.T) {
 		case c.want == "" && err != nil:
 			t.Errorf("%s: refused: %v", c.name, err)
 		case c.want != "":
-			// A group kind the connector oracle has not run is #7's; a capability a connector
-			// does not state is the tier-4 connector work, #4.
+			// A group kind the connector oracle has not run is #2597's; a capability a connector
+			// does not state is the tier-4 connector work, #2596.
 			issue := connectorCapabilityIssue
 			if c.want == "is not modelled" {
 				issue = connectorGroupIssue

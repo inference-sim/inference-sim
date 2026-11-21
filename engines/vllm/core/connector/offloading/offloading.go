@@ -38,8 +38,8 @@ import (
 // tier-4 connector and offload work. GroupIssue tracks KV cache groups of several block sizes,
 // which are part of the hybrid KV work.
 const (
-	Issue      = "https://github.com/inference-sim/blis-vllm/issues/4"
-	GroupIssue = "https://github.com/inference-sim/blis-vllm/issues/7"
+	Issue      = "https://github.com/inference-sim/inference-sim/issues/2596"
+	GroupIssue = "https://github.com/inference-sim/inference-sim/issues/2597"
 	// BlockSizeIssue tracks a KV cache group whose block is not a multiple of the hash block.
 	BlockSizeIssue = "https://github.com/inference-sim/inference-sim/issues/2433"
 )
@@ -395,9 +395,9 @@ func Check(o Options) error {
 		// The secondary tiers' lookups, stores and promotions (tiering/manager.py@4ba787ec) run in
 		// the TieringOffloadingManager the caller supplies (Config.Manager), which builds or
 		// refuses each tier by its type. Without one only the CPU primary tier is modelled
-		// (https://github.com/inference-sim/blis-vllm/issues/63).
+		// (https://github.com/inference-sim/inference-sim/issues/2621).
 		return fmt.Errorf("offloading: TieringOffloadingSpec with %d secondary tier(s) is not modelled, only its CPU "+
-			"primary tier (https://github.com/inference-sim/blis-vllm/issues/63)", o.SecondaryTiers)
+			"primary tier (https://github.com/inference-sim/inference-sim/issues/2621)", o.SecondaryTiers)
 	case o.EvictionPolicy != "" && o.EvictionPolicy != "lru":
 		// ARC (cpu/policies/arc.py:16) is https://github.com/inference-sim/inference-sim/issues/2481.
 		return fmt.Errorf("offloading: eviction_policy %q is not modelled, only lru "+
@@ -408,9 +408,9 @@ func Check(o Options) error {
 		return fmt.Errorf("offloading: store_threshold %d is not modelled (%s)", o.StoreThreshold, Issue)
 	case o.RetentionInterval != nil:
 		// Sparse retention (reachable_block_mask with retention_interval, single_type_kv_cache_manager.
-		// py:1093-1131; scheduler.py:1608-1612) is https://github.com/inference-sim/blis-vllm/issues/7.
+		// py:1093-1131; scheduler.py:1608-1612) is https://github.com/inference-sim/inference-sim/issues/2597.
 		return fmt.Errorf("offloading: prefix_cache_retention_interval %d is not modelled, only dense retention "+
-			"(https://github.com/inference-sim/blis-vllm/issues/7)", *o.RetentionInterval)
+			"(https://github.com/inference-sim/inference-sim/issues/2597)", *o.RetentionInterval)
 	}
 	return nil
 }

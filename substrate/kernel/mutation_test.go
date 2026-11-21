@@ -26,7 +26,7 @@ var mutants = []struct {
 		"draft.go", "if r.Computed+r.Scheduled > 0 {\n\t\t\treqs++",
 		"if r.Computed+r.Scheduled > 0 && r.Scheduled <= b.DecodeThreshold {\n\t\t\treqs++",
 		"TestTheDrafterCeilingCountsPrefillRows"},
-	{"pipeline plan priced at a defaulted gpu_memory_utilization (#76)",
+	{"pipeline plan priced at a defaulted gpu_memory_utilization (#2375)",
 		"pipeline.go", "if util <= 0 {\n\t\treturn fmt.Errorf(", "if util <= 0 {\n\t\tutil = 0.92\n\t}\n\tif false {\n\t\treturn fmt.Errorf(",
 		"TestAZeroMemoryUtilizationIsRefusedNotDefaulted"},
 }

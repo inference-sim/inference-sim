@@ -151,7 +151,7 @@ func kvLayersOf(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine
 	}
 	// attention_config.indexer_kv_dtype is read only for MiniMax-M3's indexer cache
 	// (m3IndexerElemBytes). Stated for a model with no such cache nothing reads it, so it would be
-	// dropped (blis-vllm#84); "auto" is every model's own default and is not a deviation.
+	// dropped (inference-sim/inference-sim#2629); "auto" is every model's own default and is not a deviation.
 	// DeepSeek V4 and V4.1 build their indexer's cache as an MLA spec, and deepseekKVLayers resolves the
 	// dtype for it.
 	if d := engine.IndexerKVDType; g != nil && d != "" && d != "auto" && !isDeepseekV4(g) {
@@ -161,7 +161,7 @@ func kvLayersOf(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine
 		}
 		if !indexer && !hasSparseGQA(g) {
 			return nil, fmt.Errorf("indexer_kv_dtype=%q is read only for MiniMax-M3's indexer cache, and this model has none, so a "+
-				"stated value would be dropped (https://github.com/inference-sim/blis-vllm/issues/84)", d)
+				"stated value would be dropped (https://github.com/inference-sim/inference-sim/issues/2629)", d)
 		}
 	}
 	return runs, nil
@@ -412,12 +412,12 @@ func m3IndexerElemBytes(dtype string, c model.Cache, headDim int) (int, error) {
 		elem = 1
 	default:
 		return 0, fmt.Errorf("indexer_kv_dtype=%q is not supported by the MiniMax M3 indexer cache (only 'bf16' or "+
-			"'fp8'/'fp8_e4m3'; https://github.com/inference-sim/blis-vllm/issues/84)", dtype)
+			"'fp8'/'fp8_e4m3'; https://github.com/inference-sim/inference-sim/issues/2629)", dtype)
 	}
 	if headDim <= 0 || elem*headDim != c.BytesPerEntry {
 		return 0, fmt.Errorf("indexer_kv_dtype %q stores %d bytes a key of %d elements, and the catalog graph's %s "+
 			"cache states %d; the latency kernel prices the graph's entry, so this indexer dtype is not modelled "+
-			"(https://github.com/inference-sim/blis-vllm/issues/84)",
+			"(https://github.com/inference-sim/inference-sim/issues/2629)",
 			dtype, elem*headDim, headDim, c.Name, c.BytesPerEntry)
 	}
 	return elem, nil
@@ -547,7 +547,7 @@ func deepseekKVLayers(g *model.Graph, pool deployment.Pool, engine engineconfig.
 					return fmt.Errorf("deepseek KV layers: layer kind %s: indexer_kv_dtype %q runs as %s, a key record of %d bytes "+
 						"for an index head of %d, and the catalog graph's %s cache states %d; the latency kernel keys the index "+
 						"record by one cache dtype and prices the graph's, so this indexer dtype is not modelled "+
-						"(https://github.com/inference-sim/blis-vllm/issues/84)",
+						"(https://github.com/inference-sim/inference-sim/issues/2629)",
 						id, engine.IndexerKVDType, indexerDType, w, indexHeadDim, index.Name, index.BytesPerEntry)
 				}
 			}
@@ -609,7 +609,7 @@ func resolveIndexerDType(arch string, ds deepseekServing, requested string) (str
 		resolved, known, err := ds.indexer.ResolveIndexerKVDType(arch, ds.family, requested)
 		if err != nil {
 			return "", fmt.Errorf("deepseek KV layers: indexer_kv_dtype=%q: vLLM refuses it for the DeepSeek sparse indexer: %w "+
-				"(vllm/v1/attention/backends/mla/indexer.py:59-84@5df63a72; https://github.com/inference-sim/blis-vllm/issues/84)",
+				"(vllm/v1/attention/backends/mla/indexer.py:59-84@5df63a72; https://github.com/inference-sim/inference-sim/issues/2629)",
 				requested, err)
 		}
 		if known {
@@ -618,7 +618,7 @@ func resolveIndexerDType(arch string, ds deepseekServing, requested string) (str
 	}
 	if requested != "" && requested != "auto" {
 		return "", fmt.Errorf("deepseek KV layers: indexer_kv_dtype=%q: this release's rules do not model the DeepSeek indexer's "+
-			"cache dtype, so a stated value would be dropped (https://github.com/inference-sim/blis-vllm/issues/84)", requested)
+			"cache dtype, so a stated value would be dropped (https://github.com/inference-sim/inference-sim/issues/2629)", requested)
 	}
 	return "", nil
 }

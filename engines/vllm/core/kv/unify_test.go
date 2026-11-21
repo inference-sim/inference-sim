@@ -96,8 +96,8 @@ func TestUnifyPageSizesAreVLLMs(t *testing.T) {
 	for _, spec := range []LayerSpec{LayerSlidingWindow, LayerSlidingWindowMLA, LayerCircularBuffer} {
 		l := Layer{Spec: spec, KVHeads: 1, HeadSize: 192, ElemBytes: 2, StateBytes: 384, Window: 128}
 		_, err := unifyPageSizes([]Layer{big, l}, 16)
-		if err == nil || strings.Contains(err.Error(), "NotImplementedError") || !strings.Contains(err.Error(), "not modelled (blis-vllm#295)") {
-			t.Errorf("spec %v that does not divide: %v (want the padding refusal citing blis-vllm#295)", spec, err)
+		if err == nil || strings.Contains(err.Error(), "NotImplementedError") || !strings.Contains(err.Error(), "not modelled (inference-sim/inference-sim#2661)") {
+			t.Errorf("spec %v that does not divide: %v (want the padding refusal citing inference-sim/inference-sim#2661)", spec, err)
 		}
 	}
 }

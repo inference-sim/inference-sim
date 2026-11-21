@@ -19,7 +19,7 @@ const StorageRefusalIssue = "https://github.com/inference-sim/inference-sim/issu
 
 // L2RefusalIssue is the open issue the host tier's other unmodelled parts are refused with: the
 // buffer_only host memory mode, the kernel_ascend IO backend and the NPU layout (X28).
-const L2RefusalIssue = "https://github.com/inference-sim/blis-sglang/issues/85"
+const L2RefusalIssue = "https://github.com/inference-sim/inference-sim/issues/2532"
 
 // IOBackends are the --hicache-io-backend values SGLang accepts (server_args.py@297e54fd); the
 // port models direct and kernel.

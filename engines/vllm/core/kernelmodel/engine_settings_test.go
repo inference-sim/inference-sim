@@ -127,7 +127,7 @@ func TestEngineResolvesTheTokenBudgetFromEnableChunkedPrefill(t *testing.T) {
 	}
 }
 
-// An unstated block_size at 0.32.0 is still refused, naming the open issue (#68); at 0.31.0 the
+// An unstated block_size at 0.32.0 is still refused, naming the open issue (#2425); at 0.31.0 the
 // block is returned as stated, and an unstated batch setting is refused, as before.
 func TestEngineRefusesWhatItDoesNotResolve(t *testing.T) {
 	_, err := openEdited(t, "block_size: 64").Engine()
@@ -195,7 +195,7 @@ func TestEngineResolvesAnUnstatedBlockSizeAtThePin(t *testing.T) {
 	}
 }
 
-// A case the pin table refuses is refused through the engine too, citing #68: minimax-m3 selects
+// A case the pin table refuses is refused through the engine too, citing #2425: minimax-m3 selects
 // a sparse-attention backend outside the selector, so no size follows from the source.
 func TestEngineRefusesAnUnresolvedBlockSizeAtThePin(t *testing.T) {
 	m, err := openWithoutBlockSize(t, "direct/minimax-m3-b200-fp4-vllm-tp2-cfg1.yaml")
@@ -203,7 +203,7 @@ func TestEngineRefusesAnUnresolvedBlockSizeAtThePin(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := m.Engine(); err == nil || !strings.Contains(err.Error(), "inference-sim/issues/2425") {
-		t.Fatalf("Engine: %v, want a refusal citing #68", err)
+		t.Fatalf("Engine: %v, want a refusal citing #2425", err)
 	}
 }
 
@@ -321,7 +321,7 @@ func TestEngineKeepsOrRefusesAStatedMemoryUtilization(t *testing.T) {
 	}
 }
 
-// A pool wider than the block-size oracle ran (core/vllm.MaxBlockSizeTP) is refused, citing #68,
+// A pool wider than the block-size oracle ran (core/vllm.MaxBlockSizeTP) is refused, citing #2425,
 // when its block_size is unstated: the per-rank head counts that feed vLLM's backend selection
 // change with the width. A pool at or under the limit is unaffected. The width reaches the
 // resolution through BlockSizeInput.TP.
@@ -363,7 +363,7 @@ func TestEngineRefusesAnUnstatedBlockSizeOnAPoolWiderThanTheOracleRan(t *testing
 		e, err := m.Engine()
 		switch {
 		case c.refused && (err == nil || !strings.Contains(err.Error(), "inference-sim/issues/2425") || !strings.Contains(err.Error(), "tensor_parallel_size")):
-			t.Errorf("tp %d: Engine: %v, want the #68 refusal for a width the oracle did not run", c.tp, err)
+			t.Errorf("tp %d: Engine: %v, want the #2425 refusal for a width the oracle did not run", c.tp, err)
 		case !c.refused && (err != nil || e.BlockSize != 16):
 			t.Errorf("tp %d: Engine: block_size %d (%v), want 16 unaffected", c.tp, e.BlockSize, err)
 		}
@@ -469,7 +469,7 @@ func TestAnUnstatedBlockSizeIsRefusedOnlyForSpeculationThatAddsLayers(t *testing
 			e, err := m.Engine()
 			if c.refusal != "" {
 				if err == nil || !strings.Contains(err.Error(), c.refusal) || !strings.Contains(err.Error(), "inference-sim/issues/2425") {
-					t.Fatalf("Engine: %v, want a refusal containing %q citing #68", err, c.refusal)
+					t.Fatalf("Engine: %v, want a refusal containing %q citing #2425", err, c.refusal)
 				}
 				return
 			}
@@ -498,7 +498,7 @@ func TestSpeculationAddsAttentionLayers(t *testing.T) {
 
 // attention_config.indexer_kv_dtype is read for MiniMax-M3's indexer cache only (fp8 is sized and
 // priced by TestMiniMaxM3FP8IndexerKeysAreHalfTheBytes); a value stated for a model with no indexer
-// cache is refused naming blis-vllm#84.
+// cache is refused naming inference-sim/inference-sim#2629.
 func TestIndexerKVDTypeIsReadForMiniMaxM3Only(t *testing.T) {
 	open := func(fixture, dtype string) error {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", fixture))
@@ -530,8 +530,8 @@ func TestIndexerKVDTypeIsReadForMiniMaxM3Only(t *testing.T) {
 	for _, c := range []struct{ fixture, dtype string }{
 		{"llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml", "bf16"}, {"gpt-oss-120b-h100-fp4-vllm-tp2.yaml", "fp8"},
 	} {
-		if err := open(c.fixture, c.dtype); err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/84") {
-			t.Errorf("%s with indexer_kv_dtype %s: %v, want a refusal citing #84", c.fixture, c.dtype, err)
+		if err := open(c.fixture, c.dtype); err == nil || !strings.Contains(err.Error(), "inference-sim/issues/2629") {
+			t.Errorf("%s with indexer_kv_dtype %s: %v, want a refusal citing #2629", c.fixture, c.dtype, err)
 		}
 	}
 }
@@ -643,7 +643,7 @@ func TestIndexerKVDTypeOnDeepSeekV4IsVLLMsOwnResolution(t *testing.T) {
 					t.Errorf("indexer_kv_dtype %s: accepted", c.dtype)
 					continue
 				}
-				for _, frag := range append(c.frags, "blis-vllm/issues/84") {
+				for _, frag := range append(c.frags, "inference-sim/issues/2629") {
 					if !strings.Contains(err.Error(), frag) {
 						t.Errorf("indexer_kv_dtype %s: %v, want %q", c.dtype, err, frag)
 					}
@@ -708,10 +708,10 @@ func TestAPrefillAndADecodePoolResolveTheirBlockSizesFromTheirOwnWidths(t *testi
 		t.Fatalf("prefill tp 8, decode tp 4: %v, %v; want both to resolve", p, d)
 	}
 	// Prefill at tp 32, past the 16 the oracle ran: the prefill pool is refused naming its own width
-	// and #68, and the decode pool at tp 4 is not.
+	// and #2425, and the decode pool at tp 4 is not.
 	p, d := open(32, 4)
 	if p == nil || !strings.Contains(p.Error(), "tensor_parallel_size 32") || !strings.Contains(p.Error(), "inference-sim/issues/2425") {
-		t.Errorf("prefill tp 32: %v, want a refusal naming tensor_parallel_size 32 and #68", p)
+		t.Errorf("prefill tp 32: %v, want a refusal naming tensor_parallel_size 32 and #2425", p)
 	}
 	if d != nil {
 		t.Errorf("decode tp 4 beside a prefill at tp 32: %v, want it to resolve", d)
@@ -778,7 +778,7 @@ func TestUsesMLAReadsTheGraphsAttention(t *testing.T) {
 
 // An unstated block_size for Gemma-4, a model whose sliding layers (head 256) and full layers (head 512)
 // are two attention layers for the selector, is vLLM's 16 on Hopper and on Blackwell, and the kernel
-// prices that size (#68). The deployment is the Llama one on the same chip with the model changed, so
+// prices that size (#2425). The deployment is the Llama one on the same chip with the model changed, so
 // the test reads only the block size and what feeds it. language_model_only true switches off the
 // multimodal prefix the table was run with, so the engine refuses it rather than guess.
 func TestEngineResolvesAnUnstatedBlockSizeForGemma4(t *testing.T) {
@@ -824,7 +824,7 @@ func TestEngineResolvesAnUnstatedBlockSizeForGemma4(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err := m.Engine(); err == nil || !strings.Contains(err.Error(), "language_model_only") || !strings.Contains(err.Error(), "inference-sim/issues/2425") {
-			t.Errorf("Engine: %v, want a refusal naming language_model_only and #68", err)
+			t.Errorf("Engine: %v, want a refusal naming language_model_only and #2425", err)
 		}
 	})
 }

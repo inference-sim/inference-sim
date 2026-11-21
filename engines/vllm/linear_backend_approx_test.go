@@ -10,7 +10,7 @@ import (
 
 // vLLM v0.33.0's linear_backend=flashinfer_cutlass on SM10x runs FlashInferCutlassNvFp4LinearKernel
 // for the NVFP4 linears, which no allowed table measures; the registry's NVFP4 ramp measures the
-// CuteDSL kernel auto selects (blis-vllm#80). The field list prices that case as linear_backend auto,
+// CuteDSL kernel auto selects (inference-sim/inference-sim#2627). The field list prices that case as linear_backend auto,
 // an execution mode substituted, never as an exact stand-in; every other value and part stays refused.
 func TestFlashInferCutlassLinearsOnSM10xArePricedAsAnExecutionModeSubstituted(t *testing.T) {
 	l, err := fields.Load("fields.json")

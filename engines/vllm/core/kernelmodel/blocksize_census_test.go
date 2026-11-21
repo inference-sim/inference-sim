@@ -20,10 +20,10 @@ import (
 //	stated       the run stated the size. That is an OPERATOR'S FLAG, not vLLM's pick (vLLM picks a
 //	             size only when none is passed, vllm/platforms/interface.py:757-781@5df63a72), so
 //	             it is not evidence of vLLM's choice. The resolution is compared with it anyway,
-//	             and every difference is named: reproduced / refused citing #68 / differs, and a
+//	             and every difference is named: reproduced / refused citing #2425 / differs, and a
 //	             difference not in statedDiffers fails the test. The rows whose server log shows the
 //	             size vLLM chose are in TestResolutionAgainstTheRecordedRuns;
-//	refused      no size was recorded and the resolution is refused, citing #68;
+//	refused      no size was recorded and the resolution is refused, citing #2425;
 //	resolved     no size was recorded and the resolution gives one; there is nothing to compare it
 //	             with, so this is not a claim about vLLM.
 //
@@ -202,7 +202,7 @@ func TestBlockSizeResolutionOverTheCensusFixtures(t *testing.T) {
 				}
 				e, err := m.Engine()
 				if err != nil && !strings.Contains(err.Error(), "inference-sim/issues/2425") {
-					t.Errorf("%s: refused, but not citing #68: %v", f, err)
+					t.Errorf("%s: refused, but not citing #2425: %v", f, err)
 				}
 				class := ""
 				if statedSize != "" {

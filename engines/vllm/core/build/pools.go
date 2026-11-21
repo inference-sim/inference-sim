@@ -199,7 +199,7 @@ func openPools(scenario string, repos kernelmodel.Repos, kernelOpen bool, top To
 	// vLLM's p2p tier hands a request off with the OffloadingConnector alone: the decode engine
 	// loads the prompt from the prefill engine's CPU tier through its own p2p tier, which the
 	// v0.33.0 engines run (docs/features/kv_offloading_usage.md "P2P (Including P/D)" at vLLM
-	// v0.33.0; #204). NIXL's rules (the connector, MultiConnector's order, the prefill backoff) are
+	// v0.33.0; #2439). NIXL's rules (the connector, MultiConnector's order, the prefill backoff) are
 	// not that handoff's; the rules every P/D run keeps follow.
 	p.P2P = p.Connector == p2pHandoffConnector && StatesP2PTier(shape.PoolOffloads[pre])
 	if p.P2P && p.DecodeConnector != p2pHandoffConnector {

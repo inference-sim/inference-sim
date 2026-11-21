@@ -105,13 +105,13 @@ func TestResolveBlockSizeAsRecorded(t *testing.T) {
 		{"Kimi-K2.5 on Hopper with bfloat16 KV", BlockSizeInput{Model: "kimi-k2.5", Capability: "9.0", KVCacheDType: "bfloat16"}, 16, "fa3_available"},
 		{"Kimi-K2.5 on Blackwell needs no assumption", BlockSizeInput{Model: "kimi-k2.5", Capability: "10.0", KVCacheDType: "auto"}, 32, ""},
 		// Gemma-4 mixes sliding layers (head 256) and full layers (head 512): FlashAttention or FlashInfer
-		// takes both at 16, on Hopper and Blackwell (#68).
+		// takes both at 16, on Hopper and Blackwell (#2425).
 		// Llama-3.3-70B (FP8 and FP4 checkpoints) is Llama-3.1's attention shape: 16 on Hopper and Blackwell.
 		{"Llama-3.3-70B FP8 on Hopper with fp8 KV", BlockSizeInput{Model: "llama-3.3-70b-instruct-fp8", Capability: "9.0", KVCacheDType: "fp8"}, 16, ""},
 		{"Llama-3.3-70B FP4 on Blackwell", BlockSizeInput{Model: "llama-3.3-70b-instruct-fp4", Capability: "10.0", KVCacheDType: "fp8"}, 16, ""},
 		{"Gemma-4 31B on Hopper", BlockSizeInput{Model: "gemma-4-31b-it", Capability: "9.0", KVCacheDType: "auto"}, 16, ""},
 		// The FP8-dynamic checkpoint is a separate catalog model with the same attention layers (only the linear
-		// layers' quantization differs), so it resolves as the BF16 one does (#68).
+		// layers' quantization differs), so it resolves as the BF16 one does (#2425).
 		{"Gemma-4 26B-A4B FP8-dynamic on Hopper with fp8 KV", BlockSizeInput{Model: "gemma-4-26b-a4b-it-fp8-dynamic", Capability: "9.0", KVCacheDType: "fp8"}, 16, ""},
 		{"Gemma-4 26B-A4B FP8-dynamic on Hopper with auto KV", BlockSizeInput{Model: "gemma-4-26b-a4b-it-fp8-dynamic", Capability: "9.0", KVCacheDType: "auto"}, 16, ""},
 		{"Gemma-4 26B-A4B FP8-dynamic on Blackwell", BlockSizeInput{Model: "gemma-4-26b-a4b-it-fp8-dynamic", Capability: "10.0", KVCacheDType: "fp8"}, 16, ""},
@@ -360,7 +360,7 @@ func TestPinAndRecordedTablesDifferOnlyByTheDefault(t *testing.T) {
 	}
 }
 
-// The pin's resolver refuses a table recorded at another commit, naming both it and #68, rather
+// The pin's resolver refuses a table recorded at another commit, naming both it and #2425, rather
 // than serve rows resolved from another default. (A build that moves the pin must re-run
 // oracle/blocksize.)
 func TestResolveBlockSizeRefusesATableFromAnotherCommit(t *testing.T) {

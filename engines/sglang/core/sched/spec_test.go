@@ -311,7 +311,7 @@ func TestSpecReserveCanRetractWhereDecodeWouldFit(t *testing.T) {
 	}
 }
 
-// What the port does not model is refused by name (SGL-6), citing #68.
+// What the port does not model is refused by name (SGL-6), citing #2355.
 func TestUnmodelledSpeculationIsRefusedByName(t *testing.T) {
 	cases := []struct {
 		name string

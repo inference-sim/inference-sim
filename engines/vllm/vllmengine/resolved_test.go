@@ -147,7 +147,7 @@ func TestAStatedEngineSettingIsNeverReplaced(t *testing.T) {
 // A deployment that states no max_model_len is served at the window vLLM derives from the model
 // configuration (vllm/config/model.py _get_and_verify_max_len), which the graph states as its
 // context window and the kernel resolves (Settings.MaxModelLen). The completed engine block
-// carries that window, so the factory builds instead of refusing the unstated one (#69).
+// carries that window, so the factory builds instead of refusing the unstated one (#2625).
 func TestAnUnstatedMaxModelLenIsTheGraphsContextWindow(t *testing.T) {
 	Register()
 	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Pool: 0,

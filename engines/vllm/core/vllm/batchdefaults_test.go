@@ -74,7 +74,7 @@ func TestAnUnstatedMaxModelLenIsRefusedNamingItsIssue(t *testing.T) {
 	_, err := resolve(Config{NumGPUBlocks: 1000, PipelineParallelSize: &pp,
 		Engine: engineconfig.Engine{BlockSize: 16, MaxNumSeqs: 256, MaxNumBatchedTokens: 2048}})
 	if err == nil || !strings.Contains(err.Error(), "max_model_len must be stated") ||
-		!strings.Contains(err.Error(), "blis-vllm/issues/69") {
-		t.Errorf("err %v, want the max_model_len refusal naming issues/69", err)
+		!strings.Contains(err.Error(), "inference-sim/issues/2625") {
+		t.Errorf("err %v, want the max_model_len refusal naming issues/2625", err)
 	}
 }

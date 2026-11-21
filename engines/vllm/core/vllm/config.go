@@ -279,7 +279,7 @@ func resolveDPBalancing(c Config, dp int) (mode string, local int, err error) {
 }
 
 // maxModelLenIssue is the open issue an unstated max_model_len cites (design X28).
-const maxModelLenIssue = "https://github.com/inference-sim/blis-vllm/issues/69"
+const maxModelLenIssue = "https://github.com/inference-sim/inference-sim/issues/2625"
 
 // resolve turns an engine block into the scheduler configuration vLLM v0.32.0 would run, or
 // refuses it. A setting that changes scheduling and that this engine does not model is refused
@@ -328,7 +328,7 @@ func resolve(c Config) (settings, error) {
 		// An unstated or auto window is the model's own, or one fitted to memory
 		// (vllm/config/model.py@5df63a72); either is the caller's to resolve. The engine will
 		// resolve an unstated one from the graph's context window, with the model values moved
-		// into graph fields (https://github.com/inference-sim/blis-vllm/issues/69).
+		// into graph fields (https://github.com/inference-sim/inference-sim/issues/2625).
 		return s, fmt.Errorf("vllm: max_model_len must be stated; an unstated or auto window is the model's "+
 			"or the memory's, which the caller resolves (%s)", maxModelLenIssue)
 	}
@@ -588,7 +588,7 @@ func resolve(c Config) (settings, error) {
 		// without it (t3-pp2-concurrent and t3-pp4-sync diverge), so it is refused rather than run.
 		return settings{}, fmt.Errorf("vllm: synchronous pipeline parallelism (pp %d, async_scheduling off) is not "+
 			"built yet: the adapter's batch queue matches vLLM's step_with_batch_queue only with async scheduling "+
-			"on the V2 runner (https://github.com/inference-sim/blis-vllm/issues/21)", pp)
+			"on the V2 runner (https://github.com/inference-sim/inference-sim/issues/2605)", pp)
 	}
 	// The release's own accepted values and refusals, for what the checks above do not cover.
 	if err := checkRules(e, pp); err != nil {
@@ -646,11 +646,11 @@ func checkMambaCache(c Config, prefixCaching bool) error {
 	if def := effectiveMambaCacheMode("", prefixCaching, c.MambaModel); stated != def {
 		return fmt.Errorf("vllm: mamba_cache_mode %q runs as %q, away from the default %q for this model with enable_prefix_caching %t; "+
 			"this model has no recurrent layer to read it, so a stated value would be dropped (%s)",
-			e.MambaCacheMode, stated, def, prefixCaching, issueBase+"7")
+			e.MambaCacheMode, stated, def, prefixCaching, issueSim+"2597")
 	}
 	if v := e.MambaSSMCacheDType; v != "" && v != "auto" && v != c.MambaSSMCacheDTypeDefault && !c.MambaModel {
 		return fmt.Errorf("vllm: mamba_ssm_cache_dtype %q differs from the default %q, and this model has no recurrent layer "+
-			"to read it, so a stated value would be dropped (%s)", v, defaultOr(c.MambaSSMCacheDTypeDefault, "auto"), issueBase+"83")
+			"to read it, so a stated value would be dropped (%s)", v, defaultOr(c.MambaSSMCacheDTypeDefault, "auto"), issueSim+"2628")
 	}
 	return nil
 }
@@ -744,7 +744,7 @@ func refuseUnmodelled(e engineconfig.Engine) error {
 		// blis-schemas' Env rule: a consumer refuses, or discloses, every key it cannot honour,
 		// and never ignores one (spec/deployment/deployment.go Engine.Env).
 		return fmt.Errorf("vllm: env %s is not read by this engine, which reads only %s; the keys that "+
-			"change step time are the latency kernel's to price (https://github.com/inference-sim/blis-vllm/issues/80)",
+			"change step time are the latency kernel's to price (https://github.com/inference-sim/inference-sim/issues/2627)",
 			strings.Join(keys, ", "), strings.Join(readEnv, ", "))
 	}
 	switch {
@@ -793,23 +793,23 @@ var unreadSettings = []unreadSetting{
 	// a stated true or false is a choice. Which prefill kernel runs is the engine's to resolve and
 	// to report as the implementation of attention.prefill, which this engine does not do yet; the
 	// kernel reads no such setting and would price a stated value as the default (VAL-8).
-	{"use_trtllm_attention", "attention_config.use_trtllm_attention", issueBase + "80", func(e engineconfig.Engine) bool { return e.UseTRTLLMAttention != nil }},
+	{"use_trtllm_attention", "attention_config.use_trtllm_attention", issueSim + "2627", func(e engineconfig.Engine) bool { return e.UseTRTLLMAttention != nil }},
 	// AttentionConfig.mla_prefill_backend: None, selected automatically (vllm/config/attention.py:81@5df63a72).
-	{"mla_prefill_backend", "attention_config.mla_prefill_backend", issueBase + "80", func(e engineconfig.Engine) bool { return e.MLAPrefillBackend != "" }},
+	{"mla_prefill_backend", "attention_config.mla_prefill_backend", issueSim + "2627", func(e engineconfig.Engine) bool { return e.MLAPrefillBackend != "" }},
 	// KernelConfig.linear_backend: "auto" (vllm/config/kernel.py:350@5df63a72). A value is lower-cased
 	// and its dashes become underscores before it is validated (kernel.py:393-397, arg_utils.py:1809),
 	// so "AUTO" is the default too.
-	{"linear_backend", "kernel_config.linear_backend", issueBase + "80",
+	{"linear_backend", "kernel_config.linear_backend", issueSim + "2627",
 		func(e engineconfig.Engine) bool {
 			v := strings.ReplaceAll(strings.ToLower(e.LinearBackend), "-", "_")
 			return v != "" && v != "auto"
 		}},
 	// CompilationConfig.custom_ops: [] (vllm/config/compilation.py:480@5df63a72).
-	{"custom_ops", "compilation_config.custom_ops", issueBase + "80", func(e engineconfig.Engine) bool { return len(e.CustomOps) > 0 }},
+	{"custom_ops", "compilation_config.custom_ops", issueSim + "2627", func(e engineconfig.Engine) bool { return len(e.CustomOps) > 0 }},
 	// SpeculativeConfig.kv_cache_dtype: None, the draft keeps the target's layout
 	// (vllm/config/speculative.py:428@5df63a72). A stated "auto" is a value, not None: it overrides
 	// the draft's cache_config.cache_dtype (:382), so it differs from the default.
-	{"speculative.kv_cache_dtype", "speculative_config.kv_cache_dtype", issueBase + "80",
+	{"speculative.kv_cache_dtype", "speculative_config.kv_cache_dtype", issueSim + "2627",
 		func(e engineconfig.Engine) bool { return e.Speculative != nil && e.Speculative.KVCacheDType != "" }},
 	// SpeculativeConfig.rejection_sample_method: "standard" (vllm/config/speculative.py:529@5df63a72).
 	// Only "synthetic" fixes the acceptance length (:532-548). It is accepted with
@@ -847,7 +847,7 @@ var unreadSettings = []unreadSetting{
 	// KVEventsConfig.publisher: None, resolved in __post_init__ to "zmq" when enable_kv_cache_events
 	// is set and "null" otherwise (vllm/config/kv_events.py:19, 51-52@5df63a72), so the default depends on
 	// that setting.
-	{"kv_events.publisher", "kv_events_config.publisher", issueBase + "60",
+	{"kv_events.publisher", "kv_events_config.publisher", issueSim + "2618",
 		func(e engineconfig.Engine) bool {
 			if e.KVEvents == nil || e.KVEvents.Publisher == "" {
 				return false
@@ -859,7 +859,7 @@ var unreadSettings = []unreadSetting{
 			return e.KVEvents.Publisher != def
 		}},
 	// KVEventsConfig.topic: "" (vllm/config/kv_events.py:45@5df63a72).
-	{"kv_events.topic", "kv_events_config.topic", issueBase + "60",
+	{"kv_events.topic", "kv_events_config.topic", issueSim + "2618",
 		func(e engineconfig.Engine) bool { return e.KVEvents != nil && e.KVEvents.Topic != "" }},
 }
 

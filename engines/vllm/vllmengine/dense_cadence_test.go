@@ -13,7 +13,7 @@ import (
 
 // vLLM v0.33.0 gives each rank of a dense (non-MoE) data-parallel deployment its own local prefill
 // cadence (scheduler.py:398-403), which the data-parallel group does not model: such a deployment
-// with prefill_schedule_interval above 1 is refused by name, citing issues/268. A dense model at
+// with prefill_schedule_interval above 1 is refused by name, citing issues/2656. A dense model at
 // data_parallel_size 1 (the local cadence, ported) and a MoE model at data_parallel_size above 1
 // (the engine-core cadence, modelled) still run, and so does a dense data-parallel deployment that
 // leaves the interval at 1.
@@ -59,8 +59,8 @@ func TestDenseDataParallelLocalCadenceIsRefusedByName(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			err := build(t, c.base, c.dpOld, c.dpNew, c.interval)
 			if c.refused {
-				if err == nil || !strings.Contains(err.Error(), "dense_dp_local_prefill_cadence") || !strings.Contains(err.Error(), "issues/268") {
-					t.Fatalf("err %v, want a refusal naming dense_dp_local_prefill_cadence and issues/268", err)
+				if err == nil || !strings.Contains(err.Error(), "dense_dp_local_prefill_cadence") || !strings.Contains(err.Error(), "issues/2656") {
+					t.Fatalf("err %v, want a refusal naming dense_dp_local_prefill_cadence and issues/2656", err)
 				}
 				return
 			}

@@ -138,7 +138,7 @@ func TestTheGraphDecidesWhetherTheExpertsAndTheRecurrentLayersAreLowered(t *test
 	hybrid := graph(t, "deepseek-r1-0528")
 	hybrid.Head = append(hybrid.Head, model.Node{Op: model.OpRecurrentUpdate})
 	if _, err := Lower(&a, hybrid, h200(t)); !refused(err) {
-		t.Errorf("a recurrent layer must be refused naming #94, got %v", err)
+		t.Errorf("a recurrent layer must be refused naming #2366, got %v", err)
 	}
 }
 

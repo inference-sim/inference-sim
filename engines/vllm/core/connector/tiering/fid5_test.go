@@ -194,7 +194,7 @@ func replayFID5(t *testing.T, tr fid5Trace) {
 		case "has_pending_work":
 			got = m.HasPendingWork()
 		case "take_events":
-			// The port's CPU tier publishes no events (https://github.com/inference-sim/blis-vllm/issues/60),
+			// The port's CPU tier publishes no events (https://github.com/inference-sim/inference-sim/issues/2618),
 			// and no recorded sequence makes vLLM's publish any.
 			if ev := m.TakeEvents(); len(ev) > 0 {
 				t.Fatalf("call %d take_events: the port reports %d events", i, len(ev))

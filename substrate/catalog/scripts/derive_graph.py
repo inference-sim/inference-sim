@@ -1706,7 +1706,7 @@ def moe(cfg: dict[str, Any], model: str, hidden: int) -> dict[str, Any]:
 # launch depends on the experts backend vLLM resolves (MoERunner hands router_logits to a
 # monolithic TRT-LLM kernel and runs router.select_experts first for a modular one,
 # runner/moe_runner.py:620-643), which is lowering (SUB-15, X3) and stays in the GroupedGEMM
-# primitive's launch count; inference-sim/blis-vllm#194 lowers it per backend.
+# primitive's launch count; inference-sim/inference-sim#2649 lowers it per backend.
 MOE_FAMILIES: dict[str, dict[str, Any]] = {
     # Inkling2MoE: a GateLinear-style router at the model dtype, no shared expert (n_shared_experts 0).
     "Inkling2ForConditionalGeneration": {"router": "base", "shared": "gated"},
@@ -7968,7 +7968,7 @@ def handler_gemma4(cfg, raw, model):
 
 # Architectures a checkpoint is known to use that have no handler yet, each with the open issue
 # that adds one; the refusal for such an architecture cites the issue (X28) instead of leaving a
-# user to guess whether the gap is known. The dense Qwen3_5ForConditionalGeneration of #317 has a
+# user to guess whether the gap is known. The dense Qwen3_5ForConditionalGeneration of #2412 has a
 # handler below (handler_qwen3_5_dense) and an entry (qwen3.8-27b), so it is not listed.
 UNHANDLED_ARCHITECTURE_ISSUES = {
     "HYV3ForCausalLM": "inference-sim/inference-sim#2412",

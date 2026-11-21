@@ -470,7 +470,7 @@ FILES = {
     """,
 }
 
-ISSUE = "https://github.com/inference-sim/blis-sglang/issues/3"
+ISSUE = "https://github.com/inference-sim/inference-sim/issues/2449"
 PROVENANCE = """// Original to blis-sglang.
 package blissglang
 
@@ -810,7 +810,7 @@ class TestParticulars(Base):
         self.divergences["divergences"][0]["issue"] = ISSUE
         status = self.all_refused()
         status["items"]["tree_core_divergence:namespaced-keys"]["issue"] = "https://github.com/inference-sim/blis-sglang/issues/99"
-        self.fails(r"tree_core_divergence:namespaced-keys: refused with .*issues/99.*records the divergence under .*issues/3", status)
+        self.fails(r"tree_core_divergence:namespaced-keys: refused with .*issues/99.*records the divergence under .*issues/2449", status)
 
     def test_a_divergence_with_no_rust_core_fails(self):
         self.files["mem_cache/unified_cache/tree_core_registry.py"] = self.files[

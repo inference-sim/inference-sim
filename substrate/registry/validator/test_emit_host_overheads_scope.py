@@ -1,4 +1,4 @@
-"""scripts/emit_host_overheads_scope.py keeps the part-wide host entries' scope equal to the catalog's parts (#242).
+"""scripts/emit_host_overheads_scope.py keeps the part-wide host entries' scope equal to the catalog's parts (#2404).
 
 What is checked is the behaviour a new part depends on: it appears in every part-wide entry, a chip with its own
 entry of a name is left to that entry, a model-scoped entry is untouched, and the committed file is already what
