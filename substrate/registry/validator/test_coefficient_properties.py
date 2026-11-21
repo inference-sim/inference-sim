@@ -695,6 +695,13 @@ def test_hardware_independent_sets_cover_every_catalog_part():
         if name.startswith(("activation_buffer_count_", "nontorch_in_budget_bytes_")):
             continue
         covered = set().union(*(set(b["scope"].get("hardware", [])) for b in bodies))
+        # A model-scoped host_launch_eager_per_kernel that does not scope a part leaves that part on the
+        # part-wide host_launch_eager_per_layer (kernel/new.go: the per-kernel entry is taken only where it
+        # applies), so the part is priced there, not zeroed. Only deepseek-v4-pro on h200 is outside the
+        # V4.1-Flash form that scopes every part.
+        if (name == "host_launch_eager_per_kernel" and tuple(models) == ("deepseek-v4-pro",)
+                and covered == {"h200"}):
+            continue
         missing = sorted(cat - covered)
         assert not missing, (
             f"{setname}: {name} for {list(models)} does not scope {missing}, so the term is "
@@ -997,7 +1004,11 @@ def test_the_h100_host_link_is_the_cpu_tier_fit_not_a_second_number():
 # scripts/fit_memory_startup.py writes, each checked out of sample on its model's anchor units. They
 # stand in for the general non-KV memory form of inference-sim/inference-sim#2409, which lowers this
 # back; the approval is recorded on inference-sim/blis-substrate#329.
-MAX_SINGLE_MODEL_ENTRIES = 73
+# Raised by one, 73 -> 74 (approved by a maintainer on the raising pull request): the
+# DeepSeek-V4-Pro host_launch_eager_per_kernel entry on h200 (scripts/fit_deepseek_v4_pro_eager.py), checked on
+# legacy-select units the fit did not see. It stands in for the general per-launch eager dispatch rate of the
+# V4 family (the V4.1-Flash entries beside it), which lowers this back.
+MAX_SINGLE_MODEL_ENTRIES = 74
 
 
 def single_model_entries(entries):
@@ -1021,6 +1032,23 @@ def test_the_single_model_ratchet_counts_a_new_entry():
     assert len(single_model_entries(extra)) == len(single_model_entries(ENTRIES)) + 1
     assert len(single_model_entries(ENTRIES)) == MAX_SINGLE_MODEL_ENTRIES, (
         "the committed count differs from the ratchet: lower MAX_SINGLE_MODEL_ENTRIES to match")
+
+
+def test_the_deepseek_v4_pro_h200_eager_launch_entry_is_pinned():
+    """The one model-scoped eager launch cost: 70 us on h200 only, inside its fitted interval.
+
+    The coverage test skips this entry because it covers h200 alone; this test is what keeps that skip
+    narrow and keeps the value tied to the fit (scripts/fit_deepseek_v4_pro_eager.py, 60 to 74 us)."""
+    found = [(s, b) for s, n, b in ENTRIES if n == "host_launch_eager_per_kernel"
+             and list((b.get("scope") or {}).get("model") or []) == ["deepseek-v4-pro"]]
+    assert len(found) == 1, "expected exactly one DeepSeek-V4-Pro host_launch_eager_per_kernel entry"
+    _, entry = found[0]
+    assert entry["scope"]["hardware"] == ["h200"], "the fit does not carry to b200 or b300"
+    assert entry["scope"]["host_cpu"] == ["x86"]
+    assert entry["units"] == "us_per_transfer"
+    lo, hi = entry["ci95"]
+    assert lo <= entry["value"] <= hi
+    assert entry["value"] == 70, "the fitted value is 70 us; refit with scripts/fit_deepseek_v4_pro_eager.py"
 
 
 # --------------------------------------------------------------------------------------

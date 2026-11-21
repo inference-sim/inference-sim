@@ -421,3 +421,29 @@ coefficients:
         factor of two, so the pooled value moves some models toward their measurement and
         others away; the pre-registration (accuracy/preregistrations.md K1) reports each.
         Hopper keeps the part-wide value.
+
+  - host_launch_eager_per_kernel:
+      value: 70
+      units: us_per_transfer
+      method: assumed
+      fitted: false
+      scope: {hardware: [h200], model: [deepseek-v4-pro], host_cpu: [x86]}
+      code_ids: [83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776, e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074]
+      ci95: [60, 74]
+      sources:
+        - {kind: discussion, cite: "InferenceX fit-role DeepSeek-V4-Pro units on h200 (46 units on the published fit list, concurrency 1 to 256, 1k1k and 8k1k): the per-launch value that minimises the mean absolute TTFT error of the kernel prediction (TTFT MAPE 50.5 to 13.2 on these units), scripts/fit_deepseek_v4_pro_eager.py", role: primary}
+        - {kind: discussion, cite: "legacy-select DeepSeek-V4-Pro units on h200, not used by the fit (n=19): TTFT MAPE 57.05 to 21.00, TPOT 29.43 to 10.08; median signed TTFT error -0.50 to -0.01. Local before/after, not the VAL-6 gate", role: supporting}
+      rationale: >
+        ASSUMED (backed out of end-to-end TTFT, as host_launch_per_kernel is): the per-launch eager dispatch cost of
+        DeepSeek-V4-Pro's prefill step on H200 nodes, on top of host_launch_per_kernel. The model's prefill chunk
+        runs about 1900 kernel launches that are not graph-replayed, and the kernel prices them at the generic
+        eager value; the measured chunk is 110 to 145 ms longer than that, independent of the parallelism and of
+        the shape, which is the size of 1900 launches at tens of microseconds each. Decode steps are graphed and
+        are not affected (the term applies to non-graphed steps only). The one degree of freedom is this value on
+        this chip; no other entry was changed. FITTED ON FIT-ROLE UNITS ONLY (D7) and checked on the legacy-select
+        units, none of which the fit saw. NOT CARRIED to b200: the same fit gives 36 us with an interval of 32 to
+        82 on 49 units, and the legacy-select b200 units (n=20) do not improve (TTFT MAPE 19.63 to 19.50), so b200
+        and b300 keep the generic value. A single-model entry, a recorded exception to the single-model ratchet:
+        the dispatch cost belongs to the model family's uncompiled path (the V4.1-Flash entry above carries 92.87
+        us from an enforce-eager anchor); the general form is a per-launch eager rate shared by the V4 family once
+        the other V4 sizes have anchors. Reproduce with scripts/fit_deepseek_v4_pro_eager.py.
