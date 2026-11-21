@@ -116,6 +116,31 @@
       }
     },
     {
+      "name": "CUDA_LAUNCH_BLOCKING",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "none",
+        "approximates": {
+          "mode": {
+            "env.CUDA_LAUNCH_BLOCKING": null
+          },
+          "evidence": "vLLM names CUDA_LAUNCH_BLOCKING nowhere (no file under vllm/, csrc/ or rust/ of the pinned release, searched 2026-11-21): the CUDA runtime reads it. The engine prices a step from the registry's per-kernel rates, fitted on AISimulate kernel timings of single operators, which are device times taken with ordinary asynchronous launches",
+          "differs": "a stated 1 makes the CUDA runtime wait for each kernel to finish before the host launches the next, so the launch latency and host gaps that overlap with device work in a normal run add to the step; the step is priced faster than a run that states it, most where a step is launch-bound (an eager step; a replayed CUDA graph is one launch)",
+          "when": [
+            {
+              "value_in": [
+                "1"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "CUDA_PATH",
       "source": "env",
       "status": "not_modelled",
@@ -384,7 +409,15 @@
         "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "the transport and the rate of every collective the engine prices: GLOO_SOCKET_IFNAME names the network interface Gloo binds (torch/csrc/distributed/c10d/ProcessGroupGloo.cpp:567-568 at pytorch v2.11.0), and vLLM uses a Gloo group only for CPU-side coordination between ranks (small metadata, barriers), never for the model's collectives, which run on NCCL or the custom all-reduce kernel; the interface carries that control traffic and changes no scheduling decision or step time",
+        "valid_when": [
+          {
+            "value_in": [
+              "eth0"
+            ]
+          }
+        ]
       }
     },
     {
@@ -1195,7 +1228,15 @@
         "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "the transport and the rate of the collectives the engine prices: NCCL_SOCKET_IFNAME names the interface NCCL's sockets bind (ncclFindInterfaces, src/misc/socket.cc:217-222 at NVIDIA/nccl v2.32.6-1 ad2d192c), which the bootstrap uses to connect the ranks (src/bootstrap.cc:127) and the socket network transport uses when no faster transport is available; collectives within a node move over NVLink or PCIe peer-to-peer and across nodes over the IB or RoCE transport when the node has one, neither of which this variable selects",
+        "valid_when": [
+          {
+            "value_in": [
+              "eth0"
+            ]
+          }
+        ]
       }
     },
     {

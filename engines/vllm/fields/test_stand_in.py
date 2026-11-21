@@ -62,6 +62,7 @@ INERT_ONE = {  # field: (the stated value that is exact, a value that is not sho
     "UCX_MAX_RMA_RAILS": ("1", "4"), "UCX_MAX_RNDV_RAILS": ("1", "4"), "UCX_RNDV_SCHEME": ("put_zcopy", "get_zcopy"),
     "UCX_MEMTYPE_CACHE": ("n", "y"), "UCX_MEMTYPE_REG_WHOLE": ("n", "y"), "TILELANG_CLEANUP_TEMP_FILES": ("1", "0"),
     "VLLM_SERVER_DEV_MODE": ("1", "0"), "VLLM_LOG_STATS_INTERVAL": ("1", "0"),
+    "GLOO_SOCKET_IFNAME": ("eth0", "ib0"), "NCCL_SOCKET_IFNAME": ("eth0", "ib0"),
 }
 
 
