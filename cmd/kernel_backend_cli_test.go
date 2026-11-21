@@ -781,11 +781,6 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 		// implement is refused by name rather than dropped.
 		{"a scenario offload block with a prefetch depth", "offload.prefetch_depth",
 			pd(writeScenarioVariant(t, "cost-model-fabric]", "cost-model-fabric, cost-model-offload-tiers]", "pd_transfer:", "offload:\n  prefetch_depth: 2\n  tiers:\n    - tier: cpu_dram\n      bytes: 107374182400\npd_transfer:"), topology...)},
-		// qwen3.5's linear-attention layers carry recurrent state, which the engine maps to a
-		// Mamba cache spec. A P/D decode engine recomputes the last prompt token a Mamba-state
-		// model's prefill engine does not compute, which is not modelled (inference-sim#2322).
-		{"a recurrent model whose prefill engine backs off its prompt", "recomputes the last 1 prompt token",
-			pd(writeScenarioVariant(t, "model: glm-5\n", "model: qwen3.5-397b-a17b\n"), topology...)},
 		{"more decode instances than the pool holds", "decode pool holds 1 data-parallel group(s)",
 			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "2")},
 		{"pools paging in different block sizes", "a P/D handoff moves whole blocks",
@@ -809,6 +804,14 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 	if out, stderr, err := runKernelCLI(t, pd(plain, topology...)...); err != nil ||
 		!completedIs(out, 6) {
 		t.Errorf("a topology exactly filling the pools was not served: %v\n%s", err, lastLines(stderr, 3))
+	}
+	// qwen3.5's linear-attention layers carry recurrent state, which the engine maps to a Mamba
+	// cache spec. The P/D decode engine's recompute of the last prompt token is modelled
+	// (inference-sim#2322), so the same topology serves a recurrent model.
+	recurrent := writeScenarioVariant(t, "model: glm-5\n", "model: qwen3.5-397b-a17b\n")
+	if out, stderr, err := runKernelCLI(t, pd(recurrent, topology...)...); err != nil ||
+		!completedIs(out, 6) {
+		t.Errorf("a P/D run of a recurrent model was not served: %v\n%s", err, lastLines(stderr, 3))
 	}
 }
 
