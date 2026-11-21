@@ -985,5 +985,29 @@
   "value": "0",
   "owner": "cited-source",
   "exact": false
+ },
+ {
+  "field": "GLOO_SOCKET_IFNAME",
+  "value": "eth0",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "GLOO_SOCKET_IFNAME",
+  "value": "ib0",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "NCCL_SOCKET_IFNAME",
+  "value": "eth0",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "NCCL_SOCKET_IFNAME",
+  "value": "ib0",
+  "owner": "cited-source",
+  "exact": false
  }
 ]

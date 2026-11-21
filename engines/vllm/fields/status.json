@@ -32,9 +32,12 @@
   "env:UCX_MEMTYPE_REG_WHOLE": "UCX has MEMTYPE_REG_WHOLE_ALLOC_TYPES (src/ucp/core/ucp_context.c:163 at openucx/ucx v1.19.0 e4636149, the same name in v1.15.0, v1.17.0, v1.18.0 and v1.20.0) and no option called MEMTYPE_REG_WHOLE; vLLM names neither. A UCX that reads the shorter name would differ in which allocations it registers whole, a registration cost and not a rate; none of the five tags checked does. The field's valid_when holds n",
   "env:TILELANG_CLEANUP_TEMP_FILES": "vllm/env_override.py:183@4ba787ec is os.environ.setdefault(\"TILELANG_CLEANUP_TEMP_FILES\", \"1\"): the variable's value in the serving process is 1 whether or not the run stated it. TileLang reads it to delete its compile-time temporary files. The field's valid_when holds 1",
   "env:VLLM_SERVER_DEV_MODE": "vLLM v0.33.0 reads envs.VLLM_SERVER_DEV_MODE at vllm/entrypoints/launchers/api_server/routers.py:46 (the development router) and vllm/entrypoints/common/cli_args.py:209 (the log_error_stack default), and nowhere else in vllm/ outside benchmarks (checked by grep, 2026-11-18). The field's valid_when holds 1",
-  "env:VLLM_LOG_STATS_INTERVAL": "vLLM v0.33.0 reads envs.VLLM_LOG_STATS_INTERVAL at llm_engine.py:467 (do_log_stats_with_interval) and server_utils.py:83 and grpc_server.py:139 (the forced-log loops), and nowhere else outside benchmarks. Logging every second instead of every ten costs front-end CPU that the engine does not price for either value; the log it produces is an output, not an input to scheduling. The field's valid_when holds 1"
+  "env:VLLM_LOG_STATS_INTERVAL": "vLLM v0.33.0 reads envs.VLLM_LOG_STATS_INTERVAL at llm_engine.py:467 (do_log_stats_with_interval) and server_utils.py:83 and grpc_server.py:139 (the forced-log loops), and nowhere else outside benchmarks. Logging every second instead of every ten costs front-end CPU that the engine does not price for either value; the log it produces is an output, not an input to scheduling. The field's valid_when holds 1",
+  "env:GLOO_SOCKET_IFNAME": "Gloo reads GLOO_SOCKET_IFNAME to choose the interface it binds (torch/csrc/distributed/c10d/ProcessGroupGloo.cpp:567-568 at pytorch v2.11.0), and vLLM names it nowhere. The variable is not in the collectives the cost model prices (they are NCCL or the custom all-reduce kernel); a stated eth0 differs from an unset one only if automatic selection would bind another interface for the control traffic, which no priced quantity depends on. The field's valid_when holds eth0, the one value the corpus states",
+  "env:NCCL_SOCKET_IFNAME": "NCCL reads NCCL_SOCKET_IFNAME in ncclFindInterfaces (src/misc/socket.cc:217-222 at NVIDIA/nccl v2.32.6-1 ad2d192c) for the bootstrap that connects the ranks (src/bootstrap.cc:127) and the socket transport, and vLLM names it nowhere. A node that reaches its peers over NVLink, PCIe peer-to-peer or IB/RoCE does not move collective data over the socket transport, so a stated eth0 and an unset variable run alike unless the socket transport is the only one available, which the cost model does not price for either value (the same standing as UCX_RCACHE_MAX_UNRELEASED). The field's valid_when holds eth0, the one value the corpus states"
  },
  "extra_env": [
+  "CUDA_LAUNCH_BLOCKING",
   "DYN_REQUEST_PLANE_CODEC",
   "GLOO_SOCKET_IFNAME",
   "HUGGINGFACE_HUB_CACHE",
@@ -5933,6 +5936,29 @@
    },
    "status": "not_modelled"
   },
+  "env:CUDA_LAUNCH_BLOCKING": {
+   "estimation": {
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "env.CUDA_LAUNCH_BLOCKING": null
+     },
+     "evidence": "vLLM names CUDA_LAUNCH_BLOCKING nowhere (no file under vllm/, csrc/ or rust/ of the pinned release, searched 2026-11-21): the CUDA runtime reads it. The engine prices a step from the registry's per-kernel rates, fitted on AISimulate kernel timings of single operators, which are device times taken with ordinary asynchronous launches",
+     "differs": "a stated 1 makes the CUDA runtime wait for each kernel to finish before the host launches the next, so the launch latency and host gaps that overlap with device work in a normal run add to the step; the step is priced faster than a run that states it, most where a step is launch-bound (an eager step; a replayed CUDA graph is one launch)",
+     "when": [
+      {
+       "value_in": [
+        "1"
+       ]
+      }
+     ]
+    }
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
   "env:CUDA_PATH": {
    "estimation": {
     "rule": "none"
@@ -6150,7 +6176,15 @@
   },
   "env:GLOO_SOCKET_IFNAME": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset",
+    "preserves": "the transport and the rate of every collective the engine prices: GLOO_SOCKET_IFNAME names the network interface Gloo binds (torch/csrc/distributed/c10d/ProcessGroupGloo.cpp:567-568 at pytorch v2.11.0), and vLLM uses a Gloo group only for CPU-side coordination between ranks (small metadata, barriers), never for the model's collectives, which run on NCCL or the custom all-reduce kernel; the interface carries that control traffic and changes no scheduling decision or step time",
+    "valid_when": [
+     {
+      "value_in": [
+       "eth0"
+      ]
+     }
+    ]
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#62"
@@ -6791,7 +6825,15 @@
   },
   "env:NCCL_SOCKET_IFNAME": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset",
+    "preserves": "the transport and the rate of the collectives the engine prices: NCCL_SOCKET_IFNAME names the interface NCCL's sockets bind (ncclFindInterfaces, src/misc/socket.cc:217-222 at NVIDIA/nccl v2.32.6-1 ad2d192c), which the bootstrap uses to connect the ranks (src/bootstrap.cc:127) and the socket network transport uses when no faster transport is available; collectives within a node move over NVLink or PCIe peer-to-peer and across nodes over the IB or RoCE transport when the node has one, neither of which this variable selects",
+    "valid_when": [
+     {
+      "value_in": [
+       "eth0"
+      ]
+     }
+    ]
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#62"
