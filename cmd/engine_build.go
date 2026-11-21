@@ -1314,7 +1314,7 @@ func resolvePoolConfig(global engineConfig, overrides poolOverrides) engineConfi
 // fabric: its payload, its floor and the links it crosses with their full rates. This is
 // the cost model's side of that question for a kernel-backed run, and the only place the
 // simulator turns a move into a demand. It prices nothing else: the engines at this pin open
-// their pools' kernels themselves (blis-vllm compat/kernelmodel), so Graph, Chip, Memory, Price
+// their pools' kernels themselves (engines/vllm/core/kernelmodel), so Graph, Chip, Memory, Price
 // and Acceptance are refused here by name, never answered with a number nobody computed.
 //
 // One transferEnvironment is built for each engine, from the kernels of its own pool and, for a
@@ -1383,7 +1383,7 @@ func poolOrigin(m *kernelmodel.Model) engine.PoolOrigin {
 // errHostEnvironment says which questions this Environment does not answer, and why.
 func errHostEnvironment(what string) error {
 	return fmt.Errorf("cmd: the host's Environment answers transfers only: %s is asked of the cost model by the "+
-		"engine, which at this pin opens its pool's kernel itself (compat/kernelmodel)", what)
+		"engine, which at this pin opens its pool's kernel itself (engines/vllm/core/kernelmodel)", what)
 }
 
 // Graph implements env.Environment; it is not answered here.
