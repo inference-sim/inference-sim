@@ -135,8 +135,11 @@ type pool struct {
 	resolved engineconfig.Engine
 	blocks   int64
 	kvBytes  int64
-	engine   yaml.Node
-	pp, dp   int
+	// maxModelLen is the window the pool serves as the kernel resolves it: the stated count, else
+	// the model graph's context window (Settings.MaxModelLen), 0 when neither exists.
+	maxModelLen int
+	engine      yaml.Node
+	pp, dp      int
 	// role is the pool's role and connector the deployment's pd_transfer.connector, which a
 	// prefill or decode pool runs as kv_producer or kv_consumer.
 	role      deployment.Role
@@ -243,7 +246,7 @@ func open(s engine.Spec, given *load.Data) (pool, error) {
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
 	}
-	return pool{model: m, resolved: resolved, blocks: blocks, kvBytes: kvBytes, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1),
+	return pool{model: m, resolved: resolved, blocks: blocks, kvBytes: kvBytes, maxModelLen: st.MaxModelLen, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1),
 		role: m.Role(), connector: poolConnector, offload: off}, nil
 }
 
@@ -657,6 +660,12 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 	setIfAbsent(&block, "max_num_seqs", fmt.Sprint(p.resolved.MaxNumSeqs))
 	setIfAbsent(&block, "max_num_batched_tokens", fmt.Sprint(p.resolved.MaxNumBatchedTokens))
 	setIfAbsent(&block, "num_gpu_blocks", fmt.Sprint(p.blocks))
+	if p.maxModelLen > 0 {
+		// An unstated window is the model's own: vLLM derives it from the model configuration
+		// (vllm/config/model.py _get_and_verify_max_len), which the graph states as its context
+		// window. A stated count, and a stated auto, are never replaced.
+		setIfAbsent(&block, "max_model_len", fmt.Sprint(p.maxModelLen))
+	}
 	if p.kvBytes > 0 {
 		// The memory the pool's blocks were sized from, for vLLM's start-up check's message.
 		setIfAbsent(&block, "kv_available_bytes", fmt.Sprint(p.kvBytes))
