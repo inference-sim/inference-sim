@@ -39,6 +39,11 @@ inference-sim's.
   config parsers and the model-architecture config convertor). `kernel_impls.json` lists the kernel implementations the release can run, with
   the code hash the coefficient registry keys its entries by. All three are generated and CI
   checks they are current.
+- **Upgrade reports.** `upgrades/<from>-to-<commit8>.json` is the output of
+  `engines/upgrade/upgrade_report.py` for one move of the modelled commit (design 12.4): the surface,
+  field, source, model and coefficient changes. The first, `v0.33.0-to-0fda86a35419.json`, was run
+  with the lists committed at v0.33.0 as the old side, the lists now committed as the new side, and
+  the catalog and coefficient registry at the commit that added the report.
 
 ## Connections
 
