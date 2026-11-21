@@ -12363,43 +12363,6 @@
     ]
    }
   },
-  "port": {
-   "value_classes": {
-    "type": "numeric",
-    "covered_classes": [
-     0
-    ]
-   },
-   "basis": {
-    "name": "port",
-    "kind": "numeric",
-    "sites": [],
-    "stated": [
-     {
-      "value": 8888,
-      "trace": "oracle/inertness/port.json"
-     },
-     {
-      "value": 30000,
-      "trace": "oracle/inertness/port.json"
-     }
-    ],
-    "numeric_type": "int",
-    "classes": [
-     {
-      "lo": null,
-      "hi": null,
-      "lo_closed": false,
-      "hi_closed": false,
-      "compared_at": [],
-      "uncut": true,
-      "covered_by": [
-       "oracle/inertness/port.json"
-      ]
-     }
-    ]
-   }
-  },
   "pp_size": {
    "value_classes": {
     "type": "numeric",
