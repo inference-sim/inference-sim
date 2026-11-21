@@ -2553,7 +2553,25 @@
     "issue": "inference-sim/inference-sim#2344"
    },
    "estimation": {
-    "rule": "none"
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "fp4_gemm_runner_backend": null
+     },
+     "evidence": "the registry's NVFP4 dense ramp (gemm_eps_max_nvfp4, gemm_m_half_nvfp4 on b200, b300, gb200 and gb300), fitted on AISimulate's FlashInferCuteDslNvFp4LinearKernel rows, the kernel SGLang runs at fp4_gemm_runner_backend auto on SM100 (flashinfer_cutedsl, layers/quantization/fp4_utils.py:153-156 at SGLang v0.5.23); no allowed table measures the CUTLASS FP4 GEMM",
+     "differs": "the NVFP4 dense linears run FlashInfer's CUTLASS FP4 GEMM, priced at the CuTe DSL kernel's measured speed; the routed experts' kernel is chosen by moe_runner_backend, not by this field, and BF16 or FP8 linears are unaffected; the other stated values (marlin, flashinfer_cudnn, flashinfer_trtllm) are not covered",
+     "when": [
+      {
+       "value_in": [
+        "flashinfer_cutlass"
+       ],
+       "compute_capability": {
+        "gte": "10.0",
+        "lt": "11.0"
+       }
+      }
+     ]
+    }
    }
   },
   "config:fp8_gemm_runner_backend": {
@@ -2562,7 +2580,25 @@
     "issue": "inference-sim/inference-sim#2344"
    },
    "estimation": {
-    "rule": "none"
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "fp8_gemm_runner_backend": null
+     },
+     "evidence": "the registry's block-FP8 dense ramp (gemm_eps_max_fp8_block, gemm_m_half_fp8_block on b200, b300, gb200 and gb300), fitted on AISimulate's FlashInfer (M<32) / DeepGEMM (M>=32) block-scaled dispatch; at fp8_gemm_runner_backend auto the engine runs DeepGEMM when JIT DeepGEMM is enabled and FlashInfer on Blackwell otherwise (layers/quantization/fp8_utils.py:1181-1184 at SGLang v0.5.23)",
+     "differs": "a stated flashinfer_trtllm runs FlashInfer's TRT-LLM groupwise block-FP8 GEMM for every token count, and Triton where the input width is under 256 (layers/quantization/fp8_utils.py:594-606, 1108-1118, 1245-1250 at SGLang v0.5.23); the cost model prices the engine's auto choice on the ramp the registry measured, so the step time of a block-FP8 model carries the difference between that dispatch and the stated kernel at M >= 32; the other stated values are not covered",
+     "when": [
+      {
+       "value_in": [
+        "flashinfer_trtllm"
+       ],
+       "compute_capability": {
+        "gte": "10.0",
+        "lt": "11.0"
+       }
+      }
+     ]
+    }
    }
   },
   "config:fuseep_mode": {
@@ -3620,7 +3656,25 @@
     "issue": "inference-sim/inference-sim#2344"
    },
    "estimation": {
-    "rule": "none"
+    "rule": "none",
+    "approximates": {
+     "mode": {
+      "moe_runner_backend": null
+     },
+     "evidence": "on SM100 with no all-to-all backend, moe_runner_backend auto resolves to flashinfer_trtllm in the engine's own overrides for the DeepSeek-V3 family and GlmMoeDsaForCausalLM (arg_groups/overrides.py:763-843, quantization fp8, modelopt or unset), for the Qwen3 MoE family unless its experts are W4A16 NVFP4 (arg_groups/model_overrides/qwen3_moe.py:38-90), and for the Llama 4, Gemma 4, GLM-4 MoE and NemotronH families (arg_groups/model_overrides/); the lowering prices flashinfer_trtllm experts for block-FP8 and NVFP4 checkpoints of DeepseekV3ForCausalLM and GlmMoeDsaForCausalLM and refuses every other architecture by name (lower/pool.go expertsKernel) at SGLang v0.5.23",
+     "differs": "the field list cannot see the architecture or the checkpoint's quantization, so a stated flashinfer_trtllm is not called exact: where the engine's own resolution of auto on this part and model is another backend (a family with no SM100 override, which resolves triton; DeepSeek-V4, which resolves flashinfer_trtllm_routed or flashinfer_mxfp4; a W4A16 NVFP4 checkpoint, which resolves marlin), the point is priced with that resolved backend and not with flashinfer_trtllm; the other stated values (flashinfer_cutlass, flashinfer_mxfp4, marlin) are not covered",
+     "when": [
+      {
+       "value_in": [
+        "flashinfer_trtllm"
+       ],
+       "compute_capability": {
+        "gte": "10.0",
+        "lt": "11.0"
+       }
+      }
+     ]
+    }
    }
   },
   "config:mooncake_ib_device": {
@@ -4215,7 +4269,19 @@
     "issue": "inference-sim/inference-sim#2344"
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset",
+    "preserves": "SGLang's own choice: with sampling_backend unset the engine resolves flashinfer whenever FlashInfer is available, which it is on every NVIDIA part (arg_groups/overrides.py:1018-1026, utils/common.py is_flashinfer_available at SGLang v0.5.23), so a stated flashinfer is the unset resolution; pytorch is not covered because the cost model does not price the sampler and the pytorch sampler's cost was not measured, and enable_deterministic_inference, which forces pytorch (arg_groups/overrides.py:1029-1036), is not an accepted field",
+    "valid_when": [
+     {
+      "value_in": [
+       "flashinfer"
+      ],
+      "compute_capability": {
+       "gte": "8.0",
+       "lt": "13.0"
+      }
+     }
+    ]
    }
   },
   "config:sampling_defaults": {
