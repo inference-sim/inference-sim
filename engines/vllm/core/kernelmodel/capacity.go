@@ -291,7 +291,7 @@ func (m *Model) kvMemory(reservedBytes int64) (KVMemory, error) {
 
 // admissionReserver is the kernel's bounded per-sequence state, exported by
 // blis-latency-kernel beside the published kernel.Kernel interface (https://github.com/inference-sim/blis-latency-kernel/issues/46,
-// #56).
+// #2614).
 type admissionReserver interface {
 	SequenceAdmissionBytes() int64
 	SequenceBoundedBytesAt(computedTokens, inFlightTokens int) int64

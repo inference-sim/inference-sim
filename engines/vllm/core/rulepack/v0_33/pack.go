@@ -800,7 +800,7 @@ func ruleList(p *pack.Pack) []pack.Rule {
 				forEachPool(in, func(at string, pool engineconfig.Pool) {
 					connector := connectorAt[at]
 					refuse := func(what string) {
-						out.RuleErrorf("qwen4-exp-qsa-backend", "%s: %s; engine %s refuses it for %s (inference-sim/blis-vllm#202)",
+						out.RuleErrorf("qwen4-exp-qsa-backend", "%s: %s; engine %s refuses it for %s (inference-sim/inference-sim#2650)",
 							at, what, Version, in.Model.Global.Architecture)
 					}
 					if pool.Parallel.DCP > 1 {

@@ -128,7 +128,7 @@ func recordedRunInput(t *testing.T, capabilityOf func(chip string) (string, erro
 //	args         an operator's flag: a different resolved size is not a disagreement with vLLM, and
 //	             each is named by row in operatorFlagDiffers.
 //
-// A refusal cites #68. A difference in an engine_line or silent row is not allow-listable: it is a
+// A refusal cites #2425. A difference in an engine_line or silent row is not allow-listable: it is a
 // finding about the table, and the test fails. The inputs are what a log records: the tensor-parallel
 // width and KV cache dtype of its engine configuration, the chip, and whether the run speculates
 // with a method that builds draft layers; the rows do not record num_spec_tokens, so one token
@@ -153,7 +153,7 @@ func TestResolutionAgainstTheRecordedRuns(t *testing.T) {
 		switch {
 		case err != nil:
 			if !strings.Contains(err.Error(), "inference-sim/issues/2425") {
-				t.Errorf("row %d: refused, but not citing #68: %v", r.Row, err)
+				t.Errorf("row %d: refused, but not citing #2425: %v", r.Row, err)
 			}
 			c.refused++
 			m[r.Evidence].refused++
@@ -218,7 +218,7 @@ func TestResolutionAgainstTheRecordedRuns(t *testing.T) {
 // the law relating the two: for each run the pin resolves, the as-recorded table either refuses
 // (a case the default change newly decides) or gives a size the pin's is a multiple of, and the pin's
 // size equals the logged one where the logged size does not depend on the default (the 256 of
-// DeepSeek-V4, which its backends state as their smallest accepted size). Every refusal cites #68.
+// DeepSeek-V4, which its backends state as their smallest accepted size). Every refusal cites #2425.
 // Counts are of all 108 runs: resolved at the pin and equal to the log, resolved and different because
 // the default changed (the 52 include the 7 operator-flag rows), refused (minimax-m3 and the speculative
 // DeepSeek-V4 runs, as recorded).
@@ -233,7 +233,7 @@ func TestRecordedRunsAtThePin(t *testing.T) {
 		if perr != nil {
 			refused++
 			if !strings.Contains(perr.Error(), "inference-sim/issues/2425") {
-				t.Errorf("row %d: refused at the pin, but not citing #68: %v", r.Row, perr)
+				t.Errorf("row %d: refused at the pin, but not citing #2425: %v", r.Row, perr)
 			}
 			if rerr == nil {
 				t.Errorf("row %d (%s %s): the as-recorded table resolves %d and the pin refuses; the default change cannot remove a resolution", r.Row, model, r.Hardware, rec.Size)

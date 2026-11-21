@@ -110,7 +110,7 @@ func buildObj(i int, raw map[string]any, topBackpressure map[string]any, chunkBy
 			return nil, at("enable_kv_events %v must be true or false", v)
 		}
 		// As for the fs tier: the tier's events reach vLLM's KV event publisher, which the engine
-		// does not model (blis-vllm#60), so the tier is built without them.
+		// does not model (inference-sim/inference-sim#2618), so the tier is built without them.
 	}
 	device, _ := raw["device_class"].(string)
 	if device == "" {

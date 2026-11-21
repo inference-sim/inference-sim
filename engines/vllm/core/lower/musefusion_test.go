@@ -115,7 +115,7 @@ func stepChange(t *testing.T, g *model.Graph, l MuseSparkLayout, tokens int) int
 	return n
 }
 
-// The test #161 asks for: the same deployment launches fewer kernels at PP1 than at PP2, where the
+// The test #2435 asks for: the same deployment launches fewer kernels at PP1 than at PP2, where the
 // gather is not fused across layers, and fewer than on an SM90 part, where none of the Blackwell
 // fusions is built.
 func TestMuseSparkBlackwellPP1LaunchesFewerKernels(t *testing.T) {

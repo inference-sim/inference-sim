@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep the part-wide host-overhead entries' scope.hardware equal to the catalog's part list (SUB-4, #242).
+"""Keep the part-wide host-overhead entries' scope.hardware equal to the catalog's part list (SUB-4, #2404).
 
     python scripts/emit_host_overheads_scope.py            # rewrite the scope lines
     python scripts/emit_host_overheads_scope.py --check    # exit 1 if a line would change

@@ -187,7 +187,7 @@ func runToTraceWithOffload(t *testing.T, offload string, seedVal, horizon int64)
 // T9/BC-G6 end-to-end: a run whose scenario states an offload block records the resolved
 // config in the trace header, and replaying that trace reproduces it (header authoritative)
 // without error. The block states the CPU tier only: the v0.33.0 engine refuses a secondary
-// tier (blis-vllm#63).
+// tier (inference-sim/inference-sim#2621).
 func TestKVOffload_EndToEnd_RunReplayRoundTrip(t *testing.T) {
 	offload := "offload:\n" +
 		"  connector: OffloadingConnector\n" +

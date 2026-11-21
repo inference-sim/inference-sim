@@ -10,7 +10,7 @@
 //
 // KNOWN DIVERGENCE. The resolution is the one the substrate's kernel ran, moved here unchanged so
 // that every price stays what it was: it encodes vLLM v0.31.0's behaviour, whatever release a
-// scenario declares, and says so in its notes. Moving it to v0.32.0 is blis-vllm#78.
+// scenario declares, and says so in its notes. Moving it to v0.32.0 is inference-sim/inference-sim#2626.
 package lowering
 
 import (
@@ -649,7 +649,7 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 				"chosen as vLLM would choose it (head size "+strconv.Itoa(headSize)+"), which assumes "+
 					"FlashInfer 0.6.18 or later is installed, the backend's own gate "+
 					"(has_flashinfer_sm90_nope_mla; flashinfer_mla_sparse_sm90.py:194-199); "+
-					"without it vLLM runs "+backendFlashAttnMLASparse+" (blis-vllm#278)")
+					"without it vLLM runs "+backendFlashAttnMLASparse+" (inference-sim/inference-sim#2659)")
 			if p.Layers, err = sparseMLAKernels(g, &c, pl.PP, be, note); err != nil {
 				return nil, err
 			}
@@ -930,7 +930,7 @@ func resolvedAll2AllBackend(r enginefacts.EngineRules, backend, moeBackend strin
 // (vllm/config/kernel.py:206-227@4ba787ec9959e566d3b587a796dff07673324da5): a FlashInfer MoE-EP
 // backend beside an explicit all2all_backend other than the default or passthrough, and passthrough
 // beside any other MoE backend. The rules pack refuses both too (moe-ep-backend-binds-passthrough),
-// but a caller can reach the lowering without it (blis-vllm#271). A release whose pack does not know
+// but a caller can reach the lowering without it (inference-sim/inference-sim#2657). A release whose pack does not know
 // the binding refuses nothing here.
 func refuseAll2AllBinding(r enginefacts.EngineRules, backend, moeBackend string) error {
 	b, ok := r.(interface {
@@ -948,11 +948,11 @@ func refuseAll2AllBinding(r enginefacts.EngineRules, backend, moeBackend string)
 	case self && stated != r.EffectiveAll2AllBackend("") && stated != "passthrough":
 		return fmt.Errorf("all2all_backend %q beside moe_backend %q: the MoE backend dispatches and combines itself, "+
 			"and vLLM refuses any explicit all2all_backend with it; leave all2all_backend unset "+
-			"(vllm/config/kernel.py:206-215, https://github.com/inference-sim/blis-vllm/issues/271)", backend, moeBackend)
+			"(vllm/config/kernel.py:206-215, https://github.com/inference-sim/inference-sim/issues/2657)", backend, moeBackend)
 	case !self && stated == "passthrough":
 		return fmt.Errorf("all2all_backend passthrough beside moe_backend %q: passthrough is valid only beside a MoE backend "+
 			"that dispatches and combines itself, and vLLM refuses it otherwise "+
-			"(vllm/config/kernel.py:216-227, https://github.com/inference-sim/blis-vllm/issues/271)", moeBackend)
+			"(vllm/config/kernel.py:216-227, https://github.com/inference-sim/inference-sim/issues/2657)", moeBackend)
 	}
 	return nil
 }

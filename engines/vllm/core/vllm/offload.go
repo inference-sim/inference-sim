@@ -182,7 +182,7 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 				continue
 			}
 			return nil, fmt.Errorf("vllm: kv_offload secondary_tiers[%d] type %q is not modelled: TieringOffloadingSpec runs only "+
-				"its CPU primary tier here (vllm/v1/kv_offload/tiering/factory.py:146-174@4ba787ec; %s)", i, typ, issueBase+"63")
+				"its CPU primary tier here (vllm/v1/kv_offload/tiering/factory.py:146-174@4ba787ec; %s)", i, typ, issueSim+"2621")
 		}
 	}
 	if err := offloading.Check(offloading.Options{SpecName: c.Spec, EvictionPolicy: c.EvictionPolicy}); err != nil {

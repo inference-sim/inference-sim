@@ -16,7 +16,7 @@ import (
 // So for such a model every stated value resolves to the one mode the hook picks, and none is
 // away from the default; for any other model no hook runs and "align" is away from the default
 // "none". The cases call the resolver on the engine block, so they do not depend on the
-// factory's earlier refusal of a Mamba model's KV groups (vllmengine, blis-vllm#7).
+// factory's earlier refusal of a Mamba model's KV groups (vllmengine, inference-sim/inference-sim#2597).
 func TestMambaCacheModeIsComparedWithTheResolvedDefault(t *testing.T) {
 	on, off := "enable_prefix_caching: true\n", "enable_prefix_caching: false\n"
 	for _, c := range []struct {
@@ -63,8 +63,8 @@ func TestMambaCacheModeIsComparedWithTheResolvedDefault(t *testing.T) {
 			if c.refuse != (err != nil) {
 				t.Fatalf("checkMambaCache = %v, want refused %t", err, c.refuse)
 			}
-			if err != nil && !strings.Contains(err.Error(), "issues/7") {
-				t.Errorf("the refusal does not cite #7: %v", err)
+			if err != nil && !strings.Contains(err.Error(), "issues/2597") {
+				t.Errorf("the refusal does not cite #2597: %v", err)
 			}
 		})
 	}
@@ -126,8 +126,8 @@ func TestMambaSSMCacheDTypeIsComparedWithTheResolvedDefault(t *testing.T) {
 			if err != nil && !strings.Contains(err.Error(), "no recurrent layer") {
 				t.Errorf("the refusal does not say that no recurrent layer reads the field: %v", err)
 			}
-			if err != nil && !strings.Contains(err.Error(), "issues/83") {
-				t.Errorf("the refusal does not cite #83: %v", err)
+			if err != nil && !strings.Contains(err.Error(), "issues/2628") {
+				t.Errorf("the refusal does not cite #2628: %v", err)
 			}
 		})
 	}

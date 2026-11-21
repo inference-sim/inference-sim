@@ -107,7 +107,7 @@ func TestFieldsCommand_TheComparisonFindsAnAddedAMissingAndAnAlteredField(t *tes
 	missing.Fields = missing.Fields[1:]
 	added := clone()
 	added.Fields = append(added.Fields, fields.Field{Name: "ZZZ_NOT_THE_ENGINES", Source: fields.SourceEnv,
-		Status: fields.StatusNotModelled, Evidence: fields.Evidence{Issue: "inference-sim/blis-vllm#53"},
+		Status: fields.StatusNotModelled, Evidence: fields.Evidence{Issue: "inference-sim/inference-sim#2611"},
 		Estimation: fields.Estimation{Rule: "none"}})
 	altered := clone()
 	altered.Fields[2].Status = fields.StatusProvenInert

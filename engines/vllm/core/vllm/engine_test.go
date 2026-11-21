@@ -139,7 +139,7 @@ func TestConformance(t *testing.T) {
 // The protocol errors a simulator relies on: completing an unknown batch, finishing an unknown
 // request (a no-op) and an unknown transfer. The factory builds one batch in flight (see
 // TestFactoryRefuses), so completing out of order is checked on an engine built with two slots
-// directly, the queue the batch-queue work will open (https://github.com/inference-sim/blis-vllm/issues/21).
+// directly, the queue the batch-queue work will open (https://github.com/inference-sim/inference-sim/issues/2605).
 func TestProtocolErrors(t *testing.T) {
 	if err := enginetest.CheckProtocolErrors(build(t, "max_num_batched_tokens: 32\n"),
 		req("a", 40, 3), req("b", 40, 3)); err != nil {

@@ -82,8 +82,8 @@ func TestTheLoweringRefusesWhatVLLMsPassthroughBindingRefuses(t *testing.T) {
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), "issues/271") {
-				t.Fatalf("err %v, want a refusal naming the combination and issues/271", err)
+			if err == nil || !strings.Contains(err.Error(), "issues/2657") {
+				t.Fatalf("err %v, want a refusal naming the combination and issues/2657", err)
 			}
 		})
 	}

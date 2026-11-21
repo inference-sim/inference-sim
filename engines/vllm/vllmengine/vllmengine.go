@@ -254,8 +254,8 @@ func open(s engine.Spec, given *load.Data) (pool, error) {
 // connector and offload work); secondaryTierIssue the tiers below the CPU one; prefetchIssue the
 // deployment's offload description, whose prefetch_depth is not a vLLM setting.
 const (
-	offloadIssue       = "https://github.com/inference-sim/blis-vllm/issues/4"
-	secondaryTierIssue = "https://github.com/inference-sim/blis-vllm/issues/63"
+	offloadIssue       = "https://github.com/inference-sim/inference-sim/issues/2596"
+	secondaryTierIssue = "https://github.com/inference-sim/inference-sim/issues/2621"
 	prefetchIssue      = "https://github.com/inference-sim/inference-sim/issues/1910"
 )
 
@@ -1053,7 +1053,7 @@ type (
 )
 
 // denseLocalCadenceIssue tracks the dense-model data-parallel ranks' own local prefill cadence.
-const denseLocalCadenceIssue = "https://github.com/inference-sim/blis-vllm/issues/268"
+const denseLocalCadenceIssue = "https://github.com/inference-sim/inference-sim/issues/2656"
 
 // refuseDenseLocalCadence refuses a dense (non-MoE) model at data_parallel_size above 1 with
 // prefill_schedule_interval above 1. vLLM v0.33.0 reconfigures each rank of such a deployment to

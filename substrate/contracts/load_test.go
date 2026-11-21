@@ -970,7 +970,7 @@ coefficients:
 // TestLoadCatalogFiles loads and VALIDATES every top-level catalog artifact in the
 // vendored snapshot: a chip, a fabric, a workload shape, and each storage tier. Like
 // TestLoadCatalogModels it is the strongest check of the tags — real files, not
-// hand-written fixtures — and it validates rather than merely loading (the gap #17 left),
+// hand-written fixtures — and it validates rather than merely loading (the gap #2533 left),
 // calling the same Validate() cmd/validate-catalog runs. A MISSING namespace is a FAILURE,
 // not a skip, so the check cannot silently stop running against a snapshot that moved.
 func TestLoadCatalogFiles(t *testing.T) {

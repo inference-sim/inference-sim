@@ -45,7 +45,7 @@ var modelledTiers = map[string]bool{"fs": true, "obj": true, "p2p": true}
 // tierLookupIssue is the fs tier's timing substitutions; tierIssue the tier keys not modelled.
 const (
 	tierTimingIssue = issueSim + "2437"
-	tierIssue       = issueBase + "63"
+	tierIssue       = issueSim + "2621"
 )
 
 // TierPricer prices a secondary tier's job: bytes between the CPU tier and t.Move.Tier, the
@@ -227,7 +227,7 @@ func buildFS(i int, raw map[string]any, topBackpressure map[string]any, chunkByt
 			return nil, at("enable_kv_events %v must be true or false", v)
 		}
 		// The tier's events reach vLLM's KV event publisher, as the CPU tier's do, which the
-		// engine does not model (blis-vllm#60): the tier is built without them.
+		// engine does not model (inference-sim/inference-sim#2618): the tier is built without them.
 	}
 	device, _ := raw["device_class"].(string)
 	if device == "" {

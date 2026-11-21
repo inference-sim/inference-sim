@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Behavioural tests for the scenario generator's engine settings.
 
-The defect these cover (#73): every scenario was written with gpu_memory_utilization 0.9,
+The defect these cover (#2373): every scenario was written with gpu_memory_utilization 0.9,
 so deployments that differed only in it were given byte-identical predictions.
 
 Run: python3 scripts/test_gen_aisimulate_scenarios.py
@@ -107,7 +107,7 @@ def main() -> int:
     except SystemExit as e:
         ck("an h200 row with no node size is refused, not given 8", "gpus_per_node" in str(e))
 
-    # #74: a speculator the kernel does not price is never written as a target-only file.
+    # #2538: a speculator the kernel does not price is never written as a target-only file.
     eagle = sweep(model="minimax-m3", stated={"speculative_method": "eagle3",
                                               "num_speculative_tokens": 3})
     ck("an unpriced speculator (minimax-m3 eagle3) emits no scenario",

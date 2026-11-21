@@ -5,7 +5,7 @@ package main
 // inference-sim's M3.0 release, v0.18.0, removes engine_version, the flags that restate scenario
 // fields, eager workload generation and contracts/kernel/enginesettings; these four go with M4). Each row's
 // removal is an M4 item: blis-vllm's compat/ and rules (inference-sim #2027),
-// contracts/rules (blis-substrate #165) and contracts/kernel/enginesettings (#58). The release
+// contracts/rules (inference-sim/inference-sim#2566) and contracts/kernel/enginesettings (inference-sim/inference-sim#2479). The release
 // bot's deprecation check skips exactly these. Every other deprecated feature, including
 // observe, calibrate, --metrics-path and --results-path, is removed in M1.
 //

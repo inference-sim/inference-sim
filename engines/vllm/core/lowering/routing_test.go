@@ -10,7 +10,7 @@ import (
 
 // Whether expert selection is a launch of its own depends on the experts class vLLM v0.33.0
 // resolves (fused_moe/runner/moe_runner.py:620-643@4ba787ec): the lowering states it, so the cost
-// model counts the launch only where it happens (inference-sim/blis-vllm#194).
+// model counts the launch only where it happens (inference-sim/inference-sim#2649).
 func TestTheLoweringStatesWhetherExpertSelectionIsItsOwnLaunch(t *testing.T) {
 	h200 := where{"deepseek-v3", "h200", "tp: 8, pp: 1, dp: 1"}
 	b200 := where{"deepseek-v3", "b200", "tp: 8, pp: 1, dp: 1"}

@@ -87,8 +87,8 @@ func TestATierBelowTheCPUTierItCannotRunIsRefused(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: tieredScenario(t, c.tier)}, nil)
 			if err == nil || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), "offload.tiers[1]") ||
-				!strings.Contains(err.Error(), "issues/63") {
-				t.Fatalf("err %v, want a refusal of offload.tiers[1] naming %q and issues/63", err, c.want)
+				!strings.Contains(err.Error(), "issues/2621") {
+				t.Fatalf("err %v, want a refusal of offload.tiers[1] naming %q and issues/2621", err, c.want)
 			}
 		})
 	}

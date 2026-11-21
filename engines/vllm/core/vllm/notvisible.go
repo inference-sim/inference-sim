@@ -130,7 +130,7 @@ func refuseNotVisible(c Config) error {
 				Loads: "vLLM imports the scheduler class from this qualified name (vllm/config/scheduler.py:228-253@5df63a72)"}
 		}
 		return fmt.Errorf("vllm: scheduler_cls %q is not modelled: the engine runs the Scheduler or AsyncScheduler that "+
-			"async scheduling selects (%s)", c.SchedulerCls, issueBase+"66")
+			"async scheduling selects (%s)", c.SchedulerCls, issueSim+"2623")
 	}
 	if sp := c.Speculative; sp != nil && (sp.Method == "custom_class" || (sp.Method == "" && customProposerPath(sp.DraftModel))) {
 		return &CodeNotVisibleError{Setting: "speculative_config.model", Value: sp.DraftModel,

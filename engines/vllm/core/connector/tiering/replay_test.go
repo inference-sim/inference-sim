@@ -694,7 +694,7 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 
 // withoutCPUEvents drops the CPU tier's own BlockStored and BlockRemoved events from a recorded
 // take_events answer. The port's CPU tier emits none: KV events from the offloading connector are
-// https://github.com/inference-sim/blis-vllm/issues/60. The secondary tiers' events are compared.
+// https://github.com/inference-sim/inference-sim/issues/2618. The secondary tiers' events are compared.
 func withoutCPUEvents(v any) any {
 	evs, ok := v.([]any)
 	if !ok {

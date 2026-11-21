@@ -2,67 +2,67 @@
  "items": {
   "async_default:async_scheduling=False if not executor_supports_async_sched": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "async_default:async_scheduling=False if self.model_config is not None and self.model_config.runner_type == 'pooling'": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "async_default:async_scheduling=False if uses_rocm_deepep_ht_dbo": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "async_default:async_scheduling=True otherwise": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "async_depth:batch_queue_enabled": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "async_depth:max_concurrent_batches": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "async_depth:step_function": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "async_placeholder:request.next_decode_eligible_step": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "async_placeholder:request.num_output_placeholder_steps": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "async_placeholder:request.num_output_placeholders": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "async_placeholder:request.spec_token_ids": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "async_placeholder:scheduler_output.has_structured_output_spec_decode": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "async_placeholder:scheduler_output.pending_structured_output_tokens": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "backpressure_class:DropAccountingPolicy": {
@@ -94,47 +94,47 @@
   },
   "connector:DecodeBenchConnector": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2640"
   },
   "connector:ExampleConnector": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2640"
   },
   "connector:ExampleHiddenStatesConnector": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2640"
   },
   "connector:FlexKVConnectorV1": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2640"
   },
   "connector:HF3FSKVConnector": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2640"
   },
   "connector:HiSparseConnector": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2610"
   },
   "connector:LMCacheConnectorV1": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/11"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2602"
   },
   "connector:LMCacheMPConnector": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/11"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2602"
   },
   "connector:MoRIIOConnector": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/10"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2601"
   },
   "connector:MooncakeConnector": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2639"
   },
   "connector:MooncakeStoreConnector": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2603"
   },
   "connector:MultiConnector": {
    "status": "modelled",
@@ -163,7 +163,7 @@
   },
   "connector:NixlPushConnector": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2600"
   },
   "connector:OffloadingConnector": {
    "status": "modelled",
@@ -174,11 +174,11 @@
   },
   "connector:SimpleCPUOffloadConnector": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2604"
   },
   "connector:UMBPStoreConnector": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2623"
   },
   "engine_default:CacheConfig.DEFAULT_BLOCK_SIZE": {
    "status": "refused",
@@ -197,7 +197,7 @@
   },
   "engine_default:CacheConfig.cache_dtype": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/55",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2613",
    "why": "no golden trace shows the default of kv_cache_dtype (fields.json: modelled)"
   },
   "engine_default:CacheConfig.enable_prefix_caching": {
@@ -214,22 +214,22 @@
   },
   "engine_default:CacheConfig.kv_cache_memory_bytes": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/55",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2613",
    "why": "no golden trace shows the default of kv_cache_memory_bytes (fields.json: modelled)"
   },
   "engine_default:CacheConfig.mamba_block_size": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/59",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2617",
    "why": "fields.json does not model mamba_block_size"
   },
   "engine_default:CacheConfig.num_gpu_blocks_override": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/55",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2613",
    "why": "fields.json does not model num_gpu_blocks_override"
   },
   "engine_default:CacheConfig.prefix_caching_hash_algo": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/55",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2613",
    "why": "fields.json does not model prefix_caching_hash_algo"
   },
   "engine_default:CacheConfig.resolved_gpu_memory_utilization": {
@@ -239,7 +239,7 @@
   },
   "engine_default:KVEventsConfig.buffer_steps": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2618",
    "why": "fields.json does not model kv_events_config.buffer_steps"
   },
   "engine_default:KVEventsConfig.enable_kv_cache_events": {
@@ -250,32 +250,32 @@
   },
   "engine_default:KVEventsConfig.endpoint": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2618",
    "why": "fields.json does not model kv_events_config.endpoint"
   },
   "engine_default:KVEventsConfig.hwm": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2618",
    "why": "fields.json does not model kv_events_config.hwm"
   },
   "engine_default:KVEventsConfig.max_queue_size": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2618",
    "why": "fields.json does not model kv_events_config.max_queue_size"
   },
   "engine_default:KVEventsConfig.publisher": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2618",
    "why": "fields.json does not model kv_events_config.publisher"
   },
   "engine_default:KVEventsConfig.replay_endpoint": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2618",
    "why": "fields.json does not model kv_events_config.replay_endpoint"
   },
   "engine_default:KVEventsConfig.topic": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2618",
    "why": "fields.json does not model kv_events_config.topic"
   },
   "engine_default:SchedulerConfig.DEFAULT_MAX_NUM_BATCHED_TOKENS": {
@@ -287,7 +287,7 @@
   },
   "engine_default:SchedulerConfig.DEFAULT_MAX_NUM_BATCHED_TOKENS_FOR_BATCHED_DP": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/55",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2613",
    "why": "no golden trace shows the default of DEFAULT_MAX_NUM_BATCHED_TOKENS_FOR_BATCHED_DP (fields.json: no entry)"
   },
   "engine_default:SchedulerConfig.DEFAULT_MAX_NUM_SEQS": {
@@ -355,7 +355,7 @@
   },
   "engine_default:SchedulerConfig.stream_interval": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/55",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2613",
    "why": "no golden trace shows the default of stream_interval (fields.json: proven_inert)"
   },
   "framework:BackpressureDetector": {
@@ -423,17 +423,17 @@
   },
   "framework:KVConnectorBase_V1 scheduler side": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2643",
    "why": "no recorded or direct trace at its interface (FID-5)"
   },
   "framework:KVConnectorBase_V1 worker side": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2643",
    "why": "no recorded or direct trace at its interface (FID-5)"
   },
   "framework:KVConnectorWorkerMetadata": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2643",
    "why": "no recorded or direct trace at its interface (FID-5)"
   },
   "framework:OffloadingManager": {
@@ -546,27 +546,27 @@
   },
   "framework:OffloadingWorker": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2643",
    "why": "no recorded or direct trace at its interface (FID-5)"
   },
   "framework:ParentManager": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621",
    "why": "no recorded or direct trace at its interface (FID-5)"
   },
   "framework:SecondaryTierManager": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621",
    "why": "no recorded or direct trace at its interface (FID-5)"
   },
   "framework:SupportsHMA": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2643",
    "why": "no recorded or direct trace at its interface (FID-5)"
   },
   "kv_cache_manager:ChunkedLocalAttentionManager": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/149"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2645"
   },
   "kv_cache_manager:CircularBufferManager": {
    "status": "modelled",
@@ -578,11 +578,11 @@
   },
   "kv_cache_manager:CrossAttentionManager": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/149"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2645"
   },
   "kv_cache_manager:DFlashSlidingWindowManager": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/150",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2646",
    "why": "the sliding-window manager of a dflash or dspark drafter; dflash is refused"
   },
   "kv_cache_manager:FullAttentionManager": {
@@ -595,15 +595,15 @@
   },
   "kv_cache_manager:HiSparseHotManager": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2610"
   },
   "kv_cache_manager:HiSparseResidentManager": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2610"
   },
   "kv_cache_manager:HiSparseSourceManager": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2610"
   },
   "kv_cache_manager:MambaManager": {
    "status": "modelled",
@@ -616,11 +616,11 @@
   },
   "kv_cache_manager:RSWAManager": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/149"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2645"
   },
   "kv_cache_manager:SinkFullAttentionManager": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/149"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2645"
   },
   "kv_cache_manager:SlidingWindowManager": {
    "status": "modelled",
@@ -645,17 +645,17 @@
   },
   "kv_event_emitter:cache_partial_block": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2618",
    "why": "no golden trace carries this emission"
   },
   "kv_event_emitter:emit_cached_block_events": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2618",
    "why": "no golden trace carries this emission"
   },
   "kv_event_emitter:reset_prefix_cache": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2618",
    "why": "emits AllBlocksCleared, which no simulated run calls"
   },
   "kv_event_publisher:null": {
@@ -676,19 +676,19 @@
   },
   "kv_event_source:LMCacheKVEvents": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/11"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2602"
   },
   "kv_event_source:MooncakeStoreKVEvents": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2603"
   },
   "kv_event_source:UMBPStoreKVEvents": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2623"
   },
   "kv_event_type:AllBlocksCleared": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2618",
    "why": "emitted by reset_prefix_cache, which no simulated run calls"
   },
   "kv_event_type:BlockRemoved": {
@@ -707,37 +707,37 @@
   },
   "kv_report_mode:full": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2618",
    "why": "kv_cache_report_mode is a per-request field that fields.json does not model"
   },
   "kv_report_mode:incremental": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2618",
    "why": "kv_cache_report_mode is a per-request field that fields.json does not model"
   },
   "metric_family:vllm:<kvcr DURATION_METRIC>": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:<kvcr STATE_METRIC>": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:<kvcr TRANSFER_BLOCKS_METRIC>": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:<kvcr TRANSFER_BYTES_METRIC>": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:admission_rejections": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/54"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2612"
   },
   "metric_family:vllm:cache_config_info": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/25"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2607"
   },
   "metric_family:vllm:corrupted_requests": {
    "status": "out_of_scope",
@@ -747,15 +747,15 @@
   },
   "metric_family:vllm:diffusion_num_canvas_positions": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/152"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2647"
   },
   "metric_family:vllm:diffusion_num_committed_tokens": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/152"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2647"
   },
   "metric_family:vllm:diffusion_num_denoising_steps": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/152"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2647"
   },
   "metric_family:vllm:e2e_request_latency_seconds": {
    "status": "modelled",
@@ -814,51 +814,51 @@
   },
   "metric_family:vllm:hf3fs_load_duration_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2640"
   },
   "metric_family:vllm:hf3fs_num_failed_load": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2640"
   },
   "metric_family:vllm:hf3fs_num_failed_save": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2640"
   },
   "metric_family:vllm:hf3fs_save_duration_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/139"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2640"
   },
   "metric_family:vllm:hisparse_cache_hits": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2610"
   },
   "metric_family:vllm:hisparse_cache_misses": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2610"
   },
   "metric_family:vllm:hisparse_host_block_idle_before_evict_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2610"
   },
   "metric_family:vllm:hisparse_host_block_lifetime_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2610"
   },
   "metric_family:vllm:hisparse_host_block_reuse_gap_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2610"
   },
   "metric_family:vllm:hisparse_host_cache_usage_perc": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2610"
   },
   "metric_family:vllm:hisparse_host_to_device_bytes": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2610"
   },
   "metric_family:vllm:hisparse_pending_page_transfers": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2610"
   },
   "metric_family:vllm:inter_token_latency_seconds": {
    "status": "modelled",
@@ -876,15 +876,15 @@
   },
   "metric_family:vllm:kv_block_idle_before_evict_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/25"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2607"
   },
   "metric_family:vllm:kv_block_lifetime_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/25"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2607"
   },
   "metric_family:vllm:kv_block_reuse_gap_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/25"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2607"
   },
   "metric_family:vllm:kv_cache_usage_perc": {
    "status": "modelled",
@@ -895,99 +895,99 @@
   },
   "metric_family:vllm:kv_offload_allocation_failure": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_config_info": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_cpu_allocation_size": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_cpu_cache_read_usage_perc": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_cpu_cache_usage_perc": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_cpu_cache_write_usage_perc": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_load_bytes": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_load_size": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_load_time": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_lookup_async_delay_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_lookup_sync_delay_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_size": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_store_bytes": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_store_size": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_store_time": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_stores_skipped": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_tiering_active_cascade_jobs": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_active_promotion_jobs": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_backpressure_blocks_dropped": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_backpressure_store_latency_ema": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_backpressure_stores_dropped": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_cascade_job_failures": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_chunk_hits": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_chunk_queries": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_deferred_release_chunks": {
    "status": "refused",
@@ -1001,55 +1001,55 @@
   },
   "metric_family:vllm:kv_offload_tiering_lookup_async_delay_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_lookup_sync_delay_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_primary_read_usage_perc": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_primary_write_usage_perc": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_promotion_allocation_failures": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_promotion_job_failures": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_promotion_latency_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_read_bytes": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_read_time": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_write_bytes": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_tiering_write_time": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621"
   },
   "metric_family:vllm:kv_offload_total_bytes": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:kv_offload_total_time": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:lora_requests_info": {
    "status": "modelled",
@@ -1072,51 +1072,51 @@
   },
   "metric_family:vllm:mooncake_bytes_transferred": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2639"
   },
   "metric_family:vllm:mooncake_num_descriptors": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2639"
   },
   "metric_family:vllm:mooncake_num_failed_recvs": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2639"
   },
   "metric_family:vllm:mooncake_num_failed_transfers": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2639"
   },
   "metric_family:vllm:mooncake_num_kv_expired_reqs": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2639"
   },
   "metric_family:vllm:mooncake_store_operation_bytes_total": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2603"
   },
   "metric_family:vllm:mooncake_store_operation_failed_keys_total": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2603"
   },
   "metric_family:vllm:mooncake_store_operation_keys_total": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2603"
   },
   "metric_family:vllm:mooncake_store_operation_time_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2603"
   },
   "metric_family:vllm:mooncake_store_operation_total": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2603"
   },
   "metric_family:vllm:mooncake_xfer_time_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2639"
   },
   "metric_family:vllm:nixl_bytes_transferred": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:nixl_num_declined_expired_reads": {
    "status": "refused",
@@ -1125,31 +1125,31 @@
   },
   "metric_family:vllm:nixl_num_descriptors": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:nixl_num_failed_notifications": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:nixl_num_failed_transfers": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:nixl_num_kv_expired_reqs": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:nixl_num_notifications_after_expiry": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:nixl_post_time_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:nixl_xfer_time_seconds": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2596"
   },
   "metric_family:vllm:num_preemptions": {
    "status": "modelled",
@@ -1160,7 +1160,7 @@
   },
   "metric_family:vllm:num_requests_kv_fetch_by_stage": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/25"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2607"
   },
   "metric_family:vllm:num_requests_running": {
    "status": "modelled",
@@ -1336,23 +1336,23 @@
   },
   "metric_family:vllm:simple_kv_offload_info": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2604"
   },
   "metric_family:vllm:simple_kv_offload_load_blocks_total": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2604"
   },
   "metric_family:vllm:simple_kv_offload_pending_store_blocks": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2604"
   },
   "metric_family:vllm:simple_kv_offload_save_outcomes_total": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2604"
   },
   "metric_family:vllm:simple_kv_offload_used_blocks": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2604"
   },
   "metric_family:vllm:sleep_mode_operation_duration_seconds": {
    "status": "out_of_scope",
@@ -1419,19 +1419,19 @@
   },
   "metric_family:vllm:umbp_transfer_bytes_total": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2623"
   },
   "metric_family:vllm:umbp_transfer_completed_total": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2623"
   },
   "metric_family:vllm:umbp_transfer_failed_total": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2623"
   },
   "metric_family:vllm:umbp_transfer_submitted_total": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2623"
   },
   "metric_family:vllm:watermark_requests": {
    "status": "out_of_scope",
@@ -1679,19 +1679,19 @@
   },
   "offload_backend:SimpleCPUOffloadConnector kv_offload_backend=cpu": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2604"
   },
   "offload_backend:SimpleCPUOffloadConnector kv_offload_backend=disk": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2604"
   },
   "offload_backend:kv_offloading_backend=lmcache": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/87"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2631"
   },
   "offload_backend:kv_offloading_backend=native": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/87"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2631"
   },
   "offload_medium:CPU": {
    "status": "modelled",
@@ -1703,7 +1703,7 @@
   },
   "offload_medium:STORAGE": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621",
    "why": "the fs and obj secondary tiers"
   },
   "offload_spec:CPUOffloadingSpec": {
@@ -1728,49 +1728,49 @@
   },
   "path_loader:kv_connector_extra_config.cache_policy_module_path": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2623",
    "refusal": "code_not_visible",
    "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   "path_loader:kv_connector_extra_config.secondary_tiers[] kvcr policy (dotted name)": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2623",
    "refusal": "code_not_visible",
    "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   "path_loader:kv_connector_extra_config.secondary_tiers[].backpressure (dotted backpressure_cls or policy_cls)": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2623",
    "refusal": "code_not_visible",
    "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   "path_loader:kv_connector_extra_config.secondary_tiers[].module_path": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2623",
    "refusal": "code_not_visible",
    "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   "path_loader:kv_connector_extra_config.spec_module_path": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2623",
    "refusal": "code_not_visible",
    "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   "path_loader:kv_events_config.publisher (EventPublisherFactory.register_publisher)": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2623",
    "refusal": "code_not_visible",
    "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   "path_loader:kv_transfer_config.kv_connector_module_path": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2623",
    "refusal": "code_not_visible",
    "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   "path_loader:scheduler_config.scheduler_cls": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2623",
    "refusal": "code_not_visible",
    "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
@@ -1812,7 +1812,7 @@
   },
   "secondary_tier:example": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621",
    "why": "refused by type, as every secondary tier is; an in-memory reference tier"
   },
   "secondary_tier:fs": {
@@ -1826,7 +1826,7 @@
   },
   "secondary_tier:kvcr": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2621",
    "why": "refused by type, as every secondary tier is; its store is the external kvcr package"
   },
   "secondary_tier:obj": {
@@ -1867,7 +1867,7 @@
   },
   "speculative_method:dflash": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2646"
   },
   "speculative_method:dfly": {
    "status": "refused",
@@ -1925,7 +1925,7 @@
   },
   "speculative_method:extract_hidden_states": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2646"
   },
   "speculative_method:gemma4_mtp": {
    "status": "out_of_scope",
@@ -2034,7 +2034,7 @@
   },
   "speculative_method:ngram_gpu": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2646"
   },
   "speculative_method:pangu_ultra_moe_mtp": {
    "status": "out_of_scope",
@@ -2074,106 +2074,106 @@
   },
   "speculative_method:suffix": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2646"
   },
   "step_input_kind:ABORT": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_input_kind:ADD": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_input_kind:EXECUTOR_FAILED": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_input_kind:START_DP_WAVE": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_input_kind:UTILITY": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_input_kind:WAKEUP": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_input_read:EngineCoreProc._process_input_queue:get#1": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_input_read:EngineCoreProc._process_input_queue:get_nowait#1": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_input_read:EngineCoreProc._wait_for_output:get_nowait#1": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_input_read:EngineCoreProc._wait_for_output:queue#1": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_order:batch_queue.appendleft#1": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_order:batch_queue.appendleft#2": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_order:batch_queue.pop#1": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_order:self._process_aborts_queue#1": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_order:self._wait_for_output#1": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_order:self.model_executor.execute_model#1": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_order:self.model_executor.sample_tokens#1": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_order:self.model_executor.sample_tokens#2": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_order:self.scheduler.schedule#1": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "step_order:self.scheduler.update_from_output#1": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/3",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2595",
    "why": "the declared step boundary (DEV-3) and its oracle check do not cover step N+2 under async scheduling; the goldens were recorded at v0.33.0 (#2290)"
   },
   "transformers_fallback:ArceeForCausalLM": {

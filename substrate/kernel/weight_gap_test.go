@@ -12,14 +12,14 @@ import (
 
 // The resident weights a rank holds, as the kernel plans them from a catalog graph, against the
 // bytes vLLM v0.33.0 allocates for the checkpoint at the same width (inference-sim/blis-substrate
-// #254, #255, #107). The expected side is computed here from the checkpoint's shapes and stored
+// #2473, #2406, #2461). The expected side is computed here from the checkpoint's shapes and stored
 // widths -- its config.json and safetensors headers at the catalog's pinned revision -- and the
 // rule vLLM applies to each module: which modules its quantization method builds unquantized,
 // which it splits over the tensor-parallel ranks and which it replicates.
 //
 // Left out on both sides, each named: the MoE router (a node of its own with #228, removed from
 // the graph here so the comparison does not depend on that change, and its 36 x 128 bias
-// elements); the multimodal tower, which these graphs do not hold (#107 item 2). The MXFP4 experts are allocated at
+// elements); the multimodal tower, which these graphs do not hold (#2461 item 2). The MXFP4 experts are allocated at
 // vLLM's padded shapes (#273): hidden up to a multiple of 256 and each rank's intermediate up to
 // 128 (fused_moe/oracle/mxfp4.py:837-879@v0.33.0), on Hopper and Blackwell alike.
 
@@ -68,7 +68,7 @@ func gptOSS120B(tp int) []ckptModule {
 		{L * float64(H*(q+2*kv)+q*H), bf16, false}, // qkv_proj and o_proj
 		{L * expertParams, mxfp4, false},           // experts gate_up and down
 		{V * H, bf16, false}, {V * H, bf16, false}, // lm_head, embed_tokens (vocab-parallel)
-		// The biases the checkpoint stores (#281), at the unpadded shapes it stores them in: the
+		// The biases the checkpoint stores (#2408), at the unpadded shapes it stores them in: the
 		// attention projections' (qkv split; o_proj row-parallel, whole on every rank, kept
 		// split by the graph for its 0.2 MB), the experts' gate_up (split) and down (whole).
 		{L * float64(q+2*kv), bf16, false}, {L * float64(H), bf16, false},

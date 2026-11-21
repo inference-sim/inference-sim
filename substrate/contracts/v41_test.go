@@ -25,7 +25,7 @@ func v41(t *testing.T) *model.Graph {
 	return g
 }
 
-// TestV41KVPerContextToken is #47's acceptance case: 1,790 B per context token, against the
+// TestV41KVPerContextToken is #2535's acceptance case: 1,790 B per context token, against the
 // 40 x 584 = 23,360 B a consumer infers when every attention layer is taken to own a
 // full-length cache of its read width.
 func TestV41KVPerContextToken(t *testing.T) {
@@ -97,7 +97,7 @@ func TestV41KVPerContextToken(t *testing.T) {
 	}
 }
 
-// TestV41WindowRingTerm is the constant term beside #47's 1,790 B: what the 43 window
+// TestV41WindowRingTerm is the constant term beside #2535's 1,790 B: what the 43 window
 // rings hold per request, by vLLM v0.31.0's admission cap
 // (max_admission_blocks_per_request): cdiv(min(window - 1 + extra retained + in flight,
 // max_model_len), block) + 1 pages, each page's bytes rounded up to the alignment. The

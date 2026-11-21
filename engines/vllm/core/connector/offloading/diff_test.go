@@ -931,10 +931,10 @@ func TestCheckRefusesWhatIsNotModelled(t *testing.T) {
 		want string
 	}{
 		{Options{SpecName: "Other"}, "spec_name"},
-		{Options{SpecName: "TieringOffloadingSpec", SecondaryTiers: 1}, "issues/63"},
+		{Options{SpecName: "TieringOffloadingSpec", SecondaryTiers: 1}, "issues/2621"},
 		{Options{EvictionPolicy: "arc"}, "issues/2481)"},
 		{Options{StoreThreshold: 2}, "store_threshold"},
-		{Options{RetentionInterval: &zero}, "issues/7"},
+		{Options{RetentionInterval: &zero}, "issues/2597"},
 	} {
 		if err := Check(c.o); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("Check(%+v) = %v, want an error naming %q", c.o, err, c.want)

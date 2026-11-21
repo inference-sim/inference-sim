@@ -393,7 +393,7 @@ ROW4_IDS = [
 MANIFEST = {"generator": "test", "vllm": "0.32.0", "families": [
     {"name": "vllm:num_requests_running", "defined": "vllm/v1/metrics/loggers.py:10", "class": "exact"}]}
 
-ISSUE = "https://github.com/inference-sim/blis-vllm/issues/1"
+ISSUE = "https://github.com/inference-sim/inference-sim/issues/2481"
 PROVENANCE = """package blisvllm
 
 var Upstream = UpstreamRelease{
@@ -982,7 +982,7 @@ class GenSurfaceTest(unittest.TestCase):
         code, diff, err = run(self.tree, s, "--check", committed)
         self.assertEqual(code, 1)
         self.assertIn("regenerate it", err)
-        self.assertIn("issues/10", diff)
+        self.assertIn("issues/24810", diff)
 
 
 if __name__ == "__main__":

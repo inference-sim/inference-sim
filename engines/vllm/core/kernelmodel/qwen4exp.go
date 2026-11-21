@@ -21,7 +21,7 @@ const sparseGQA model.AttentionKind = "sparse_gqa"
 // (nvidia/qsa.py:146-206). This file holds what the engine decides about them that the graph
 // does not: which settings the backend refuses, and the KV cache specs the layer registers.
 // The wiring that calls these from kvLayersRead, planMamba's geometry check and the rules pack
-// belongs to the files that hold those decisions (blis-vllm#202).
+// belongs to the files that hold those decisions (inference-sim/inference-sim#2650).
 
 // Qwen4ExpArchitectures are the architecture strings whose layers are QSA.
 var qwen4ExpArchitectures = map[string]bool{
@@ -52,7 +52,7 @@ func checkQwen4Exp(s qsaSettings) error {
 	if !isQwen4Exp(s.Arch) {
 		return nil
 	}
-	const issue = "inference-sim/blis-vllm#202"
+	const issue = "inference-sim/inference-sim#2650"
 	switch {
 	case s.DCP > 1:
 		return fmt.Errorf("%s: decode context parallelism %d: the QSA backend refuses it (Qwen4ExpQSAFlashAttentionImpl "+

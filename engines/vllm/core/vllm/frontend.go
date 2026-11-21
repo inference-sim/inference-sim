@@ -9,7 +9,7 @@ import (
 )
 
 // Frontend is vLLM's API-server settings that decide how requests queue before the engine admits
-// them. blis-schemas states neither yet (blis-vllm#85, #105), so the host that builds the engine
+// them. blis-schemas states neither yet (inference-sim/inference-sim#2630, #105), so the host that builds the engine
 // gives them with SetFrontend and an unset engine has vLLM's defaults.
 //
 // vLLM v0.32.0 runs the tokenizer and the chat template on the renderer's thread pool,

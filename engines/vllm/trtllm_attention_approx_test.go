@@ -11,7 +11,7 @@ import (
 // A stated use_trtllm_attention=true on SM10x forces FlashInfer's trtllm-gen kernels. The engine
 // reports no attention implementation, so the registry's pooled lanes price the step; the field list
 // prices that case as the auto-detected choice, an execution mode substituted, never as an exact
-// stand-in. false, other parts and unstated values stay refused (blis-vllm#80).
+// stand-in. false, other parts and unstated values stay refused (inference-sim/inference-sim#2627).
 func TestAStatedTRTLLMAttentionOnSM10xIsPricedAsAnExecutionModeSubstituted(t *testing.T) {
 	l, err := fields.Load("fields.json")
 	if err != nil {

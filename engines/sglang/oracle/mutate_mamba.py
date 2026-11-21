@@ -1,5 +1,5 @@
 # Original to blis-sglang.
-"""Mutation check of the hybrid mamba pools (S48, #94): each mutant changes one decision of the port
+"""Mutation check of the hybrid mamba pools (S48, #2366): each mutant changes one decision of the port
 in core/cache/mamba.go or core/cache/mamba_budget.go; the replay of SGLang's traces
 (TestLinearStateIsSGLangs, TestHybridPoolBytesAreSGLangs, TestHybridRequestPoolAnswersAsSGLang,
 TestMambaBudgetIsSGLangs) must fail on every one.

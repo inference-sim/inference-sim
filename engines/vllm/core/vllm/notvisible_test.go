@@ -173,7 +173,7 @@ func TestEveryRegisteredSecondaryTierIsRefusedByItsType(t *testing.T) {
 				t.Fatalf("refused as code_not_visible, want not modelled: %v", err)
 			}
 			if !strings.Contains(err.Error(), `"`+typ+`"`) || !strings.Contains(err.Error(), "not modelled") ||
-				!strings.Contains(err.Error(), "issues/63") {
+				!strings.Contains(err.Error(), "issues/2621") {
 				t.Errorf("refusal does not name the tier, say it is not modelled and cite its issue: %v", err)
 			}
 		})

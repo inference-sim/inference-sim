@@ -71,7 +71,7 @@ values, for the record: gb200-nvl72 0.549 / 122, b200 0.522 / 112, b300 0.390 / 
 174, b300 0.501 / 192, gb300 0.526 / 227. The routed-expert error is dominated by geometry (small hidden sizes under-predicted by
 about 27%, the largest over-predicted), which a ramp over tokens alone cannot carry, so a
 second token ramp buys nothing at the operator level. The kernel's fallback to the dense
-nvfp4 ramp therefore stands, and the +10% / +20% kimi-k2.5-nvfp4 TPOT residual #51 records is
+nvfp4 ramp therefore stands, and the +10% / +20% kimi-k2.5-nvfp4 TPOT residual #2372 records is
 not explained by the ramp. The script is kept so the evidence re-runs; it writes an entry
 only for a part whose held-out A beats the dense ramp.
 """

@@ -169,27 +169,27 @@ var noDefaultValue = map[string]string{
 // The test checks each really reaches the kernel's settings (vllmsettings.Of), so an entry cannot
 // outlive the kernel reading the key.
 var pricedByTheKernel = map[string]string{
-	"all2all_backend":                   "all2all_backend: allgather_reducescatter\n#264",
-	"disable_custom_all_reduce":         "disable_custom_all_reduce: true\n#78",
-	"disable_cascade_attn":              "disable_cascade_attn: false\n#78",
-	"enforce_eager":                     "enforce_eager: true\n#59",
-	"mamba_cache_dtype":                 "mamba_cache_dtype: float32\n#83",
+	"all2all_backend":                   "all2all_backend: allgather_reducescatter\n#2655",
+	"disable_custom_all_reduce":         "disable_custom_all_reduce: true\n#2626",
+	"disable_cascade_attn":              "disable_cascade_attn: false\n#2626",
+	"enforce_eager":                     "enforce_eager: true\n#2617",
+	"mamba_cache_dtype":                 "mamba_cache_dtype: float32\n#2628",
 	"moe_backend":                       "moe_backend: triton\n#2394",
 	"kernel_config.moe_backend":         "moe_backend: triton\n#2394",
 	"enable_dbo":                        "enable_dbo: true\n#2428",
 	"enable_eplb":                       "enable_eplb: true\n#2430",
 	"eplb_config.num_redundant_experts": "enable_eplb: true\neplb_config: {num_redundant_experts: 8}\n#2430",
-	"engram_config.cpu_offload":         "engram_config: {cpu_offload: false}\n#78",
-	"engram_config.dp_shared_memory":    "engram_config: {dp_shared_memory: true}\n#78",
-	"engram_config.use_thp":             "engram_config: {use_thp: true}\n#78",
+	"engram_config.cpu_offload":         "engram_config: {cpu_offload: false}\n#2626",
+	"engram_config.dp_shared_memory":    "engram_config: {dp_shared_memory: true}\n#2626",
+	"engram_config.use_thp":             "engram_config: {use_thp: true}\n#2626",
 	"dcp_comm_backend":                  "dcp_comm_backend: a2a\n#2483",
-	"dcp_q_replicate":                   "dcp_q_replicate: true\n#8",
-	"cp_kv_cache_interleave_size":       "cp_kv_cache_interleave_size: 4\n#8",
+	"dcp_q_replicate":                   "dcp_q_replicate: true\n#2599",
+	"cp_kv_cache_interleave_size":       "cp_kv_cache_interleave_size: 4\n#2599",
 	// Reachable only through Spec.Config: a deployment cannot state them, because
 	// deployment.PDTransfer has the connector alone and offload.connector_options refuses all but
-	// blocks_per_chunk (offloadOf). blis-vllm#89.
-	"kv_transfer_config.kv_load_failure_policy":    "#89",
-	"kv_transfer_config.kv_connector_extra_config": "#89",
+	// blocks_per_chunk (offloadOf). inference-sim/inference-sim#2633.
+	"kv_transfer_config.kv_load_failure_policy":    "#2633",
+	"kv_transfer_config.kv_connector_extra_config": "#2633",
 }
 
 // readByTheEngine are the not-modelled keys the engine reads through a rule of its own that depends
@@ -427,10 +427,10 @@ func TestADeploymentStatesDPSyncInterval(t *testing.T) {
 	}
 }
 
-// rejection_sample_method is not_modelled (#29) only for the value that fixes the acceptance length.
+// rejection_sample_method is not_modelled (#2608) only for the value that fixes the acceptance length.
 // "standard" and "block", the values recorded runs state, are accepted: acceptance is supplied, so
 // they decide nothing the engine takes from the setting. "synthetic" fixes the length, which the
-// run supplies as speculative_config.synthetic_acceptance_length (#88): with it the block is
+// run supplies as speculative_config.synthetic_acceptance_length (#2632): with it the block is
 // accepted, as the run's supplied acceptance profile; without it, as vLLM refuses it
 // (vllm/config/speculative.py:575), it is refused.
 func TestOnlySyntheticRejectionSamplingIsRefused(t *testing.T) {
@@ -477,8 +477,8 @@ func TestKVEventsPublisherDefaultFollowsEnableKVCacheEvents(t *testing.T) {
 		if c.refused != (err != nil) {
 			t.Errorf("events %t, publisher %s: err %v, want refused %t", c.enabled, c.publisher, err, c.refused)
 		}
-		if err != nil && !strings.Contains(err.Error(), "issues/60") {
-			t.Errorf("events %t, publisher %s: refusal does not cite #60: %v", c.enabled, c.publisher, err)
+		if err != nil && !strings.Contains(err.Error(), "issues/2618") {
+			t.Errorf("events %t, publisher %s: refusal does not cite #2618: %v", c.enabled, c.publisher, err)
 		}
 	}
 }
@@ -520,7 +520,7 @@ func TestPrepareStatesMambaModelOnlyForARecurrentModel(t *testing.T) {
 // (VAL-8); this engine reports none yet, which needs the code hash of the trtllm-gen prefill kernel of
 // its FlashInfer pin, published by an engine release's kernel_impls.json (inference-sim/inference-sim#2466).
 // The kernel reads no such setting, so a stated value would be priced as the default and dropped
-// without a word; the engine says so first, citing blis-vllm#80.
+// without a word; the engine says so first, citing inference-sim/inference-sim#2627.
 func TestTheEngineRefusesUseTRTLLMAttentionWhateverItsValue(t *testing.T) {
 	Register()
 	build := func(t *testing.T, chip, line string) error {
@@ -543,8 +543,8 @@ func TestTheEngineRefusesUseTRTLLMAttentionWhateverItsValue(t *testing.T) {
 	} {
 		err := build(t, c.chip, c.line)
 		if err == nil || !strings.Contains(err.Error(), "attention_config.use_trtllm_attention") ||
-			!strings.Contains(err.Error(), "blis-vllm/issues/80") {
-			t.Errorf("%s on %s: %v, want a refusal naming the field and blis-vllm#80", strings.TrimSpace(c.line), c.chip, err)
+			!strings.Contains(err.Error(), "inference-sim/issues/2627") {
+			t.Errorf("%s on %s: %v, want a refusal naming the field and inference-sim/inference-sim#2627", strings.TrimSpace(c.line), c.chip, err)
 		}
 	}
 }

@@ -127,7 +127,7 @@ func TestStatedLeaveUnsetFieldsWithNoEngineKeyAreRefused(t *testing.T) {
 		}
 	}
 	// synthetic_acceptance_length is a key of the block (a supplied acceptance profile); the per-position
-	// rates are not, and stay refused (#88).
+	// rates are not, and stay refused (#2632).
 	var n yaml.Node
 	if err := yaml.Unmarshal([]byte("speculative_config: {method: m, num_speculative_tokens: 2, rejection_sample_method: synthetic, synthetic_acceptance_length: 2, synthetic_acceptance_rates: [1, 0.5]}\n"), &n); err != nil {
 		t.Fatal(err)

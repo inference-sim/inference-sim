@@ -17,7 +17,7 @@ import (
 //	      naming a device the table does not define is refused naming it.
 //
 // The scenario is the only source of the offload tiers (#2037). The v0.33.0 engine models the
-// cpu_dram tier only and refuses a secondary tier (blis-vllm#63), so these legs offload to
+// cpu_dram tier only and refuses a secondary tier (inference-sim/inference-sim#2621), so these legs offload to
 // cpu_dram, except where a refusal of the named device comes first.
 
 // Environment variables driving the re-exec subprocess legs.
