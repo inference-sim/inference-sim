@@ -143,3 +143,24 @@ func TestAStatedEngineSettingIsNeverReplaced(t *testing.T) {
 		}
 	}
 }
+
+// A deployment that states no max_model_len is served at the window vLLM derives from the model
+// configuration (vllm/config/model.py _get_and_verify_max_len), which the graph states as its
+// context window and the kernel resolves (Settings.MaxModelLen). The completed engine block
+// carries that window, so the factory builds instead of refusing the unstated one (#69).
+func TestAnUnstatedMaxModelLenIsTheGraphsContextWindow(t *testing.T) {
+	Register()
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Pool: 0,
+		Roots: scenarioWithout(t, "deepseek-v4-pro-b200-fp4-vllm-tp8.yaml", "max_model_len")}
+	p, err := open(spec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// deepseek-v4-pro's graph states context_window 1048576.
+	if got := blockInt(t, p.complete(yaml.Node{}), "max_model_len"); got != 1048576 {
+		t.Errorf("max_model_len = %d, want the graph's context window 1048576", got)
+	}
+	if _, err := engine.New(spec); err != nil {
+		t.Errorf("the engine does not build from an unstated max_model_len: %v", err)
+	}
+}
