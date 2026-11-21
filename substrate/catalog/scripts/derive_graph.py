@@ -5930,6 +5930,25 @@ def ngram_shard_shape(model: str, layer: int, shards: int) -> tuple[int, int, in
     return int(t["shape"][0]), int(t["shape"][1]), stored
 
 
+def unscaled_context_window(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> dict[str, Any]:
+    """The `global.context_window` of a model whose config scales no RoPE.
+
+    vLLM derives max_model_len from max_position_embeddings (config/model.py
+    _get_and_verify_max_len); a config that scales its RoPE would shorten or lengthen it, so
+    this refuses one (the top-level and the text config are both read, as vLLM reads the
+    rope parameters of either). Used by the families none of whose committed configs scales
+    its RoPE."""
+    for where in (raw, raw.get("text_config") or {}):
+        if where.get("rope_scaling") or where.get("rope_parameters"):
+            raise DeriveError(f"{model}: the config scales its RoPE, so max_model_len is not "
+                              f"max_position_embeddings")
+    positions = require_key(cfg, "max_position_embeddings", model)
+    if isinstance(positions, bool) or int(positions) != positions or positions < 1:
+        raise DeriveError(f"{model}: max_position_embeddings is {positions!r}, not a positive "
+                          f"whole number")
+    return {"global": {"context_window": int(positions)}}
+
+
 # NemotronH's layer characters (hybrid_override_pattern, mtp_hybrid_override_pattern): M
 # state-space, * attention, - MLP, E MoE.
 NEMOTRON_H_CHARS = {"M": "mamba", "*": "attention", "-": "mlp", "E": "moe"}
@@ -5966,16 +5985,7 @@ def handler_nemotron_h(cfg, raw, model):
     used = list(dict.fromkeys(vector))
     kinds = [catalogue[n] for n in used]
     stack = compress(list(vector))
-    # vLLM derives max_model_len from max_position_embeddings; a config that scales its
-    # RoPE would shorten or lengthen it, and none of the committed NemotronH configs does.
-    if raw.get("rope_scaling") or raw.get("rope_parameters"):
-        raise DeriveError(f"{model}: the config scales its RoPE, so max_model_len is not "
-                          f"max_position_embeddings")
-    positions = require_key(cfg, "max_position_embeddings", model)
-    if isinstance(positions, bool) or int(positions) != positions or positions < 1:
-        raise DeriveError(f"{model}: max_position_embeddings is {positions!r}, not a positive "
-                          f"whole number")
-    window = {"global": {"context_window": int(positions)}}
+    window = unscaled_context_window(cfg, raw, model)
     quant = raw.get("quantization_config") or {}
     method = str(quant.get("quant_method", "")).lower()
     uniform = method == "modelopt" and str(quant.get("quant_algo", "")).upper() != "MIXED_PRECISION"
@@ -6366,7 +6376,10 @@ def handler_kimi_k3(cfg, raw, model):
         sequence.append(f"{mixer}_dense" if i < first_dense else f"{mixer}_moe")
     # A kind no layer uses would be a node a reader has to account for and no step runs.
     kinds = [k for k in kinds if k["id"] in set(sequence)]
-    return kimi_k3_place_widths(kinds, cfg, raw, model), compress(sequence)
+    # A deployment that states no max_model_len is served at the window vLLM derives from the
+    # configuration; the graph states it because nothing else the simulator holds does.
+    return (kimi_k3_place_widths(kinds, cfg, raw, model), compress(sequence),
+            unscaled_context_window(cfg, raw, model))
 
 
 def handler_glm5_next(cfg, raw, model):

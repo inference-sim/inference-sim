@@ -2624,6 +2624,33 @@ def test_kimi_k3_resolves_its_full_attention_layers_one_based():
     assert set(seq) <= {"kda_moe", "mla_moe", "kda_dense", "mla_dense"}
 
 
+def test_kimi_k3_states_the_context_window_its_config_gives_vllm():
+    """A deployment that states no max_model_len is served at the window vLLM derives from the
+    configuration (config/model.py _get_and_verify_max_len): max_position_embeddings of the text
+    config when no RoPE scaling applies, which KimiK3Config reads through its KimiLinearConfig
+    text config. The graph is where the simulator reads that window (the vendor config is not
+    a schema input), so a Kimi-K3 graph without it left every run that passes no
+    --max-model-len refused."""
+    d = ROOT / "models" / "kimi-k3"
+    if not d.is_dir():
+        pytest.skip("kimi-k3 is not in the catalog")
+    assert graph_of(d)["global"]["context_window"] == text_config(config_of(d))["max_position_embeddings"]
+
+
+def test_kimi_k3_refuses_a_config_that_scales_its_rope(tmp_path):
+    """A scaled RoPE changes the length vLLM serves (a factor multiplies the derived window),
+    so max_position_embeddings alone would state the wrong window."""
+    d = ROOT / "models" / "kimi-k3"
+    if not d.is_dir():
+        pytest.skip("kimi-k3 is not in the catalog")
+    raw = config_of(d)
+    text_config(raw)["rope_parameters"] = {"rope_type": "linear", "factor": 4.0}
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match="scales its RoPE"):
+        _derive_raw(raw, tmp_path, "kimi-k3")
+
+
 def test_kimi_k3_kda_state_geometry_comes_from_the_config():
     """The recurrent node's shape, which decides its state bytes and its step cost."""
     d = ROOT / "models" / "kimi-k3"
