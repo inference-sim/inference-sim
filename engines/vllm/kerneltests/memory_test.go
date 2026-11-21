@@ -248,9 +248,10 @@ func TestProvenanceSeesEveryFigureFixedBytesReports(t *testing.T) {
 	for _, o := range k.Provenance() {
 		// all_reduce_message_limit is the named gap of inference-sim/inference-sim#2478: a pool's tensor-parallel
 		// all-reduce is priced from the custom lane at every message size, where the engine runs a
-		// message above the custom kernel's size limit on NCCL (blis-substrate#373 reports it).
-		// nontorch_in_budget_bytes_<N>rank is the named gap of blis-substrate#299: a (model, part,
-		// tensor-parallel width) with no fit-unit group is charged nothing and says so (#294).
+		// message above the custom kernel's size limit on NCCL (the kernel reports it as an assumption).
+		// nontorch_in_budget_bytes_<N>rank is a named gap, pinned by
+		// substrate/kernel TestAnUnmeasuredNonTorchTermIsAStatedGap: a (model, part,
+		// tensor-parallel width) with no fit-unit group is charged nothing and says so.
 		if o.Set == KernelAssumptionSet && o.Name != "max_cudagraph_capture_size" &&
 			o.Name != "engine_version" && o.Name != "all_reduce_message_limit" && !strings.HasPrefix(o.Name, "nontorch_in_budget_bytes_") {
 			t.Errorf("a deployment stating every engine setting reported the kernel "+
