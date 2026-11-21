@@ -16203,7 +16203,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
+        "issue": "inference-sim/inference-sim#2366"
       },
       "estimation": {
         "rule": "none"
@@ -16212,12 +16212,28 @@
     {
       "name": "mamba_ssm_dtype",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "float32",
+          "bfloat16",
+          "float16"
+        ],
+        "covered": [
+          "bfloat16",
+          "float16",
+          "float32"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -16446,7 +16462,18 @@
         "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "the engine's pricing of a text-only workload: sdpa, fa3, fa4 and triton_attn only choose the kernel class the vision tower builds (QKV_BACKEND_IMPL, layers/attention/vision.py:1052-1062; _determine_attention_backend, :1286-1305, where an unset value takes fa3 on SM90, fa4 on SM100/SM103 and triton_attn otherwise), and the tower does not run for a request with no image. None of the four allocates a buffer when built. flashinfer_cudnn is not stated here: it allocates a 128 MiB workspace when the tower is built (FLASHINFER_WORKSPACE_SIZE_BYTES, vision.py:110; qwen3_vl.py:430-438; minimax_vl_common.py:726-738), which the port's KV capacity does not subtract. The remaining choices (ascend_attn, aiter_attn, amx_attn, xpu_attn) are for other platforms and Resolve refuses them. All cites at SGLang 297e54fd",
+        "valid_when": [
+          {
+            "value_in": [
+              "fa3",
+              "fa4",
+              "sdpa",
+              "triton_attn"
+            ]
+          }
+        ]
       }
     },
     {

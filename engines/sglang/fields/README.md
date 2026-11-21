@@ -57,6 +57,6 @@ Every `not_modelled` field with the rule `leave_unset` is named below. A scorer 
 field at SGLang's default when a run's records do not state it. A value a run does state is never
 replaced.
 
-None yet.
+- `mm_attention_backend`, for the values fa3, fa4, sdpa and triton_attn (the field's valid_when): they choose the vision tower's kernel, which a text-only run never runs. flashinfer_cudnn is not among them, since the engine allocates a 128 MiB workspace for it.
 
 End of the leave_unset list.
