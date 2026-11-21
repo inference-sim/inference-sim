@@ -2,7 +2,7 @@ name: ledger candidate
 
 # The candidate half of every operator-level scoring run (design §10.2, D7). It runs the pull
 # request's code with no secret, no environment and a read-only token. It is handed every unit
-# not on the published fit, anchor and report lists, predicts each with no network, and
+# not on the published fit and anchor lists, predicts each with no network, and
 # uploads one file, predictions.json (ledger.Predictions, at most 64 MB). ledger.yml's select,
 # error and gate jobs read that file from main, in the environment that holds the seed.
 #

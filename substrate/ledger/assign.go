@@ -94,8 +94,8 @@ func (a *Assigner) Role(source string, u *Unit) (Role, error) {
 	return cp.Role(d)
 }
 
-// Published is one of the three lists the release job writes: fit.yaml, anchor.yaml or
-// report.yaml under catalog/ledger/published/.
+// Published is one of the two lists the release job writes: fit.yaml or anchor.yaml under
+// catalog/ledger/published/.
 type Published struct {
 	Kind             string   `yaml:"kind"` // "PublishedUnits"
 	Role             Role     `yaml:"role"`
@@ -117,7 +117,7 @@ func (p *Published) Check(file Role, cfg *Config) error {
 		errs = append(errs, fmt.Errorf("kind %q, want %q", p.Kind, PublishedKind))
 	}
 	if !p.Role.Published() {
-		errs = append(errs, fmt.Errorf("role %q is not published; only fit, anchor and report are", p.Role))
+		errs = append(errs, fmt.Errorf("role %q is not published; only fit and anchor are", p.Role))
 	} else if p.Role != file {
 		errs = append(errs, fmt.Errorf("role %q in the file for %q", p.Role, file))
 	}
@@ -145,19 +145,17 @@ func (p *Published) Check(file Role, cfg *Config) error {
 	return errors.Join(errs...)
 }
 
-// CheckReleasable is the release gate's check of the three lists (D7, COV-2): all three are
+// CheckReleasable is the release gate's check of the two lists (D7, COV-2): both are
 // present, and the fit list and the anchor list each hold a unit. The anchor list is what the
-// dashboard scores (COV-2); the fit list is what every fitted coefficient cites (D1). The
-// report list may be empty, because the partition's cut-points give the report role no range
-// until a source draws one. A tree that has not yet published its lists is fine to check and
-// to merge; it is not fine to release.
+// dashboard scores (COV-2); the fit list is what every fitted coefficient cites (D1). A tree
+// that has not yet published its lists is fine to check and to merge; it is not fine to release.
 func CheckReleasable(lists map[Role]*Published) error {
 	var errs []error
-	for _, r := range []Role{RoleFit, RoleAnchor, RoleReport} {
+	for _, r := range []Role{RoleFit, RoleAnchor} {
 		p := lists[r]
 		switch {
 		case p == nil:
-			errs = append(errs, fmt.Errorf("the %s list is not published; a release carries fit, anchor and report", r))
+			errs = append(errs, fmt.Errorf("the %s list is not published; a release carries fit and anchor", r))
 		case len(p.Units) == 0 && r.mustBeNonempty():
 			errs = append(errs, fmt.Errorf("the %s list holds no unit; a release publishes a nonempty %s list", r, r))
 		}
@@ -199,12 +197,12 @@ func CheckRelease(dir string) error {
 // against the ledger: each list's own checks, every unit on it is a unit of some source, and
 // no unit is on two lists (one role per unit, D4). The lists are optional until the first
 // release publishes them; a missing list is absent from the result, but a directory holding
-// some lists and not all of the three is refused, because the dashboard and the candidate
+// some lists and not both is refused, because the dashboard and the candidate
 // jobs read them as a set.
 func LoadPublished(dir string, cfg *Config, units map[string][]Unit) (map[Role]*Published, error) {
 	out := map[Role]*Published{}
 	var errs []error
-	for _, r := range []Role{RoleFit, RoleAnchor, RoleReport} {
+	for _, r := range []Role{RoleFit, RoleAnchor} {
 		path := filepath.Join(dir, DirPublished, string(r)+".yaml")
 		raw, err := os.ReadFile(path)
 		if errors.Is(err, os.ErrNotExist) {
@@ -226,8 +224,8 @@ func LoadPublished(dir string, cfg *Config, units map[string][]Unit) (map[Role]*
 	if len(out) == 0 {
 		return out, errors.Join(errs...)
 	}
-	if len(out) != 3 {
-		errs = append(errs, fmt.Errorf("%s holds %d of the three published lists; the release job writes fit, anchor and report together", DirPublished, len(out)))
+	if len(out) != 2 {
+		errs = append(errs, fmt.Errorf("%s holds %d of the two published lists; the release job writes fit and anchor together", DirPublished, len(out)))
 	}
 	known := map[string]bool{}
 	for _, us := range units {
@@ -236,7 +234,7 @@ func LoadPublished(dir string, cfg *Config, units map[string][]Unit) (map[Role]*
 		}
 	}
 	on := map[string]Role{}
-	for _, r := range []Role{RoleFit, RoleAnchor, RoleReport} {
+	for _, r := range []Role{RoleFit, RoleAnchor} {
 		p := out[r]
 		if p == nil {
 			continue
@@ -258,11 +256,11 @@ func LoadPublished(dir string, cfg *Config, units map[string][]Unit) (map[Role]*
 	return out, errors.Join(errs...)
 }
 
-// Release computes the three published lists from every unit of every source. It returns
-// only fit, anchor and report: the members of the other roles never leave the job.
+// Release computes the two published lists from every unit of every source. It returns
+// only fit and anchor: the members of the other roles never leave the job.
 func (a *Assigner) Release(cfg *Config, units map[string][]Unit) (map[Role]*Published, error) {
 	out := map[Role]*Published{}
-	for _, r := range []Role{RoleFit, RoleAnchor, RoleReport} {
+	for _, r := range []Role{RoleFit, RoleAnchor} {
 		out[r] = &Published{Kind: PublishedKind, Role: r, PartitionVersion: cfg.PartitionVersion,
 			SeedSHA256: cfg.Seed.SHA256, Units: []string{}}
 	}
@@ -288,7 +286,7 @@ func (a *Assigner) Release(cfg *Config, units map[string][]Unit) (map[Role]*Publ
 
 // CheckCitesOnlyFit is D1's release check: a fitted coefficient cites only units whose role
 // is fit. cites maps each coefficient to the unit_ids it cites; fit is the release's fit list.
-// A unit not on the fit list is select, validate, held, anchor or report, and none may have
+// A unit not on the fit list is select, validate, held or anchor, and none may have
 // fitted a coefficient; a legacy coefficient citing a unit now in select is refitted from the
 // fit list before the release (design §10.2). The registry has no field that cites unit_ids
 // yet (D1's target is M2), so the release job has nothing to pass it until that field lands.

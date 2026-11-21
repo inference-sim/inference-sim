@@ -349,7 +349,6 @@ func TestAdmit(t *testing.T) {
 		"select step reads the fit share":    {"refit-kernel-keyed", prereg.StepSelect, "vllm-ci-perf", ledger.RoleFit, "not fit"},
 		"held role":                          {"refit-kernel-keyed", prereg.StepFit, "inferencex", ledger.RoleHeld, "not held"},
 		"anchor role":                        {"refit-kernel-keyed", prereg.StepSelect, "inferencex", ledger.RoleAnchor, "not anchor"},
-		"report role":                        {"refit-kernel-keyed", prereg.StepSelect, "inferencex", ledger.RoleReport, "not report"},
 		"unknown step":                       {"refit-kernel-keyed", prereg.Step("tune"), "inferencex", ledger.RoleFit, "step"},
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -66,7 +66,7 @@ func TestRoleHoldersFromVersionTwo(t *testing.T) {
 			c.Rules["configiq"] = SourceRule{CutPoints: CutPoints{{RoleFit, 0, 49}, {RoleAnchor, 50, 99}}}
 		},
 		"configiq half anchor": func(c *Config) {
-			c.Rules["configiq"] = SourceRule{CutPoints: CutPoints{{RoleAnchor, 0, 49}, {RoleReport, 50, 99}}}
+			c.Rules["configiq"] = SourceRule{CutPoints: CutPoints{{RoleAnchor, 0, 49}, {RoleSelect, 50, 99}}}
 		},
 		"InferenceX loses held": func(c *Config) {
 			c.Rules["inferencex"] = SourceRule{CutPoints: CutPoints{{RoleFit, 0, 79}, {RoleAnchor, 80, 99}}}

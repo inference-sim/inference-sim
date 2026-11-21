@@ -22,7 +22,7 @@ const (
 	DirUnits      = "units"     // units/<source>.jsonl.gz
 	DirReports    = "reports"   // reports/<source>.yaml, the ingest report
 	DirAliases    = "aliases"   // aliases/<source>-<n>.yaml
-	DirPublished  = "published" // fit.yaml, anchor.yaml, report.yaml, written by the release job
+	DirPublished  = "published" // fit.yaml and anchor.yaml, written by the release job
 )
 
 // Config is ledger.yaml.

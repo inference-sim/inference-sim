@@ -305,7 +305,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: The extractor's pin file equals the ledger's entry for the artifact (`ledger: TestExtractorPinEqualsTheLedgerEntry`)
 - **D4** (partial; target ci by M3) Roles are drawn by the keyed rule, per role key, so every unit sharing a role key has the same role, except a legacy unit, which keeps its legacy side even where units of its role key fall on both sides.
   - `ci`, pull_request: A check against the ledger at the pull request's merge base (`ledger: TestCheckAgainstBase`)
-  - `ci`, pull_request: A check that no committed file lists roles, other than the three published lists that the release job writes and the legacy labels in legacy-map.yaml (`ledger: TestNoCommittedRoles`)
+  - `ci`, pull_request: A check that no committed file lists roles, other than the two published lists that the release job writes and the legacy labels in legacy-map.yaml (`ledger: TestNoCommittedRoles`)
   - `new`, pull_request: A check that the committed unit list equals the ingest tool's output for the pinned source
   - `ci`, pull_request: A check that every unit at the merge base keeps its unit_id and role key, or is covered by an alias table, and a new partition version is the next number with a new seed record (`ledger: TestCheckAgainstBase`)
   - `new`, pull_request: A check that each alias table equals the one generated from the merge-base and candidate ingest tools on the same source revision
@@ -317,8 +317,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **D7** (partial; target ci by M3) The role seed is 256 random bits and a CI secret until its partition version is retired.
   - `new`, pull_request: The seed is stored in one CI environment per repository (blis-substrate and accuracy-dashboard) whose branch policy allows only main, available only to the release, select, error and gate jobs
   - `ci`, pull_request: A workflow lint that those jobs check out only main (`ledger: TestLintWorkflows`)
-  - `ci`, pull_request: The three published lists are read back and checked against the ledger that drew them: the seed hash and partition version it records, units that exist, one role per unit (`ledger: TestPublishedListsAreCheckedAgainstTheLedger`)
-  - `ci`, pull_request: A release carries all three published lists with the fit and anchor lists nonempty; the release job, the ledger check and the release tool refuse otherwise (`ledger: TestReleaseRefusesAnEmptyPublishedSet`)
+  - `ci`, pull_request: The two published lists are read back and checked against the ledger that drew them: the seed hash and partition version it records, units that exist, one role per unit (`ledger: TestPublishedListsAreCheckedAgainstTheLedger`)
+  - `ci`, pull_request: A release carries both published lists, each nonempty; the release job, the ledger check and the release tool refuse otherwise (`ledger: TestReleaseRefusesAnEmptyPublishedSet`)
   - `new`, pull_request: Their outputs are checked to contain no per-unit rows and no aggregate over fewer than 10 units
 - **D8** (partial; target ci by M2) A quantity BLIS simulates, such as prefix-cache hits or queueing, is never stored.
   - `new`, pull_request: A validator rule refusing such families in the registry without a workload key
