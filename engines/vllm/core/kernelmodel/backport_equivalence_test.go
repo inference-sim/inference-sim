@@ -346,19 +346,33 @@ func logCoverage(t *testing.T) {
 // An observation fills every dimension the check compares, and is repeatable: a dimension that
 // stayed empty would compare equal whatever a backport did.
 func TestObservationFillsEveryDimensionAndRepeats(t *testing.T) {
+	// The first committed fixture, in model-name order, that the build opens without a refusal:
+	// a model the build refuses at a deployment (an unresolved block size, weights that do not
+	// fit) has no observation to fill, and its refusal is compared by message in the check itself.
+	fixtures := vllmFixtures(t)
+	var models []string
+	for m := range fixtures {
+		models = append(models, m)
+	}
+	sort.Strings(models)
 	var f fixtureModel
-	for _, fs := range vllmFixtures(t) {
-		if !fs[0].synthetic {
-			f = representative(fs, v0_33.Pack(), repos())
+	var a observation
+	for _, m := range models {
+		for _, c := range fixtures[m] {
+			if c.synthetic {
+				continue
+			}
+			if o := observe(c.dir, c.name, v0_33.Pack(), repos()); o.OpenErr == "" && o.EngineErr == "" && o.SettingsErr == "" {
+				f, a = c, o
+				break
+			}
+		}
+		if f.name != "" {
 			break
 		}
 	}
 	if f.name == "" {
-		t.Fatal("no committed fixture")
-	}
-	a := observe(f.dir, f.name, v0_33.Pack(), repos())
-	if a.OpenErr != "" || a.EngineErr != "" || a.SettingsErr != "" {
-		t.Fatalf("%s did not open cleanly: %+v", f.name, a)
+		t.Fatal("no committed fixture opens without a refusal")
 	}
 	v := reflect.ValueOf(a)
 	for i := 0; i < v.NumField(); i++ {
