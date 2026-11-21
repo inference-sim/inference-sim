@@ -177,6 +177,9 @@ type Model struct {
 	// indexerRules resolves the DeepSeek indexer's cache dtype, from the release's rules; nil when
 	// they carry no such rule (indexerKVDTypeRules).
 	indexerRules indexerKVDTypeRules
+	// resolveDPLB is the release's rule for the load-balancing mode a pool runs
+	// (enginefacts.EngineRules.ResolveDPLoadBalancing); nil when the build has no rules.
+	resolveDPLB func(deployment.Parallelism) deployment.DPLoadBalancing
 
 	decodeThreshold int
 	smBudget        int
@@ -508,6 +511,9 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 		m.substitutions = append(m.substitutions, *quant)
 	}
 	m.indexerRules, _ = in.Rules.(indexerKVDTypeRules)
+	if in.Rules != nil {
+		m.resolveDPLB = in.Rules.ResolveDPLoadBalancing
+	}
 	m.rules = reportRules(in)
 	m.routing = routingRecordOf(in.Routing)
 	// The graph the kernel priced: the scenario's, with a drafter named by
@@ -822,6 +828,16 @@ func (m *Model) Lowered() plan.Lowered { return m.lowered }
 // Kernel exposes the adapted kernel. A caller that needs a memory or provenance answer
 // asks the kernel directly rather than having this adapter grow a passthrough per method.
 func (m *Model) Kernel() kernel.Kernel { return m.k }
+
+// ResolveDPLoadBalancing is the load-balancing mode the engine release runs pl as (hybrid with
+// one rank per node is external, with every rank on one node internal); the stated mode where
+// the build carries no rules.
+func (m *Model) ResolveDPLoadBalancing(pl deployment.Parallelism) deployment.DPLoadBalancing {
+	if m.resolveDPLB == nil {
+		return pl.DataParallelLoadBalancing.Mode()
+	}
+	return m.resolveDPLB(pl)
+}
 
 // RecordSelected registers the model's kernel with d, as the kernel's own RecordSelected does:
 // d lists the kernel's selected coefficients, and (with a substrate that observes kernels) reads

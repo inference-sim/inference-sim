@@ -7,6 +7,7 @@ package build
 import (
 	"fmt"
 
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/routing"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
@@ -95,7 +96,36 @@ func PoolEngineKnobs(scenario string, m *kernelmodel.Model, f EngineKnobFlags) (
 	if f.DPLoadBalancingFromFlag {
 		mode = f.DPLoadBalancing
 	}
+	if err := requireOneEndpoint(scenario, m, mode); err != nil {
+		return 0, "", err
+	}
 	return threshold, mode, nil
+}
+
+// requireOneEndpoint refuses a P/D pool that runs a data-parallel group as more than one
+// endpoint. The host runs each group as one engine behind vLLM's internal balancer, one
+// endpoint, and does not expose the ranks of an external group, or of a hybrid group that is
+// not all on one node, for the router to choose between; accepting the mode would run it as
+// internal. vLLM runs the mode that EngineArgs.create_engine_config resolves (hybrid with
+// one rank per node is external, with every rank on one node internal), so that is the mode
+// judged (inference-sim#1988).
+func requireOneEndpoint(scenario string, m *kernelmodel.Model, stated string) error {
+	pl := m.Kernel().Deployment().Parallel
+	pl.DataParallelLoadBalancing = deployment.DPLoadBalancing(stated)
+	runs := m.ResolveDPLoadBalancing(pl)
+	if runs == deployment.DPLBInternal {
+		return nil
+	}
+	resolved := ""
+	if runs != pl.DataParallelLoadBalancing.Mode() {
+		resolved = fmt.Sprintf(" (vLLM runs it as %s)", runs)
+	} else if runs == deployment.DPLBHybrid {
+		resolved = fmt.Sprintf(" (dp_local %d of dp %d)", pl.DPLocal, pl.DP)
+	}
+	return fmt.Errorf("scenario %q: the %s pool's parallel.data_parallel_load_balancing %s%s exposes the group's "+
+		"ranks as more than one endpoint for the router to choose between, which the host does not drive "+
+		"for a P/D pool yet; it would run as one internal endpoint. State internal, or hybrid with every "+
+		"rank on one node (inference-sim#1988)", scenario, m.Role(), stated, resolved)
 }
 
 func poolField(shape kernelmodel.Shape, i int, field string) string {
