@@ -47,3 +47,35 @@ func TestEveryProvenInertFieldNamesItsProof(t *testing.T) {
 		}
 	}
 }
+
+// A modelled field names the traces that show it changing a decision; each is a file in the
+// tree (committed gzipped), non-empty, so no field is classed modelled without a comparison
+// to read (blis-sglang#63, X1).
+func TestEveryModelledFieldNamesTracesThatExist(t *testing.T) {
+	l, err := fields.Load("fields.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, f := range l.Fields {
+		if f.Status != fields.StatusModelled {
+			continue
+		}
+		n++
+		if len(f.Evidence.Traces) == 0 {
+			t.Errorf("%s: modelled with no trace", f.Name)
+		}
+		for _, tr := range f.Evidence.Traces {
+			fi, err := os.Stat(tr)
+			if err != nil {
+				fi, err = os.Stat(tr + ".gz")
+			}
+			if err != nil || fi.Size() == 0 {
+				t.Errorf("%s: trace %s is missing or empty", f.Name, tr)
+			}
+		}
+	}
+	if n < 20 {
+		t.Fatalf("only %d modelled fields in the list", n)
+	}
+}

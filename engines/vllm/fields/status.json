@@ -5044,12 +5044,15 @@
   },
   "config:speculative_config.draft_sample_method": {
    "estimation": {
-    "rule": "leave_unset"
+    "rule": "none"
    },
    "evidence": {
-    "note": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml marks it inert; no inertness proof yet (VLM-3, due in M2). Policy note: How drafts are sampled; with synthetic rejection the acceptance length is fixed."
+    "traces": [
+     "core/build/acceptance_realisation_test.go",
+     "core/engineconfig/speculative_test.go"
+    ]
    },
-   "status": "inert_unproven"
+   "status": "modelled"
   },
   "config:speculative_config.draft_tensor_parallel_size": {
    "estimation": {

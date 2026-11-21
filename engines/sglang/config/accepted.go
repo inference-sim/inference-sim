@@ -178,6 +178,9 @@ func checkAccepted(args *ServerArgs, in Input) error {
 	if args.ModelPath == "" {
 		return fmt.Errorf("model_path: SGLang's ServerArgs requires it (python/sglang/srt/arg_groups/fields/model.py:51@297e54fd)")
 	}
+	if err := checkSettingPairs(args); err != nil {
+		return err
+	}
 	def := Defaults()
 	for _, name := range FieldNames() {
 		if !differs(args, &def, name) {
@@ -283,4 +286,23 @@ func AcceptedFields() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// checkSettingPairs refuses the pairs of settings SGLang accepts singly and refuses together, with
+// SGLang's message (SIM-9). It runs before the field-by-field check: a pair SGLang refuses is
+// refused for SGLang's reason, not for the port's not modelling one of its members.
+//
+// create_tree_cache (mem_cache/registry.py:261-271@297e54fd) refuses --radix-eviction-policy tlru
+// on a tree cache that is not UnifiedRadixCache. default_radix_cache_factory
+// (registry.py:83-153@297e54fd) selects FlexKVRadixCache, a RadixCache subclass
+// (storage/flexkv/flexkv_radix_cache.py:73@297e54fd), for enable_flexkv unless the radix cache is
+// disabled, LMCache is on or the unified cache's external linker is.
+func checkSettingPairs(args *ServerArgs) error {
+	if args.RadixEvictionPolicy == "tlru" && args.EnableFlexkv &&
+		!args.DisableRadixCache && !args.EnableLmcache && !args.EnableUnifiedCacheExternalLinker {
+		return &UpstreamRefusal{Site: "sglang/srt/mem_cache/registry.py:create_tree_cache",
+			Message: "--radix-eviction-policy tlru requires UnifiedRadixCache, but tree_cache is FlexKVRadixCache. " +
+				"Drop the flag or the option that selected another tree cache for this model."}
+	}
+	return nil
 }

@@ -5,6 +5,7 @@ package lower
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -238,6 +239,29 @@ func errString(err error) string {
 	return err.Error()
 }
 
+// yamlScalar quotes a probe that would otherwise parse as a YAML mapping or sequence.
+func yamlScalar(v string) string {
+	if strings.HasPrefix(v, "{") || strings.HasPrefix(v, "[") {
+		return "'" + v + "'"
+	}
+	return v
+}
+
+// inertProbes are the values each inert ServerArgs field is stated at by the proof that no decision
+// reads it (TestInertFieldsChangeNoDecision), and the values oracle/inertness/<field>.json lists.
+var inertProbes = map[string][]string{
+	"host":                      {"0.0.0.0", "127.0.0.1"},
+	"port":                      {"8888", "30000"},
+	"trust_remote_code":         {"true", "false"},
+	"served_model_name":         {"glm-5-fp8", "m"},
+	"tool_call_parser":          {"glm47", "qwen"},
+	"reasoning_parser":          {"glm45", "qwen3"},
+	"stream_interval":           {"10", "1", "64"},
+	"tokenizer_worker_num":      {"4", "8"},
+	"model_loader_extra_config": {"{}", `{"enable_multithread_load":true}`},
+	"tokenizer_path":            {"/models/a", "/models/b"},
+}
+
 // TestInertFieldsChangeNoDecision is the proof fields/status.json cites for the fields the
 // recipes state that no decision reads. For each, resolving a pool with the field set to a probe
 // value gives every other ServerArgs field the value it has with the field unset, and lowers to the
@@ -246,16 +270,7 @@ func errString(err error) string {
 // tokenizer, detokenizer and metrics-label code; stream_interval only batches the tokens the
 // detokenizer is sent, output_streamer.py:455-470@297e54fd).
 func TestInertFieldsChangeNoDecision(t *testing.T) {
-	probes := map[string][]string{
-		"host":                 {"0.0.0.0", "127.0.0.1"},
-		"port":                 {"8888", "30000"},
-		"trust_remote_code":    {"true", "false"},
-		"served_model_name":    {"glm-5-fp8", "m"},
-		"tool_call_parser":     {"glm47", "qwen"},
-		"reasoning_parser":     {"glm45", "qwen3"},
-		"stream_interval":      {"10", "1", "64"},
-		"tokenizer_worker_num": {"4", "8"},
-	}
+	probes := inertProbes
 	for _, g := range []string{"deepseek-r1-0528", "glm-5"} {
 		base := "mem_fraction_static: 0.82\n"
 		want, err := lowerPool(t, g, 8, base)
@@ -268,7 +283,7 @@ func TestInertFieldsChangeNoDecision(t *testing.T) {
 		}
 		for field, vals := range probes {
 			for _, v := range vals {
-				block := base + field + ": " + v + "\n"
+				block := base + field + ": " + yamlScalar(v) + "\n"
 				got, err := lowerPool(t, g, 8, block)
 				if err != nil {
 					t.Fatalf("%s %s=%s: %v", g, field, v, err)
@@ -279,6 +294,11 @@ func TestInertFieldsChangeNoDecision(t *testing.T) {
 				res, err := Resolve(PoolInput{Deployment: pool(t, 8, block), Model: graph(t, g), Chip: h200(t)})
 				if err != nil {
 					t.Fatal(err)
+				}
+				// The run read the field: the pipeline took the probe in as the field's resolved value, so
+				// that nothing else changed is a finding about a field that was set, not one that was dropped.
+				if got, _ := res.Value(field); fmt.Sprint(got) != v {
+					t.Errorf("%s %s=%s: the run resolved the field to %v, so it never read the probe", g, field, v, got)
 				}
 				for _, name := range config.FieldNames() {
 					if name == field {

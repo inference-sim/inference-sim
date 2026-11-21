@@ -127,7 +127,7 @@ func TestTheFactoryRefusesAnotherReleaseAndWhatTheEngineDoesNotModel(t *testing.
 func TestTheFactoryRefusesWhatSGLangRefusesOfThePrioritySettings(t *testing.T) {
 	h := newHost()
 	for block, want := range map[string]string{
-		"model_path: m\nschedule_policy: priority\n":                              "unknown schedule_policy",
+		"model_path: m\nschedule_policy: priority\n":                              "Unknown schedule_policy: policy='priority'",
 		"model_path: m\nenable_priority_scheduling: true\nschedule_policy: lpm\n": "schedule_policy must be 'fcfs' or 'lof'",
 		"model_path: m\nretraction_policy: priority\n":                            "--retraction-policy priority requires --enable-priority-scheduling",
 	} {
