@@ -4,6 +4,7 @@
 Run: python3 -I fields/test_classes.py
 """
 
+import gzip
 import json
 import os
 import sys
@@ -100,6 +101,15 @@ class ClassesTest(unittest.TestCase):
                 json.dump({"engine": {"page_size": 128}}, f)
             vc, _ = classes(self.src, "page_size", evidence={"traces": ["oracle/scenarios/s.json"]}, repo=repo)
             self.assertEqual(vc["covered_classes"], [3], "128 lies in the class at and above 65")
+
+    def test_covered_comes_from_a_trace_committed_only_as_gzip(self):
+        # A golden of 16000 bytes or more is committed as <name>.gz; the evidence names the plain path.
+        with tempfile.TemporaryDirectory() as repo:
+            os.makedirs(os.path.join(repo, "oracle/scenarios"))
+            with gzip.open(os.path.join(repo, "oracle/scenarios/s.json.gz"), "wt") as f:
+                json.dump({"engine": {"page_size": 128}}, f)
+            vc, _ = classes(self.src, "page_size", evidence={"traces": ["oracle/scenarios/s.json"]}, repo=repo)
+            self.assertEqual(vc["covered_classes"], [3], "the gzip is read as the trace it holds")
 
     def test_known_bad_a_modelled_field_without_classes(self):
         with tempfile.TemporaryDirectory() as d:
