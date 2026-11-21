@@ -4,7 +4,9 @@ package build
 
 import (
 	"fmt"
+	"reflect"
 
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
@@ -66,4 +68,47 @@ func PoolSettingsOf(scenario string, m *kernelmodel.Model, reservedBytes int64, 
 		return PoolSettings{}, err
 	}
 	return ps, nil
+}
+
+// Drafting is a pool's speculative decoding as its engine resolves it: the draft length and the
+// method (zero tokens when the pool drafts nothing).
+type Drafting struct {
+	Tokens int
+	Method string
+}
+
+// Drafts reports whether the pool drafts any token.
+func (d Drafting) Drafts() bool { return d.Tokens != 0 }
+
+// PoolDrafting is pool m's speculative decoding, read from its engine's settings.
+func PoolDrafting(m *kernelmodel.Model) (Drafting, error) {
+	s, err := m.Settings()
+	if err != nil {
+		return Drafting{}, fmt.Errorf("reading the %s pool's speculative settings: %v", m.Role(), err)
+	}
+	return Drafting{Tokens: s.SpeculativeTokens, Method: s.SpeculativeMethod}, nil
+}
+
+// PoolsDraftDifferently reports whether the prefill and decode pools state different speculative
+// blocks: no block and a block of no draft tokens both draft nothing, and any other pair draft
+// alike only when the blocks are equal.
+func PoolsDraftDifferently(prefill, decode *kernelmodel.Model) (bool, error) {
+	blocks := make([]*engineconfig.Speculative, 0, 2)
+	for _, m := range []*kernelmodel.Model{prefill, decode} {
+		e, err := m.Engine()
+		if err != nil {
+			return false, fmt.Errorf("reading the %s pool's speculative settings: %v", m.Role(), err)
+		}
+		blocks = append(blocks, e.Speculative)
+	}
+	tokens := func(s *engineconfig.Speculative) int {
+		if s == nil {
+			return 0
+		}
+		return s.NumSpecTokens
+	}
+	if tokens(blocks[0]) == 0 && tokens(blocks[1]) == 0 {
+		return false, nil
+	}
+	return !reflect.DeepEqual(blocks[0], blocks[1]), nil
 }

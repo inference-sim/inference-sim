@@ -566,6 +566,65 @@ func poolOverridesOf(m *engineModel) poolOverrides {
 	return o
 }
 
+// poolsDraftDifferently reports whether the P/D pools state different speculative blocks
+// (build.PoolsDraftDifferently).
+func poolsDraftDifferently(p *kernelPools) bool {
+	if p == nil {
+		return false
+	}
+	different, err := build.PoolsDraftDifferently(p.prefill, p.decode)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	return different
+}
+
+// resolvePoolSpeculation resolves each P/D pool's speculation from its own block (resolveSpeculation)
+// and records it in poolSpeculation. It returns the run-wide config, the first drafting pool's,
+// which names the run in the places that state one speculation. The command line's acceptance
+// flags apply to every pool.
+func resolvePoolSpeculation(cmd *cobra.Command, p *kernelPools) speculativeConfig {
+	poolSpeculation = map[string]poolSpeculative{}
+	var run speculativeConfig
+	var have bool
+	for _, pool := range []struct {
+		role string
+		m    *engineModel
+	}{{"prefill", p.prefill}, {"decode", p.decode}} {
+		d, err := build.PoolDrafting(pool.m)
+		if err != nil {
+			logrus.Fatalf("%v", err)
+		}
+		var c speculativeConfig
+		var rec *sim.AcceptanceRecord
+		if !d.Drafts() {
+			// A pool that drafts nothing takes no acceptance (the other pool's selectors and
+			// length are not refused for it).
+			c = speculativeConfigOf(0, 0, d.Method)
+		} else {
+			c, rec = resolveSpeculation(cmd, pool.m, d.Tokens, d.Method, " in the "+pool.role+" pool")
+		}
+		poolSpeculation[pool.role] = poolSpeculative{Config: c, Record: rec}
+		if !have && c.IsEnabled() {
+			run, have = c, true
+		}
+	}
+	if !have {
+		return poolSpeculation["prefill"].Config
+	}
+	return run
+}
+
+// adoptPoolSpeculation puts each pool's own speculation on its overrides when the pools draft
+// differently; a no-op otherwise, so same-config pools and colocated runs are unchanged.
+func adoptPoolSpeculation(prefill, decode *poolOverrides) {
+	if poolSpeculation == nil {
+		return
+	}
+	pre, dec := poolSpeculation["prefill"].Config, poolSpeculation["decode"].Config
+	prefill.Speculative, decode.Speculative = &pre, &dec
+}
+
 // rankInPool is an instance's rank within its pool (build.RankInPool).
 func rankInPool(id cluster.InstanceID, firstDecode int) int {
 	return build.RankInPool(string(id), firstDecode)
