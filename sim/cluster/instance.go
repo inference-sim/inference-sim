@@ -29,7 +29,7 @@ type InstanceSimulator struct {
 	onTransition func(*InstanceSimulator)
 	id           InstanceID
 	// drv is the instance's engine, driven through blis-schemas' engine.Engine contract: the
-	// engine its release builds (blis-vllm core/vllm for 0.32.0, compat/contract for 0.29/0.31).
+	// engine its release builds (engines/vllm/core/vllm for vLLM, engines/sglang for SGLang).
 	// nil only for an instance a test builds with no engine.
 	drv    *sim.EngineDriver
 	hasRun bool

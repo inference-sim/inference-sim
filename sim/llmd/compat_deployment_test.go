@@ -40,9 +40,9 @@ func setPDPrice(d *cluster.DeploymentConfig, ticks func(tokens int64) int64) {
 	d.NewEngine = compatEngineFactoryWith(isDisaggregated(*d), ticks)
 }
 
-// This package's tests build every instance's engine as `blis run` builds a 0.29/0.31 one: the
-// compatibility engine behind engine.Engine (blis-vllm compat/contract), driven by a
-// sim.EngineDriver. A test describes the engine with compat's own configuration
+// This package's tests build every instance's engine as `blis run` builds a vLLM one: the
+// v0.33.0 engine (internal/vllmtest, which builds engines/vllm/core/vllm) behind engine.Engine,
+// driven by a sim.EngineDriver. A test describes the engine with its own configuration
 // (cengine.SimConfig, which test files may name); the helpers below are sim/cluster's test
 // helpers of the same names (compat_deployment_test.go there), which a test file there cannot
 // export.
@@ -87,7 +87,7 @@ func newCluster(d cluster.DeploymentConfig, src cluster.RequestSource, onRequest
 }
 
 // compatEngineFactory builds each instance's engine as cmd's compatEngineFactory does: one
-// compat/contract.Engine per instance, or one DPGroup per run of lockstepRanks instances, whose
+// engine.Engine per instance, or one DPGroup per run of lockstepRanks instances, whose
 // rank views the instances drive, rank 0's driver stepping the group.
 func compatEngineFactory(pd bool) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
 	return compatEngineFactoryWith(pd, pdTicks)

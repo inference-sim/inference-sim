@@ -672,7 +672,7 @@
   target:
     status: ci
     milestone: 4
-  note: compat/kernelmodel imports the cost model until M4 (§3.3)
+  note: the engine's kernel adapter (engines/vllm/core/kernelmodel) imports the cost model until M4 (§3.3)
 - id: X8
   section: §4
   title: Every number is reproducible, and no data point both fits and judges.

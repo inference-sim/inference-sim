@@ -150,8 +150,9 @@ func (d *EngineDriver) splitGroupResult(res engine.Result) map[*EngineDriver]eng
 	return out
 }
 
-// groupEngine is the leader's engine: a data-parallel group's rank 0 view (the vLLM engine
-// compat/contract.RankView), which steps the whole group.
+// groupEngine is the leader's engine: a data-parallel group's rank 0 view, which steps the whole
+// group. No engine in this tree implements it now (the rank view it was written against left
+// with the retired compatibility engine), so a group's leader reaches kickGroup's panic.
 type groupEngine interface {
 	StepDue(now engine.Time) bool
 	LockstepSteps() (steps, dummy int)
