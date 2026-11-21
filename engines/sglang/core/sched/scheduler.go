@@ -52,6 +52,7 @@ type Config struct {
 	InBatchPrefixDeprioritizeThreshold int    `json:"in_batch_prefix_deprioritize_threshold"`
 	EnablePriorityScheduling           bool   `json:"enable_priority_scheduling"`
 	PrefillDecodeInterval              int    `json:"prefill_decode_interval"`
+	PrefillDecodeIntervalMinBs         int    `json:"prefill_decode_interval_min_bs"`
 	Allocator                          string `json:"allocator"`
 	TreeCache                          string `json:"tree_cache"`
 	DisaggregationMode                 string `json:"disaggregation_mode"`
@@ -157,6 +158,10 @@ type Scheduler struct {
 
 	waitingPrefixRefreshCalls int
 
+	// prefillDecodeIntervalRemaining is _prefill_decode_interval_remaining (scheduler.py:1354@297e54fd):
+	// the rounds in which prefill is still held back.
+	prefillDecodeIntervalRemaining int
+
 	// resultQueue is Scheduler.result_queue (scheduler.py:2064@297e54fd): the launched batches
 	// whose results the overlap loop has not processed. At scheduling time it holds at most one.
 	resultQueue []*Batch
@@ -192,8 +197,6 @@ func New(cfg Config, tree cache.PrefixCache, alloc cache.Allocator, pool cache.R
 		return nil, fmt.Errorf("sched: disaggregation mode %q belongs to S25 (%s)", cfg.DisaggregationMode, Refusal)
 	case cfg.PPSize > 1:
 		return nil, fmt.Errorf("sched: pipeline parallelism belongs to S37 (%s)", Refusal)
-	case cfg.PrefillDecodeInterval != 0:
-		return nil, refused("a prefill-decode interval")
 	case cfg.TreeCache != "UnifiedRadixCache":
 		return nil, refused("tree cache " + cfg.TreeCache)
 	case cfg.Allocator != "TokenToKVPoolAllocator" && cfg.Allocator != "PagedTokenToKVPoolAllocator":
@@ -423,18 +426,47 @@ func (s *Scheduler) getNextBatchToRun() *Batch {
 	if running.Size() < runningBS {
 		running.BatchIsFull = false
 	}
-	newBatch, running := s.getNewBatchPrefill(running)
+	var newBatch *Batch
+	if !s.shouldDeferPrefill(running) {
+		newBatch, running = s.getNewBatchPrefill(running)
+	}
 	s.running = running
+	var ret *Batch
 	if newBatch != nil {
 		// Run prefill first if possible.
-		return newBatch
-	}
-	if !running.IsEmpty() {
+		ret = newBatch
+	} else if !running.IsEmpty() {
 		if d := s.updateRunningBatch(running); d != nil && !d.IsEmpty() {
-			return d
+			ret = d
 		}
 	}
-	return nil
+	s.armPrefillDecodeInterval(ret)
+	return ret
+}
+
+// shouldDeferPrefill is _should_defer_prefill (scheduler.py:1400-1411@297e54fd). A running batch
+// below the minimum size admits prefill every round so that it can grow.
+func (s *Scheduler) shouldDeferPrefill(running *Batch) bool {
+	if s.prefillDecodeIntervalRemaining == 0 {
+		return false
+	}
+	if running.Size() < s.cfg.PrefillDecodeIntervalMinBs {
+		s.prefillDecodeIntervalRemaining = 0
+		return false
+	}
+	s.prefillDecodeIntervalRemaining--
+	return true
+}
+
+// armPrefillDecodeInterval is _arm_prefill_decode_interval (scheduler.py:1413-1426@297e54fd),
+// without the data-parallel-attention branch that cfg refuses.
+func (s *Scheduler) armPrefillDecodeInterval(b *Batch) {
+	if s.cfg.PrefillDecodeInterval == 0 || b == nil {
+		return
+	}
+	if b.Mode == Extend || b.Mode == Mixed {
+		s.prefillDecodeIntervalRemaining = s.cfg.PrefillDecodeInterval
+	}
 }
 
 // stashChunkedRequest is stash_chunked_request (:3772-3776): publish the chunk's KV.
