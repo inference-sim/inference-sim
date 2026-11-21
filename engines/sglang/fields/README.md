@@ -59,5 +59,6 @@ replaced.
 
 - `mm_attention_backend`, for the values fa3, fa4, sdpa and triton_attn (the field's valid_when): they choose the vision tower's kernel, which a text-only run never runs. flashinfer_cudnn is not among them, since the engine allocates a 128 MiB workspace for it.
 - `sampling_backend`: a stated flashinfer is the engine's own resolution on an NVIDIA part, so it is left unset.
+- `NCCL_MNNVL_ENABLE`: NCCL's own choice for a stated 1 or 2, so it is left unset.
 
 End of the leave_unset list.

@@ -240,7 +240,7 @@ func TestEveryApproximatedModeValueIsNullOrAccepted(t *testing.T) {
 	want := map[string]bool{}
 	for key, f := range src.Fields {
 		if len(f.Estimation.Approximates) > 0 && string(f.Estimation.Approximates) != "null" {
-			want[strings.TrimPrefix(key, "config:")] = true
+			want[strings.TrimPrefix(strings.TrimPrefix(key, "config:"), "env:")] = true
 		}
 	}
 	l, err := fields.Load("fields.json")
