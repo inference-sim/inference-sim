@@ -8,6 +8,6 @@ added: 2026-11-19
 expires: 2026-12-19
 modules: [llm-d-router]
 reason: >-
-  the router fork is pinned by commit while its change (inference-sim/llm-d-router#24) is in
+  the router fork is pinned by commit while its change (inference-sim/llm-d-router#25) is in
   review, and is moved to a -blis.N tag once that pull request is merged and tagged; the engines
   and the substrate are directories of this module and are not pinned
