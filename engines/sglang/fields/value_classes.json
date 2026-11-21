@@ -4089,6 +4089,66 @@
     ]
    }
   },
+  "disable_priority_preemption": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "true"
+    ]
+   },
+   "basis": {
+    "name": "disable_priority_preemption",
+    "kind": "boolean",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:369",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.disable_priority_preemption"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:295",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.disable_priority_preemption"
+     }
+    ],
+    "stated": [
+     {
+      "value": true,
+      "trace": "oracle/scenarios-sched/priority-fcfs-no-preempt.json"
+     }
+    ],
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:369",
+       "python/sglang/srt/arg_groups/validation_hook.py:295"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:369",
+       "python/sglang/srt/arg_groups/validation_hook.py:295"
+      ],
+      "covered_by": [
+       "oracle/scenarios-sched/priority-fcfs-no-preempt.json"
+      ]
+     }
+    ]
+   }
+  },
   "disable_radix_cache": {
    "value_classes": {
     "type": "boolean",

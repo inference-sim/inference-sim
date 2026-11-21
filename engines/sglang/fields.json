@@ -13384,12 +13384,21 @@
     {
       "name": "disable_priority_preemption",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2451"
+        "traces": [
+          "core/sched/testdata/golden-sched/priority-fcfs-no-preempt.trace.json",
+          "oracle/scenarios-sched/priority-fcfs-no-preempt.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {

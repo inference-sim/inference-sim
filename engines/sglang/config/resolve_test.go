@@ -205,7 +205,6 @@ func TestResolveRefusalsNameTheIssueOfTheFeature(t *testing.T) {
 		{"pp_max_micro_batch_size", 2, "2358"},
 		{"swa_full_tokens_ratio", 0.5, "2359"},
 		{"mamba_track_interval", 128, "2366"},
-		{"disable_priority_preemption", true, "2451"},
 		{"speculative_algorithm", "STANDALONE", "2460"},
 		{"speculative_algorithm", "NGRAM", "2460"},
 		{"speculative_algorithm", "DFLASH", "2460"},
@@ -237,7 +236,7 @@ func TestTheSchedulersSettingsResolveAsStated(t *testing.T) {
 	args := map[string]any{
 		"model_path": "<model>", "enable_priority_scheduling": true,
 		"priority_scheduling_preemption_threshold": 3, "schedule_low_priority_values_first": true,
-		"abort_on_priority_when_disabled": true, "max_queued_requests": 7, "prefill_max_requests": 2,
+		"abort_on_priority_when_disabled": true, "disable_priority_preemption": true, "max_queued_requests": 7, "prefill_max_requests": 2,
 		"allow_auto_truncate": true, "retraction_policy": "priority",
 	}
 	got, err := Resolve(Input{Args: args, Chip: c.Chip, Model: c.ModelFacts})
@@ -246,7 +245,7 @@ func TestTheSchedulersSettingsResolveAsStated(t *testing.T) {
 	}
 	a := got.Args
 	if !a.EnablePriorityScheduling || a.PrioritySchedulingPreemptionThreshold != 3 ||
-		!a.ScheduleLowPriorityValuesFirst || !a.AbortOnPriorityWhenDisabled || a.MaxQueuedRequests == nil || *a.MaxQueuedRequests != 7 ||
+		!a.ScheduleLowPriorityValuesFirst || !a.AbortOnPriorityWhenDisabled || !a.DisablePriorityPreemption || a.MaxQueuedRequests == nil || *a.MaxQueuedRequests != 7 ||
 		a.PrefillMaxRequests == nil || *a.PrefillMaxRequests != 2 || !a.AllowAutoTruncate || a.RetractionPolicy != "priority" {
 		t.Errorf("a stated setting did not resolve as stated: %+v", a)
 	}
