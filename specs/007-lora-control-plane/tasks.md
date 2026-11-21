@@ -189,7 +189,7 @@ per-adapter TTFT comparison report with an error metric.
 
 - [ ] T044 [P] Run/replay parity integration test (INV-13): export a trace with adapters via `--trace-output`, replay with identical flags, assert identical per-request metrics
 - [ ] T045 [P] Determinism regression test (INV-6, SC-006): same seed + adapter config → byte-identical stdout across two runs
-- [ ] T046 [P] Update docs: `CLAUDE.md` "Current Implementation Focus" + valid scorer list (add `lora-affinity`); `docs/guide/` routing/latency pages; `docs/contributing/extension-recipes.md`
+- [ ] T046 [P] Update docs: `CLAUDE.md` "Current Implementation Focus" + valid scorer list (add `lora-affinity`); the routing and latency guide pages; `.github/agent-prompts/extension-recipes.md`
 - [ ] T047 R15/R12 sweep: grep for stale `PR N` / `TODO.*PR N` references and resolve; regenerate + document golden dataset if any output format changed
 - [ ] T048 Verification gate: `go build ./... && go test ./... -count=1 && golangci-lint run ./...` — all MUST report zero failures
 

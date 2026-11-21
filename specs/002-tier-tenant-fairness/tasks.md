@@ -6,7 +6,7 @@
 **Branch**: `002-tier-tenant-fairness`
 **PRs**: #809 (US1), #810 (US2), #811 (US3), #812 (US4)
 
-**Tests**: Included — project requires BDD/TDD per `docs/contributing/standards/principles.md`. Tests MUST be written first and must FAIL before implementation begins.
+**Tests**: Included — project requires BDD/TDD per `.github/agent-prompts/standards/principles.md`. Tests MUST be written first and must FAIL before implementation begins.
 
 ## Format: `[ID] [P?] [Story?] Description — file path`
 
@@ -139,8 +139,8 @@ No additional foundational work — T001 and T002 are sufficient. User story pha
 
 - [ ] T028 [P] Run `go test ./... -count=1 -race` and fix any failures
 - [ ] T029 [P] Run `golangci-lint run ./...` and fix all warnings
-- [ ] T030 Update `docs/reference/configuration.md`: document `tier-shed` admission policy options (`tier_shed_threshold`, `tier_shed_min_priority`) and `tenant_budgets` deployment config field
-- [ ] T031 Update `docs/guide/results.md`: document `deferred_horizon_interrupted` counter and `per_tenant` metrics section
+- [ ] T030 Update the configuration reference (`blis schema`): document `tier-shed` admission policy options (`tier_shed_threshold`, `tier_shed_min_priority`) and `tenant_budgets` deployment config field
+- [ ] T031 Update the results documentation: document `deferred_horizon_interrupted` counter and `per_tenant` metrics section
 
 ---
 
@@ -221,7 +221,7 @@ Parallel stream B (US3 / PR-3):
 ## Notes
 
 - `[P]` = different files, no inter-task dependency → safe to implement simultaneously
-- TDD order is non-negotiable per `docs/contributing/standards/principles.md`: test MUST fail before implementation
+- TDD order is non-negotiable per `.github/agent-prompts/standards/principles.md`: test MUST fail before implementation
 - Each PR should include only the tasks listed for that story — no cross-PR changes
 - `sloTierPriority()` (T001) lives in `sim/` (not `sim/cluster/`) to keep tenant enforcement in the cluster layer able to call it without a circular import
 - Speckit artifacts (`specs/002-tier-tenant-fairness/`) are committed as a separate PR before any implementation PRs

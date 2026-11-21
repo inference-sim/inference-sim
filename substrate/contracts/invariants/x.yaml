@@ -880,7 +880,7 @@
     check: Release bot (§13.6)
     runs: release
     status: ci
-    test: tools/release
+    test: substrate/tools/release
     known_bad: 'tools/release: TestReviewSetIsPlannedBottomUp'
   review: null
   status: ci
@@ -1278,7 +1278,7 @@
     check: A lint that flags schema-like rule code in Python scripts
     runs: pull_request
     status: ci
-    test: tools/pyrules/pyrules.py
+    test: substrate/tools/pyrules/pyrules.py
     known_bad: 'tools/pyrules: TestPythonRuleLintFindsARestatedVocabulary'
   review: null
   status: ci

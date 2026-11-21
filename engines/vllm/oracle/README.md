@@ -18,7 +18,7 @@ weights; the scenario's fixed `num_blocks` and `block_size` govern every decisio
 
 A golden of 16000 bytes or more is committed as `<name>.gz` (gzip, mtime 0), so the repository's module stays under
 100 MB (`internal/repocheck` `TestModuleZipIsUnder100MB`); a smaller one stays plain. The Go tests read either form through
-`internal/testgz`, and the comparison and provenance scripts through `oracle/goldengz.py`, always by the plain name.
+`engines/vllm/internal/testgz`, and the comparison and provenance scripts through `oracle/goldengz.py`, always by the plain name.
 A runner writes plain files, since a golden records the sha256 of every oracle file its run executed
 (`oracle_inputs`) and a change to a runner would make every golden it produced stale; after a runner or a hand copy has
 written a golden directory, store it in the committed form with `python3 -I oracle/goldengz.py pack <dir>...`
@@ -149,7 +149,7 @@ from a build without FA3 is resolved wrongly. At the pin no combination resolves
 its size and the size under each setting of the facts. The committed table is
 `core/vllm/blocksize_table.json`, which
 `core/vllm/blocksize.go` embeds, and CI fails if it differs from what the oracle prints at the pin
-(`internal/upstream.Commit`):
+(`Commit` in `engines/vllm/internal/upstream`):
 
 ```sh
 BLIS_ORACLE_CATALOG=<blis-substrate>/catalog/models \
@@ -161,7 +161,7 @@ The default block size is part of the answer: `CacheConfig.DEFAULT_BLOCK_SIZE` i
 (`vllm/config/cache.py:185`) and 16 at v0.33.0 (`cache.py:71`), and the preferred size starts from it.
 The runs this repository holds logs for (vLLM 0.18 to 0.22) predate that change, so they cannot be
 compared with the pin's table. `core/vllm/blocksize_table_recorded.json` is the same oracle run over the
-v0.33.0 checkout (`internal/upstream.OracleCommit`, default 16), read by
+v0.33.0 checkout (`OracleCommit` in `engines/vllm/internal/upstream`, default 16), read by
 `vllm.ResolveBlockSizeAsRecorded`; the recorded-run tests of `core/kernelmodel` compare it with the
 logged "Setting kv cache block size" lines (no mismatch is allowed). CI does not rebuild this second
 table (it checks out only the pin); regenerate it with `json` over a v0.33.0 checkout:

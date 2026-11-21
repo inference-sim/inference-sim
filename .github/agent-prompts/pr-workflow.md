@@ -340,7 +340,7 @@ Check for:
 (7) Any division where the denominator derives from runtime state without a zero guard?
 (8) Any new interface with methods only meaningful for one implementation?
 (9) Any method >50 lines spanning multiple concerns (scheduling + latency + metrics)?
-(10) Any changes to `docs/contributing/standards/` files — is the canonical doc the single source, with `CLAUDE.md` holding only a pointer to it (not a synced copy)?
+(10) Any changes to `.github/agent-prompts/standards/` files — is the canonical doc the single source, with `CLAUDE.md` holding only a pointer to it (not a synced copy)?
 
 **Catches:** Logic errors, nil pointer risks, silent failures (discarded return values), panic paths reachable from user input, CLAUDE.md convention violations, dead code, silent `continue` data loss, non-deterministic map iteration, construction site drift, library code calling `os.Exit`, exported mutable maps, YAML zero-value ambiguity, division by zero in runtime computation, leaky interfaces, monolith methods, documentation drift.
 

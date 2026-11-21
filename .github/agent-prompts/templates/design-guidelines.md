@@ -16,7 +16,7 @@ This document serves two audiences:
 - A reference for evaluating whether a design doc or a new module meets BLIS's quality bar
 
 **What this document is NOT:**
-- Not an implementation plan (refactoring happens in separate PRs, each following `docs/contributing/pr-workflow.md`)
+- Not an implementation plan (refactoring happens in separate PRs, each following `.github/agent-prompts/pr-workflow.md`)
 - Not a replacement for CLAUDE.md (which captures engineering rules and code-level patterns)
 - Not a replacement for the micro-plan template (which captures PR-level planning structure)
 
@@ -358,7 +358,7 @@ This is the most architecturally significant extension type. Examples: AutoScale
 2. **Interface design** — prefer single-method interfaces where possible. If multiple methods are needed, justify each one. The interface must be testable with a mock.
 3. **Event integration** — what new event types are added to the cluster event queue? What are their priority constants? How do they interact with existing events?
 4. **State ownership** — what new mutable state does this module introduce? Who creates it, who reads it, who mutates it? No shared mutable state across module boundaries.
-5. **Failure modes** — what happens when the module fails? (Error return? Panic? Graceful degradation?) Which error handling boundary applies? (See the error-handling boundaries in `docs/contributing/standards/principles.md`)
+5. **Failure modes** — what happens when the module fails? (Error return? Panic? Graceful degradation?) Which error handling boundary applies? (See the error-handling boundaries in `.github/agent-prompts/standards/principles.md`)
 6. **Default behavior** — what does BLIS do when this module is not configured? (A no-op default must exist so existing workflows are unaffected)
 7. **Configuration surface** — what CLI flags / YAML config does this add? Validated how?
 
