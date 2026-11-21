@@ -43,12 +43,9 @@ In short:
   (`pip install --require-hashes --no-deps -r oracle/requirements-hashed.txt`, Linux x86_64;
   `oracle/README.md` gives each runner's command and the environment variables the Go fuzz
   tests read).
-- **Which CI jobs a change runs.** the header of `.github/workflows/ci.yml`: a job runs when a changed file is one it reads, the slow
-  suites are shared out over runners, and `.github/scripts/test-changed-jobs.sh` checks the selection.
-  A new test that opens a file outside its package, or a new step of `ci.yml` that names a path,
-  is covered by `audit_triggers.py` in that script; it tells you which list to extend.
-- **Process checks.** `.github/workflows/blis.yml` calls blis-substrate's shared checks by
-  commit; `.github/workflows/private-names.yml` is the name scan. The section below and
+- **Which CI jobs a change runs.** the repository-root `.github/workflows/ci.yml` (one CI for the single module); this directory holds no workflows.
+- **Process checks.** the repository-root `.github/workflows/blis.yml` runs the shared checks;
+  `.github/workflows/private-names.yml` is the name scan. The section below and
   `.github/pull_request_template.md` are generated from the invariant registry
   (`go run github.com/inference-sim/blis-substrate/tools/invariants agents -repo blis-vllm`,
   and `template`); CI checks them.

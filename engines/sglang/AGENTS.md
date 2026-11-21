@@ -67,8 +67,8 @@ In short:
   overlap conditions, the memory budget, the KV-event hashing, the NIXL plugins and the drafter
   architectures. Add one by adding it to the generator, never to `surface.json`.
 - Tests: `go test ./...`; lint: `golangci-lint run ./...` (v2.14.0).
-- **Process checks.** `.github/workflows/blis.yml` calls blis-substrate's shared checks by
-  commit; `.github/workflows/private-names.yml` is the name scan. The section below and
+- **Process checks.** the repository-root `.github/workflows/blis.yml` runs the shared checks;
+  `.github/workflows/private-names.yml` is the name scan. The section below and
   `.github/pull_request_template.md` are generated from the invariant registry
   (`go run github.com/inference-sim/blis-substrate/tools/invariants agents -repo blis-sglang`,
   and `template`); CI checks them.
