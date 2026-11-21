@@ -80,6 +80,7 @@ var acceptedFields = map[string][]any{
 	"priority_scheduling_preemption_threshold": nil,
 	"schedule_low_priority_values_first":       nil,
 	"abort_on_priority_when_disabled":          nil,
+	"disable_priority_preemption":              nil,
 	"max_queued_requests":                      nil,
 	"prefill_max_requests":                     nil,
 	"allow_auto_truncate":                      nil,
@@ -116,9 +117,6 @@ var refusedFieldIssue = func() map[string]string {
 		"expert_distribution_recorder_mode", "expert_balancedness_report_mode", "moe_a2a_backend")
 	put("2358", "pp_size", "pp_max_micro_batch_size", "pp_async_batch_depth")
 	put("2359", "swa_full_tokens_ratio", "disable_hybrid_swa_memory", "swa_prefix_tails")
-	// The scheduler core reads the flag (core/sched), but no oracle golden covers it set: the setting is
-	// refused until Stage 4 records one, the issue fields/status.json cites for it.
-	put("2451", "disable_priority_preemption")
 	put("2366", "mamba_backend", "mamba_full_memory_ratio", "mamba_max_states_per_path", "mamba_track_interval", "max_mamba_cache_size")
 	for _, n := range FieldNames() {
 		switch {
