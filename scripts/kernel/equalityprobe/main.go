@@ -3,7 +3,7 @@
 // times, the per-sequence and fixed memory, the KV budget and memory, the host costs, adaptive
 // verification, the kernel's Resolved() and Provenance(), the engine assumptions and sources,
 // and a refusal's text. It is the price-equality check of the engine-settings review set
-// (inference-sim/blis-substrate#58): build it against two module sets, run both over the same
+// (inference-sim/inference-sim#2479): build it against two module sets, run both over the same
 // scenario directories, and compare the outputs with -compare, which reports every field that
 // differs and exits 1 when a price, a figure, a refusal or a record differs. A provenance field
 // may be allowed to differ in order only (-order-only).

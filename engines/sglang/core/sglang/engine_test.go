@@ -221,8 +221,8 @@ func TestWhatThePortDoesNotModelIsRefusedByName(t *testing.T) {
 	}
 	cfg := tr.Config
 	cfg.DisableConsecutivePrefillOverlap = true
-	if _, err := New(cfg, flat{}, emptyList()); err == nil || !strings.Contains(err.Error(), "blis-sglang#4") {
-		t.Fatalf("got %v, want the consecutive-prefill option refused naming blis-sglang#4", err)
+	if _, err := New(cfg, flat{}, emptyList()); err == nil || !strings.Contains(err.Error(), "inference-sim/inference-sim#2451") {
+		t.Fatalf("got %v, want the consecutive-prefill option refused naming inference-sim/inference-sim#2451", err)
 	}
 	if _, err := New(tr.Config, nil, emptyList()); err == nil {
 		t.Fatal("an engine without a pricer was built")

@@ -17,8 +17,8 @@ import (
 
 // ErrNotModelled is a controller operation the port refuses by name: the storage prefetch's
 // scheduler-side admission (HybridCacheController.submit_prefetch, allocate_storage_hit) and the
-// prefetch thread bodies' reads, which HiCache's L3 stage ports (inference-sim/blis-sglang#40).
-var ErrNotModelled = errors.New("hicache: not modelled until HiCache L3 storage (inference-sim/blis-sglang#40)")
+// prefetch thread bodies' reads, which HiCache's L3 stage ports (inference-sim/inference-sim#2342).
+var ErrNotModelled = errors.New("hicache: not modelled until HiCache L3 storage (inference-sim/inference-sim#2342)")
 
 // DeviceAllocator is what the controller calls on the device's KV allocator.
 type DeviceAllocator interface {
@@ -357,9 +357,9 @@ func (c *Controller) GetPrefetchSubmission(rid string) *PrefetchSubmission { ret
 
 // ErrStorageConfigFile refuses a storage extra configuration given as a file (@path), which
 // SGLang reads as JSON, TOML or YAML (hybrid_cache_controller.py:383-399@297e54fd); it is not
-// modelled until inference-sim/blis-sglang#87.
+// modelled until inference-sim/inference-sim#2459.
 var ErrStorageConfigFile = errors.New("hicache: --hicache-storage-backend-extra-config given as @path is not modelled " +
-	"(inference-sim/blis-sglang#87); give the configuration inline")
+	"(inference-sim/inference-sim#2459); give the configuration inline")
 
 // ParseStorageBackendExtraConfig is HybridCacheController.parse_storage_backend_extra_config
 // (hybrid_cache_controller.py:378-438@297e54fd) for an inline JSON object; a configuration file

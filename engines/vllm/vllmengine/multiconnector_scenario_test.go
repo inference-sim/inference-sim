@@ -157,7 +157,7 @@ func TestAHostStatesTheMultiConnectorOrderInItsEngineBlock(t *testing.T) {
 // (get_offloading_group_ids), so both pools build, and the prefill pool stores a prompt's compressed
 // blocks to the CPU tier while holding the request for the decoder's pull. Before, the engine gave
 // the connector all ten groups and refused them against the 64-token hash block size
-// (blis-vllm#132, #146).
+// (inference-sim/inference-sim#2432, #2433).
 func TestTheShippedMultiConnectorScenarioBuildsAndOffloadsItsCacheableGroup(t *testing.T) {
 	Register()
 	r := roots(t, shippedScenario)

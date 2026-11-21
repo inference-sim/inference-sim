@@ -87,7 +87,7 @@ func TestKVCacheGroupsOfAnMLAModel(t *testing.T) {
 		t.Error("no caches were grouped")
 	}
 	win := []enginefacts.KVCacheLayer{{Name: "layers.0.kv", Cache: model.Cache{Kind: model.CacheWindow, Window: 128}}}
-	if _, err := V0_5_23.KVCacheGroups(enginefacts.KVCacheGroupsInput{Layers: win, EngineBlockSize: 1}); err == nil || !strings.Contains(err.Error(), "#94") {
+	if _, err := V0_5_23.KVCacheGroups(enginefacts.KVCacheGroupsInput{Layers: win, EngineBlockSize: 1}); err == nil || !strings.Contains(err.Error(), "#2366") {
 		t.Errorf("a window cache is a hybrid pool, refused naming its issue: %v", err)
 	}
 }

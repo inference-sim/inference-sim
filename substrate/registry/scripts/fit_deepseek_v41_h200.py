@@ -121,7 +121,7 @@ PARTS = {
              "e2e": ("NO END-TO-END CHECK EXISTS FOR vLLM: AISimulate FPM (revision "
                      "03e006de) carries DeepSeek-V4.1-Flash on h200 under SGLang only -- "
                      "another engine, MoE kernel and checkpoint revision -- so it cannot "
-                     "arbitrate vLLM v0.31.0 pricing; inference-sim/blis-substrate#130 has no arbiter until "
+                     "arbitrate vLLM v0.31.0 pricing; inference-sim/inference-sim#2465 has no arbiter until "
                      "a vLLM V4.1 forward-pass measurement exists, see methodology section "
                      "10.5.")},
     "h100": {"sku": "h100_sxm", "name": "H100", "sibling": "h200",

@@ -136,7 +136,7 @@ def main(argv) -> int:
     bad = [f"unlisted divergence: {d}" for d in found if key(d) not in listed]
     bad += [f"listed divergence that no longer occurs: {d}" for k, d in listed.items() if k not in {key(f) for f in found}]
     bad += [f"divergence without an open issue: {d}" for d in known if not str(d.get("issue", "")).startswith(
-        "https://github.com/inference-sim/blis-sglang/issues/")]
+        "https://github.com/inference-sim/inference-sim/issues/")]
     with open(report_path, "w") as f:
         json.dump({"sequences": names, "divergences": found, "problems": bad}, f, indent=1, sort_keys=True)
     for b in bad:

@@ -14,7 +14,7 @@ import (
 )
 
 // A p2p WRITE is priced from the bytes the engine states, on the links between the two nodes it
-// names, and not as the decode pull of the GPU handoff (blis-vllm#204).
+// names, and not as the decode pull of the GPU handoff (inference-sim/inference-sim#2439).
 
 func writeOf(tokens int64, from, to plan.Endpoint) engine.Transfer {
 	return engine.Transfer{ID: 1, Request: "r", Kind: engine.TransferStore, Tokens: int(tokens),

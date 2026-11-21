@@ -15,9 +15,9 @@ import (
 // replaces the stated block size. Before the recurrent state was mapped to a MambaSpec these were
 // refused with "recurrent state is not mapped to a KV cache spec". The Qwen fixtures are the
 // cells the cluster matrix refused: a 256-wide attention head beside the recurrent layers
-// (blis-vllm#309) and a QSA model whose pool page was derived from the memory model's bytes
-// (blis-vllm#310). The GLM fixtures are sparse-MLA attention beside KDA layers, with the MTP drafter
-// on a B200 (blis-vllm#308).
+// (inference-sim/inference-sim#2490) and a QSA model whose pool page was derived from the memory model's bytes
+// (inference-sim/inference-sim#2491). The GLM fixtures are sparse-MLA attention beside KDA layers, with the MTP drafter
+// on a B200 (inference-sim/inference-sim#2489).
 func TestRecurrentModelsBuildAndRun(t *testing.T) {
 	Register()
 	for _, scenario := range []string{"recurrent-nemotron-3-ultra-h100-tp8.yaml", "recurrent-kimi-k3-h200-dep16.yaml",

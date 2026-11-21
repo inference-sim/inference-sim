@@ -20,7 +20,7 @@
    "manager": "MooncakeKVManager",
    "selected": "disaggregation/utils.py:728",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/18"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2446"
   },
   {
    "id": "transfer_backend:mori",
@@ -30,7 +30,7 @@
    "manager": "MoriKVManager",
    "selected": "disaggregation/utils.py:742",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/66"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2353"
   },
   {
    "id": "transfer_backend:nixl",
@@ -40,7 +40,7 @@
    "manager": "NixlKVManager",
    "selected": "disaggregation/utils.py:770",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/66"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2353"
   },
   {
    "id": "transfer_backend:ascend",
@@ -62,7 +62,7 @@
    "manager": "FakeKVManager",
    "selected": "disaggregation/utils.py:784",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/64"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
   },
   {
    "id": "transfer_backend:mooncake_tcp",
@@ -71,7 +71,7 @@
    "site": "arg_groups/pd_disaggregation_hook.py:30",
    "alias_of": "mooncake",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/18"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2446"
   },
   {
    "id": "hicache_storage:file",
@@ -81,7 +81,7 @@
    "class": "sglang.srt.mem_cache.hicache_storage.HiCacheFile",
    "level": "L3",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
   },
   {
    "id": "hicache_storage:sim",
@@ -91,7 +91,7 @@
    "class": "sglang.srt.mem_cache.storage.sim_storage.SimHiCacheStorage",
    "level": "L3",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
   },
   {
    "id": "hicache_storage:nixl",
@@ -101,7 +101,7 @@
    "class": "sglang.srt.mem_cache.storage.nixl.hicache_nixl.HiCacheNixl",
    "level": "L3",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
   },
   {
    "id": "hicache_storage:mooncake",
@@ -111,7 +111,7 @@
    "class": "sglang.srt.mem_cache.storage.mooncake_store.mooncake_store.MooncakeStore",
    "level": "L3",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/14"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2443"
   },
   {
    "id": "hicache_storage:npu_memcache",
@@ -133,7 +133,7 @@
    "class": "sglang.srt.mem_cache.storage.hf3fs.storage_hf3fs.HiCacheHF3FS",
    "level": "L3",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
   },
   {
    "id": "hicache_storage:aibrix",
@@ -143,7 +143,7 @@
    "class": "sglang.srt.mem_cache.storage.aibrix_kvcache.aibrix_kvcache_storage.AibrixKVCacheStorage",
    "level": "L3",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
   },
   {
    "id": "hicache_storage:eic",
@@ -153,7 +153,7 @@
    "class": "sglang.srt.mem_cache.storage.eic.eic_storage.EICStorage",
    "level": "L3",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
   },
   {
    "id": "hicache_storage:simm",
@@ -163,7 +163,7 @@
    "class": "sglang.srt.mem_cache.storage.simm.hicache_simm.HiCacheSiMM",
    "level": "L3",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
   },
   {
    "id": "hicache_storage:mori",
@@ -173,7 +173,7 @@
    "class": "sglang.srt.mem_cache.storage.umbp.umbp_store.UMBPStore",
    "level": "L3",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
   },
   {
    "id": "hicache_storage:shm",
@@ -183,7 +183,7 @@
    "class": "sglang.srt.mem_cache.storage.shm.HiCacheShm",
    "level": "L3",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
   },
   {
    "id": "hicache_storage:tensorcast",
@@ -193,7 +193,7 @@
    "class": "sglang.srt.mem_cache.storage.tensorcast_store.tensorcast_store.TensorcastStore",
    "level": "L3",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
   },
   {
    "id": "hicache_storage:seaweedfs",
@@ -203,7 +203,7 @@
    "class": "sglang.srt.mem_cache.storage.seaweedfs.seaweedfs_store.SeaweedFSStore",
    "level": "L3",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
   },
   {
    "id": "hicache_storage:dynamic",
@@ -213,7 +213,7 @@
    "level": "L3",
    "path_loaded": true,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "tree_cache:BasePrefixCache",
@@ -221,7 +221,7 @@
    "name": "BasePrefixCache",
    "site": "mem_cache/base_prefix_cache.py:390",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "tree_cache:PureSWARadixCache",
@@ -230,7 +230,7 @@
    "site": "mem_cache/pure_swa_radix_cache.py:14",
    "selected": "mem_cache/registry.py:130",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "tree_cache:RadixCache",
@@ -239,7 +239,7 @@
    "site": "mem_cache/radix_cache.py:281",
    "selected": "managers/schedule_policy.py:211",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "tree_cache:FlexKVRadixCache",
@@ -248,7 +248,7 @@
    "site": "mem_cache/storage/flexkv/flexkv_radix_cache.py:73",
    "selected": "mem_cache/registry.py:144",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
   },
   {
    "id": "tree_cache:LMCacheUnifiedRadixCache",
@@ -257,7 +257,7 @@
    "site": "mem_cache/storage/lmcache/lmcache_unified_radix_cache.py:45",
    "selected": "mem_cache/registry.py:115",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/15"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2444"
   },
   {
    "id": "tree_cache:UnifiedRadixCache",
@@ -266,7 +266,7 @@
    "site": "mem_cache/unified_radix_cache.py:199",
    "selected": "mem_cache/registry.py:146",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "tree_cache_backend:flexkv",
@@ -275,7 +275,7 @@
    "site": "mem_cache/storage/flexkv/__init__.py:77",
    "builds": "FlexKVRadixCache",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
   },
   {
    "id": "tree_attachment:init_hicache",
@@ -283,7 +283,7 @@
    "name": "init_hicache",
    "site": "mem_cache/registry.py:196",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "tree_attachment:init_cache_linker",
@@ -291,7 +291,7 @@
    "name": "init_cache_linker",
    "site": "mem_cache/registry.py:206",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "tree_component:FULL",
@@ -299,7 +299,7 @@
    "name": "FULL",
    "site": "mem_cache/unified_cache/component_type.py:9",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "tree_component:SWA",
@@ -307,7 +307,7 @@
    "name": "SWA",
    "site": "mem_cache/unified_cache/component_type.py:10",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "tree_component:MAMBA",
@@ -315,7 +315,7 @@
    "name": "MAMBA",
    "site": "mem_cache/unified_cache/component_type.py:11",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "tree_component:C128",
@@ -333,7 +333,7 @@
    "name": "AUXILIARY_SWA",
    "site": "mem_cache/unified_cache/component_type.py:13",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "tree_core:python",
@@ -347,7 +347,7 @@
     "arg_groups/kv_shard_hook.py:135=python"
    ],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "tree_core:rust",
@@ -359,7 +359,7 @@
    "env_site": "environ.py:741",
    "forced_by": [],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "unified_cache_linker:dynamic",
@@ -368,7 +368,7 @@
    "site": "mem_cache/unified_cache/linker_factory.py:72",
    "path_loaded": true,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "unified_cache_linker:mooncake",
@@ -376,7 +376,7 @@
    "name": "mooncake",
    "site": "mem_cache/unified_cache/linker_factory.py:101",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/14"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2443"
   },
   {
    "id": "unified_cache_linker:mori",
@@ -384,7 +384,7 @@
    "name": "mori",
    "site": "mem_cache/unified_cache/linker_factory.py:107",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/16"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
   },
   {
    "id": "eviction_policy:lru",
@@ -393,7 +393,7 @@
    "site": "mem_cache/utils.py:61",
    "class": "LRUStrategy",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "eviction_policy:lfu",
@@ -402,7 +402,7 @@
    "site": "mem_cache/utils.py:62",
    "class": "LFUStrategy",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "eviction_policy:fifo",
@@ -412,7 +412,7 @@
    "class": "FIFOStrategy",
    "cli": false,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "eviction_policy:mru",
@@ -422,7 +422,7 @@
    "class": "MRUStrategy",
    "cli": false,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "eviction_policy:filo",
@@ -432,7 +432,7 @@
    "class": "FILOStrategy",
    "cli": false,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "eviction_policy:priority",
@@ -441,7 +441,7 @@
    "site": "mem_cache/utils.py:66",
    "class": "PriorityStrategy",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "eviction_policy:slru",
@@ -450,7 +450,7 @@
    "site": "mem_cache/utils.py:67",
    "class": "SLRUStrategy",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "eviction_policy:tlru",
@@ -459,7 +459,7 @@
    "site": "mem_cache/utils.py:68",
    "class": "TLRUStrategy",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "allocator:BaseTokenToKVPoolAllocator",
@@ -468,7 +468,7 @@
    "site": "mem_cache/allocator/base.py:41",
    "built": "mem_cache/kv_cache_configurator.py:344",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "allocator:DSV4NPUTokenToKVPoolAllocator",
@@ -488,7 +488,7 @@
    "site": "mem_cache/allocator/hisparse.py:302",
    "built": "mem_cache/kv_cache_configurator.py:2941",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "allocator:FloatMultiEndedAllocator",
@@ -496,7 +496,7 @@
    "name": "FloatMultiEndedAllocator",
    "site": "mem_cache/allocator/unified_sub_pool.py:2204",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "allocator:HiSparseTokenToKVPoolAllocator",
@@ -505,7 +505,7 @@
    "site": "mem_cache/allocator/hisparse.py:22",
    "built": "mem_cache/kv_cache_configurator.py:729",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "allocator:MambaSlotAllocator",
@@ -513,7 +513,7 @@
    "name": "MambaSlotAllocator",
    "site": "mem_cache/allocator/mamba.py:30",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "allocator:MultiEndedAllocator",
@@ -521,7 +521,7 @@
    "name": "MultiEndedAllocator",
    "site": "mem_cache/allocator/unified_sub_pool.py:279",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "allocator:NPUPagedTokenToKVPoolAllocator",
@@ -541,7 +541,7 @@
    "site": "mem_cache/allocator/page_interleave.py:58",
    "built": "mem_cache/kv_cache_configurator.py:2904",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "allocator:PagedTokenToKVPoolAllocator",
@@ -562,7 +562,7 @@
    "site": "mem_cache/allocator/swa.py:727",
    "built": "mem_cache/kv_cache_configurator.py:2866",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "allocator:SWATokenToKVPoolAllocator",
@@ -571,7 +571,7 @@
    "site": "mem_cache/allocator/swa.py:41",
    "built": "mem_cache/kv_cache_configurator.py:2822",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "allocator:TokenToKVPoolAllocator",
@@ -592,7 +592,7 @@
    "site": "mem_cache/allocator/unified_hybrid_swa.py:1340",
    "built": "mem_cache/unified_memory_pool.py:2479",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "allocator:UnifiedMambaSlotAllocator",
@@ -600,7 +600,7 @@
    "name": "UnifiedMambaSlotAllocator",
    "site": "mem_cache/unified_memory_pool.py:1261",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "allocator:UnifiedMambaTokenToKVPoolAllocator",
@@ -609,7 +609,7 @@
    "site": "mem_cache/allocator/unified_mamba.py:42",
    "built": "mem_cache/kv_cache_configurator.py:659",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "allocator:UnifiedSWAAllocatorBase",
@@ -617,7 +617,7 @@
    "name": "UnifiedSWAAllocatorBase",
    "site": "mem_cache/allocator/unified_hybrid_swa.py:55",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "allocator:UnifiedSWATokenToKVPoolAllocator",
@@ -626,7 +626,7 @@
    "site": "mem_cache/allocator/unified_hybrid_swa.py:808",
    "built": "mem_cache/unified_memory_pool.py:2255",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "host_pool:AsymmetricMHATokenToKVPoolHost",
@@ -635,7 +635,7 @@
    "site": "mem_cache/pool_host/mha.py:1343",
    "level": "L2",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "host_pool:DSAIndexerPoolHost",
@@ -644,7 +644,7 @@
    "site": "mem_cache/pool_host/dsa.py:143",
    "level": "L2",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "host_pool:DeepSeekV4PagedHostPool",
@@ -653,7 +653,7 @@
    "site": "mem_cache/memory_pool_host.py:236",
    "level": "L2",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/74"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2360"
   },
   {
    "id": "host_pool:DeepSeekV4StateHostPool",
@@ -662,7 +662,7 @@
    "site": "mem_cache/memory_pool_host.py:770",
    "level": "L2",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/74"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2360"
   },
   {
    "id": "host_pool:HiSparseMHATokenToKVPoolHost",
@@ -671,7 +671,7 @@
    "site": "mem_cache/pool_host/mha.py:1266",
    "level": "L2",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "host_pool:HostKVCache",
@@ -680,7 +680,7 @@
    "site": "mem_cache/pool_host/base.py:162",
    "level": "L2",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "host_pool:MHATokenToKOnlyPoolHost",
@@ -689,7 +689,7 @@
    "site": "mem_cache/pool_host/mha.py:904",
    "level": "L2",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "host_pool:MHATokenToKVPoolHost",
@@ -698,7 +698,7 @@
    "site": "mem_cache/pool_host/mha.py:135",
    "level": "L2",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "host_pool:MHATokenToKVPoolMXFP8Host",
@@ -707,7 +707,7 @@
    "site": "mem_cache/pool_host/mha_mxfp8.py:38",
    "level": "L2",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "host_pool:MLATokenToKVPoolHost",
@@ -716,7 +716,7 @@
    "site": "mem_cache/pool_host/mla.py:92",
    "level": "L2",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "host_pool:MambaPoolHost",
@@ -725,7 +725,7 @@
    "site": "mem_cache/pool_host/mamba.py:75",
    "level": "L2",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "host_pool:MiniMaxM3Nvfp4IndexKPoolHost",
@@ -734,7 +734,7 @@
    "site": "mem_cache/pool_host/minimax_m3_nvfp4.py:46",
    "level": "L2",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "host_pool:MiniMaxM3Nvfp4MainKVPoolHost",
@@ -743,7 +743,7 @@
    "site": "mem_cache/pool_host/minimax_m3_nvfp4.py:471",
    "level": "L2",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "host_pool:QSAIndexerPoolHost",
@@ -752,7 +752,7 @@
    "site": "mem_cache/pool_host/qsa.py:9",
    "level": "L2",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "host_pool:UnifiedPageEnvelopeHostPool",
@@ -761,7 +761,7 @@
    "site": "mem_cache/pool_host/unified.py:667",
    "level": "L2",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "kv_pool:BaseSWAKVPool",
@@ -770,7 +770,7 @@
    "site": "mem_cache/base_swa_memory_pool.py:14",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:DSATokenToKVPool",
@@ -803,7 +803,7 @@
    "site": "mem_cache/deepseek_v4_memory_pool.py:545",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:DeepSeekV4SingleKVPool",
@@ -812,7 +812,7 @@
    "site": "mem_cache/deepseek_v4_memory_pool.py:237",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:DeepSeekV4TokenToKVPool",
@@ -822,7 +822,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2097",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:DeepSeekV4UniformFP8KVPool",
@@ -831,7 +831,7 @@
    "site": "mem_cache/deepseek_v4_memory_pool.py:383",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:HiSparseC4DevicePool",
@@ -840,7 +840,7 @@
    "site": "mem_cache/deepseek_v4_memory_pool.py:437",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:HiSparseDSATokenToKVPool",
@@ -850,7 +850,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2346",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:HiSparseMHAMainPool",
@@ -859,7 +859,7 @@
    "site": "mem_cache/hisparse_memory_pool.py:174",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:HybridLinearKVPool",
@@ -869,7 +869,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2680",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:KVCache",
@@ -878,7 +878,7 @@
    "site": "mem_cache/memory_pool.py:2005",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:LayerSplitDSATokenToKVPool",
@@ -888,7 +888,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2361",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:MHATokenToKOnlyPool",
@@ -897,7 +897,7 @@
    "site": "mem_cache/memory_pool.py:5732",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:MHATokenToKVPool",
@@ -918,7 +918,7 @@
    "site": "mem_cache/memory_pool.py:3621",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:MHATokenToKVPoolMXFP8",
@@ -927,7 +927,7 @@
    "site": "mem_cache/memory_pool.py:3847",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:MLATokenToKVPool",
@@ -948,7 +948,7 @@
    "site": "mem_cache/memory_pool.py:5133",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:MambaPool",
@@ -957,7 +957,7 @@
    "site": "mem_cache/memory_pool.py:505",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:MiniMaxM3Nvfp4IndexKPool",
@@ -966,7 +966,7 @@
    "site": "mem_cache/minimax_m3_nvfp4_pool.py:123",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:MiniMaxM3Nvfp4KVPool",
@@ -976,7 +976,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2576",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:MiniMaxM3Nvfp4MainKVPool",
@@ -985,7 +985,7 @@
    "site": "mem_cache/minimax_m3_nvfp4_pool.py:347",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:MiniMaxSparseKVPool",
@@ -995,7 +995,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2572",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:NPUDeepSeekV4IndexerPool",
@@ -1074,7 +1074,7 @@
    "built": "mem_cache/kv_cache_configurator.py:815",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:PageInterleaveDSATokenToKVPool",
@@ -1084,7 +1084,7 @@
    "built": "mem_cache/kv_cache_configurator.py:1976",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:PageInterleaveMHATokenToKVPool",
@@ -1094,7 +1094,7 @@
    "built": "mem_cache/kv_cache_configurator.py:1980",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:PageInterleaveMLATokenToKVPool",
@@ -1104,7 +1104,7 @@
    "built": "mem_cache/kv_cache_configurator.py:1975",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:PageMajorMHATokenToKVPool",
@@ -1114,7 +1114,7 @@
    "built": "mem_cache/kv_cache_configurator.py:1804",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:QSATokenToKVPool",
@@ -1124,7 +1124,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2683",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:SWAKVPool",
@@ -1134,7 +1134,7 @@
    "built": "mem_cache/kv_cache_configurator.py:2191",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:UnifiedDraftKVPool",
@@ -1143,7 +1143,7 @@
    "site": "mem_cache/unified_draft_pool.py:37",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:UnifiedDraftMambaPool",
@@ -1152,7 +1152,7 @@
    "site": "mem_cache/unified_draft_pool.py:320",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:UnifiedDraftSWAKVPool",
@@ -1161,7 +1161,7 @@
    "site": "mem_cache/unified_draft_pool.py:128",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:UnifiedHybridLinearKVPool",
@@ -1171,7 +1171,7 @@
    "built": "mem_cache/unified_memory_pool.py:1749",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:UnifiedKVPool",
@@ -1181,7 +1181,7 @@
    "built": "mem_cache/unified_memory_pool.py:1704",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:UnifiedMHATokenToKVPool",
@@ -1191,7 +1191,7 @@
    "built": "mem_cache/unified_memory_pool.py:1739",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:UnifiedMLATokenToKVPool",
@@ -1201,7 +1201,7 @@
    "built": "mem_cache/unified_memory_pool.py:1732",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:UnifiedMambaPool",
@@ -1210,7 +1210,7 @@
    "site": "mem_cache/unified_memory_pool.py:1071",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:UnifiedSWAKVPool",
@@ -1220,7 +1220,7 @@
    "built": "mem_cache/unified_memory_pool.py:2246",
    "level": "L1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "kv_pool:_DummyKVCache",
@@ -1251,7 +1251,7 @@
    "site": "disaggregation/decode.py:171",
    "built": "mem_cache/kv_cache_configurator.py:1691",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "req_pool:HybridMambaDecodeReqToTokenPool",
@@ -1260,7 +1260,7 @@
    "site": "disaggregation/decode.py:275",
    "built": "mem_cache/kv_cache_configurator.py:1646",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "req_pool:HybridReqToTokenPool",
@@ -1269,7 +1269,7 @@
    "site": "mem_cache/memory_pool.py:1355",
    "built": "mem_cache/kv_cache_configurator.py:754",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "req_pool:MlxAuxiliaryStateReqToTokenPool",
@@ -1299,7 +1299,7 @@
    "site": "mem_cache/unified_memory_pool.py:1357",
    "built": "mem_cache/unified_memory_pool.py:1712",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/44"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   {
    "id": "hicache_option:hicache_write_policy=write_back",
@@ -1307,7 +1307,7 @@
    "name": "hicache_write_policy=write_back",
    "site": "arg_groups/fields/memory.py:121",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "hicache_option:hicache_write_policy=write_through",
@@ -1315,7 +1315,7 @@
    "name": "hicache_write_policy=write_through",
    "site": "arg_groups/fields/memory.py:121",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "hicache_option:hicache_write_policy=write_through_selective",
@@ -1323,7 +1323,7 @@
    "name": "hicache_write_policy=write_through_selective",
    "site": "arg_groups/fields/memory.py:121",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "hicache_option:hicache_io_backend=direct",
@@ -1331,7 +1331,7 @@
    "name": "hicache_io_backend=direct",
    "site": "arg_groups/fields/memory.py:128",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "hicache_option:hicache_io_backend=kernel",
@@ -1339,7 +1339,7 @@
    "name": "hicache_io_backend=kernel",
    "site": "arg_groups/fields/memory.py:128",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "hicache_option:hicache_io_backend=kernel_ascend",
@@ -1357,7 +1357,7 @@
    "name": "hicache_mem_layout=layer_first",
    "site": "arg_groups/fields/memory.py:135",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "hicache_option:hicache_mem_layout=page_first",
@@ -1365,7 +1365,7 @@
    "name": "hicache_mem_layout=page_first",
    "site": "arg_groups/fields/memory.py:135",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "hicache_option:hicache_mem_layout=page_first_direct",
@@ -1373,7 +1373,7 @@
    "name": "hicache_mem_layout=page_first_direct",
    "site": "arg_groups/fields/memory.py:135",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "hicache_option:hicache_mem_layout=page_first_kv_split",
@@ -1381,7 +1381,7 @@
    "name": "hicache_mem_layout=page_first_kv_split",
    "site": "arg_groups/fields/memory.py:135",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "hicache_option:hicache_mem_layout=page_head",
@@ -1389,7 +1389,7 @@
    "name": "hicache_mem_layout=page_head",
    "site": "arg_groups/fields/memory.py:135",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "hicache_option:hicache_storage_prefetch_policy=best_effort",
@@ -1397,7 +1397,7 @@
    "name": "hicache_storage_prefetch_policy=best_effort",
    "site": "arg_groups/fields/memory.py:170",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
   },
   {
    "id": "hicache_option:hicache_storage_prefetch_policy=wait_complete",
@@ -1405,7 +1405,7 @@
    "name": "hicache_storage_prefetch_policy=wait_complete",
    "site": "arg_groups/fields/memory.py:170",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
   },
   {
    "id": "hicache_option:hicache_storage_prefetch_policy=timeout",
@@ -1413,7 +1413,7 @@
    "name": "hicache_storage_prefetch_policy=timeout",
    "site": "arg_groups/fields/memory.py:170",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
   },
   {
    "id": "hicache_option:hicache_host_memory_mode=cache",
@@ -1421,7 +1421,7 @@
    "name": "hicache_host_memory_mode=cache",
    "site": "arg_groups/fields/memory.py:102",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "hicache_option:hicache_host_memory_mode=buffer_only",
@@ -1429,7 +1429,7 @@
    "name": "hicache_host_memory_mode=buffer_only",
    "site": "arg_groups/fields/memory.py:102",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "hicache_option:disaggregation_decode_retraction_backup=cpu_tensor",
@@ -1437,7 +1437,7 @@
    "name": "disaggregation_decode_retraction_backup=cpu_tensor",
    "site": "arg_groups/fields/disagg.py:95",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/65"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2352"
   },
   {
    "id": "hicache_option:disaggregation_decode_retraction_backup=host_pool",
@@ -1445,7 +1445,7 @@
    "name": "disaggregation_decode_retraction_backup=host_pool",
    "site": "arg_groups/fields/disagg.py:95",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/65"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2352"
   },
   {
    "id": "hicache_option:disaggregation_decode_retraction_backup=none",
@@ -1453,7 +1453,7 @@
    "name": "disaggregation_decode_retraction_backup=none",
    "site": "arg_groups/fields/disagg.py:95",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/65"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2352"
   },
   {
    "id": "schedule_policy:lpm",
@@ -1556,7 +1556,7 @@
    "site": "arg_groups/fields/schedule.py:86",
    "rejected": "managers/schedule_policy.py:344",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "spec_algo:DFLASH",
@@ -1564,7 +1564,7 @@
    "name": "DFLASH",
    "site": "speculative/spec_info.py:39",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "spec_algo:UNO",
@@ -1572,7 +1572,7 @@
    "name": "UNO",
    "site": "speculative/spec_info.py:40",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "spec_algo:DSPARK",
@@ -1580,7 +1580,7 @@
    "name": "DSPARK",
    "site": "speculative/spec_info.py:41",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "spec_algo:EAGLE",
@@ -1588,7 +1588,7 @@
    "name": "EAGLE",
    "site": "speculative/spec_info.py:42",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/68"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2355"
   },
   {
    "id": "spec_algo:EAGLE3",
@@ -1596,7 +1596,7 @@
    "name": "EAGLE3",
    "site": "speculative/spec_info.py:43",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/68"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2355"
   },
   {
    "id": "spec_algo:FROZEN_KV_MTP",
@@ -1604,7 +1604,7 @@
    "name": "FROZEN_KV_MTP",
    "site": "speculative/spec_info.py:44",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "spec_algo:STANDALONE",
@@ -1612,7 +1612,7 @@
    "name": "STANDALONE",
    "site": "speculative/spec_info.py:45",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "spec_algo:NGRAM",
@@ -1620,7 +1620,7 @@
    "name": "NGRAM",
    "site": "speculative/spec_info.py:46",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "spec_algo:NEXTN",
@@ -1629,7 +1629,7 @@
    "site": "speculative/spec_registry.py:183",
    "alias_of": "EAGLE",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/68"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2355"
   },
   {
    "id": "spec_worker:DFlashWorkerV2",
@@ -1638,7 +1638,7 @@
    "site": "speculative/spec_info.py:324",
    "condition": "self.is_dflash()",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "spec_worker:UnoWorkerV2",
@@ -1647,7 +1647,7 @@
    "site": "speculative/spec_info.py:331",
    "condition": "self.is_uno()",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "spec_worker:DSparkWorkerV2",
@@ -1656,7 +1656,7 @@
    "site": "speculative/spec_info.py:336",
    "condition": "self.is_dspark()",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "spec_worker:FrozenKVMTPWorkerV2",
@@ -1665,7 +1665,7 @@
    "site": "speculative/spec_info.py:343",
    "condition": "self.is_frozen_kv_mtp()",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "spec_worker:MultiLayerEagleWorkerV2",
@@ -1674,7 +1674,7 @@
    "site": "speculative/spec_info.py:354",
    "condition": "self.is_eagle() and cfg.enable_multi_layer_eagle",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/68"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2355"
   },
   {
    "id": "spec_worker:EAGLEWorkerV2",
@@ -1683,7 +1683,7 @@
    "site": "speculative/spec_info.py:361",
    "condition": "self.is_eagle()",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/68"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2355"
   },
   {
    "id": "spec_worker:StandaloneWorkerV2",
@@ -1692,7 +1692,7 @@
    "site": "speculative/spec_info.py:365",
    "condition": "self.is_standalone()",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "spec_worker:NGRAMWorker",
@@ -1701,7 +1701,7 @@
    "site": "speculative/spec_info.py:369",
    "condition": "self.is_ngram()",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "moe_a2a_backend:none",
@@ -1709,7 +1709,7 @@
    "name": "none",
    "site": "layers/moe/utils.py:37",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "moe_a2a_backend:deepep",
@@ -1717,7 +1717,7 @@
    "name": "deepep",
    "site": "layers/moe/utils.py:38",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/71"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
   },
   {
    "id": "moe_a2a_backend:mooncake",
@@ -1725,7 +1725,7 @@
    "name": "mooncake",
    "site": "layers/moe/utils.py:39",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/30"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2450"
   },
   {
    "id": "moe_a2a_backend:nixl",
@@ -1733,7 +1733,7 @@
    "name": "nixl",
    "site": "layers/moe/utils.py:40",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/71"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
   },
   {
    "id": "moe_a2a_backend:mori",
@@ -1741,7 +1741,7 @@
    "name": "mori",
    "site": "layers/moe/utils.py:41",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/71"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
   },
   {
    "id": "moe_a2a_backend:ascend_fuseep",
@@ -1769,7 +1769,7 @@
    "name": "flashinfer",
    "site": "layers/moe/utils.py:44",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/71"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
   },
   {
    "id": "moe_a2a_backend:megamoe",
@@ -1777,7 +1777,7 @@
    "name": "megamoe",
    "site": "layers/moe/utils.py:45",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/71"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
   },
   {
    "id": "moe_a2a_backend:deepep_v2",
@@ -1785,7 +1785,7 @@
    "name": "deepep_v2",
    "site": "layers/moe/utils.py:46",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/71"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
   },
   {
    "id": "moe_a2a_backend:pplx",
@@ -1793,7 +1793,7 @@
    "name": "pplx",
    "site": "layers/moe/utils.py:47",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/71"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
   },
   {
    "id": "moe_a2a_backend:flashinfer_megamoe",
@@ -1801,7 +1801,7 @@
    "name": "flashinfer_megamoe",
    "site": "layers/moe/utils.py:48",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/71"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
   },
   {
    "id": "moe_a2a_backend:customized",
@@ -1810,7 +1810,7 @@
    "site": "layers/moe/utils.py:49",
    "cli": false,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "kv_event_type:BlockStored",
@@ -1818,7 +1818,7 @@
    "name": "BlockStored",
    "site": "disaggregation/kv_events.py:279",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_type:BlockRemoved",
@@ -1826,7 +1826,7 @@
    "name": "BlockRemoved",
    "site": "disaggregation/kv_events.py:298",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_type:AllBlocksCleared",
@@ -1834,7 +1834,7 @@
    "name": "AllBlocksCleared",
    "site": "disaggregation/kv_events.py:303",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_medium:GPU",
@@ -1842,7 +1842,7 @@
    "name": "GPU",
    "site": "disaggregation/kv_events.py:264",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_medium:CPU_PINNED",
@@ -1850,7 +1850,7 @@
    "name": "CPU_PINNED",
    "site": "disaggregation/kv_events.py:265",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_medium:DISK",
@@ -1858,7 +1858,7 @@
    "name": "DISK",
    "site": "disaggregation/kv_events.py:266",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_medium:EXTERNAL",
@@ -1866,7 +1866,7 @@
    "name": "EXTERNAL",
    "site": "disaggregation/kv_events.py:267",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_publisher:null",
@@ -1874,7 +1874,7 @@
    "name": "null",
    "site": "disaggregation/kv_events.py:743",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_publisher:zmq",
@@ -1882,7 +1882,7 @@
    "name": "zmq",
    "site": "disaggregation/kv_events.py:744",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "transformers_fallback:TransformersForCausalLM",
@@ -2008,7 +2008,7 @@
    "site": "observability/metrics_collector.py:2334",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:backup_pgs",
@@ -2017,7 +2017,7 @@
    "site": "observability/metrics_collector.py:2318",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:backuped_tokens_total",
@@ -2026,7 +2026,7 @@
    "site": "observability/metrics_collector.py:2219",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:cache_hit_rate",
@@ -2035,7 +2035,7 @@
    "site": "observability/metrics_collector.py:388",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:cached_tokens_total",
@@ -2044,7 +2044,7 @@
    "site": "observability/metrics_collector.py:1934",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:context_len",
@@ -2053,7 +2053,7 @@
    "site": "observability/metrics_collector.py:1337",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:cuda_graph_passes_total",
@@ -2062,7 +2062,7 @@
    "site": "observability/metrics_collector.py:737",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:decode_deferred_kv_release_seconds",
@@ -2071,7 +2071,7 @@
    "site": "observability/metrics_collector.py:626",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:decode_deferred_kv_release_total",
@@ -2080,7 +2080,7 @@
    "site": "observability/metrics_collector.py:632",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:decode_sum_seq_lens",
@@ -2089,7 +2089,7 @@
    "site": "observability/metrics_collector.py:394",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:dp_attention_pairs_total",
@@ -2098,7 +2098,7 @@
    "site": "observability/metrics_collector.py:1152",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:dp_attention_steps_total",
@@ -2107,7 +2107,7 @@
    "site": "observability/metrics_collector.py:1144",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:dp_attention_sync_wait_seconds",
@@ -2116,7 +2116,7 @@
    "site": "observability/metrics_collector.py:1194",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:dp_attention_token_imbalance_ratio",
@@ -2125,7 +2125,7 @@
    "site": "observability/metrics_collector.py:1167",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:dp_attention_tokens_total",
@@ -2134,7 +2134,7 @@
    "site": "observability/metrics_collector.py:1134",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:dp_cooperation_forward_execution_seconds_total",
@@ -2143,7 +2143,7 @@
    "site": "observability/metrics_collector.py:1125",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:dp_cooperation_realtime_tokens_total",
@@ -2152,7 +2152,7 @@
    "site": "observability/metrics_collector.py:1117",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:e2e_request_latency_seconds",
@@ -2161,7 +2161,7 @@
    "site": "observability/metrics_collector.py:2067",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_cache_entries",
@@ -2170,7 +2170,7 @@
    "site": "observability/metrics_collector.py:2672",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_cache_evictions_total",
@@ -2179,7 +2179,7 @@
    "site": "observability/metrics_collector.py:2661",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_cache_hit_files_total",
@@ -2188,7 +2188,7 @@
    "site": "observability/metrics_collector.py:2688",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_cache_hit_tokens_total",
@@ -2197,7 +2197,7 @@
    "site": "observability/metrics_collector.py:2678",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_cache_size_mb",
@@ -2206,7 +2206,7 @@
    "site": "observability/metrics_collector.py:2666",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_cache_total_files_total",
@@ -2215,7 +2215,7 @@
    "site": "observability/metrics_collector.py:2693",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_cache_total_tokens_total",
@@ -2224,7 +2224,7 @@
    "site": "observability/metrics_collector.py:2683",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_dp_pending_requests",
@@ -2233,7 +2233,7 @@
    "site": "disaggregation/encoder/runtime.py:466",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_mm_items_per_batch",
@@ -2242,7 +2242,7 @@
    "site": "observability/metrics_collector.py:2715",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_mm_items_per_request",
@@ -2251,7 +2251,7 @@
    "site": "observability/metrics_collector.py:2743",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_model_forward_seconds",
@@ -2260,7 +2260,7 @@
    "site": "observability/metrics_collector.py:2777",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_preprocess_seconds",
@@ -2269,7 +2269,7 @@
    "site": "observability/metrics_collector.py:2769",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_queue_wait_seconds",
@@ -2278,7 +2278,7 @@
    "site": "observability/metrics_collector.py:2761",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_request_e2e_latency_seconds",
@@ -2287,7 +2287,7 @@
    "site": "observability/metrics_collector.py:2751",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_requests_received_total",
@@ -2296,7 +2296,7 @@
    "site": "observability/metrics_collector.py:2708",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_requests_total",
@@ -2305,7 +2305,7 @@
    "site": "observability/metrics_collector.py:2700",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:encoder_transfer_seconds",
@@ -2314,7 +2314,7 @@
    "site": "observability/metrics_collector.py:2785",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:eplb_balancedness",
@@ -2323,7 +2323,7 @@
    "site": "observability/metrics_collector.py:1026",
    "kind": "Summary",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:eplb_gpu_physical_count",
@@ -2332,7 +2332,7 @@
    "site": "observability/metrics_collector.py:2408",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:estimated_flops_per_gpu_total",
@@ -2341,7 +2341,7 @@
    "site": "observability/metrics_collector.py:1092",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:estimated_read_bytes_per_gpu_total",
@@ -2350,7 +2350,7 @@
    "site": "observability/metrics_collector.py:1100",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:estimated_write_bytes_per_gpu_total",
@@ -2359,7 +2359,7 @@
    "site": "observability/metrics_collector.py:1108",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:evicted_tokens_total",
@@ -2368,7 +2368,7 @@
    "site": "observability/metrics_collector.py:2534",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:eviction_duration_seconds",
@@ -2377,7 +2377,7 @@
    "site": "observability/metrics_collector.py:2524",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:failed_session_recoveries_total",
@@ -2386,7 +2386,7 @@
    "site": "disaggregation/mooncake/conn.py:87",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:forward_execution_seconds_total",
@@ -2395,7 +2395,7 @@
    "site": "observability/metrics_collector.py:1054",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:full_token_usage",
@@ -2404,7 +2404,7 @@
    "site": "observability/metrics_collector.py:410",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:func_latency_seconds",
@@ -2413,7 +2413,7 @@
    "site": "observability/func_timer.py:35",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:fwd_occupancy",
@@ -2422,7 +2422,7 @@
    "site": "observability/metrics_collector.py:710",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:gen_throughput",
@@ -2431,7 +2431,7 @@
    "site": "observability/metrics_collector.py:382",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:generation_tokens_histogram",
@@ -2440,7 +2440,7 @@
    "site": "observability/metrics_collector.py:1924",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:generation_tokens_total",
@@ -2449,7 +2449,7 @@
    "site": "observability/metrics_collector.py:1860",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:get_loads_duration_seconds",
@@ -2458,7 +2458,7 @@
    "site": "observability/metrics_collector.py:1946",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:grammar_compilation_time_seconds",
@@ -2467,7 +2467,7 @@
    "site": "observability/metrics_collector.py:895",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:grammar_ebnf_size",
@@ -2476,7 +2476,7 @@
    "site": "observability/metrics_collector.py:967",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:grammar_schema_count",
@@ -2485,7 +2485,7 @@
    "site": "observability/metrics_collector.py:939",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:grammar_tree_traversal_time_avg",
@@ -2494,7 +2494,7 @@
    "site": "observability/metrics_collector.py:1009",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:grammar_tree_traversal_time_max",
@@ -2503,7 +2503,7 @@
    "site": "observability/metrics_collector.py:1015",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:graph_memory_usage_gb",
@@ -2512,7 +2512,7 @@
    "site": "observability/metrics_collector.py:1313",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:hicache_backup_bytes_total",
@@ -2521,7 +2521,7 @@
    "site": "observability/metrics_collector.py:2571",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:hicache_backup_dropped_tokens_total",
@@ -2530,7 +2530,7 @@
    "site": "observability/metrics_collector.py:2275",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:hicache_backup_duration_seconds",
@@ -2539,7 +2539,7 @@
    "site": "observability/metrics_collector.py:2561",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:hicache_backup_tokens_total",
@@ -2548,7 +2548,7 @@
    "site": "observability/metrics_collector.py:2595",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:hicache_dropped_tokens_total",
@@ -2557,7 +2557,7 @@
    "site": "observability/metrics_collector.py:2606",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:hicache_host_mamba_total_states",
@@ -2566,7 +2566,7 @@
    "site": "observability/metrics_collector.py:788",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:hicache_host_mamba_used_states",
@@ -2575,7 +2575,7 @@
    "site": "observability/metrics_collector.py:782",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:hicache_host_total_tokens",
@@ -2584,7 +2584,7 @@
    "site": "observability/metrics_collector.py:776",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:hicache_host_used_tokens",
@@ -2593,7 +2593,7 @@
    "site": "observability/metrics_collector.py:770",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:hicache_prefetch_aux_alloc_failed_tokens_total",
@@ -2602,7 +2602,7 @@
    "site": "observability/metrics_collector.py:2285",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:http_requests_active",
@@ -2611,7 +2611,7 @@
    "site": "observability/http_request_metrics.py:40",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:http_requests_total",
@@ -2620,7 +2620,7 @@
    "site": "observability/http_request_metrics.py:28",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:http_responses_total",
@@ -2629,7 +2629,7 @@
    "site": "observability/http_request_metrics.py:34",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:inter_token_latency_seconds",
@@ -2638,7 +2638,7 @@
    "site": "observability/metrics_collector.py:2050",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:is_cuda_graph",
@@ -2647,7 +2647,7 @@
    "site": "observability/metrics_collector.py:731",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:kv_available_tokens",
@@ -2656,7 +2656,7 @@
    "site": "observability/metrics_collector.py:438",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:kv_cache_memory_usage_gb",
@@ -2665,7 +2665,7 @@
    "site": "observability/metrics_collector.py:1307",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:kv_evictable_tokens",
@@ -2674,7 +2674,7 @@
    "site": "observability/metrics_collector.py:444",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:kv_transfer_alloc_ms",
@@ -2683,7 +2683,7 @@
    "site": "observability/metrics_collector.py:688",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:kv_transfer_bootstrap_ms",
@@ -2692,7 +2692,7 @@
    "site": "observability/metrics_collector.py:682",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:kv_transfer_latency_ms",
@@ -2701,7 +2701,7 @@
    "site": "observability/metrics_collector.py:643",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:kv_transfer_speed_gb_s",
@@ -2710,7 +2710,7 @@
    "site": "observability/metrics_collector.py:637",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:kv_transfer_total_mb",
@@ -2719,7 +2719,7 @@
    "site": "observability/metrics_collector.py:694",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:kv_used_tokens",
@@ -2728,7 +2728,7 @@
    "site": "observability/metrics_collector.py:450",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:load_back_bytes_total",
@@ -2737,7 +2737,7 @@
    "site": "observability/metrics_collector.py:2583",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:load_back_duration_seconds",
@@ -2746,7 +2746,7 @@
    "site": "observability/metrics_collector.py:2543",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:load_back_tokens_total",
@@ -2755,7 +2755,7 @@
    "site": "observability/metrics_collector.py:2552",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:lora_pool_slots_total",
@@ -2764,7 +2764,7 @@
    "site": "observability/metrics_collector.py:753",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:lora_pool_slots_used",
@@ -2773,7 +2773,7 @@
    "site": "observability/metrics_collector.py:747",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:lora_pool_utilization",
@@ -2782,7 +2782,7 @@
    "site": "observability/metrics_collector.py:759",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:mamba_available_tokens",
@@ -2791,7 +2791,7 @@
    "site": "observability/metrics_collector.py:474",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:mamba_evictable_tokens",
@@ -2800,7 +2800,7 @@
    "site": "observability/metrics_collector.py:480",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:mamba_usage",
@@ -2809,7 +2809,7 @@
    "site": "observability/metrics_collector.py:422",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:mamba_used_tokens",
@@ -2818,7 +2818,7 @@
    "site": "observability/metrics_collector.py:486",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:max_running_requests_under_SLO",
@@ -2827,7 +2827,7 @@
    "site": "observability/metrics_collector.py:1319",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:max_total_num_tokens",
@@ -2836,7 +2836,7 @@
    "site": "observability/metrics_collector.py:1289",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:max_total_num_tokens_swa",
@@ -2845,7 +2845,7 @@
    "site": "observability/metrics_collector.py:1295",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:new_token_ratio",
@@ -2854,7 +2854,7 @@
    "site": "observability/metrics_collector.py:720",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_aborted_requests_total",
@@ -2863,7 +2863,7 @@
    "site": "observability/metrics_collector.py:1959",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_bootstrap_failed_reqs_total",
@@ -2872,7 +2872,7 @@
    "site": "observability/metrics_collector.py:667",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_decode_deferred_kv_release_reqs",
@@ -2881,7 +2881,7 @@
    "site": "observability/metrics_collector.py:617",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_decode_host_receive_queue_reqs",
@@ -2890,7 +2890,7 @@
    "site": "observability/metrics_collector.py:606",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_decode_host_receive_reqs_total",
@@ -2899,7 +2899,7 @@
    "site": "observability/metrics_collector.py:612",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_decode_prealloc_queue_reqs",
@@ -2908,7 +2908,7 @@
    "site": "observability/metrics_collector.py:594",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_decode_transfer_queue_reqs",
@@ -2917,7 +2917,7 @@
    "site": "observability/metrics_collector.py:600",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_grammar_aborted_total",
@@ -2926,7 +2926,7 @@
    "site": "observability/metrics_collector.py:924",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_grammar_cache_hit_total",
@@ -2935,7 +2935,7 @@
    "site": "observability/metrics_collector.py:919",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_grammar_queue_reqs",
@@ -2944,7 +2944,7 @@
    "site": "observability/metrics_collector.py:376",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_grammar_timeout_total",
@@ -2953,7 +2953,7 @@
    "site": "observability/metrics_collector.py:929",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_grammar_total",
@@ -2962,7 +2962,7 @@
    "site": "observability/metrics_collector.py:934",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_pages",
@@ -2971,7 +2971,7 @@
    "site": "observability/metrics_collector.py:1331",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_paused_reqs",
@@ -2980,7 +2980,7 @@
    "site": "observability/metrics_collector.py:573",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_prefill_bootstrap_queue_reqs",
@@ -2989,7 +2989,7 @@
    "site": "observability/metrics_collector.py:582",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_prefill_inflight_queue_reqs",
@@ -2998,7 +2998,7 @@
    "site": "observability/metrics_collector.py:588",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_prefill_retries_total",
@@ -3007,7 +3007,7 @@
    "site": "observability/metrics_collector.py:677",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_queue_reqs",
@@ -3016,7 +3016,7 @@
    "site": "observability/metrics_collector.py:370",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_requests_total",
@@ -3025,7 +3025,7 @@
    "site": "observability/metrics_collector.py:1940",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_retracted_input_tokens_total",
@@ -3034,7 +3034,7 @@
    "site": "observability/metrics_collector.py:563",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_retracted_output_tokens_total",
@@ -3043,7 +3043,7 @@
    "site": "observability/metrics_collector.py:568",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_retracted_reqs",
@@ -3052,7 +3052,7 @@
    "site": "observability/metrics_collector.py:552",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_retracted_requests_total",
@@ -3061,7 +3061,7 @@
    "site": "observability/metrics_collector.py:557",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_running_reqs",
@@ -3070,7 +3070,7 @@
    "site": "observability/metrics_collector.py:364",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_so_requests_total",
@@ -3079,7 +3079,7 @@
    "site": "observability/metrics_collector.py:1953",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_streaming_sessions",
@@ -3088,7 +3088,7 @@
    "site": "observability/metrics_collector.py:799",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_transfer_failed_reqs_total",
@@ -3097,7 +3097,7 @@
    "site": "observability/metrics_collector.py:672",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_unique_running_routing_keys",
@@ -3106,7 +3106,7 @@
    "site": "observability/metrics_collector.py:815",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:num_used_tokens",
@@ -3115,7 +3115,7 @@
    "site": "observability/metrics_collector.py:432",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:page_size",
@@ -3124,7 +3124,7 @@
    "site": "observability/metrics_collector.py:1325",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:pending_prealloc_token_usage",
@@ -3133,7 +3133,7 @@
    "site": "observability/metrics_collector.py:649",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:per_stage_req_latency_seconds",
@@ -3142,7 +3142,7 @@
    "site": "observability/metrics_collector.py:884",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:prealloc_full_token_usage",
@@ -3151,7 +3151,7 @@
    "site": "observability/metrics_collector.py:655",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:prealloc_swa_token_usage",
@@ -3160,7 +3160,7 @@
    "site": "observability/metrics_collector.py:661",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:prefetch_bandwidth",
@@ -3169,7 +3169,7 @@
    "site": "observability/metrics_collector.py:2325",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:prefetch_pgs",
@@ -3178,7 +3178,7 @@
    "site": "observability/metrics_collector.py:2311",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:prefetched_tokens_total",
@@ -3187,7 +3187,7 @@
    "site": "observability/metrics_collector.py:2212",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:prefill_delayer_outcomes_total",
@@ -3196,7 +3196,7 @@
    "site": "observability/metrics_collector.py:1274",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:prefill_delayer_wait_forward_passes",
@@ -3205,7 +3205,7 @@
    "site": "observability/metrics_collector.py:1244",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:prefill_delayer_wait_seconds",
@@ -3214,7 +3214,7 @@
    "site": "observability/metrics_collector.py:1261",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:prefill_effective_tokens_total",
@@ -3223,7 +3223,7 @@
    "site": "observability/metrics_collector.py:1040",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:process_cpu_seconds_total",
@@ -3232,7 +3232,7 @@
    "site": "observability/cpu_monitor.py:10",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:prompt_tokens_histogram",
@@ -3241,7 +3241,7 @@
    "site": "observability/metrics_collector.py:1908",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:prompt_tokens_total",
@@ -3250,7 +3250,7 @@
    "site": "observability/metrics_collector.py:1855",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:queue_time_seconds",
@@ -3259,7 +3259,7 @@
    "site": "observability/metrics_collector.py:837",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:realtime_tokens_total",
@@ -3268,7 +3268,7 @@
    "site": "observability/metrics_collector.py:1032",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:request_time_per_output_token_seconds",
@@ -3277,7 +3277,7 @@
    "site": "observability/metrics_collector.py:2057",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:routing_key_all_req_count",
@@ -3286,7 +3286,7 @@
    "site": "observability/metrics_collector.py:827",
    "kind": "GaugeHistogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:routing_key_running_req_count",
@@ -3295,7 +3295,7 @@
    "site": "observability/metrics_collector.py:821",
    "kind": "GaugeHistogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:routing_keys_active",
@@ -3304,7 +3304,7 @@
    "site": "observability/http_request_metrics.py:48",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:scheduler_idle_seconds_total",
@@ -3313,7 +3313,7 @@
    "site": "observability/metrics_collector.py:1062",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:scheduler_process_cpu_seconds_total",
@@ -3322,7 +3322,7 @@
    "site": "observability/metrics_collector.py:1069",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:scheduler_stage_seconds_total",
@@ -3331,7 +3331,7 @@
    "site": "observability/metrics_collector.py:1076",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:spec_accept_length",
@@ -3340,7 +3340,7 @@
    "site": "observability/metrics_collector.py:511",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:spec_accept_rate",
@@ -3349,7 +3349,7 @@
    "site": "observability/metrics_collector.py:517",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:spec_block_accept_length",
@@ -3358,7 +3358,7 @@
    "site": "observability/metrics_collector.py:529",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:spec_cap_length",
@@ -3367,7 +3367,7 @@
    "site": "observability/metrics_collector.py:523",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:spec_num_draft_tokens",
@@ -3376,7 +3376,7 @@
    "site": "observability/metrics_collector.py:541",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:spec_num_steps",
@@ -3385,7 +3385,7 @@
    "site": "observability/metrics_collector.py:535",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:spec_verify_calls_total",
@@ -3394,7 +3394,7 @@
    "site": "observability/metrics_collector.py:1865",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:startup_available_gpu_memory_gb",
@@ -3403,7 +3403,7 @@
    "site": "observability/metrics_collector.py:1343",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:startup_cuda_graph_time_seconds",
@@ -3412,7 +3412,7 @@
    "site": "observability/metrics_collector.py:1848",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:startup_latency_breakdown_seconds_max",
@@ -3421,7 +3421,7 @@
    "site": "observability/startup_func_log_and_timer.py:27",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:startup_time_seconds",
@@ -3430,7 +3430,7 @@
    "site": "observability/metrics_collector.py:1842",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:storage_prefetch_deferred_tokens_total",
@@ -3439,7 +3439,7 @@
    "site": "observability/metrics_collector.py:2264",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:storage_prefetch_hit_tokens_total",
@@ -3448,7 +3448,7 @@
    "site": "observability/metrics_collector.py:2225",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:storage_prefetch_unfulfilled_tokens_total",
@@ -3457,7 +3457,7 @@
    "site": "observability/metrics_collector.py:2232",
    "kind": "Counter",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:streaming_session_held_tokens",
@@ -3466,7 +3466,7 @@
    "site": "observability/metrics_collector.py:805",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:swa_available_tokens",
@@ -3475,7 +3475,7 @@
    "site": "observability/metrics_collector.py:456",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:swa_evictable_tokens",
@@ -3484,7 +3484,7 @@
    "site": "observability/metrics_collector.py:462",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:swa_token_usage",
@@ -3493,7 +3493,7 @@
    "site": "observability/metrics_collector.py:416",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:swa_used_tokens",
@@ -3502,7 +3502,7 @@
    "site": "observability/metrics_collector.py:468",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:time_to_first_token_seconds",
@@ -3511,7 +3511,7 @@
    "site": "observability/metrics_collector.py:2040",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:token_usage",
@@ -3520,7 +3520,7 @@
    "site": "observability/metrics_collector.py:404",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:uncached_prompt_tokens_histogram",
@@ -3529,7 +3529,7 @@
    "site": "observability/metrics_collector.py:1916",
    "kind": "Histogram",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:utilization",
@@ -3538,7 +3538,7 @@
    "site": "observability/metrics_collector.py:704",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:weight_load_duration_seconds",
@@ -3547,7 +3547,7 @@
    "site": "observability/metrics_collector.py:496",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "metric_family:sglang:weight_memory_usage_gb",
@@ -3556,7 +3556,7 @@
    "site": "observability/metrics_collector.py:1301",
    "kind": "Gauge",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "framework:BasePrefixCache",
@@ -3564,7 +3564,7 @@
    "name": "BasePrefixCache",
    "site": "mem_cache/base_prefix_cache.py:390",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "framework:BaseTokenToKVPoolAllocator",
@@ -3572,7 +3572,7 @@
    "name": "BaseTokenToKVPoolAllocator",
    "site": "mem_cache/allocator/base.py:41",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "framework:KVCache",
@@ -3580,7 +3580,7 @@
    "name": "KVCache",
    "site": "mem_cache/memory_pool.py:2005",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "framework:ReqToTokenPool",
@@ -3588,7 +3588,7 @@
    "name": "ReqToTokenPool",
    "site": "mem_cache/memory_pool.py:376",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "framework:HiCacheController",
@@ -3596,7 +3596,7 @@
    "name": "HiCacheController",
    "site": "managers/cache_controller.py:295",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "framework:LayerDoneCounter",
@@ -3604,7 +3604,7 @@
    "name": "LayerDoneCounter",
    "site": "managers/cache_controller.py:83",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "framework:HybridCacheController",
@@ -3612,7 +3612,7 @@
    "name": "HybridCacheController",
    "site": "mem_cache/hybrid_cache/hybrid_cache_controller.py:206",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/74"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2360"
   },
   {
    "id": "framework:HostKVCache",
@@ -3620,7 +3620,7 @@
    "name": "HostKVCache",
    "site": "mem_cache/pool_host/base.py:162",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "framework:HiCacheStorage",
@@ -3628,7 +3628,7 @@
    "name": "HiCacheStorage",
    "site": "mem_cache/hicache_storage.py:293",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
   },
   {
    "id": "framework:L2TransferEngine",
@@ -3636,7 +3636,7 @@
    "name": "L2TransferEngine",
    "site": "mem_cache/l2_transfer.py:52",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/38"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
   },
   {
    "id": "framework:UnifiedCacheLinker",
@@ -3644,7 +3644,7 @@
    "name": "UnifiedCacheLinker",
    "site": "mem_cache/unified_cache/unified_cache_linker.py:133",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "framework:BaseKVManager",
@@ -3652,7 +3652,7 @@
    "name": "BaseKVManager",
    "site": "disaggregation/base/conn.py:131",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/64"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
   },
   {
    "id": "framework:BaseKVSender",
@@ -3660,7 +3660,7 @@
    "name": "BaseKVSender",
    "site": "disaggregation/base/conn.py:172",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/64"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
   },
   {
    "id": "framework:BaseKVReceiver",
@@ -3668,7 +3668,7 @@
    "name": "BaseKVReceiver",
    "site": "disaggregation/base/conn.py:247",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/64"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
   },
   {
    "id": "framework:BaseKVBootstrapServer",
@@ -3676,7 +3676,7 @@
    "name": "BaseKVBootstrapServer",
    "site": "disaggregation/base/conn.py:320",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/64"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
   },
   {
    "id": "extension_point:add_load_format_choices",
@@ -3685,7 +3685,7 @@
    "site": "arg_groups/choices.py:215",
    "extends": "LOAD_FORMAT_CHOICES",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:add_quantization_method_choices",
@@ -3694,7 +3694,7 @@
    "site": "arg_groups/choices.py:221",
    "extends": "QUANTIZATION_CHOICES",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:add_attention_backend_choices",
@@ -3703,7 +3703,7 @@
    "site": "arg_groups/choices.py:225",
    "extends": "ATTENTION_BACKEND_CHOICES",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:add_draft_attention_backend_choices",
@@ -3712,7 +3712,7 @@
    "site": "arg_groups/choices.py:227",
    "extends": "DRAFT_ATTENTION_BACKEND_CHOICES",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:add_chunked_prefix_cache_attention_backend",
@@ -3721,7 +3721,7 @@
    "site": "arg_groups/choices.py:241",
    "extends": "CHUNKED_PREFIX_CACHE_SUPPORTED_ATTENTION_BACKENDS",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:add_deterministic_attention_backend_choices",
@@ -3730,7 +3730,7 @@
    "site": "arg_groups/choices.py:245",
    "extends": "DETERMINISTIC_ATTENTION_BACKEND_CHOICES",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:add_radix_supported_deterministic_attention_backend_choices",
@@ -3739,7 +3739,7 @@
    "site": "arg_groups/choices.py:250",
    "extends": "RADIX_SUPPORTED_DETERMINISTIC_ATTENTION_BACKEND",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:add_disagg_transfer_backend_choices",
@@ -3748,7 +3748,7 @@
    "site": "arg_groups/choices.py:256",
    "extends": "DISAGG_TRANSFER_BACKEND_CHOICES",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:add_grammar_backend_choices",
@@ -3757,7 +3757,7 @@
    "site": "arg_groups/choices.py:260",
    "extends": "GRAMMAR_BACKEND_CHOICES",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:add_moe_runner_backend_choices",
@@ -3766,7 +3766,7 @@
    "site": "arg_groups/choices.py:265",
    "extends": "MOE_RUNNER_BACKEND_CHOICES",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:add_mxfp8_moe_runner_backend_choices",
@@ -3775,7 +3775,7 @@
    "site": "arg_groups/choices.py:267",
    "extends": "MXFP8_MOE_RUNNER_BACKEND_CHOICES",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:add_fp8_gemm_runner_backend_choices",
@@ -3784,7 +3784,7 @@
    "site": "arg_groups/choices.py:269",
    "extends": "FP8_GEMM_RUNNER_BACKEND_CHOICES",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:add_fp4_gemm_runner_backend_choices",
@@ -3793,7 +3793,7 @@
    "site": "arg_groups/choices.py:271",
    "extends": "FP4_GEMM_RUNNER_BACKEND_CHOICES",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:add_radix_eviction_policy_choices",
@@ -3802,7 +3802,7 @@
    "site": "arg_groups/choices.py:275",
    "extends": "RADIX_EVICTION_POLICY_CHOICES",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:add_rl_on_policy_target_choices",
@@ -3811,7 +3811,7 @@
    "site": "arg_groups/choices.py:279",
    "extends": "RL_ON_POLICY_TARGET_CHOICES",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:add_linear_attn_kernel_backend_choices",
@@ -3820,7 +3820,7 @@
    "site": "arg_groups/choices.py:283",
    "extends": "LINEAR_ATTN_KERNEL_BACKEND_CHOICES",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:register_radix_cache_backend",
@@ -3829,7 +3829,7 @@
    "site": "mem_cache/registry.py:58",
    "selected_by": "--radix-cache-backend",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:register_tree_core_backend",
@@ -3838,7 +3838,7 @@
    "site": "mem_cache/unified_cache/tree_core_registry.py:134",
    "selected_by": "SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:register_algorithm",
@@ -3847,7 +3847,7 @@
    "site": "speculative/spec_registry.py:234",
    "selected_by": "--speculative-algorithm (SpeculativeAlgorithm.register)",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:register_publisher",
@@ -3856,7 +3856,7 @@
    "site": "disaggregation/kv_events.py:748",
    "selected_by": "--kv-events-config publisher (EventPublisherFactory.register_publisher)",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:register_resolution_hook",
@@ -3865,7 +3865,7 @@
    "site": "arg_groups/resolution_hooks.py:108",
    "selected_by": "a resolution step of arg_groups/pipeline.py",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:SRTPlatform.get_graph_runner_cls",
@@ -3873,7 +3873,7 @@
    "name": "SRTPlatform.get_graph_runner_cls",
    "site": "platforms/interface.py:115",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:SRTPlatform.get_full_graph_backend_cls",
@@ -3881,7 +3881,7 @@
    "name": "SRTPlatform.get_full_graph_backend_cls",
    "site": "platforms/interface.py:126",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:SRTPlatform.get_kv_pool_cls",
@@ -3889,7 +3889,7 @@
    "name": "SRTPlatform.get_kv_pool_cls",
    "site": "platforms/interface.py:130",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:SRTPlatform.get_paged_allocator_cls",
@@ -3897,7 +3897,7 @@
    "name": "SRTPlatform.get_paged_allocator_cls",
    "site": "platforms/interface.py:164",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:SRTPlatform.get_piecewise_backend_cls",
@@ -3905,7 +3905,7 @@
    "name": "SRTPlatform.get_piecewise_backend_cls",
    "site": "platforms/interface.py:181",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:SRTPlatform.get_speculative_worker_cls",
@@ -3913,7 +3913,7 @@
    "name": "SRTPlatform.get_speculative_worker_cls",
    "site": "platforms/interface.py:192",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "extension_point:SRTPlatform.get_speculative_graph_runner_cls",
@@ -3921,7 +3921,7 @@
    "name": "SRTPlatform.get_speculative_graph_runner_cls",
    "site": "platforms/interface.py:202",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "server_args_group:device",
@@ -4121,7 +4121,7 @@
    "kind": "env",
    "default": 0.7,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "engine_setting:SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR",
@@ -4132,7 +4132,7 @@
    "kind": "env",
    "default": 0.14,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "engine_setting:SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS",
@@ -4143,7 +4143,7 @@
    "kind": "env",
    "default": 600,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "engine_setting:schedule_conservativeness",
@@ -4154,7 +4154,7 @@
    "kind": "arg",
    "default": 1.0,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "engine_setting:max_prefill_tokens",
@@ -4194,7 +4194,7 @@
    "kind": "env",
    "default": 20,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "engine_setting:SGLANG_CLIP_MAX_NEW_TOKENS_ESTIMATION",
@@ -4205,7 +4205,7 @@
    "kind": "env",
    "default": 4096,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "engine_setting:SGLANG_MAX_NEW_TOKENS_LIMIT",
@@ -4216,7 +4216,7 @@
    "kind": "env",
    "default": null,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "engine_setting:allow_auto_truncate",
@@ -4242,7 +4242,7 @@
    "kind": "arg",
    "default": null,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "engine_setting:max_running_requests",
@@ -4267,7 +4267,7 @@
    "kind": "arg",
    "default": null,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "engine_setting:disable_overlap_schedule",
@@ -4278,7 +4278,7 @@
    "kind": "arg",
    "default": false,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "engine_setting:SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP",
@@ -4289,7 +4289,7 @@
    "kind": "env",
    "default": false,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "engine_setting:page_size",
@@ -4300,7 +4300,7 @@
    "kind": "arg",
    "default": null,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "engine_setting:kv_events_config",
@@ -4311,7 +4311,7 @@
    "kind": "arg",
    "default": null,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "engine_setting:SGLANG_HICACHE_NIXL_BACKEND_PLUGIN",
@@ -4322,7 +4322,7 @@
    "kind": "getenv",
    "default": "auto",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/6"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2453"
   },
   {
    "id": "pd_allocation_policy:early",
@@ -4335,7 +4335,7 @@
     "disaggregation/decode.py:1871"
    ],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/64"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
   },
   {
    "id": "pd_allocation_policy:prefill_complete",
@@ -4356,7 +4356,7 @@
     "disaggregation/common/conn.py:418"
    ],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/64"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
   },
   {
    "id": "retraction_policy:length",
@@ -4392,10 +4392,10 @@
    "core": "rust",
    "against": "python",
    "difference": "the Rust core queues one BlockRemoved per namespace where the Python core merges them into one (events.py:140-170)",
-   "divergence_issue": "https://github.com/inference-sim/blis-sglang/issues/55",
+   "divergence_issue": "https://github.com/inference-sim/inference-sim/issues/2345",
    "recorded_in": "oracle/treecore-divergences.json",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/55"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2345"
   },
   {
    "id": "tree_core_divergence:namespaced-keys-dynamo",
@@ -4405,10 +4405,10 @@
    "core": "rust",
    "against": "python",
    "difference": "as namespaced-keys, in the dynamo event format",
-   "divergence_issue": "https://github.com/inference-sim/blis-sglang/issues/55",
+   "divergence_issue": "https://github.com/inference-sim/inference-sim/issues/2345",
    "recorded_in": "oracle/treecore-divergences.json",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/55"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2345"
   },
   {
    "id": "spec_running_requests:_handle_dflash",
@@ -4417,7 +4417,7 @@
    "site": "arg_groups/speculative_hook.py:439",
    "value": 48,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "spec_running_requests:_handle_dspark",
@@ -4426,7 +4426,7 @@
    "site": "arg_groups/speculative_hook.py:853",
    "value": 48,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "spec_running_requests:_handle_frozen_kv_mtp",
@@ -4435,7 +4435,7 @@
    "site": "arg_groups/speculative_hook.py:993",
    "value": 48,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "spec_running_requests:_handle_eagle_family",
@@ -4444,7 +4444,7 @@
    "site": "arg_groups/speculative_hook.py:1087",
    "value": 48,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/68"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2355"
   },
   {
    "id": "spec_running_requests:_handle_ngram",
@@ -4453,7 +4453,7 @@
    "site": "arg_groups/speculative_hook.py:1295",
    "value": 48,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "scheduler_loop:event_loop_pdmux",
@@ -4462,7 +4462,7 @@
    "site": "managers/scheduler.py:6225",
    "condition": "disaggregation_mode == DisaggregationMode.NULL and scheduler.enable_pdmux",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "scheduler_loop:event_loop_pp",
@@ -4471,7 +4471,7 @@
    "site": "managers/scheduler.py:6227",
    "condition": "disaggregation_mode == DisaggregationMode.NULL and not (scheduler.enable_pdmux) and get_parallel().pp_size > 1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "scheduler_loop:event_loop_overlap_mlx",
@@ -4480,7 +4480,7 @@
    "site": "managers/scheduler.py:6229",
    "condition": "disaggregation_mode == DisaggregationMode.NULL and not (scheduler.enable_pdmux) and not (get_parallel().pp_size > 1) and scheduler.enable_overlap_mlx",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/9"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "scheduler_loop:event_loop_overlap",
@@ -4489,7 +4489,7 @@
    "site": "managers/scheduler.py:6231",
    "condition": "disaggregation_mode == DisaggregationMode.NULL and not (scheduler.enable_pdmux) and not (get_parallel().pp_size > 1) and not (scheduler.enable_overlap_mlx) and scheduler.enable_overlap",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "scheduler_loop:event_loop_normal",
@@ -4498,7 +4498,7 @@
    "site": "managers/scheduler.py:6233",
    "condition": "disaggregation_mode == DisaggregationMode.NULL and not (scheduler.enable_pdmux) and not (get_parallel().pp_size > 1) and not (scheduler.enable_overlap_mlx) and not (scheduler.enable_overlap)",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "scheduler_loop:event_loop_pp_disagg_prefill",
@@ -4507,7 +4507,7 @@
    "site": "managers/scheduler.py:6236",
    "condition": "not (disaggregation_mode == DisaggregationMode.NULL) and disaggregation_mode == DisaggregationMode.PREFILL and get_parallel().pp_size > 1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/72"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2358"
   },
   {
    "id": "scheduler_loop:event_loop_overlap_disagg_prefill",
@@ -4516,7 +4516,7 @@
    "site": "managers/scheduler.py:6238",
    "condition": "not (disaggregation_mode == DisaggregationMode.NULL) and disaggregation_mode == DisaggregationMode.PREFILL and not (get_parallel().pp_size > 1) and scheduler.enable_overlap",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/64"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
   },
   {
    "id": "scheduler_loop:event_loop_normal_disagg_prefill",
@@ -4525,7 +4525,7 @@
    "site": "managers/scheduler.py:6240",
    "condition": "not (disaggregation_mode == DisaggregationMode.NULL) and disaggregation_mode == DisaggregationMode.PREFILL and not (get_parallel().pp_size > 1) and not (scheduler.enable_overlap)",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/64"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
   },
   {
    "id": "scheduler_loop:event_loop_pp_disagg_decode",
@@ -4534,7 +4534,7 @@
    "site": "managers/scheduler.py:6243",
    "condition": "not (disaggregation_mode == DisaggregationMode.NULL) and not (disaggregation_mode == DisaggregationMode.PREFILL) and disaggregation_mode == DisaggregationMode.DECODE and get_parallel().pp_size > 1",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/72"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2358"
   },
   {
    "id": "scheduler_loop:event_loop_overlap_disagg_decode",
@@ -4543,7 +4543,7 @@
    "site": "managers/scheduler.py:6245",
    "condition": "not (disaggregation_mode == DisaggregationMode.NULL) and not (disaggregation_mode == DisaggregationMode.PREFILL) and disaggregation_mode == DisaggregationMode.DECODE and not (get_parallel().pp_size > 1) and scheduler.enable_overlap",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/65"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2352"
   },
   {
    "id": "scheduler_loop:event_loop_normal_disagg_decode",
@@ -4552,7 +4552,7 @@
    "site": "managers/scheduler.py:6247",
    "condition": "not (disaggregation_mode == DisaggregationMode.NULL) and not (disaggregation_mode == DisaggregationMode.PREFILL) and disaggregation_mode == DisaggregationMode.DECODE and not (get_parallel().pp_size > 1) and not (scheduler.enable_overlap)",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/65"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2352"
   },
   {
    "id": "overlap_switch:enable_overlap",
@@ -4561,7 +4561,7 @@
    "site": "managers/scheduler.py:500",
    "condition": "not get_schedule().disable_overlap_schedule and (not use_mlx())",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "overlap_switch:enable_overlap_mlx",
@@ -4570,7 +4570,7 @@
    "site": "managers/scheduler.py:503",
    "condition": "not get_schedule().disable_overlap_schedule and use_mlx()",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "overlap_depth:result_queue",
@@ -4580,7 +4580,7 @@
    "queue_appends": 1,
    "drain_sites": 2,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "overlap_disabler:disable_overlap_for_batch",
@@ -4589,7 +4589,7 @@
    "site": "managers/scheduler.py:2152",
    "condition": "envs.SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP.get() and batch_is_extend and last_batch_is_extend",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "overlap_disabler:need_grammar_sync",
@@ -4598,7 +4598,7 @@
    "site": "managers/scheduler.py:2160",
    "condition": "batch and (not batch.spec_algorithm.is_none()) and batch.grammar_needs_sync() and batch.forward_mode.is_decode() and (len(self.result_queue) > 0)",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "memory_budget:slack_gb",
@@ -4614,7 +4614,7 @@
     3027
    ],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "memory_budget:mm_reservation_gb",
@@ -4628,7 +4628,7 @@
     3034
    ],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "memory_budget:rest_memory",
@@ -4644,7 +4644,7 @@
     3040
    ],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "memory_budget:returned",
@@ -4655,7 +4655,7 @@
     "int(rest_memory * (1 << 30))"
    ],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/3"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   {
    "id": "nixl_plugin:3FS",
@@ -4665,7 +4665,7 @@
    "kind": "file",
    "auto_rank": 0,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
   },
   {
    "id": "nixl_plugin:POSIX",
@@ -4675,7 +4675,7 @@
    "kind": "file",
    "auto_rank": 1,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
   },
   {
    "id": "nixl_plugin:GDS_MT",
@@ -4685,7 +4685,7 @@
    "kind": "file",
    "auto_rank": 2,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
   },
   {
    "id": "nixl_plugin:GDS",
@@ -4695,7 +4695,7 @@
    "kind": "file",
    "auto_rank": 3,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
   },
   {
    "id": "nixl_plugin:OBJ",
@@ -4705,7 +4705,7 @@
    "kind": "object",
    "auto_rank": 0,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/40"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
   },
   {
    "id": "kv_event_hash:get_hash_str",
@@ -4714,7 +4714,7 @@
    "site": "mem_cache/utils.py:116",
    "seed_tags": [],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_hash:storage_namespace_seed",
@@ -4725,7 +4725,7 @@
     "sglang-cache-namespace-v1"
    ],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_hash:get_storage_hash_str",
@@ -4734,7 +4734,7 @@
    "site": "mem_cache/utils.py:142",
    "seed_tags": [],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_hash:hash_str_to_int64",
@@ -4743,7 +4743,7 @@
    "site": "mem_cache/utils.py:155",
    "seed_tags": [],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_hash:compute_node_hash_values",
@@ -4752,7 +4752,7 @@
    "site": "mem_cache/utils.py:166",
    "seed_tags": [],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_hash:compute_node_event_hash_values",
@@ -4763,7 +4763,7 @@
     "sglang-cache-salt-v1\u0000"
    ],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_hash:kv_event_namespace_seed",
@@ -4772,7 +4772,7 @@
    "site": "disaggregation/kv_events.py:312",
    "seed_tags": [],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_hash:namespaced_block_hash",
@@ -4781,7 +4781,7 @@
    "site": "disaggregation/kv_events.py:329",
    "seed_tags": [],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_hash:_NAMESPACE_SEED_TAG",
@@ -4792,7 +4792,7 @@
     "sglang-kv-event-namespace-v1"
    ],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_granularity:page_size",
@@ -4809,7 +4809,7 @@
     "mem_cache/events.py:290"
    ],
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_merge:BlockRemoved",
@@ -4818,7 +4818,7 @@
    "site": "mem_cache/events.py:150",
    "when": "tail.medium == event.medium",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_merge:BlockStored",
@@ -4827,7 +4827,7 @@
    "site": "mem_cache/events.py:155",
    "when": "tail.medium == event.medium and tail.lora_id == event.lora_id and (tail.block_size == event.block_size) and (tail.cache_salt == event.cache_salt) and (tail.session_id == event.session_id) and (tail.lora_name == event.lora_name) and tail.block_hashes and (event.parent_block_hash == tail.block_hashes[-1])",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_format:default",
@@ -4836,7 +4836,7 @@
    "site": "disaggregation/kv_events.py:723",
    "default": true,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "kv_event_format:dynamo",
@@ -4845,7 +4845,7 @@
    "site": "disaggregation/kv_events.py:723",
    "default": false,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/4"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
   {
    "id": "drafter_arch:DeepseekV3ForCausalLMNextN",
@@ -4859,7 +4859,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:GlmMoeDsaForCausalLMNextN",
@@ -4872,7 +4872,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:DeepseekV4ForCausalLMDSpark",
@@ -4885,7 +4885,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:DeepseekV4ForCausalLMNextN",
@@ -4898,7 +4898,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:Glm4MoeForCausalLMNextN",
@@ -4911,7 +4911,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:Glm4MoeLiteForCausalLMNextN",
@@ -4924,7 +4924,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:Glm5NextForConditionalGenerationNextN",
@@ -4937,7 +4937,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:GlmOcrForConditionalGenerationNextN",
@@ -4950,7 +4950,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:LongcatFlashForCausalLMNextN",
@@ -4963,7 +4963,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:MiMoMTP",
@@ -4976,7 +4976,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:MiMoV2MTP",
@@ -4989,7 +4989,7 @@
    ],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:Step3p5MTP",
@@ -5002,7 +5002,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:InklingForConditionalGenerationMTP",
@@ -5015,7 +5015,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:GigaChat35ForCausalLMNextN",
@@ -5028,7 +5028,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:BailingMoeForCausalLMNextN",
@@ -5044,7 +5044,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:Ernie4_5_MoeForCausalLMMTP",
@@ -5057,7 +5057,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:Qwen3NextForCausalLMMTP",
@@ -5070,7 +5070,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:Qwen4ExpForCausalLMMTP",
@@ -5083,7 +5083,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:Qwen3MoeForCausalLMMTP",
@@ -5096,7 +5096,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:Qwen3_5ForCausalLMMTP",
@@ -5114,7 +5114,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:ExaoneMoEForCausalLMMTP",
@@ -5128,7 +5128,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:NemotronHForCausalLMMTP",
@@ -5142,7 +5142,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:HYV3ForCausalLMNextN",
@@ -5155,7 +5155,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   },
   {
    "id": "drafter_arch:HYV4ForCausalLMNextN",
@@ -5168,7 +5168,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/8"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
   }
  ]
 }

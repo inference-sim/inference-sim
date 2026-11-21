@@ -383,7 +383,7 @@ coefficients:
         WHAT IT IS NOT. It is the combined cost of a launch and of everything per step that
         scales with the planned launch count; the count and the constant are not separable on
         these data (the planned count is a lower bound of the real one, and the engine-side
-        count of fused kernels is open in blis-vllm#161, #191 and PR #192). It does not carry
+        count of fused kernels is open in inference-sim/inference-sim#2435, #2438 and PR inference-sim/blis-vllm#192). It does not carry
         a model's scale error: the per-model best values on the same units differ by more than a
         factor of two, so the pooled value moves some models toward their measurement and
         others away; the pre-registration (accuracy/preregistrations.md K1) reports each.
@@ -416,7 +416,7 @@ coefficients:
         WHAT IT IS NOT. It is the combined cost of a launch and of everything per step that
         scales with the planned launch count; the count and the constant are not separable on
         these data (the planned count is a lower bound of the real one, and the engine-side
-        count of fused kernels is open in blis-vllm#161, #191 and PR #192). It does not carry
+        count of fused kernels is open in inference-sim/inference-sim#2435, #2438 and PR inference-sim/blis-vllm#192). It does not carry
         a model's scale error: the per-model best values on the same units differ by more than a
         factor of two, so the pooled value moves some models toward their measurement and
         others away; the pre-registration (accuracy/preregistrations.md K1) reports each.

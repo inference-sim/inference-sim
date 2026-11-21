@@ -341,9 +341,9 @@ type Transfer struct {
 	// Move is the transfer as the cost model prices it. It is required: a transfer whose Move
 	// is the zero value is refused by Validate. Two limits are deferred to M3. For a pool that
 	// spans nodes Move names one node, the one that holds the tier, because plan.Transfer has
-	// one From and one To (inference-sim/blis-substrate#48). Move has one token count, so the
+	// one From and one To (inference-sim/inference-sim#2369). Move has one token count, so the
 	// per-KV-group sizes of a hybrid model are lost at the boundary and an engine that prices
-	// them itself cannot pass them on (inference-sim/blis-substrate#49).
+	// them itself cannot pass them on (inference-sim/inference-sim#2370).
 	Move plan.Transfer
 }
 

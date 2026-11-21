@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Speculative decoding at top-k 1 (S30, inference-sim/blis-sglang#68). The scenario states how many
+// Speculative decoding at top-k 1 (S30, inference-sim/inference-sim#2355). The scenario states how many
 // of a pass's drafts the verify accepts; the scheduler decides what that does to the request's
 // output, its committed KV and the KV the next pass reserves.
 
@@ -327,8 +327,8 @@ func TestUnmodelledSpeculationIsRefusedByName(t *testing.T) {
 			cfg := specConfig(t, 1)
 			tc.edit(&cfg)
 			_, err := build(cfg, 13)
-			if err == nil || !strings.Contains(err.Error(), "blis-sglang#68") {
-				t.Fatalf("got %v, want a refusal citing blis-sglang#68", err)
+			if err == nil || !strings.Contains(err.Error(), "inference-sim/inference-sim#2355") {
+				t.Fatalf("got %v, want a refusal citing inference-sim/inference-sim#2355", err)
 			}
 		})
 	}

@@ -618,7 +618,7 @@ func TestAP2PTierItCannotRunIsRefused(t *testing.T) {
 		"unknown key":       {tier(", root_dir: /kv"), `"root_dir"`},
 		"locality":          {tier(", locality: local"), `"locality"`},
 		"non-UCX backend":   {tier(", backends: [UCX, GDS]"), "GDS"},
-		"backpressure":      {tier(", backpressure: {backpressure_cls: EMABackpressureDetector}"), "issues/13"},
+		"backpressure":      {tier(", backpressure: {backpressure_cls: EMABackpressureDetector}"), "issues/2484"},
 		"port zero":         {tier(", port: 0"), "port"},
 		"port too large":    {tier(", port: 70000"), "port"},
 		"port not a number": {tier(", port: http"), "port"},
@@ -630,7 +630,7 @@ func TestAP2PTierItCannotRunIsRefused(t *testing.T) {
 		"two p2p tiers": {"kv_offload: {connector: OffloadingConnector, spec: TieringOffloadingSpec, cpu_bytes: 819200, " +
 			"bytes_per_block: 4096, secondary_tiers: [{type: p2p}, {type: p2p, port: 5711}]}\n", "one p2p tier"},
 		"top-level backpressure": {"kv_offload: {connector: OffloadingConnector, spec: TieringOffloadingSpec, cpu_bytes: 819200, " +
-			"bytes_per_block: 4096, backpressure: {backpressure_cls: EMABackpressureDetector}, secondary_tiers: [{type: p2p}]}\n", "issues/13"},
+			"bytes_per_block: 4096, backpressure: {backpressure_cls: EMABackpressureDetector}, secondary_tiers: [{type: p2p}]}\n", "issues/2484"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := build(t, c.extra)()

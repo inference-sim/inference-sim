@@ -11,7 +11,7 @@ import (
 // The input space Resolve models: the inputs the oracle's cases cover (oracle/serverargs/cases.json).
 // Every other input is refused by name with the open issue that models it, so Resolve never
 // resolves a configuration by a guess (X1, X28).
-const issueRest = "inference-sim/blis-sglang#49"
+const issueRest = "inference-sim/inference-sim#2344"
 
 // acceptedFields are the ServerArgs fields a user may set away from their defaults. A field
 // with a value list accepts only those values; nil accepts any value of the field's type.
@@ -90,39 +90,39 @@ var acceptedFields = map[string][]any{
 // general one. A family is the settings of one feature the engine does not model: the issue that
 // models the feature is the one a user waits on.
 var refusedFieldIssue = func() map[string]string {
-	const repo = "inference-sim/blis-sglang#"
+	const repo = "inference-sim/inference-sim#"
 	m := map[string]string{}
 	put := func(issue string, names ...string) {
 		for _, n := range names {
 			m[n] = repo + issue
 		}
 	}
-	put("26", "attn_cp_size", "dcp_size", "enable_prefill_cp", "cp_strategy", "dcp_comm_backend")
-	put("64", "disaggregation_mode", "disaggregation_bootstrap_port", "disaggregation_decode_allocation_policy",
+	put("2448", "attn_cp_size", "dcp_size", "enable_prefill_cp", "cp_strategy", "dcp_comm_backend")
+	put("2351", "disaggregation_mode", "disaggregation_bootstrap_port", "disaggregation_decode_allocation_policy",
 		"disaggregation_decode_extra_slots", "disaggregation_decode_polling_interval", "disaggregation_enable_kv_checksum")
-	put("65", "disaggregation_decode_enable_offload_kvcache", "disaggregation_decode_enable_radix_cache",
+	put("2352", "disaggregation_decode_enable_offload_kvcache", "disaggregation_decode_enable_radix_cache",
 		"disaggregation_decode_host_receive_threshold", "disaggregation_decode_retraction_backup")
-	put("66", "disaggregation_ib_device", "disaggregation_transfer_backend")
-	put("38", "enable_hierarchical_cache", "hicache_ratio", "hicache_host_memory_fraction", "hicache_host_memory_mode", "hicache_io_backend",
+	put("2353", "disaggregation_ib_device", "disaggregation_transfer_backend")
+	put("2341", "enable_hierarchical_cache", "hicache_ratio", "hicache_host_memory_fraction", "hicache_host_memory_mode", "hicache_io_backend",
 		"hicache_mem_layout", "hicache_size", "hicache_write_policy")
-	put("40", "hicache_storage_backend", "hicache_storage_prefetch_policy", "hicache_storage_prefetch_retry_max_attempts",
+	put("2342", "hicache_storage_backend", "hicache_storage_prefetch_policy", "hicache_storage_prefetch_retry_max_attempts",
 		"hicache_storage_prefetch_retry_poll_interval", "file_storage_path")
-	put("87", "hicache_storage_backend_extra_config")
-	put("70", "enable_dp_attention", "load_balance_method", "attn_dp_size", "moe_dp_size", "enable_dp_lm_head", "enable_dp_attention_local_control_broadcast")
-	put("71", "deepep_config", "deepep_dispatcher_output_dtype", "deepep_mode", "deepep_v2_mode", "fuseep_mode",
+	put("2459", "hicache_storage_backend_extra_config")
+	put("2356", "enable_dp_attention", "load_balance_method", "attn_dp_size", "moe_dp_size", "enable_dp_lm_head", "enable_dp_attention_local_control_broadcast")
+	put("2357", "deepep_config", "deepep_dispatcher_output_dtype", "deepep_mode", "deepep_v2_mode", "fuseep_mode",
 		"enable_eplb", "eplb_algorithm", "eplb_min_rebalancing_utilization_threshold", "eplb_rebalance_layers_per_chunk",
 		"eplb_rebalance_num_iterations", "ep_dispatch_algorithm", "ep_num_redundant_experts", "init_expert_location",
 		"enable_two_batch_overlap", "tbo_token_distribution_threshold", "expert_distribution_recorder_buffer_size",
 		"expert_distribution_recorder_mode", "expert_balancedness_report_mode", "moe_a2a_backend")
-	put("72", "pp_size", "pp_max_micro_batch_size", "pp_async_batch_depth")
-	put("73", "swa_full_tokens_ratio", "disable_hybrid_swa_memory", "swa_prefix_tails")
-	put("94", "mamba_backend", "mamba_full_memory_ratio", "mamba_max_states_per_path", "mamba_track_interval", "max_mamba_cache_size")
+	put("2358", "pp_size", "pp_max_micro_batch_size", "pp_async_batch_depth")
+	put("2359", "swa_full_tokens_ratio", "disable_hybrid_swa_memory", "swa_prefix_tails")
+	put("2366", "mamba_backend", "mamba_full_memory_ratio", "mamba_max_states_per_path", "mamba_track_interval", "max_mamba_cache_size")
 	for _, n := range FieldNames() {
 		switch {
 		case strings.HasPrefix(n, "speculative_dspark_"):
-			put("69", n)
+			put("2454", n)
 		case strings.HasPrefix(n, "speculative_"):
-			put("68", n)
+			put("2355", n)
 		}
 	}
 	return m
@@ -131,16 +131,16 @@ var refusedFieldIssue = func() map[string]string {
 // refusedValueIssue names, for a field Resolve models at some values only, the open issue that
 // models one value it refuses; a value absent here takes the field's issue.
 var refusedValueIssue = map[string]map[string]string{
-	"moe_a2a_backend": {"mooncake": "inference-sim/blis-sglang#30"},
+	"moe_a2a_backend": {"mooncake": "inference-sim/inference-sim#2450"},
 	"hicache_storage_backend": {
-		"mooncake": "inference-sim/blis-sglang#14", "aibrix": "inference-sim/blis-sglang#16", "eic": "inference-sim/blis-sglang#16",
-		"simm": "inference-sim/blis-sglang#16", "mori": "inference-sim/blis-sglang#16", "tensorcast": "inference-sim/blis-sglang#16",
+		"mooncake": "inference-sim/inference-sim#2443", "aibrix": "inference-sim/inference-sim#2445", "eic": "inference-sim/inference-sim#2445",
+		"simm": "inference-sim/inference-sim#2445", "mori": "inference-sim/inference-sim#2445", "tensorcast": "inference-sim/inference-sim#2445",
 	},
-	"speculative_algorithm": {"DSPARK": "inference-sim/blis-sglang#69"},
+	"speculative_algorithm": {"DSPARK": "inference-sim/inference-sim#2454"},
 	"disaggregation_transfer_backend": {
-		"mooncake": "inference-sim/blis-sglang#18", "mooncake_tcp": "inference-sim/blis-sglang#18",
+		"mooncake": "inference-sim/inference-sim#2446", "mooncake_tcp": "inference-sim/inference-sim#2446",
 		// The fake backend completes a transfer at the step a scenario names; the P/D queues that use it are S25.
-		"fake": "inference-sim/blis-sglang#64",
+		"fake": "inference-sim/inference-sim#2351",
 	},
 }
 

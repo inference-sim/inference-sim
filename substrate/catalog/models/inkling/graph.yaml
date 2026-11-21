@@ -191,10 +191,10 @@ encoder:
   omitted:
   - modality: image
     reason: the hmlp tower's layer widths come from a planner that has been read, not run
-    issue: inference-sim/blis-substrate#278
+    issue: inference-sim/inference-sim#2476
   - modality: audio
     reason: a discrete-mel embedding sum, which is not priced
-    issue: inference-sim/blis-substrate#275
+    issue: inference-sim/inference-sim#2474
 head:
 - op: Elementwise
   role: final_norm

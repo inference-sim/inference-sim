@@ -14,7 +14,7 @@ import (
 )
 
 // BlockSizeIssue is the open issue an unresolved block_size cites (design X28).
-const BlockSizeIssue = "https://github.com/inference-sim/blis-vllm/issues/68"
+const BlockSizeIssue = "https://github.com/inference-sim/inference-sim/issues/2425"
 
 // MaxBlockSizeTP is the widest tensor-parallel width the block-size oracle ran (its TP_WIDTHS are
 // every width from 1 to 16). The per-rank head counts it feeds vLLM's selection shrink with the width, and
@@ -230,7 +230,7 @@ func selectorEnv(name string) bool {
 // ResolveBlockSize returns the block size the pinned vLLM (upstream.Commit) resolves an unstated
 // block_size to. It does so for the models, GPUs and KV dtypes the block-size oracle
 // (oracle/blocksize) resolves, at a tensor-parallel width up to MaxBlockSizeTP. Otherwise it
-// returns an error naming why, and https://github.com/inference-sim/blis-vllm/issues/68.
+// returns an error naming why, and https://github.com/inference-sim/inference-sim/issues/2425.
 //
 // vLLM picks the size in Platform.update_block_size_for_backend
 // (vllm/platforms/interface.py:796-810@0fda86a3). When the user did not state block_size, it calls

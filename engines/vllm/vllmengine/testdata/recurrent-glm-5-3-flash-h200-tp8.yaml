@@ -1,5 +1,5 @@
 # glm-5.3-flash on one H200 node at tp 8: sparse-MLA attention beside KDA layers, whose three caches (the indexer key cache,
-# the kpool tail ring and the main latent) were refused as "not mapped" (blis-vllm#308).
+# the kpool tail ring and the main latent) were refused as "not mapped" (inference-sim/inference-sim#2489).
 kind: Scenario
 name: recurrent-glm-5-3-flash-h200-tp8
 engine: {kind: vllm}

@@ -112,9 +112,9 @@ func TestTheFactoryRefusesAnotherReleaseAndWhatTheEngineDoesNotModel(t *testing.
 		t.Errorf("got %v, want a refusal naming the release", err)
 	}
 	for block, issue := range map[string]string{
-		"model_path: m\ntp_size: 8\ndp_size: 8\nenable_dp_attention: true\n": "#70",
-		"model_path: m\nenable_hierarchical_cache: true\n":                   "#38",
-		"model_path: m\nscheduler_recv_interval: 10\n":                       "#49",
+		"model_path: m\ntp_size: 8\ndp_size: 8\nenable_dp_attention: true\n": "#2356",
+		"model_path: m\nenable_hierarchical_cache: true\n":                   "#2341",
+		"model_path: m\nscheduler_recv_interval: 10\n":                       "#2344",
 	} {
 		_, err := FactoryFor(h).New(specOf(t, block))
 		if err == nil || !strings.Contains(err.Error(), issue) {
@@ -226,12 +226,12 @@ func TestEachUnmodelledSettingIsRefusedOnItsOwn(t *testing.T) {
 		set   func(*config.ServerArgs)
 		issue string
 	}{
-		{"tree drafting and verification", func(a *config.ServerArgs) { a.SpeculativeAlgorithm = &spec; a.SpeculativeEagleTopk = &topk }, "#68"},
-		{"DP attention", func(a *config.ServerArgs) { a.EnableDpAttention = true }, "#70"},
-		{"a data-parallel size above one", func(a *config.ServerArgs) { a.DpSize = 2 }, "#70"},
-		{"pipeline parallelism", func(a *config.ServerArgs) { a.PpSize = 2 }, "#72"},
-		{"P/D disaggregation", func(a *config.ServerArgs) { a.DisaggregationMode = "prefill" }, "#64"},
-		{"HiCache", func(a *config.ServerArgs) { a.EnableHierarchicalCache = true }, "#38"},
+		{"tree drafting and verification", func(a *config.ServerArgs) { a.SpeculativeAlgorithm = &spec; a.SpeculativeEagleTopk = &topk }, "#2355"},
+		{"DP attention", func(a *config.ServerArgs) { a.EnableDpAttention = true }, "#2356"},
+		{"a data-parallel size above one", func(a *config.ServerArgs) { a.DpSize = 2 }, "#2356"},
+		{"pipeline parallelism", func(a *config.ServerArgs) { a.PpSize = 2 }, "#2358"},
+		{"P/D disaggregation", func(a *config.ServerArgs) { a.DisaggregationMode = "prefill" }, "#2351"},
+		{"HiCache", func(a *config.ServerArgs) { a.EnableHierarchicalCache = true }, "#2341"},
 	} {
 		a := config.Defaults()
 		tc.set(&a)
@@ -281,7 +281,7 @@ func TestTheEngineReadsItsEnvironmentFromTheEnvMap(t *testing.T) {
 	}
 }
 
-// A verify pass carries num_draft_tokens per request (S30, blis-sglang#68). It is a decode: the kernel
+// A verify pass carries num_draft_tokens per request (S30, inference-sim/inference-sim#2355). It is a decode: the kernel
 // must price it through its decode path and pad it to a capture bucket, counted in tokens, whose
 // batch size the runner captured at that width. A prefill chunk is not one, and neither is a pass whose
 // request carries the width as a chunk of prompt.

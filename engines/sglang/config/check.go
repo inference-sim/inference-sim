@@ -7,7 +7,7 @@ package config
 // CheckServerArgs is the part of check_server_args (validation_hook.py:172+) that reads the
 // scheduler's priority settings. SGLang runs it after resolution (engine.py:1165, server_args.py:508),
 // not inside resolve_once, so Resolve does not call it; the engine does, on the resolved arguments.
-// The other checks of that function are not yet ported (inference-sim/blis-sglang#49).
+// The other checks of that function are not yet ported (inference-sim/inference-sim#2344).
 func CheckServerArgs(a *ServerArgs) error {
 	const site = "sglang/srt/arg_groups/validation_hook.py:check_server_args"
 	if a.EnablePriorityScheduling {

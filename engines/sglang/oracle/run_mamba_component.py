@@ -1,6 +1,6 @@
 # Original to blis-sglang.
 """Direct traces at SGLang's MambaComponent request-side lifecycle (design FID-5, §7.6;
-inference-sim/blis-sglang#94, #128 piece A1).
+inference-sim/inference-sim#2366, #2442 piece A1).
 
 A sequence (oracle/scenarios-mamba-component/*.json) builds SGLang's own HybridReqToTokenPool as
 oracle/run_mamba_pools.py does, and a MambaComponent without its tree: the component object is

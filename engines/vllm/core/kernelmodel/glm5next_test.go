@@ -65,7 +65,7 @@ pools:
 // kpool tail ring, a CircularBufferSpec of two bf16 head slots of the indexer's key width
 // (Glm5NextTailCache, :142-200); and the main MLA latent, one state a token
 // (MLAAttentionSpec, mla_attention.py:1637-1672). It was refused as "sparse_mla attention beside
-// recurrent layers is not mapped" (blis-vllm#308). Laws, over the chips and the cache dtypes:
+// recurrent layers is not mapped" (inference-sim/inference-sim#2489). Laws, over the chips and the cache dtypes:
 // the model opens; per sparse-MLA layer of the graph there is one run of each of the three
 // caches (per stack position, the drafter's marked as the drafter's); every cache states its
 // element size, the main latent's following the cache dtype that runs (SM10x resolves an unstated

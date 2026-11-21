@@ -100,7 +100,7 @@ func TestMemoryUtilizationIsClassedModelledWithItsEvidence(t *testing.T) {
 
 // A stated moe_backend is not refused where the engine can price it: the field list covers, with a
 // named execution-mode substitution, the backends a recorded run states on the parts it states
-// them on (blis-substrate#150). On an SM90 part Triton and FlashInfer CUTLASS are the backends the
+// them on (inference-sim/inference-sim#2394). On an SM90 part Triton and FlashInfer CUTLASS are the backends the
 // engine's own expert-kernel selection orders for block-FP8 experts; CuteDSL is a Blackwell
 // backend. A backend or part no clause covers stays unapproximated, so the point is refused by name.
 func TestAStatedMoEBackendIsApproximatedWhereTheEnginePricesIt(t *testing.T) {

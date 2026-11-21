@@ -28,7 +28,7 @@ const glm5NextIndexerQuantBlock = 128
 // at :308-316) and the main latent (MLAAttentionSpec, mla_attention.py:1636-1672). Nothing for the
 // indexer's scorer node, which registers its caches with its main node. The drafter's layer has the
 // same caches, marked as the drafter's. Every cache states its element size, the main latent's the
-// cache dtype's, so no page is taken from the memory model's remainder (blis-vllm#308).
+// cache dtype's, so no page is taken from the memory model's remainder (inference-sim/inference-sim#2489).
 func glm5NextLayerRuns(g *model.Graph, id string, lk model.LayerKind, n model.Node, e engineconfig.Engine, draft bool) ([]KVLayerRun, error) {
 	if !n.ReadsEngineKV() {
 		return nil, nil

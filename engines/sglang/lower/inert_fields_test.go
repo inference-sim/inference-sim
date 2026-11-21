@@ -15,7 +15,7 @@ import (
 )
 
 // A field the list calls inert is one the inertness proof states: no field is classed inert
-// without a run that set it (blis-sglang#63, X1, SGL-3). Every inert ServerArgs field is probed at two or more values
+// without a run that set it (inference-sim/inference-sim#2350, X1, SGL-3). Every inert ServerArgs field is probed at two or more values
 // by TestInertFieldsChangeNoDecision, no field is probed that the list does not class inert, the
 // values a proven field's proof file lists are the values the test states, and an inert
 // environment variable names the engine test that reads it.

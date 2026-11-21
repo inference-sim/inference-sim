@@ -4,7 +4,7 @@
     python scripts/fit_hopper_fp8_grouped_ramp.py            # print the fits, rewrite the file
     python scripts/fit_hopper_fp8_grouped_ramp.py --check    # exit 1 if the file would change
 
-WHY THIS FAMILY EXISTS (inference-sim/blis-substrate#150). Block-FP8 routed experts on SM90
+WHY THIS FAMILY EXISTS (inference-sim/inference-sim#2394). Block-FP8 routed experts on SM90
 run the grouped kernel the engine's MoE backend selects. vLLM v0.33.0 picks Triton's fused
 experts (TritonExperts) at expert-parallel width 1 and FlashInfer's CUTLASS experts
 (FlashInferExperts) above it, unless moe_backend says otherwise

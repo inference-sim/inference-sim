@@ -21,7 +21,7 @@ A path not covered must be listed in `held` in oracle/value_coverage.json, with 
   SGL-1 requires), so no scenario can move it;
 - `no_neutral`: its neutral value cannot occur (a forward pass has at least one request);
 - `gap`: a scenario could move it and none does yet. The reason cites the open issue that adds the
-  scenario (`inference-sim/blis-sglang#N` or `#N`, X28).
+  scenario (`inference-sim/inference-sim#N` or `#N`, X28).
 
 A held key ending in `**` holds a whole subtree: the path before it and every path under it. It is for
 a record whose fields mean different things by call (the recorded calls of the cache and HiCache
@@ -46,7 +46,7 @@ import traces  # noqa: E402  (oracle/traces.py; -I leaves the script directory o
 import goldengz  # noqa: E402  (oracle/goldengz.py)
 
 KINDS = ("fixed", "no_neutral", "gap")
-ISSUE = re.compile(r"(inference-sim/blis-sglang)?#\d+")
+ISSUE = re.compile(r"(inference-sim/(?:blis-sglang|inference-sim))?#\d+")
 
 
 def kind(v) -> str:

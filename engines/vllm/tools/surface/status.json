@@ -67,23 +67,23 @@
   },
   "backpressure_class:DropAccountingPolicy": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/13"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2484"
   },
   "backpressure_class:DropStorePolicy": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/13"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2484"
   },
   "backpressure_class:EMABackpressureDetector": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/13"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2484"
   },
   "backpressure_class:ThrottledDropPolicy": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/13"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2484"
   },
   "cache_policy:arc": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/1"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2481"
   },
   "cache_policy:lru": {
    "status": "modelled",
@@ -360,12 +360,12 @@
   },
   "framework:BackpressureDetector": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/13",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2484",
    "why": "no recorded or direct trace at its interface (FID-5)"
   },
   "framework:BackpressurePolicy": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/13",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2484",
    "why": "no recorded or direct trace at its interface (FID-5)"
   },
   "framework:CachePolicy": {
@@ -1782,17 +1782,17 @@
   },
   "platform_preference:CudaPlatformBase.get_valid_backends": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/68",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2425",
    "why": "the oracle's faked-device CUDA platform record is at v0.33.0 and not re-run at the pin (#2290)"
   },
   "platform_preference:Platform._preferred_block_size_for_backends": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/68",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2425",
    "why": "the oracle's faked-device CUDA platform record is at v0.33.0 and not re-run at the pin (#2290)"
   },
   "platform_preference:_get_backend_priorities": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/68",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2425",
    "why": "the oracle's faked-device CUDA platform record is at v0.33.0 and not re-run at the pin (#2290)"
   },
   "scheduler_policy:fcfs": {
@@ -1822,7 +1822,7 @@
     "core/connector/tiering/testdata/golden",
     "core/vllm/offloadtiers_test.go"
    ],
-   "why": "over the CPU primary tier; each job a transfer to or from the tier's device_class, priced on its offload_tier_<device>_* coefficients; the lookup worker and thread pool timed by named substitution (blis-vllm#190); store backpressure refused (blis-vllm#13)"
+   "why": "over the CPU primary tier; each job a transfer to or from the tier's device_class, priced on its offload_tier_<device>_* coefficients; the lookup worker and thread pool timed by named substitution (inference-sim/inference-sim#2437); store backpressure refused (inference-sim/inference-sim#2484)"
   },
   "secondary_tier:kvcr": {
    "status": "refused",
@@ -1836,7 +1836,7 @@
     "core/connector/tiering/testdata/golden",
     "core/vllm/offloadtiers_obj_test.go"
    ],
-   "why": "over the CPU primary tier; each job one NIXL OBJ transfer, a transfer to or from the tier's device_class priced on its offload_tier_<device>_* coefficients, which are scenario inputs (blis-vllm#184); the probe worker timed by named substitution (blis-vllm#190); store backpressure refused (blis-vllm#13)"
+   "why": "over the CPU primary tier; each job one NIXL OBJ transfer, a transfer to or from the tier's device_class priced on its offload_tier_<device>_* coefficients, which are scenario inputs (inference-sim/inference-sim#2436); the probe worker timed by named substitution (inference-sim/inference-sim#2437); store backpressure refused (inference-sim/inference-sim#2484)"
   },
   "secondary_tier:p2p": {
    "status": "modelled",
@@ -1845,7 +1845,7 @@
     "core/connector/tiering/testdata/golden",
     "core/vllm/offloadtiers_p2p_test.go"
    ],
-   "why": "over the CPU primary tier; the engine is a Peered: the tier's control messages travel as the simulator's peer messages and each WRITE is a store between pools priced from its Move, to the endpoint the simulator placed the peer at (PlacePeer); the message delivery latency and the WRITE's duration are the simulator's, and a session that is only idle is polled at the next message or call rather than on the poll thread's schedule (blis-vllm#204); only the UCX data plane, store backpressure refused (blis-vllm#13)"
+   "why": "over the CPU primary tier; the engine is a Peered: the tier's control messages travel as the simulator's peer messages and each WRITE is a store between pools priced from its Move, to the endpoint the simulator placed the peer at (PlacePeer); the message delivery latency and the WRITE's duration are the simulator's, and a session that is only idle is polled at the next message or call rather than on the poll thread's schedule (inference-sim/inference-sim#2439); only the UCX data plane, store backpressure refused (inference-sim/inference-sim#2484)"
   },
   "speculative_method:bailing_hybrid_mtp": {
    "status": "out_of_scope",
@@ -1882,7 +1882,7 @@
   },
   "speculative_method:draft_model": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/17"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2487"
   },
   "speculative_method:dspark": {
    "status": "modelled",

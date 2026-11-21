@@ -1373,7 +1373,7 @@ def block_fp8_scale(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> dic
     (create_fp8_scale_parameter, utils/fp8_utils.py:1396-1425@v0.33.0, dtype float32 unless the
     config's is_scale_e8m0 says otherwise; fp8.py:322-339). With the 128 x 128 block that is
     16384 elements to a 4-byte scale. The kernel reads the element count to tell this layout
-    from a per-tensor FP8 weight (inference-sim/blis-substrate#122). A block that is not square
+    from a per-tensor FP8 weight (inference-sim/inference-sim#2463). A block that is not square
     128 has no kernel form, so it is refused rather than priced as 128 x 128."""
     quant = raw.get("quantization_config") or cfg.get("quantization_config") or {}
     if str(quant.get("quant_method", "")).lower() != "fp8" or not quant.get("weight_block_size"):
@@ -1924,7 +1924,7 @@ HEAD_UNQUANTIZED = {
 # architecture, as HEAD_UNQUANTIZED is, so adding a family re-derives its graphs on purpose.
 # The GLM DSA family (glm-5, glm-5.1-fp8, glm-5.2-fp8, glm-5.3) is among them. Not yet in:
 # llama-4-scout-17b-16e-instruct-fp8-dynamic, whose ignore list also names every text layer's
-# attention projections (inference-sim/blis-substrate#255, catalog lane).
+# attention projections (inference-sim/inference-sim#2406, catalog lane).
 HEAD_AT_BASE_ARCHS = frozenset({
     "DeepseekV3ForCausalLM",              # deepseek-v3, deepseek-r1-0528 (fp8)
     "GlmMoeDsaForCausalLM",               # glm-5, glm-5.1-fp8, glm-5.2-fp8, glm-5.3 (fp8)
@@ -1939,7 +1939,7 @@ HEAD_AT_BASE_ARCHS = frozenset({
 # projections (attention_bias), on the router, and on every routed expert's gate_up and down
 # projections (gpt_oss.py in vLLM; the checkpoint's gate_up_proj_bias and down_proj_bias). The
 # bias is stored at the base width; how an engine converts or pads it is the engine's lowering
-# (inference-sim/blis-substrate#281).
+# (inference-sim/inference-sim#2408).
 NODE_BIAS_ROLES = {
     "GptOssForCausalLM": {"qkv_proj": "attention_bias", "o_proj": "attention_bias",
                           "router": None, "experts": None},
@@ -2164,7 +2164,7 @@ def chain(nodes: list[dict[str, Any]]) -> list[list[int]]:
 #   DeepSeek-V2 and V3 classes here; the GLM DSA, glm5next and Kimi-K3 paths build their
 #   A-projections the same way (deepseek_v32/attention.py:247, glm5next/common/
 #   attention.py:428, kimi_k3/nvidia/mla.py:241-251, whose gated form shards the gate), and
-#   join this table with the re-derivation of their graphs (inference-sim/blis-substrate#107).
+#   join this table with the re-derivation of their graphs (inference-sim/inference-sim#2461).
 #
 # An architecture absent here takes {fused_a: True, fused_norm: False}, which is what
 # DeepseekV2MLAAttention does -- the shape every MLA family shares unless it opts into
@@ -3225,7 +3225,7 @@ def handler_deepseek_v4(cfg, raw, model):
         these windows. Their pages' 576 B padding, and the larger hold during chunked
         prefill, are not carried (https://github.com/inference-sim/blis-schemas/issues/59);
       * h_proj runs on all hc_mult streams of the MTP input, hc_mult rows per token
-        (nvidia/mtp.py:185-187); a GEMM node states one (inference-sim/blis-substrate#157);
+        (nvidia/mtp.py:185-187); a GEMM node states one (inference-sim/inference-sim#2469);
       * the shared expert's TP padding: without sequence parallelism its intermediate
         rounds up to whole 128-blocks per rank (nvidia/model.py:150-158), which is no
         padding at TP 8 (24 blocks) but 4,096 for 3,072 at TP 16. It depends on the TP
@@ -4034,7 +4034,7 @@ def handler_deepseek_v41(cfg, raw, model):
         biases and the engram gate's q and k weights, a few MB;
       * the SM100 page size of the compressed and indexer caches, 128 tokens where
         SM90's is 64: an architecture overlay restates a cache's record and alignment
-        but not its block_size (inference-sim/blis-substrate#158);
+        but not its block_size (inference-sim/inference-sim#2470);
       * the SM100 mega-attention launches (above), and the draft context's window
         insert, which writes a draft layer's cache from another kind and so states the
         SM90 record in its traffic rather than following the overlay;
@@ -4055,7 +4055,7 @@ def handler_deepseek_v41(cfg, raw, model):
         `context` read of `swa`, for the window part of the gather, is charged over
         the whole context (computed + scheduled), which on the last 8K chunk of a
         100K-token prompt states 12x the window-bounded gather
-        (inference-sim/blis-substrate#105);
+        (inference-sim/inference-sim#2379);
       * Engram's DP-sharded path: with DP > 1 and /dev/shm too small for the ~189 GiB
         of tables, they shard over TP x DP and the hashes and rows are exchanged over
         the engram DP group (nvidia/engram.py:104-159, 408-424, 490-496;
@@ -7376,7 +7376,7 @@ def handler_dflash2(cfg, raw, model):
     attention_mode mla (an MLA DFlash2 drafter) is refused: v0.33.0's DFlash attention builds a
     QKV projection over head_dim and has no latent-attention path, and SGLang v0.5.23's
     (python/sglang/srt/models/dflash.py DFlashAttention) has none either, so neither pinned
-    engine runs such a checkpoint (inference-sim/blis-sglang#21, inference-sim/blis-substrate#179)."""
+    engine runs such a checkpoint (inference-sim/inference-sim#2447, inference-sim/inference-sim#2400)."""
     def whole(v, key):
         if isinstance(v, bool) or not isinstance(v, int):
             raise DeriveError(f"{model}: {key} is {v!r}, not a whole number")
@@ -7398,7 +7398,7 @@ def handler_dflash2(cfg, raw, model):
                           f"attention is GQA only (qwen3_dflash.py:159-296@4ba787ec), and SGLang "
                           f"v0.5.23's is too (srt/models/dflash.py DFlashAttention@297e54fd); SGLang "
                           f"serves MLA drafts only after that release "
-                          f"(inference-sim/blis-sglang#21, inference-sim/blis-substrate#179)")
+                          f"(inference-sim/inference-sim#2447, inference-sim/inference-sim#2400)")
     unread = sorted(set(draft) - DFLASH2_KEYS)
     if unread:
         raise DeriveError(f"{model}: dflash_config states {unread}, which this handler does not "
@@ -7665,7 +7665,7 @@ def handler_llama_eagle3(cfg, raw, model):
 GEMMA4_LAYER_TYPES = ("sliding_attention", "full_attention")
 
 # The open issue each refused Gemma 4 feature cites (X28).
-GEMMA4_GAP = "inference-sim/blis-substrate#232"
+GEMMA4_GAP = "inference-sim/inference-sim#2471"
 
 
 def gemma4_layer_shapes(cfg: dict[str, Any], model: str) -> list[tuple[str, int, int]]:
@@ -7958,8 +7958,8 @@ def handler_gemma4(cfg, raw, model):
 # user to guess whether the gap is known. The dense Qwen3_5ForConditionalGeneration of #317 has a
 # handler below (handler_qwen3_5_dense) and an entry (qwen3.8-27b), so it is not listed.
 UNHANDLED_ARCHITECTURE_ISSUES = {
-    "HYV3ForCausalLM": "inference-sim/blis-substrate#317",
-    "MiMoV2ForCausalLM": "inference-sim/blis-substrate#317",
+    "HYV3ForCausalLM": "inference-sim/inference-sim#2412",
+    "MiMoV2ForCausalLM": "inference-sim/inference-sim#2412",
 }
 
 
@@ -8574,9 +8574,9 @@ HANDLERS = {
 # open issue that tracks it (X28) rather than priced from a default.
 
 ENCODER_ISSUES = {
-    "audio": "inference-sim/blis-substrate#275",
-    "dtype": "inference-sim/blis-substrate#277",
-    "inkling": "inference-sim/blis-substrate#278",
+    "audio": "inference-sim/inference-sim#2474",
+    "dtype": "inference-sim/inference-sim#2475",
+    "inkling": "inference-sim/inference-sim#2476",
 }
 
 
@@ -8938,7 +8938,7 @@ TOWER_BUILDERS = {
 UNPRICED_IMAGE_TOWERS = {
     "Qwen4ExpForConditionalGeneration": ("the architecture is absent from vLLM v0.33.0, the release the catalog "
                                          "models, so its tower is not verified against the pinned code",
-                                         "inference-sim/blis-substrate#304"),
+                                         "inference-sim/inference-sim#2477"),
     "InklingForConditionalGeneration": ("the hmlp tower's layer widths come from a planner that has been read, "
                                         "not run", ENCODER_ISSUES["inkling"]),
 }

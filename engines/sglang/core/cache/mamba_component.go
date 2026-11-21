@@ -36,7 +36,7 @@ var ErrMambaAllocFailed = errors.New("can not alloc mamba cache")
 // MambaLifecycle is the request-side half of MambaComponent (components/mamba.py:527-727@297e54fd):
 // how a request's mamba state is chosen for the tree when its KV is cached, and what is freed
 // afterwards. It works on the hybrid request pool and a stand-in for the cache's eviction; the
-// tree-side half (nodes, locks, matching, eviction order) is a later stage (blis-sglang#128).
+// tree-side half (nodes, locks, matching, eviction order) is a later stage (inference-sim/inference-sim#2442).
 type MambaLifecycle struct {
 	Pool        *HybridRequestPool
 	ExtraBuffer bool
@@ -60,9 +60,9 @@ type MambaLifecycleParams struct {
 func NewMambaLifecycle(p MambaLifecycleParams) (*MambaLifecycle, error) {
 	switch {
 	case p.Int8Checkpoint:
-		return nil, fmt.Errorf("cache: the int8 mamba checkpoint pool is not modelled; refused until it is (inference-sim/blis-sglang#128)")
+		return nil, fmt.Errorf("cache: the int8 mamba checkpoint pool is not modelled; refused until it is (inference-sim/inference-sim#2442)")
 	case p.ReplaySSM:
-		return nil, fmt.Errorf("cache: ReplaySSM's write cursor (replayssm_write_pos), which caps a finished request's donated length, is not modelled; refused until it is (inference-sim/blis-sglang#128)")
+		return nil, fmt.Errorf("cache: ReplaySSM's write cursor (replayssm_write_pos), which caps a finished request's donated length, is not modelled; refused until it is (inference-sim/inference-sim#2442)")
 	case p.Pool == nil || p.Evictor == nil:
 		return nil, fmt.Errorf("cache: a MambaLifecycle needs its hybrid request pool and an evictor")
 	}
@@ -77,7 +77,7 @@ func (m *MambaLifecycle) allocMambaSlot(req *Req) (int64, error) {
 		return s[0], nil
 	}
 	if req != nil && m.Pool.lazy && req.Lock != nil {
-		return 0, fmt.Errorf("cache: dropping the COW-source lock before a mamba eviction (extra_buffer_lazy) is not modelled; inference-sim/blis-sglang#128")
+		return 0, fmt.Errorf("cache: dropping the COW-source lock before a mamba eviction (extra_buffer_lazy) is not modelled; inference-sim/inference-sim#2442")
 	}
 	m.Evictor.EvictForAlloc(1)
 	s, ok := m.Pool.Mamba.Alloc(1)

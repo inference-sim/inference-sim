@@ -1,7 +1,7 @@
 // Original to blis-vllm.
 // Moved unchanged from blis-substrate's kernel/internal/resolve/dcp.go at
 // 00817b10798cbc00f560e51921c30c7084fa5e0c, when the engine-settings resolution left the cost
-// model (blis-substrate#58).
+// model (inference-sim/inference-sim#2479).
 
 package lowering
 

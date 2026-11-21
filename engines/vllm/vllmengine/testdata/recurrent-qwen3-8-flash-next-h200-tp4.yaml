@@ -1,6 +1,6 @@
 # qwen3.8-flash-next on one H200 node at tp 4, at vLLM's default recurrent settings: prefix caching on, so the
 # recurrent cache runs in align mode and the hybrid block-size alignment replaces the stated
-# block_size. Its KV layers' sizing remainder was not whole bytes (blis-vllm#310).
+# block_size. Its KV layers' sizing remainder was not whole bytes (inference-sim/inference-sim#2491).
 kind: Scenario
 name: recurrent-qwen3-8-flash-next-h200-tp4
 engine: {kind: vllm}

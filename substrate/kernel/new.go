@@ -1518,7 +1518,7 @@ func (k *Kernel) liftCollectiveFloors(c *resolve.Coefficients) error {
 		k.assume("all_reduce_message_limit", "the custom lane for every message size",
 			"the engine runs a message above the custom kernel's size limit on NCCL; the pool's "+
 				"tensor-parallel all-reduce is priced from the custom lane at every size "+
-				"(inference-sim/blis-substrate#392)")
+				"(inference-sim/inference-sim#2478)")
 	}
 	return nil
 }

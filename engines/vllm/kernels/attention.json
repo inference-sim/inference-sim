@@ -82,7 +82,7 @@
     },
     "B12X": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "CPU_ATTN": {
       "status": "not_cuda",
@@ -98,11 +98,11 @@
     },
     "CUTLASS_MLA": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "CUTLASS_MSA": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "FLASHINFER": {
       "status": "listed",
@@ -136,7 +136,7 @@
             "attention.decode",
             "attention.prefill"
           ],
-          "issue": "inference-sim/blis-vllm#151",
+          "issue": "inference-sim/inference-sim#2486",
           "note": "the attention-sink wrapper vLLM uses on SM90 and SM12x for a model with sinks"
         },
         {
@@ -144,7 +144,7 @@
           "primitives": [
             "attention.prefill"
           ],
-          "issue": "inference-sim/blis-vllm#151",
+          "issue": "inference-sim/inference-sim#2486",
           "note": "merges the outputs of a split prefill"
         },
         {
@@ -152,7 +152,7 @@
           "primitives": [
             "attention.prefill"
           ],
-          "issue": "inference-sim/blis-vllm#151",
+          "issue": "inference-sim/inference-sim#2486",
           "note": "the Triton kernel that dequantizes an FP8 KV cache before trtllm-gen prefill"
         },
         {
@@ -167,23 +167,23 @@
     },
     "FLASHINFER_MLA": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "FLASHINFER_MLA_SPARSE": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "FLASHINFER_MLA_SPARSE_DSV4": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "FLASHINFER_MLA_SPARSE_DSV41": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "FLASHINFER_MLA_SPARSE_SM120": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "FLASHINFER_MLA_SPARSE_SM90": {
       "status": "listed",
@@ -205,23 +205,23 @@
     },
     "FLASHMLA": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "FLASHMLA_MEGA_ATTN_DSV41": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "FLASHMLA_SPARSE": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "FLASHMLA_SPARSE_DSV4": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "FLASHMLA_SPARSE_DSV41": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "FLASH_ATTN": {
       "status": "listed",
@@ -258,7 +258,7 @@
           "primitives": [
             "attention.decode"
           ],
-          "issue": "inference-sim/blis-vllm#151",
+          "issue": "inference-sim/inference-sim#2486",
           "note": "combines decode-context-parallel partial outputs"
         },
         {
@@ -266,34 +266,34 @@
           "primitives": [
             "attention.prefill"
           ],
-          "issue": "inference-sim/blis-vllm#151",
+          "issue": "inference-sim/inference-sim#2486",
           "note": "merges the outputs of a split prefill"
         }
       ]
     },
     "FLASH_ATTN_DIFFKV": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "FLASH_ATTN_MLA": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "FLASH_ATTN_MLA_SPARSE": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "FLASH_ATTN_MLA_SPARSE_FA4": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "FLEX_ATTENTION": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "HPC_ATTN": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "KIMI_K3_KV_BALANCED_MLA": {
       "status": "gap",
@@ -301,7 +301,7 @@
     },
     "MINIMAX_M3_SPARSE": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "NO_ATTENTION": {
       "status": "not_lowered",
@@ -353,11 +353,11 @@
     },
     "STEP5_DSA": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "TOKENSPEED_MLA": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "TORCH_SDPA": {
       "status": "not_lowered",
@@ -374,31 +374,31 @@
     },
     "TRITON_ATTN_DIFFKV": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "TRITON_FLASHINFER": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "TRITON_FLASH_ATTN": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "TRITON_MLA": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "TRITON_MSA": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "TURBOQUANT": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "ULTRAQUANT": {
       "status": "gap",
-      "issue": "inference-sim/blis-vllm#151"
+      "issue": "inference-sim/inference-sim#2486"
     },
     "XPU_MLA_SPARSE": {
       "status": "not_cuda",

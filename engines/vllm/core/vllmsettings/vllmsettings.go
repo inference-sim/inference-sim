@@ -6,7 +6,7 @@
 // kernel model use it.
 //
 // The settings were the substrate's typed engine-settings carrier until engine lowering took the
-// resolution over (blis-substrate#58); they are vLLM's, so they live here, and the cost model
+// resolution over (inference-sim/inference-sim#2479); they are vLLM's, so they live here, and the cost model
 // receives only the plan the lowering resolves them to.
 package vllmsettings
 

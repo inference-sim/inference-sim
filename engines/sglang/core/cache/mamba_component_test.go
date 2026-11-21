@@ -10,7 +10,7 @@ import (
 )
 
 // MambaComponentGoldenDir holds the traces oracle/run_mamba_component.py records at SGLang's
-// MambaComponent request-side lifecycle (inference-sim/blis-sglang#128, piece A1).
+// MambaComponent request-side lifecycle (inference-sim/inference-sim#2442, piece A1).
 const MambaComponentGoldenDir = "testdata/golden-pools/mamba-component"
 
 // treeSlots stands in for the mamba states the tree holds: an eviction frees the oldest.
@@ -260,7 +260,7 @@ func TestMambaLifecycleRefusesWhatItDoesNotPort(t *testing.T) {
 		{MambaLifecycleParams{Evictor: ev}, "needs its hybrid request pool"},
 	} {
 		_, err := NewMambaLifecycle(tc.p)
-		if err == nil || !strings.Contains(err.Error(), tc.want) || (tc.want != "needs its hybrid request pool" && !strings.Contains(err.Error(), "blis-sglang#128")) {
+		if err == nil || !strings.Contains(err.Error(), tc.want) || (tc.want != "needs its hybrid request pool" && !strings.Contains(err.Error(), "inference-sim/inference-sim#2442")) {
 			t.Errorf("%+v: got %v, want a refusal naming %q and the issue", tc.p, err, tc.want)
 		}
 	}

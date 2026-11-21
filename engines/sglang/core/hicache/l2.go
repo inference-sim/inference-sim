@@ -15,7 +15,7 @@ import (
 
 // StorageRefusalIssue is the open issue HiCache's L3 storage is refused with until it is
 // modelled (X28).
-const StorageRefusalIssue = "https://github.com/inference-sim/blis-sglang/issues/40"
+const StorageRefusalIssue = "https://github.com/inference-sim/inference-sim/issues/2342"
 
 // L2RefusalIssue is the open issue the host tier's other unmodelled parts are refused with: the
 // buffer_only host memory mode, the kernel_ascend IO backend and the NPU layout (X28).

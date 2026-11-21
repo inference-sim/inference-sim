@@ -3959,7 +3959,7 @@ bound:
       max_ratio: 1.04
   not_measured:
     - >-
-      The layout sweep (layouts.csv): 32 layout classes of the Dynamo vLLM prefill/decode runs whose pools carry no data-parallel attention, 52 of the 188 topologies and 167 of the 445 artifact points, at the pool shapes those points use. Pools with data-parallel attention have no bound, and neither does kimik2.5 on gb300 at 1P7D (its recipe states no chunked prefill with a connector, which the engine refuses, blis-vllm#214).
+      The layout sweep (layouts.csv): 32 layout classes of the Dynamo vLLM prefill/decode runs whose pools carry no data-parallel attention, 52 of the 188 topologies and 167 of the 445 artifact points, at the pool shapes those points use. Pools with data-parallel attention have no bound, and neither does kimik2.5 on gb300 at 1P7D (its recipe states no chunked prefill with a connector, which the engine refuses, inference-sim/inference-sim#2440).
     - >-
       The layout sweep simulates each layout with the engine settings the frozen recipes state (flags the engine does not model are listed per shape in layouts.json), on the catalog fabric of the chip: ib-400g for b200 and gb200-nvl72, ib-800g for b300 and gb300 (b300 is documented as RoCE 800G, so its fabric is an estimated substitution), and 8 GPUs per node (4 on gb200-nvl72 and gb300). The build's kernel encodes vLLM v0.31.0 behaviour though the scenario declares 0.33.0 (inference-sim#150); the bound names the release difference.
     - >-

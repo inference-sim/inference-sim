@@ -16,10 +16,10 @@ import (
 // (DecodeReqToTokenPool, disaggregation/decode.py:171, borrows ReqToTokenPool's methods; MambaPool,
 // memory_pool.py:505, is the request-indexed state pool). A configuration that selects any other is
 // refused by the class's name and the setting that selects it, citing the open issue that tracks
-// it (X28); config resolution (S08) makes the check at start-up. The HiCache host pools are HiCache's (inference-sim/blis-sglang#38).
+// it (X28); config resolution (S08) makes the check at start-up. The HiCache host pools are HiCache's (inference-sim/inference-sim#2341).
 
 // RefusedPoolsIssue is the open issue every refused allocator and pool cites.
-const RefusedPoolsIssue = "inference-sim/blis-sglang#44"
+const RefusedPoolsIssue = "inference-sim/inference-sim#2343"
 
 // PoolKind is which framework interface a class implements.
 type PoolKind string

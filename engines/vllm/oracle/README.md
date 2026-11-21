@@ -181,7 +181,7 @@ is never written into the repository or the catalog.
 
 Each combination is also run at every tensor-parallel width from 1 to 16 (`TP_WIDTHS`), and
 resolves only if the size is the same at all of them. The table is valid for a width up to 16, and
-`ResolveBlockSize` refuses a wider pool, citing blis-vllm#68.
+`ResolveBlockSize` refuses a wider pool, citing inference-sim/inference-sim#2425.
 
 It needs vLLM's `requirements/common.txt` and `torch`; it does not need a GPU. At a new vLLM
 release, re-read each model's attention layer (the `LAYERS` table cites the line that builds it)

@@ -11,7 +11,7 @@ import (
 // vLLM-form speculative block, which an SGLang scenario does not state, so K reads as zero and
 // the flag was refused as "drafts no tokens": a scenario that states speculative_num_draft_tokens
 // does draft. The refusal names the SGLang algorithm and the draft width it states and the
-// engine's issue (inference-sim/blis-sglang#68), and a scenario that does not speculate is still
+// engine's issue (inference-sim/inference-sim#2355), and a scenario that does not speculate is still
 // told it drafts no tokens.
 func TestRunCmd_SGLangSpeculationWithAnAcceptanceFlagIsRefusedForItsOwnReason(t *testing.T) {
 	const name = "deepseek-r1-h200-fp8-sglang-tp8.yaml"
@@ -30,11 +30,11 @@ func TestRunCmd_SGLangSpeculationWithAnAcceptanceFlagIsRefusedForItsOwnReason(t 
 		notWant                string
 	}{
 		{"length, speculating", speculating, "--speculative-acceptance-length", "2.5",
-			[]string{"speculative_algorithm EAGLE", "3 drafts", "inference-sim/blis-sglang#68"}, "drafts no tokens"},
+			[]string{"speculative_algorithm EAGLE", "3 drafts", "inference-sim/inference-sim#2355"}, "drafts no tokens"},
 		{"rate, speculating", speculating, "--speculative-acceptance-rate", "0.6",
-			[]string{"speculative_algorithm EAGLE", "3 drafts", "inference-sim/blis-sglang#68"}, "drafts no tokens"},
+			[]string{"speculative_algorithm EAGLE", "3 drafts", "inference-sim/inference-sim#2355"}, "drafts no tokens"},
 		{"length, not speculating", plain, "--speculative-acceptance-length", "2.5",
-			[]string{"drafts no tokens"}, "blis-sglang#68"},
+			[]string{"drafts no tokens"}, "inference-sim/inference-sim#2355"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, stderr, err := runKernelCLI(t, "run", "--scenarios", tt.dir, "--scenario", name,

@@ -526,7 +526,7 @@
    ],
    "site": "srt/observability/metrics_collector.py:967",
    "class": "later",
-   "why": "grammar-constrained decoding, blis-sglang#81"
+   "why": "grammar-constrained decoding, inference-sim/inference-sim#2458"
   },
   {
    "name": "sglang:grammar_schema_count",
@@ -536,7 +536,7 @@
    ],
    "site": "srt/observability/metrics_collector.py:939",
    "class": "later",
-   "why": "grammar-constrained decoding, blis-sglang#81"
+   "why": "grammar-constrained decoding, inference-sim/inference-sim#2458"
   },
   {
    "name": "sglang:grammar_tree_traversal_time_avg",
@@ -546,7 +546,7 @@
    ],
    "site": "srt/observability/metrics_collector.py:1009",
    "class": "later",
-   "why": "grammar-constrained decoding, blis-sglang#81"
+   "why": "grammar-constrained decoding, inference-sim/inference-sim#2458"
   },
   {
    "name": "sglang:grammar_tree_traversal_time_max",
@@ -556,7 +556,7 @@
    ],
    "site": "srt/observability/metrics_collector.py:1015",
    "class": "later",
-   "why": "grammar-constrained decoding, blis-sglang#81"
+   "why": "grammar-constrained decoding, inference-sim/inference-sim#2458"
   },
   {
    "name": "sglang:graph_memory_usage_gb",
@@ -846,7 +846,7 @@
    ],
    "site": "srt/observability/metrics_collector.py:753",
    "class": "later",
-   "why": "LoRA, blis-sglang#80"
+   "why": "LoRA, inference-sim/inference-sim#2457"
   },
   {
    "name": "sglang:lora_pool_slots_used",
@@ -856,7 +856,7 @@
    ],
    "site": "srt/observability/metrics_collector.py:747",
    "class": "later",
-   "why": "LoRA, blis-sglang#80"
+   "why": "LoRA, inference-sim/inference-sim#2457"
   },
   {
    "name": "sglang:lora_pool_utilization",
@@ -1026,7 +1026,7 @@
    ],
    "site": "srt/observability/metrics_collector.py:924",
    "class": "later",
-   "why": "grammar-constrained decoding, blis-sglang#81"
+   "why": "grammar-constrained decoding, inference-sim/inference-sim#2458"
   },
   {
    "name": "sglang:num_grammar_cache_hit_total",
@@ -1036,7 +1036,7 @@
    ],
    "site": "srt/observability/metrics_collector.py:919",
    "class": "later",
-   "why": "grammar-constrained decoding, blis-sglang#81"
+   "why": "grammar-constrained decoding, inference-sim/inference-sim#2458"
   },
   {
    "name": "sglang:num_grammar_queue_reqs",
@@ -1056,7 +1056,7 @@
    ],
    "site": "srt/observability/metrics_collector.py:929",
    "class": "later",
-   "why": "grammar-constrained decoding, blis-sglang#81"
+   "why": "grammar-constrained decoding, inference-sim/inference-sim#2458"
   },
   {
    "name": "sglang:num_grammar_total",
@@ -1066,7 +1066,7 @@
    ],
    "site": "srt/observability/metrics_collector.py:934",
    "class": "later",
-   "why": "grammar-constrained decoding, blis-sglang#81"
+   "why": "grammar-constrained decoding, inference-sim/inference-sim#2458"
   },
   {
    "name": "sglang:num_pages",
@@ -1186,7 +1186,7 @@
    ],
    "site": "srt/observability/metrics_collector.py:1953",
    "class": "later",
-   "why": "grammar-constrained decoding, blis-sglang#81"
+   "why": "grammar-constrained decoding, inference-sim/inference-sim#2458"
   },
   {
    "name": "sglang:num_streaming_sessions",
@@ -1196,7 +1196,7 @@
    ],
    "site": "srt/observability/metrics_collector.py:799",
    "class": "later",
-   "why": "streaming sessions, blis-sglang#45"
+   "why": "streaming sessions, inference-sim/inference-sim#2452"
   },
   {
    "name": "sglang:num_transfer_failed_reqs_total",
@@ -1613,7 +1613,7 @@
    ],
    "site": "srt/observability/metrics_collector.py:805",
    "class": "later",
-   "why": "streaming sessions, blis-sglang#45"
+   "why": "streaming sessions, inference-sim/inference-sim#2452"
   },
   {
    "name": "sglang:swa_available_tokens",

@@ -70,7 +70,7 @@ func poolCapacityOracle(t *testing.T, mml, inFlight, retained int, blocks int64)
 // expected figures are vLLM's own get_kv_cache_capacity over the same groups (the oracle), not
 // numbers written here. Before this the engine's only size was its blocks x 256 tokens, 4.47
 // million whatever the length: 6 to 23 times the logged figure on the dashboard's V4-Pro points
-// (blis-vllm#129).
+// (inference-sim/inference-sim#2431).
 func TestDeepSeekV4ProEngineReportsVLLMsStartupKVFigure(t *testing.T) {
 	Register()
 	const blocks, perBlock = 17475, 1435968

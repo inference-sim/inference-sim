@@ -19,7 +19,7 @@ func speculate(algorithm string, steps int, multiLayer bool) func(*config.Server
 	}
 }
 
-// A pool that speculates states its draft passes to the cost model (S30, blis-sglang#68): the chain
+// A pool that speculates states its draft passes to the cost model (S30, inference-sim/inference-sim#2355): the chain
 // length, which rows the drafter's first pass processes, and which requests the later passes run for.
 // The cost model refuses a speculating pool that leaves them unstated, and prices what it is told.
 // The EAGLE family lowers alike: the algorithm names the drafter, not the verify path.

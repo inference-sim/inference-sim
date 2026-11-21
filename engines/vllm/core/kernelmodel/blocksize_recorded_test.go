@@ -152,7 +152,7 @@ func TestResolutionAgainstTheRecordedRuns(t *testing.T) {
 		}
 		switch {
 		case err != nil:
-			if !strings.Contains(err.Error(), "blis-vllm/issues/68") {
+			if !strings.Contains(err.Error(), "inference-sim/issues/2425") {
 				t.Errorf("row %d: refused, but not citing #68: %v", r.Row, err)
 			}
 			c.refused++
@@ -185,7 +185,7 @@ func TestResolutionAgainstTheRecordedRuns(t *testing.T) {
 			t.Errorf("operatorFlagDiffers names row %d, which is not an args row of the recorded runs", row)
 		}
 	}
-	// Coverage by model, in the test log and in the blis-vllm#68 comment.
+	// Coverage by model, in the test log and in the inference-sim/inference-sim#2425 comment.
 	models := make([]string, 0, len(byModel))
 	for k := range byModel {
 		models = append(models, k)
@@ -232,7 +232,7 @@ func TestRecordedRunsAtThePin(t *testing.T) {
 		rec, rerr := vllm.ResolveBlockSizeAsRecorded(in)
 		if perr != nil {
 			refused++
-			if !strings.Contains(perr.Error(), "blis-vllm/issues/68") {
+			if !strings.Contains(perr.Error(), "inference-sim/issues/2425") {
 				t.Errorf("row %d: refused at the pin, but not citing #68: %v", r.Row, perr)
 			}
 			if rerr == nil {

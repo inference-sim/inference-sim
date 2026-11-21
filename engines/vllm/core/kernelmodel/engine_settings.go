@@ -24,7 +24,7 @@ type resolvedEngine struct {
 	// gpu_memory_utilization for every release this package knows (0.29.0, 0.31.0, 0.32.0), and
 	// max_num_seqs, max_num_batched_tokens and block_size for 0.32.0.
 	sources map[string]string
-	// blockSizeErr is why an unstated block_size is not resolved, naming blis-vllm#68; nil when
+	// blockSizeErr is why an unstated block_size is not resolved, naming inference-sim/inference-sim#2425; nil when
 	// it is stated or resolved.
 	blockSizeErr error
 	// mamba is the spec the model's recurrent layers build, and the block size vLLM aligns a
@@ -186,7 +186,7 @@ func resolveBlockSize(in latencykernel.Inputs, e engineconfig.Engine, pool deplo
 // for the GPU (resolveEngine), and EngineSources says which values were stated. An unstated
 // block_size is vLLM's own too, for the models, GPUs and KV dtypes the block-size oracle
 // resolves (core/vllm.ResolveBlockSize); for any other it is refused, naming why and
-// https://github.com/inference-sim/blis-vllm/issues/68. For 0.29.0 and 0.31.0 it returns the
+// https://github.com/inference-sim/inference-sim/issues/2425. For 0.29.0 and 0.31.0 it returns the
 // deployment's own values, and refuses an unstated max_num_seqs, max_num_batched_tokens or
 // block_size, as before.
 //

@@ -1,6 +1,6 @@
 # qwen3.8-27b on one H200 node at tp 4, at vLLM's default recurrent settings: prefix caching on, so the
 # recurrent cache runs in align mode and the hybrid block-size alignment replaces the stated
-# block_size. Its 256-wide attention head beside the recurrent layers was refused (blis-vllm#309).
+# block_size. Its 256-wide attention head beside the recurrent layers was refused (inference-sim/inference-sim#2490).
 kind: Scenario
 name: recurrent-qwen3-8-27b-h200-tp4
 engine: {kind: vllm}

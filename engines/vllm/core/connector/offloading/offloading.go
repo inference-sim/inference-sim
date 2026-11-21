@@ -41,7 +41,7 @@ const (
 	Issue      = "https://github.com/inference-sim/blis-vllm/issues/4"
 	GroupIssue = "https://github.com/inference-sim/blis-vllm/issues/7"
 	// BlockSizeIssue tracks a KV cache group whose block is not a multiple of the hash block.
-	BlockSizeIssue = "https://github.com/inference-sim/blis-vllm/issues/146"
+	BlockSizeIssue = "https://github.com/inference-sim/inference-sim/issues/2433"
 )
 
 // Group is one KV cache group as the connector sees it (GroupOffloadConfig,
@@ -328,7 +328,7 @@ func New(cfg Config) (*Scheduler, error) {
 		}
 		if g.BlockSize%cfg.TokensPerHash != 0 {
 			// Whether vLLM accepts a group whose block is smaller than the hash block, and how it sizes
-			// its offload block then, is https://github.com/inference-sim/blis-vllm/issues/146.
+			// its offload block then, is https://github.com/inference-sim/inference-sim/issues/2433.
 			return nil, fmt.Errorf("offloading: block size %d is not a multiple of the hash block size %d (%s)", g.BlockSize,
 				cfg.TokensPerHash, BlockSizeIssue)
 		}
@@ -399,9 +399,9 @@ func Check(o Options) error {
 		return fmt.Errorf("offloading: TieringOffloadingSpec with %d secondary tier(s) is not modelled, only its CPU "+
 			"primary tier (https://github.com/inference-sim/blis-vllm/issues/63)", o.SecondaryTiers)
 	case o.EvictionPolicy != "" && o.EvictionPolicy != "lru":
-		// ARC (cpu/policies/arc.py:16) is https://github.com/inference-sim/blis-vllm/issues/1.
+		// ARC (cpu/policies/arc.py:16) is https://github.com/inference-sim/inference-sim/issues/2481.
 		return fmt.Errorf("offloading: eviction_policy %q is not modelled, only lru "+
-			"(https://github.com/inference-sim/blis-vllm/issues/1)", o.EvictionPolicy)
+			"(https://github.com/inference-sim/inference-sim/issues/2481)", o.EvictionPolicy)
 	case o.StoreThreshold >= 2:
 		// The admission tracker (cpu/manager.py:123-142, 272-281); TieringOffloadingSpec refuses
 		// it itself (tiering/spec.py:340-343).

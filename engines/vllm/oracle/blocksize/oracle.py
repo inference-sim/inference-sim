@@ -187,7 +187,7 @@ COMPUTE_CAPABILITY = {"h100": (9, 0), "h200": (9, 0), "b200": (10, 0), "b300": (
 # auto (CacheDType, vllm/config/cache.py:39-59). Backends test the name against their own
 # supported_kv_cache_dtypes (v1/attention/backend.py:61, :130-131), and a few list one name of a pair and
 # not the other, so the oracle runs each name and the table says which resolve alike, rather than Go
-# assuming an alias (blis-vllm#68).
+# assuming an alias (inference-sim/inference-sim#2425).
 KV_DTYPES = ["auto", "fp8", "fp8_e4m3", "bfloat16", "float16"]
 # Facts the oracle assumes for a compute capability, with the evidence for each. A CPU cannot
 # discover a fact, and a combination whose size depends on one is refused; an assumption lets it

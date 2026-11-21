@@ -146,9 +146,9 @@ func TestResolveRefusesWhatItDoesNotModelByName(t *testing.T) {
 		value any
 		issue string
 	}{
-		{"attn_cp_size", 2, "inference-sim/blis-sglang#26"},
-		{"pp_size", 2, "inference-sim/blis-sglang#72"},
-		{"disaggregation_transfer_backend", "mori", "inference-sim/blis-sglang#66"},
+		{"attn_cp_size", 2, "inference-sim/inference-sim#2448"},
+		{"pp_size", 2, "inference-sim/inference-sim#2358"},
+		{"disaggregation_transfer_backend", "mori", "inference-sim/inference-sim#2353"},
 	} {
 		in := Input{Args: map[string]any{"model_path": "<model>"}, Chip: c.Chip, Model: c.ModelFacts}
 		def := Defaults()
@@ -167,8 +167,8 @@ func TestResolveRefusesWhatItDoesNotModelByName(t *testing.T) {
 	in := Input{Args: map[string]any{"model_path": "<model>", "disaggregation_mode": "prefill"}, Chip: c.Chip, Model: c.ModelFacts}
 	_, err := Resolve(in)
 	var nm *NotModelled
-	if !errors.As(err, &nm) || nm.Name != "disaggregation_transfer_backend" || nm.Issue != "inference-sim/blis-sglang#18" {
-		t.Errorf("P/D over mooncake: got %v, want NotModelled naming disaggregation_transfer_backend and #18", err)
+	if !errors.As(err, &nm) || nm.Name != "disaggregation_transfer_backend" || nm.Issue != "inference-sim/inference-sim#2446" {
+		t.Errorf("P/D over mooncake: got %v, want NotModelled naming disaggregation_transfer_backend and #2446", err)
 	}
 }
 
@@ -177,39 +177,39 @@ func TestResolveRefusesWhatItDoesNotModelByName(t *testing.T) {
 // SGLang's help text and choices name (python/sglang/srt/arg_groups/fields/*.py@297e54fd).
 func TestResolveRefusalsNameTheIssueOfTheFeature(t *testing.T) {
 	c := readAnswers(t).Cases[0]
-	const repo = "inference-sim/blis-sglang#"
+	const repo = "inference-sim/inference-sim#"
 	for _, tc := range []struct {
 		field string
 		value any
 		issue string
 	}{
-		{"disaggregation_decode_allocation_policy", "prefill_complete", "64"},
-		{"disaggregation_decode_polling_interval", 4, "64"},
-		{"disaggregation_decode_retraction_backup", "host_pool", "65"},
-		{"disaggregation_decode_enable_offload_kvcache", true, "65"},
-		{"disaggregation_ib_device", "mlx5_0", "66"},
-		{"hicache_write_policy", "write_back", "38"},
-		{"hicache_storage_prefetch_policy", "wait_complete", "40"},
-		{"hicache_storage_backend", "nixl", "40"},
-		{"hicache_storage_backend", "mooncake", "14"},
-		{"hicache_storage_backend", "aibrix", "16"},
-		{"hicache_storage_backend", "tensorcast", "16"},
-		{"hicache_storage_backend_extra_config", "@storage.json", "87"},
-		{"load_balance_method", "minimum_tokens", "70"},
-		{"enable_dp_lm_head", true, "70"},
-		{"deepep_mode", "low_latency", "71"},
-		{"enable_eplb", true, "71"},
-		{"enable_two_batch_overlap", true, "71"},
-		{"moe_a2a_backend", "mooncake", "30"},
-		{"moe_a2a_backend", "mori", "71"},
-		{"pp_max_micro_batch_size", 2, "72"},
-		{"swa_full_tokens_ratio", 0.5, "73"},
-		{"mamba_track_interval", 128, "94"},
-		{"speculative_algorithm", "STANDALONE", "68"},
-		{"speculative_algorithm", "DSPARK", "69"},
-		{"speculative_token_map", "map.json", "68"},
-		{"speculative_dspark_block_size", 8, "69"},
-		{"disaggregation_transfer_backend", "mooncake_tcp", "18"},
+		{"disaggregation_decode_allocation_policy", "prefill_complete", "2351"},
+		{"disaggregation_decode_polling_interval", 4, "2351"},
+		{"disaggregation_decode_retraction_backup", "host_pool", "2352"},
+		{"disaggregation_decode_enable_offload_kvcache", true, "2352"},
+		{"disaggregation_ib_device", "mlx5_0", "2353"},
+		{"hicache_write_policy", "write_back", "2341"},
+		{"hicache_storage_prefetch_policy", "wait_complete", "2342"},
+		{"hicache_storage_backend", "nixl", "2342"},
+		{"hicache_storage_backend", "mooncake", "2443"},
+		{"hicache_storage_backend", "aibrix", "2445"},
+		{"hicache_storage_backend", "tensorcast", "2445"},
+		{"hicache_storage_backend_extra_config", "@storage.json", "2459"},
+		{"load_balance_method", "minimum_tokens", "2356"},
+		{"enable_dp_lm_head", true, "2356"},
+		{"deepep_mode", "low_latency", "2357"},
+		{"enable_eplb", true, "2357"},
+		{"enable_two_batch_overlap", true, "2357"},
+		{"moe_a2a_backend", "mooncake", "2450"},
+		{"moe_a2a_backend", "mori", "2357"},
+		{"pp_max_micro_batch_size", 2, "2358"},
+		{"swa_full_tokens_ratio", 0.5, "2359"},
+		{"mamba_track_interval", 128, "2366"},
+		{"speculative_algorithm", "STANDALONE", "2355"},
+		{"speculative_algorithm", "DSPARK", "2454"},
+		{"speculative_token_map", "map.json", "2355"},
+		{"speculative_dspark_block_size", 8, "2454"},
+		{"disaggregation_transfer_backend", "mooncake_tcp", "2446"},
 	} {
 		in := Input{Args: map[string]any{"model_path": "<model>", tc.field: tc.value}, Chip: c.Chip, Model: c.ModelFacts}
 		_, err := Resolve(in)

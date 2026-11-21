@@ -148,7 +148,7 @@ func hasSparseGQA(g *model.Graph) bool {
 // has the same caches, marked as the drafter's. The main cache states its element size, the
 // cache dtype's (qsa.py:361-368), as the ring's and the indexer's cache do, so the pool's page
 // bytes are the specs' and none is taken from the memory model's, which counts the graph's
-// stated caches at a width the TP split does not give (blis-vllm#310).
+// stated caches at a width the TP split does not give (inference-sim/inference-sim#2491).
 func qsaLayerRuns(g *model.Graph, id string, lk model.LayerKind, n model.Node, tp int, e engineconfig.Engine, draft bool) ([]KVLayerRun, error) {
 	if !n.ReadsEngineKV() {
 		return nil, nil

@@ -14,11 +14,11 @@
   },
   "budgets[].message": {
    "kind": "gap",
-   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "budgets[].raises": {
    "kind": "gap",
-   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "calls**": {
    "kind": "gap",
@@ -26,7 +26,7 @@
   },
   "classes.tree_cache": {
    "kind": "gap",
-   "reason": "One tree cache in the scenario set; disable_radix_cache and further tree caches move it (inference-sim/blis-sglang#32)."
+   "reason": "One tree cache in the scenario set; disable_radix_cache and further tree caches move it (inference-sim/inference-sim#2340)."
   },
   "classes.tree_core": {
    "kind": "fixed",
@@ -34,111 +34,111 @@
   },
   "config.clip_max_new_tokens": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.context_len": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.disaggregation_mode": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.eos_token_ids": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.in_batch_prefix_check_threshold": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.in_batch_prefix_deprioritize_threshold": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.kv_events_dynamo": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.max_context_len": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.need_sort": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.new_token_ratio.decay": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.new_token_ratio.init": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.new_token_ratio.min": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.pp_size": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.prefill_decode_interval": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.radix_eviction_policy": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.retract_decode_steps": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.tree_cache": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "config.vocab_size": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "facts.conv": {
    "kind": "gap",
-   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "facts.conv[]": {
    "kind": "gap",
-   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "facts.conv_dtype": {
    "kind": "gap",
-   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "facts.conv_kernel": {
    "kind": "gap",
-   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "facts.full_attention_layer_ids": {
    "kind": "gap",
-   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "facts.layers": {
    "kind": "gap",
-   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "facts.temporal": {
    "kind": "gap",
-   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every hybrid mamba pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "finished.*.reason.err_type": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "finished.*.reason.matched": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "harness_problems": {
    "kind": "fixed",
@@ -146,11 +146,11 @@
   },
   "hosts": {
    "kind": "gap",
-   "reason": "Every HiCache host-pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every HiCache host-pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "hosts[].raises": {
    "kind": "gap",
-   "reason": "Every HiCache host-pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every HiCache host-pool scenario runs one configuration; a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "receive.max_recv_per_poll": {
    "kind": "fixed",
@@ -170,7 +170,7 @@
   },
   "sglang_env.SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP": {
    "kind": "gap",
-   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },
   "sglang_env.SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND": {
    "kind": "fixed",

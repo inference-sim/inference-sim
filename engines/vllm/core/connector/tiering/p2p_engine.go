@@ -28,7 +28,7 @@ func (t *P2PTier) WriteRequest(peer string, tid int) (string, bool) {
 // connection to reap; parked stores awaiting their fetch; results or released requests the next
 // poll hands the manager. A session that is only idle is not busy: nothing it holds changes until
 // a message or a call (vLLM's has_pending_work is always true, which on a virtual clock would
-// tick forever; blis-vllm#204).
+// tick forever; inference-sim/inference-sim#2439).
 func (t *P2PTier) Busy() bool {
 	if t.unboundStores.len() > 0 || len(t.finished) > 0 || len(t.failedServeCtxs) > 0 {
 		return true
