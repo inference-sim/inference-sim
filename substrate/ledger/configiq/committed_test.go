@@ -51,7 +51,7 @@ func TestCommittedConfigiqSource(t *testing.T) {
 	}
 }
 
-// release draws the three published lists from the given units under cfg, with a test seed.
+// release draws the two published lists from the given units under cfg, with a test seed.
 func release(t *testing.T, cfg ledger.Config, legacy *ledger.LegacyMap, units map[string][]ledger.Unit, seed string) map[ledger.Role]map[string]bool {
 	t.Helper()
 	raw, _ := hex.DecodeString(seed)
@@ -76,7 +76,7 @@ func release(t *testing.T, cfg ledger.Config, legacy *ledger.LegacyMap, units ma
 }
 
 // D7, D4: adding configiq's cut-points under the current partition version moves no
-// InferenceX unit's role. The release job's fit, anchor and report lists, restricted to
+// InferenceX unit's role. The release job's fit and anchor lists, restricted to
 // InferenceX units, are the same with and without the configiq source, for two seeds; and
 // configiq's own units are drawn into the lists too.
 func TestAddingConfigiqMovesNoInferenceXRole(t *testing.T) {
@@ -97,7 +97,7 @@ func TestAddingConfigiqMovesNoInferenceXRole(t *testing.T) {
 		now := release(t, *l.Config, l.Legacy, l.Units, seed)
 		cq := 0
 		for _, u := range l.Units[configiq.SourceID] {
-			for _, r := range []ledger.Role{ledger.RoleFit, ledger.RoleAnchor, ledger.RoleReport} {
+			for _, r := range []ledger.Role{ledger.RoleFit, ledger.RoleAnchor} {
 				if now[r][u.UnitID] {
 					cq++
 				}
@@ -106,7 +106,7 @@ func TestAddingConfigiqMovesNoInferenceXRole(t *testing.T) {
 		if cq == 0 {
 			t.Errorf("seed %s…: no configiq unit is on a published list", seed[:4])
 		}
-		for _, r := range []ledger.Role{ledger.RoleFit, ledger.RoleAnchor, ledger.RoleReport} {
+		for _, r := range []ledger.Role{ledger.RoleFit, ledger.RoleAnchor} {
 			moved := 0
 			var first string
 			for _, u := range ix {

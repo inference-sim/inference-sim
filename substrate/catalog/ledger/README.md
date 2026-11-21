@@ -19,15 +19,14 @@ check `ledger scan-roles` refuses any other committed file that pairs a unit wit
 | `legacy-map.yaml` | the legacy table: each legacy unit's side, the units whose records carry both labels, and the new units whose role key holds legacy units | the ingest tool |
 | `legacy-points.jsonl.gz` | each point of the old partition, its label and the units its records fell in | the ingest tool |
 | `aliases/<source>-<n>.yaml` | alias tables, old to new unit_id and role key, after a change to how identities are computed | `ledger generate-aliases`, in the pull request that makes the change |
-| `published/{fit,anchor,report}.yaml` | the three published lists | the release job, at each substrate release |
+| `published/{fit,anchor}.yaml` | the two published lists | the release job, at each substrate release |
 
 `published/` does not exist yet. The release job writes it once a ledger owner has created the
 seed. Nothing else may write it.
 
 A tree without the lists can merge, but it cannot be released. `ledger check -release catalog/ledger`
-and the release tool (`tools/release`, at `-tag`) refuse a tree that lacks any of the three lists
-or whose fit or anchor list holds no unit; the release job itself refuses to write such lists.
-The report list may be empty, because the cut-points give the report role no range. The
+and the release tool (`tools/release`, at `-tag`) refuse a tree that lacks either list
+or whose fit or anchor list holds no unit; the release job itself refuses to write such lists. The
 fit list is what every fitted coefficient cites (D1) and the anchor list is what the dashboard
 scores (COV-2), so a release without them has nothing to fit from or score.
 
@@ -234,7 +233,7 @@ hash. A person with admin rights on the repository, or an agent acting for one, 
    SHA-256 is not the recorded one, so a record without its secret draws no role.
 4. Run `.github/workflows/ledger.yml` with `job: release` on main. The job checks the seed
    against the recorded hash before it draws anything. Its artifact `published` holds
-   `fit.yaml`, `anchor.yaml` and `report.yaml`. The release bot commits them under
+   `fit.yaml` and `anchor.yaml`. The release bot commits them under
    `published/` in the release pull request. The lists are not embedded in the simulator's
    data (`CatalogPatterns` names nothing under `ledger/`, and the loader ignores everything
    under `catalog/ledger/`); the dashboard reads them from the release checkout.
@@ -357,7 +356,7 @@ relatives, not InferenceX units, so no role is drawn for it.
 Three sources are calibration data for the kernel and are never held out: `vllm-ci-perf`,
 `sglang-nightly` and `sglang-traces`. Their rules in `ledger.yaml` assign fit (0 to 69), select
 (70 to 84) and validate (85 to 99) only, and have no legacy side; `ledger check` refuses a
-held, anchor or report role, or a legacy side, for any of them. Their licence is NOASSERTION, so
+held or anchor role, or a legacy side, for any of them. Their licence is NOASSERTION, so
 only identifiers and hashes are committed (X12, D6) and each input is pinned by hash (D3).
 
 | source | unit | role key |

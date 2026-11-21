@@ -27,7 +27,7 @@ type Ledger struct {
 	Units map[string][]Unit
 	// Aliases holds every alias table, in file order.
 	Aliases []*AliasTable
-	// Published holds the lists the release job wrote, by role: all three, or none before the
+	// Published holds the lists the release job wrote, by role: both, or none before the
 	// first release publishes them.
 	Published map[Role]*Published
 }
@@ -179,11 +179,11 @@ var allowed = []*regexp.Regexp{
 	regexp.MustCompile(`^units/[a-z0-9-]+\.jsonl\.gz$`),
 	regexp.MustCompile(`^reports/[a-z0-9-]+\.yaml$`),
 	regexp.MustCompile(`^aliases/[a-z0-9-]+-[0-9]+\.yaml$`),
-	regexp.MustCompile(`^published/(fit|anchor|report)\.yaml$`),
+	regexp.MustCompile(`^published/(fit|anchor)\.yaml$`),
 }
 
 // CheckLayout refuses any file under dir that the ledger does not define, and any symbolic
-// link. The only files that may list roles are published/{fit,anchor,report}.yaml; the legacy
+// link. The only files that may list roles are published/{fit,anchor}.yaml; the legacy
 // labels of legacy-map.yaml are sides, not roles (D4).
 func CheckLayout(dir string) error {
 	var errs []error
@@ -221,14 +221,14 @@ var unitRef = regexp.MustCompile(`\b[0-9a-fA-F]{16,64}\b`)
 // a tab or a list dash, and before the end of the value; or as a key that opens a list or a
 // mapping. So "role: held", "{\"role\":\"held\"}", "abc…,held", "held:" and "- FIT" match,
 // and prose such as "the report (not redistributed)" does not.
-var roleWord = regexp.MustCompile(`(?i)([:=,\t-]\s*["']?(fit|select|validate|held|anchor|report)["']?\s*([,}\]#\t]|$))|(^\s*["']?(fit|select|validate|held|anchor|report)["']?\s*:\s*(\[|\{|$))`)
+var roleWord = regexp.MustCompile(`(?i)([:=,\t-]\s*["']?(fit|select|validate|held|anchor)["']?\s*([,}\]#\t]|$))|(^\s*["']?(fit|select|validate|held|anchor)["']?\s*:\s*(\[|\{|$))`)
 
 // LegacyFiles are the two committed files that may pair a unit with a legacy label (D4).
 var LegacyFiles = []string{"catalog/ledger/" + FileLegacyMap, "catalog/ledger/legacy-points.jsonl.gz"}
 
 // CheckNoRoles is D4's check that no committed file lists roles. It refuses any line that
 // names both a unit-like identifier (16 or more hex digits) and a role or legacy label, in
-// every file of files (paths relative to root), except the three published lists and the two
+// every file of files (paths relative to root), except the two published lists and the two
 // legacy files. Gzipped files are read decompressed. skip names paths not to scan, for test
 // fixtures that hold roles on purpose as known-bad inputs.
 func CheckNoRoles(root string, files []string, skip func(string) bool) error {
@@ -257,7 +257,7 @@ func CheckNoRoles(root string, files []string, skip func(string) bool) error {
 				opened = i + 1
 			}
 			if unitRef.Match(line) && (roleWord.Match(line) || opened > 0) {
-				errs = append(errs, fmt.Errorf("%s:%d: pairs an identifier with a role; roles are computed by the seed-holding jobs, and only catalog/ledger/published/{fit,anchor,report}.yaml list them (D4)", rel, i+1))
+				errs = append(errs, fmt.Errorf("%s:%d: pairs an identifier with a role; roles are computed by the seed-holding jobs, and only catalog/ledger/published/{fit,anchor}.yaml list them (D4)", rel, i+1))
 				break
 			}
 		}
@@ -265,9 +265,9 @@ func CheckNoRoles(root string, files []string, skip func(string) bool) error {
 	return errors.Join(errs...)
 }
 
-var roleKeyLine = regexp.MustCompile(`(?i)^\s*["']?(fit|select|validate|held|anchor|report)["']?\s*:\s*(\[|\{|$)`)
+var roleKeyLine = regexp.MustCompile(`(?i)^\s*["']?(fit|select|validate|held|anchor)["']?\s*:\s*(\[|\{|$)`)
 
-var publishedList = regexp.MustCompile(`^catalog/ledger/published/(fit|anchor|report)\.yaml$`)
+var publishedList = regexp.MustCompile(`^catalog/ledger/published/(fit|anchor)\.yaml$`)
 
 // AliasTable maps old unit identifiers and role keys to new ones after a change to how a
 // source's identifying fields or role keys are computed (design §10.2). An aliased unit keeps

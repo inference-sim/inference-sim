@@ -4,8 +4,8 @@
 //
 // It is not a contracts package. Only inference-sim and the seed-holding jobs import it.
 //
-// A unit's role is computed, never stored, except in the three published lists the release
-// job writes (fit, anchor, report) and in the legacy labels of legacy-map.yaml (D4). Nothing
+// A unit's role is computed, never stored, except in the two published lists the release
+// job writes (fit, anchor) and in the legacy labels of legacy-map.yaml (D4). Nothing
 // here writes a select, validate or held role to a file; Assign returns roles to the caller,
 // and only a job that holds the seed can call it.
 package ledger

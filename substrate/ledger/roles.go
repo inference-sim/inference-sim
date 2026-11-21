@@ -17,7 +17,6 @@ const (
 	RoleValidate Role = "validate"
 	RoleHeld     Role = "held"
 	RoleAnchor   Role = "anchor"
-	RoleReport   Role = "report"
 )
 
 // RoleNone is the absence of a role: a unit its source's rule leaves out has none. It is not
@@ -25,9 +24,9 @@ const (
 const RoleNone Role = ""
 
 // Roles lists every role, in the order the design's table gives them.
-var Roles = []Role{RoleFit, RoleSelect, RoleValidate, RoleHeld, RoleAnchor, RoleReport}
+var Roles = []Role{RoleFit, RoleSelect, RoleValidate, RoleHeld, RoleAnchor}
 
-// Valid reports whether r is one of the six roles.
+// Valid reports whether r is one of the five roles.
 func (r Role) Valid() bool {
 	for _, x := range Roles {
 		if r == x {
@@ -37,9 +36,9 @@ func (r Role) Valid() bool {
 	return false
 }
 
-// Published reports whether the release job publishes r's members: fit, anchor and report.
+// Published reports whether the release job publishes r's members: fit and anchor.
 // The members of select, validate and held are known only inside the jobs that hold the seed.
-func (r Role) Published() bool { return r == RoleFit || r == RoleAnchor || r == RoleReport }
+func (r Role) Published() bool { return r == RoleFit || r == RoleAnchor }
 
 // mustBeNonempty reports whether a published list of r holds a unit in every release: the
 // fit list, which the fits cite (D1), and the anchor list, which the dashboard scores (COV-2).

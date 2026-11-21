@@ -247,8 +247,8 @@ func TestRolesPerRoleKeyAndLegacySide(t *testing.T) {
 	}
 }
 
-// The release job publishes only fit, anchor and report.
-func TestReleasePublishesOnlyThreeLists(t *testing.T) {
+// The release job publishes only fit and anchor.
+func TestReleasePublishesOnlyTwoLists(t *testing.T) {
 	a := assignerFor(t, nil)
 	var units []Unit
 	byID := map[string]Unit{}
@@ -261,7 +261,7 @@ func TestReleasePublishesOnlyThreeLists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(lists) != 3 || lists[RoleFit] == nil || lists[RoleAnchor] == nil || lists[RoleReport] == nil {
+	if len(lists) != 2 || lists[RoleFit] == nil || lists[RoleAnchor] == nil {
 		t.Fatalf("published %v", lists)
 	}
 	for r, p := range lists {
@@ -881,7 +881,7 @@ func TestCheckCitesOnlyFit(t *testing.T) {
 
 // The published lists are read back and checked against the ledger that drew them (D7, COV-2):
 // a list from another seed or partition, a role the release does not publish, a unit no source
-// has, a unit on two lists, an unsorted list, and a directory holding only some of the three are
+// has, a unit on two lists, an unsorted list, and a directory holding only one of the two are
 // each refused. Each case is a known-bad directory.
 func TestPublishedListsAreCheckedAgainstTheLedger(t *testing.T) {
 	a := assignerFor(t, nil)
@@ -928,7 +928,7 @@ func TestPublishedListsAreCheckedAgainstTheLedger(t *testing.T) {
 
 	dir := write(t, func(map[Role]*Published) {})
 	got, err := LoadPublished(dir, cfg, byUnit)
-	if err != nil || len(got) != 3 {
+	if err != nil || len(got) != 2 {
 		t.Fatalf("the lists the release wrote were refused: %v", err)
 	}
 	if got, err := LoadPublished(t.TempDir(), cfg, byUnit); err != nil || len(got) != 0 {
@@ -941,14 +941,14 @@ func TestPublishedListsAreCheckedAgainstTheLedger(t *testing.T) {
 	}{
 		"another seed":           {func(m map[Role]*Published) { m[RoleAnchor].SeedSHA256 = strings.Repeat("0", 64) }, "is not the seed ledger.yaml records"},
 		"another partition":      {func(m map[Role]*Published) { m[RoleFit].PartitionVersion = 2 }, "ledger.yaml is at 1"},
-		"a role not published":   {func(m map[Role]*Published) { m[RoleReport].Role = RoleHeld }, `role "held" is not published`},
-		"a role in another file": {func(m map[Role]*Published) { m[RoleReport].Role = RoleFit }, `role "fit" in the file for "report"`},
+		"a role not published":   {func(m map[Role]*Published) { m[RoleAnchor].Role = RoleHeld }, `role "held" is not published`},
+		"a role in another file": {func(m map[Role]*Published) { m[RoleAnchor].Role = RoleFit }, `role "fit" in the file for "anchor"`},
 		"a unit no source has": {func(m map[Role]*Published) {
 			m[RoleAnchor].Units = append(m[RoleAnchor].Units, strings.Repeat("f", 64))
 		}, "is in no source's unit list"},
 		"a unit on two lists": {func(m map[Role]*Published) {
-			m[RoleReport].Units = append([]string{m[RoleFit].Units[0]}, m[RoleReport].Units...)
-			sort.Strings(m[RoleReport].Units)
+			m[RoleAnchor].Units = append([]string{m[RoleFit].Units[0]}, m[RoleAnchor].Units...)
+			sort.Strings(m[RoleAnchor].Units)
 		}, "a unit has one role"},
 		"an unsorted list": {func(m map[Role]*Published) {
 			u := m[RoleFit].Units
@@ -959,7 +959,7 @@ func TestPublishedListsAreCheckedAgainstTheLedger(t *testing.T) {
 			m[RoleFit].Units = append(u[:2:2], u[1:]...)
 		}, "is listed twice"},
 		"a name that is no unit id": {func(m map[Role]*Published) { m[RoleFit].Units[0] = "A" }, "is not a unit_id"},
-		"only two of the three":     {func(m map[Role]*Published) { delete(m, RoleReport) }, "holds 2 of the three"},
+		"only one of the two":       {func(m map[Role]*Published) { delete(m, RoleAnchor) }, "holds 1 of the two"},
 	} {
 		_, err := LoadPublished(write(t, c.mut), cfg, byUnit)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
