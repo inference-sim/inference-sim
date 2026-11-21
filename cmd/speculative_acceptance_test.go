@@ -337,3 +337,50 @@ func TestAcceptanceRunReplayParity(t *testing.T) {
 		t.Errorf("run recorded %+v, replay %+v", runRec, repRec)
 	}
 }
+
+// DEV-7 / INV-13: the acceptance terms a catalog preset states (its category and thinking
+// mode) are the workload layer, so a trace exported from the preset carries them and a replay
+// with no selector flag resolves the profile the run did (inference-sim#2115). The selectors
+// here are not flags on either side, which the parity tests above cannot see.
+func TestAcceptanceTermsOfPresetSurviveReplay(t *testing.T) {
+	registry, catalog := acceptanceRepos(t, "category: coding\nthinking: \"off\"\n")
+	dir := dsparkVariant(t, 5, "")
+	prefix := filepath.Join(t.TempDir(), "trace")
+	runRec, runOut, stderr, err := runAccept(t, dir, registry, catalog,
+		append(append([]string{}, acceptRunArgs...), "--workload", "accept", "--trace-output", prefix,
+			"--horizon", "600000000")...)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 4))
+	}
+	if want := fixtureAL(t, 5, acceptance.ThinkingOff); runRec == nil || runRec.Entry.Key == "" || runRec.Length != want {
+		t.Fatalf("the run did not resolve a registry profile (want AL %v): %+v", want, runRec)
+	}
+	header, err := os.ReadFile(prefix + ".yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(header), "acceptance:") {
+		t.Errorf("the exported header states no acceptance terms:\n%s", header)
+	}
+	repRec, repOut, stderr, err := runAccept(t, dir, registry, catalog,
+		"replay", "--trace-header", prefix+".yaml", "--trace-data", prefix+".csv", "--horizon", "600000000")
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 4))
+	}
+	if !reflect.DeepEqual(runRec, repRec) {
+		t.Errorf("the run resolved %+v, the replay %+v", runRec, repRec)
+	}
+	if inv13View(t, runOut) != inv13View(t, repOut) {
+		t.Errorf("INV-13: the replay's Result differs from the run's")
+	}
+	// A selector on the command line still overrides the header's terms.
+	onRec, _, stderr, err := runAccept(t, dir, registry, catalog,
+		"replay", "--trace-header", prefix+".yaml", "--trace-data", prefix+".csv", "--horizon", "600000000",
+		"--speculative-thinking", "on")
+	if err != nil {
+		t.Fatalf("replay with a selector: %v\n%s", err, lastLines(stderr, 4))
+	}
+	if onRec == nil || onRec.Length == repRec.Length {
+		t.Errorf("--speculative-thinking on did not override the header's thinking off: %+v vs %+v", onRec, repRec)
+	}
+}

@@ -221,6 +221,9 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 	}
 	notToggled := map[string]bool{
 		"TraceHeader.KVOffload": true, "TraceHeader.Mode": true, "TraceHeader.SessionContextGrowth": true,
+		// Acceptance selects a speculative profile, and the fixture's scenario does not speculate;
+		// TestAcceptanceTermsOfPresetSurviveReplay changes the resolved profile with it.
+		"TraceHeader.Acceptance":  true,
 		"TraceRecord.ThinkTimeUs": true, "TraceRecord.InputTokensReset": true, "TraceRecord.ImageTokens": true,
 		"TraceRecord.AudioTokens": true, "TraceRecord.VideoTokens": true, "TraceRecord.Streaming": true,
 		// Phases and the phase column are consumed together; a header with phases needs every row to
