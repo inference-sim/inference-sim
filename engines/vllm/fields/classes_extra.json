@@ -140,6 +140,21 @@
   "kind": "numeric",
   "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
  },
+ "HF_HUB_CACHE": {
+  "kind": "enumerated",
+  "values": ["/hf_hub_cache"],
+  "why": "the variable is a directory, which the field list has no class for; it holds the one the recorded runs state, and a recipe that states another falls outside it and is estimated by the scorer. No value of the variable reaches a step, a batch or a KV budget (the proof of the field)"
+ },
+ "HUGGINGFACE_HUB_CACHE": {
+  "kind": "enumerated",
+  "values": ["/hf_hub_cache"],
+  "why": "the variable is a directory, which the field list has no class for; it holds the one the recorded runs state, and a recipe that states another falls outside it and is estimated by the scorer. No value of the variable reaches a step, a batch or a KV budget (the proof of the field)"
+ },
+ "TRANSFORMERS_CACHE": {
+  "kind": "enumerated",
+  "values": ["/hf_hub_cache"],
+  "why": "the variable is a directory, which the field list has no class for; it holds the one the recorded runs state, and a recipe that states another falls outside it and is estimated by the scorer. No value of the variable reaches a step, a batch or a KV budget (the proof of the field)"
+ },
  "attention_config.indexer_kv_dtype": {
   "stated": [
    {

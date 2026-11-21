@@ -1,0 +1,96 @@
+{
+ "field": "HF_HUB_CACHE",
+ "kind": "named",
+ "release": "0.34.0+0fda86a35419 0fda86a35419c9c70dbfada224c838c10fbb62ad",
+ "claim": "Reviewed static fact, not a run of vLLM's code: vLLM's serving process (vllm/, csrc/, rust/) names HF_HUB_CACHE at two load-time sites (the second one is also named in a comment) and in test code, and nowhere else; the harness holds the list to the tree. (1) vllm/model_executor/model_loader/weight_utils.py _local_snapshot_dirs uses huggingface_hub.constants.HF_HUB_CACHE as the cache directory when none is passed, to find a cached checkpoint's snapshot directories; its only caller is drop_checkpoint_cache (in the same file), which evicts the checkpoint files from the page cache with posix_fadvise(POSIX_FADV_DONTNEED), and drop_checkpoint_cache is called only from DeepSeek-V4.1's load_weights and process_weights_after_loading when engram_config.use_thp is on (vllm/models/deepseek_v41/nvidia/model.py): the eviction runs once, while the model is loaded. (2) rust/src/text/src/backend/hf/model_files.rs SourceFiles::open reads the variable to find a cached snapshot of the model's tokenizer or config files before a Hub download, when the Rust front end (enabled by VLLM_USE_RUST_FRONTEND) resolves the model's files at start-up. The three test sites follow the file's first #[cfg(test)] line. The variable chooses the directory those files are read from; it is not a size, a rate or a count, and neither site is on the path of a request. A load that finds the files elsewhere takes a different time, which is outside the window a run is scored over.",
+ "argument": "reviewed_static_fact",
+ "names": [
+  "HF_HUB_CACHE"
+ ],
+ "sites": {
+  "HF_HUB_CACHE": [
+   {
+    "file": "rust/src/text/src/backend/hf/model_files.rs",
+    "line": 266,
+    "text": "// TODO: Let hf-hub read HF_HUB_CACHE after upgrading to 1.0.",
+    "role": "load"
+   },
+   {
+    "file": "rust/src/text/src/backend/hf/model_files.rs",
+    "line": 267,
+    "text": "let cache = std::env::var_os(\"HF_HUB_CACHE\")",
+    "role": "load"
+   },
+   {
+    "file": "rust/src/text/src/backend/hf/model_files.rs",
+    "line": 821,
+    "text": "let cache = PathBuf::from(std::env::var_os(\"HF_HUB_CACHE\").unwrap());",
+    "role": "test"
+   },
+   {
+    "file": "rust/src/text/src/backend/hf/model_files.rs",
+    "line": 878,
+    "text": ".env(\"HF_HUB_CACHE\", &cache)",
+    "role": "test"
+   },
+   {
+    "file": "rust/src/text/src/backend/hf/model_files.rs",
+    "line": 950,
+    "text": ".env_remove(\"HF_HUB_CACHE\")",
+    "role": "test"
+   },
+   {
+    "file": "vllm/model_executor/model_loader/weight_utils.py",
+    "line": 847,
+    "text": "Path(cache_dir or huggingface_hub.constants.HF_HUB_CACHE)",
+    "role": "load"
+   }
+  ]
+ },
+ "probes": [
+  {
+   "label": "the directory the recorded runs state",
+   "value": "/hf_hub_cache"
+  }
+ ],
+ "result": {
+  "vllm_commit": "0.34.0+0fda86a35419 0fda86a35419c9c70dbfada224c838c10fbb62ad",
+  "files_scanned": 5312,
+  "occurrences": {
+   "HF_HUB_CACHE": [
+    {
+     "file": "rust/src/text/src/backend/hf/model_files.rs",
+     "line": 266,
+     "role": "load"
+    },
+    {
+     "file": "rust/src/text/src/backend/hf/model_files.rs",
+     "line": 267,
+     "role": "load"
+    },
+    {
+     "file": "rust/src/text/src/backend/hf/model_files.rs",
+     "line": 821,
+     "role": "test"
+    },
+    {
+     "file": "rust/src/text/src/backend/hf/model_files.rs",
+     "line": 878,
+     "role": "test"
+    },
+    {
+     "file": "rust/src/text/src/backend/hf/model_files.rs",
+     "line": 950,
+     "role": "test"
+    },
+    {
+     "file": "vllm/model_executor/model_loader/weight_utils.py",
+     "line": 847,
+     "role": "load"
+    }
+   ]
+  },
+  "problems": [],
+  "verdict": "inert"
+ }
+}

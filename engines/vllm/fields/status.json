@@ -37,6 +37,7 @@
  "extra_env": [
   "DYN_REQUEST_PLANE_CODEC",
   "GLOO_SOCKET_IFNAME",
+  "HUGGINGFACE_HUB_CACHE",
   "MC_ENABLE_DEST_DEVICE_AFFINITY",
   "MC_SLICE_SIZE",
   "MC_WORKERS_PER_CTX",
@@ -49,6 +50,7 @@
   "PYTHONUNBUFFERED",
   "TORCH_CUDA_ARCH_LIST",
   "TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC",
+  "TRANSFORMERS_CACHE",
   "UCX_CUDA_IPC_ENABLE_MNNVL",
   "UCX_MAX_RMA_RAILS",
   "UCX_MAX_RNDV_RAILS",
@@ -6167,9 +6169,9 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#53"
+    "proof": "oracle/inertness/HF_HUB_CACHE.json"
    },
-   "status": "not_modelled"
+   "status": "proven_inert"
   },
   "env:HF_HUB_OFFLINE": {
    "estimation": {
@@ -6215,6 +6217,15 @@
     "issue": "inference-sim/blis-vllm#53"
    },
    "status": "not_modelled"
+  },
+  "env:HUGGINGFACE_HUB_CACHE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "proof": "oracle/inertness/HUGGINGFACE_HUB_CACHE.json"
+   },
+   "status": "proven_inert"
   },
   "env:INKLING_GFX950_GLUON": {
    "estimation": {
@@ -7261,6 +7272,15 @@
     "issue": "inference-sim/blis-vllm#53"
    },
    "status": "not_modelled"
+  },
+  "env:TRANSFORMERS_CACHE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "proof": "oracle/inertness/TRANSFORMERS_CACHE.json"
+   },
+   "status": "proven_inert"
   },
   "env:TRITON_CACHE_AUTOTUNING": {
    "estimation": {

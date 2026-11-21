@@ -861,6 +861,10 @@ def entry_for(src, root, name, field, repo):
         if override == "numeric":
             # A variable no code compares (or reads): one class, all its values (reviewed, with the reason in the file).
             kind, extra, optional = "numeric", "int", False
+        elif override == "enumerated":
+            # A variable no code compares whose value is a string the list has no class for (a directory):
+            # the values it lists are the ones the evidence states (reviewed, with the reason in the file).
+            kind, extra, optional = "enumerated", list(read_json(EXTRA_PATH)[name]["values"]), False
     else:
         owner, leaf, ea_name, node = src.resolve(name)
         kind, extra, optional = src.kind_of(node.annotation)
