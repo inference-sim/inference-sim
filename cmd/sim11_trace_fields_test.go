@@ -244,6 +244,8 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 	sort.Strings(consumed)
 
 	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	// The precise-prefix router reads token IDs the engines' render endpoints give it.
+	scenarios := kernelScenariosDirServingRender(t)
 	raw := func(muts ...mutate) string {
 		h, r := sim11Trace()
 		for _, m := range muts {
@@ -255,7 +257,7 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 			t.Fatal(err)
 		}
 		return runReplayCaptureStdout(t, []string{"--trace-header", hp, "--trace-data", dp,
-			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t),
+			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", scenarios,
 			"--registry", kernelRegistryDir(t), "--defaults-filepath", defaultsPath,
 			"--num-instances", "2", "--horizon", "60000000"})
 	}
