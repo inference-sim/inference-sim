@@ -790,32 +790,30 @@ func p2pEngineOfWorld(t *testing.T, port int, at plan.Endpoint, world int, extra
 	return e
 }
 
-// A prefiller and a decoder of different tensor parallelism are compatible peers when the layout is
-// parallelism agnostic (one non-MLA full-attention group): vLLM's p2p handshake compares the
-// FileMapper run config built with parallel_agnostic=True, which names no tensor-parallel size
-// (tiering/p2p/manager.py:351-356, file_mapper.py:100-127@4ba787ec), so the decoder loads the prompt
-// from the prefiller across the fabric instead of recomputing it (inference-sim#2214).
-func TestAP2PDecoderOfAnotherTensorParallelismLoadsItsPromptFromThePrefiller(t *testing.T) {
-	p, d := p2pEngineOfWorld(t, 5710, prefillerAt, 4, ""), p2pEngineOfWorld(t, 5711, decoderAt, 8, "")
-	w := newP2PWorld(t, p, d)
-	w.placeAll(prefillerAt, decoderAt)
-	w.add(0, 0, kvParams(req("p1", 96, 1), `{"remote_decoder":{"kv_request_id":"kv1"}}`))
-	w.add(0, 1, kvParams(req("d1", 100, 2), fromPrefiller("kv1")))
-	w.run(10_000_000)
+// A prefiller and a decoder of different tensor parallelism, with a model that is not MLA, are not
+// compatible peers: the handshake compares the FileMapper run config, which names the tensor-parallel
+// size unless is_parallelism_agnostic, and at vLLM 0.34.0+0fda86a35419 only canonical_layout makes a
+// layout agnostic (offloading/config.py), whatever the model runner. vLLM rejects the peer's connect
+// (session.py _on_connect, "config fingerprint mismatch"), so the decoder computes the whole prompt
+// and no WRITE is made (inference-sim#2214). vLLM does not refuse the deployment.
+func TestAP2PDecoderOfAnotherTensorParallelismRecomputesItsPrompt(t *testing.T) {
+	for _, runner := range []string{"use_v2_model_runner: false\n", "use_v2_model_runner: true\n"} {
+		p, d := p2pEngineOfWorld(t, 5710, prefillerAt, 4, runner), p2pEngineOfWorld(t, 5711, decoderAt, 8, runner)
+		w := newP2PWorld(t, p, d)
+		w.placeAll(prefillerAt, decoderAt)
+		w.add(0, 0, kvParams(req("p1", 96, 1), `{"remote_decoder":{"kv_request_id":"kv1"}}`))
+		w.add(0, 1, kvParams(req("d1", 100, 2), fromPrefiller("kv1")))
+		w.run(10_000_000)
 
-	if _, ok := w.nodes[1].finished["d1"]; !ok {
-		t.Fatal("the decoder's request did not finish")
-	}
-	if got := w.nodes[1].first["d1"]; got != 4 {
-		t.Errorf("the decoder's first step computed %d tokens of d1, want the 4 past the prompt: it recomputed the prompt "+
-			"the tp 4 prefiller held", got)
-	}
-	moved := 0
-	for _, s := range w.writes() {
-		moved += s.tr.Tokens
-	}
-	if moved != 96 {
-		t.Errorf("the WRITEs moved %d tokens, want the prompt's 96", moved)
+		if _, ok := w.nodes[1].finished["d1"]; !ok {
+			t.Fatalf("%s: the decoder's request did not finish", strings.TrimSpace(runner))
+		}
+		if got := w.nodes[1].first["d1"]; got != 64 {
+			t.Errorf("%s: the decoder's first step computed %d tokens of d1, want a full 64-token budget of the prompt it recomputes, not the 4 past it", strings.TrimSpace(runner), got)
+		}
+		if n := len(w.writes()); n != 0 {
+			t.Errorf("%s: a rejected peer made %d WRITEs", strings.TrimSpace(runner), n)
+		}
 	}
 }
 
@@ -833,31 +831,28 @@ func TestTheP2PFingerprintNamesTheParallelSizesOnlyWhenTheLayoutIsNotAgnostic(t 
 	}
 }
 
-// is_parallelism_agnostic: one non-MLA full-attention group on the V1 model runner. A compressed
-// (MLA) group, an indexer, a sliding window, several groups or the V2 runner are not.
-func TestParallelismAgnosticIsVLLMsGate(t *testing.T) {
-	full := KVLayerRun{Count: 2, Spec: "full", NumKVHeads: 8, HeadSize: 128}
-	for _, c := range []struct {
-		name string
-		runs []KVLayerRun
-		v2   bool
-		want bool
-	}{
-		{"no kv_layers: one full-attention group", nil, false, true},
-		{"a full-attention run", []KVLayerRun{full}, false, true},
-		{"the V2 model runner", []KVLayerRun{full}, true, false},
-		{"an MLA run", []KVLayerRun{{Count: 2, Spec: "mla", NumKVHeads: 1, HeadSize: 576}}, false, false},
-		{"an indexer run", []KVLayerRun{full, {Count: 1, Spec: "indexer"}}, false, false},
-		{"a sliding window beside full attention", []KVLayerRun{full, {Count: 2, Spec: "sliding_window", SlidingWindow: 128}}, false, false},
-		{"a drafter's layers", []KVLayerRun{full, {Count: 1, Spec: "full", Draft: true}}, false, false},
-	} {
-		if got := parallelismAgnostic(c.runs, c.v2); got != c.want {
-			t.Errorf("%s: parallelismAgnostic = %v, want %v", c.name, got, c.want)
+// is_parallelism_agnostic at vLLM 0.34.0+0fda86a35419 needs canonical_layout, which the engine does not
+// model: no layout it runs is agnostic, on either model runner and for any KV layers, and only an MLA
+// pool that is tensor-parallel only is replicated.
+func TestNoModelledLayoutIsParallelismAgnostic(t *testing.T) {
+	for _, mla := range []bool{false, true} {
+		for _, plain := range []bool{false, true} {
+			for _, pp := range []int{1, 2} {
+				for _, world := range []int{1, 4, 8} {
+					_, _, agnostic, replicated := layoutOf(offloadLayoutFacts{plainGroup: plain, pp: pp}, mla, world)
+					if agnostic {
+						t.Errorf("mla %v plain %v pp %d world %d: agnostic", mla, plain, pp, world)
+					}
+					if want := mla && plain && pp == 1 && world > 1; replicated != want {
+						t.Errorf("mla %v plain %v pp %d world %d: replicated = %v, want %v", mla, plain, pp, world, replicated, want)
+					}
+				}
+			}
 		}
 	}
 }
 
-// A tensor-parallel-only MLA pool is vLLM's replicated_layout (offloading/config.py:196-208@4ba787ec):
+// A tensor-parallel-only MLA pool is vLLM's replicated_layout (offloading/config.py@0fda86a35419):
 // the latent is the same on every rank, so a prefiller and a decoder of different tensor parallelism
 // handshake and the decoder loads the prompt (inference-sim#2214 for the MLA models).
 func TestAnMLAPoolOfAnotherTensorParallelismLoadsItsPromptFromThePrefiller(t *testing.T) {
@@ -887,7 +882,7 @@ func TestAnMLAPoolsRunConfigNamesTheParallelSizesUnlessItIsTensorParallelOnly(t 
 		return kvtier.Namespace{TokensPerHash: 16, BlocksPerFile: 1, TPSize: tp, PPSize: pp, PCPSize: 1, DCPSize: 1,
 			ParallelAgnostic: agnostic, Replicated: replicated}.RunConfig()
 	}
-	plain := func(pp int) offloadLayoutFacts { return offloadLayoutFacts{agnostic: true, plainGroup: true, pp: pp} }
+	plain := func(pp int) offloadLayoutFacts { return offloadLayoutFacts{plainGroup: true, pp: pp} }
 	if a, b := cfg(plain(1), true, 4), cfg(plain(1), true, 8); a != b || !strings.Contains(a, `"replicated_layout":true`) {
 		t.Errorf("tensor-parallel-only MLA pools of tp 4 and tp 8 differ or are not replicated:\n%s\n%s", a, b)
 	}
@@ -900,7 +895,7 @@ func TestAnMLAPoolsRunConfigNamesTheParallelSizesUnlessItIsTensorParallelOnly(t 
 	if a := cfg(plain(1), true, 1); strings.Contains(a, "replicated_layout") {
 		t.Errorf("a single-GPU MLA pool is replicated: %s", a)
 	}
-	stated := offloadLayoutFacts{agnostic: false, plainGroup: false, pp: 1}
+	stated := offloadLayoutFacts{plainGroup: false, pp: 1}
 	if a, b := cfg(stated, true, 4), cfg(stated, true, 8); a == b {
 		t.Errorf("an MLA model with stated kv_layers agrees across tp: %s", a)
 	}
