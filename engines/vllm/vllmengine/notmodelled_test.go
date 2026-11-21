@@ -170,7 +170,6 @@ var noDefaultValue = map[string]string{
 // outlive the kernel reading the key.
 var pricedByTheKernel = map[string]string{
 	"all2all_backend":                   "all2all_backend: allgather_reducescatter\n#2655",
-	"disable_custom_all_reduce":         "disable_custom_all_reduce: true\n#2626",
 	"disable_cascade_attn":              "disable_cascade_attn: false\n#2626",
 	"enforce_eager":                     "enforce_eager: true\n#2617",
 	"mamba_cache_dtype":                 "mamba_cache_dtype: float32\n#2628",

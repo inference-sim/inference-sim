@@ -18,6 +18,10 @@
 #     fallback overstates efficiency; an entry needs a measurement, not a transfer of that rule.
 #   recurrent_decode_*: tokens per microsecond of a sequential scan, fitted per kernel and chip
 #     (0.235 to 13.5); not derivable from catalog peaks.
+#   recurrent_decode_rate_short_conv (every chip; Inkling-2-Small, whose target layers include
+#     short convolutions): no measured decode form exists, so the kernel charges nothing beyond the
+#     projections the graph prices and states the gap (qwen4exp.go). It is listed to name that gap, not to
+#     admit a default; it goes when a short-convolution decode rate is measured.
 #   recurrent_prefill_rate_*: the kernel charges chunked-scan FLOPs at the GEMM ramp; an entry
 #     needs a fit.
 #   sharded_projection_gather: priced as an NCCL all-gather; an entry needs a measurement.
@@ -46,6 +50,7 @@ recurrent_decode_floor_mamba2 a100-80,a100-sxm,l40s
 recurrent_decode_rate_gdn a100-80,a100-sxm,l40s
 recurrent_decode_rate_kda a100-80,a100-sxm,l40s
 recurrent_decode_rate_mamba2 a100-80,a100-sxm,l40s
+recurrent_decode_rate_short_conv a100-80,a100-sxm,b200,b300,h100,h200,l40s
 recurrent_prefill_rate_gdn a100-80,a100-sxm,b200,b300,h100,h200,l40s
 recurrent_prefill_rate_kda a100-80,a100-sxm,b200,b300,h100,h200,l40s
 recurrent_prefill_rate_mamba2 a100-80,a100-sxm,b200,b300,h100,h200,l40s
