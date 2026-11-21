@@ -15,17 +15,18 @@ import (
 // (arg_groups/fields/schedule.py, memory.py, disagg.py@297e54fd). The caller resolves them
 // (config.Resolve) and hands the values over; this package reads no ServerArgs itself.
 type SchedArgs struct {
-	PageSize                  int
-	SchedulePolicy            string
-	MaxPrefillTokens          int
-	ChunkedPrefillSize        *int
-	EnableMixedChunk          bool
-	DisableRadixCache         bool
-	DisableOverlapSchedule    bool
-	ScheduleConservativeness  float64
-	PrefillDecodeInterval     *int
-	EnablePriorityScheduling  bool
-	DisablePriorityPreemption bool
+	PageSize                   int
+	SchedulePolicy             string
+	MaxPrefillTokens           int
+	ChunkedPrefillSize         *int
+	EnableMixedChunk           bool
+	DisableRadixCache          bool
+	DisableOverlapSchedule     bool
+	ScheduleConservativeness   float64
+	PrefillDecodeInterval      *int
+	PrefillDecodeIntervalMinBs int
+	EnablePriorityScheduling   bool
+	DisablePriorityPreemption  bool
 	// SchedulePriorityThreshold is priority_scheduling_preemption_threshold.
 	PriorityPreemptionThreshold    int
 	ScheduleLowPriorityValuesFirst bool
@@ -170,6 +171,7 @@ func SchedConfig(a SchedArgs, rt Runtime, env Env) (sched.Config, error) {
 		InBatchPrefixDeprioritizeThreshold: 32,
 		EnablePriorityScheduling:           a.EnablePriorityScheduling,
 		PrefillDecodeInterval:              interval,
+		PrefillDecodeIntervalMinBs:         a.PrefillDecodeIntervalMinBs,
 		Allocator:                          allocator,
 		TreeCache:                          "UnifiedRadixCache",
 		DisaggregationMode:                 mode,

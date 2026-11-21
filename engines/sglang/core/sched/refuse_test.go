@@ -25,7 +25,6 @@ func TestUnmodelledSettingsAreRefusedByName(t *testing.T) {
 		want string
 	}{
 		{"disagg", func(c *Config) { c.DisaggregationMode = "prefill" }, "disaggregation"},
-		{"interval", func(c *Config) { c.PrefillDecodeInterval = 4 }, "prefill-decode interval"},
 		{"pp", func(c *Config) { c.PPSize = 2 }, "pipeline parallelism"},
 		{"retraction policy", func(c *Config) { c.RetractionPolicy = "fifo" }, "does not exist"},
 		{"unknown", func(c *Config) { c.Policy = "nope" }, "Unknown schedule_policy: policy='nope'"},
