@@ -269,6 +269,8 @@ const cpuTier = "cpu_dram"
 // (worker_kv_bytes_per_block, offloading/config.py:174-189), the engine's world size (num_workers,
 // offloading/scheduler.py:313) and how many workers' copies of a block the tier holds
 // (OffloadCopies: one for the replicated latent layout, offloading/config.py:196-209).
+// The tier's bytes are not reduced by the host memory the model holds (DeepSeek-V4.1's engram
+// tables), and the engram's PCIe reads are not charged: a documented deviation, issue 1924.
 func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) {
 	if o == nil {
 		return nil, nil
