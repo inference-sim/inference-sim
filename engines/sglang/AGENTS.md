@@ -43,7 +43,7 @@ In short:
 - **Shared files are generated.** `.golangci.yml` and `oracle/check_{lock,mocks,goldens}.py` are
   copies of `contracts/harness` at the substrate version `go.mod` selects. Never edit them;
   regenerate with
-  `go run github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles`.
+  `go run ./substrate/contracts/harness/cmd/harnessfiles`.
   `TestHarnessCopiesAreCurrent` fails when one differs. `oracle/harness.json` is this
   repository's configuration of the oracle checks. Its `upstream_names` are matched by function
   name alone, whatever class or module defines the function. Its `decision_prefixes`, with
@@ -70,7 +70,7 @@ In short:
 - **Process checks.** the repository-root `.github/workflows/blis.yml` runs the shared checks;
   `.github/workflows/private-names.yml` is the name scan. The section below and
   `.github/pull_request_template.md` are generated from the invariant registry
-  (`go run github.com/inference-sim/blis-substrate/tools/invariants agents -repo blis-sglang`,
+  (`go run ./substrate/tools/invariants agents -repo blis-sglang`,
   and `template`); CI checks them.
 
 <!-- BEGIN GENERATED: invariants (go run ./tools/invariants render; do not edit) -->
