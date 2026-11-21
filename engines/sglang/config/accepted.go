@@ -136,7 +136,14 @@ var refusedValueIssue = map[string]map[string]string{
 		"mooncake": "inference-sim/inference-sim#2443", "aibrix": "inference-sim/inference-sim#2445", "eic": "inference-sim/inference-sim#2445",
 		"simm": "inference-sim/inference-sim#2445", "mori": "inference-sim/inference-sim#2445", "tensorcast": "inference-sim/inference-sim#2445",
 	},
-	"speculative_algorithm": {"DSPARK": "inference-sim/inference-sim#2454"},
+	// The algorithms outside the EAGLE family are the surface list's remainder (Stage 9); the EAGLE
+	// issue closes when the family is modelled, and a refusal must not then cite a closed issue.
+	"speculative_algorithm": {
+		"DSPARK":     "inference-sim/inference-sim#2454",
+		"STANDALONE": "inference-sim/inference-sim#2460", "NGRAM": "inference-sim/inference-sim#2460",
+		"DFLASH": "inference-sim/inference-sim#2460", "UNO": "inference-sim/inference-sim#2460",
+		"FROZEN_KV_MTP": "inference-sim/inference-sim#2460",
+	},
 	"disaggregation_transfer_backend": {
 		"mooncake": "inference-sim/inference-sim#2446", "mooncake_tcp": "inference-sim/inference-sim#2446",
 		// The fake backend completes a transfer at the step a scenario names; the P/D queues that use it are S25.
