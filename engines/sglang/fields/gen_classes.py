@@ -33,6 +33,12 @@ Usage:
     python3 -I fields/gen_classes.py <sglang-source> fields.json fields/declarations.json > fields/value_classes.json
     python3 -I fields/gen_classes.py <sglang-source> fields.json fields/declarations.json --check fields/value_classes.json
     python3 -I fields/gen_classes.py <sglang-source> fields.json fields/declarations.json --field NAME ...
+    python3 -I fields/gen_classes.py <sglang-source> fields.json fields/declarations.json --reads NAME
+
+--reads prints every read of one field, of any status, as {"at", "to", "expr"}: the places the
+comparisons above start from, and also a read through a resolved-config bag (`get_schedule().field`,
+`get_exec().moe.field`, a name or self attribute assigned one), which the classes do not follow.
+oracle/inertness.py records which of them a run executed.
 """
 
 import argparse
@@ -210,6 +216,83 @@ def comparisons(src, field):
                         out.append((site, "Truth", None, ast.unparse(t)))
     return [(s, op, list(v) if isinstance(v, tuple) else v, e)
             for s, op, v, e in sorted(set(out), key=lambda s: (gf.site_order(s[0]), s[1], repr(s[2]), s[3]))]
+
+
+def bag_getters(src):
+    """The functions of runtime_context.py that answer a resolved-config bag (or the ServerArgs): the
+    module-level `def get_*` whose return annotation is _ConfigBag or ServerArgs. A bag is read as
+    `get_schedule().field` or `get_exec().moe.field`, so these are how a scheduler reads a field."""
+    path = os.path.join(src, gf.SRT, "runtime_context.py")
+    with open(path, encoding="utf-8") as f:
+        tree = ast.parse(f.read(), filename=path)
+    return {n.name for n in tree.body if isinstance(n, ast.FunctionDef) and n.name.startswith("get_")
+            and n.returns is not None and ast.unparse(n.returns) in ("_ConfigBag", "ServerArgs")}
+
+
+def is_bag_expr(node, getters, names, attrs):
+    """Whether node is a bag: a getter's call, a name or self attribute the scope assigned one to, or a
+    sub-bag (an attribute of a bag)."""
+    if isinstance(node, ast.Call):
+        fn = node.func
+        last = fn.id if isinstance(fn, ast.Name) else fn.attr if isinstance(fn, ast.Attribute) else None
+        return last in getters and not node.args and not node.keywords
+    if isinstance(node, ast.Name):
+        return node.id in names
+    if isinstance(node, ast.Attribute):
+        if isinstance(node.value, ast.Name) and node.value.id == "self" and node.attr in attrs:
+            return True
+        return is_bag_expr(node.value, getters, names, attrs)
+    return False
+
+
+def find_reads(src, field):
+    """Every place the scanned Python source reads the field, as {"at": "path:line", "to": last line,
+    "expr"}: the reads comparisons() recognises (a config base's attribute, getattr of it, an environment
+    read) and a read of a bag, `get_<bag>().field`, `get_<bag>().sub.field`, getattr of one, and the same
+    through a name or a self attribute the scope assigned a bag to. A read of an object this does not
+    recognise is not found: oracle/inertness.py checks the run's own reads of the field against these."""
+    getters = bag_getters(src)
+    out = set()
+    for path, rel in gf.walk(src, gf.SCANNED_PY, (".py",)):
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        if field.name not in text:
+            continue
+        tree = ast.parse(text, filename=rel)
+        attrs = set()
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Assign) and is_bag_expr(n.value, getters, set(), set()):
+                attrs.update(t.attr for t in n.targets if isinstance(t, ast.Attribute)
+                             and isinstance(t.value, ast.Name) and t.value.id == "self")
+        fns = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))] + [tree]
+        for fn in fns:
+            body_nodes = list(gf.scope_nodes(fn))
+            names = set()
+            for _ in range(2):
+                for n in body_nodes:
+                    if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name) \
+                            and is_bag_expr(n.value, getters, names, attrs):
+                        names.add(n.targets[0].id)
+            for n in body_nodes:
+                hit = False
+                if isinstance(n, ast.Attribute) and isinstance(n.ctx, ast.Load):
+                    hit = (n.attr == field.name and field.source == "config" and is_bag_expr(n.value, getters, names, attrs))
+                elif isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "getattr" and len(n.args) >= 2:
+                    a = n.args[1]
+                    hit = (field.source == "config" and isinstance(a, ast.Constant) and a.value == field.name
+                           and is_bag_expr(n.args[0], getters, names, attrs))
+                if not hit and isinstance(n, (ast.Attribute, ast.Call, ast.Subscript)) \
+                        and isinstance(getattr(n, "ctx", ast.Load()), ast.Load) and is_field_expr(n, field, rel, set()):
+                    hit = True
+                if hit:
+                    out.add((rel, n.lineno, n.end_lineno or n.lineno, " ".join((ast.get_source_segment(text, n) or ast.unparse(n)).split())))
+    return [{"at": "%s:%d" % (rel, line), "to": to, "expr": expr}
+            for rel, line, to, expr in sorted(out, key=lambda r: (r[0], r[1], r[3]))]
+
+
+def reads_of(src, f):
+    """The reads of one field of fields.json (see find_reads)."""
+    return find_reads(src, Field(f["name"], f["source"], None))
 
 
 # Keys whose subtree names the hook that decided a value or the model's facts, not a value of the
@@ -393,9 +476,16 @@ def main(argv):
     ap.add_argument("declarations_json")
     ap.add_argument("--check", metavar="VALUE_CLASSES_JSON")
     ap.add_argument("--field", action="append", help="print the classes of any field, whatever its status")
+    ap.add_argument("--reads", metavar="NAME", help="print every read of the field NAME (any status) as JSON")
     ap.add_argument("--repo", default=".", help="the blis-sglang checkout the evidence paths are in")
     a = ap.parse_args(argv)
     decls = read_json(a.declarations_json)
+    if a.reads:
+        fl = {f["name"]: f for f in read_json(a.fields_json)["fields"]}
+        if a.reads not in fl:
+            raise SystemExit("gen_classes: %s is not in %s" % (a.reads, a.fields_json))
+        sys.stdout.write(json.dumps(reads_of(a.sglang_source, fl[a.reads]), indent=1) + "\n")
+        return 0
     if a.field:
         fl = {f["name"]: f for f in read_json(a.fields_json)["fields"]}
         out = {}

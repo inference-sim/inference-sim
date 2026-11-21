@@ -124,6 +124,99 @@ class ClassesTest(unittest.TestCase):
             probs = gen_classes.check_document({"fields": {"page_size": {"basis": basis}}}, fj)
             self.assertEqual(probs, ["page_size: class 1 cites nowhere.py:1, which is not a comparison of the field"])
 
+READ_FILES = {
+    SRT + "/runtime_context.py": '''
+        def get_parallel() -> ParallelContext:
+            return _PARALLEL
+
+        def get_server_args() -> ServerArgs:
+            return _CONTEXT.server_args
+
+        def get_schedule() -> _ConfigBag:
+            return _CONTEXT.config_bag("schedule")
+
+        def get_exec() -> _ConfigBag:
+            return _CONTEXT.config_bag("exec")
+    ''',
+    SRT + "/managers/scheduler.py": '''
+        from sglang.srt.runtime_context import get_exec, get_schedule
+
+        def direct(server_args):
+            return server_args.stream_interval
+
+        def through_a_bag():
+            return get_schedule().stream_interval
+
+        def through_a_sub_bag():
+            return get_exec().moe.stream_interval
+
+        def through_a_local_alias():
+            sched = get_schedule()
+            x = 1
+            return x + sched.stream_interval
+
+        def through_an_attribute_alias(self):
+            self.cfg = get_exec()
+            return 2
+
+        def uses_it(self):
+            return self.cfg.stream_interval
+
+        def through_getattr():
+            return getattr(get_schedule(), "stream_interval", None)
+
+        def not_a_read(server_args):
+            server_args.stream_interval = 3
+            return get_schedule().page_size, other.stream_interval, get_other().stream_interval
+    ''',
+    "python/sglang/kernels/__init__.py": "",
+    "python/sglang/utils.py": "",
+    "python/sglang/launch_server.py": "",
+    "python/sglang/cli/serve.py": "",
+}
+
+
+class ReadsTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.src = self.tmp.name
+        for rel, text in READ_FILES.items():
+            p = os.path.join(self.src, rel)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w") as f:
+                f.write(textwrap.dedent(text))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def reads(self, name="stream_interval", source="config"):
+        return gen_classes.find_reads(self.src, gen_classes.Field(name, source, {}))
+
+    def test_a_read_through_each_bag_form_is_found_at_its_line(self):
+        by_expr = {r["expr"]: r["at"] for r in self.reads()}
+        scheduler = SRT + "/managers/scheduler.py"
+        self.assertEqual(by_expr["server_args.stream_interval"], scheduler + ":5")
+        self.assertEqual(by_expr["get_schedule().stream_interval"], scheduler + ":8")
+        self.assertEqual(by_expr["get_exec().moe.stream_interval"], scheduler + ":11")
+        self.assertEqual(by_expr["sched.stream_interval"], scheduler + ":16")
+        self.assertEqual(by_expr["self.cfg.stream_interval"], scheduler + ":23")
+        self.assertEqual(by_expr['getattr(get_schedule(), "stream_interval", None)'], scheduler + ":26")
+
+    def test_a_store_a_read_of_another_field_and_another_object_are_not_reads_of_the_field(self):
+        exprs = [r["expr"] for r in self.reads()]
+        self.assertEqual(len(exprs), 6, exprs)
+        self.assertNotIn("other.stream_interval", exprs)
+        self.assertNotIn("get_other().stream_interval", exprs)
+
+    def test_the_getters_are_the_ones_runtime_context_declares(self):
+        self.assertEqual(gen_classes.bag_getters(self.src), {"get_server_args", "get_schedule", "get_exec"})
+        self.assertEqual([r["expr"] for r in self.reads("page_size")], ["get_schedule().page_size"])
+
+    def test_every_read_names_the_last_line_of_its_expression(self):
+        for r in self.reads():
+            self.assertGreaterEqual(r["to"], int(r["at"].rsplit(":", 1)[1]))
+
+
 class SetLiteralOrder(unittest.TestCase):
     """A set literal's values come out in one order whatever the process's hash seed (a set of strings
     iterates in an order that depends on it)."""

@@ -3888,12 +3888,12 @@
    }
   },
   "config:port": {
-   "status": "proven_inert",
+   "status": "inert_unproven",
    "evidence": {
-    "proof": "oracle/inertness/port.json"
+    "note": "No proof file: the oracle runs the scheduler, and no scenario's run executes a read of the field. The places that read it (the HTTP, gRPC and encoder servers, entrypoints/http_server.py:2927-3055, entrypoints/grpc_server.py:181, disaggregation/encoder/http_server.py, the PD bootstrap address at disaggregation/common/conn.py:1607, the data-parallel controller at managers/data_parallel_controller.py:505, the Rust server, the argument resolution at arg_groups/pd_disaggregation_hook.py:275-294) are code no oracle scenario executes, so no observed run read the field, and a proof that every read ran cannot be written (inertness_test.go holds a proven-inert field to one). Reviewed reading at SGLang v0.5.23 297e54fd: SGLang binds its servers to the port and advertises it as the PD bootstrap port; the scheduler loop and the model runner's step do not read it. lower.TestInertFieldsChangeNoDecision shows resolution and the lowered plan unchanged at 8888 and 30000."
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:pp_async_batch_depth": {

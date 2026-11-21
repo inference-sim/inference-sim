@@ -80,6 +80,8 @@ jobs:
         run: python -I oracle/test_checks.py sglang-source
       - name: the step-driven runner and its step hook run at the declared boundary
         run: python -I oracle/test_step_runner.py
+      - name: the inertness verdict fails on what it guards
+        run: python -I oracle/test_inertness.py
       # The surface list (X9, SGL-4, SGL-6, FID-5): surface.json is what tools/surface/gen_surface.py
       # writes from SGLang's registration and selection code at the pinned commit, every item has a
       # status X9 allows, and the generator's tests (its known-bad inputs among them) pass.
@@ -167,6 +169,20 @@ jobs:
       - name: the committed ServerArgs answers are SGLang's own
         if: matrix.group == 'resolve'
         run: python -I oracle/compare_serverargs.py config/testdata/serverargs.json shard-out/oracle-traces/serverargs.json
+      # T1 (issue #2350): each proof of kind observed_reads is re-run through SGLang's scheduler at the
+      # field's default and probes, and the file must be what the runs give (oracle/inertness.py).
+      - name: the inertness proofs are what SGLang's scheduler gives
+        if: matrix.group == 'resolve'
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          for p in oracle/inertness/*.json; do
+            python -I oracle/inertness.py sglang-source "$p" --check
+          done
       # Lowering: SGLang's own decode CUDA-graph, gather, attention and MoE functions, run after
       # SGLang resolves and publishes each accepted case (oracle/lower/extract.py; every
       # replacement listed in oracle/lower/replacements.json). The answers must equal
