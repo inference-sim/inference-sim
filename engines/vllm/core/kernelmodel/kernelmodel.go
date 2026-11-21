@@ -378,6 +378,7 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+	in = withInkling2ExpertParallel(in)
 	// One decoding of the pool's engine block, which the routing resolution, the model and the
 	// kernel all read: this package keeps it (Model.engine), and the kernel prices the settings
 	// converted from that same copy, never from a second read.
@@ -399,6 +400,7 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 // fromInputs builds and adapts the kernel for loaded Inputs, decoding the priced pool's engine
 // block first; see fromDecoded.
 func fromInputs(in latencykernel.Inputs) (*Model, error) {
+	in = withInkling2ExpertParallel(in)
 	engine, err := decodeEngine(in.Deployment.Pools[in.PoolIndex])
 	if err != nil {
 		return nil, err

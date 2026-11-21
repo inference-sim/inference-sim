@@ -7,9 +7,12 @@ package kernelmodel
 import (
 	"fmt"
 	"math/bits"
+	"slices"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
 )
@@ -20,6 +23,29 @@ const archInkling2 = "Inkling2ForConditionalGeneration"
 // isInkling2 is whether g is Inkling 2.
 func isInkling2(g *model.Graph) bool {
 	return g != nil && g.Global.Architecture == archInkling2
+}
+
+// withInkling2ExpertParallel is in with the priced pool's enable_expert_parallel on for Inkling 2.
+// Its routed experts are always expert-parallel across the tensor-parallel group, whatever the flag
+// says: Inkling2Experts takes ep_size and ep_rank from the tensor-parallel group and holds
+// num_experts / ep_size whole experts (vllm/models/inkling2/nvidia/moe.py:93-96@0fda86a3), and the
+// recipe's TP4 is TP4 attention with EP4 experts. Left to the flag, a pool that omits it would be
+// priced as every expert sliced over the ranks and padded for the Hopper repack. The expert group
+// is the tensor-parallel group only, so a pool with data or prefill-context parallelism, where the
+// flag would widen it to the product, is left as stated.
+func withInkling2ExpertParallel(in latencykernel.Inputs) latencykernel.Inputs {
+	if !isInkling2(in.Model) || in.Deployment == nil || in.PoolIndex >= len(in.Deployment.Pools) {
+		return in
+	}
+	pl := in.Deployment.Pools[in.PoolIndex].Parallel
+	if pl.EnableExpertParallel || pl.TP < 2 || pl.DP > 1 || pl.PCP > 1 {
+		return in
+	}
+	dep := *in.Deployment
+	dep.Pools = slices.Clone(dep.Pools)
+	dep.Pools[in.PoolIndex].Parallel.EnableExpertParallel = true
+	in.Deployment = &dep
+	return in
 }
 
 // inkling2KVLayers is the KV cache specs Inkling 2 registers, in model order. Each decoder layer
