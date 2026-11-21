@@ -170,7 +170,7 @@ func resolveAcceptance(in latencykernel.Inputs, e engineconfig.Engine, data *loa
 		Hardware:            in.Chip.Name,
 		Workload:            bindingAcceptanceTerms(in.Scenario.Workload),
 		Scenario:            pin,
-		CLI:                 o.CLI,
+		CLI:                 cliAtK(o.CLI, e.Speculative.NumSpecTokens),
 		FallbackCategory:    o.FallbackCategory,
 	}
 	if o.Workload != nil {
@@ -188,6 +188,20 @@ func resolveAcceptance(in latencykernel.Inputs, e engineconfig.Engine, data *loa
 	}
 	data.RecordAcceptance(&r)
 	return &r, nil
+}
+
+// cliAtK is the command line's acceptance value stated at k, the pool's own draft length. The
+// command line states one rate or length for the run, at the first pool's K, while each pool
+// drafts its own (inference-sim#2125); the resolver refuses a value for a K it was not stated at
+// (acceptance does not carry across K), so a pool takes the same rate or length at its K. The
+// caller's value is not changed: the other pools read it.
+func cliAtK(v *acceptance.Value, k int) *acceptance.Value {
+	if v == nil || v.NumSpecTokens == k {
+		return v
+	}
+	restated := *v
+	restated.NumSpecTokens = k
+	return &restated
 }
 
 // targetArchitecture is the architecture of the pool's target model as its graph records it

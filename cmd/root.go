@@ -308,7 +308,7 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	scenarioOffload, scenarioDecodeOffload = runOffloads(shape)
 	adoptScenarioEngineKnobs(shape)
 	scenarioShape = shape
-	acceptanceRecord = nil
+	acceptanceRecord, poolSpeculation = nil, nil
 	prefixCacheRecords = nil
 	// The router's inputs are the deployment's too: its router block and pool labels.
 	adoptScenarioRouter(shape)
@@ -507,8 +507,21 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 // and replay, so a trace round-trips under identical flags (INV-13). Fatal on an invalid or
 // unresolvable config (CLI boundary, R6).
 func resolveSpeculativeConfig(cmd *cobra.Command) speculativeConfig {
-	acceptanceRecord = nil
-	ar, speculating := resolveAcceptance(cmd, numSpeculativeTokens, speculativeMethod)
+	acceptanceRecord, poolSpeculation = nil, nil
+	if poolsDraftDifferently(kernelPDOpened) {
+		// The pools draft differently (inference-sim#2125): each resolves its own acceptance.
+		return resolvePoolSpeculation(cmd, kernelPDOpened)
+	}
+	c, rec := resolveSpeculation(cmd, kernelOpened, numSpeculativeTokens, speculativeMethod, "")
+	acceptanceRecord = rec
+	return c
+}
+
+// resolveSpeculation resolves the speculation of the pool m drafting k tokens with method: its
+// config and, when it drafts, the acceptance record, logging what it resolved (what names the pool
+// when the run has more than one speculation).
+func resolveSpeculation(cmd *cobra.Command, m *engineModel, k int, method, what string) (speculativeConfig, *sim.AcceptanceRecord) {
+	ar, speculating := resolveAcceptanceFor(cmd, m, k, method)
 	alpha := 0.0
 	if speculating {
 		alpha = ar.Res.AcceptanceRate()
@@ -518,17 +531,18 @@ func resolveSpeculativeConfig(cmd *cobra.Command) speculativeConfig {
 	} else if cmd.Flags().Changed(acceptanceRateFlag) {
 		alpha = speculativeAcceptance // refused below: a rate with nothing drafted
 	}
-	c := speculativeConfigOf(numSpeculativeTokens, alpha, speculativeMethod)
-	if c.IsEnabled() {
-		acceptanceRecord = acceptanceRecordOf(ar.Res, c)
-		logAcceptance(acceptanceRecord, c.K)
-		logrus.Infof("speculative decoding enabled: method=%q k=%d acceptance=%.3f (mean %.3f tokens/step, verify width %d, %d lookahead KV slots)",
-			c.Method, c.K, c.Acceptance, c.EffectiveTokensPerStep(), c.VerifyWidth(), c.LookaheadTokens())
-		if c.Acceptance == 0 {
-			logrus.Warnf("speculative decoding: acceptance length 1 => no throughput gain but verify-width cost applies (net slowdown); this is usually not intended")
-		}
+	c := speculativeConfigOf(k, alpha, method)
+	if !c.IsEnabled() {
+		return c, nil
 	}
-	return c
+	rec := acceptanceRecordOf(ar.Res, c)
+	logAcceptance(rec, c.K)
+	logrus.Infof("speculative decoding enabled%s: method=%q k=%d acceptance=%.3f (mean %.3f tokens/step, verify width %d, %d lookahead KV slots)",
+		what, c.Method, c.K, c.Acceptance, c.EffectiveTokensPerStep(), c.VerifyWidth(), c.LookaheadTokens())
+	if c.Acceptance == 0 {
+		logrus.Warnf("speculative decoding: acceptance length 1 => no throughput gain but verify-width cost applies (net slowdown); this is usually not intended")
+	}
+	return c, rec
 }
 
 // applyTimeoutToSpec sets ClientSpec.Timeout and CohortSpec.Timeout on every entry in spec.
@@ -990,6 +1004,9 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
 		}
 		ec := engineConfigFor(cmd, lr.ModelConfig, dataParallelism, kvOffloadCfg, loraCfg)
+		// Pools that draft differently each advance by their own speculation (inference-sim#2125); as in
+		// the other command (INV-13).
+		adoptPoolSpeculation(&prefillOverrides, &decodeOverrides)
 		runEngine := engineConfigOfRun(ec, simulationHorizon, seed, lr.KernelModel, sloPriorityOverrides)
 		config := cluster.DeploymentConfig{
 			InstanceConfig:                 instanceConfigOf(runEngine),
