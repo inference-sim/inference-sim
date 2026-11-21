@@ -188,11 +188,24 @@ func TestExternallyLoadedItemsAreRefused(t *testing.T) {
 		{"registered disaggregation transfer backend", map[string]any{"disaggregation_mode": "prefill",
 			"disaggregation_transfer_backend": ext}, nil},
 		{"a custom weight loader", map[string]any{"custom_weight_loader": []string{"pkg.loader"}}, nil},
+		{"plugins loaded by entry point", nil, map[string]any{"SGLANG_PLUGINS": ext}},
+		{"an external model package", nil, map[string]any{"SGLANG_EXTERNAL_MODEL_PACKAGE": ext}},
+		{"an external multimodal model architecture", nil, map[string]any{"SGLANG_EXTERNAL_MM_MODEL_ARCH": ext}},
+		{"an external multimodal processor package", nil, map[string]any{"SGLANG_EXTERNAL_MM_PROCESSOR_PACKAGE": ext}},
+		{"a custom sigquit handler", map[string]any{"custom_sigquit_handler": ext}, nil},
 	} {
 		err := startUp(t, tc.args, tc.env)
 		if err == nil || !isRefusal(err) {
 			t.Errorf("%s: got %v, want a refusal by SGLang's message or an issue", tc.name, err)
 		}
+	}
+}
+
+// The partner of the table above: the same engine with none of them set starts, so the refusals are
+// the loaded items', not the start-up path's.
+func TestEngineStartsWithNoExternallyLoadedItem(t *testing.T) {
+	if err := startUp(t, nil, nil); err != nil {
+		t.Fatalf("start-up refused with nothing external set: %v", err)
 	}
 }
 
