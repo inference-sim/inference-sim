@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
 	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
@@ -85,6 +86,7 @@ func (m *Model) StepTimesAcrossDP(batches [][]*sim.Request) []int64 {
 		maxTokens = max(maxTokens, kbs[i].PaddedTokens())
 		allDecode = allDecode && (dummy || kbs[i].UniformDecode(m.pad.dummyWidth))
 	}
+	m.padDrafters(kbs)
 	padded := m.pad.ceiling > 0 && maxTokens <= m.pad.ceiling && (!m.pad.decodeOnly || allDecode)
 	groupTokens := 0
 	for i := range kbs {
@@ -126,6 +128,7 @@ func (m *Model) StepTimesAcrossDPOfStep(ranks [][]ReqShape, skipDrafts bool) []i
 		maxTokens = max(maxTokens, kbs[i].PaddedTokens())
 		allDecode = allDecode && (dummy || kbs[i].UniformDecode(m.pad.dummyWidth))
 	}
+	m.padDrafters(kbs)
 	padded := m.pad.ceiling > 0 && maxTokens <= m.pad.ceiling && (!m.pad.decodeOnly || allDecode)
 	groupTokens := 0
 	for i := range kbs {
@@ -140,6 +143,43 @@ func (m *Model) StepTimesAcrossDPOfStep(ranks [][]ReqShape, skipDrafts bool) []i
 		out[i] = max(1, ticks(m.k.StepTime(kbs[i]).NoOverlap))
 	}
 	return out
+}
+
+// padDrafters states each rank's drafter launch width (Batch.DraftPaddedTokens), the padding
+// vLLM's drafters coordinate across the data-parallel group apart from the target's, which the
+// kernel prices as it is told.
+//
+// The drafter's batch is built from the group's largest real request count, not from the rank's
+// own: _build_uniform_batch_dp_sync (vllm/v1/worker/gpu/spec_decode/speculator.py:747-765 at
+// 0fda86a35419) gives every rank num_reqs_across_dp.max() (gpu/dp_utils.py, num_reqs) times the
+// drafter's query rows per request, and states it uniform and not eager. It is independent of
+// the target's pad: it holds when the target steps run eagerly or past the capture ceiling, and
+// the idle rank's dummy propose (model_runner.py:1014-1051) launches it too. A parallel-block
+// drafter (DSpark, DFlash) runs one pass of num_speculative_tokens rows per request
+// (dspark/speculator.py, num_query_per_req); an autoregressive one (MTP, EAGLE) runs its
+// multi-step decode at one row per request (autoregressive/speculator.py:167-195).
+//
+// vLLM stops at one rank: dp_sync_state is None without data parallelism, so a single rank, a
+// non-speculating pool and a step whose drafters are skipped state nothing. The graph bucket the
+// width rounds up to is not modelled, as for the target's pad.
+func (m *Model) padDrafters(kbs []kernel.Batch) {
+	if len(kbs) < 2 || m.specTokens <= 0 || m.graph == nil || m.graph.Speculator == nil {
+		return
+	}
+	rowsPerReq := 1
+	if m.graph.Speculator.Drafting == model.DraftingParallelBlock {
+		rowsPerReq = m.specTokens
+	}
+	groupReqs := 0
+	for _, b := range kbs {
+		if b.SkipDrafts {
+			return
+		}
+		groupReqs = max(groupReqs, len(b.Reqs))
+	}
+	for i := range kbs {
+		kbs[i].DraftPaddedTokens = groupReqs * rowsPerReq
+	}
 }
 
 var _ sim.DPStepPricer = (*Model)(nil)
