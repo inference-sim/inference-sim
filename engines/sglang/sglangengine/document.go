@@ -197,7 +197,7 @@ type pricer struct {
 }
 
 func (p *pricer) StepTime(b engine.Batch) engine.Duration {
-	// NoOverlap is the edge blis-vllm measured nearly unbiased (compat/kernelmodel); microseconds,
+	// NoOverlap is the edge the vLLM engine measured nearly unbiased (engines/vllm/core/kernelmodel); microseconds,
 	// at least one so a pass always takes time.
 	return max(engine.Duration(p.k.StepTime(p.shape(b)).NoOverlap.Microseconds()), 1)
 }
@@ -207,8 +207,8 @@ func (p *pricer) shape(b engine.Batch) kernel.Batch {
 	// A request that schedules its decode width is a decode: SGLang's decode pass runs one token per
 	// request, a verify pass num_draft_tokens, so the kernel counts a request as a prefill only above it.
 	// With the threshold left at zero the kernel prices every decode request through the prefill
-	// attention path (kernel/step.go: `Scheduled > DecodeThreshold`). blis-vllm sets 8 for vLLM's own
-	// classifier (compat/kernelmodel DecodeThreshold); SGLang has no such short-chunk class.
+	// attention path (kernel/step.go: `Scheduled > DecodeThreshold`). the vLLM engine sets 8 for its own
+	// classifier (engines/vllm/core/kernelmodel DecodeThreshold); SGLang has no such short-chunk class.
 	width := max(p.width, 1)
 	kb := kernel.Batch{Reqs: make([]kernel.ReqShape, len(b.Reqs)), DecodeThreshold: width}
 	decode := len(b.Reqs) > 0

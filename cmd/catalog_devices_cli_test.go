@@ -128,7 +128,7 @@ func TestRunCmd_KVOffloadDeviceClass_MissingCatalogTableIsRefused(t *testing.T) 
 }
 
 // TestRunCmd_KVOffloadRefusalsReachTheCLI: the KV offload configuration is resolved by the
-// engine (blis-vllm compat/build, called from cmd/engine_build.go), and each kind of refusal
+// engine (engines/vllm/core/build, called from cmd/engine_build.go), and each kind of refusal
 // ends `blis run` with it on stderr, naming what to fix: a malformed storage-device table (the
 // loader opens the catalog first, so its decoding error names the catalog and the file in it),
 // and a tier naming a device class the table does not define. A refusal is never a silent
