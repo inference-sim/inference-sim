@@ -768,9 +768,6 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 		{"a pool stating no max_model_len", "states no engine.max_model_len",
 			pd(writeScenarioVariant(t, "      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n  - role: decode",
 				"      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n  - role: decode"), topology...)},
-		{"pools drafting differently", "one speculative configuration applies to the run",
-			pd(writeScenarioVariant(t, "      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer",
-				"      compilation_config: {cudagraph_mode: PIECEWISE}\n      speculative_config: {method: mtp, num_speculative_tokens: 2}\n\npd_transfer"), topology...)},
 		// The decode pool caching bf16 behind an fp8 prefill pool: the handoff would move pages
 		// the decode engine does not hold.
 		{"pools caching KV in different formats", "caches KV as cache_dtype",

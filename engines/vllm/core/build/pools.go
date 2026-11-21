@@ -248,15 +248,11 @@ func openPools(scenario string, repos kernelmodel.Repos, kernelOpen bool, top To
 	// each pool is sized by its own group (Model.GroupCapacity), priced by its own kernel. Nothing in vLLM ties the
 	// prefill engine's --data-parallel-size to the decode engine's; the handoff is per request, from the prefill
 	// instance that computed it to the decode instance the balancer chose (inference-sim/inference-sim#1952).
-	// The simulator's speculative config (draft length, acceptance) is one per run, while each
-	// pool's kernel prices its own draft width. Pools that disagree would advance requests by
-	// one draft length and charge for another.
-	if ps.SpeculativeTokens != ds.SpeculativeTokens || ps.SpeculativeMethod != ds.SpeculativeMethod {
-		return nil, fmt.Errorf("scenario %q drafts %d %q tokens in the prefill pool and %d "+
-			"%q in the decode pool; one speculative configuration applies to the run, so the pools "+
-			"must agree", scenario, ps.SpeculativeTokens,
-			ps.SpeculativeMethod, ds.SpeculativeTokens, ds.SpeculativeMethod)
-	}
+	// The pools' speculative configurations may differ: vLLM takes each server's own
+	// speculative_config and its P/D connector fingerprint carries no speculative field, so a
+	// prefill server may draft one token and a decode server three. Each pool's engine drafts and
+	// verifies by its own block; the host resolves each pool's acceptance
+	// (inference-sim#2125).
 	return p, nil
 }
 

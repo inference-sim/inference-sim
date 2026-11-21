@@ -486,6 +486,9 @@ Example:
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
 		}
 		ec := engineConfigFor(cmd, lr.ModelConfig, dataParallelism, kvOffloadCfg, loraCfg)
+		// Pools that draft differently each advance by their own speculation (inference-sim#2125); as in
+		// the other command (INV-13).
+		adoptPoolSpeculation(&prefillOverrides, &decodeOverrides)
 		runEngine := engineConfigOfRun(ec, replayHorizon, seed, lr.KernelModel, sloPriorityOverrides)
 		config := cluster.DeploymentConfig{
 			InstanceConfig:             instanceConfigOf(runEngine),

@@ -154,6 +154,13 @@ const (
 // workload states and the command line. CLI boundary: a refusal is fatal; a selector flag
 // given to a run that does not speculate is warned about and ignored.
 func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptance, bool) {
+	return resolveAcceptanceFor(cmd, kernelOpened, k, method)
+}
+
+// resolveAcceptanceFor is resolveAcceptance for the pool m (nil when no pool is open): the lookup's
+// key takes m's own speculative block, so each P/D pool resolves its own acceptance
+// (inference-sim#2125).
+func resolveAcceptanceFor(cmd *cobra.Command, m *engineModel, k int, method string) (build.Acceptance, bool) {
 	fl := cmd.Flags()
 	if err := checkRealisationFlag(fl); err != nil {
 		logrus.Fatalf("%v", err)
@@ -165,7 +172,7 @@ func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptan
 			}
 		}
 	}
-	a, speculating, err := build.ResolveAcceptance(poolAcceptanceInputs(build.AcceptanceInputs{
+	a, speculating, err := build.ResolveAcceptance(poolAcceptanceInputs(m, build.AcceptanceInputs{
 		Scenario: kernelScenario, Shape: scenarioShape, Data: mustRunData(), Hardware: gpu,
 		Workload: workloadAcceptance,
 		Flags: build.AcceptanceFlags{
@@ -191,19 +198,19 @@ func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptan
 	return a, speculating
 }
 
-// poolAcceptanceInputs is in with the first pool's part of the lookup's key, from the speculative
-// block of the engine it opened (none when no pool is open): the drafter it names
+// poolAcceptanceInputs is in with pool m's part of the lookup's key, from the speculative
+// block of the engine it opened (none when m is nil): the drafter it names
 // (speculative_config.model, the catalog drafter; inference-sim/inference-sim#2142), its draft
 // sampler and verifier as vLLM resolves them, defaults included, the engine "vllm" and vLLM's own
 // defaults (build.AcceptanceInputs.VLLMInputs). A pool that names no drafter drafts with the
 // target's own speculator.
-func poolAcceptanceInputs(in build.AcceptanceInputs) build.AcceptanceInputs {
-	if kernelOpened == nil {
+func poolAcceptanceInputs(m *engineModel, in build.AcceptanceInputs) build.AcceptanceInputs {
+	if m == nil {
 		return in.VLLMInputs(nil)
 	}
-	e, err := kernelOpened.Engine()
+	e, err := m.Engine()
 	if err != nil {
-		logrus.Fatalf("reading the first pool's speculative settings: %v", err)
+		logrus.Fatalf("reading the %s pool's speculative settings: %v", m.Role(), err)
 	}
 	in = in.VLLMInputs(e.Speculative)
 	if e.Speculative != nil {
@@ -1189,6 +1196,11 @@ type poolOverrides struct {
 	// ("" = use global; #76): vLLM sets both per engine, so prefill and decode pools may differ.
 	LongPrefillTokenThreshold *int64
 	DPLoadBalancing           string
+
+	// Speculative is the pool's own speculative configuration (nil = use global): vLLM takes each
+	// server's speculative_config, and the P/D connector's fingerprint carries none of its fields,
+	// so the prefill and decode pools may draft differently (inference-sim#2125).
+	Speculative *speculativeConfig
 }
 
 // Validate checks that non-nil pointer fields satisfy their constraints (R3).
@@ -1233,7 +1245,7 @@ func (o poolOverrides) IsEmpty() bool {
 		o.LatencyModel == nil && o.MaxNumSeqs == nil && o.MaxNumBatchedTokens == nil &&
 		o.PrefixCachingDisabled == nil && o.KVOffload == nil &&
 		o.SequenceState == nil && o.PrefixHit == nil && o.Scheduler == "" && o.PreemptionPolicy == "" &&
-		o.LongPrefillTokenThreshold == nil && o.DPLoadBalancing == ""
+		o.LongPrefillTokenThreshold == nil && o.DPLoadBalancing == "" && o.Speculative == nil
 }
 
 // resolvePoolConfig applies per-pool overrides to a global SimConfig.
@@ -1287,6 +1299,9 @@ func resolvePoolConfig(global engineConfig, overrides poolOverrides) engineConfi
 	}
 	if overrides.LongPrefillTokenThreshold != nil {
 		resolved.LongPrefillTokenThreshold = *overrides.LongPrefillTokenThreshold
+	}
+	if overrides.Speculative != nil {
+		resolved.SpeculativeConfig = *overrides.Speculative
 	}
 
 	return resolved

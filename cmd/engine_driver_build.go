@@ -67,9 +67,12 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 	storage := newTierStorage()
 	build := func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
 		m := latency
+		accept := acceptance
 		if kernelPDOpened != nil {
-			// Each P/D pool's host overheads are its own kernel's.
+			// Each P/D pool's host overheads are its own kernel's, and its requests advance by
+			// its own speculative acceptance (inference-sim#2125).
 			m = engineConfigIn(ic).LatencyModel
+			accept = engineConfigIn(ic).Acceptance
 		}
 		streamInterval, err := streamIntervalOf(m)
 		if err != nil {
@@ -114,7 +117,7 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 			}
 			s.EnableServerSeries(iv)
 		}
-		cfg := sim.EngineDriverConfig{Horizon: horizon, Acceptance: acceptance, StreamInterval: streamInterval,
+		cfg := sim.EngineDriverConfig{Horizon: horizon, Acceptance: accept, StreamInterval: streamInterval,
 			Environment: kernelPDOpened.environmentOf(ic, kernelOpened)}
 		hostOverheads(&cfg, m)
 		return sim.NewEngineDriver(eng, cfg), nil

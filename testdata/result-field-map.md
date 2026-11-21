@@ -54,6 +54,6 @@ Where each field of the MetricsOutput JSON lives in the Result document, or why 
 | `whole_run` | `reports.engine.cluster.whole_run` |
 | `kernel_provenance` | `reports.kernel` |
 | `blis_version`, `kernel_version`, `schemas_version` | `revisions.simulator`, `revisions.substrate` (one module holds the kernel and the schemas) |
-| `acceptance` | `reports.engine.cluster.acceptance` |
+| `acceptance` | `reports.engine.cluster.acceptance`; `reports.engine.<pool role>.acceptance` per pool when the P/D pools draft differently |
 | `prefix_cache` | `reports.engine.<pool role>.prefix_cache` |
 <!-- /result-field-map -->
