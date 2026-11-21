@@ -55,19 +55,11 @@ const recipesCommit = "0fda86a35419"
 //     weights) on one 4-GPU GB300 node leaves no room for the 262144-token window's KV, and as a
 //     prefill or decode pool it leaves none at all; Inkling's 8 KV heads do not divide TP16, which
 //     is two 8-GPU nodes of multi-node TP (the recipe's two-tray TP8 is GB200's).
-//   - Inkling TP4 on H200 with DSpark (key suffix #dspark): the plain command runs, and with the
-//     drafter the engine prices 27.19 GiB of KV per GPU against 28.89 GiB needed for the recipe's
-//     131072-token window. The recipe states 43.5 GiB of KV per GPU on 4x H200 and that the window
-//     fits, so this is a disagreement between the recipe and the engine's memory model (the catalog
-//     weights and the default 0.92 utilization leave less than the recipe measured), not a vLLM
-//     refusal; it is listed so it is seen.
 var expectedRefusals = map[string]string{
-	"mistral/gb300/single_node_tp/fp8":                         "To serve at least one request with the model's max seq len",
-	"mistral/gb300/pd_cluster/fp8":                             "No available memory for the cache blocks",
-	"inkling/b200/multi_node_tp/default":                       "does not divide the 8 KV heads",
-	"inkling/b300/multi_node_tp/default":                       "does not divide the 8 KV heads",
-	"inkling/h200/single_node_tp/default#dspark":               "To serve at least one request with the model's max seq len (131072)",
-	"inkling/h200/single_node_tp/default#dspark-probabilistic": "To serve at least one request with the model's max seq len (131072)",
+	"mistral/gb300/single_node_tp/fp8":   "To serve at least one request with the model's max seq len",
+	"mistral/gb300/pd_cluster/fp8":       "No available memory for the cache blocks",
+	"inkling/b200/multi_node_tp/default": "does not divide the 8 KV heads",
+	"inkling/b300/multi_node_tp/default": "does not divide the 8 KV heads",
 }
 
 // recipeAcceptance is the acceptance the recipes state for their drafters, which the run pins

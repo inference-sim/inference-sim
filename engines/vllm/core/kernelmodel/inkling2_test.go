@@ -1,6 +1,9 @@
 package kernelmodel
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -95,5 +98,82 @@ func TestInkling2DSparkDraftLayersAreDraftAttention(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), "attention.py:215") {
 		t.Errorf("fp8 cache: got %v, want the attention layer's assertion named", err)
+	}
+}
+
+// openInkling2H200 opens the TP4 Inkling 2 fixture on one 8-GPU H200 node, the layout the vLLM
+// recipe serves, with enable_expert_parallel as the test states it.
+func openInkling2H200(t *testing.T, expertParallel bool, dp int, extra string) *Model {
+	t.Helper()
+	dir := filepath.Join(ownRoot(), "..", "..", "testdata", "scenarios", "inkling-2-small")
+	raw, err := os.ReadFile(filepath.Join(dir, "inkling-2-small-gb200-tp4.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	for old, repl := range map[string]string{
+		"hardware: gb200-nvl72":        "hardware: h200",
+		"gpus_per_node: 4":             "gpus_per_node: 8",
+		"  gpus_per_rack: 72\n":        "",
+		"enable_expert_parallel: true": fmt.Sprintf("enable_expert_parallel: %t", expertParallel),
+		"max_model_len: 262144":        "max_model_len: 131072",
+		"dp: 1":                        fmt.Sprintf("dp: %d", dp),
+	} {
+		if !strings.Contains(body, old) {
+			t.Fatalf("the fixture has no %q to rewrite", old)
+		}
+		body = strings.Replace(body, old, repl, 1)
+	}
+	if extra != "" {
+		const anchor = "      async_scheduling: true\n"
+		body = strings.Replace(body, anchor, anchor+"      "+extra+"\n", 1)
+	}
+	r := repos()
+	r.Scenarios = t.TempDir()
+	if err := os.WriteFile(filepath.Join(r.Scenarios, "v.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Open("v.yaml", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// Inkling 2 runs its routed experts expert-parallel across the tensor-parallel group whatever
+// enable_expert_parallel says: Inkling2Experts takes ep_size and ep_rank from the tensor-parallel
+// group and holds num_experts / ep_size whole experts (vllm/models/inkling2/nvidia/moe.py:93-96@
+// 0fda86a3), and the recipe says TP4 means TP4 attention with EP4 experts. A scenario that leaves
+// the flag off therefore serves the same layout as one that sets it: 96 whole experts a rank, not
+// a 576-wide slice of every expert padded up to 640 for the Hopper repack, which is 11% more
+// NVFP4 expert weight than the rank holds.
+func TestInkling2ExpertsAreExpertParallelOverTPWhateverTheFlagSays(t *testing.T) {
+	off := openInkling2H200(t, false, 1, "")
+	on := openInkling2H200(t, true, 1, "")
+	if got := off.k.Resolved().ExpertParallel(); got != 4 {
+		t.Errorf("expert-parallel width %d with the flag off, want the tensor-parallel width 4", got)
+	}
+	if !off.Deployment().ExpertParallel {
+		t.Error("the deployment reports expert parallelism off for a model that always runs it")
+	}
+	if a, b := off.k.FixedBytes(), on.k.FixedBytes(); a != b {
+		t.Errorf("fixed bytes differ with the flag: off %+v, on %+v; the model runs one layout", a, b)
+	}
+	const gib = 1 << 30
+	// 40 NVFP4 layers at 0.5625 B and 8 MXFP8 layers at 1.03125 B a parameter over 384 experts of
+	// 3 x 2304 x 4608, a quarter to a rank, then the dense and embedding weights (about 4 GiB):
+	// the checkpoint's own bytes, which the padded slice exceeded by 7 GiB.
+	if w := float64(off.k.FixedBytes().Weights) / gib; w < 90 || w > 95 {
+		t.Errorf("weights %.2f GiB a rank, want the checkpoint's 91 to 94", w)
+	}
+}
+
+// The expert group is the tensor-parallel group alone, so with data parallelism the flag would
+// widen it to tp x dp, which is not what the model runs: a pool that states dp 2 and no flag is
+// priced as stated, not given a group the model never forms.
+func TestInkling2WithDataParallelismKeepsTheFlagAsStated(t *testing.T) {
+	m := openInkling2H200(t, false, 2, "")
+	if got := m.k.Resolved().ExpertParallel(); got != 1 {
+		t.Errorf("expert-parallel width %d (tp %d dp %d), want 1 as the pool states it", got, m.k.Resolved().TensorParallel(), m.k.Resolved().DataParallel())
 	}
 }
