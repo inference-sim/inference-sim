@@ -1542,7 +1542,21 @@
         "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "none",
+        "approximates": {
+          "mode": {
+            "env.NCCL_CUMEM_ENABLE": null
+          },
+          "evidence": "the registry's all-reduce, all-gather and all-to-all floors and rates, fitted on AISimulate's NCCL sweep at NCCL's defaults (cost-model-collectives); since NCCL 2.19 the default allocates with the CUDA cuMem functions whenever the system supports them (NCCL user guide, NCCL_CUMEM_ENABLE), so a stated 1 is the configuration the sweep ran",
+          "differs": "SGLang writes NCCL_CUMEM_ENABLE=0 itself when the variable is absent from the environment and enable_symm_mem is false (entrypoints/engine.py:1898-1907 at SGLang v0.5.23), so the engine's own resolution of the unset variable is not a stated 1 and the field list cannot call leaving it unset exact; the cost model does not read the variable and prices the collectives at the sweep's configuration; a stated 0 is not covered",
+          "when": [
+            {
+              "value_in": [
+                "1"
+              ]
+            }
+          ]
+        }
       }
     },
     {
@@ -1597,7 +1611,16 @@
         "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "NCCL's own choice: the default is 2, use multi-node NVLink where the system supports it and fall back to the network where it does not, and 1 differs only in failing communicator initialization when MNNVL is unsupported or cannot be enabled (NCCL user guide, NCCL_MNNVL_ENABLE), which a run that completed did not do. SGLang itself sets 1 only for a multi-node run on an MNNVL fabric and only when the variable is unset (entrypoints/engine.py:1878-1886 at SGLang v0.5.23), the value stated here. The latency kernel prices every collective from the NCCL sweep at NCCL's defaults, and a stated cluster's NVLink domain is a catalog fact, not a setting",
+        "valid_when": [
+          {
+            "value_in": [
+              "1",
+              "2"
+            ]
+          }
+        ]
       }
     },
     {
@@ -1608,7 +1631,22 @@
         "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "none",
+        "approximates": {
+          "mode": {
+            "env.NCCL_NVLS_ENABLE": null
+          },
+          "evidence": "the registry's all-reduce, all-gather and all-to-all floors and rates, fitted on AISimulate's NCCL sweep at NCCL's defaults (cost-model-collectives); NCCL's default for NCCL_NVLS_ENABLE is 2, use NVLink SHARP where the system supports it, and 1 differs only in failing communicator initialization when the NVLS resources cannot be allocated (NCCL user guide, NCCL_NVLS_ENABLE), which a run that completed did not do",
+          "differs": "SGLang writes NCCL_NVLS_ENABLE=0 itself when the variable is absent from the environment and neither enable_nccl_nvls nor enable_symm_mem is set (entrypoints/engine.py:1908-1915 at SGLang v0.5.23), so the engine's own resolution of the unset variable switches NVLS off, which the sweep did not; the cost model does not read the variable and prices the collectives at the sweep's configuration; a stated 0 is not covered",
+          "when": [
+            {
+              "value_in": [
+                "1",
+                "2"
+              ]
+            }
+          ]
+        }
       }
     },
     {
@@ -14786,7 +14824,25 @@
         "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "none",
+        "approximates": {
+          "mode": {
+            "enable_symm_mem": null
+          },
+          "evidence": "the registry's all-reduce floors and rates, fitted on AISimulate's NCCL sweep at NCCL's defaults (cost-model-collectives)",
+          "differs": "a stated true registers the tensor-parallel group's all-reduce buffers as NCCL symmetric memory, so an all-reduce that custom all-reduce does not take goes to the pynccl symmetric-memory all-reduce, which can use the NVLS symmetric kernels the sweep did not run (distributed/parallel_state.py:745-763 at SGLang v0.5.23), and sets NCCL_CUMEM_ENABLE=1 and NCCL_NVLS_ENABLE=1 (entrypoints/engine.py:1898-1915); the all-reduce is priced at the default NCCL algorithm. The 4 GiB symmetric pool is allocated after the KV pool is sized and the graphs are captured (arg_groups/memory_hook.py:349-353, model_executor/model_runner_components/cuda_graph_setup.py:461-466), so the KV capacity does not change, and the cost model does not carry the 4 GiB in its headroom",
+          "when": [
+            {
+              "value_in": [
+                "true"
+              ],
+              "compute_capability": {
+                "gte": "9.0",
+                "lt": "11.0"
+              }
+            }
+          ]
+        }
       }
     },
     {
