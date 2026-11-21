@@ -457,6 +457,40 @@
     "name": "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS"
    }
   },
+  "VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "oracle/inertness/VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD.json"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [],
+    "stated": [
+     {
+      "value": 0,
+      "trace": "oracle/inertness/VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD.json"
+     }
+    ],
+    "name": "VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD"
+   }
+  },
   "VLLM_USE_RUST_FRONTEND": {
    "value_classes": {
     "type": "boolean",

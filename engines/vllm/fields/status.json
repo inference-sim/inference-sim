@@ -59,6 +59,7 @@
   "UCX_RNDV_SCHEME",
   "UCX_TLS",
   "VLLM_MXFP4_USE_MARLIN",
+  "VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD",
   "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
   "VLLM_USE_V2_MODEL_RUNNER"
  ],
@@ -9952,6 +9953,15 @@
     "issue": "inference-sim/blis-vllm#53"
    },
    "status": "not_modelled"
+  },
+  "env:VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "proof": "oracle/inertness/VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD.json"
+   },
+   "status": "proven_inert"
   },
   "env:VLLM_RPC_BASE_PATH": {
    "estimation": {

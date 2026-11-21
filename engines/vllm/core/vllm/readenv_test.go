@@ -55,3 +55,16 @@ func TestTheV2RunnerEnvKeyIsOneOrRefused(t *testing.T) {
 		}
 	}
 }
+
+// VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD is named by no file of the pinned vLLM release, so a stated
+// value reaches no code (oracle/inertness/VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD.json): the engine accepts it
+// and still refuses a neighbouring VLLM_ variable no proof covers.
+func TestTheEngineAcceptsTheRoutedDownProjThresholdItProvesInert(t *testing.T) {
+	if err := refuseUnmodelled(engineconfig.Engine{Env: map[string]string{"VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD": "0"}}); err != nil {
+		t.Errorf("VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD is refused although fields.json proves it inert: %v", err)
+	}
+	err := refuseUnmodelled(engineconfig.Engine{Env: map[string]string{"VLLM_SOME_OTHER_THRESHOLD": "0"}})
+	if err == nil || !strings.Contains(err.Error(), "VLLM_SOME_OTHER_THRESHOLD") {
+		t.Errorf("an unproven VLLM_ variable must still be refused by name, got %v", err)
+	}
+}

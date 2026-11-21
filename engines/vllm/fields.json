@@ -5059,6 +5059,23 @@
       }
     },
     {
+      "name": "VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD",
+      "source": "env",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "oracle/inertness/VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD.json"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_RPC_BASE_PATH",
       "source": "env",
       "status": "not_modelled",
