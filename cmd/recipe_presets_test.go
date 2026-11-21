@@ -61,13 +61,9 @@ const recipesCommit = "0fda86a35419"
 //     fits, so this is a disagreement between the recipe and the engine's memory model (the catalog
 //     weights and the default 0.92 utilization leave less than the recipe measured), not a vLLM
 //     refusal; it is listed so it is seen.
-//   - the engine's coverage: pipeline parallelism over a model whose graph states its caches is
-//     not priced (the kernel sizes the stated caches over the whole stack, not per stage), which is
-//     Mistral FP8 on two 8-GPU H200 nodes as TP8 x PP2.
 var expectedRefusals = map[string]string{
 	"mistral/gb300/single_node_tp/fp8":                         "To serve at least one request with the model's max seq len",
 	"mistral/gb300/pd_cluster/fp8":                             "No available memory for the cache blocks",
-	"mistral/h200/multi_node_tp_pp/fp8":                        "pipeline parallelism (pp 2) on a model whose graph states its caches is not priced",
 	"inkling/b200/multi_node_tp/default":                       "does not divide the 8 KV heads",
 	"inkling/b300/multi_node_tp/default":                       "does not divide the 8 KV heads",
 	"inkling/h200/single_node_tp/default#dspark":               "To serve at least one request with the model's max seq len (131072)",
