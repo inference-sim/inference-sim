@@ -49,12 +49,12 @@ go run ./tools/prcheck docrefs
 - The generated copies, with `go run ./tools/invariants render`, when an invariant registry record
   changes; and the record itself, when a check is added or a status moves (design §13.1).
 - The JSON Schemas, with `go run ./tools/schemagen`, when a schema or data field changes.
-- The registry's engine CodeIDs, with `tools/codepaths/export_code_ids.py` (its docstring gives
+- The registry's engine CodeIDs, with `substrate/tools/codepaths/export_code_ids.py` (its docstring gives
   the command), when an engine's `code_paths.json` changes. The tables are regenerated from the
-  engine's pinned release by `tools/codepaths/regen.py`. This repository names no path of an
+  engine's pinned release by `substrate/tools/codepaths/regen.py`. This repository names no path of an
   engine module (X7).
 - The registry's copy of each engine's kernel-implementation table, with
-  `tools/kernelimpls/export_kernel_impls.py` (its docstring gives the command), when an engine's
+  `substrate/tools/kernelimpls/export_kernel_impls.py` (its docstring gives the command), when an engine's
   `kernel_impls.json` changes.
 - The issue the change closes, named on a `Closes` line; an issue cited as a gap stays open until
   the change that removes its last citation (X28).
@@ -73,7 +73,7 @@ commit and resolves the thread (X24); no check waits for a person to do either.
 
 CI reruns a failed run automatically in one case only: the hosted runner was shut down ("The
 runner has received a shutdown signal"), on the first attempt, for every failed job
-(`.github/workflows/rerun-on-runner-shutdown.yml`). It is announced in the job summary and a
+(the `rerun` subcommand of `substrate/tools/prcheck`). It is announced in the job summary and a
 comment. Any other red is a defect or a gate: read the log, fix it, and do not rerun it hoping
 it passes. A flaky test is reported, not quarantined or retried.
 
@@ -116,7 +116,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: Published numbers regenerate: on redistributable fixtures on every pull request, on the full data nightly
   - `new`, pull_request: An accuracy change's success criteria are committed before any commit that reads its held-out data
 - **X10** (ci; target reached) Repositories are merged bottom-up, and inference-sim is the only repository whose release is required.
-  - `ci`, release: Release bot (§13.6) (`tools/release`)
+  - `ci`, release: Release bot (§13.6) (`substrate/tools/release`)
 - **X11** (partial; target ci by M1) Pins are exact commits.
   - `ci`, pull_request: Selected-version lint (LIF-2), in every repository: no replace outside inference-sim (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: No other module requiring github.com/llm-d/llm-d-router (`tools/modlint: TestEachRuleHasAKnownBadInput`)
@@ -135,7 +135,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: The description check, a shared workflow run in every repository (`shared-pr-checks.yml: prcheck description, invariants cited`)
 - **X15** (ci; target reached) Each validation rule exists once, in Go, in blis-substrate.
   - `ci`, pull_request: The parity test in blis-substrate (`tools/pyrules: TestEveryRestatementAgreesWithGo`)
-  - `ci`, pull_request: A lint that flags schema-like rule code in Python scripts (`tools/pyrules/pyrules.py`)
+  - `ci`, pull_request: A lint that flags schema-like rule code in Python scripts (`substrate/tools/pyrules/pyrules.py`)
 - **X16** (new; target ci by M1) A skipped test in a required or gate job is a failure, not a pass, unless it is on the quarantine list of X25.
   - `new`, pull_request: Each repository's CI configuration (`prcheck workflows, prcheck skips`)
   - `new`, nightly: The nightly status page (§13.4) (`shared-nightly.yml: prcheck status`)

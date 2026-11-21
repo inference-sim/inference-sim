@@ -6,7 +6,7 @@
 **Branch**: `003-tier-shed-admission`
 **PR**: #809
 
-**Tests**: Included — project requires BDD/TDD per `docs/contributing/standards/principles.md`. Tests MUST be written first and must FAIL before implementation begins.
+**Tests**: Included — project requires BDD/TDD per `.github/agent-prompts/standards/principles.md`. Tests MUST be written first and must FAIL before implementation begins.
 
 ## Format: `[ID] [P?] [Story?] Description — file path`
 
@@ -173,7 +173,7 @@ Phase 3 implementation (sequential — same files):
 ## Notes
 
 - `[P]` = different files, no inter-task dependency → safe to implement simultaneously
-- TDD order is non-negotiable per `docs/contributing/standards/principles.md`: test MUST fail before implementation
+- TDD order is non-negotiable per `.github/agent-prompts/standards/principles.md`: test MUST fail before implementation
 - `SLOTierPriority()` (T001) lives in `sim/` (not `sim/cluster/`) — exported so `sim/cluster/` can call it without circular import
 - Do NOT add `case "tier-shed":` to `NewAdmissionPolicy()` factory — factory is float64-parameterized and cannot carry the int fields `TierShedAdmission` requires (research.md D-2)
 - `shedByTier` is a runtime-mutated metrics map (not a validation map) — R8 applies to validation maps only; field is correctly unexported

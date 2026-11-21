@@ -111,7 +111,7 @@ To add a new field to the per-request rows of the Result (`request_rows`):
 1. **Add field to `Request`** in `sim/request.go` (runtime state, zero-value safe). When constructing `Request` structs, use `RequestState` typed constants (`StateQueued`, `StateRunning`, `StateCompleted`) — never bare strings.
 2. **Record it**: a tag known when the request is created goes in `RequestFact` (`sim/cluster/fates.go`, set by `noteFacts`); a value the engine produces goes in `RequestMetrics` (`sim/metrics_utils.go`, propagated by `NewRequestMetrics()` or set where the engine records it).
 3. **State it in the row**: `requestRows` (`cmd/result_rows.go`) copies it onto the `result.RequestRow`. A member the row does not have is a blis-substrate change (`contracts/spec/result`), released and repinned in `go.mod`.
-4. **Document it** in the Per-Request Rows table of `docs/guide/results.md`.
+4. **Document it** with the row member's description in `substrate/contracts/spec/result`.
 5. **Add behavioral tests** covering multi-instance, single-instance, and standalone boundaries
 
 Examples:

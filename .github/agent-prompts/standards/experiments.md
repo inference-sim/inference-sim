@@ -401,7 +401,7 @@ Every experiment produces individual findings. Each finding MUST be classified i
 
 ### The Audit Step
 
-After analyzing results, EVERY experiment MUST audit findings against `docs/contributing/standards/`:
+After analyzing results, EVERY experiment MUST audit findings against `.github/agent-prompts/standards/`:
 
 1. Do any findings reveal violations of existing rules or principles?
 2. Do any findings suggest a new rule, invariant, or principle is needed?

@@ -25,7 +25,7 @@ check `ledger scan-roles` refuses any other committed file that pairs a unit wit
 seed. Nothing else may write it.
 
 A tree without the lists can merge, but it cannot be released. `ledger check -release catalog/ledger`
-and the release tool (`tools/release`, at `-tag`) refuse a tree that lacks either list
+and the release tool (`substrate/tools/release`, at `-tag`) refuse a tree that lacks either list
 or whose fit or anchor list holds no unit; the release job itself refuses to write such lists. The
 fit list is what every fitted coefficient cites (D1) and the anchor list is what the dashboard
 scores (COV-2), so a release without them has nothing to fit from or score.
@@ -47,7 +47,7 @@ go run ./ledger/cmd/ledger ingest-inferencex -rows rows.jsonl -partition partiti
 
 `ledger check-generated` runs the same steps into memory and requires every generated file to
 equal the committed one byte for byte (D4). It needs the dump, so it runs in the nightly
-`gate-nightly` job of `.github/workflows/ledger.yml`, not on each pull request. Each pull request
+`gate-nightly` job of the seed-holding ledger workflow, which is not part of this tree, and not on each pull request. Each pull request
 runs `ledger check`, `ledger scan-roles`, `ledger lint-workflows` and `ledger check-base`, which
 need no source data (`.github/workflows/ci.yml`, job `ledger`).
 
@@ -231,7 +231,7 @@ hash. A person with admin rights on the repository, or an agent acting for one, 
    and `seed.rotation_owner`. The review question "Was the new seed generated as the ledger
    records?" (D7) is guidance for the review agent. The seed-holding jobs refuse a secret whose
    SHA-256 is not the recorded one, so a record without its secret draws no role.
-4. Run `.github/workflows/ledger.yml` with `job: release` on main. The job checks the seed
+4. Run the seed-holding ledger workflow with `job: release` on main. The job checks the seed
    against the recorded hash before it draws anything. Its artifact `published` holds
    `fit.yaml` and `anchor.yaml`. The release bot commits them under
    `published/` in the release pull request. The lists are not embedded in the simulator's
@@ -250,11 +250,11 @@ so that anyone can check the split against the committed hash.
 
 ## The jobs
 
-`.github/workflows/ledger-candidate.yml` holds the candidate job. It runs a pull request's
+The candidate workflow holds the candidate job. It runs a pull request's
 code with no secret, no environment and a read-only token. It predicts every unit not on the
 published lists with no network, and uploads `predictions.json`, nothing else.
 
-`.github/workflows/ledger.yml` holds the seed-holding jobs: release, select, error and
+The seed-holding ledger workflow holds the seed-holding jobs: release, select, error and
 gate-nightly. Each runs only from main, in the environment `ledger`. Each checks out main and
 reads the predictions as untrusted input with a strict loader (`ledger.ReadPredictions`). Each
 reduces its own role's units to aggregates over at least 10 units, and checks that its report

@@ -8,7 +8,7 @@ environment and the platform replaced (design §7.2, §7.3). The release and com
 
 A golden of 16000 bytes or more is committed as `<name>.gz` (gzip, mtime 0), so the repository's module stays under
 100 MB (`internal/repocheck` `TestModuleZipIsUnder100MB`); a smaller one stays plain. The Go tests read either form through
-`internal/testgz`, and the comparison and provenance scripts through `oracle/goldengz.py`, always by the plain name.
+`engines/sglang/internal/testgz`, and the comparison and provenance scripts through `oracle/goldengz.py`, always by the plain name.
 A runner writes plain files, since a golden records the sha256 of every oracle file its run executed
 (`oracle_inputs`) and a change to a runner would make every golden it produced stale; after a runner or a hand copy has
 written a golden directory, store it in the committed form with `python3 -I oracle/goldengz.py pack <dir>...`
@@ -19,7 +19,7 @@ written a golden directory, store it in the committed form with `python3 -I orac
 SGLang is read from a checkout of the pinned commit, never installed: a runner takes the
 checkout as its first argument and puts `<checkout>/python` first on `sys.path`. CI checks out
 the commit `provenance.go` names and fails if the checkout is any other
-(`.github/actions/oracle-env`).
+(`.github/actions/oracle-env-sglang`).
 
 `oracle/requirements.lock` is the rest of the environment, every package pinned (CPython 3.12,
 Linux x86_64, CPU). `oracle/requirements.txt` gives the direct pins it was resolved from and
@@ -132,7 +132,7 @@ others:
 
 A run that cannot fill a key fails, and writes nothing.
 
-The committed goldens are under `testdata/golden/`. These rules hold them:
+The committed goldens are under `engines/sglang/oracle/testdata/golden/`. These rules hold them:
 
 - **compare_goldens.py**, in the `oracle` job, runs every scenario. Each golden must equal the fresh
   trace outside its provenance and record the same tier, manifest version, model, lock, scenario
@@ -175,7 +175,7 @@ the two values are empty and not empty. A field that takes one value is listed i
 The report fails on a held field that is now covered, and on one that no golden has.
 `--report` prints every field with its values.
 
-`mutate.py` is the mutation sweep (T7), run by `.github/workflows/mutation.yml`. It applies one
+`mutate.py` is the mutation sweep (T7), run by `.github/workflows/mutation-sglang.yml`. It applies one
 one-line break at a time to a scratch copy of the tree and runs the suite that must catch it. There
 are two kinds of mutant:
 

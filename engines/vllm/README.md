@@ -66,7 +66,7 @@ inference-sim's.
 | `kernels/`, `kernel_impls.json`, `kernelimpls.go` | the kernel-implementation table, its generator, and the lookup the lowering uses |
 | `oracle/` | the Python side: vLLM's classes with the GPU mocked, goldens, fuzz corpora, metric manifest (`oracle/metrics/`); `oracle/README.md` gives each runner's command |
 | `kerneltests/` | the cost model's tests that open a kernel from a vLLM engine block |
-| `docs/feature-matrix.md` | every feature the sources use, its vLLM citation, owner, oracle tier and status |
+| `engines/vllm/docs/feature-matrix.md` | every feature the sources use, its vLLM citation, owner, oracle tier and status |
 
 ## Build, test and run
 
@@ -80,5 +80,5 @@ The oracle tiers run from a Python with `oracle/requirements.lock` installed
 (`pip install --require-hashes --no-deps -r oracle/requirements-hashed.txt`, Linux x86_64) as the
 `oracle-scenarios`, `oracle-inertness` and `oracle-fuzz` jobs of `.github/workflows/ci.yml`.
 That file's header says how a change selects the jobs it runs and how the slow suites are shared
-out over runners; `.github/scripts/test-changed-jobs.sh` checks the selection. `AGENTS.md` holds
+out over runners; `substrate/tools/changedjobs/workflow_test.go` checks the selection. `AGENTS.md` holds
 the rules an AI-assisted change follows.
