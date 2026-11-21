@@ -297,6 +297,9 @@ func resolve(c Config) (settings, error) {
 	if err := refuseUnmodelled(e); err != nil {
 		return s, err
 	}
+	if err := checkAllocatorWithConnector(c); err != nil {
+		return s, err
+	}
 	if c.NumGPUBlocks < 2 {
 		// One block is the null block (vllm/v1/core/block_pool.py:187-188@5df63a72); with
 		// none left vLLM refuses to start (kv_cache_utils.py:1009-1017@5df63a72).
@@ -878,7 +881,39 @@ func refuseUnreadSettings(e engineconfig.Engine) error {
 }
 
 // readEnv are the engine environment variables this engine reads (resolveV2Runner).
-var readEnv = append([]string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER", "UCX_CUDA_IPC_ENABLE_MNNVL", "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS"}, p2pEnvNames...)
+var readEnv = append([]string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER", "UCX_CUDA_IPC_ENABLE_MNNVL", "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS",
+	"PYTORCH_CUDA_ALLOC_CONF"}, p2pEnvNames...)
+
+// checkAllocatorWithConnector refuses PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True beside a KV
+// connector, as VllmConfig._verify_kv_transfer_compat does (vllm/config/vllm.py:1337-1389@0fda86a3):
+// the expandable-segments allocator can remap the KV cache's virtual addresses to other physical
+// pages, which invalidates the memory a connector registered. vLLM exempts the CuMem allocator
+// (enable_cumem_allocator, which sleep mode turns on); a deployment cannot state either, so both are
+// off here and the combination is refused. A KV offload tier is the OffloadingConnector in vLLM
+// (vllm/config/vllm.py:1105-1130@5df63a72), so it counts as a connector. Any other value of the
+// variable changes allocator fragmentation, not a step's time or the KV budget the caller sizes.
+func checkAllocatorWithConnector(c Config) error {
+	conf, ok := c.Env["PYTORCH_CUDA_ALLOC_CONF"]
+	if !ok || !strings.Contains(conf, "expandable_segments:True") {
+		return nil
+	}
+	name := ""
+	switch {
+	case c.KVTransfer != nil && c.KVTransfer.Connector != "":
+		name = c.KVTransfer.Connector
+	case c.KVOffload != nil:
+		name = c.KVOffload.Connector
+		if name == "" {
+			name = offloadChild
+		}
+	default:
+		return nil
+	}
+	return fmt.Errorf("vllm: KV connector %s is incompatible with PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True "+
+		"unless enable_cumem_allocator is also enabled: PyTorch's CUDA VMM allocator can remap KV cache virtual "+
+		"addresses to different physical pages, invalidating the KV memory a connector registered "+
+		"(vllm/config/vllm.py:1337-1389@0fda86a3)", name)
+}
 
 // inertEnv are the environment variables the engine accepts without reading: fields.json proves each
 // inert (oracle/inertness/<name>.json), so stating one changes nothing the engine decides. Python

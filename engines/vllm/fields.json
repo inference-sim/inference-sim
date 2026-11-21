@@ -1448,9 +1448,19 @@
     {
       "name": "PYTORCH_CUDA_ALLOC_CONF",
       "source": "env",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
+        "traces": [
+          "core/vllm/alloc_conf_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "covered": [
+          "expandable_segments:False",
+          "expandable_segments:True",
+          "max_split_size_mb:512"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -8095,9 +8105,19 @@
     {
       "name": "disable_custom_all_reduce",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "core/lowering/disable_custom_all_reduce_test.go",
+          "core/lowering/v031_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
         "rule": "none"
