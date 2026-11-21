@@ -482,5 +482,30 @@
     "why": "the test states 0 (read as false) and 1 (read as true) beside the unstated default and asserts the KV pool grows by exactly the capture cost under 0 and is unchanged under 1; a value that is not an integer is refused as vLLM's int() would"
    }
   ]
+ },
+ "PYTORCH_CUDA_ALLOC_CONF": {
+  "stated": [
+   {
+    "trace": "core/vllm/alloc_conf_test.go",
+    "values": [
+     "expandable_segments:True",
+     "expandable_segments:False",
+     "max_split_size_mb:512"
+    ],
+    "why": "the test states each beside a KV transfer connector or an offload tier and asserts the engine refuses expandable_segments:True there, as vLLM does, and runs any other value"
+   }
+  ]
+ },
+ "disable_custom_all_reduce": {
+  "stated": [
+   {
+    "trace": "core/lowering/disable_custom_all_reduce_test.go",
+    "values": [
+     false,
+     true
+    ],
+    "why": "the test states false and true beside the unstated default and asserts true moves the reduction off the custom kernel and false keeps it where the layout supports it"
+   }
+  ]
  }
 }

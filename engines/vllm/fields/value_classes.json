@@ -319,6 +319,68 @@
     "name": "PYTHONUNBUFFERED"
    }
   },
+  "PYTORCH_CUDA_ALLOC_CONF": {
+   "value_classes": {
+    "type": "enumerated",
+    "covered": [
+     "expandable_segments:False",
+     "expandable_segments:True",
+     "max_split_size_mb:512"
+    ]
+   },
+   "basis": {
+    "kind": "open",
+    "classes": [
+     {
+      "values": [
+       "expandable_segments:True"
+      ],
+      "compared_at": [
+       "vllm/config/vllm.py:1375"
+      ],
+      "covered_by": [
+       "core/vllm/alloc_conf_test.go"
+      ]
+     },
+     {
+      "other": true,
+      "compared_at": [],
+      "covered_by": [
+       "core/vllm/alloc_conf_test.go"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/config/vllm.py:1375",
+      "expr": "\"expandable_segments:True\" not in os.environ.get( \"PYTORCH_CUDA_ALLOC_CONF\", \"\" )",
+      "op": "NotIn",
+      "values": [
+       "expandable_segments:True"
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": "expandable_segments:True",
+      "trace": "core/vllm/alloc_conf_test.go",
+      "reviewed": true
+     },
+     {
+      "value": "expandable_segments:False",
+      "trace": "core/vllm/alloc_conf_test.go",
+      "reviewed": true
+     },
+     {
+      "value": "max_split_size_mb:512",
+      "trace": "core/vllm/alloc_conf_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "PYTORCH_CUDA_ALLOC_CONF"
+   }
+  },
   "TRANSFORMERS_CACHE": {
    "value_classes": {
     "type": "enumerated",
@@ -4749,6 +4811,66 @@
      }
     ],
     "name": "data_parallel_size_local"
+   }
+  },
+  "disable_custom_all_reduce": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "kind": "boolean",
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "vllm/v1/executor/cuda_checkpoint_executor.py:137"
+      ],
+      "covered_by": [
+       "core/lowering/disable_custom_all_reduce_test.go"
+      ]
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "vllm/v1/executor/cuda_checkpoint_executor.py:137"
+      ],
+      "covered_by": [
+       "core/lowering/disable_custom_all_reduce_test.go"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/v1/executor/cuda_checkpoint_executor.py:137",
+      "expr": "not parallel.disable_custom_all_reduce",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": false,
+      "trace": "core/lowering/disable_custom_all_reduce_test.go",
+      "reviewed": true
+     },
+     {
+      "value": true,
+      "trace": "core/lowering/disable_custom_all_reduce_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "disable_custom_all_reduce"
    }
   },
   "disable_hybrid_kv_cache_manager": {

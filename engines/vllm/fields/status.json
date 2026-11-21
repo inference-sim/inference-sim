@@ -1604,9 +1604,12 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "core/lowering/disable_custom_all_reduce_test.go",
+     "core/lowering/v031_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:disable_fastapi_docs": {
    "estimation": {
@@ -6999,9 +7002,11 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#53"
+    "traces": [
+     "core/vllm/alloc_conf_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "env:PYTORCH_HIP_ALLOC_CONF": {
    "estimation": {
