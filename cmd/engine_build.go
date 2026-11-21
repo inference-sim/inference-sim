@@ -198,6 +198,19 @@ func resolveAcceptanceFor(cmd *cobra.Command, m *engineModel, k int, method stri
 	return a, speculating
 }
 
+// acceptanceEngineVLLM is the engine name `blis acceptance --engine` takes.
+const acceptanceEngineVLLM = build.Engine
+
+// vllmAcceptanceRequest is req with the vLLM engine's part of the lookup's key stated as a run
+// states it: the engine, its defaults, and the draft sampler and verifier the speculative block's
+// sample methods (or the defaults) resolve to.
+func vllmAcceptanceRequest(req acceptance.Request, draftSample, rejectionSample string) acceptance.Request {
+	in := build.AcceptanceInputs{}.VLLMInputsSampling(draftSample, rejectionSample)
+	req.Engine, req.DefaultDraftSampler, req.DefaultVerifier = in.Engine, in.DefaultDraftSampler, in.DefaultVerifier
+	req.DraftSampler, req.Verifier = in.DraftSampler, in.Verifier
+	return req
+}
+
 // poolAcceptanceInputs is in with pool m's part of the lookup's key, from the speculative
 // block of the engine it opened (none when m is nil): the drafter it names
 // (speculative_config.model, the catalog drafter; inference-sim/inference-sim#2142), its draft

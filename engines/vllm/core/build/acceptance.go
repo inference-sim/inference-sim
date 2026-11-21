@@ -91,6 +91,16 @@ func (in AcceptanceInputs) VLLMInputs(sp *engineconfig.Speculative) AcceptanceIn
 	return in
 }
 
+// VLLMInputsSampling is VLLMInputs for a speculative block that states only its draft and
+// rejection sample methods (engine.speculative.draft_sample_method and
+// rejection_sample_method), "" for one it leaves to the engine: what `blis acceptance` states.
+func (in AcceptanceInputs) VLLMInputsSampling(draftSample, rejectionSample string) AcceptanceInputs {
+	if draftSample == "" && rejectionSample == "" {
+		return in.VLLMInputs(nil)
+	}
+	return in.VLLMInputs(&engineconfig.Speculative{DraftSampleMethod: draftSample, RejectionSampleMethod: rejectionSample})
+}
+
 // Acceptance is a run's resolved acceptance.
 type Acceptance struct {
 	Res acceptance.Resolution

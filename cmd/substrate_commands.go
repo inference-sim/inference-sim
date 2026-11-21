@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
+	specmodel "github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
@@ -40,7 +41,10 @@ var catalogResolveCmd = &cobra.Command{
 		"chip resolves when hardware/<name>.yaml exists. The output is {\"query\": ..., " +
 		"\"identity\": <catalog name> | null, \"reason\": ...}; a resolved chip adds " +
 		"\"packaging\": {\"gpus_per_node\", \"gpus_per_rack\"}, each the value its entry fixes or null " +
-		"where the scenario states it. A name two entries claim is an error, never a choice.",
+		"where the scenario states it; a resolved model adds \"drafters\": [{\"name\", \"method\", " +
+		"\"num_spec_tokens\"}], what the entry lists as able to draft for it (\"speculator\" for its " +
+		"own in-graph one, else a drafter checkpoint's catalog name; the --drafter of `blis " +
+		"acceptance`), omitted for a model that lists none. A name two entries claim is an error, never a choice.",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -59,6 +63,9 @@ var catalogResolveCmd = &cobra.Command{
 		}
 		if err != nil {
 			return err
+		}
+		if r.Identity != nil && resolveModel != "" {
+			r.Drafters = draftersOf(data, *r.Identity)
 		}
 		if substrateJSON {
 			return writeJSON(cmd.OutOrStdout(), r)
@@ -83,6 +90,44 @@ type catalogResolution struct {
 	// neither field for a value stated here, and the scenario's own for a null one
 	// (the substrate scenario.Cluster.Packaging, design SUB-3).
 	Packaging *chipPackaging `json:"packaging,omitempty"`
+	// Drafters is a resolved model's drafters as its entry lists them (model.Identity.Drafters,
+	// design D8), in the entry's order: the in-graph speculator and each separate drafter
+	// checkpoint, with the method and draft length the drafter's graph defaults to. Absent for a
+	// chip, a model that does not resolve, and a model that lists none. `blis acceptance
+	// --drafter` takes the name (inference-sim#2141).
+	Drafters []drafterInfo `json:"drafters,omitempty"`
+}
+
+// drafterInfo is one entry of a target's drafters: the word "speculator" for its own
+// in-graph speculator, or the catalog name of a separate drafter checkpoint.
+type drafterInfo struct {
+	Name string `json:"name"`
+	// Method and NumSpecTokens are the speculator the drafter's graph states (the target's own
+	// graph for the in-graph speculator); NumSpecTokens is the draft length the checkpoint
+	// defaults to, not a limit (the substrate model.Speculator.NumSpec). Empty and 0 when the
+	// catalog has no graph for the name.
+	Method        string `json:"method"`
+	NumSpecTokens int    `json:"num_spec_tokens"`
+}
+
+func draftersOf(data *load.Data, target string) []drafterInfo {
+	id, err := data.ModelIdentity(target)
+	if err != nil || len(id.Drafters) == 0 {
+		return nil
+	}
+	var out []drafterInfo
+	for _, d := range id.Drafters {
+		graphOf := d
+		if d == specmodel.InGraphSpeculator {
+			graphOf = target
+		}
+		info := drafterInfo{Name: d}
+		if g, err := data.Model(graphOf); err == nil && g.Speculator != nil {
+			info.Method, info.NumSpecTokens = g.Speculator.Method, g.Speculator.NumSpec
+		}
+		out = append(out, info)
+	}
+	return out
 }
 
 // chipPackaging is what a chip's catalog entry states about its packaging.
