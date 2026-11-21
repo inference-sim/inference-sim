@@ -130,7 +130,7 @@ func (p *Pack) AsyncCompatibleSpeculative(string) (compatible, known bool) { ret
 func (p *Pack) EngramOnHostByDefault() bool { return false }
 
 // DCPCommBackendNames implements enginefacts.EngineRules: decode context parallelism is refused
-// (blis-sglang#26), so no backend list is stated.
+// (inference-sim/inference-sim#2448), so no backend list is stated.
 func (p *Pack) DCPCommBackendNames() map[string]bool { return nil }
 
 // MegaMoEBackend implements enginefacts.EngineRules: the backend that runs the mega-MoE path
@@ -138,7 +138,7 @@ func (p *Pack) DCPCommBackendNames() map[string]bool { return nil }
 func (p *Pack) MegaMoEBackend(name string) bool { return name == "flashinfer_megamoe" }
 
 // SequenceParallelMoE implements enginefacts.EngineRules: SGLang v0.5.23 has no sequence-parallel MoE
-// of vLLM's kind; its attention-DP layouts are refused until blis-sglang#70.
+// of vLLM's kind; its attention-DP layouts are refused until inference-sim/inference-sim#2356.
 func (p *Pack) SequenceParallelMoE(string, bool, int, int) bool { return false }
 
 // ModelSequenceParallel implements enginefacts.EngineRules: SGLang v0.5.23 does not split the residual
@@ -160,7 +160,7 @@ func (p *Pack) CustomAllReduceSupportsWidth(tp int) bool {
 func (p *Pack) TritonFetchWithholdsSMs(int) int { return 0 }
 
 // DBOEngages implements enginefacts.EngineRules: two-batch overlap (enable_two_batch_overlap) is
-// refused until blis-sglang#49 models it, so no step engages it.
+// refused until inference-sim/inference-sim#2344 models it, so no step engages it.
 func (p *Pack) DBOEngages(bool, int, bool) bool { return false }
 
 // EffectiveAll2AllBackend implements enginefacts.EngineRules: SGLang runs the all-to-all backend that
@@ -181,13 +181,13 @@ func (p *Pack) ResolveCacheDType(_ string, _, _ int, requested string) string {
 }
 
 // WindowPagesPerRequest implements enginefacts.EngineRules: sliding-window caches are SWA pools, which
-// are refused until blis-sglang#73; zero makes the kernel refuse a graph that has one.
+// are refused until inference-sim/inference-sim#2359; zero makes the kernel refuse a graph that has one.
 func (p *Pack) WindowPagesPerRequest(model.Cache, int, int, int, int) int { return 0 }
 
 // KVCacheGroups implements enginefacts.EngineRules: SGLang v0.5.23 allocates every layer's KV from the
 // same token index (the one TokenToKVPoolAllocator, mem_cache/allocator.py), so all owned caches
 // of a graph without window or state caches form one group whose block is page_size tokens. A
-// graph with a window or state cache is the hybrid pool (blis-sglang#73, #94) and is refused.
+// graph with a window or state cache is the hybrid pool (inference-sim/inference-sim#2359, #2366) and is refused.
 func (p *Pack) KVCacheGroups(in enginefacts.KVCacheGroupsInput) (enginefacts.KVCacheGrouping, error) {
 	if len(in.Layers) == 0 {
 		return enginefacts.KVCacheGrouping{}, fmt.Errorf("no owned caches to group")
@@ -197,7 +197,7 @@ func (p *Pack) KVCacheGroups(in enginefacts.KVCacheGroupsInput) (enginefacts.KVC
 	for _, l := range in.Layers {
 		c := l.Cache
 		if c.Kind != model.CacheKV && c.Kind != model.CacheIndex {
-			return enginefacts.KVCacheGrouping{}, fmt.Errorf("layer %q has a %s cache: SGLang %s models a plain token pool only (hybrid pools: inference-sim/blis-sglang#94, #73)", l.Name, c.Kind, p.Version)
+			return enginefacts.KVCacheGrouping{}, fmt.Errorf("layer %q has a %s cache: SGLang %s models a plain token pool only (hybrid pools: inference-sim/inference-sim#2366, #2359)", l.Name, c.Kind, p.Version)
 		}
 		block := in.EngineBlockSize
 		if block < 1 {

@@ -16,7 +16,7 @@ jobs:
 
 // LIF-2: a job installs Go with the go-toolchain action, which installs contracts/toolchain's
 // version. A workflow or another action that installs the Go that go.mod names leaves a job on
-// a different version when the two differ (inference-sim/blis-substrate#193).
+// a different version when the two differ (inference-sim/inference-sim#2402).
 func TestAJobThatInstallsGoFromGoModIsRefused(t *testing.T) {
 	has(t, mustLint(t, ".github/workflows/ci.yml", setupGo), "go-toolchain")
 	// A caller's own composite action is held to the same rule.

@@ -568,13 +568,13 @@
     {
       "symbol": "threading.Thread.start at python/sglang/srt/mem_cache/hybrid_cache/hybrid_cache_controller.py:285@297e54fd (pp_prefetch_command_thread_func)",
       "kind": "environment",
-      "how": "thread body run synchronously at step k, by the step-driven runner's rule (oracle/step_runner.py RULE); the PP prefetch ticket thread starts only with buffer_only host memory and more than one pipeline stage, and the runner refuses its start by name (pipeline parallelism, inference-sim/blis-sglang#8)",
+      "how": "thread body run synchronously at step k, by the step-driven runner's rule (oracle/step_runner.py RULE); the PP prefetch ticket thread starts only with buffer_only host memory and more than one pipeline stage, and the runner refuses its start by name (pipeline parallelism, inference-sim/inference-sim#2456)",
       "sites": []
     },
     {
       "symbol": "threading.Thread.start at python/sglang/srt/mem_cache/hybrid_cache/hybrid_cache_controller.py:509@297e54fd (pp_prefetch_command_thread_func)",
       "kind": "environment",
-      "how": "thread body run synchronously at step k, by the step-driven runner's rule (oracle/step_runner.py RULE); the PP prefetch ticket thread starts only with buffer_only host memory and more than one pipeline stage, and the runner refuses its start by name (pipeline parallelism, inference-sim/blis-sglang#8)",
+      "how": "thread body run synchronously at step k, by the step-driven runner's rule (oracle/step_runner.py RULE); the PP prefetch ticket thread starts only with buffer_only host memory and more than one pipeline stage, and the runner refuses its start by name (pipeline parallelism, inference-sim/inference-sim#2456)",
       "sites": []
     },
     {

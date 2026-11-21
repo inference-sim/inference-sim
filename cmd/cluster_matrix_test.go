@@ -111,7 +111,7 @@ type matrixClass struct {
 	step   string // "block" or "tp" for a search step
 	defect bool
 	// issue is the open issue that holds the defect; a reason that carries its own reference
-	// ("(inference-sim/blis-sglang#49)") is read from the message instead.
+	// ("(inference-sim/inference-sim#2344)") is read from the message instead.
 	issue string
 	why   string
 }
@@ -125,16 +125,16 @@ var matrixClasses = []matrixClass{
 		why: "the tensor-parallel size does not divide the KV head count of a projection that cannot replicate a head"},
 	{id: "heads_not_divisible", re: regexp.MustCompile(`is not divisible by tensor_parallel_size`), step: "tp",
 		why: "the tensor-parallel size does not divide the head count"},
-	{id: "sglang_pd_not_modelled", re: regexp.MustCompile(`prefill/decode disaggregation is not modelled yet \(inference-sim/blis-sglang#\d+\)`), defect: true,
+	{id: "sglang_pd_not_modelled", re: regexp.MustCompile(`prefill/decode disaggregation is not modelled yet \(inference-sim/(?:blis-sglang|inference-sim)#\d+\)`), defect: true,
 		why: "the SGLang engine does not model prefill/decode disaggregation"},
-	{id: "sglang_pd_not_placeable", re: regexp.MustCompile(`the engine does not implement engine\.Placeable`), defect: true, issue: "inference-sim/blis-sglang#64",
+	{id: "sglang_pd_not_placeable", re: regexp.MustCompile(`the engine does not implement engine\.Placeable`), defect: true, issue: "inference-sim/inference-sim#2351",
 		why: "the SGLang engine does not model prefill/decode disaggregation, so a pool of several nodes is refused at placement before a request is"},
-	{id: "sglang_not_lowered", re: regexp.MustCompile(`\(inference-sim/blis-sglang#\d+\)`), defect: true,
+	{id: "sglang_not_lowered", re: regexp.MustCompile(`\(inference-sim/(?:blis-sglang|inference-sim)#\d+\)`), defect: true,
 		why: "the SGLang engine does not lower this architecture, chip or setting"},
 	{id: "recurrent_sparse_mla", re: regexp.MustCompile(`sparse_mla attention beside recurrent layers is not mapped`), defect: true,
-		issue: "inference-sim/blis-vllm#308", why: "sparse MLA attention beside recurrent layers is not mapped"},
+		issue: "inference-sim/inference-sim#2489", why: "sparse MLA attention beside recurrent layers is not mapped"},
 	{id: "recurrent_head_size_256", re: regexp.MustCompile(`an attention head size 256 beside recurrent layers`), defect: true,
-		issue: "inference-sim/blis-vllm#309", why: "a 256-wide attention head beside recurrent layers: the kernel block depends on the FlashAttention version"},
+		issue: "inference-sim/inference-sim#2490", why: "a 256-wide attention head beside recurrent layers: the kernel block depends on the FlashAttention version"},
 	{id: "upstream_no_kv_connector", re: regexp.MustCompile(`supports_kv_connector False`),
 		why: "vLLM's own attention backend for this model supports no KV connector, so it cannot serve P/D"},
 }
@@ -863,10 +863,10 @@ func TestClusterMatrix_EveryCellSimulatesOrIsRefusedWithItsReason(t *testing.T) 
 
 func TestClusterMatrix_ReadsAnEngineRefusalOfARequest(t *testing.T) {
 	for _, tc := range []struct{ line, reason, issue string }{
-		{`time="2026-11-20T16:12:07-05:00" level=warning msg="dropping request request_1_prefill: the engine refused it: sglang: prefill/decode disaggregation is not modelled yet (inference-sim/blis-sglang#64): request request_1_prefill"` + "\n",
-			"sglang: prefill/decode disaggregation is not modelled yet (inference-sim/blis-sglang#64)", "inference-sim/blis-sglang#64"},
-		{`time="2026-11-20T18:20:38-05:00" level=warning msg="dropping request request_0: the engine refused it: refused: sched: a prompt token outside the vocabulary is not modelled (inference-sim/blis-sglang#56)"` + "\n",
-			"refused: sched: a prompt token outside the vocabulary is not modelled (inference-sim/blis-sglang#56)", "inference-sim/blis-sglang#56"},
+		{`time="2026-11-20T16:12:07-05:00" level=warning msg="dropping request request_1_prefill: the engine refused it: sglang: prefill/decode disaggregation is not modelled yet (inference-sim/inference-sim#2351): request request_1_prefill"` + "\n",
+			"sglang: prefill/decode disaggregation is not modelled yet (inference-sim/inference-sim#2351)", "inference-sim/inference-sim#2351"},
+		{`time="2026-11-20T18:20:38-05:00" level=warning msg="dropping request request_0: the engine refused it: refused: sched: a prompt token outside the vocabulary is not modelled (inference-sim/inference-sim#2346)"` + "\n",
+			"refused: sched: a prompt token outside the vocabulary is not modelled (inference-sim/inference-sim#2346)", "inference-sim/inference-sim#2346"},
 	} {
 		m := matrixEngineRefused.FindStringSubmatch(tc.line)
 		if m == nil {

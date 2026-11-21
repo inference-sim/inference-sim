@@ -201,7 +201,7 @@ func TestBlockSizeResolutionOverTheCensusFixtures(t *testing.T) {
 					pieces++
 				}
 				e, err := m.Engine()
-				if err != nil && !strings.Contains(err.Error(), "blis-vllm/issues/68") {
+				if err != nil && !strings.Contains(err.Error(), "inference-sim/issues/2425") {
 					t.Errorf("%s: refused, but not citing #68: %v", f, err)
 				}
 				class := ""

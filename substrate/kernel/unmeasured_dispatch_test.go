@@ -10,7 +10,7 @@ import (
 
 // A dispatch kernel the registry measures nothing for is priced as the generic routed all-to-all
 // and the result says so; a measured one, and the gather-and-scatter dispatch, add no such
-// assumption (blis-vllm#75).
+// assumption (inference-sim/inference-sim#2429).
 func TestAnUnmeasuredDispatchKernelIsPricedAsTheGenericOneAndSaysSo(t *testing.T) {
 	d, err := load.Embedded()
 	if err != nil {

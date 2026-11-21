@@ -109,7 +109,7 @@ func tightestTier(dev float64) float64 {
 }
 
 // The KV cache size an engine core logs at start-up is asserted for every fit unit of the published
-// ledger whose server log prints it (blis-vllm#73): the engine's own figure for the run's recorded
+// ledger whose server log prints it (inference-sim/inference-sim#2427): the engine's own figure for the run's recorded
 // scenario (Engine.KVCacheCapacity, vLLM's get_kv_cache_capacity) against the logged "GPU KV cache
 // size: N tokens". Each group (model, chip, tensor and data parallel width) is held to the
 // tightest tolerance of kvStartupTiers that holds today, in the file beside the scenarios.

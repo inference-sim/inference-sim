@@ -144,7 +144,7 @@ func MuseSparkFusionsFor(headDim int, l MuseSparkLayout) (MuseSparkFusions, erro
 	major := l.CapabilityMajor
 	if major != 9 && major != 10 {
 		return f, fmt.Errorf("lower: Muse Spark's fused kernels are resolved for compute capability 9 and 10, not %d: "+
-			"another part's attention-backend priority list is not ported (inference-sim/blis-vllm#191)", major)
+			"another part's attention-backend priority list is not ported (inference-sim/inference-sim#2438)", major)
 	}
 	if major == 9 && l.KVCacheDType == "nvfp4" {
 		return f, fmt.Errorf("lower: no attention backend vLLM v0.33.0 builds on compute capability 9 takes an NVFP4 KV cache " +
@@ -214,7 +214,7 @@ type NodeLaunches struct {
 // the Triton fused_post_expert_finalize otherwise, muse_moe_runner.py:288-313). And the unfused
 // gather, which the graph counts no launch for, is gather_columns: one all-gather and, for more
 // than one token, the copy its transpose needs (model.py:158-167). The unfused QK-norm and RoPE
-// launches are not counted here (inference-sim/blis-vllm#191).
+// launches are not counted here (inference-sim/inference-sim#2438).
 func MuseSparkLayerLaunches(f MuseSparkFusions, tokens int, ep bool) []NodeLaunches {
 	out := make([]NodeLaunches, 0, 6)
 	if f.QKNormRopeKVInsert {
@@ -223,7 +223,7 @@ func MuseSparkLayerLaunches(f MuseSparkFusions, tokens int, ep bool) []NodeLaunc
 			NodeLaunches{"attention (cache write)", 1, 0, "k and v withheld from the attention layer, model.py:1235-1236"})
 	} else {
 		out = append(out,
-			NodeLaunches{museRoleQKNormRope, 1, 1, "unfused QK-norm and RoPE, not counted (model.py:1198-1222, inference-sim/blis-vllm#191)"},
+			NodeLaunches{museRoleQKNormRope, 1, 1, "unfused QK-norm and RoPE, not counted (model.py:1198-1222, inference-sim/inference-sim#2438)"},
 			NodeLaunches{"attention (cache write)", 1, 1, "the backend's KV-cache update"})
 	}
 	if ep {

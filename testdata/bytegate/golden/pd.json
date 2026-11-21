@@ -10,13 +10,13 @@
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "ee8f8f0dfd8d63b0790ac93f3538c7f90752c2552eec3c7a81f183fb4f5261d8",
-      "combined_hash": "ee8f8f0dfd8d63b0790ac93f3538c7f90752c2552eec3c7a81f183fb4f5261d8"
+      "hash": "3a2cbf4d4d4c073daed535923f8944007c5966caba74ef249313ce9024a0f7b1",
+      "combined_hash": "3a2cbf4d4d4c073daed535923f8944007c5966caba74ef249313ce9024a0f7b1"
     },
     "registry": {
       "source": "path",
-      "hash": "a8c45043c9f9096f382f4e2d65fa840fc6e3ea02915f1239d3762ddc5020e55b",
-      "combined_hash": "a8c45043c9f9096f382f4e2d65fa840fc6e3ea02915f1239d3762ddc5020e55b"
+      "hash": "1725e9738f68fc339b073390d36dd25c2bbc9a0e65d4a1a46757299cba78d53b",
+      "combined_hash": "1725e9738f68fc339b073390d36dd25c2bbc9a0e65d4a1a46757299cba78d53b"
     },
     "released_data": false,
     "build": "unreleased"
@@ -2148,7 +2148,7 @@
             "Name": "all_reduce_message_limit",
             "Primitive": "",
             "Running": "",
-            "Scope": "the custom lane for every message size: the engine runs a message above the custom kernel's size limit on NCCL; the pool's tensor-parallel all-reduce is priced from the custom lane at every size (inference-sim/blis-substrate#392)",
+            "Scope": "the custom lane for every message size: the engine runs a message above the custom kernel's size limit on NCCL; the pool's tensor-parallel all-reduce is priced from the custom lane at every size (inference-sim/inference-sim#2478)",
             "Set": "blis-latency-kernel"
           },
           {
@@ -2677,7 +2677,7 @@
             "Name": "all_reduce_message_limit",
             "Primitive": "",
             "Running": "",
-            "Scope": "the custom lane for every message size: the engine runs a message above the custom kernel's size limit on NCCL; the pool's tensor-parallel all-reduce is priced from the custom lane at every size (inference-sim/blis-substrate#392)",
+            "Scope": "the custom lane for every message size: the engine runs a message above the custom kernel's size limit on NCCL; the pool's tensor-parallel all-reduce is priced from the custom lane at every size (inference-sim/inference-sim#2478)",
             "Set": "blis-latency-kernel"
           },
           {

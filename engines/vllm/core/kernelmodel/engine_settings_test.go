@@ -131,8 +131,8 @@ func TestEngineResolvesTheTokenBudgetFromEnableChunkedPrefill(t *testing.T) {
 // block is returned as stated, and an unstated batch setting is refused, as before.
 func TestEngineRefusesWhatItDoesNotResolve(t *testing.T) {
 	_, err := openEdited(t, "block_size: 64").Engine()
-	if err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/68") {
-		t.Errorf("0.32.0 without block_size: %v, want a refusal citing blis-vllm#68", err)
+	if err == nil || !strings.Contains(err.Error(), "inference-sim/issues/2425") {
+		t.Errorf("0.32.0 without block_size: %v, want a refusal citing inference-sim/inference-sim#2425", err)
 	}
 }
 
@@ -202,7 +202,7 @@ func TestEngineRefusesAnUnresolvedBlockSizeAtThePin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Engine(); err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/68") {
+	if _, err := m.Engine(); err == nil || !strings.Contains(err.Error(), "inference-sim/issues/2425") {
 		t.Fatalf("Engine: %v, want a refusal citing #68", err)
 	}
 }
@@ -362,7 +362,7 @@ func TestEngineRefusesAnUnstatedBlockSizeOnAPoolWiderThanTheOracleRan(t *testing
 		}
 		e, err := m.Engine()
 		switch {
-		case c.refused && (err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/68") || !strings.Contains(err.Error(), "tensor_parallel_size")):
+		case c.refused && (err == nil || !strings.Contains(err.Error(), "inference-sim/issues/2425") || !strings.Contains(err.Error(), "tensor_parallel_size")):
 			t.Errorf("tp %d: Engine: %v, want the #68 refusal for a width the oracle did not run", c.tp, err)
 		case !c.refused && (err != nil || e.BlockSize != 16):
 			t.Errorf("tp %d: Engine: block_size %d (%v), want 16 unaffected", c.tp, e.BlockSize, err)
@@ -468,7 +468,7 @@ func TestAnUnstatedBlockSizeIsRefusedOnlyForSpeculationThatAddsLayers(t *testing
 			}
 			e, err := m.Engine()
 			if c.refusal != "" {
-				if err == nil || !strings.Contains(err.Error(), c.refusal) || !strings.Contains(err.Error(), "blis-vllm/issues/68") {
+				if err == nil || !strings.Contains(err.Error(), c.refusal) || !strings.Contains(err.Error(), "inference-sim/issues/2425") {
 					t.Fatalf("Engine: %v, want a refusal containing %q citing #68", err, c.refusal)
 				}
 				return
@@ -710,7 +710,7 @@ func TestAPrefillAndADecodePoolResolveTheirBlockSizesFromTheirOwnWidths(t *testi
 	// Prefill at tp 32, past the 16 the oracle ran: the prefill pool is refused naming its own width
 	// and #68, and the decode pool at tp 4 is not.
 	p, d := open(32, 4)
-	if p == nil || !strings.Contains(p.Error(), "tensor_parallel_size 32") || !strings.Contains(p.Error(), "blis-vllm/issues/68") {
+	if p == nil || !strings.Contains(p.Error(), "tensor_parallel_size 32") || !strings.Contains(p.Error(), "inference-sim/issues/2425") {
 		t.Errorf("prefill tp 32: %v, want a refusal naming tensor_parallel_size 32 and #68", p)
 	}
 	if d != nil {
@@ -823,7 +823,7 @@ func TestEngineResolvesAnUnstatedBlockSizeForGemma4(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := m.Engine(); err == nil || !strings.Contains(err.Error(), "language_model_only") || !strings.Contains(err.Error(), "blis-vllm/issues/68") {
+		if _, err := m.Engine(); err == nil || !strings.Contains(err.Error(), "language_model_only") || !strings.Contains(err.Error(), "inference-sim/issues/2425") {
 			t.Errorf("Engine: %v, want a refusal naming language_model_only and #68", err)
 		}
 	})

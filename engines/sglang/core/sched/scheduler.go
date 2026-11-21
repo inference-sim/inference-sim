@@ -100,7 +100,7 @@ type Config struct {
 }
 
 // SpecRefusal is the open issue the speculation the port does not model cites (X28).
-const SpecRefusal = "inference-sim/blis-sglang#68"
+const SpecRefusal = "inference-sim/inference-sim#2355"
 
 // speculative reports whether decode passes verify drafts.
 func (c Config) speculative() bool { return c.SpecNumDraftTokens > 0 }
@@ -123,7 +123,7 @@ func refused(what string) refusal { return refusal{what, Refusal} }
 
 // RetractionRefusal is the open issue the priority retraction policy and the abort of the last
 // request cite (X28).
-const RetractionRefusal = "inference-sim/blis-sglang#77"
+const RetractionRefusal = "inference-sim/inference-sim#2363"
 
 func refusedAt(what, issue string) refusal { return refusal{what, issue} }
 

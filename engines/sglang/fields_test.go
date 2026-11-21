@@ -80,10 +80,10 @@ func TestEveryNotModelledFieldCitesAnIssueOfThisRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	own := regexp.MustCompile(`^inference-sim/blis-sglang#[1-9][0-9]*$`)
+	own := regexp.MustCompile(`^inference-sim/inference-sim#[1-9][0-9]*$`)
 	for _, f := range l.Fields {
 		if f.Status == fields.StatusNotModelled && !own.MatchString(f.Evidence.Issue) {
-			t.Errorf("%s:%s is not_modelled and cites %q, not an inference-sim/blis-sglang issue", f.Source, f.Name, f.Evidence.Issue)
+			t.Errorf("%s:%s is not_modelled and cites %q, not an inference-sim/inference-sim issue", f.Source, f.Name, f.Evidence.Issue)
 		}
 	}
 }

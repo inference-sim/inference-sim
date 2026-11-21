@@ -55,7 +55,7 @@
     "speculation_on": "Qwen2ForCausalLM"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/attention.go:noSpecOrTopkOne:&&->||#1:return k == nil || (*k == 1 && (r.cfg.PageSize == nil || *r.cfg.PageSize == 1))",
@@ -63,7 +63,7 @@
     "speculation_on": "Qwen2ForCausalLM"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/attention.go:noSpecOrTopkOne:==->!=#3:return k == nil || (*k == 1 && (r.cfg.PageSize == nil || *r.cfg.PageSize == 1))",
@@ -71,7 +71,7 @@
     "speculation_on": "Qwen2ForCausalLM"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/attention.go:noSpecOrTopkOne:||->&&#2:return k == nil || (*k == 1 && (r.cfg.PageSize == nil || *r.cfg.PageSize == 1))",
@@ -79,7 +79,7 @@
     "speculation_on": "Qwen2ForCausalLM"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/attention.go:noSpecOrTopkOne:==->!=#4:return k == nil || (*k == 1 && (r.cfg.PageSize == nil || *r.cfg.PageSize == 1))",
@@ -87,7 +87,7 @@
     "speculation_on": "Qwen2ForCausalLM"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/attention.go:defaultAttentionBackend:&&->||#1:case r.chip.isSM100() && r.noSpecOrTopkOne() &&",
@@ -95,7 +95,7 @@
     "speculation_on": "Qwen2ForCausalLM"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/attention.go:defaultAttentionBackend:&&->||#2:case r.chip.isSM100() && r.noSpecOrTopkOne() &&",
@@ -103,7 +103,7 @@
     "speculation_on": "Qwen2ForCausalLM"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/attention.go:defaultAttentionBackend:!=->==#1:(r.cfg.SpeculativeAlgorithm == nil || r.cfg.SpeculativeEagleTopk != nil || upper(*r.cfg.SpeculativeAlgorithm) == \"DFLASH\"):",
@@ -111,7 +111,7 @@
     "speculation_on": "Qwen2ForCausalLM"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/attention.go:defaultAttentionBackend:||->&&#2:(r.cfg.SpeculativeAlgorithm == nil || r.cfg.SpeculativeEagleTopk != nil || upper(*r.cfg.SpeculativeAlgorithm) == \"DFLASH\"):",
@@ -119,7 +119,7 @@
     "speculation_on": "Qwen2ForCausalLM"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/attention.go:defaultAttentionBackend:==->!=#2:(r.cfg.SpeculativeAlgorithm == nil || r.cfg.SpeculativeEagleTopk != nil || upper(*r.cfg.SpeculativeAlgorithm) == \"DFLASH\"):",
@@ -127,7 +127,7 @@
     "speculation_on": "Qwen2ForCausalLM"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/attention.go:mlaBackendPageConstraints:||->&&#1:if is(a, \"flashmla\") || is(d, \"flashmla\") {",
@@ -248,7 +248,7 @@
     ]
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/hooks.go:handleHicacheRatioDefault:!=->==#1:if f := r.cfg.HicacheHostMemoryFraction; f != nil && !(0 < *f && *f <= 1) {",
@@ -256,7 +256,7 @@
     "field": "hicache_host_memory_fraction"
    },
    "stage": "S21 (lane C)",
-   "issue": "inference-sim/blis-sglang#38"
+   "issue": "inference-sim/inference-sim#2341"
   },
   {
    "id": "config/hooks.go:handleHicacheRatioDefault:<-><=#1:if f := r.cfg.HicacheHostMemoryFraction; f != nil && !(0 < *f && *f <= 1) {",
@@ -264,7 +264,7 @@
     "field": "hicache_host_memory_fraction"
    },
    "stage": "S21 (lane C)",
-   "issue": "inference-sim/blis-sglang#38"
+   "issue": "inference-sim/inference-sim#2341"
   },
   {
    "id": "config/hooks.go:handleHicacheRatioDefault:&&->||#2:if f := r.cfg.HicacheHostMemoryFraction; f != nil && !(0 < *f && *f <= 1) {",
@@ -272,7 +272,7 @@
     "field": "hicache_host_memory_fraction"
    },
    "stage": "S21 (lane C)",
-   "issue": "inference-sim/blis-sglang#38"
+   "issue": "inference-sim/inference-sim#2341"
   },
   {
    "id": "config/hooks.go:handleHicacheRatioDefault:<=-><#1:if f := r.cfg.HicacheHostMemoryFraction; f != nil && !(0 < *f && *f <= 1) {",
@@ -280,7 +280,7 @@
     "field": "hicache_host_memory_fraction"
    },
    "stage": "S21 (lane C)",
-   "issue": "inference-sim/blis-sglang#38"
+   "issue": "inference-sim/inference-sim#2341"
   },
   {
    "id": "config/hooks.go:handleDecodeContextParallelism:&&->||#1:if r.cfg.DcpCommBackend == nil && r.cfg.DcpSize <= 1 {",
@@ -288,7 +288,7 @@
     "field": "dcp_size"
    },
    "stage": "S38",
-   "issue": "inference-sim/blis-sglang#26"
+   "issue": "inference-sim/inference-sim#2448"
   },
   {
    "id": "config/hooks.go:handleDataParallelism:==->!=#1:if r.numDPRanks() == 1 && (r.cfg.EpJoinMode == nil || *r.cfg.EpJoinMode != \"scale\") {",
@@ -296,7 +296,7 @@
     "field": "enable_dp_lm_head"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/hooks.go:handleDataParallelism:&&->||#1:if r.numDPRanks() == 1 && (r.cfg.EpJoinMode == nil || *r.cfg.EpJoinMode != \"scale\") {",
@@ -304,7 +304,7 @@
     "field": "enable_dp_lm_head"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/hooks.go:handleDataParallelism:!=->==#1:if r.numDPRanks() == 1 && (r.cfg.EpJoinMode == nil || *r.cfg.EpJoinMode != \"scale\") {",
@@ -312,7 +312,7 @@
     "field": "ep_join_mode"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/hooks.go:handleEncoderDisaggregation:>->>=#1:if r.model.Architecture == \"KimiK3ForConditionalGeneration\" && r.cfg.TpSize > 1 {",
@@ -320,7 +320,7 @@
     "architecture": "KimiK3ForConditionalGeneration"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/memory.go:disableBreakableIfIncompatible:!=->==#1:r.model.UsesKDAAttention && r.model.Architecture != \"Glm5NextForConditionalGeneration\",",
@@ -328,7 +328,7 @@
     "architecture": "Glm5NextForConditionalGeneration"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/memory.go:applyDeepEPAdjustments:!=->==#2:if pre.MaxBs != nil && *pre.MaxBs != 0 {",
@@ -336,7 +336,7 @@
     "field": "cuda_graph_config"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/memory.go:reserveForGraphMB:&&->||#1:if r.cfg.DisaggregationMode != \"prefill\" && dec.Backend != backendDisabled {",
@@ -344,7 +344,7 @@
     "field": "cuda_graph_config"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/models.go:deepseekFamilyOverrides:!=->==#1:if r.model.DSAIndexKpool != nil {",
@@ -352,7 +352,7 @@
     "model_fact": "dsa_index_kpool_above_1"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/models.go:dsaSplitBackendResolution:==->!=#1:case r.model.Architecture == \"GlmMoeDsaForCausalLM\" && major == 12 && kv == \"fp8_e4m3\":",
@@ -361,7 +361,7 @@
     "architecture": "GlmMoeDsaForCausalLM"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/models.go:dsaSplitBackendResolution:==->!=#3:case r.model.Architecture == \"GlmMoeDsaForCausalLM\" && major == 12 && kv == \"fp8_e4m3\":",
@@ -370,7 +370,7 @@
     "architecture": "GlmMoeDsaForCausalLM"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/models.go:validateDeepseekV41Features:!=->==#2:graphIncompatible := pre != backendDisabled && pre != backendBreakable",
@@ -378,7 +378,7 @@
     "field": "cuda_graph_config"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/speculative.go:handleSpeculativeDecoding:>=->>#1:case len(d) >= 5 && d[:5] == \"lora_\":",
@@ -386,7 +386,7 @@
     "field": "moe_runner_backend"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/speculative.go:handleEagleFamily:&&->||#1:if eagleDraftInTarget[r.model.Architecture] && r.cfg.SpeculativeDraftModelPath == nil {",
@@ -394,7 +394,7 @@
     "field": "speculative_draft_model_path"
    },
    "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
+   "issue": "inference-sim/inference-sim#2344"
   },
   {
    "id": "config/speculative.go:handleEagleFamily:||->&&#1:if p, d := r.attentionBackends(); (is(p, \"trtllm_mha\") || is(d, \"trtllm_mha\")) && topk > 1 {",

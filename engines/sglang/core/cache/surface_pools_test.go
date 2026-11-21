@@ -11,7 +11,7 @@ import (
 
 // The surface list (surface.json, X9) and the start-up refusal (pool_classes.json, SGL-6) both
 // say which allocators, KV pools and request pools the port models. They are generated and
-// hand-kept apart, so this test holds them to one answer (blis-sglang#44): a class the refusal
+// hand-kept apart, so this test holds them to one answer (inference-sim/inference-sim#2343): a class the refusal
 // models is modelled in the list; every other in-scope class is refused in the list citing the
 // issue the refusal cites, not a parent stage issue; and an out-of-scope class (a hardware backend
 // SGLang does not run on a CUDA target) is still refused by name at start-up.

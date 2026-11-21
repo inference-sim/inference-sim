@@ -746,11 +746,11 @@ func refuseUnmodelled(e engineconfig.Engine) error {
 	}
 	switch {
 	case e.PrefixMatchUnit != 0:
-		return fmt.Errorf("vllm: prefix_match_unit is not modelled (https://github.com/inference-sim/blis-vllm/issues/109)")
+		return fmt.Errorf("vllm: prefix_match_unit is not modelled (https://github.com/inference-sim/inference-sim/issues/2483)")
 	case e.PrefixCacheRetentionInterval != nil && *e.PrefixCacheRetentionInterval != 0:
 		// CacheConfig.prefix_cache_retention_interval: 0 (vllm/config/cache.py:159@5df63a72); a stated 0
 		// is the default and keeps only the semantic checkpoints, which this engine builds.
-		return fmt.Errorf("vllm: prefix_cache_retention_interval is not modelled (https://github.com/inference-sim/blis-vllm/issues/109)")
+		return fmt.Errorf("vllm: prefix_cache_retention_interval is not modelled (https://github.com/inference-sim/inference-sim/issues/2483)")
 	case e.PrefillScheduleInterval < 0:
 		// SchedulerConfig.prefill_schedule_interval: Field(default=1, ge=1)
 		// (vllm/config/scheduler.py:203@4ba787ec); 0 is the block's unstated.
@@ -781,6 +781,9 @@ type unreadSetting struct {
 }
 
 const issueBase = "https://github.com/inference-sim/blis-vllm/issues/"
+
+// issueSim is the base of an issue that was transferred out of blis-vllm: it keeps its new number.
+const issueSim = "https://github.com/inference-sim/inference-sim/issues/"
 
 var unreadSettings = []unreadSetting{
 	// AttentionConfig.use_trtllm_attention: None, auto-detect (vllm/config/attention.py:74@5df63a72);
@@ -819,22 +822,22 @@ var unreadSettings = []unreadSetting{
 	// mamba_cache_mode and mamba_ssm_cache_dtype are not listed: a model hook rewrites them, so what
 	// differs from the default is decided on the resolved value (checkMambaCache).
 	// ParallelConfig.dbo_decode_token_threshold: 32 (vllm/config/parallel.py:262@5df63a72)..
-	{"dbo.dbo_decode_token_threshold", "dbo_decode_token_threshold", issueBase + "74",
+	{"dbo.dbo_decode_token_threshold", "dbo_decode_token_threshold", issueSim + "2428",
 		func(e engineconfig.Engine) bool {
 			return e.DBO != nil && e.DBO.DecodeTokenThreshold != nil && *e.DBO.DecodeTokenThreshold != 32
 		}},
 	// ParallelConfig.dbo_prefill_token_threshold: 512 (vllm/config/parallel.py:267@5df63a72).
-	{"dbo.dbo_prefill_token_threshold", "dbo_prefill_token_threshold", issueBase + "74",
+	{"dbo.dbo_prefill_token_threshold", "dbo_prefill_token_threshold", issueSim + "2428",
 		func(e engineconfig.Engine) bool {
 			return e.DBO != nil && e.DBO.PrefillTokenThreshold != nil && *e.DBO.PrefillTokenThreshold != 512
 		}},
 	// EPLBConfig.window_size: 1000 (vllm/config/parallel.py:66@5df63a72).
-	{"eplb.window_size", "eplb_config.window_size", issueBase + "108",
+	{"eplb.window_size", "eplb_config.window_size", issueSim + "2430",
 		func(e engineconfig.Engine) bool {
 			return e.EPLB != nil && e.EPLB.WindowSize != 0 && e.EPLB.WindowSize != 1000
 		}},
 	// EPLBConfig.step_interval: 3000 (vllm/config/parallel.py:68@5df63a72).
-	{"eplb.step_interval", "eplb_config.step_interval", issueBase + "108",
+	{"eplb.step_interval", "eplb_config.step_interval", issueSim + "2430",
 		func(e engineconfig.Engine) bool {
 			return e.EPLB != nil && e.EPLB.StepInterval != 0 && e.EPLB.StepInterval != 3000
 		}},

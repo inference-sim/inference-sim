@@ -19,7 +19,7 @@ import (
 	kvtier "github.com/inference-sim/inference-sim/engines/vllm/core/connector/tiering"
 )
 
-// The p2p secondary tier through engine.Engine (blis-vllm#204).
+// The p2p secondary tier through engine.Engine (inference-sim/inference-sim#2439).
 //
 // kvtier.P2PTier decides: which peers to talk to, which blocks a peer fetches, which WRITE moves
 // them. It moves nothing and reads no clock. Here the engine gives it the two transports it
@@ -41,7 +41,7 @@ import (
 // 312-326@4ba787ec) is the engine's poll: Schedule runs a round when the interval has passed since
 // the last, and NextWake asks the simulator for the next one.
 //
-// Substitutions, named (blis-vllm#204):
+// Substitutions, named (inference-sim/inference-sim#2439):
 //
 //   - A message's delivery latency is the simulator's, as is the WRITE's duration (priced from its
 //     Move); the engine learns that a peer died only through the session's own timeouts.
@@ -59,7 +59,7 @@ import (
 // tier's port), as vLLM's operator does.
 
 // p2pIssue is the p2p tier's engine side.
-const p2pIssue = issueBase + "204"
+const p2pIssue = issueSim + "2439"
 
 // p2pKeys are the p2p tier's keys in secondary_tiers (P2PSecondaryTierManager.__init__,
 // tiering/p2p/manager.py:232-246@4ba787ec). type is the factory's (tiering/factory.py:59-63).
@@ -190,7 +190,7 @@ func buildP2P(i int, raw map[string]any, topBackpressure map[string]any, chunkBy
 	if raw["backpressure"] != nil || topBackpressure != nil {
 		// The p2p tier itself refuses a detector (p2p/manager.py:291-304@4ba787ec).
 		return nil, at("store backpressure is not supported for the p2p tier: vLLM refuses it (p2p/manager.py:291-304@4ba787ec; %s)",
-			issueBase+"13")
+			issueSim+"2484")
 	}
 	env := c.env
 	host := "localhost"

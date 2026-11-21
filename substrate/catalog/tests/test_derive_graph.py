@@ -263,7 +263,7 @@ def test_a_failure_names_its_model_once(tmp_path):
 
 
 def test_a_known_missing_handler_is_refused_citing_its_issue(tmp_path):
-    """An architecture the catalog's open issues list as unhandled (HYV3, MiMoV2: blis-substrate#317)
+    """An architecture the catalog's open issues list as unhandled (HYV3, MiMoV2: inference-sim/inference-sim#2412)
     is refused by name with that issue, and the refusal's other words are the generic one's."""
     models = tmp_path / "models"
     for name, arch in (("hy3-fp8", "HYV3ForCausalLM"), ("mimo-v2-flash", "MiMoV2ForCausalLM")):
@@ -275,7 +275,7 @@ def test_a_known_missing_handler_is_refused_citing_its_issue(tmp_path):
     lines = r.stderr.splitlines()
     for name, arch in (("hy3-fp8", "HYV3ForCausalLM"), ("mimo-v2-flash", "MiMoV2ForCausalLM")):
         assert (f"{name}: no handler for architecture {arch!r} (open issue "
-                "inference-sim/blis-substrate#317); add one rather than letting a default "
+                "inference-sim/inference-sim#2412); add one rather than letting a default "
                 "misprice the model") in lines, r.stderr
 
 
@@ -7199,7 +7199,7 @@ def test_the_graphs_that_state_a_scale_are_the_block_scaled_ones():
     MXFP8 and NVFP4-mixed MiniMax graphs (32 elements to one byte), DeepSeek-V4.1-Flash, and the
     generic 128 x 128 block-FP8 graphs (16,384 elements to a float32). The kernel reads the 16384
     to price a block-scaled GEMM on its block form rather than the per-tensor ramp
-    (inference-sim/blis-substrate#122). The DeepSeek-V4 handlers, whose scale dtype depends on the
+    (inference-sim/inference-sim#2463). The DeepSeek-V4 handlers, whose scale dtype depends on the
     checkpoint's experts, state their own layout and are not in the generic set."""
     scaled = {d.name: graph_of(d)["global"]["weight_scale"] for d in sorted(MODELS.iterdir())
               if d.is_dir() and graph_of(d)["global"].get("weight_scale")
@@ -8452,7 +8452,7 @@ def test_dflash2_drafts_a_block_from_the_targets_captured_states(tmp_path):
 
 
 @pytest.mark.parametrize("edit,why", [
-    ({"dflash_config": {**DFLASH2_CFG["dflash_config"], "attention_mode": "mla"}}, "neither pinned engine supports.*blis-sglang#21"),
+    ({"dflash_config": {**DFLASH2_CFG["dflash_config"], "attention_mode": "mla"}}, "neither pinned engine supports.*inference-sim/inference-sim#2447"),
     ({"dflash_config": {**DFLASH2_CFG["dflash_config"], "causal": True}}, "does not read"),
     ({"is_causal": True}, "non-causal"),
     ({"draft_vocab_size": 32000}, "draft_vocab_size differs"),
@@ -9973,7 +9973,7 @@ def test_every_catalog_model_with_a_vision_config_states_its_tower_or_why_not():
         for o in enc.get("omitted", []):
             assert re.fullmatch(r"[\w.-]+/[\w.-]+#\d+", o["issue"]), (d.name, o)
 
-# ---- Resident widths and splits vLLM v0.33.0 builds (inference-sim/blis-substrate#254, #255, #107)
+# ---- Resident widths and splits vLLM v0.33.0 builds (inference-sim/inference-sim#2473, #2406, #2461)
 
 def _derived_edited(tmp_path, name: str, edit=None) -> dict:
     """The graph derive() gives for a committed config, edited by `edit` first where given."""
@@ -10093,7 +10093,7 @@ def test_qwen38_tower_is_omitted_by_name_because_the_pinned_release_lacks_its_cl
         assert g["encoder"]["towers"] == []
         [o] = g["encoder"]["omitted"]
         assert o["modality"] == "image" and "v0.33.0" in o["reason"]
-        assert o["issue"] == "inference-sim/blis-substrate#304"
+        assert o["issue"] == "inference-sim/inference-sim#2477"
         assert g["modality"] == "text_decoder_of_multimodal"
 
 

@@ -19,7 +19,7 @@ those experts on MarlinExperts W4A16 on every SM (AISimulate `collector/vllm/col
 and the FPM dataset's own runtime-dtype annotation records that build's GB300 runs as
 `moe_quant_mode: w4a16_mxfp4` (`fpm_identity_correction`, policy
 `runtime-dtype-annotation-v1`, in the Kimi-K3 gb300 `0.1.dev19262/tep8` metadata). That run is
-the only end-to-end evidence for the KDA pair (inference-sim/blis-substrate#129), so gb300 carries the family too.
+the only end-to-end evidence for the KDA pair (inference-sim/inference-sim#2464), so gb300 carries the family too.
 
 A ramp here is a property of (kernel, part), not a claim about which kernel a deployment
 selects: a consumer applies it only where the deployment's MoE backend IS Marlin W4A16, and
@@ -121,7 +121,7 @@ BYTES_PER_WEIGHT = {FIT_DTYPE: 0.5 + 1 / 32, HOLDOUT_DTYPE: 0.5 + 2 / 128, FORM_
 
 # The parts this family is committed for, and why each (see the module docstring): h200
 # and h100, where stock v0.31.0 selects Marlin for MXFP4 experts; gb300, where the Kimi-K3
-# FPM run the KDA validation (inference-sim/blis-substrate#129) scores against ran Marlin W4A16.
+# FPM run the KDA validation (inference-sim/inference-sim#2464) scores against ran Marlin W4A16.
 PARTS = [("h200_sxm", "h200"), ("gb300", "gb300"), ("h100_sxm", "h100"),
          ("b200_sxm", "b200"), ("b300_sxm", "b300")]
 

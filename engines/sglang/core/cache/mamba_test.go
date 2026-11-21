@@ -16,7 +16,7 @@ import (
 )
 
 // MambaGoldenDir holds the traces oracle/run_mamba_pools.py records at SGLang's hybrid pools, the
-// state budget and the request-slot cap (inference-sim/blis-sglang#94).
+// state budget and the request-slot cap (inference-sim/inference-sim#2366).
 const MambaGoldenDir = "testdata/golden-pools/mamba"
 
 type mambaScenario struct {

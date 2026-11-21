@@ -246,7 +246,7 @@ func TestProvenanceSeesEveryFigureFixedBytesReports(t *testing.T) {
 		}
 	}
 	for _, o := range k.Provenance() {
-		// all_reduce_message_limit is the named gap of blis-substrate#392: a pool's tensor-parallel
+		// all_reduce_message_limit is the named gap of inference-sim/inference-sim#2478: a pool's tensor-parallel
 		// all-reduce is priced from the custom lane at every message size, where the engine runs a
 		// message above the custom kernel's size limit on NCCL (blis-substrate#373 reports it).
 		// nontorch_in_budget_bytes_<N>rank is the named gap of blis-substrate#299: a (model, part,

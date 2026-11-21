@@ -8,7 +8,7 @@ import (
 
 // Kimi-K2.5's routed experts are compressed-tensors int4 (W4A16). vLLM runs them on the Marlin
 // W4A16 grouped kernel, so the routed term is priced on the registry's measured Marlin ramp
-// (gemm_*_w4a16_mxfp4_grouped) and not on the BF16 dense ramp (blis-substrate#118). A
+// (gemm_*_w4a16_mxfp4_grouped) and not on the BF16 dense ramp (inference-sim/inference-sim#2384). A
 // weaker Marlin asymptote must therefore make a decode step dearer, at a batch large enough
 // for the routed GEMM to be compute-bound.
 func TestINT4RoutedExpertsArePricedOnTheMarlinRamp(t *testing.T) {

@@ -13,7 +13,7 @@ import (
 )
 
 // BackpressureIssue tracks the tiered-offload decision clocks on virtual time.
-const BackpressureIssue = "https://github.com/inference-sim/blis-vllm/issues/13"
+const BackpressureIssue = "https://github.com/inference-sim/inference-sim/issues/2484"
 
 // Policy of a detector: BackpressurePolicy (backpressure.py:9-24).
 type bpPolicy interface {

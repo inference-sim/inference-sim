@@ -778,7 +778,7 @@ SHAPE_RULE = (
     "Curves measured under different engines, draft samplers and verifiers are pooled within a "
     "method; the exponent is an estimate, not a measurement, and is not judged against held-out "
     "end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the "
-    "mean acceptance length until per-step draws land (inference-sim/blis-vllm#147), so the "
+    "mean acceptance length until per-step draws land (inference-sim/inference-sim#2485), so the "
     "shape prices adaptive verification only.")
 
 

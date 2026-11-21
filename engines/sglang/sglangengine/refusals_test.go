@@ -57,7 +57,7 @@ func startUp(t *testing.T, args map[string]any, env map[string]any) error {
 	return err
 }
 
-var issueRef = regexp.MustCompile(`inference-sim/blis-sglang(#|/issues/)[0-9]+`)
+var issueRef = regexp.MustCompile(`inference-sim/(?:blis-sglang|inference-sim)(#|/issues/)[0-9]+`)
 
 // A start-up refusal is SGLang's own (an UpstreamRefusal) or names the open issue that models the
 // item (SGL-6, X28).
@@ -108,7 +108,7 @@ func stateItem(it surfaceItem) (args map[string]any, env map[string]any, ok bool
 // The surface items the list calls refused but whose stated value is the value SGLang's own
 // default or a value Resolve models, so a scenario that states it starts. The list cannot tell
 // them from a refusal until the dispatch from a surface item to the value that selects it is
-// generated (blis-sglang#61); until then this list is the ratchet: an item that starts being
+// generated (inference-sim/inference-sim#2348); until then this list is the ratchet: an item that starts being
 // refused must leave it, and an item that joins it is a regression.
 var listedRefusedButAccepted = map[string]string{
 	"eviction_policy:lru":        "radix_eviction_policy lru is the default",
@@ -119,7 +119,7 @@ var listedRefusedButAccepted = map[string]string{
 
 // Every refused surface item that one setting or environment variable selects is refused at
 // start-up, through the engine factory, by SGLang's own message or the open issue that models it,
-// and none starts: a test that fails if the refusal is removed (SGL-6, blis-sglang#62).
+// and none starts: a test that fails if the refusal is removed (SGL-6, inference-sim/inference-sim#2349).
 func TestEverySettingSelectedSurfaceItemIsRefusedAtStartUp(t *testing.T) {
 	checked, accepted := 0, map[string]bool{}
 	for _, it := range surfaceItems(t) {
@@ -156,7 +156,7 @@ func TestEverySettingSelectedSurfaceItemIsRefusedAtStartUp(t *testing.T) {
 
 // Items an externally loaded class, file or registration selects are refused, never loaded: the
 // engine runs no Python, so a value that only exists after an extension registers it is not one
-// of the values it models (SGL-6, blis-sglang#9).
+// of the values it models (SGL-6, inference-sim/inference-sim#2460).
 func TestExternallyLoadedItemsAreRefused(t *testing.T) {
 	const ext = "plugin-registered-elsewhere"
 	for _, tc := range []struct {

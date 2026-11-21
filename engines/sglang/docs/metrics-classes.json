@@ -64,7 +64,7 @@
   {
    "match": "^sglang:(streaming_session|num_streaming)",
    "class": "later",
-   "why": "streaming sessions, blis-sglang#45"
+   "why": "streaming sessions, inference-sim/inference-sim#2452"
   },
   {
    "match": "^sglang:encoder_",
@@ -84,12 +84,12 @@
   {
    "match": "^sglang:lora_",
    "class": "later",
-   "why": "LoRA, blis-sglang#80"
+   "why": "LoRA, inference-sim/inference-sim#2457"
   },
   {
    "match": "^sglang:(grammar_|num_grammar|num_so_)",
    "class": "later",
-   "why": "grammar-constrained decoding, blis-sglang#81"
+   "why": "grammar-constrained decoding, inference-sim/inference-sim#2458"
   },
   {
    "match": "^sglang:(failed_session|kv_transfer|num_bootstrap|num_transfer|num_prefill_retries|num_decode_host_receive_reqs_total)",

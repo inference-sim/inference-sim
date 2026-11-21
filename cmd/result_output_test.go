@@ -1,6 +1,6 @@
 package cmd
 
-// Behavioral contracts of the Result document (#1871, inference-sim/blis-substrate#154 sections A and D):
+// Behavioral contracts of the Result document (#1871, inference-sim/inference-sim#2467 sections A and D):
 //
 //	BC-R1 stdout of run and replay is exactly one Result that blis-schemas validates: JSON by
 //	      default, YAML with --format yaml, the same document in both.

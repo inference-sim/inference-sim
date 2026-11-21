@@ -484,7 +484,7 @@ func TestAProducerGroupOnOneNodeStatesNoEndpoint(t *testing.T) {
 // EngineCore its own connector, vllm/v1/engine/core.py:1417-1421@4ba787ec). A request finishes on the rank the
 // balancer chose and that rank stores its blocks to its own tier: the jobs of the two ranks carry IDs no two ranks
 // share, the host ends each with TransferDone and the group routes it to the rank that started it, and every
-// request completes. Before this the group was refused for carrying no offload jobs (blis-vllm#47).
+// request completes. Before this the group was refused for carrying no offload jobs (inference-sim/inference-sim#2423).
 func TestADataParallelGroupOffloadsEachRanksBlocksToItsOwnTier(t *testing.T) {
 	he := newHostEngine(t, cpuTier+dpPool(2, 8, 1), 0)
 	h := &host{t: t, engs: []*hostEngine{he}}

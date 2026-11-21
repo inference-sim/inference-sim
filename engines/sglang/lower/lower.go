@@ -23,7 +23,7 @@ import (
 )
 
 // issueLower is the issue that models a setting lowering refuses.
-const issueLower = "inference-sim/blis-sglang#49"
+const issueLower = "inference-sim/inference-sim#2344"
 
 // Parallel holds the widths SGLang derives from ServerArgs when it publishes the runtime
 // context (runtime_context.py:142-215, derive_parallel_widths, attn_dp_enabled_of,

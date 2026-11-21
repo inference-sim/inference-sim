@@ -783,7 +783,7 @@ func (h *leafHeap) Pop() any {
 }
 
 // RefusalIssue is the open issue the radix cache's refusals cite (X28).
-const RefusalIssue = "https://github.com/inference-sim/blis-sglang/issues/45"
+const RefusalIssue = "https://github.com/inference-sim/inference-sim/issues/2452"
 
 // evictionPriority is get_eviction_strategy (mem_cache/utils.py:72-84@297e54fd) with each
 // strategy's get_priority (evict_policy.py@297e54fd) as a pair: the smaller is evicted first.

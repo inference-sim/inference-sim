@@ -25,7 +25,7 @@ func (e *tagged) Add(r engine.Request, now engine.Time) error {
 // The talker's messages are not needed here: this engine only takes requests.
 func (e *tagged) Schedule(now engine.Time) (engine.Batch, error) { return e.FIFO.Schedule(now) }
 
-// A P/D handoff between two peered instances goes through vLLM's p2p tier (blis-vllm#204): the
+// A P/D handoff between two peered instances goes through vLLM's p2p tier (inference-sim/inference-sim#2439): the
 // prefill sub-request is told to keep its KV for the remote decoder, and the decode sub-request, an
 // ordinary request to its engine, to pull it from the prefill instance at its address, under one
 // transfer id. The request completes. Before, both sub-requests went untagged and the decode was

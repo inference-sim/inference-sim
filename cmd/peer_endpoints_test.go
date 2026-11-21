@@ -8,7 +8,7 @@ import (
 )
 
 // A colocated run's instances are told where each peer sits, so a p2p tier's WRITE between two of
-// them ends on the peer's own node (blis-vllm#204). Before, a colocated run gave no peer endpoints
+// them ends on the peer's own node (inference-sim/inference-sim#2439). Before, a colocated run gave no peer endpoints
 // at all and every WRITE between its instances was refused. The fixture's prefill pool, read as one
 // colocated pool, holds four one-tray groups: instance n is group n, on tray n.
 func TestPeerEndpoint_AColocatedRunPlacesEachInstanceOnItsGroupsNode(t *testing.T) {

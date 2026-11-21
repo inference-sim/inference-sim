@@ -22,7 +22,7 @@ import (
 //   - LIF-2: a step that uses actions/setup-go outside the go-toolchain action. It installs the
 //     Go that go.mod (or a literal) names, not the version in contracts/toolchain; a job installs
 //     Go with inference-sim/blis-substrate/.github/actions/go-toolchain, which fails when the go
-//     command reports any other version (inference-sim/blis-substrate#193);
+//     command reports any other version (inference-sim/inference-sim#2402);
 //   - X16: go test run with -short or a -skip flag in a job, or a skip marker written into
 //     a required job's environment (SKIP_*, *_SKIP);
 //   - X16: a gate (a workflow whose file starts with "gate", or that carries a

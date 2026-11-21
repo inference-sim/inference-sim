@@ -1,6 +1,6 @@
 // Original to blis-vllm.
 // Moved unchanged from blis-substrate's kernel/rulespanic.go at
-// 00817b10798cbc00f560e51921c30c7084fa5e0c, with the rules calls it guards (blis-substrate#58).
+// 00817b10798cbc00f560e51921c30c7084fa5e0c, with the rules calls it guards (inference-sim/inference-sim#2479).
 
 package lowering
 

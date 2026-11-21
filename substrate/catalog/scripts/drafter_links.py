@@ -2,7 +2,7 @@
 
     from drafter_links import Catalog, resolve, Unresolved
 
-The catalog links a target and its drafters both ways (design D8, blis-substrate#109): a target's
+The catalog links a target and its drafters both ways (design D8, inference-sim/inference-sim#2381): a target's
 model.yaml lists its drafters (`drafters: [speculator, <entry>, ...]`, where `speculator` is its
 own in-graph head), and a drafter entry names its targets (`targets: [...]`). `resolve` turns a
 run's stated draft checkpoint into the catalog entry it is, or "" for the model's own in-graph

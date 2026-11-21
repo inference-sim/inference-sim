@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// The scan must not find the markers it looks for in its own definition (blis-substrate#84),
+// The scan must not find the markers it looks for in its own definition (inference-sim/inference-sim#2480),
 // and must still find a real one of every kind.
 func TestTheDeprecationScanDoesNotMatchItsOwnDefinition(t *testing.T) {
 	for _, f := range []string{"rules.go", "release.go"} {
@@ -31,7 +31,7 @@ func TestTheDeprecationScanDoesNotMatchItsOwnDefinition(t *testing.T) {
 }
 
 // The kernel's exported API carries no deprecated feature, so a MINOR release at v0 is not
-// refused for it (LIF-7, blis-substrate#84).
+// refused for it (LIF-7, inference-sim/inference-sim#2480).
 func TestTheKernelPackageCarriesNoDeprecation(t *testing.T) {
 	files, err := filepath.Glob("../../kernel/*.go")
 	if err != nil || len(files) == 0 {

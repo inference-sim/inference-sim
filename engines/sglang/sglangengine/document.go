@@ -141,15 +141,15 @@ func (f factory) New(s engine.Spec) (engine.Engine, error) { return newFromDocum
 func refuseUnmodelled(a *config.ServerArgs) error {
 	switch {
 	case a.SpeculativeEagleTopk != nil && *a.SpeculativeEagleTopk > 1:
-		return fmt.Errorf("sglangengine: tree drafting and tree verification (speculative_eagle_topk %d) are not modelled by the engine (inference-sim/blis-sglang#68)", *a.SpeculativeEagleTopk)
+		return fmt.Errorf("sglangengine: tree drafting and tree verification (speculative_eagle_topk %d) are not modelled by the engine (inference-sim/inference-sim#2355)", *a.SpeculativeEagleTopk)
 	case a.EnableDpAttention || a.DpSize > 1:
-		return fmt.Errorf("sglangengine: DP attention is not modelled by the engine (inference-sim/blis-sglang#70)")
+		return fmt.Errorf("sglangengine: DP attention is not modelled by the engine (inference-sim/inference-sim#2356)")
 	case a.PpSize > 1:
-		return fmt.Errorf("sglangengine: pipeline parallelism is not modelled by the engine (inference-sim/blis-sglang#72)")
+		return fmt.Errorf("sglangengine: pipeline parallelism is not modelled by the engine (inference-sim/inference-sim#2358)")
 	case a.DisaggregationMode != "null":
-		return fmt.Errorf("sglangengine: P/D disaggregation is not modelled by the engine (inference-sim/blis-sglang#64)")
+		return fmt.Errorf("sglangengine: P/D disaggregation is not modelled by the engine (inference-sim/inference-sim#2351)")
 	case a.EnableHierarchicalCache:
-		return fmt.Errorf("sglangengine: HiCache is not modelled by the engine (inference-sim/blis-sglang#38)")
+		return fmt.Errorf("sglangengine: HiCache is not modelled by the engine (inference-sim/inference-sim#2341)")
 	}
 	return nil
 }

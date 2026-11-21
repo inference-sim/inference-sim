@@ -102,7 +102,7 @@ func TestAnEngineBuildsFromAnUnstatedDeploymentWithOneSetOfValues(t *testing.T) 
 
 // The block-size oracle's table is recorded at the pin, so an unstated block_size resolves to the size
 // the pinned vLLM picks (default 64, vllm/config/cache.py:185@0fda86a3) and the engine builds with it
-// (blis-vllm#68), instead of being refused.
+// (inference-sim/inference-sim#2425), instead of being refused.
 func TestAnUnstatedBlockSizeResolvesAtThePin(t *testing.T) {
 	Register()
 	roots := scenarioWithout(t, "gpt-oss-120b-h200-fp4-vllm-tp4.yaml", "block_size")

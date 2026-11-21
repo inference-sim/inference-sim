@@ -6,7 +6,7 @@ import "github.com/inference-sim/inference-sim/engines/sglang/config"
 
 // issueCP is the issue that models context parallelism. It stays open while this refusal cites it
 // (X28).
-const issueCP = "inference-sim/blis-sglang#26"
+const issueCP = "inference-sim/inference-sim#2448"
 
 // contextParallel refuses, by its SGLang name, a context-parallel setting a resolved ServerArgs
 // holds away from its default: attention context parallelism (attn_cp_size, enable_prefill_cp,

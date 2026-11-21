@@ -49,43 +49,43 @@
         },
         "FLASHINFER_TRTLLM": {
           "status": "gap",
-          "issue": "inference-sim/blis-substrate#150"
+          "issue": "inference-sim/inference-sim#2394"
         },
         "DEEPGEMM": {
           "status": "gap",
-          "issue": "inference-sim/blis-substrate#150"
+          "issue": "inference-sim/inference-sim#2394"
         },
         "BATCHED_DEEPGEMM": {
           "status": "gap",
-          "issue": "inference-sim/blis-substrate#150"
+          "issue": "inference-sim/inference-sim#2394"
         },
         "MARLIN": {
           "status": "gap",
-          "issue": "inference-sim/blis-substrate#150"
+          "issue": "inference-sim/inference-sim#2394"
         },
         "HUMMING": {
           "status": "gap",
-          "issue": "inference-sim/blis-substrate#150"
+          "issue": "inference-sim/inference-sim#2394"
         },
         "BATCHED_TRITON": {
           "status": "gap",
-          "issue": "inference-sim/blis-substrate#150"
+          "issue": "inference-sim/inference-sim#2394"
         },
         "VLLM_CUTLASS": {
           "status": "gap",
-          "issue": "inference-sim/blis-substrate#150"
+          "issue": "inference-sim/inference-sim#2394"
         },
         "BATCHED_VLLM_CUTLASS": {
           "status": "gap",
-          "issue": "inference-sim/blis-substrate#150"
+          "issue": "inference-sim/inference-sim#2394"
         },
         "HPC": {
           "status": "gap",
-          "issue": "inference-sim/blis-substrate#150"
+          "issue": "inference-sim/inference-sim#2394"
         },
         "EMULATION": {
           "status": "gap",
-          "issue": "inference-sim/blis-substrate#150"
+          "issue": "inference-sim/inference-sim#2394"
         },
         "NONE": {
           "status": "not_lowered",
@@ -121,7 +121,7 @@
         },
         "FLASHINFER_MOE_EP_CUTEDSL": {
           "status": "gap",
-          "issue": "inference-sim/blis-substrate#150"
+          "issue": "inference-sim/inference-sim#2394"
         }
       },
       "kernels": [

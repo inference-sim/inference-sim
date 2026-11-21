@@ -16,7 +16,7 @@ func strictGood() Commit {
 		Message: "Merge a thing\n\nAssisted-by: Claude Code (claude-sonnet-5-5)\nSigned-off-by: " + maintainer + "\n"}
 }
 
-// The known-bad commits of inference-sim/blis-substrate#335: each is one way the M3.0 history
+// The known-bad commits of inference-sim/inference-sim#2415: each is one way the M3.0 history
 // failed, and the strict check names it.
 func TestStrictCommitPolicyNamesEachWayAHistoryFailed(t *testing.T) {
 	none(t, StrictCommitPolicy(strictGood(), []string{maintainer}))

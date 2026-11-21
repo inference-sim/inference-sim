@@ -112,14 +112,14 @@ func TestAnObjTierItCannotRunIsRefused(t *testing.T) {
 	}
 	sc := ", store_config: {bucket: kv, endpoint_override: 'http://store:9000'}"
 	for name, c := range map[string]struct{ extra, want string }{
-		"no device":       {tier(sc), "issues/184"},
+		"no device":       {tier(sc), "issues/2436"},
 		"no store_config": {tier(", device_class: s3_store"), "store_config"},
 		"no bucket":       {tier(", device_class: s3_store, store_config: {endpoint_override: 'http://store:9000'}"), "bucket"},
 		"no endpoint":     {tier(", device_class: s3_store, store_config: {bucket: kv}"), "endpoint_override"},
 		"unknown field":   {tier(", device_class: s3_store, store_config: {bucket: kv, endpoint_override: e, retries: 3}"), `"retries"`},
 		"unknown key":     {tier(sc + ", device_class: s3_store, root_dir: /kv"), `"root_dir"`},
 		"bad locality":    {tier(sc + ", device_class: s3_store, locality: remote"), "remote"},
-		"tier pressure":   {tier(sc + ", device_class: s3_store, backpressure: {backpressure_cls: EMABackpressureDetector}"), "issues/13"},
+		"tier pressure":   {tier(sc + ", device_class: s3_store, backpressure: {backpressure_cls: EMABackpressureDetector}"), "issues/2484"},
 		"no io thread":    {tier(sc + ", device_class: s3_store, io_threads: 0"), "io_threads"},
 	} {
 		t.Run(name, func(t *testing.T) {

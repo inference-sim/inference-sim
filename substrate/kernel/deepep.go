@@ -91,7 +91,7 @@ func (k *Kernel) liftDeepEP(c *resolve.Coefficients) {
 		// A dispatch kernel the registry measures nothing for (mori, nixl_ep, MoonEP, FlashInfer's
 		// all-to-alls, and any library the engine names) is priced as the generic routed
 		// all-to-all, and says so: it is never priced silently as another backend
-		// (blis-vllm#75).
+		// (inference-sim/inference-sim#2429).
 		if lib := k.low.MoE.Dispatch.Library; lib != "" {
 			k.assume("moe_a2a_"+lib, "generic routed all-to-all",
 				"the registry measures no "+lib+" dispatch kernel, so it is priced as NCCL's all-to-all over top_k bytes")

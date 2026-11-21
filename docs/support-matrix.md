@@ -34,10 +34,10 @@ Each cell is one model on one chip, over one fabric, in one serving mode, on one
 
 | issue | cause | cells | models |
 |---|---|---|---|
-| inference-sim/blis-sglang#49 | the SGLang engine does not lower this architecture, chip or setting | 1476 | 76 |
-| inference-sim/blis-sglang#64 | the SGLang engine does not model prefill/decode disaggregation | 12 | 6 |
-| inference-sim/blis-sglang#94 | the SGLang engine does not lower this architecture, chip or setting | 40 | 5 |
-| inference-sim/blis-vllm#308 | sparse MLA attention beside recurrent layers is not mapped | 48 | 2 |
+| inference-sim/inference-sim#2344 | the SGLang engine does not lower this architecture, chip or setting | 1476 | 76 |
+| inference-sim/inference-sim#2351 | the SGLang engine does not model prefill/decode disaggregation | 12 | 6 |
+| inference-sim/inference-sim#2366 | the SGLang engine does not lower this architecture, chip or setting | 40 | 5 |
+| inference-sim/inference-sim#2489 | sparse MLA attention beside recurrent layers is not mapped | 48 | 2 |
 | inference-sim/inference-sim#2322 | P/D with a prefill engine that backs off its last prompt tokens (a Mamba-state model, or MTP with K>1) is not modelled | 360 | 30 |
 | inference-sim/inference-sim#2323 | the P/D pools of a DSpark or DFlash model resolve no per-block KV | 72 | 6 |
 

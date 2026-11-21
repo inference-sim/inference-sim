@@ -9,7 +9,7 @@ import (
 
 // A checkpoint whose weight scales are one per 128x128 block (16,384 elements; MiniMax-M2.5) runs
 // vLLM's block-scaled FP8 linear kernels, which the registry measures as the fp8_block ramp
-// (blis-substrate#122). The dense projections must read it, so a weaker fp8_block asymptote makes
+// (inference-sim/inference-sim#2463). The dense projections must read it, so a weaker fp8_block asymptote makes
 // a decode step dearer.
 func TestBlockScaledFP8DenseProjectionsArePricedOnTheFP8BlockRamp(t *testing.T) {
 	d, err := load.Embedded()

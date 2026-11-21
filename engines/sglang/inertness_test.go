@@ -50,7 +50,7 @@ func TestEveryProvenInertFieldNamesItsProof(t *testing.T) {
 
 // A modelled field names the traces that show it changing a decision; each is a file in the
 // tree (committed gzipped), non-empty, so no field is classed modelled without a comparison
-// to read (blis-sglang#63, X1).
+// to read (inference-sim/inference-sim#2350, X1).
 func TestEveryModelledFieldNamesTracesThatExist(t *testing.T) {
 	l, err := fields.Load("fields.json")
 	if err != nil {

@@ -1,6 +1,6 @@
 # Original to blis-sglang.
 """Direct traces at SGLang's hybrid (mamba / linear-attention) pools and their sizing (design
-FID-5, §7.6; SGL-6; inference-sim/blis-sglang#94).
+FID-5, §7.6; SGL-6; inference-sim/inference-sim#2366).
 
 A sequence (oracle/scenarios-mamba-pools/*.json) builds SGLang's own MambaPool,
 HybridReqToTokenPool and HybridLinearKVPool with their own constructors on CPU, from the state

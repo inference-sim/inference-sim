@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// EAGLE3 and the multi-layer worker are the same resolution as EAGLE (S30, blis-sglang#68): EAGLE3
+// EAGLE3 and the multi-layer worker are the same resolution as EAGLE (S30, inference-sim/inference-sim#2355): EAGLE3
 // is_eagle() and runs _handle_eagle_family (speculative_spec_info.py:104-118, 255-266@297e54fd),
 // and enable_multi_layer_eagle selects only the worker. The reference is an EAGLE case SGLang's own
 // pipeline resolved (testdata/serverargs.json): the others resolve to what it resolved, field by
@@ -67,8 +67,8 @@ func TestEagleFamilyRefusalsCiteTheIssue(t *testing.T) {
 	} {
 		_, err := Resolve(in.with(set))
 		var nm *NotModelled
-		if !errors.As(err, &nm) || !strings.HasSuffix(nm.Issue, "blis-sglang#68") {
-			t.Errorf("%v: got %v, want NotModelled citing blis-sglang#68", set, err)
+		if !errors.As(err, &nm) || !strings.HasSuffix(nm.Issue, "inference-sim/inference-sim#2355") {
+			t.Errorf("%v: got %v, want NotModelled citing inference-sim/inference-sim#2355", set, err)
 		}
 	}
 	// EAGLE3 on a model whose checkpoint ships no draft layers needs a separate checkpoint.
@@ -76,8 +76,8 @@ func TestEagleFamilyRefusalsCiteTheIssue(t *testing.T) {
 	noDraft.Model.Architecture = "Qwen2ForCausalLM"
 	_, err := Resolve(noDraft.with(map[string]any{"speculative_algorithm": "EAGLE3"}))
 	var nm *NotModelled
-	if !errors.As(err, &nm) || !strings.HasSuffix(nm.Issue, "blis-sglang#68") {
-		t.Errorf("EAGLE3 without a draft in the checkpoint: got %v, want NotModelled citing blis-sglang#68", err)
+	if !errors.As(err, &nm) || !strings.HasSuffix(nm.Issue, "inference-sim/inference-sim#2355") {
+		t.Errorf("EAGLE3 without a draft in the checkpoint: got %v, want NotModelled citing inference-sim/inference-sim#2355", err)
 	}
 }
 

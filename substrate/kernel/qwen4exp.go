@@ -38,7 +38,7 @@ func (k *Kernel) pricesQwen4Exp(c *resolve.Coefficients) {
 		} else {
 			k.assume("attention_decode_rate_sparse_gqa", "substituted",
 				"the QSA Triton kernel has no measurement in an allowed data source "+
-					"(blis-substrate#251), so sparse-GQA attention and its indexer scorer are priced "+
+					"(inference-sim/inference-sim#2472), so sparse-GQA attention and its indexer scorer are priced "+
 					"with the part-wide grouped-query attention pair over the selected tokens; "+
 					"a point priced so is capped at the lowest scored grade")
 		}

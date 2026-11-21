@@ -60,7 +60,7 @@ func provenanceNames(t *testing.T, in Inputs) string {
 }
 
 // Block-FP8 routed experts on Hopper are priced on the ramp and floor measured for the grouped
-// kernel the plan says the engine runs (blis-substrate#150): Triton's at expert-parallel width
+// kernel the plan says the engine runs (inference-sim/inference-sim#2394): Triton's at expert-parallel width
 // 1, FlashInfer's CUTLASS experts above it. A few-token decode then pays each layer's measured
 // floor, which the dense FP8 ramp the routed term was priced on before does not charge, so the
 // step is dearer than with the kernel unstated; and the price reads the backend's own entries, which

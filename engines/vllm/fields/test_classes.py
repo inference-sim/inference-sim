@@ -265,7 +265,7 @@ class SyntheticTree(unittest.TestCase):
     def test_an_entry_for_a_field_that_is_not_modelled_fails(self):
         fl = copy.deepcopy(self.fl)
         fl["fields"][0]["status"] = "not_modelled"
-        fl["fields"][0]["evidence"] = {"issue": "inference-sim/blis-vllm#1"}
+        fl["fields"][0]["evidence"] = {"issue": "inference-sim/inference-sim#2481"}
         self.assertTrue([p for p in gc.check_document(self.doc, fl, None) if "neither modelled nor proven inert" in p])
 
     def test_a_field_with_no_classes_fails(self):

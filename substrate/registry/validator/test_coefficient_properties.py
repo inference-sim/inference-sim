@@ -995,7 +995,7 @@ def test_the_h100_host_link_is_the_cpu_tier_fit_not_a_second_number():
 # and a maintainer approves it there.
 # Recorded exceptions now in force: 46 -> 73 (2026-11-17), the 27 per-model non-KV memory entries
 # scripts/fit_memory_startup.py writes, each checked out of sample on its model's anchor units. They
-# stand in for the general non-KV memory form of inference-sim/blis-substrate#294, which lowers this
+# stand in for the general non-KV memory form of inference-sim/inference-sim#2409, which lowers this
 # back; the approval is recorded on inference-sim/blis-substrate#329.
 MAX_SINGLE_MODEL_ENTRIES = 73
 

@@ -37,14 +37,14 @@ var modelledTiers = map[string]bool{"fs": true, "obj": true, "p2p": true}
 // fs/manager.py:168-172). When the simulator reports the transfer done, the job runs (FSTier.Run),
 // and the manager collects it at its next call, as vLLM's get_finished_jobs does.
 //
-// Two of the tier's threads are timed by named substitution (blis-vllm#190): a lookup batch
+// Two of the tier's threads are timed by named substitution (inference-sim/inference-sim#2437): a lookup batch
 // flushed at a schedule's on_schedule_end resolves when that batch's output is applied, and a job
 // is one transfer started with the first schedule after its submission, whatever the thread
 // pool's size.
 
 // tierLookupIssue is the fs tier's timing substitutions; tierIssue the tier keys not modelled.
 const (
-	tierTimingIssue = issueBase + "190"
+	tierTimingIssue = issueSim + "2437"
 	tierIssue       = issueBase + "63"
 )
 
@@ -435,7 +435,7 @@ func (o *offload) isPeerWrite(id engine.TransferID) bool {
 }
 
 // tierStep is the step boundary for the tiers' lookup workers: each lookup batch flushed so far
-// resolves (blis-vllm#190).
+// resolves (inference-sim/inference-sim#2437).
 func (o *offload) tierStep() {
 	if o == nil || o.tiers == nil {
 		return

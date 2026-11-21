@@ -11,7 +11,7 @@ import (
 // File is one small input file the run read, held whole so the Result reproduces without it
 // (DEV-7, SIM-10): the router's endpoint-picker configuration and manifests the deployment
 // names, and each configuration file a command-line option names. Bulk data, a trace or a
-// corpus, is never held here; the Result names it by sha256 only (blis-substrate#154,
+// corpus, is never held here; the Result names it by sha256 only (inference-sim/inference-sim#2467,
 // Principle 6).
 type File struct {
 	// Path is the file as the input names it: the deployment's router path, or the option's

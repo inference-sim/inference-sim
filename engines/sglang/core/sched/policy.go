@@ -14,7 +14,7 @@ import (
 )
 
 // Refusal is the open issue every refused scheduling feature cites (X28).
-const Refusal = "inference-sim/blis-sglang#56"
+const Refusal = "inference-sim/inference-sim#2346"
 
 // Policy is a built-in schedule policy (schedule_policy.py:172-188@297e54fd).
 type Policy string
