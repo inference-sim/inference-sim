@@ -157,6 +157,18 @@ func TestSchedConfigFollowsSGLangsArithmeticWhereNoScenarioReachesIt(t *testing.
 			t.Errorf("min %v, want 1", c.NewTokenRatio.Min)
 		}
 	})
+	t.Run("the prefill-decode interval and its minimum batch size are carried to the scheduler (scheduler.py:1353-1357)", func(t *testing.T) {
+		a, rt := base()
+		four := 4
+		a.PrefillDecodeInterval, a.PrefillDecodeIntervalMinBs = &four, 3
+		c, err := SchedConfig(a, rt, DefaultEnv())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.PrefillDecodeInterval != 4 || c.PrefillDecodeIntervalMinBs != 3 {
+			t.Errorf("interval %d min_bs %d, want 4 and 3", c.PrefillDecodeInterval, c.PrefillDecodeIntervalMinBs)
+		}
+	})
 	t.Run("the micro-batch is the running requests over the pipeline size, at least one (scheduler.py:1237-1244)", func(t *testing.T) {
 		a, rt := base()
 		a.PPSize = 2
