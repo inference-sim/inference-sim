@@ -205,6 +205,7 @@ func TestResolveRefusalsNameTheIssueOfTheFeature(t *testing.T) {
 		{"pp_max_micro_batch_size", 2, "2358"},
 		{"swa_full_tokens_ratio", 0.5, "2359"},
 		{"mamba_track_interval", 128, "2366"},
+		{"disable_priority_preemption", true, "2451"},
 		{"speculative_algorithm", "STANDALONE", "2460"},
 		{"speculative_algorithm", "NGRAM", "2460"},
 		{"speculative_algorithm", "DFLASH", "2460"},
