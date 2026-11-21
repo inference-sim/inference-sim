@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
@@ -91,6 +92,8 @@ type pipelineStage struct {
 	// the pool is not inside one NVLink rack domain. The send's rate and the resource it is
 	// booked to follow this one test.
 	overNIC bool
+	// caches are the caches the graph states as the stage's rank holds them (liftStageCaches).
+	caches statedCaches
 	// memory is the stage's per-rank memory (liftPipelineMemory).
 	memory stageMemory
 }
@@ -110,6 +113,9 @@ type stageMemory struct {
 	kv     []layerKV
 	// drafter is whether the stage holds the drafter.
 	drafter bool
+	// caches are the stage's stated caches; their growing share is a per-block cost beside
+	// kvPerToken's.
+	caches statedCaches
 }
 
 // KVLayerPageBytes is one page of blockTokens tokens of every KV-holding layer the rank holds
@@ -156,6 +162,7 @@ type rankMemoryView struct {
 	kv         []layerKV
 	kvPerToken float64
 	drafter    bool
+	caches     statedCaches
 }
 
 // rankMemory is the view of the rank whose pool binds.
@@ -163,13 +170,14 @@ func (k *Kernel) rankMemory() rankMemoryView {
 	if len(k.stages) > 0 {
 		m := k.stages[k.ppKVStage].memory
 		return rankMemoryView{layers: m.layers, kv: m.kv, kvPerToken: m.kvPerToken,
-			drafter: m.drafter}
+			drafter: m.drafter, caches: m.caches}
 	}
 	per := k.kvBytesPerToken
 	if k.speculating {
 		per += k.draftKVBytesPerToken
 	}
-	return rankMemoryView{layers: k.plan.Layers, kv: k.layerKV, kvPerToken: per, drafter: true}
+	return rankMemoryView{layers: k.plan.Layers, kv: k.layerKV, kvPerToken: per, drafter: true,
+		caches: statedCaches{terms: k.caches, pool: k.kvPool}}
 }
 
 // ppIndices is get_pp_indices (vllm/distributed/utils.py:126-169@5df63a72) without
@@ -199,18 +207,6 @@ func (k *Kernel) liftPipeline(g *model.Graph) error {
 	pp := max(k.layout.PP, 1)
 	if pp <= 1 {
 		return nil
-	}
-	// A cache a graph states -- the target's or its drafter's -- is sized per layer kind over
-	// the whole stack (cacheTerms) and grouped into one pool over all of them, not per stage,
-	// so a pipeline split of it would charge each rank every stage's cache. Refused rather
-	// than overstated. COVERAGE LIMIT, not an engine refusal: vLLM serves DeepSeek-V4 and
-	// V4.1, whose graphs state their caches, under PP (their make_empty_intermediate_tensors,
-	// vllm/models/deepseek_v4/nvidia/model.py:1406-1424, deepseek_v41/nvidia/model.py:
-	// 885-910@v0.32.0).
-	if len(k.caches) > 0 {
-		return fmt.Errorf("pipeline parallelism (pp %d) on a model whose graph states its "+
-			"caches is not priced: the stated caches are sized over the whole stack, not "+
-			"per stage", pp)
 	}
 	seq := g.Stack.Expand()
 	// Not an engine refusal: get_pp_indices gives a stage no layers when there
@@ -289,6 +285,9 @@ func (k *Kernel) liftPipeline(g *model.Graph) error {
 			st.crossesNode = crosses(s)
 			st.overNIC = st.crossesNode && (!k.fabric.RackIsOneDomain || !k.sameRack())
 		}
+	}
+	if err := k.liftStageCaches(seq); err != nil {
+		return err
 	}
 	if err := k.liftPipelineMemory(); err != nil {
 		return err
@@ -513,6 +512,145 @@ func (k *Kernel) stageHost(b kernel.Batch, st *pipelineStage, draftKernels int) 
 	return host + seconds(k.launchPerKernel.Seconds()*float64(kernels+draftKernels))
 }
 
+// liftStageCaches splits the caches a graph states over the stages. Each stage's rank holds
+// the caches of its own layers, in the engine's shared block pool over the global KV cache
+// groups projected onto them: the groups are cut from the whole model's layers in stack order
+// (get_global_kv_cache_groups, vllm/v1/core/kv_cache_planning.py:1637@v0.33.0), every group
+// stays on every worker with only that worker's layers (_project_kv_cache_groups_to_worker,
+// :1418-1453), and the pool's block costs the widest group's page bytes over the worker's own
+// layers (_get_kv_cache_bytes_per_block, :542-566), so a request holds the same blocks on every
+// stage and each stage pays them at its own bytes. The drafter's caches are the last stage's.
+//
+// A cache one layer reads from an owner on an earlier stage is refused: an engine worker holds
+// only its own stage's caches, so the owner's cache is not there to read. COVERAGE LIMIT, not
+// a priced case.
+func (k *Kernel) liftStageCaches(seq []string) error {
+	if len(k.caches) == 0 {
+		return nil
+	}
+	kind := make(map[string]int, len(k.plan.Layers))
+	for i, l := range k.plan.Layers {
+		kind[l.ID] = i
+	}
+	if err := k.checkStageReaders(seq, kind); err != nil {
+		return err
+	}
+	owned := map[int][]int{}
+	for ti, t := range k.caches {
+		if !t.draft {
+			owned[t.layer] = append(owned[t.layer], ti)
+		}
+	}
+	var layers []enginefacts.KVCacheLayer
+	term, stageOf := map[string]int{}, map[string]int{}
+	next := make([]int, len(k.caches))
+	add := func(ti, stage int) {
+		l := packLayer(ti, next[ti], k.caches[ti])
+		next[ti]++
+		layers = append(layers, l)
+		term[l.Name], stageOf[l.Name] = ti, stage
+	}
+	for s := range k.stages {
+		for _, id := range seq[k.stages[s].lo:k.stages[s].hi] {
+			for _, ti := range owned[kind[id]] {
+				add(ti, s)
+			}
+		}
+	}
+	for ti, t := range k.caches {
+		if t.draft && k.speculating {
+			for range t.count {
+				add(ti, len(k.stages)-1)
+			}
+		}
+	}
+	if len(layers) == 0 {
+		return nil
+	}
+	g, err := k.packCaches(layers)
+	if err == nil {
+		err = k.checkPages(g, term)
+		if err != nil {
+			return err
+		}
+	} else {
+		k.assume("kv_cache_grouping", "per cache",
+			"the stated caches are sized at their own pages rather than in the engine's "+
+				"shared block pool, because the rules pack cannot group them: "+err.Error())
+	}
+	for s := range k.stages {
+		var c statedCaches
+		held := make([]int, len(k.caches))
+		for name, ti := range term {
+			if stageOf[name] == s {
+				held[ti]++
+			}
+		}
+		for ti, t := range k.caches {
+			if held[ti] > 0 {
+				t.count = held[ti]
+				c.terms = append(c.terms, t)
+			}
+		}
+		if err == nil {
+			c.pool = k.poolOf(g, term)
+			c.pool.bytesPerBlock = 0
+			for _, gr := range g.Groups {
+				var page int
+				for _, name := range gr.Layers {
+					if stageOf[name] == s {
+						page += g.PageBytes[name]
+					}
+				}
+				c.pool.bytesPerBlock = math.Max(c.pool.bytesPerBlock, float64(page))
+			}
+		}
+		k.stages[s].caches = c
+	}
+	return nil
+}
+
+// checkStageReaders refuses a layer that reads a cache whose owner, the nearest preceding
+// layer of the stack to own one of that name (model.Cache.Owned), sits on an earlier stage.
+func (k *Kernel) checkStageReaders(seq []string, kind map[string]int) error {
+	stageAt := func(p int) int {
+		for s := range k.stages {
+			if p >= k.stages[s].lo && p < k.stages[s].hi {
+				return s
+			}
+		}
+		return 0
+	}
+	owns := func(p int, name string) bool {
+		for _, c := range layerCaches(k.plan.Layers[kind[seq[p]]]) {
+			if c.Owned && c.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+	for p, id := range seq {
+		for _, c := range layerCaches(k.plan.Layers[kind[id]]) {
+			if c.Owned {
+				continue
+			}
+			for q := p - 1; q >= 0; q-- {
+				if !owns(q, c.Name) {
+					continue
+				}
+				if s, o := stageAt(p), stageAt(q); o != s {
+					return fmt.Errorf("pipeline parallelism (pp %d): layer %d on stage %d reads "+
+						"the cache %q that layer %d on stage %d owns, and an engine worker holds "+
+						"only its own stage's caches, so a cache shared across a stage boundary "+
+						"is not priced", len(k.stages), p, s, c.Name, q, o)
+				}
+				break
+			}
+		}
+	}
+	return nil
+}
+
 // liftPipelineMemory sets each stage's per-rank memory and picks the binding stage.
 //
 // Each worker of vLLM's pipeline loads only its stage's modules (PPMissingLayer elsewhere,
@@ -546,7 +684,7 @@ func (k *Kernel) liftPipelineMemory() error {
 		needsTargetEmbed(k.plan.Draft.Method) && len(k.stages) > 1
 	for i := range k.stages {
 		st := &k.stages[i]
-		m := stageMemory{layers: st.layers, kv: st.kv, drafter: st.last}
+		m := stageMemory{layers: st.layers, kv: st.kv, drafter: st.last, caches: st.caches}
 		for j, l := range st.layers {
 			m.weights += float64(l.Count) * k.residentBytes(l)
 			m.layerPerToken += st.kv[j].perToken * float64(l.Count)
@@ -590,8 +728,11 @@ func (k *Kernel) bindStage() error {
 		other := act + float64(k.captureBytes) + float64(k.deepEPBufferBytes(k.graph))
 		left := part - st.memory.weights - other
 		tokens := math.Inf(1)
-		if st.memory.kvPerToken > 0 {
-			tokens = left / st.memory.kvPerToken
+		// The growing caches a graph states cost the stage per block, as its pool prices them.
+		per := st.memory.kvPerToken +
+			k.variableBytesOf(st.memory.caches, k.blockSize)/float64(max(k.blockSize, 1))
+		if per > 0 {
+			tokens = left / per
 		} else if left < 0 {
 			tokens = left
 		}
@@ -673,9 +814,11 @@ func (k *Kernel) PipelineStageMemory() []StageMemory {
 				EPLBRedundant:  int64(m.eplbRedundant),
 				CommBuffers:    k.deepEPBufferBytes(k.graph),
 			},
-			PerBlockBytes:  k.pagedKVBytes(k.blockSize, m.kvPerToken),
-			LayerPageBytes: k.pagedKVBytes(k.blockSize, m.layerPerToken),
-			Binding:        i == k.ppKVStage,
+			PerBlockBytes: k.pagedKVBytes(k.blockSize, m.kvPerToken) +
+				int64(k.variableBytesOf(m.caches, k.blockSize)),
+			LayerPageBytes: k.pagedKVBytes(k.blockSize, m.layerPerToken) +
+				int64(k.variableBytesOf(m.caches, k.blockSize)),
+			Binding: i == k.ppKVStage,
 		}
 	}
 	return out

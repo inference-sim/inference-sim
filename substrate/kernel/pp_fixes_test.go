@@ -82,6 +82,34 @@ func TestTheBindingStageIsOneWorkersPool(t *testing.T) {
 	}
 }
 
+// The caches a graph states count toward a stage's pool as its blocks cost: a stage with no
+// inferred KV at all but a stated pool of 64,000 B a 16-token block holds 4,000 B a token, so
+// its 39.0 GB hold 9.75M tokens against the other stage's 19.0M, and it binds. Left out of the
+// comparison it would hold unbounded tokens and the weight-heavier stage would bind.
+func TestTheBindingStageCountsStatedCaches(t *testing.T) {
+	const gb = 1e9
+	pool := &kvPool{bytesPerBlock: 64000, groups: []poolGroup{{cache: model.Cache{Kind: model.CacheKV},
+		block: 16}}}
+	k := &Kernel{chip: hardware.Chip{MemoryGiB: 80}, graph: &model.Graph{}, blockSize: 16,
+		low: plan.PoolPlan{MemoryFraction: 0.92},
+		stages: []pipelineStage{
+			{memory: stageMemory{weights: 60 * gb, kvPerToken: 1000}},
+			{memory: stageMemory{weights: 40 * gb, caches: statedCaches{pool: pool}}},
+		}}
+	if err := k.bindStage(); err != nil {
+		t.Fatal(err)
+	}
+	if k.ppKVStage != 1 {
+		t.Errorf("binding stage %d; stage 1's stated pool holds 9.75M tokens, stage 0's KV 19.0M",
+			k.ppKVStage)
+	}
+	if sm := k.PipelineStageMemory(); sm[1].PerBlockBytes != 64000 || sm[1].LayerPageBytes != 64000 ||
+		sm[0].PerBlockBytes != 16000 {
+		t.Errorf("per block bytes %d and %d, layer page %d; want 16000 and 64000, 64000",
+			sm[0].PerBlockBytes, sm[1].PerBlockBytes, sm[1].LayerPageBytes)
+	}
+}
+
 // A tensor-parallel width that does not divide the KV heads of an attention that cannot
 // replicate a head is refused, in the drafter's layers too; one that can replicate is priced.
 func TestAnUnsplittableKVHeadCountIsRefused(t *testing.T) {

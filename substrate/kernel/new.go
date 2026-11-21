@@ -1147,7 +1147,7 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 		}
 		per := inferred(l)
 		k.layerKV[i].inferred = per
-		k.caches = append(k.caches, k.cacheTerms(layerCaches(l), l.Count)...)
+		k.caches = append(k.caches, k.cacheTerms(layerCaches(l), l.Count, i)...)
 		if len(l.AttnCaches) > 0 {
 			k.layerKV[i].stated = true
 			continue
