@@ -667,26 +667,26 @@ func specMethodModelled(method string) bool {
 }
 
 // resolveV2Runner is VllmConfig.use_v2_model_runner (vllm/config/vllm.py:703-739@5df63a72) for
-// what a deployment states: use_v2_model_runner, else the VLLM_USE_V2_MODEL_RUNNER env key,
-// read as vLLM reads it (bool(int(value)), vllm/envs.py:358-361@5df63a72). Unstated, vLLM
-// decides from whether Triton is installed (:724-728) and the features on (:730-737), which
-// this engine cannot see, so it refuses rather than guess.
+// what a deployment states: use_v2_model_runner, else the VLLM_USE_V2_MODEL_RUNNER env key.
+// Unstated, vLLM decides from whether Triton is installed (:724-728) and the features on
+// (:730-737), which this engine cannot see, so it refuses rather than guess.
 //
-// vLLM itself reads only the env key (vllm/config/vllm.py:720-722, vllm/envs.py:2151-2152@5df63a72):
-// use_v2_model_runner is this engine block's restatement of it, so when both are stated they must
-// agree, and a disagreement is refused rather than one silently winning.
+// The env key is read as the release the engine is pinned to reads it: Model Runner V1 has been
+// removed, and Platform.validate_environ accepts the value 1 (a warning that it is redundant) and
+// raises for any other (vllm/platforms/interface.py:1672-1682, called from
+// EngineArgs.create_engine_config), so 1 is the V2 runner and every other value is refused.
+//
+// vLLM itself no longer reads the env key to choose a runner: use_v2_model_runner is this engine
+// block's restatement, so when both are stated they must agree, and a disagreement is refused
+// rather than one silently winning.
 func resolveV2Runner(c Config) (bool, error) {
 	var fromEnv *bool
 	if v, ok := c.Env["VLLM_USE_V2_MODEL_RUNNER"]; ok {
-		var b bool
-		switch v {
-		case "0":
-		case "1":
-			b = true
-		default:
-			return false, fmt.Errorf("vllm: env VLLM_USE_V2_MODEL_RUNNER=%q is not 0 or 1, which vLLM reads as int "+
-				"(vllm/envs.py:358-361@5df63a72)", v)
+		if v != "1" {
+			return false, fmt.Errorf("vllm: env VLLM_USE_V2_MODEL_RUNNER=%q is no longer supported: Model Runner V1 has been "+
+				"removed; vLLM accepts only 1 and raises for any other value (vllm/platforms/interface.py:1672-1676)", v)
 		}
+		b := true
 		fromEnv = &b
 	}
 	switch {

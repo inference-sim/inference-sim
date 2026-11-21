@@ -277,14 +277,14 @@ func TestFactoryRefuses(t *testing.T) {
 		// The resolved runner decides, not either statement alone (vllm/config/vllm.py:2976-2979@5df63a72):
 		// an env key saying V1 refuses DSpark, and a field saying V1 beside an env key saying V2
 		// is refused as the contradiction it is, before DSpark could be built on either.
-		{"dspark on the V1 runner by its env key", Version, "use_v2_model_runner: null\n" +
-			"env: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\nspeculative_config: {method: dspark, num_speculative_tokens: 3}\n", "V2 model runner"},
+		{"the V1 runner as its env key", Version, "use_v2_model_runner: null\n" +
+			"env: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\nspeculative_config: {method: dspark, num_speculative_tokens: 3}\n", "no longer supported"},
 		{"dspark on the V1 runner, the env saying V2", Version, "speculative_config: {method: dspark, num_speculative_tokens: 3}\n" +
 			"env: {VLLM_USE_V2_MODEL_RUNNER: \"1\"}\n", "disagree"},
-		// vLLM reads the runner only from VLLM_USE_V2_MODEL_RUNNER (vllm/config/vllm.py:720-722,
-		// vllm/envs.py:2151-2152@5df63a72); use_v2_model_runner restates it, so the two must agree.
-		{"the runner field and its env key disagree", Version, "use_v2_model_runner: true\n" +
-			"env: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\n", "disagree"},
+		// use_v2_model_runner restates the env key, so the two must agree (the case above); a stated 0 is
+		// refused before they are compared.
+		{"the runner field true and its env key 0", Version, "use_v2_model_runner: true\n" +
+			"env: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\n", "no longer supported"},
 		{"an mtp drafter without its layer count", Version, "speculative_config: {method: mtp, num_speculative_tokens: 2}\n", "mtp_nextn_predict_layers"},
 		{"V1 runner with PP and async", Version, "async_scheduling: true\npipeline_parallel_size: 2\n", "V1 model runner"},
 		{"prefix_match_unit", Version, "prefix_match_unit: 8\n", "prefix_match_unit"},
@@ -362,7 +362,7 @@ func TestFactoryRefuses(t *testing.T) {
 // refusals.
 func TestFactoryAccepts(t *testing.T) {
 	for _, c := range []struct{ name, extra string }{
-		{"the V2 runner as its env key", "use_v2_model_runner: null\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\n"},
+		{"the V2 runner as its env key", "use_v2_model_runner: null\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"1\"}\n"},
 		// The AsyncScheduler's placeholder drafts are diff-tested (core/engine t3-async-mtp*, t3-async-dspark).
 		{"async with drafts", "async_scheduling: true\nspeculative_config: {method: eagle3, num_speculative_tokens: 3}\n"},
 		// The closest neighbours of the ngram refusal: async stated off, and async left to resolve

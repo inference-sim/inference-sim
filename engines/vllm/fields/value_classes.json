@@ -577,6 +577,44 @@
     "name": "VLLM_USE_RUST_FRONTEND"
    }
   },
+  "VLLM_USE_V2_MODEL_RUNNER": {
+   "value_classes": {
+    "type": "enumerated",
+    "values": [
+     "1"
+    ],
+    "covered": [
+     "1"
+    ]
+   },
+   "basis": {
+    "kind": "enumerated",
+    "classes": [
+     {
+      "values": [
+       "1"
+      ],
+      "uncompared": true,
+      "compared_at": [],
+      "covered_by": [
+       "oracle/inertness/VLLM_USE_V2_MODEL_RUNNER.json"
+      ]
+     }
+    ],
+    "enumeration": [
+     "1"
+    ],
+    "relations": [],
+    "sites": [],
+    "stated": [
+     {
+      "value": "1",
+      "trace": "oracle/inertness/VLLM_USE_V2_MODEL_RUNNER.json"
+     }
+    ],
+    "name": "VLLM_USE_V2_MODEL_RUNNER"
+   }
+  },
   "api_server_count": {
    "value_classes": {
     "type": "numeric",

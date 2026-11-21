@@ -19,7 +19,7 @@ after --write, the result. Runs:
 
   A proof file of kind "named" is for a variable the serving process names only at the sites the file lists,
   each a reviewed static fact: {"kind": "named", "names": [...], "sites": {name: [{"file", "line", "text",
-  "role"}]}}. The role is "load" (a site on the model-file path, run before the first request) or "test"
+  "role"}]}}. The role is "load" (a site that runs once at start-up, before the first request) or "test"
   (after the file's first #[cfg(test)] line, which the harness checks). The check fails when the source
   names the variable anywhere the file does not list, or a listed site is not there.
 
@@ -607,7 +607,7 @@ def evaluate_named(vllm_root, spec):
     """A proof of kind "named": the serving process names each variable only at the sites the proof lists. Every
     line of every text file under vllm/, csrc/ and rust/ is searched for the name as a whole word; the lines
     found must equal the listed sites (file, line and text), and a site with role "test" must follow the first
-    #[cfg(test)] line of its Rust file. That each "load" site is on the model-file path is the reviewed
+    #[cfg(test)] line of its Rust file. That each "load" site runs only at start-up is the reviewed
     claim of the proof; the harness holds the list to the tree."""
     import re
 

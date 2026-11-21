@@ -5828,6 +5828,26 @@
       }
     },
     {
+      "name": "VLLM_USE_V2_MODEL_RUNNER",
+      "source": "env",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "oracle/inertness/VLLM_USE_V2_MODEL_RUNNER.json"
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "1"
+        ],
+        "covered": [
+          "1"
+        ]
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_V1_OUTPUT_PROC_CHUNK_SIZE",
       "source": "env",
       "status": "not_modelled",
