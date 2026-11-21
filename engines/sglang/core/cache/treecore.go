@@ -811,6 +811,8 @@ func evictionPriority(policy string) (func(*node) [2]float64, error) {
 			return [2]float64{protected, n.lastAccess}
 		}, nil
 	case "tlru":
+		// SGLang accepts tlru on the UnifiedRadixCache this cache is (registry.py:261-271@297e54fd
+		// refuses it only on another tree cache); the port does not price T-LRU's per-node tail ordering.
 		return nil, fmt.Errorf("cache: the tlru eviction policy is not modelled (%s)", RefusalIssue)
 	}
 	return nil, fmt.Errorf("cache: unknown eviction policy %q (SGLang raises ValueError, mem_cache/utils.py:77-83)", policy)

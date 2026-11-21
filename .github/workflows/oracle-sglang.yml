@@ -72,6 +72,10 @@ jobs:
         run: python -I oracle/value_coverage.py
       - name: every allocator and pool class SGLang defines is modelled or refused (SGL-6)
         run: python -I oracle/check_pool_classes.py sglang-source
+      - name: every refusal the port quotes from SGLang is in its source at the pin, in the port and in its test (SGL-6, SIM-9)
+        run: python -I oracle/check_refusal_quotes.py sglang-source
+      - name: the refusal-quote guard fails on what it guards
+        run: python -I oracle/test_check_refusal_quotes.py
       - name: the guards fail on what they guard
         run: python -I oracle/test_checks.py sglang-source
       - name: the step-driven runner and its step hook run at the declared boundary
