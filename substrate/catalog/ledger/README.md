@@ -146,11 +146,8 @@ and changes nothing under the ledger:
   reviews it and adds the supplements to `sources.yaml`, then runs `ingest-inferencex`, in a
   pull request.
 
-`ledger.yml` runs it as the scheduled job `inferencex-feed`, from main: no seed, no environment,
-no secret, no commit. It uploads both files as the artifact `inferencex-feed`. The API's URLs
-are the repository variable `INFERENCEX_FEED_URLS` (space-separated), which a ledger owner
-sets; until then the job reports that it has no feed and succeeds. The job restores the dump
-(34 GB), as `gate-nightly` does.
+No workflow runs it. A ledger owner runs `ledger feed` by hand, with the dump restored (34 GB) and
+the API's URLs as `-url` flags; it needs the network and commits nothing.
 
 A unit's role is still drawn only by the seed-holding jobs. Until a ledger owner creates the
 seed, no supplement unit, like no other unit, is on the fit or anchor list, and so the dashboard
