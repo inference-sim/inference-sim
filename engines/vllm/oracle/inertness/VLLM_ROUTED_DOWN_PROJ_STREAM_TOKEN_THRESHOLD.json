@@ -1,0 +1,25 @@
+{
+ "field": "VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD",
+ "kind": "unread",
+ "release": "0.34.0+0fda86a35419 0fda86a35419c9c70dbfada224c838c10fbb62ad",
+ "claim": "Reviewed static fact, not a run of vLLM's code: no file of the pinned vLLM release's serving process (vllm/, csrc/, rust/) names VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD; the result lists the files the scan read. The cut-off the name suggests is a module constant of the Kimi-K3 model file, _ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD = 256 (vllm/models/kimi_k3/nvidia/model.py:142), not read from the environment, so a stated value reaches no code. At start-up vLLM warns about a VLLM_-prefixed variable it does not list and refuses it only when fail_on_environ_validation is set, which defaults to false (vllm/platforms/interface.py validate_environ, called from EngineArgs.create_engine_config with that flag; vllm/engine/arg_utils.py:863). The constant itself picks whether the router gate and the routed-expert down projection overlap on a second CUDA stream; that is a kernel-level choice of the model's forward, outside what this variable changes. Recorded AgentX runs state the variable as 0.",
+ "argument": "reviewed_static_fact",
+ "names": [
+  "VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD"
+ ],
+ "probes": [
+  {
+   "label": "set (0: the recorded runs)",
+   "value": 0
+  }
+ ],
+ "result": {
+  "vllm_commit": "0.34.0+0fda86a35419 0fda86a35419c9c70dbfada224c838c10fbb62ad",
+  "files_scanned": 5312,
+  "occurrences": {
+   "VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD": []
+  },
+  "problems": [],
+  "verdict": "inert"
+ }
+}

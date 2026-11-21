@@ -140,6 +140,10 @@
   "kind": "numeric",
   "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
  },
+ "VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD": {
+  "kind": "numeric",
+  "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
+ },
  "VLLM_USE_V2_MODEL_RUNNER": {
   "kind": "enumerated",
   "values": ["1"],
