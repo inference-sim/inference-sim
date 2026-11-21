@@ -1564,7 +1564,7 @@
    "name": "DFLASH",
    "site": "speculative/spec_info.py:39",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "spec_algo:UNO",
@@ -1572,7 +1572,7 @@
    "name": "UNO",
    "site": "speculative/spec_info.py:40",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "spec_algo:DSPARK",
@@ -1580,7 +1580,7 @@
    "name": "DSPARK",
    "site": "speculative/spec_info.py:41",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2454"
   },
   {
    "id": "spec_algo:EAGLE",
@@ -1604,7 +1604,7 @@
    "name": "FROZEN_KV_MTP",
    "site": "speculative/spec_info.py:44",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "spec_algo:STANDALONE",
@@ -1612,7 +1612,7 @@
    "name": "STANDALONE",
    "site": "speculative/spec_info.py:45",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "spec_algo:NGRAM",
@@ -1620,7 +1620,7 @@
    "name": "NGRAM",
    "site": "speculative/spec_info.py:46",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "spec_algo:NEXTN",
@@ -1638,7 +1638,7 @@
    "site": "speculative/spec_info.py:324",
    "condition": "self.is_dflash()",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "spec_worker:UnoWorkerV2",
@@ -1647,7 +1647,7 @@
    "site": "speculative/spec_info.py:331",
    "condition": "self.is_uno()",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "spec_worker:DSparkWorkerV2",
@@ -1656,7 +1656,7 @@
    "site": "speculative/spec_info.py:336",
    "condition": "self.is_dspark()",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2454"
   },
   {
    "id": "spec_worker:FrozenKVMTPWorkerV2",
@@ -1665,7 +1665,7 @@
    "site": "speculative/spec_info.py:343",
    "condition": "self.is_frozen_kv_mtp()",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "spec_worker:MultiLayerEagleWorkerV2",
@@ -1692,7 +1692,7 @@
    "site": "speculative/spec_info.py:365",
    "condition": "self.is_standalone()",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "spec_worker:NGRAMWorker",
@@ -1701,7 +1701,7 @@
    "site": "speculative/spec_info.py:369",
    "condition": "self.is_ngram()",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "moe_a2a_backend:none",
@@ -4417,7 +4417,7 @@
    "site": "arg_groups/speculative_hook.py:439",
    "value": 48,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "spec_running_requests:_handle_dspark",
@@ -4426,7 +4426,7 @@
    "site": "arg_groups/speculative_hook.py:853",
    "value": 48,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2454"
   },
   {
    "id": "spec_running_requests:_handle_frozen_kv_mtp",
@@ -4435,7 +4435,7 @@
    "site": "arg_groups/speculative_hook.py:993",
    "value": 48,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "spec_running_requests:_handle_eagle_family",
@@ -4453,7 +4453,7 @@
    "site": "arg_groups/speculative_hook.py:1295",
    "value": 48,
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   {
    "id": "scheduler_loop:event_loop_pdmux",
@@ -4885,7 +4885,7 @@
    "target_arch_lists": [],
    "registered": "native",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2454"
   },
   {
    "id": "drafter_arch:DeepseekV4ForCausalLMNextN",

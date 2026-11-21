@@ -54,15 +54,13 @@ func TestEagleFamilyResolvesAsEagleDoes(t *testing.T) {
 	}
 }
 
-// What the engine does not model is refused by name citing #68: another algorithm, and an EAGLE3
-// with a separate draft checkpoint (it resolves speculative_draft_model_revision, which needs
-// goldens recorded from SGLang).
+// What the engine does not model is refused by name citing #2355: an EAGLE3 with a separate draft
+// checkpoint (it resolves speculative_draft_model_revision, which needs goldens recorded from
+// SGLang). Another algorithm is not part of the EAGLE family and cites the stage that models the
+// rest of the surface list (TestOtherSpeculativeAlgorithmsCiteTheirOwnIssue).
 func TestEagleFamilyRefusalsCiteTheIssue(t *testing.T) {
 	in := eagleReference(t)
 	for _, set := range []map[string]any{
-		{"speculative_algorithm": "STANDALONE"},
-		{"speculative_algorithm": "DFLASH"},
-		{"speculative_algorithm": "NGRAM"},
 		{"speculative_algorithm": "EAGLE3", "speculative_draft_model_path": "org/eagle3-draft"},
 	} {
 		_, err := Resolve(in.with(set))
@@ -105,4 +103,20 @@ func (e eagleInput) with(set map[string]any) Input {
 		args[k] = v
 	}
 	return Input{Args: args, Chip: e.Chip, Model: e.Model}
+}
+
+// An algorithm outside the EAGLE family is refused by name citing the open issue that models it, not
+// the EAGLE issue, which closes when the EAGLE family is modelled and would leave the refusal citing a
+// closed issue (X28). DSPARK has its own; the others are the surface list's remainder (Stage 9).
+func TestOtherSpeculativeAlgorithmsCiteTheirOwnIssue(t *testing.T) {
+	in := eagleReference(t)
+	for algo, issue := range map[string]string{
+		"STANDALONE": "2460", "NGRAM": "2460", "DFLASH": "2460", "UNO": "2460", "FROZEN_KV_MTP": "2460", "DSPARK": "2454",
+	} {
+		_, err := Resolve(in.with(map[string]any{"speculative_algorithm": algo}))
+		var nm *NotModelled
+		if !errors.As(err, &nm) || nm.Issue != "inference-sim/inference-sim#"+issue {
+			t.Errorf("%s: got %v, want NotModelled citing inference-sim/inference-sim#%s", algo, err, issue)
+		}
+	}
 }

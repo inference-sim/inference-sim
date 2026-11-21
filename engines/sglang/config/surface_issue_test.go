@@ -38,6 +38,7 @@ func TestSurfaceListCitesTheIssueTheSettingRefusalCites(t *testing.T) {
 		"transfer_backend":     "disaggregation_transfer_backend",
 		"moe_a2a_backend":      "moe_a2a_backend",
 		"pd_allocation_policy": "disaggregation_decode_allocation_policy",
+		"spec_algo":            "speculative_algorithm",
 	}
 	external := map[string]bool{"hicache_storage:dynamic": true, "moe_a2a_backend:customized": true}
 	known := map[string]bool{}
@@ -75,7 +76,56 @@ func TestSurfaceListCitesTheIssueTheSettingRefusalCites(t *testing.T) {
 		}
 		checked++
 	}
-	if checked < 40 {
+	if checked < 45 {
 		t.Fatalf("only %d surface items were held to a setting refusal", checked)
+	}
+}
+
+// The worker class and the argument-resolution handler an algorithm selects are refused with the
+// algorithm (the surface list cites the issue the refusal of speculative_algorithm cites). The
+// EAGLE family is accepted at the setting, and its items cite the issue that models it.
+func TestSurfaceSpeculativeWorkersCiteTheirAlgorithmsIssue(t *testing.T) {
+	raw, err := os.ReadFile("../surface.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Items []struct {
+			ID    string `json:"id"`
+			Issue string `json:"issue"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	algorithmOf := map[string]string{
+		"spec_worker:DFlashWorkerV2":                  "DFLASH",
+		"spec_worker:UnoWorkerV2":                     "UNO",
+		"spec_worker:DSparkWorkerV2":                  "DSPARK",
+		"spec_worker:FrozenKVMTPWorkerV2":             "FROZEN_KV_MTP",
+		"spec_worker:StandaloneWorkerV2":              "STANDALONE",
+		"spec_worker:NGRAMWorker":                     "NGRAM",
+		"spec_running_requests:_handle_dflash":        "DFLASH",
+		"spec_running_requests:_handle_dspark":        "DSPARK",
+		"spec_running_requests:_handle_frozen_kv_mtp": "FROZEN_KV_MTP",
+		"spec_running_requests:_handle_ngram":         "NGRAM",
+		"drafter_arch:DeepseekV4ForCausalLMDSpark":    "DSPARK",
+	}
+	seen := map[string]bool{}
+	for _, it := range doc.Items {
+		algo, ok := algorithmOf[it.ID]
+		if !ok {
+			continue
+		}
+		seen[it.ID] = true
+		want := "https://github.com/" + strings.Replace(ValueRefusalIssue("speculative_algorithm", algo), "#", "/issues/", 1)
+		if it.Issue != want {
+			t.Errorf("%s: the list cites %s, but refusing speculative_algorithm=%s cites %s", it.ID, it.Issue, algo, want)
+		}
+	}
+	for id := range algorithmOf {
+		if !seen[id] {
+			t.Errorf("%s is not in the surface list", id)
+		}
 	}
 }

@@ -92,7 +92,7 @@
   },
   "drafter_arch:DeepseekV4ForCausalLMDSpark": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2454"
   },
   "drafter_arch:DeepseekV4ForCausalLMNextN": {
    "status": "refused",
@@ -2016,11 +2016,11 @@
   },
   "spec_algo:DFLASH": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   "spec_algo:DSPARK": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2454"
   },
   "spec_algo:EAGLE": {
    "status": "refused",
@@ -2032,7 +2032,7 @@
   },
   "spec_algo:FROZEN_KV_MTP": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   "spec_algo:NEXTN": {
    "status": "refused",
@@ -2040,23 +2040,23 @@
   },
   "spec_algo:NGRAM": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   "spec_algo:STANDALONE": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   "spec_algo:UNO": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   "spec_running_requests:_handle_dflash": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   "spec_running_requests:_handle_dspark": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2454"
   },
   "spec_running_requests:_handle_eagle_family": {
    "status": "refused",
@@ -2064,19 +2064,19 @@
   },
   "spec_running_requests:_handle_frozen_kv_mtp": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   "spec_running_requests:_handle_ngram": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   "spec_worker:DFlashWorkerV2": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   "spec_worker:DSparkWorkerV2": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2454"
   },
   "spec_worker:EAGLEWorkerV2": {
    "status": "refused",
@@ -2084,7 +2084,7 @@
   },
   "spec_worker:FrozenKVMTPWorkerV2": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   "spec_worker:MultiLayerEagleWorkerV2": {
    "status": "refused",
@@ -2092,15 +2092,15 @@
   },
   "spec_worker:NGRAMWorker": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   "spec_worker:StandaloneWorkerV2": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   "spec_worker:UnoWorkerV2": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
   "transfer_backend:ascend": {
    "status": "out_of_scope",
