@@ -15,6 +15,7 @@ func cloneLowered(l plan.Lowered) plan.Lowered {
 	l.Notes = slices.Clone(l.Notes)
 	l.Plan.Graphs.Buckets = slices.Clone(l.Plan.Graphs.Buckets)
 	l.Plan.Launches = slices.Clone(l.Plan.Launches)
+	l.Plan.Collectives.Runs = slices.Clone(l.Plan.Collectives.Runs)
 	if w := l.ServedLayout; w != nil {
 		c := *w
 		l.ServedLayout = &c

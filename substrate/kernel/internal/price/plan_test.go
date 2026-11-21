@@ -1,6 +1,7 @@
 package price
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
@@ -10,25 +11,20 @@ import (
 // node. Used where a test is about planning rather than about resolution.
 type emitAll struct{}
 
-func (emitAll) Emits(model.EmitCondition) bool { return true }
-func (emitAll) Recognizes(c model.EmitCondition) bool {
-	return c.Valid()
-}
+func (emitAll) Runs(string, model.Node) (bool, error) { return true, nil }
 
 // emitNone drops every conditional node, which is the single-rank layout.
 type emitNone struct{}
 
-func (emitNone) Emits(c model.EmitCondition) bool { return c == model.EmitAlways }
-func (emitNone) Recognizes(c model.EmitCondition) bool {
-	return c.Valid()
-}
+func (emitNone) Runs(string, model.Node) (bool, error) { return false, nil }
 
-// emitUnknown recognizes nothing, standing in for a resolver that meets a condition it
-// cannot evaluate.
+// emitUnknown decides nothing, standing in for an emitter that is asked about a node it has no
+// decision for.
 type emitUnknown struct{}
 
-func (emitUnknown) Emits(model.EmitCondition) bool      { return false }
-func (emitUnknown) Recognizes(model.EmitCondition) bool { return false }
+func (emitUnknown) Runs(string, model.Node) (bool, error) {
+	return false, fmt.Errorf("no decision for this node")
+}
 
 // hybridGraph mirrors the widest model in the catalog: 108 layers over three kinds, which
 // is the case that shows why a plan aggregates by kind.
@@ -500,7 +496,7 @@ func TestDenseGEMMShardAxisComesFromTheGraph(t *testing.T) {
 		// shapes correctly and this one wrongly.
 		{Op: model.OpGEMM, Role: "index_qk_proj", N: 640, K: hidden},
 	}
-	pl, err := planNodes(nodes, emitAll{}, testOptions(1, 1), hidden)
+	pl, err := planNodes("", nodes, emitAll{}, testOptions(1, 1), hidden)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,7 +521,7 @@ func TestDenseGEMMShardAxisComesFromTheGraph(t *testing.T) {
 // hidden size recorded must not claim a classification it cannot make: the consumer then
 // shards the reduction, which is what it did before this field existed.
 func TestDenseGEMMShardAxisFallsBackWithoutHidden(t *testing.T) {
-	pl, err := planNodes([]model.Node{
+	pl, err := planNodes("", []model.Node{
 		{Op: model.OpGEMM, Role: "unknown", N: 4096, K: 4096},
 	}, emitAll{}, testOptions(1, 1), 0)
 	if err != nil {
@@ -552,7 +548,7 @@ func TestConsecutiveColumnParallelGEMMsFuse(t *testing.T) {
 	const hidden = 6144
 	plan := func(nodes ...model.Node) PlannedLayer {
 		t.Helper()
-		pl, err := planNodes(nodes, emitAll{}, testOptions(1, 1), hidden)
+		pl, err := planNodes("", nodes, emitAll{}, testOptions(1, 1), hidden)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -621,7 +617,7 @@ func testOptions(dtypeBytes, stateBytes float64) PlanOptions {
 // false, none reads the engine's cache -- is refused rather than planned with its attention
 // unpriced.
 func TestALayerWithAttentionButNoPrimaryIsRefused(t *testing.T) {
-	_, err := planNodes([]model.Node{
+	_, err := planNodes("", []model.Node{
 		{Op: model.OpAttention, HoldsEngineKV: model.Bool(false), Role: "attention", AttentionKind: model.AttentionGQA,
 			NumQHeads: 8, NumKVHeads: 8, HeadDim: 128},
 	}, emitAll{}, testOptions(2, 4), 1024)
@@ -635,7 +631,7 @@ func TestALayerWithAttentionButNoPrimaryIsRefused(t *testing.T) {
 func TestConflictingExpertFormatsAreRefused(t *testing.T) {
 	o := testOptions(1, 4)
 	o.Format = func(n model.Node) Format { return Format{DType: n.WeightDType} }
-	_, err := planNodes([]model.Node{
+	_, err := planNodes("", []model.Node{
 		{Op: model.OpGroupedGEMM, Shared: model.Bool(false), N: 512, K: 1024, Experts: 64, TopK: 4,
 			WeightDType: model.DTypeFP8},
 		{Op: model.OpGroupedGEMM, Shared: model.Bool(false), N: 512, K: 1024, Experts: 64, TopK: 4,
@@ -664,7 +660,7 @@ func TestTheMoEDispatchCarriesTheLatentWidth(t *testing.T) {
 		{"no latent", []model.Node{{Op: model.OpGroupedGEMM, Shared: model.Bool(false), N: 4096, K: hidden, Experts: 256, TopK: 8}, a2a},
 			hidden * ActivationBytes},
 	} {
-		pl, err := planNodes(c.nodes, emitAll{}, PlanOptions{
+		pl, err := planNodes("", c.nodes, emitAll{}, PlanOptions{
 			WeightBytesPerParam: func(model.Node) float64 { return 2 },
 			Format:              func(model.Node) Format { return Format{DType: model.DTypeBF16} },
 		}, hidden)
@@ -709,7 +705,7 @@ func TestGatedDeltaNetInputProjectionsAreTwoMatmuls(t *testing.T) {
 	const hidden = 4096
 	plan := func(nodes ...model.Node) PlannedLayer {
 		t.Helper()
-		pl, err := planNodes(nodes, emitAll{}, testOptions(1, 1), hidden)
+		pl, err := planNodes("", nodes, emitAll{}, testOptions(1, 1), hidden)
 		if err != nil {
 			t.Fatal(err)
 		}

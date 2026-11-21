@@ -141,7 +141,7 @@ func withPlan(in Inputs, f func(*plan.Lowered)) Inputs {
 	l := cloneLowered(*in.Lowered)
 	f(&l)
 	in.Lowered = &l
-	return in
+	return completeRuns(in)
 }
 
 // drafting is in with a plan that drafts n tokens a step.

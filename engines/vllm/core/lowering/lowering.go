@@ -227,6 +227,15 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 	}
 	p.Collectives = plan.CollectivePlan{SequenceParallelMoE: lay.SequenceParallelMoE,
 		SequenceParallelModel: lay.ModelSequenceParallel}
+	targetKinds, draftKinds := g.LayerKinds, []model.LayerKind(nil)
+	if in.Draft != nil {
+		targetKinds, draftKinds = withoutSpeculatorKinds(g), c.speculatorKinds
+	}
+	runs, err := collectiveRuns(lay, g, sp, draftKinds, targetKinds)
+	if err != nil {
+		return nil, err
+	}
+	p.Collectives.Runs = runs
 	out.Reported.SMAllReduce = lay.CustomAllReduce
 	out.Encoder = encoderRun(eng, g, pl.TP, pl.PP)
 

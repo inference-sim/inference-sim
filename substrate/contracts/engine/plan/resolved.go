@@ -161,6 +161,41 @@ type CollectivePlan struct {
 	// Unstated is read from ReportedSettings.SMAllReduce: true is AllReduceCustom, false is
 	// AllReduceNCCL, which is what an engine that predates this field states.
 	AllReduce AllReduceBackend
+	// Runs states, for each collective node of the pool's model graph, whether the engine
+	// runs it under this layout. Which collectives an engine's layers launch -- an all-reduce
+	// where the layout is tensor-parallel, an all-gather and reduce-scatter where its
+	// sequence-parallel mode replaces it, an all-to-all where its MoE dispatch runs -- is the
+	// engine's lowering of the model (SUB-15), so the cost model asks this list rather than
+	// evaluating a condition of its own (SUB-6). A collective node of the graph that the pool
+	// runs and that has no entry is refused.
+	Runs []CollectiveRun
+}
+
+// The parts of a graph outside its layer kinds that a CollectiveRun can name as its Section.
+const (
+	SectionHead           = "head"
+	SectionEmbedding      = "embedding"
+	SectionDraftEmbedding = "draft_embedding"
+	SectionDraftHead      = "draft_head"
+	SectionDraftSeqHead   = "draft_sequential_head"
+	sectionLayerPrefix    = "layer:"
+	// DraftKindPrefix is how a drafter that is a checkpoint of its own names its layer kinds
+	// once it joins the target graph, so neither graph's kind ids collide.
+	DraftKindPrefix = "draft."
+)
+
+// LayerSection is the Section of a layer kind's nodes, by the kind's id as the pool's graph
+// names it. A drafter's kinds join the target graph under DraftKindPrefix, and that is the id here.
+func LayerSection(kindID string) string { return sectionLayerPrefix + kindID }
+
+// CollectiveRun is whether one collective node of the pool's model graph runs. A node is named
+// by the part of the graph it is in (Section), its primitive (Op: AllReduce, AllGather,
+// ReduceScatter or All2All) and its Role, which together are unique in a graph.
+type CollectiveRun struct {
+	Section string
+	Op      string
+	Role    string
+	Runs    bool
 }
 
 // AllReduceBackend is the kernel that runs a tensor-parallel all-reduce, in neutral words.
@@ -314,6 +349,19 @@ func (p PoolPlan) ValidateResolved() error {
 		for j := range i {
 			if p.TokenShardedRoles[j] == r {
 				bad = append(bad, fmt.Sprintf("TokenShardedRoles[%d] names role %q, which TokenShardedRoles[%d] already does", i, r, j))
+			}
+		}
+	}
+	for i, r := range p.Collectives.Runs {
+		switch {
+		case r.Section == "" || r.Op == "":
+			bad = append(bad, fmt.Sprintf("Collectives.Runs[%d] names no section or no op", i))
+		case r.Op != "AllReduce" && r.Op != "AllGather" && r.Op != "ReduceScatter" && r.Op != "All2All":
+			bad = append(bad, fmt.Sprintf("Collectives.Runs[%d] names op %q, which is not a collective", i, r.Op))
+		}
+		for j := range i {
+			if o := p.Collectives.Runs[j]; o.Section == r.Section && o.Op == r.Op && o.Role == r.Role {
+				bad = append(bad, fmt.Sprintf("Collectives.Runs[%d] names %s %q in %q, which Collectives.Runs[%d] already does", i, r.Op, r.Role, r.Section, j))
 			}
 		}
 	}

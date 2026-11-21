@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
@@ -485,11 +486,13 @@ type PlannedCollective struct {
 	RoutedByTopK  bool
 }
 
-// Emitter decides whether a conditional node survives. The resolver implements it; the
-// plan takes it as a parameter so this package does not depend on the resolver.
+// Emitter decides whether a conditional node survives. The caller implements it from what the
+// engine stated; the plan takes it as a parameter so this package does not depend on the
+// caller. Section names the part of the graph the node is in (plan.LayerSection of a layer
+// kind's id, or one of the plan.Section words). An error is a node the emitter has no decision
+// for, which the plan refuses rather than price with the node quietly present or missing.
 type Emitter interface {
-	Emits(model.EmitCondition) bool
-	Recognizes(model.EmitCondition) bool
+	Runs(section string, n model.Node) (bool, error)
 }
 
 // ActivationBytes is the width an activation crosses a collective or a normalization at:
@@ -592,7 +595,7 @@ func BuildPlanWith(g *model.Graph, em Emitter, o PlanOptions) (*Plan, error) {
 	}
 	p.Layers, p.TotalKernels = layers, kernels
 
-	head, err := planNodes(g.Head, em, o, hidden)
+	head, err := planNodes(plan.SectionHead, g.Head, em, o, hidden)
 	if err != nil {
 		return nil, fmt.Errorf("head: %w", err)
 	}
@@ -602,7 +605,7 @@ func BuildPlanWith(g *model.Graph, em Emitter, o PlanOptions) (*Plan, error) {
 	p.TotalKernels += head.Kernels
 
 	if len(g.Embedding) > 0 {
-		emb, err := planNodes(g.Embedding, em, o, hidden)
+		emb, err := planNodes(plan.SectionEmbedding, g.Embedding, em, o, hidden)
 		if err != nil {
 			return nil, fmt.Errorf("embedding: %w", err)
 		}
@@ -632,14 +635,14 @@ func BuildPlanWith(g *model.Graph, em Emitter, o PlanOptions) (*Plan, error) {
 			into  *PlannedLayer
 			id    string
 		}{
-			{sp.Embedding, &d.Embedding, "draft_embedding"},
-			{sp.Head, &d.Head, "draft_head"},
-			{sp.SequentialHead, &d.SequentialHead, "draft_sequential_head"},
+			{sp.Embedding, &d.Embedding, plan.SectionDraftEmbedding},
+			{sp.Head, &d.Head, plan.SectionDraftHead},
+			{sp.SequentialHead, &d.SequentialHead, plan.SectionDraftSeqHead},
 		} {
 			if len(part.nodes) == 0 {
 				continue
 			}
-			pl, err := planNodes(part.nodes, em, o, hidden)
+			pl, err := planNodes(part.id, part.nodes, em, o, hidden)
 			if err != nil {
 				return nil, fmt.Errorf("speculator %s: %w", part.id, err)
 			}
@@ -672,7 +675,7 @@ func planStack(st model.Stack, byID map[string]model.LayerKind, em Emitter, o Pl
 		if !ok {
 			return nil, 0, fmt.Errorf("the stack names layer kind %q, which the graph does not declare", id)
 		}
-		pl, err := planNodes(lk.Nodes, em, o, hidden)
+		pl, err := planNodes(plan.LayerSection(id), lk.Nodes, em, o, hidden)
 		if err != nil {
 			return nil, 0, fmt.Errorf("layer kind %q: %w", id, err)
 		}
@@ -720,7 +723,7 @@ func weightBytes(n model.Node, global float64) float64 {
 	return global
 }
 
-func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
+func planNodes(section string, nodes []model.Node, em Emitter, o PlanOptions,
 	hidden int) (PlannedLayer, error) {
 	var pl PlannedLayer
 	// routedSet and sharedSet record that an expert format was taken, so a second node
@@ -759,23 +762,28 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 			routedExperts = n.Experts
 		}
 	}
-	for _, n := range nodes {
-		if !n.IsSharedExpert() && n.Op == model.OpGroupedGEMM &&
-			n.LatentSize > 0 && (n.Emit == model.EmitAlways || em.Emits(n.Emit)) {
+	// runs is the engine's decision for each node whose existence depends on the layout. A
+	// node with no condition runs; one with a condition runs where the emitter says so.
+	runs := make([]bool, len(nodes))
+	for i, n := range nodes {
+		runs[i] = true
+		if n.Emit == model.EmitAlways {
+			continue
+		}
+		r, err := em.Runs(section, n)
+		if err != nil {
+			return pl, err
+		}
+		runs[i] = r
+	}
+	for i, n := range nodes {
+		if runs[i] && !n.IsSharedExpert() && n.Op == model.OpGroupedGEMM && n.LatentSize > 0 {
 			dispatchWidth = n.LatentSize
 		}
 	}
-	for _, n := range nodes {
-		if n.Emit != model.EmitAlways {
-			if !em.Recognizes(n.Emit) {
-				return pl, fmt.Errorf(
-					"node %s carries condition %q, which this resolver cannot evaluate; "+
-						"pricing it would either drop a cost or invent one",
-					n.Op, n.Emit)
-			}
-			if !em.Emits(n.Emit) {
-				continue
-			}
+	for i, n := range nodes {
+		if !runs[i] {
+			continue
 		}
 		// Every surviving node launches at least one kernel. Counted here, once, so a
 		// conditional node that was resolved away costs no launch either.

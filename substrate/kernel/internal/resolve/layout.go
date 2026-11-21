@@ -5,7 +5,6 @@ import (
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 
-	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
 )
 
@@ -170,57 +169,4 @@ func ResolveGeometry(pk scenario.Packaging, pool deployment.Pool, fab Fabric) (L
 		l.NodesSpanned = 1
 	}
 	return l, nil
-}
-
-// Emits reports whether a conditional node is part of the graph under this layout.
-//
-// This is the whole of the condition evaluation, and it is a switch rather than an
-// expression evaluator. The graph names which question to ask; the layout answers it. A
-// condition the graph could state and this function could not answer is impossible,
-// because the schema's enum and this switch are the same closed set.
-func (l Layout) Emits(c model.EmitCondition) bool {
-	switch c {
-	case model.EmitAlways:
-		return true
-	case model.EmitTensorParallel:
-		return l.TP > 1
-	case model.EmitExpertParallel:
-		// The MoE dispatch and combine. blis-schemas words the condition as the
-		// expert-parallel width exceeding one; the engine is what this answers for, and
-		// it dispatches only where MoEDispatches says.
-		return l.MoEDispatches()
-	case model.EmitTensorParallelUnlessSequenceParallelMoE:
-		return l.TP > 1 && !l.SequenceParallelMoE
-	case model.EmitSequenceParallel:
-		return l.ModelSequenceParallel
-	case model.EmitTensorParallelUnlessSequenceParallel:
-		return l.TP > 1 && !l.ModelSequenceParallel
-	case model.EmitTensorParallelWithoutExpertParallel:
-		// The experts are sharded by tensor parallelism only while expert parallelism is
-		// off; under it every expert is whole on one rank (FusedMoEParallelConfig.make,
-		// vllm/model_executor/layers/fused_moe/config.py: ep_size = tp_size, tp_size = 1).
-		return l.TP > 1 && l.ExpertWidth <= 1
-	case model.EmitExpertParallelWithoutDispatch:
-		// Expert parallelism over a group that holds every token: no all-to-all moves them
-		// (MoEDispatches is false), so each rank's partial expert output is all-reduced
-		// across the group, which is the tensor-parallel group here.
-		return l.ExpertWidth > 1 && l.TP > 1 && !l.MoEDispatches()
-	}
-	// An unrecognized condition answers false here, but it never reaches this line from
-	// the pricer: BuildPlan asks Recognizes first and rejects the graph, because silently
-	// dropping a node would remove a cost with nothing reporting it.
-	return false
-}
-
-// Recognizes reports whether Emits can answer a condition, so a resolver can reject a
-// graph rather than price it with a node quietly missing.
-func Recognizes(c model.EmitCondition) bool {
-	switch c {
-	case model.EmitAlways, model.EmitTensorParallel, model.EmitExpertParallel,
-		model.EmitTensorParallelUnlessSequenceParallelMoE, model.EmitSequenceParallel,
-		model.EmitTensorParallelUnlessSequenceParallel,
-		model.EmitTensorParallelWithoutExpertParallel, model.EmitExpertParallelWithoutDispatch:
-		return true
-	}
-	return false
 }
