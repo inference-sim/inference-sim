@@ -334,6 +334,10 @@ func TestCeilingLawSurvivesCheapEagerLaunches(t *testing.T) {
 		for j := range c.Coefficients {
 			if strings.HasPrefix(c.Coefficients[j].Name, "host_launch_eager") {
 				c.Coefficients[j].Value *= 1e-3
+				if ci := c.Coefficients[j].CI95; ci != nil {
+					// The interval scales with the value, or the documents no longer validate.
+					c.Coefficients[j].CI95 = &coefficient.Interval{Low: ci.Low * 1e-3, High: ci.High * 1e-3}
+				}
 			}
 		}
 		in.Coefficients[i] = &c
