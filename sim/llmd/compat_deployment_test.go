@@ -96,6 +96,14 @@ func compatEngineFactory(pd bool) func(int, sim.InstanceConfig) (*sim.EngineDriv
 // compatEngineFactoryWith is compatEngineFactory with the price each driver's Environment gives a
 // handoff.
 func compatEngineFactoryWith(pd bool, ticks func(tokens int64) int64) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
+	return compatEngineFactoryStating(pd, ticks, "enable_scale_out: true\n")
+}
+
+// compatEngineFactoryStating is compatEngineFactoryWith with engine-block lines (vLLM setting
+// names) the engines are built with. The default states enable_scale_out, which a router config
+// with a render token-producer needs of the engines it routes to (inference-sim#2129); a test of
+// the engines without it passes none.
+func compatEngineFactoryStating(pd bool, ticks func(tokens int64) int64, extra string) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
 	driver := func(eng engine.Engine, cfg cengine.SimConfig) (*sim.EngineDriver, error) {
 		var pull env.Environment = testutil.FixedPull(cfg.BlockSizeTokens, func(tokens int64, _, _ plan.Endpoint) int64 { return ticks(tokens) })
 		dcfg := sim.EngineDriverConfig{Horizon: cfg.Horizon,
@@ -112,7 +120,7 @@ func compatEngineFactoryWith(pd bool, ticks func(tokens int64) int64) func(int, 
 	}
 	return func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
 		cfg := engineConfigIn(ic)
-		eng, err := vllmtest.Engine(cfg, vllmtest.Options{Connector: pd, Index: index})
+		eng, err := vllmtest.Engine(cfg, vllmtest.Options{Connector: pd, Index: index, Extra: extra})
 		if err != nil {
 			return nil, err
 		}

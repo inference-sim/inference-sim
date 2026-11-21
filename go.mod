@@ -15,6 +15,7 @@ require (
 	k8s.io/api v0.37.1
 	k8s.io/apimachinery v0.37.1
 	pgregory.net/rapid v1.2.0
+	sigs.k8s.io/controller-runtime v0.25.2
 	sigs.k8s.io/yaml v1.6.0
 )
 
@@ -118,7 +119,6 @@ require (
 	k8s.io/streaming v0.37.1 // indirect
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.36.0 // indirect
-	sigs.k8s.io/controller-runtime v0.25.2 // indirect
 	sigs.k8s.io/gateway-api-inference-extension v1.6.2 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect

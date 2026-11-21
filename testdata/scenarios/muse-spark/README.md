@@ -62,8 +62,9 @@ llm-d router configuration of internal deployment measurements,
 - `token-load-scorer`;
 - flow control, holding requests once a pod has 32 in flight or a queue builds.
 
-The deployment's pod discovery and service URL are replaced by the simulated pool. Run them
-with `--num-instances 2`.
+The deployment's pod discovery and service URL are replaced by the simulated pool. The router
+calls the engines' render endpoints, which vLLM answers only with `--enable-scale-out`, so each
+file states `enable_scale_out: true`. Run them with `--num-instances 2`.
 
 | File | Layout |
 |---|---|
