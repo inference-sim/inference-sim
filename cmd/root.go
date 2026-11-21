@@ -1224,6 +1224,9 @@ var runCmd = &cobra.Command{
 				Router: router.header(gw.Seed()),
 				// #1926: the stages the run ran in, so a replay sends them drain-gated too.
 				Phases: spec.TracePhases(),
+				// #2115 (DEV-7): the workload's acceptance terms, so a replay resolves the
+				// profile this run did. Nil, and so omitted, when the workload states none.
+				Acceptance: workloadAcceptance,
 			}
 			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
