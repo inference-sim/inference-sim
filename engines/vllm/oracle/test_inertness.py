@@ -162,6 +162,42 @@ class Controls(unittest.TestCase):
         self.assertEqual(r["verdict"], "not_inert")
         self.assertIn("vllm/envs.py", r["problems"][0])
 
+    def test_a_named_site_the_proof_does_not_list_fails(self):
+        spec = copy.deepcopy(proof("HF_HUB_CACHE"))
+        dropped = spec["sites"]["HF_HUB_CACHE"].pop()
+        r = self.h.evaluate_named(ROOT, spec)
+        self.assertEqual(r["verdict"], "not_inert")
+        want = "HF_HUB_CACHE is named at %s:%d and the proof does not list it" % (dropped["file"], dropped["line"])
+        self.assertIn(want, r["problems"])
+
+    def test_a_named_site_the_source_does_not_hold_fails(self):
+        spec = copy.deepcopy(proof("HF_HUB_CACHE"))
+        spec["sites"]["HF_HUB_CACHE"].append(
+            {"file": "vllm/envs.py", "line": 1, "text": "HF_HUB_CACHE", "role": "load"})
+        r = self.h.evaluate_named(ROOT, spec)
+        self.assertIn("HF_HUB_CACHE is listed at vllm/envs.py:1 and is not named there", r["problems"])
+
+    def test_a_named_site_with_the_wrong_role_fails(self):
+        spec = copy.deepcopy(proof("HF_HUB_CACHE"))
+        for site in spec["sites"]["HF_HUB_CACHE"]:
+            if site["role"] == "test":
+                site["role"] = "load"
+        r = self.h.evaluate_named(ROOT, spec)
+        self.assertTrue([p for p in r["problems"] if "is listed as load code and follows a #[cfg(test)] line" in p],
+                        r["problems"])
+        spec = copy.deepcopy(proof("HF_HUB_CACHE"))
+        for site in spec["sites"]["HF_HUB_CACHE"]:
+            if site["role"] == "load":
+                site["role"] = "test"
+        r = self.h.evaluate_named(ROOT, spec)
+        self.assertTrue([p for p in r["problems"] if "is listed as test code and does not follow" in p], r["problems"])
+
+    def test_a_named_site_whose_line_changed_fails(self):
+        spec = copy.deepcopy(proof("HF_HUB_CACHE"))
+        spec["sites"]["HF_HUB_CACHE"][0]["text"] = "something else"
+        r = self.h.evaluate_named(ROOT, spec)
+        self.assertTrue([p for p in r["problems"] if "the proof lists 'something else'" in p], r["problems"])
+
     def test_a_read_with_no_disposition_fails(self):
         spec = copy.deepcopy(proof("stream_interval"))
         spec["runs"] = []

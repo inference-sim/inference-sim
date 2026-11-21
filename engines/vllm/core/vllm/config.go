@@ -883,8 +883,10 @@ var readEnv = append([]string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER", "UCX
 // inertEnv are the environment variables the engine accepts without reading: fields.json proves each
 // inert (oracle/inertness/<name>.json), so stating one changes nothing the engine decides. Python
 // reads PYTHONUNBUFFERED to write its standard streams unbuffered; vLLM's serving process names it
-// nowhere.
-var inertEnv = []string{"PYTHONUNBUFFERED"}
+// nowhere. HF_HUB_CACHE, HUGGINGFACE_HUB_CACHE and TRANSFORMERS_CACHE name the directory model files
+// are looked for in while the model is loaded: they change where a load reads, not what a step costs
+// (the proofs cite the read sites), and the engine has no model files to look for.
+var inertEnv = []string{"PYTHONUNBUFFERED", "HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE", "TRANSFORMERS_CACHE"}
 
 // unreadEnv are env's keys this engine neither reads nor knows to be inert, sorted.
 func unreadEnv(env map[string]string) []string {

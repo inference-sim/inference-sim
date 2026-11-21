@@ -17,6 +17,12 @@ after --write, the result. Runs:
   A proof file may instead be of kind "unread": {"kind": "unread", "names": [...]}, for a variable no file of
   the serving process (vllm/, csrc/, rust/) names; the result lists the files scanned.
 
+  A proof file of kind "named" is for a variable the serving process names only at the sites the file lists,
+  each a reviewed static fact: {"kind": "named", "names": [...], "sites": {name: [{"file", "line", "text",
+  "role"}]}}. The role is "load" (a site on the model-file path, run before the first request) or "test"
+  (after the file's first #[cfg(test)] line, which the harness checks). The check fails when the source
+  names the variable anywhere the file does not list, or a listed site is not there.
+
   scheduler   vLLM's real Scheduler on an oracle scenario (oracle/run_scheduler.py) with the probe applied
               through the scenario's scheduler_config; the trace without provenance is the decisions.
   config      EngineArgs(...).create_engine_config(): the value the field resolves to and what the
@@ -597,6 +603,67 @@ def evaluate_unread(vllm_root, spec):
     return result
 
 
+def evaluate_named(vllm_root, spec):
+    """A proof of kind "named": the serving process names each variable only at the sites the proof lists. Every
+    line of every text file under vllm/, csrc/ and rust/ is searched for the name as a whole word; the lines
+    found must equal the listed sites (file, line and text), and a site with role "test" must follow the first
+    #[cfg(test)] line of its Rust file. That each "load" site is on the model-file path is the reviewed
+    claim of the proof; the harness holds the list to the tree."""
+    import re
+
+    root = os.path.realpath(vllm_root)
+    pats = {n: re.compile(r"\b%s\b" % re.escape(n)) for n in spec["names"]}
+    found = {n: [] for n in spec["names"]}
+    first_test = {}
+    scanned = 0
+    for top in ("vllm", "csrc", "rust"):
+        for dirpath, _, files in os.walk(os.path.join(root, top)):
+            for fn in sorted(files):
+                path = os.path.join(dirpath, fn)
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        lines = f.read().split("\n")
+                except (UnicodeDecodeError, OSError):
+                    continue
+                scanned += 1
+                rel = os.path.relpath(path, root)
+                for i, line in enumerate(lines, 1):
+                    if rel.endswith(".rs") and rel not in first_test and line.strip() == "#[cfg(test)]":
+                        first_test[rel] = i
+                    for n, pat in pats.items():
+                        if pat.search(line):
+                            found[n].append({"file": rel, "line": i, "text": line.strip()})
+    problems = []
+    occurrences = {}
+    for n in spec["names"]:
+        found[n].sort(key=lambda o: (o["file"], o["line"]))
+        listed = spec.get("sites", {}).get(n, [])
+        by_at = {(s["file"], s["line"]): s for s in listed}
+        occurrences[n] = []
+        for o in found[n]:
+            s = by_at.pop((o["file"], o["line"]), None)
+            if s is None:
+                problems.append("%s is named at %s:%d and the proof does not list it" % (n, o["file"], o["line"]))
+                continue
+            role = s.get("role")
+            if s.get("text") != o["text"]:
+                problems.append("%s at %s:%d reads %r, the proof lists %r" % (n, o["file"], o["line"], o["text"], s.get("text")))
+            if role == "test" and not (o["file"] in first_test and o["line"] > first_test[o["file"]]):
+                problems.append("%s at %s:%d is listed as test code and does not follow a #[cfg(test)] line" % (n, o["file"], o["line"]))
+            elif role == "load" and o["file"] in first_test and o["line"] > first_test[o["file"]]:
+                problems.append("%s at %s:%d is listed as load code and follows a #[cfg(test)] line" % (n, o["file"], o["line"]))
+            elif role not in ("load", "test"):
+                problems.append("%s at %s:%d has role %r, not load or test" % (n, o["file"], o["line"], role))
+            occurrences[n].append({"file": o["file"], "line": o["line"], "role": role})
+        for (f, ln) in sorted(by_at):
+            problems.append("%s is listed at %s:%d and is not named there" % (n, f, ln))
+    result = {"vllm_commit": spec["release"], "files_scanned": scanned, "occurrences": occurrences, "problems": problems}
+    if scanned < 1000:
+        result["problems"].append("only %d files were scanned: the checkout is not a vLLM tree" % scanned)
+    result["verdict"] = "inert" if not result["problems"] else "not_inert"
+    return result
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -604,7 +671,13 @@ def main(argv):
     vllm_root, path = argv[0], argv[1]
     with open(path, encoding="utf-8") as f:
         spec = json.load(f)
-    result = evaluate_unread(vllm_root, spec) if spec.get("kind") == "unread" else evaluate(vllm_root, spec)
+    kind = spec.get("kind")
+    if kind == "unread":
+        result = evaluate_unread(vllm_root, spec)
+    elif kind == "named":
+        result = evaluate_named(vllm_root, spec)
+    else:
+        result = evaluate(vllm_root, spec)
     if "--check" in argv:
         if spec.get("result") != result:
             sys.stderr.write("inertness: %s differs from what the harness computes now\n" % path)

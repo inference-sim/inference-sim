@@ -401,9 +401,18 @@
     {
       "name": "HF_HUB_CACHE",
       "source": "env",
-      "status": "not_modelled",
+      "status": "proven_inert",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
+        "proof": "oracle/inertness/HF_HUB_CACHE.json"
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "/hf_hub_cache"
+        ],
+        "covered": [
+          "/hf_hub_cache"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -459,6 +468,26 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "HUGGINGFACE_HUB_CACHE",
+      "source": "env",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "oracle/inertness/HUGGINGFACE_HUB_CACHE.json"
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "/hf_hub_cache"
+        ],
+        "covered": [
+          "/hf_hub_cache"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -1757,6 +1786,26 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "TRANSFORMERS_CACHE",
+      "source": "env",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "oracle/inertness/TRANSFORMERS_CACHE.json"
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "/hf_hub_cache"
+        ],
+        "covered": [
+          "/hf_hub_cache"
+        ]
       },
       "estimation": {
         "rule": "none"

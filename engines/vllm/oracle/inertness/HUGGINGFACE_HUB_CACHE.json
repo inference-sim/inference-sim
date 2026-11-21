@@ -1,0 +1,25 @@
+{
+ "field": "HUGGINGFACE_HUB_CACHE",
+ "kind": "unread",
+ "release": "0.34.0+0fda86a35419 0fda86a35419c9c70dbfada224c838c10fbb62ad",
+ "claim": "Reviewed static fact, not a run of vLLM's code: no file of vLLM's serving process (vllm/, csrc/, rust/) names HUGGINGFACE_HUB_CACHE; the result lists the files the scan read. The huggingface_hub library reads it when it is imported (huggingface_hub/constants.py:173 at huggingface_hub 2.0.0, the lowest version the pin's requirements/common.txt admits), as the default of HF_HUB_CACHE (constants.py:177-181), the directory model files are cached in. vLLM's two load-time uses of HF_HUB_CACHE are those of the HF_HUB_CACHE proof, so the variable only chooses where model files are looked for before the first request, and no step, admission or KV-budget decision of the engine follows from it.",
+ "argument": "reviewed_static_fact",
+ "names": [
+  "HUGGINGFACE_HUB_CACHE"
+ ],
+ "probes": [
+  {
+   "label": "the directory the recorded runs state",
+   "value": "/hf_hub_cache"
+  }
+ ],
+ "result": {
+  "vllm_commit": "0.34.0+0fda86a35419 0fda86a35419c9c70dbfada224c838c10fbb62ad",
+  "files_scanned": 5312,
+  "occurrences": {
+   "HUGGINGFACE_HUB_CACHE": []
+  },
+  "problems": [],
+  "verdict": "inert"
+ }
+}

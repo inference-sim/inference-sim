@@ -1,0 +1,25 @@
+{
+ "field": "TRANSFORMERS_CACHE",
+ "kind": "unread",
+ "release": "0.34.0+0fda86a35419 0fda86a35419c9c70dbfada224c838c10fbb62ad",
+ "claim": "Reviewed static fact, not a run of vLLM's code: no file of vLLM's serving process (vllm/, csrc/, rust/) names TRANSFORMERS_CACHE; the result lists the files the scan read. The libraries vLLM's requirements/common.txt admit do not read it either: the wheels of transformers 5.16.1, 5.19.0 and 5.23.0 (the ends and a middle of the admitted range, >= 5.16.1, < 5.24.0) and of huggingface_hub 2.0.0 contain no occurrence of the name. A recipe that states it sets a variable of the transformers 4 series, which a serving process on these libraries ignores.",
+ "argument": "reviewed_static_fact",
+ "names": [
+  "TRANSFORMERS_CACHE"
+ ],
+ "probes": [
+  {
+   "label": "the directory the recorded runs state",
+   "value": "/hf_hub_cache"
+  }
+ ],
+ "result": {
+  "vllm_commit": "0.34.0+0fda86a35419 0fda86a35419c9c70dbfada224c838c10fbb62ad",
+  "files_scanned": 5312,
+  "occurrences": {
+   "TRANSFORMERS_CACHE": []
+  },
+  "problems": [],
+  "verdict": "inert"
+ }
+}
