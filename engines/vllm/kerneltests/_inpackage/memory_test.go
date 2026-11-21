@@ -331,7 +331,7 @@ func TestAPackedSparseMLACacheIsItsOwnSize(t *testing.T) {
 // Asserted as a contrast on one deployment: minimax-m2.5 on h200, and the same chip marked as
 // data-center Blackwell (native NVFP4, which nothing else in this fp8-served deployment
 // reads). A decode-only step must price identically on both; the two backends' prefill kernels have
-// their own rates (blis-substrate#217), so what is compared is the rebate, what the decode and the
+// their own fitted rates (registry coefficients), so what is compared is the rebate, what the decode and the
 // prefill priced alone cost over the mixed step they make: FlashAttention's must exceed FlashInfer's
 // by the smaller floor per attention layer, within 5% (the rates of the two prefill kernels differ
 // by a little more than the floors do).
