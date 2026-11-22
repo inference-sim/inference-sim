@@ -39,6 +39,9 @@ func (f fakeKernel) StepTime(b kernel.Batch) kernel.StepEstimate {
 type fakeHost struct {
 	k          fakeKernel
 	oracleCase string
+	// arch, when set, replaces the opened model's architecture: the model a scenario names selects a
+	// class by it (an architecture SGLang's config translation yields), and the allowlist reads it.
+	arch string
 }
 
 func (h fakeHost) Open(engine.Spec) (Pool, error) {
@@ -62,6 +65,9 @@ func (h fakeHost) Open(engine.Spec) (Pool, error) {
 	}
 	for _, c := range doc.Cases {
 		if c.Name == want {
+			if h.arch != "" {
+				c.Model.Architecture = h.arch
+			}
 			return Pool{Kernel: h.k, Chip: c.Chip, Model: c.Model, PreModelLoadGiB: 78, ContextLen: 32768,
 				EOSTokenIDs: []int64{151643, 151645}, VocabSize: 151936}, nil
 		}

@@ -74,6 +74,22 @@ is refused by name. When a store package enters the lock, it runs as code under 
 them. `harness.json` configures them for this repository: SGLang's decision modules, the harness
 files `check_mocks.py` reads, and the golden directories.
 
+## SGLang's own refusals (S18, SGL-6, SIM-9)
+
+```sh
+ORACLE_MODEL=<as below> python -I oracle/run_refusals.py <sglang checkout> oracle/refusals/cases.json > refusals.json
+python -I oracle/compare_refusals.py sglangengine/testdata/sglang_refusals.json refusals.json
+```
+
+Each case of `oracle/refusals/cases.json` is the input of one refusal SGLang makes itself
+(`schedule_policy.py:332-344`, `registry.py:261-271`, `ServerArgs.check_server_args`) and the same
+site's accepted partner. `run_refusals.py` calls SGLang's own function and records the exception's
+type and message, or "accepted". The `oracle-sglang` `serverargs-0` shard re-runs it and
+`compare_refusals.py` fails unless the committed `sglangengine/testdata/sglang_refusals.json` is what
+SGLang gave; the Go test `TestRefusalsAreSGLangsOwn` compares it with the port's refusals and fails
+when the file is missing or was recorded at another commit. Record a changed golden by copying
+`refusals.json` from the `oracle-traces` artifact (`BLIS_SGLANG_ALLOW_GOLDEN_UPDATE=1`), never by hand.
+
 ## Tier 2: the scheduler
 
 ```sh

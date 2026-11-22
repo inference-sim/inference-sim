@@ -1,0 +1,83 @@
+{
+ "cases": [
+  {
+   "kind": "policy",
+   "name": "unknown-policy",
+   "quote": "unknown schedule policy",
+   "refused": {
+    "message": "Unknown schedule_policy: policy='nope'",
+    "type": "ValueError"
+   }
+  },
+  {
+   "accepted": "CacheAwarePolicy",
+   "kind": "policy",
+   "name": "known-policy",
+   "quote": "unknown schedule policy"
+  },
+  {
+   "kind": "policy",
+   "name": "shortest-prefill-first-without-prefix-cache",
+   "quote": "shortest-prefill-first without a prefix cache",
+   "refused": {
+    "message": "Unknown schedule_policy: policy='shortest-prefill-first'",
+    "type": "ValueError"
+   }
+  },
+  {
+   "accepted": "CacheAwarePolicy",
+   "kind": "policy",
+   "name": "shortest-prefill-first-with-prefix-cache",
+   "quote": "shortest-prefill-first without a prefix cache"
+  },
+  {
+   "kind": "tree_cache",
+   "name": "tlru-off-the-unified-tree",
+   "quote": "radix eviction policy tlru off the unified tree",
+   "refused": {
+    "message": "--radix-eviction-policy tlru requires UnifiedRadixCache, but tree_cache is RadixCache. Drop the flag or the option that selected another tree cache for this model.",
+    "type": "ValueError"
+   }
+  },
+  {
+   "accepted": "UnifiedRadixCache",
+   "kind": "tree_cache",
+   "name": "tlru-on-the-unified-tree",
+   "quote": "radix eviction policy tlru off the unified tree"
+  },
+  {
+   "kind": "server_args",
+   "name": "priority-scheduling-over-lpm",
+   "quote": "priority scheduling over a policy other than fcfs or lof",
+   "refused": {
+    "message": "To use priority scheduling, schedule_policy must be 'fcfs' or 'lof'. 'lpm' is not supported.",
+    "type": "AssertionError"
+   }
+  },
+  {
+   "accepted": "check_server_args",
+   "kind": "server_args",
+   "name": "priority-scheduling-over-lof",
+   "quote": "priority scheduling over a policy other than fcfs or lof"
+  },
+  {
+   "kind": "server_args",
+   "name": "priority-retraction-without-priority-scheduling",
+   "quote": "priority retraction without priority scheduling",
+   "refused": {
+    "message": "--retraction-policy priority requires --enable-priority-scheduling",
+    "type": "ValueError"
+   }
+  },
+  {
+   "accepted": "check_server_args",
+   "kind": "server_args",
+   "name": "priority-retraction-with-priority-scheduling",
+   "quote": "priority retraction without priority scheduling"
+  }
+ ],
+ "provenance": {
+  "cases_sha256": "1f9fbca52e329adcb1fbe2ea8167a9a074b5a55fd9bcb975a162963e067f98b8",
+  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90"
+ }
+}

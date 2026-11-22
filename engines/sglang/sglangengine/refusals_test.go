@@ -16,11 +16,13 @@ import (
 )
 
 type surfaceItem struct {
-	ID       string `json:"id"`
-	Category string `json:"category"`
-	Name     string `json:"name"`
-	Status   string `json:"status"`
-	Issue    string `json:"issue"`
+	ID          string   `json:"id"`
+	Category    string   `json:"category"`
+	Name        string   `json:"name"`
+	Site        string   `json:"site"`
+	Status      string   `json:"status"`
+	Issue       string   `json:"issue"`
+	TargetArchs []string `json:"target_archs"`
 }
 
 func surfaceItems(t *testing.T) []surfaceItem {
@@ -42,6 +44,12 @@ func surfaceItems(t *testing.T) []surfaceItem {
 // engine block does, and returns the start-up error.
 func startUp(t *testing.T, args map[string]any, env map[string]any) error {
 	t.Helper()
+	return startUpArch(t, "", args, env)
+}
+
+// startUpArch is startUp for a model whose architecture is arch (the opened model's own when empty).
+func startUpArch(t *testing.T, arch string, args map[string]any, env map[string]any) error {
+	t.Helper()
 	blk := map[string]any{"model_path": "m"}
 	for k, v := range args {
 		blk[k] = v
@@ -53,7 +61,9 @@ func startUp(t *testing.T, args map[string]any, env map[string]any) error {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = FactoryFor(newHost()).New(specOf(t, string(b)))
+	h := newHost()
+	h.arch = arch
+	_, err = FactoryFor(h).New(specOf(t, string(b)))
 	return err
 }
 

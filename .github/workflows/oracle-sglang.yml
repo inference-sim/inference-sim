@@ -84,6 +84,8 @@ jobs:
         run: python -I oracle/test_inertness.py
       - name: the ServerArgs shards partition the cases and each is compared with its own
         run: python -I oracle/test_compare_serverargs.py
+      - name: the refusal comparison fails on what it guards
+        run: python -I oracle/test_compare_refusals.py
       # The surface list (X9, SGL-4, SGL-6, FID-5): surface.json is what tools/surface/gen_surface.py
       # writes from SGLang's registration and selection code at the pinned commit, every item has a
       # status X9 allows, and the generator's tests (its known-bad inputs among them) pass.
@@ -190,6 +192,22 @@ jobs:
         env:
           PART: ${{ matrix.part }}
         run: python -I oracle/compare_serverargs.py config/testdata/serverargs.json "shard-out/oracle-traces/serverargs-$PART.json"
+      # S18 (issue #2349): the refusals SGLang makes itself (schedule_policy.py:332-344, registry.py:261-271,
+      # and ServerArgs.check_server_args) are run through SGLang's own code, and the messages must be
+      # the ones committed in sglangengine/testdata/sglang_refusals.json, which the Go test compares
+      # with the port's. A missing or stale golden fails here and in the Go test; nothing is recorded
+      # by hand (BLIS_SGLANG_ALLOW_GOLDEN_UPDATE copies it from the oracle-traces artifact).
+      - name: run SGLang's own refusals
+        if: matrix.group == 'serverargs-0'
+        env:
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p shard-out/oracle-traces
+          ORACLE_MODEL="$PWD/oracle-model" python -I oracle/run_refusals.py sglang-source oracle/refusals/cases.json > shard-out/oracle-traces/refusals.json
+      - name: the committed refusals are SGLang's own
+        if: matrix.group == 'serverargs-0'
+        run: python -I oracle/compare_refusals.py sglangengine/testdata/sglang_refusals.json shard-out/oracle-traces/refusals.json
       # T1 (issue #2350): each proof of kind observed_reads is re-run through SGLang's scheduler at the
       # field's default and probes, and the file must be what the runs give (oracle/inertness.py).
       - name: the inertness proofs are what SGLang's scheduler gives
