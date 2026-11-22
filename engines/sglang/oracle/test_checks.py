@@ -309,6 +309,21 @@ class CompareGoldens(unittest.TestCase):
                 self.assertEqual(r.returncode, 1, r.stdout)
                 self.assertIn(f"this run's trace: provenance.{key}: missing", r.stdout)
 
+    def test_the_oracle_model_directory_of_another_checkout_passes_but_any_other_path_fails(self):
+        def with_path(path):
+            t = json.loads(json.dumps(self.TRACE))
+            t["steps"][0]["model_name"] = path
+            return t
+        d = self.dirs(fresh=with_path("/home/runner/work/inference-sim/inference-sim/engines/sglang/oracle-model"))
+        with open(os.path.join(d["golden"], "a.trace.json"), "w") as f:
+            json.dump(with_path("/home/runner/work/blis-sglang/blis-sglang/oracle-model"), f)
+        self.assertEqual(self.compare(d).returncode, 0)
+        with open(os.path.join(d["golden"], "a.trace.json"), "w") as f:
+            json.dump(with_path("/home/runner/work/blis-sglang/blis-sglang/other-model"), f)
+        r = self.compare(d)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("/steps/0/model_name", r.stdout)
+
     def test_another_seed_fails(self):
         fresh = json.loads(json.dumps(self.TRACE))
         fresh["provenance"]["seed"] = 7

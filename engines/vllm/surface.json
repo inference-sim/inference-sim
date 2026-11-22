@@ -398,7 +398,7 @@
     "oracle/scenarios/kv-events.json",
     "core/sched/testdata/golden/kv-events.json"
    ],
-   "why": "accepted where it is vLLM's default; a stated non-default publisher is refused (#60)"
+   "why": "accepted where it is vLLM's default; a stated non-default publisher is refused"
   },
   {
    "id": "kv_event_publisher:zmq",

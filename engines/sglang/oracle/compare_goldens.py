@@ -44,6 +44,23 @@ def first_difference(a, b, path="") -> str:
     return "" if a == b else f"{path}: {a!r} != {b!r}"
 
 
+ORACLE_MODEL_DIR = "oracle-model"
+
+
+def checkout_neutral(v):
+    """The oracle model's directory is an absolute path under the runner's checkout (the helper model
+    is downloaded into <checkout>/oracle-model), and SGLang records it in some calls' arguments. A
+    golden recorded in another checkout, or on another runner, differs in that prefix alone, so a value
+    that is a path ending in /oracle-model compares as that directory; every other value compares as is."""
+    if isinstance(v, dict):
+        return {k: checkout_neutral(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [checkout_neutral(x) for x in v]
+    if isinstance(v, str) and v.startswith("/") and v.rstrip("/").rsplit("/", 1)[-1] == ORACLE_MODEL_DIR:
+        return "<" + ORACLE_MODEL_DIR + ">"
+    return v
+
+
 # The provenance a golden must share with a fresh run of its scenario.
 PROVENANCE_HELD = ("tier", "mock_version", "model", "model_revision", "requirements_lock_sha256",
                    "scenario_sha256", "seed")
@@ -82,7 +99,7 @@ def main(fresh_dir: str, commit: str, scenarios: str = SCENARIOS, golden_dir: st
                 bad.append(f"{name}: the golden records {key} {gp.get(key)!r}, but this run's is {fp.get(key)!r}")
         golden.pop("provenance", None)
         fresh.pop("provenance", None)
-        d = first_difference(golden, fresh)
+        d = first_difference(checkout_neutral(golden), checkout_neutral(fresh))
         if d:
             bad.append(f"{name}: the golden differs from SGLang's output at {d}")
     for g in sorted(n[:-3] if n.endswith(".gz") else n for n in os.listdir(GOLDEN)) if os.path.isdir(GOLDEN) else []:
