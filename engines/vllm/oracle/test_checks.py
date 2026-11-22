@@ -372,6 +372,21 @@ class CompareGoldensDerived(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("step 0", r.stdout)
 
+    def test_a_tier_file_directory_from_another_checkout_is_not_a_difference(self):
+        def step(root, names):
+            return {"offload": {"tier_files": [[f"{root}/{n}" for n in names]], "completed": [0]}}
+        names = ["627/99_g0/a.bin", "659/91_g0/b.bin"]
+        r = self.compare({"oracle_run": True}, [step("_home_a_oracle-model_514a_r0", names)],
+                         [step("_home_b_oracle-model_13f4_r0", names)])
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_different_tier_file_is_still_a_difference(self):
+        def step(root, names):
+            return {"offload": {"tier_files": [[f"{root}/{n}" for n in names]], "completed": [0]}}
+        r = self.compare({"oracle_run": True}, [step("_x_r0", ["627/99_g0/a.bin"])], [step("_y_r0", ["627/99_g0/c.bin"])])
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("step 0: fields ['offload'] differ", r.stdout)
+
 
 class KeyNamesFromSource(unittest.TestCase):
     """run_engineargs.py --key-names-source answers whether EngineArgs takes a name from the checkout's

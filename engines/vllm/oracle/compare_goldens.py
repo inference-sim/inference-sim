@@ -19,8 +19,20 @@ sys.path.insert(0, HERE)
 import goldengz  # noqa: E402  (oracle/goldengz.py; -I leaves the script directory off sys.path)
 
 
+def comparable(step: dict) -> dict:
+    """A step with each tier's block file names cut to their last three components. The first
+    component of a name is the storage directory vLLM derives from the model's path (and a hash of
+    it), so it records where the run's checkout was; the rest (the block-hash directories and the
+    file) is the tier's decision. core/vllm's own comparison of these traces does the same."""
+    off = step.get("offload")
+    if not isinstance(off, dict) or "tier_files" not in off:
+        return step
+    files = [sorted("/".join(n.split("/")[-3:]) for n in tier) for tier in off["tier_files"]]
+    return {**step, "offload": {**off, "tier_files": files}}
+
+
 def first_difference(golden: dict, fresh: dict) -> str:
-    gs, fs = golden["steps"], fresh["steps"]
+    gs, fs = [comparable(s) for s in golden["steps"]], [comparable(s) for s in fresh["steps"]]
     for i in range(max(len(gs), len(fs))):
         if i >= len(gs):
             return f"step {i}: only vLLM's fresh trace has it"
