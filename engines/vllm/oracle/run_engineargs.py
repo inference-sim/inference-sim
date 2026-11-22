@@ -14,7 +14,11 @@ so the CPU answer is the platform's and not the engine's. Its refusals are recor
 
 Usage: python -I oracle/run_engineargs.py <vllm checkout> <cases.json> > trace.json
        python -I oracle/run_engineargs.py --key-names <vllm checkout> <keys.json> > names.json
-(the second form asks, for the engine block's keys, whether EngineArgs takes each name)
+       python -I oracle/run_engineargs.py --key-names-source <vllm checkout> <keys.json> > names.json
+(the second form asks, for the engine block's keys, whether EngineArgs takes each name; the
+third answers the same from the checkout's source text alone, without importing vLLM, for a
+checkout the oracle environment cannot import: the commit the engine models, which is newer than
+the release the environment installs. On the release it can import, the two forms must agree.)
 cases.json holds {"cases": [{"name", "args"}]}: args are EngineArgs keyword arguments. The model is
 facebook/opt-125m (a configuration only, no weights are read), the CPU platform.
 """
@@ -58,7 +62,47 @@ def key_names(vllm_root: str, keys_path: str) -> dict:
     return out
 
 
+def key_names_source(vllm_root: str, keys_path: str) -> dict:
+    """key_names from the source text: the annotated fields of class EngineArgs in
+    vllm/engine/arg_utils.py, and of the config class (vllm/config/*.py, found by the same
+    camel-case rule as key_names) behind each nested group, with the fields of base classes
+    defined in the same file."""
+    import ast
+    import glob
+
+    def fields(classes: dict, name: str, seen=()) -> set:
+        node = classes.get(name)
+        if node is None or name in seen:
+            return set()
+        out = {t.target.id for t in node.body if isinstance(t, ast.AnnAssign) and isinstance(t.target, ast.Name)}
+        for base in node.bases:
+            if isinstance(base, ast.Name):
+                out |= fields(classes, base.id, seen + (name,))
+        return out
+
+    def classes_of(path: str) -> dict:
+        with open(path) as f:
+            return {n.name: n for n in ast.parse(f.read()).body if isinstance(n, ast.ClassDef)}
+
+    with open(keys_path) as f:
+        want = json.load(f)
+    args = fields(classes_of(os.path.join(vllm_root, "vllm/engine/arg_utils.py")), "EngineArgs")
+    out = {"top": {k: k in args for k in want["top"]}, "nested": {}}
+    config_classes = {}
+    for path in sorted(glob.glob(os.path.join(vllm_root, "vllm/config/*.py"))):
+        for name, node in classes_of(path).items():
+            if name.endswith("Config"):
+                config_classes[name.lower()] = fields(classes_of(path), name)
+    for g, leaves in want["nested"].items():
+        known = config_classes.get(g.replace("_", ""), set())
+        out["nested"][g] = {leaf: leaf in known for leaf in leaves}
+    return out
+
+
 def main() -> None:
+    if len(sys.argv) > 3 and sys.argv[1] == "--key-names-source":
+        print(json.dumps(key_names_source(sys.argv[2], sys.argv[3]), indent=1, sort_keys=True))
+        return
     if len(sys.argv) > 3 and sys.argv[1] == "--key-names":
         print(json.dumps(key_names(sys.argv[2], sys.argv[3]), indent=1, sort_keys=True))
         return

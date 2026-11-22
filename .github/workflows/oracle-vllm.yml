@@ -183,14 +183,20 @@ jobs:
           mkdir -p oracle/out
           python -I oracle/run_engineargs.py vllm-source oracle/engineargs-cases.json > oracle/out/engineargs.json
           python3 -I oracle/compare_engineargs.py core/vllm/testdata/engineargs.json oracle/out/engineargs.json
-          # Every key the engine block takes is a name vLLM's EngineArgs takes (blis-vllm#93): ask the
-          # pinned vLLM about the keys the committed answer covers, and compare.
+          # Every key the engine block takes is a name vLLM's EngineArgs takes (blis-vllm#93). The
+          # committed table (core/engineconfig/testdata/vllm_names.json) is for the commit the engine
+          # models, which this environment cannot import, so it is read from that commit's source
+          # text. The source reader is trusted only where the import can check it: on the release
+          # installed here, the two must give the same answer.
           python3 -I - <<'PY' > oracle/out/block-keys.json
           import json
           t = json.load(open("core/engineconfig/testdata/vllm_names.json"))
           print(json.dumps({"top": sorted(t["top"]), "nested": {g: sorted(v) for g, v in t["nested"].items()}}))
           PY
-          python -I oracle/run_engineargs.py --key-names vllm-source oracle/out/block-keys.json > oracle/out/vllm_names.json
+          python -I oracle/run_engineargs.py --key-names vllm-source oracle/out/block-keys.json > oracle/out/vllm_names_import.json
+          python -I oracle/run_engineargs.py --key-names-source vllm-source oracle/out/block-keys.json > oracle/out/vllm_names_release_source.json
+          python3 -I -c "import json,sys; a,b=(json.load(open(f)) for f in sys.argv[1:]); sys.exit(0 if a==b else 'the source reader and the import disagree on the installed release')" oracle/out/vllm_names_import.json oracle/out/vllm_names_release_source.json
+          python -I oracle/run_engineargs.py --key-names-source vllm-engine-source oracle/out/block-keys.json > oracle/out/vllm_names.json
           python3 -I -c "import json,sys; a,b=(json.load(open(f)) for f in sys.argv[1:]); sys.exit(0 if a==b else 'the EngineArgs name answers differ from core/engineconfig/testdata/vllm_names.json')" core/engineconfig/testdata/vllm_names.json oracle/out/vllm_names.json
       # The block-hash fixture: every case's hashes recomputed by vLLM's own hash_block_tokens;
       # the generator exits non-zero if any differs from the committed file.

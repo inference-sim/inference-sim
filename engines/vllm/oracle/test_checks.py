@@ -373,5 +373,40 @@ class CompareGoldensDerived(unittest.TestCase):
         self.assertIn("step 0", r.stdout)
 
 
+class KeyNamesFromSource(unittest.TestCase):
+    """run_engineargs.py --key-names-source answers whether EngineArgs takes a name from the checkout's
+    source text, for a commit the oracle environment cannot import."""
+
+    ARG_UTILS = (
+        "class Base:\n    inherited: int = 1\n\n"
+        "class EngineArgs(Base):\n    model: str = 'm'\n    mamba_cache_mode: str = 'none'\n    plain = 3\n"
+    )
+    CACHE = "class CacheConfig:\n    block_size: int = 16\n\nclass Other:\n    ignored: int = 0\n"
+
+    def answer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for rel, text in (("vllm/engine/arg_utils.py", self.ARG_UTILS), ("vllm/config/cache.py", self.CACHE)):
+                path = os.path.join(tmp, rel)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w") as f:
+                    f.write(text)
+            keys = os.path.join(tmp, "keys.json")
+            with open(keys, "w") as f:
+                json.dump({"top": ["model", "inherited", "plain", "absent"],
+                           "nested": {"cache_config": ["block_size", "ignored"], "no_such_group": ["x"]}}, f)
+            r = run([sys.executable, "-I", os.path.join(HERE, "run_engineargs.py"), "--key-names-source", tmp, keys], HERE)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return json.loads(r.stdout)
+
+    def test_annotated_fields_and_base_fields_are_taken_and_the_rest_are_not(self):
+        got = self.answer()
+        self.assertEqual(got["top"], {"model": True, "inherited": True, "plain": False, "absent": False})
+
+    def test_a_nested_group_is_the_config_class_of_that_name(self):
+        got = self.answer()
+        self.assertEqual(got["nested"]["cache_config"], {"block_size": True, "ignored": False})
+        self.assertEqual(got["nested"]["no_such_group"], {"x": False})
+
+
 if __name__ == "__main__":
     unittest.main()
