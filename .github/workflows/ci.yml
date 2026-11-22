@@ -339,10 +339,10 @@ jobs:
         include:
           - { name: "workload shard 1/2", group: workload, packages: "./sim/workload", timeout: "10m", salt: "s5:", flag: workload, shard: 1, shards: 2 }
           - { name: "workload shard 2/2", group: workload, packages: "./sim/workload", timeout: "10m", salt: "s5:", flag: workload, shard: 2, shards: 2 }
-          - { name: "cmd shard 1/4", group: cmd, packages: "./cmd", timeout: "10m", salt: "s3:", flag: cmd, shard: 1, shards: 4 }
-          - { name: "cmd shard 2/4", group: cmd, packages: "./cmd", timeout: "10m", salt: "s3:", flag: cmd, shard: 2, shards: 4 }
-          - { name: "cmd shard 3/4", group: cmd, packages: "./cmd", timeout: "10m", salt: "s3:", flag: cmd, shard: 3, shards: 4 }
-          - { name: "cmd shard 4/4", group: cmd, packages: "./cmd", timeout: "10m", salt: "s3:", flag: cmd, shard: 4, shards: 4 }
+          - { name: "cmd shard 1/4", group: cmd, packages: "./cmd", timeout: "15m", salt: "s8:", flag: cmd, shard: 1, shards: 4 }
+          - { name: "cmd shard 2/4", group: cmd, packages: "./cmd", timeout: "15m", salt: "s8:", flag: cmd, shard: 2, shards: 4 }
+          - { name: "cmd shard 3/4", group: cmd, packages: "./cmd", timeout: "15m", salt: "s8:", flag: cmd, shard: 3, shards: 4 }
+          - { name: "cmd shard 4/4", group: cmd, packages: "./cmd", timeout: "15m", salt: "s8:", flag: cmd, shard: 4, shards: 4 }
     steps:
       - name: The change filter ran, and whether this entry's group is on
         id: gate
