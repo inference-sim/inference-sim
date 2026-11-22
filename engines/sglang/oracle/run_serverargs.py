@@ -22,7 +22,11 @@ Nothing in arg_groups/ is replaced. A model is read as configuration only (no we
 revision cases.json pins. Paths are recorded as "<model>" so the answer does not depend on where
 the model was fetched; random_seed is recorded as "<random>" when SGLang draws it.
 
-Usage: python -I oracle/run_serverargs.py <sglang checkout> <cases.json> <models dir> > answers.json
+Usage: python -I oracle/run_serverargs.py [--shard I/N] <sglang checkout> <cases.json> <models dir> > answers.json
+
+--shard I/N runs the cases whose position in cases.json is I mod N and records {"index": I, "of": N}
+as the answer's "shard"; every case still runs in a process of its own, so a case's answer does not
+depend on the shard it ran in. compare_serverargs.py reads the shard from the answer.
 <models dir>/<name>/ holds each model's configuration files (oracle/serverargs/fetch_models.py).
 """
 import hashlib
@@ -212,7 +216,21 @@ def refusal_site(e: BaseException) -> str:
     return ""
 
 
+def parse_shard(arg: str):
+    try:
+        i, n = (int(x) for x in arg.split("/"))
+    except ValueError:
+        raise SystemExit("--shard takes I/N, got %r" % arg)
+    if not 0 <= i < n:
+        raise SystemExit("--shard I/N needs 0 <= I < N, got %r" % arg)
+    return i, n
+
+
 def main(argv) -> int:
+    shard = None
+    if len(argv) == 5 and argv[0] == "--shard":
+        shard = parse_shard(argv[1])
+        argv = argv[2:]
     if len(argv) != 3:
         print(__doc__.split("Usage:", 1)[1].strip(), file=sys.stderr)
         return 2
@@ -230,7 +248,9 @@ def main(argv) -> int:
             del os.environ[k]
     commit = subprocess.run(["git", "-C", src, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     results = []
-    for case in spec["cases"]:
+    for k, case in enumerate(spec["cases"]):
+        if shard is not None and k % shard[1] != shard[0]:
+            continue
         chip = spec["chips"][case["chip"]]
         r, w = os.pipe()
         pid = os.fork()
@@ -264,6 +284,8 @@ def main(argv) -> int:
                        "models": {k: v["revision"] for k, v in sorted(spec["models"].items())}},
         "cases": results,
     }
+    if shard is not None:
+        doc["shard"] = {"index": shard[0], "of": shard[1]}
     sys.stdout.write(json.dumps(doc, indent=1, sort_keys=True) + "\n")
     return 0
 

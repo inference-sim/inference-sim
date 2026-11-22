@@ -8,6 +8,10 @@ case: its inputs, the model facts, acceptance or SGLang's refusal, every resolve
 step that decided it. So the answers the Go test reads pass only while the pinned release still
 gives them. The provenance must name the same SGLang commit, case file and model revisions.
 
+A fresh answer written by one shard of run_serverargs.py (--shard I/N, recorded as its "shard") holds
+the cases whose position is I mod N; it is compared with the committed cases at those positions, and
+the workflow's last job fails unless every shard of N ran.
+
 Usage: python3 -I oracle/compare_serverargs.py <committed answers> <fresh answers>
 """
 import gzip
@@ -31,6 +35,13 @@ def main(committed: str, fresh: str) -> int:
         print(f"the committed answers and the fresh ones differ in provenance: {keys}")
         return 1
     ca, cb = a["cases"], b["cases"]
+    shard = b.get("shard")
+    if shard is not None:
+        i, n = shard["index"], shard["of"]
+        ca = [c for k, c in enumerate(ca) if k % n == i]
+        if not ca:
+            print(f"shard {i}/{n} holds no committed case")
+            return 1
     if [c["name"] for c in ca] != [c["name"] for c in cb]:
         print(f"committed cases {[c['name'] for c in ca]}, fresh {[c['name'] for c in cb]}")
         return 1

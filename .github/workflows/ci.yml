@@ -1137,8 +1137,11 @@ jobs:
         include:
           - name: core
             pkgs: "./engines/vllm/internal/substratedata ./engines/vllm/core/vllm ./engines/vllm/core/sched ./engines/vllm/core/engine ./engines/vllm/core/kvtransfer ./engines/vllm/core/connector/..."
-          - name: vllmengine
-            pkgs: "./engines/vllm/vllmengine"
+          # The package's tests, split by position in `go test -list` (test k to shard k mod 3, the
+          # list computed in the job, so a test added later runs in exactly one shard).
+          - {name: vllmengine-0, pkgs: "./engines/vllm/vllmengine", shard: "0/3"}
+          - {name: vllmengine-1, pkgs: "./engines/vllm/vllmengine", shard: "1/3"}
+          - {name: vllmengine-2, pkgs: "./engines/vllm/vllmengine", shard: "2/3"}
           # The block-size census is the slowest race test; it ran as four slices before the merge.
           - name: kernelmodel-census
             pkgs: "./engines/vllm/core/kernelmodel"
@@ -1180,10 +1183,20 @@ jobs:
         env:
           PKGS: ${{ matrix.pkgs }}
           ONLY: ${{ matrix.only }}
+          SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
           args=()
           if [ -n "$ONLY" ]; then args+=(-run "$ONLY"); fi
+          if [ -n "$SHARD" ]; then
+            i="${SHARD%/*}"; n="${SHARD#*/}"
+            # shellcheck disable=SC2086
+            all="$(go test -race -list '.*' $PKGS | grep -E '^(Test|Example|Fuzz)' | sort)"
+            sel="$(printf '%s\n' "$all" | awk -v i="$i" -v n="$n" 'NR % n == i' | paste -sd'|' -)"
+            test -n "$sel"
+            echo "shard $SHARD: $(printf '%s\n' "$sel" | tr '|' '\n' | wc -l | tr -d ' ') of $(printf '%s\n' "$all" | wc -l | tr -d ' ') tests"
+            args+=(-run "^($sel)\$")
+          fi
           # shellcheck disable=SC2086
           go test -race -count=1 -timeout 50m "${args[@]}" $PKGS
 
