@@ -157,6 +157,11 @@ jobs:
       # Go test (config TestResolveAgainstSGLang) compares with config.Resolve field by field.
       - name: fetch the ServerArgs cases' model configurations at their pinned revisions
         if: matrix.group == 'resolve' || matrix.group == 'lower'
+        # One of the pinned models (meta-llama/Llama-3.1-8B-Instruct) is a gated repository: its
+        # configuration is served only to an account that accepted the license, so the fetch reads
+        # the repository secret HF_TOKEN (set for this step alone; later steps run offline).
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python -I oracle/serverargs/fetch_models.py oracle/serverargs/cases.json serverargs-models
       - name: resolve every ServerArgs case through SGLang's own pipeline
         if: matrix.group == 'resolve'
