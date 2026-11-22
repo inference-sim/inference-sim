@@ -114,7 +114,7 @@ Every cluster run routes with the real llm-d router (EPP) embedded in-process (`
 
 GitHub Actions run on all PRs to main:
 
-- `.github/workflows/ci.yml` — build (`go build ./...`), lint (`golangci-lint`, v2.14.0), tests, and a CLAUDE.md size-ceiling check.
+- `.github/workflows/ci.yml` — build (`go build ./...`), lint (`golangci-lint`, v2.14.0), tests, the substrate and engine checks, and a CLAUDE.md size-ceiling check. `scripts/ci-changes.sh` maps changed paths to the jobs a change runs; a path it does not classify runs everything.
 
 ## Cross-Repository Changes (BLIS repositories)
 
@@ -160,6 +160,7 @@ Analyzes completed runs (distinct from the real-time flow-control detector). Pac
 
 ## File Organization
 
+The layout table is in `README.md`; per-directory rules are in `substrate/AGENTS.md`, `engines/vllm/AGENTS.md` and `engines/sglang/AGENTS.md`.
 
 ## Key Data Flow
 

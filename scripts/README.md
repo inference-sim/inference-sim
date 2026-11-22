@@ -251,8 +251,9 @@ uses, so a stalled probe cannot hang a job. Tested by `scripts/deliver_author_ga
 
 ## catalog-load-gate.sh — the strict catalog-load CI gate (R1/C6)
 
-Loads **every** entry in the authoritative [`blis-catalog`](https://github.com/inference-sim/blis-catalog)
-through the same loader code path `blis run` uses, and fails on any rejection. C6 says there is *no
+Loads **every** entry in a catalog checkout (the authoritative catalog is `substrate/catalog/`, which
+the substrate's own `validate-catalog` check and the module's tests cover on every pull request; this
+script is the on-demand form for an external checkout) through the same loader code path `blis run` uses, and fails on any rejection. C6 says there is *no
 validate command* — the simulator validates whatever it reads and fails naming the file and the
 problem — so the gate is this script driving `cmd.TestCatalogStrictLoad_RealCatalog`, not a
 subcommand and not a bespoke validator that could accept what a run rejects (#1750).
@@ -327,8 +328,8 @@ either one would quietly hand grading back to the PR.
 ## find-saturation.sh — Rate-sweep saturation finder
 
 Drives `blis run` across a configurable rate sweep against one scenario (a
-blis-schemas Scenario + Deployment file that fixes model, hardware, parallelism
-and engine settings; `blis-latency-kernel` prices every step). For each rate it:
+Scenario + Deployment file that fixes model, hardware, parallelism
+and engine settings; the cost model prices every step). For each rate it:
 
 1. Runs `blis run` once with the steady-state detector (`--detectors settle`, DEV-10).
 2. Reads the detector's state from the run's `--saturation-report`.
@@ -362,8 +363,8 @@ any directory of scenario YAMLs works.
 |---|---|---|
 | `SCENARIO` | — (required) | Scenario file name, passed as `--scenario` |
 | `SCENARIOS` | — (required) | Directory holding the scenario, passed as `--scenarios` |
-| `REGISTRY` | — (required by the script) | A directory with the layout of the substrate's `registry/`, passed as `--registry` |
-| `CATALOG` | `$BLIS_CATALOG`, else `blis-catalog` | A directory with the layout of the substrate's `catalog/`, passed as `--catalog`. The script always passes it, so it does not use the embedded catalog. The scenario's model must have an entry; a missing one is refused, never fetched. |
+| `REGISTRY` | — (required by the script) | A directory with the layout of the substrate's `registry/` (for example `substrate/registry`), passed as `--registry` |
+| `CATALOG` | `$BLIS_CATALOG`, else `blis-catalog` | A directory with the layout of the substrate's `catalog/` (for example `substrate/catalog`), passed as `--catalog`. The script always passes it, so it does not use the embedded catalog. The scenario's model must have an entry; a missing one is refused, never fetched. |
 | `WORKLOAD` | `chatbot` | Catalog workload preset (chatbot/summarization/contentgen/multidoc) |
 | `NUM_REQUESTS` | `6000` | `--num-requests` per rate |
 | `HORIZON_US` | `600000000` (600s) | `--horizon` per rate |
@@ -443,6 +444,6 @@ is growing before mean latency crosses the cutoff.
 ### Running on a custom configuration
 
 Point `SCENARIO`/`SCENARIOS` at any scenario file. To probe a new deployment, write a
-scenario for it (the blis-schemas Scenario + Deployment format); its model must be in the
+scenario for it (the Scenario + Deployment format); its model must be in the
 catalog and its coefficient sets in the registry. BLIS does not fetch model configs at run
 time.

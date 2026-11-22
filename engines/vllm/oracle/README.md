@@ -152,7 +152,7 @@ its size and the size under each setting of the facts. The committed table is
 (`Commit` in `engines/vllm/internal/upstream`):
 
 ```sh
-BLIS_ORACLE_CATALOG=<blis-substrate>/catalog/models \
+BLIS_ORACLE_CATALOG=substrate/catalog/models \
   python -I oracle/blocksize/oracle.py <vllm checkout> table > oracle/blocksize/TABLE.tsv   # for reading
   python -I oracle/blocksize/oracle.py <vllm checkout> json > core/vllm/blocksize_table.json
 ```
@@ -205,7 +205,7 @@ prints. It needs vLLM's `requirements/common.txt`, `torch` and `torchvision` (th
 model's modules); it does not need a GPU.
 
 ```sh
-BLIS_ORACLE_CATALOG=<blis-substrate>/catalog/models \
+BLIS_ORACLE_CATALOG=substrate/catalog/models \
   python -I oracle/quantization/oracle.py <vllm checkout> json > core/quantization/resolved.json
 ```
 

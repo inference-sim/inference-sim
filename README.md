@@ -42,17 +42,49 @@ The reference is printed from the data and the code, not written: `blis schema`,
 `blis metrics`, `blis catalog` and `blis router-configs`, with `--help` on
 every command, the JSON Schemas and the Go doc comments.
 
+## Layout
+
+| Path | What it holds |
+|---|---|
+| `cmd/` | the `blis` command (`run`, `replay`, `convert`, `schema`, `fields`, `catalog`, ...) and the one site that builds each engine |
+| `sim/` | the simulator library: clock, event loop, cluster (`sim/cluster`), workloads (`sim/workload`), the embedded router host (`sim/llmd`), saturation detection |
+| `internal/` | repository machinery: `stack` (the `stack.json` record), `repocheck` (layering and path checks), `bytegate` (the byte-identity gate), `substratedata` |
+| `substrate/` | `contracts/`, `kernel/` (the cost model), `catalog/`, `registry/`, `ledger/`, `validate/`, `tools/`; its [README](./substrate/README.md) says what each holds |
+| `engines/vllm`, `engines/sglang` | the two engine models; see their READMEs |
+| `examplescenarios/`, `testdata/` | ready-to-run scenarios; test inputs, the byte-gate goldens |
+| `tools/`, `scripts/` | scoring and validation harnesses; CI and delivery scripts |
+| `docs/` | [support-matrix.md](./docs/support-matrix.md) (generated, below) and [deferred.md](./docs/deferred.md) |
+
+The router fork is the one external module that is substituted: `go.mod` carries a single
+`replace` of `github.com/llm-d/llm-d-router` by `github.com/inference-sim/llm-d-router` at the
+tag `stack.json` records. `blis version` prints every pin.
+
+## Testing and CI
+
+`go test ./...` runs everything that needs no Python or network; `golangci-lint run ./...`
+(v2.14.0) lints. CI (`.github/workflows/ci.yml`) runs the jobs a change needs: `scripts/ci-changes.sh`
+maps each changed path to path classes (`core`, `cluster`, `kernel`, `cmd`, `substrate`, `vllm`,
+`sglang`, ...) and a path no class names runs everything. A change under `substrate/` runs every
+class, one under `engines/vllm` or `engines/sglang` every class but the other engine's and
+`substrate`, and a test file or a `testdata/` file only its own class. The substrate's catalog and
+registry validators, the cost model's mutation check, and the engines' oracle jobs (each
+engine's decisions compared with the upstream project's own classes, GPU mocked) are jobs of the
+same workflow; each engine's README gives its commands. `docs/support-matrix.md` is generated:
+`go test ./cmd -run ClusterMatrix -update-matrix` rewrites it and `docs/support-matrix.tsv` by
+running every cell; never edit either by hand.
+
 ## Engines
 
 A scenario names its engine kind: `engine: {kind: vllm}` or `engine: {kind: sglang}`, and states no
-release (a `version` field is refused as unknown); `stack.json` names the engine commits this build runs,
-`inference-sim version` prints them, and every Result records them under `engine`. An SGLang
+release (a `version` field is refused as unknown). `stack.json` names the engine commits this build runs,
+`blis version` prints them, and every Result records them under `engine`. An SGLang
 pool's `engine:` block states SGLang's own `ServerArgs` field names (`mem_fraction_static`,
 `chunked_prefill_size`, ...) and a name that is not one is refused naming it; `blis fields` prints each
 engine's field list. Two SGLang scenarios run in CI, `testdata/kernel/sglang/glm-5-h200-fp8-sglang-tp8.yaml`
-and `deepseek-r1-h200-fp8-sglang-tp8.yaml`. A scenario states `context_length` (the catalog graph carries
-none), the memory CUDA holds before a model loads is known for the H200 only, and speculative decoding,
-DP attention, pipeline parallelism, HiCache and P/D disaggregation are each refused naming their issue.
+and `deepseek-r1-h200-fp8-sglang-tp8.yaml`. A feature an engine does not model is refused, naming the
+issue that holds it; [docs/support-matrix.md](./docs/support-matrix.md) lists every model, chip and
+serving mode that runs or is refused, and [docs/deferred.md](./docs/deferred.md) lists what M3.2
+leaves out on purpose.
 
 One named substitution stands on every SGLang point: the host-side facts (model, hardware, parallelism,
 KV store, host overheads) are read through the vLLM engine's adapter from a copy of the scenario in vLLM form,

@@ -1,22 +1,23 @@
-# blis-vllm
+# vLLM engine
 
 A Go model of the [vLLM](https://github.com/vllm-project/vllm) inference engine's scheduling,
-KV-cache, connector and metrics behaviour, for a discrete-event simulator. It implements the
-engine-neutral contract in [blis-substrate](https://github.com/inference-sim/blis-substrate)
-`contracts/` (`engine.Engine`), so a simulator such as
-[inference-sim](https://github.com/inference-sim/inference-sim) builds it once and then holds only
-that interface. The design, which states every rule below and why, is at
-<https://inference-sim.github.io/blis-design/>.
+KV-cache, connector and metrics behaviour, for a discrete-event simulator. It lives in the
+`engines/vllm` directory of the one `github.com/inference-sim/inference-sim` module and implements
+the engine-neutral contract in `substrate/contracts/` (`engine.Engine`), so the simulator builds it
+once (`cmd/engine_build.go`) and then holds only that interface. The design, which states every
+rule below and why, is at <https://inference-sim.github.io/blis-design/>.
 
 ## What it owns, and what it never holds
 
 It owns everything about vLLM's behaviour: defaults, how a step is formed, which KV blocks move,
 which kernel runs, and the per-release rules that validate a vLLM engine block. It never holds
-the cost model, a hardware fact, a coefficient or a router; those are blis-substrate's and
-inference-sim's.
+the cost model, a hardware fact, a coefficient or a router; those are the substrate's
+(`substrate/`) and the simulator's (`sim/`, `cmd/`).
 
-- **One release per build.** A build models one vLLM release (`provenance.go`; now v0.33.0,
-  `4ba787ec9959e566d3b587a796dff07673324da5`). Every statement about vLLM cites
+- **One release per build.** A build models one vLLM commit (`provenance.go`, `engines/vllm/internal/upstream/upstream.go`; now
+  `0.34.0+0fda86a35419`, the commit `0fda86a35419c9c70dbfada224c838c10fbb62ad`, which `stack.json`
+  also pins). The committed oracle recordings were taken at v0.33.0 and are evidence of that
+  release until a maintainer re-records them (`oracle/README.md`). Every statement about vLLM cites
   `vllm/<path>:<lines>@<commit8>` at that release. A ported file records its source and keeps
   vLLM's licence.
 - **Time is a value.** Nothing reads a clock or starts a goroutine. The simulator passes the
@@ -39,21 +40,18 @@ inference-sim's.
   config parsers and the model-architecture config convertor). `kernel_impls.json` lists the kernel implementations the release can run, with
   the code hash the coefficient registry keys its entries by. All three are generated and CI
   checks they are current.
-- **Upgrade reports.** `upgrades/<from>-to-<commit8>.json` is the output of
-  `engines/upgrade/upgrade_report.py` for one move of the modelled commit (design 12.4): the surface,
-  field, source, model and coefficient changes. The first, `v0.33.0-to-0fda86a35419.json`, was run
-  with the lists committed at v0.33.0 as the old side, the lists now committed as the new side, and
-  the catalog and coefficient registry at the commit that added the report.
+- **Upgrade reports.** `engines/upgrade/upgrade_report.py` reports, for one move of the modelled
+  commit (design 12.4), the surface, field, source, model and coefficient changes; its docstring
+  gives the command.
 
 ## Connections
 
-- **Imports** only blis-substrate's `contracts/` packages and, until the engine boundary moves,
-  its cost model. The cost model imports nothing from this module.
-- **Is pinned by** inference-sim, which builds the engine at one site and holds only
-  `engine.Engine`; the release that runs a build pins it in its `go.mod`. Builds are tagged
-  `v0.33.0-blis.N`.
-- **Is read by** accuracy-dashboard and blis-config-search through `inference-sim fields`
-  (the field list) and the surface list.
+- **Imports** only `substrate/` (the `contracts/` packages and the cost model). The substrate
+  imports nothing from this module, and no engine imports another (`internal/repocheck`).
+- **Is built by** the simulator at one site, `cmd/engine_build.go`, which holds only `engine.Engine`.
+  The module has one version for everything in it, so there is no separate engine tag.
+- **Is read by** the field and surface commands (`blis fields`, `blis schema`) and by the
+  scenario validator.
 
 ## Layout
 
@@ -70,15 +68,29 @@ inference-sim's.
 
 ## Build, test and run
 
+Run from `engines/vllm/` (the checks are the `vllm-checks`, `vllm-race` and `oracle-vllm` jobs of
+`.github/workflows/ci.yml` and `oracle-vllm.yml`):
+
 ```sh
 go build ./... && go vet ./...
 go test ./...                   # every package; the oracle jobs below need Python
 golangci-lint run ./...         # v2.14.0
 ```
 
+The generated lists are regenerated from a checkout of vLLM at the pinned commit (`vllm-source`
+below, which CI fetches), and CI compares each with the committed file (`--check`); the docstring
+of each generator gives its full usage:
+
+```sh
+python3 -I fields/gen_fields.py vllm-source fields/status.json > fields.json
+python3 -I fields/gen_classes.py vllm-source fields.json > fields/value_classes.json
+python3 -I kernels/regen.py            # kernel_impls.json; needs the network
+go run ./cmd/metricsmanifest -vllm vllm-source
+python3 -I tools/surface/gen_surface.py vllm-source tools/surface/status.json > surface.json
+```
+
 The oracle tiers run from a Python with `oracle/requirements.lock` installed
 (`pip install --require-hashes --no-deps -r oracle/requirements-hashed.txt`, Linux x86_64) as the
-`oracle-scenarios`, `oracle-inertness` and `oracle-fuzz` jobs of `.github/workflows/ci.yml`.
-That file's header says how a change selects the jobs it runs and how the slow suites are shared
-out over runners; `substrate/tools/changedjobs/workflow_test.go` checks the selection. `AGENTS.md` holds
-the rules an AI-assisted change follows.
+jobs of `.github/workflows/oracle-vllm.yml`. `.github/workflows/ci.yml` calls it when a change
+touches `engines/vllm` or `substrate`; the header of `scripts/ci-changes.sh` says how a change
+selects jobs. `AGENTS.md` holds the rules an AI-assisted change follows.

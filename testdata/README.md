@@ -56,6 +56,5 @@ repository imports both the engine and the cost model (release plan §2).
 
 ## The catalog and registry
 
-Tests read the `catalog/` and `registry/` directories of the blis-substrate module that
-`go.mod` selects (`internal/substratedata`). There is no copy here and no lock file: the
-substrate requirement in `go.mod` is the one place that names the data.
+Tests read the `catalog/` and `registry/` directories under `substrate/` (`internal/substratedata`).
+There is no copy here and no lock file: `substrate/` is the one place that holds the data.

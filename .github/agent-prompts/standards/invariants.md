@@ -282,10 +282,10 @@ These constrain **which code may read or do what**. They are not statements abou
 the catalog or the registry. This is design §3.3 at the CLI. Three clauses:
 
 1. **The data in use.** A run that names no catalog uses the catalog embedded in the
-   blis-substrate release this build pins; a run that names no registry uses the embedded
+   binary (from `substrate/catalog`); a run that names no registry uses the embedded
    registry, so `--registry` is optional. `--catalog <dir>` / `BLIS_CATALOG` and
-   `--registry <dir>` / `BLIS_REGISTRY` name directories with the layout of blis-substrate's
-   `catalog/` and `registry/`, and each replaces its embedded copy; a path never overlays.
+   `--registry <dir>` / `BLIS_REGISTRY` name directories with the layout of `substrate/catalog/`
+   and `substrate/registry/`, and each replaces its embedded copy; a path never overlays.
    `--catalog-overlay` and `--registry-overlay` add or replace entries, and are the only way
    to (design SIM-6). The Result records each source, its content hash, every overlay hash
    and the combined hash (X8).
@@ -296,7 +296,7 @@ the catalog or the registry. This is design §3.3 at the CLI. Three clauses:
    `blis replay` invocation creates or modifies a catalog or registry file, and none reaches
    the network.
 3. **The deployment is chosen, never inferred.** The deployment comes from a required
-   scenario (`--scenario` / `--scenarios`, a blis-substrate `contracts/spec` Scenario +
+   scenario (`--scenario` / `--scenarios`, a `substrate/contracts/spec` Scenario +
    Deployment file) on both `blis run` and `blis replay`; omitting it is refused. No flag
    restates the model, the hardware or the tensor-parallel width.
 

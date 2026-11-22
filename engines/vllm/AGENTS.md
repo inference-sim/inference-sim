@@ -1,26 +1,25 @@
-# Agent instructions for blis-vllm
+# Agent instructions for the vLLM engine
 
-These rules apply to every AI-assisted change to this repository. Human contributors follow the
-same rules; they are written here so an agent reads them first.
+These rules apply to every AI-assisted change under `engines/vllm/`. Human contributors follow the
+same rules; they are written here so an agent reads them first. The rules for the whole
+repository are in the root `CLAUDE.md`.
 
-## Cross-repository rules (all BLIS repositories)
+## Rules for the whole repository
 
-blis-vllm sits between blis-substrate and inference-sim. A change that touches more than one
-repository follows
-[the design](https://inference-sim.github.io/blis-design/) (changes across the repositories).
-In short:
+The substrate, both engines and the simulator are one Go module, so a change that touches more than
+one of them is one pull request (design: changes across directories). In short:
 
 1. **Public artifacts.** Never write internal project, customer or colleague names in a commit,
    code, comment, document, issue or pull request. Refer to private measurements by what they
    are ("internal deployment reports"). Run the name scan before every push.
 2. **Data.** Never commit third-party data. Commit derived values only, each with its source URL
    plus commit or sha256.
-3. **Versions.** Pin dependencies by release tag, or by the exact pushed head marked `TEMPORARY`
-   with its pull request. Never commit a `replace` in `go.mod`.
+3. **Versions.** Pin dependencies by release tag. The one `replace` in `go.mod` is the llm-d router
+   fork (`.github/agent-prompts/llm-d-router-fork.md`).
 4. **Tests.** Every behaviour change has a test that fails without it. Mutation-check it:
    revert the fix, see the test fail, restore, and say so in the commit message.
 
-## This repository
+## This directory
 
 - **One release.** A build models one vLLM release (`Upstream` in `provenance.go`). Every
   statement about vLLM cites `vllm/<path>:<lines>@<commit8>` at that release.
@@ -38,12 +37,13 @@ In short:
   decision; every patch is listed in `oracle/mocks.json`, and CI fails on a patch of decision
   code. Never change a golden trace's decisions without a `golden-reviewed: <trace>: <reason>` trailer, and a "Golden changes" section in the pull request body (`oracle/README.md`).
 - Tests: `go test ./...`; lint: `golangci-lint run ./...` (v2.14.0); the oracle tiers: the
-  `oracle-scenarios`, `oracle-inertness` and `oracle-fuzz` jobs of `ci.yml` (the required check `oracle-tier2` is their
-  aggregate), step by step, from a Python with `oracle/requirements.lock` installed
+  `oracle-scenarios`, `oracle-inertness` and `oracle-fuzz` jobs of `.github/workflows/oracle-vllm.yml`, step by step, from a Python with `oracle/requirements.lock` installed
   (`pip install --require-hashes --no-deps -r oracle/requirements-hashed.txt`, Linux x86_64;
   `oracle/README.md` gives each runner's command and the environment variables the Go fuzz
   tests read).
-- **Which CI jobs a change runs.** the repository-root `.github/workflows/ci.yml` (one CI for the single module); this directory holds no workflows.
+- **Which CI jobs a change runs.** The repository-root `.github/workflows/ci.yml` (one CI for the
+  single module; the header of `scripts/ci-changes.sh` gives the path classes); this directory
+  holds no workflows.
 - **Process checks.** the repository-root `.github/workflows/blis.yml` runs the shared checks;
   `.github/workflows/private-names.yml` is the name scan. The section below and
   `.github/pull_request_template.md` are generated from the invariant registry
