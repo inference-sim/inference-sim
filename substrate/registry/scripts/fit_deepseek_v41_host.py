@@ -69,7 +69,7 @@ import yaml
 # `tokenizers` library" (crusoecloud/fastokens 7923de6c, README blob e0bb3b78, Apache-2.0).
 FASTOKENS = "crusoecloud/fastokens 7923de6c76753347d4090c444e22f6c95a15f01b README.md (blob e0bb3b7811029d8c7d7f97823ad179c87cc9a715)"
 FASTOKENS_SPEEDUP = 10
-# The public cold-encode range of the Python path: vllm PR #47583's DeepSeek-V3 tokenizer
+# The public cold-encode range of the Python path: vllm-project/vllm#47583's DeepSeek-V3 tokenizer
 # benchmark, 35.66 ms at 32K and 160.40 ms at 128K tokens (1.11-1.25 us/token).
 PY_PATH_LOW_US = 1.11
 
@@ -519,7 +519,7 @@ def entries(ea: dict, ad: dict) -> list:
         "host_admission_per_token_rust_frontend", rust, "us_per_token", "assumed", False,
         scope_all, [("discussion", f"{FASTOKENS}: 'on average achieves a 10x+ faster "
                      f"tokenization compared to the tokenizers library'", "primary"),
-                    ("discussion", "vllm-project/vllm PR #47583 benchmark: DeepSeek-V3 "
+                    ("discussion", "vllm-project/vllm#47583 benchmark: DeepSeek-V3 "
                      "tokenizer cold encode 35.66 ms at 32K, 160.40 ms at 128K tokens",
                      "supporting"),
                     ("discussion", f"validator/testdata/anchors/{RUST_BOUND_JSON.name}: client "
@@ -535,7 +535,7 @@ def entries(ea: dict, ad: dict) -> list:
         f"host_admission_per_token ({ad['value']} us, the Python path) / {FASTOKENS_SPEEDUP}, "
         f"fastokens' stated average speedup over HF tokenizers = {rust} us/token. RANGE "
         f"{PY_PATH_LOW_US / FASTOKENS_SPEEDUP:.2f}-{rust} us/token: the low end divides the "
-        f"public Python-path rate (vllm PR #47583, DeepSeek-V3 tokenizer, {PY_PATH_LOW_US} us/"
+        f"public Python-path rate (vllm-project/vllm#47583, DeepSeek-V3 tokenizer, {PY_PATH_LOW_US} us/"
         f"token) instead, and the README says '10x+' and that the gap widens with prompt "
         f"length, so this value is the slow end. NOT MEASURED on any serving node, not fitted, "
         f"and NOT derived from any InferenceX TTFT. ONE-SIDED CHECK, not used to set it: the "
@@ -551,7 +551,7 @@ def entries(ea: dict, ad: dict) -> list:
         f"satisfies it, and a regression of the rows' mean TTFT on their mean prompt, with or "
         f"without the computed-token count, is not identified (slope -0.1 to 3.1 us/token "
         f"across the specifications tried). A published single-core benchmark of the same "
-        f"tokenizer library (vllm-project/vllm PR #51027, open: fastokens 0.3.1, 11,776-byte "
+        f"tokenizer library (vllm-project/vllm#51027, open: fastokens 0.3.1, 11,776-byte "
         f"Kimi-K2.5 fixture, ordinary encode 44.2 us, 254 MiB/s) implies a tokenization cost "
         f"well under this value per token, on a different tokenizer and CPU, and excludes "
         f"rendering and IPC. TO MEASURE IT: time the Rust frontend's admission of real corpus "

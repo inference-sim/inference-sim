@@ -10,13 +10,13 @@
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "78131239cd1524254f4e97ce6892832793fa82823af9e3570c94726e5c656f41",
-      "combined_hash": "78131239cd1524254f4e97ce6892832793fa82823af9e3570c94726e5c656f41"
+      "hash": "2b66fedf6c1b26b57854b522aa525f57923fecd769731835004ca5c6329d58c7",
+      "combined_hash": "2b66fedf6c1b26b57854b522aa525f57923fecd769731835004ca5c6329d58c7"
     },
     "registry": {
       "source": "path",
-      "hash": "01eebe1c5d843109b82b645f63025efb4fe7a1fdd5ad4eaa383a1749a5055322",
-      "combined_hash": "01eebe1c5d843109b82b645f63025efb4fe7a1fdd5ad4eaa383a1749a5055322"
+      "hash": "217d27a6e0dd97c3929854aa19f19bc4a58b194e97914eab7478a6a13fc8472e",
+      "combined_hash": "217d27a6e0dd97c3929854aa19f19bc4a58b194e97914eab7478a6a13fc8472e"
     },
     "released_data": false,
     "build": "unreleased"

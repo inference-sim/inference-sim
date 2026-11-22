@@ -42,7 +42,7 @@ the source_sha of the newest run; collectivex/bench and collectivex/docs/methodo
 WHICH DeepEP. CollectiveX runs DeepEP 01dc3aaac820 (library_version in every series); vLLM
 v0.31.0 pins d4f41e4e93. The GitHub compare d4f41e4e93...01dc3aa is 6 commits ahead, 0 behind.
 None touches csrc/kernels/legacy, where the low-latency kernels live. Four touch the elastic
-(v2) path the `normal` rows run (#674, #688, #715, #178), so the v2 entries measure a DeepEP
+(v2) path the `normal` rows run (deepseek-ai/DeepEP#674, deepseek-ai/DeepEP#688, deepseek-ai/DeepEP#715, deepseek-ai/DeepEP#178), so the v2 entries measure a DeepEP
 six commits newer than v0.31.0's; that residual is unmeasured and is stated on them.
 
 THE FORM: latency_us = floor + tokens_per_rank x hidden x 2 x top_k / rate, the basis the
@@ -126,7 +126,7 @@ DIFF = {
     "low-latency": ("DeepEP d4f41e4e93 (vLLM v0.31.0's pin)...01dc3aa: 6 commits ahead, 0 "
                     "behind, none under csrc/kernels/legacy, where these kernels live."),
     "normal": ("DeepEP d4f41e4e93 (vLLM v0.31.0's pin)...01dc3aa: 6 commits ahead, 0 behind, "
-               "four of them (#674, #688, #715, #178) on the elastic path these rows run, so "
+               "four of them (deepseek-ai/DeepEP#674, deepseek-ai/DeepEP#688, deepseek-ai/DeepEP#715, deepseek-ai/DeepEP#178) on the elastic path these rows run, so "
                "this measures a DeepEP six commits newer than v0.31.0's; that residual is "
                "unmeasured."),
 }

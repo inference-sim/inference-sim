@@ -649,7 +649,7 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 				"chosen as vLLM would choose it (head size "+strconv.Itoa(headSize)+"), which assumes "+
 					"FlashInfer 0.6.18 or later is installed, the backend's own gate "+
 					"(has_flashinfer_sm90_nope_mla; flashinfer_mla_sparse_sm90.py:194-199); "+
-					"without it vLLM runs "+backendFlashAttnMLASparse+" (inference-sim/inference-sim#2659)")
+					"without it vLLM runs "+backendFlashAttnMLASparse+" (_get_backend_priorities, cuda.py:137-145 at v0.31.0)")
 			if p.Layers, err = sparseMLAKernels(g, &c, pl.PP, be, note); err != nil {
 				return nil, err
 			}

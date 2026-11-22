@@ -312,7 +312,7 @@ func TestADeploymentMethodThatIsNotTheDraftersIsRefused(t *testing.T) {
 // vLLM puts FlashInfer's SM90 sparse-MLA backend first when the MLA layer's head size is 512 and
 // FlashAttention's first otherwise (_get_backend_priorities, cuda.py:137-145 at v0.31.0 and
 // :139-147 at v0.33.0). The head size is kv_lora_rank + qk_rope_head_dim: 576 for a rope-64 model
-// such as GLM-5 and DeepSeek-V3.2, 512 for GLM-5.3-Flash, a NoPE latent (inference-sim/inference-sim#2659). This
+// such as GLM-5 and DeepSeek-V3.2, 512 for GLM-5.3-Flash, a NoPE latent. This
 // assumes FlashInfer 0.6.18 or later is installed (the backend's own gate).
 func TestSparseMLAOnSM90PrefersFlashInferAtHeadSize512(t *testing.T) {
 	base := sparseMLABackendRequest{cache: "auto", headsPerRank: 8, tp: 8, dcp: 1, pcp: 1}
