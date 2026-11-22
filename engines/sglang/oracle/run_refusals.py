@@ -14,8 +14,12 @@ partner (the same site, an input SGLang accepts):
                entrypoints/engine.py:1165 launches in (arg_groups/validation_hook.py).
 
 The answer is the exception SGLang raised (its type and its message) or "accepted". Nothing is
-replaced beyond what oracle/mocks.json lists: the platform is the CPU's, no case reads it, and a
-module of a CUDA-only package SGLang imports is stubbed as oracle/stubs.py stubs it. The model of a
+replaced beyond what oracle/mocks.json lists. A policy and a tree_cache case read no platform. A
+server_args case resolves on the CUDA platform of the H100 entry of oracle/serverargs/cases.json,
+stated as run_serverargs.py states a chip (restore_cuda, stub_cuda_packages), in a process of its
+own forked before SGLang is imported: SGLang refuses a ServerArgs on a host with no accelerator
+("No accelerator ... or platform plugin is available."), so without a stated platform the answer
+would be the runner's, not SGLang's. No case reads the chip's capability or memory. The model of a
 server_args case is the CPU oracle's configuration-only model ($ORACLE_MODEL, as the scheduler
 runners read it).
 
@@ -77,7 +81,11 @@ def run_tree_cache(case: dict, index: int) -> dict:
     return {"accepted": type(cache).__name__}
 
 
-def run_server_args(case: dict, model: str) -> dict:
+def run_server_args(case: dict, model: str, chip: dict) -> dict:
+    import run_serverargs
+
+    run_serverargs.stub_cuda_packages()
+    run_serverargs.restore_cuda(chip)
     from sglang.srt.server_args import ServerArgs
 
     try:
@@ -87,6 +95,31 @@ def run_server_args(case: dict, model: str) -> dict:
     except Exception as e:  # SGLang's own refusal is the answer
         return refused(e)
     return {"accepted": "check_server_args"}
+
+
+def run_forked(case: dict, model: str) -> dict:
+    """One server_args case in a process of its own, so the platform it states stays in it."""
+    with open(os.path.join(HERE, "serverargs", "cases.json"), "rb") as f:
+        chip = json.load(f)["chips"]["H100"]
+    r, w = os.pipe()
+    pid = os.fork()
+    if pid == 0:
+        os.close(r)
+        try:
+            res = run_server_args(case, model, chip)
+        except BaseException as e:  # a harness failure, not a refusal
+            res = {"harness_error": "%s: %s" % (type(e).__name__, e)}
+        with os.fdopen(w, "w") as fw:
+            json.dump(res, fw)
+        os._exit(0)
+    os.close(w)
+    with os.fdopen(r) as fr:
+        data = fr.read()
+    os.waitpid(pid, 0)
+    res = json.loads(data) if data else {"harness_error": "no answer"}
+    if "harness_error" in res:
+        raise RuntimeError("%s: %s" % (case["name"], res["harness_error"]))
+    return res
 
 
 def main(argv) -> int:
@@ -110,6 +143,16 @@ def main(argv) -> int:
     import stubs
 
     stubs.install()
+    # A server_args case runs first, each in a forked process of its own, before SGLang is imported
+    # here: the platform it states (run_server_args) must be the one SGLang reads at import.
+    server_args_answers = {}
+    for k, case in enumerate(spec["cases"]):
+        if case["kind"] != "server_args":
+            continue
+        if not model:
+            print("ORACLE_MODEL names no model for the case %s" % case["name"], file=sys.stderr)
+            return 1
+        server_args_answers[k] = run_forked(case, model)
     out = []
     for k, case in enumerate(spec["cases"]):
         if case["kind"] == "policy":
@@ -117,10 +160,7 @@ def main(argv) -> int:
         elif case["kind"] == "tree_cache":
             ans = run_tree_cache(case, k)
         elif case["kind"] == "server_args":
-            if not model:
-                print("ORACLE_MODEL names no model for the case %s" % case["name"], file=sys.stderr)
-                return 1
-            ans = run_server_args(case, model)
+            ans = server_args_answers[k]
         else:
             print("%s: unknown kind %r" % (case["name"], case["kind"]), file=sys.stderr)
             return 1

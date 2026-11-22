@@ -119,6 +119,15 @@ def restore_cuda(chip: dict) -> None:
     srt_utils.is_flashinfer_available = common.is_flashinfer_available
 
 
+def stub_cuda_packages() -> None:
+    """The CUDA-only kernel packages (CUDA_STUBBED) import as stubs.py's stub module; call it in a
+    process before SGLang is imported."""
+    import stubs
+
+    stubs.STUBBED = tuple(stubs.STUBBED) + CUDA_STUBBED
+    stubs.install()
+
+
 def model_facts(sa) -> dict:
     """The model facts the Go resolution reads, as SGLang's own ModelConfig derives them from the
     model's configuration (configs/model_config.py). config/ takes them as an input, so the
@@ -257,10 +266,7 @@ def main(argv) -> int:
         if pid == 0:
             os.close(r)
             try:
-                import stubs
-
-                stubs.STUBBED = tuple(stubs.STUBBED) + CUDA_STUBBED
-                stubs.install()
+                stub_cuda_packages()
                 res = run_case(case, chip, models)
             except BaseException as e:  # a harness failure, not a refusal
                 res = {"name": case["name"], "harness_error": "%s: %s" % (type(e).__name__, e)}
