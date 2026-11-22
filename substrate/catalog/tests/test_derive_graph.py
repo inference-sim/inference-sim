@@ -262,21 +262,23 @@ def test_a_failure_names_its_model_once(tmp_path):
     assert "no-config: no config.json" in lines, r.stderr
 
 
-def test_a_known_missing_handler_is_refused_citing_its_issue(tmp_path):
-    """An architecture the catalog's open issues list as unhandled (HYV3, MiMoV2: inference-sim/inference-sim#2412)
-    is refused by name with that issue, and the refusal's other words are the generic one's."""
-    models = tmp_path / "models"
-    for name, arch in (("hy3-fp8", "HYV3ForCausalLM"), ("mimo-v2-flash", "MiMoV2ForCausalLM")):
-        (models / name).mkdir(parents=True)
-        (models / name / "config.json").write_text(json.dumps({"architectures": [arch]}))
-    r = subprocess.run([sys.executable, str(DERIVER), str(tmp_path), "--check"],
-                       capture_output=True, text=True)
-    assert r.returncode != 0
-    lines = r.stderr.splitlines()
-    for name, arch in (("hy3-fp8", "HYV3ForCausalLM"), ("mimo-v2-flash", "MiMoV2ForCausalLM")):
-        assert (f"{name}: no handler for architecture {arch!r} (open issue "
-                "inference-sim/inference-sim#2412); add one rather than letting a default "
-                "misprice the model") in lines, r.stderr
+def test_a_known_missing_handler_is_refused_citing_its_issue(tmp_path, monkeypatch):
+    """An architecture listed in UNHANDLED_ARCHITECTURE_ISSUES with no handler is refused by name with
+    its issue (X28), and the refusal's other words are the generic one's. Run in-process against a
+    stand-in architecture, because no real architecture is unhandled now that HYV3 and MiMoV2 are
+    derived: the mechanism stays for the next one."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph
+    assert "Qwen9ForCausalLM" not in derive_graph.HANDLERS
+    monkeypatch.setitem(derive_graph.UNHANDLED_ARCHITECTURE_ISSUES, "Qwen9ForCausalLM",
+                        "inference-sim/inference-sim#1")
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"architectures": ["Qwen9ForCausalLM"]}))
+    with pytest.raises(derive_graph.DeriveError) as e:
+        derive_graph.derive(p, "qwen9-1t")
+    assert str(e.value) == ("qwen9-1t: no handler for architecture 'Qwen9ForCausalLM' (open issue "
+                            "inference-sim/inference-sim#1); add one rather than letting a default "
+                            "misprice the model")
 
 
 @pytest.mark.parametrize("d", model_dirs(), ids=lambda d: d.name)
@@ -347,6 +349,10 @@ def test_attention_shape_matches_config(d: Path):
             # Gemma 4's full-attention layers take num_global_key_value_heads where
             # attention_k_eq_v is set (transformers' per_layer_config, which vLLM reads).
             assert n["n_kv"] == t["num_global_key_value_heads"]
+        elif n["kind"] == "swa" and config_of(d).get("architectures") == ["MiMoV2ForCausalLM"]:
+            # MiMo-V2's window layers state their own key/value head count (swa_num_key_value_heads);
+            # num_key_value_heads is the full-attention layers' (mimo_v2.py MiMoV2DecoderLayer).
+            assert n["n_kv"] == t["swa_num_key_value_heads"]
         else:
             assert n["n_kv"] == t["num_key_value_heads"]
 
@@ -7234,7 +7240,7 @@ def test_the_graphs_that_state_a_scale_are_the_block_scaled_ones():
     block = {"elements": 16384, "bytes": 4}
     assert {n for n, sc in scaled.items() if sc == block} == {
         "deepseek-r1-0528", "deepseek-v3", "glm-5", "glm-5.1-fp8", "glm-5.2-fp8", "glm-5.3", "glm-5.3-flash",
-        "minimax-m2.5", "minimax-m2.7", "mistral-large-4-1t-a52b", "qwen3.5-397b-a17b-fp8", "qwen3.8-flash-next-fp8"}
+        "mimo-v2-flash", "minimax-m2.5", "minimax-m2.7", "mistral-large-4-1t-a52b", "qwen3.5-397b-a17b-fp8", "qwen3.8-flash-next-fp8"}
     assert {n for n, sc in scaled.items() if sc != block} == {
         "minimax-m3-mxfp8", "minimax-m3-nvfp4", "minimax-m3.1-flash", "minimax-m3.1-flash-dspark",
         "deepseek-v4.1-flash"}
@@ -10576,3 +10582,210 @@ def test_mistral_large4_committed_graphs_census(model, layers_indexed, sharers):
     assert sum(k.endswith("_idx") for k in seq) == layers_indexed
     assert sum("_share_" in k for k in seq) == sharers
     assert g["derived_from"]["format"] == "mistral_params_json"
+
+
+# --- HYV3ForCausalLM and MiMoV2ForCausalLM (inference-sim/inference-sim#2412) ----------------------------
+
+HY3 = MODELS / "hy3-fp8"
+MIMO = MODELS / "mimo-v2-flash"
+
+
+def _derive_entry(model: Path) -> dict:
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    return derive_graph.derive(model / "config.json", model.name)
+
+
+def _kind(g: dict, kid: str) -> dict:
+    return {k["id"]: k for k in g["layer_kinds"]}[kid]
+
+
+def _roles(kind: dict) -> list[str]:
+    return [n.get("role", n["op"]) for n in kind["nodes"]]
+
+
+def test_hy3_and_mimo_are_derived_not_refused():
+    """Both architectures have a handler and are not listed as unhandled, so no refusal can cite their issue."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph
+    for arch in ("HYV3ForCausalLM", "MiMoV2ForCausalLM"):
+        assert arch in derive_graph.HANDLERS
+        assert arch not in derive_graph.UNHANDLED_ARCHITECTURE_ISSUES
+    assert "inference-sim/inference-sim#2412" not in derive_graph.UNHANDLED_ARCHITECTURE_ISSUES.values()
+
+
+@pytest.mark.parametrize("model", [HY3, MIMO], ids=lambda d: d.name)
+def test_hy3_and_mimo_committed_graph_is_what_the_deriver_derives(model):
+    g = yaml.safe_load((model / "graph.yaml").read_text())
+    derived = _derive_entry(model)
+    assert g["name"] == model.name
+    assert {k: g[k] for k in ("global", "layer_kinds", "stack", "head")} == \
+        {k: derived[k] for k in ("global", "layer_kinds", "stack", "head")}
+
+
+def test_hy3_stack_is_one_dense_layer_then_moe():
+    """first_k_dense_replace is 1 and num_hidden_layers 80: layer 0 has the dense MLP of
+    intermediate_size 13312, layers 1..79 the sparse one (HYV3DecoderLayer, hy_v3.py)."""
+    g = _derive_entry(HY3)
+    assert layer_sequence(g["stack"]) == ["attn_dense"] + ["attn_moe"] * 79
+    dense = _kind(g, "attn_dense")
+    gu, dn = _node(dense, "mlp_gate_up"), _node(dense, "mlp_down")
+    assert (gu["n"], gu["k"]) == (2 * 13312, 4096)
+    assert (dn["n"], dn["k"]) == (4096, 13312)
+    assert "experts" not in _roles(dense)
+
+
+def test_hy3_attention_and_projection_widths_are_the_checkpoints():
+    """64 query and 8 key/value heads of 128: a fused qkv of (64 + 2 * 8) * 128 = 10240 rows over
+    4096, and an o_proj reading 64 * 128 = 8192. Full attention on every layer. The widths agree with
+    the checkpoint's own safetensors headers (qkv_proj [10240, 4096], o_proj [4096, 8192])."""
+    g = _derive_entry(HY3)
+    for kid in ("attn_dense", "attn_moe"):
+        k = _kind(g, kid)
+        qkv, o = _node(k, "qkv_proj"), _node(k, "o_proj")
+        assert (qkv["n"], qkv["k"]) == (10240, 4096)
+        assert (o["n"], o["k"]) == (4096, 8192)
+        attn = [n for n in k["nodes"] if n["op"] == "Attention"][0]
+        assert (attn["kind"], attn["n_q"], attn["n_kv"], attn["d_h"]) == ("gqa", 64, 8, 128)
+        assert "window" not in attn
+
+
+def test_hy3_experts_router_and_shared_expert():
+    """192 routed experts of width 1536, top 8, one shared expert of the same width (a gated MLP, so
+    gate and up fused into 2 x 1536). The router is a replicated fp32 GEMM over the experts
+    (HYV3MoE builds ReplicatedLinear gate with params_dtype float32, hy_v3.py)."""
+    k = _kind(_derive_entry(HY3), "attn_moe")
+    ex = _node(k, "experts")
+    assert (ex["n"], ex["k"], ex["experts"], ex["top_k"]) == (1536, 4096, 192, 8)
+    r = _node(k, "router")
+    assert (r["n"], r["k"], r["tp"], r["weight_dtype"]) == (192, 4096, "replicated", "fp32")
+    gu, dn = _node(k, "shared_gate_up"), _node(k, "shared_down")
+    assert (gu["n"], gu["k"]) == (2 * 1536, 4096)
+    assert (dn["n"], dn["k"]) == (4096, 1536)
+
+
+def test_hy3_stored_widths_match_the_fp8_checkpoint():
+    """Per-tensor static FP8 (no weight_block_size), so there is no block scale; lm_head and the
+    embedding are excluded from quantization, so the head is bf16 beside the fp8 decoder."""
+    g = _derive_entry(HY3)
+    assert g["global"]["weight_dtype"] == "fp8"
+    assert "weight_scale" not in g["global"]
+    assert g["global"]["vocab_size"] == 120832
+    assert g["global"]["tie_word_embeddings"] is False
+    lm = _node({"nodes": g["head"]}, "lm_head")
+    assert (lm["n"], lm["k"], lm["weight_dtype"]) == (120832, 4096, "bf16")
+
+
+def test_hy3_mtp_draft_is_a_moe_layer_with_its_own_input_stage_and_final_norm():
+    """HYV3MultiTokenPredictorLayer (hy_v3_mtp.py): enorm, hnorm and a bf16 eh_proj
+    (nn.Linear 2 x hidden -> hidden, no quant config) ahead of a HYV3DecoderLayer at index
+    num_hidden_layers (sparse, since 80 >= first_k_dense_replace), then a final_layernorm."""
+    g = _derive_entry(HY3)
+    s = g["speculator"]
+    assert (s["method"], s["num_spec_tokens"]) == ("mtp", 1)
+    assert layer_sequence(s["stack"]) == ["mtp_moe"]
+    k = _kind(g, "mtp_moe")
+    roles = _roles(k)
+    assert roles[:3] == ["mtp_enorm", "mtp_hnorm", "mtp_eh_proj"]
+    assert roles[-1] != "mlp_out" and "mtp_final_norm" in roles
+    assert roles.index("mtp_final_norm") > roles.index("mlp_out")
+    eh = _node(k, "mtp_eh_proj")
+    assert (eh["n"], eh["k"], eh["weight_dtype"], eh["tp"]) == (4096, 8192, "bf16", "replicated")
+    assert "experts" in roles
+
+
+MIMO_FULL_LAYERS = {0, 5, 11, 17, 23, 29, 35, 41, 47}
+
+
+def test_mimo_layers_follow_hybrid_layer_pattern():
+    """hybrid_layer_pattern marks full attention with 0 and sliding window with 1; moe_layer_freq marks
+    the dense layer (layer 0 only). Read per layer, never from a period."""
+    g = _derive_entry(MIMO)
+    seq = layer_sequence(g["stack"])
+    assert len(seq) == 48
+    expected = ["full_dense" if i == 0 else "full_moe" if i in MIMO_FULL_LAYERS else "swa_moe"
+                for i in range(48)]
+    assert seq == expected
+
+
+def test_mimo_full_and_window_attention_have_their_own_head_counts_and_caches():
+    """Full layers: 64 query, 4 key/value heads, qk head width 192, value width 128. Window layers
+    (swa_*): 64 query, 8 key/value heads, the same widths, window 128. The cache entry is the stored
+    width, K at 192 and V at 128 (bf16 K + V per kv head): 4 x 320 x 2 = 2560 B full, 8 x 320 x 2 = 5120 B
+    window. The fused qkv rows carry the narrower value heads: 64 x 192 + 4 x 192 + 4 x 128 = 13568
+    full, 64 x 192 + 8 x 192 + 8 x 128 = 14848 window. o_proj reads 64 x 128 = 8192 and is bf16 (the
+    checkpoint lists every o_proj in ignored_layers)."""
+    g = _derive_entry(MIMO)
+    for kid, n_kv, qkv_n, win, entry in (("full_moe", 4, 13568, None, 2560), ("swa_moe", 8, 14848, 128, 5120)):
+        k = _kind(g, kid)
+        qkv, o = _node(k, "qkv_proj"), _node(k, "o_proj")
+        assert (qkv["n"], qkv["k"]) == (qkv_n, 4096), kid
+        assert (o["n"], o["k"], o["weight_dtype"]) == (4096, 8192, "bf16"), kid
+        a = [n for n in k["nodes"] if n["op"] == "Attention"][0]
+        assert (a["n_q"], a["n_kv"], a["d_h"]) == (64, n_kv, 192), kid
+        assert a.get("window") == win, kid
+        caches = a["caches"]
+        assert len(caches) == 1 and caches[0]["bytes_per_entry"] == entry, kid
+        if win:
+            assert caches[0]["kind"] == "window" and caches[0]["window"] == win, kid
+        else:
+            assert caches[0]["kind"] == "kv", kid
+
+
+def test_mimo_experts_are_mxfp4_and_the_router_follows_moe_router_dtype():
+    """256 routed experts of width 2048, top 8, no shared expert (n_shared_experts null). The routed
+    weights are stored MXFP4 (quantization_config.store_dtype) beside FP8 linears; the router is
+    built at moe_router_dtype, bfloat16 in this checkpoint."""
+    g = _derive_entry(MIMO)
+    for kid in ("full_moe", "swa_moe"):
+        k = _kind(g, kid)
+        ex = _node(k, "experts")
+        assert (ex["n"], ex["k"], ex["experts"], ex["top_k"], ex["weight_dtype"]) == (2048, 4096, 256, 8, "mxfp4")
+        r = _node(k, "router")
+        assert (r["n"], r["k"], r["weight_dtype"]) == (256, 4096, "bf16")
+        assert not [x for x in _roles(k) if x.startswith("shared_")]
+    dense = _kind(g, "full_dense")
+    assert (_node(dense, "mlp_gate_up")["n"], _node(dense, "mlp_down")["k"]) == (2 * 16384, 16384)
+
+
+def test_mimo_global_is_block_fp8_with_a_bf16_head():
+    g = _derive_entry(MIMO)
+    assert g["global"]["weight_dtype"] == "fp8"
+    assert g["global"]["weight_scale"] == {"elements": 128 * 128, "bytes": 4}
+    assert g["global"]["vocab_size"] == 152576
+    lm = _node({"nodes": g["head"]}, "lm_head")
+    assert (lm["n"], lm["k"], lm["weight_dtype"]) == (152576, 4096, "bf16")
+
+
+def test_mimo_draft_is_one_dense_layer_whatever_num_nextn_predict_layers_says():
+    """The config declares num_nextn_predict_layers 3, the checkpoint holds one MTP layer
+    (model_mtp.safetensors) whose MLP is dense, and vLLM's MiMoV2 MTP builds one layer."""
+    g = _derive_entry(MIMO)
+    s = g["speculator"]
+    assert (s["method"], s["num_spec_tokens"]) == ("mtp", 1)
+    assert layer_sequence(s["stack"]) == ["mtp_dense"]
+    assert "experts" not in _roles(_kind(g, "mtp_dense"))
+
+
+def test_mimo_vision_tower_is_bf16_and_audio_is_a_recorded_omission():
+    """MiMoV2OmniForCausalLM builds the ViT with quant_config None, so the tower is bf16 beside fp8 text
+    (the headers hold BF16 for every visual.* tensor). 28 blocks, full attention at fullatt_block_indexes
+    {0, 9, 18, 27}, window attention (64 tokens) elsewhere; 32 query and 8 key/value heads of 64:
+    qkv 3072 = (32 + 2 x 8) x 64 rows over 1280, proj reading 2048."""
+    g = _derive_entry(MIMO)
+    enc = g["encoder"]
+    assert [t["modality"] for t in enc["towers"]] == ["image"]
+    t = enc["towers"][0]
+    assert t["weight_dtype"] == "bf16"
+    seq = layer_sequence(t["stack"])
+    assert len(seq) == 28
+    assert {i for i, k in enumerate(seq) if k == "full_block"} == {0, 9, 18, 27}
+    kinds = {k["id"]: k for k in t["layer_kinds"]}
+    for kid, window in (("full_block", None), ("window_block", 64)):
+        nodes = {n["role"]: n for n in kinds[kid]["nodes"]}
+        assert (nodes["qkv"]["n"], nodes["qkv"]["k"]) == (3072, 1280)
+        assert (nodes["o_proj"]["n"], nodes["o_proj"]["k"]) == (1280, 2048)
+        assert (nodes["gate_up"]["n"], nodes["down"]["k"]) == (2 * 4608, 4608)
+        assert nodes["attention"].get("window") == window
+        assert (nodes["attention"]["n_heads"], nodes["attention"]["d_h"]) == (32, 64)
+    assert [(o["modality"], o["issue"]) for o in enc["omitted"]] == [("audio", "inference-sim/inference-sim#2474")]

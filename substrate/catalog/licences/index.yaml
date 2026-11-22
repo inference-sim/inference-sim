@@ -217,6 +217,13 @@ models:
         sha256: bbf009b29f1dc413c2b3c9abb12637b0cdffa350cd0a3bd6eba89b270fc9e83f
     notice: "Llama 4 is licensed under the Llama 4 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved."
     note: "RedHatAI's repository holds no licence file; its card names llama4 and the base model meta-llama/Llama-4-Scout-17B-16E-Instruct, so the text is Meta's own copy at a pinned commit."
+  - model: mimo-v2-flash
+    licence: MIT
+    texts:
+      - file: MIT.txt
+        source: https://raw.githubusercontent.com/spdx/license-list-data/279b7e997a87c09be00dd6bdda189519ade502cf/text/MIT.txt
+        sha256: b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5
+    note: "The card names MIT, and the repository holds no licence file and names no copyright holder, so the text is SPDX's MIT licence."
   - model: minimax-m2.5
     licence: LicenseRef-modified-mit
     texts:

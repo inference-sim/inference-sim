@@ -74,8 +74,9 @@ type KVLayerRun struct {
 //
 // It is nil when every layer is full attention, which is one group. What it does not map is an
 // error naming it: a recurrent layer whose state the graph or the engine block does not state,
-// window and state caches, another kind's indexer, shared KV beside these, and a drafter's layers
-// beside them.
+// window and state caches other than a grouped-query or sliding-window node's own (a stated entry
+// that is not the symmetric one is mapped, statedHeadBytes), another kind's indexer, shared KV
+// beside these, and a drafter's layers beside them.
 func (m *Model) KVLayers() ([]KVLayerRun, error) {
 	runner, _ := m.ModelRunner()
 	return kvLayersOf(m.graph, m.k.Deployment(), m.engine, m.serving(runner))
@@ -290,6 +291,11 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 				switch {
 				case c.Kind == model.CacheKV:
 					shared = shared || !c.Owned
+					r.StateBytes = statedHeadBytes(n, c, ds.cacheDType, g)
+				case c.Kind == model.CacheWindow && c.Owned && n.AttentionKind == model.AttentionSWA && c.Window == n.Window:
+					// A sliding-window layer states its window ring where its entry is not the
+					// symmetric one (MiMo-V2's window layers, a value head narrower than the key head).
+					r.StateBytes = statedHeadBytes(n, c, ds.cacheDType, g)
 				case c.Kind == model.CacheIndex && c.Owned && n.AttentionKind == model.AttentionGQA:
 					b, err := m3IndexerElemBytes(engine.IndexerKVDType, c, n.HeadDim)
 					if err != nil {
@@ -306,7 +312,7 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 			mlaLatent(&r, n, hybridMLA)
 			plain = plain && r.Spec == "full"
 			if l := len(runs) - 1; l >= 0 && runs[l].Spec == r.Spec && runs[l].SlidingWindow == r.SlidingWindow &&
-				runs[l].NumKVHeads == r.NumKVHeads && runs[l].HeadSize == r.HeadSize {
+				runs[l].NumKVHeads == r.NumKVHeads && runs[l].HeadSize == r.HeadSize && runs[l].StateBytes == r.StateBytes {
 				runs[l].Count++
 			} else {
 				runs = append(runs, r)
@@ -358,11 +364,19 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 					}
 					continue
 				}
-				if len(n.Caches) > 0 {
-					return nil, fmt.Errorf("drafter layer kind %s states caches, which are not mapped to a KV cache spec", id)
-				}
 				r := KVLayerRun{Count: 1, Spec: "full", NumKVHeads: max(n.NumKVHeads/tp, 1), HeadSize: n.HeadDim,
 					Draft: true}
+				// The drafter's attention is mapped as the target's is: an owned window ring or KV
+				// cache of the node's own kind sets its value width; any other cache is not mapped.
+				for _, c := range n.Caches {
+					switch {
+					case c.Owned && c.Kind == model.CacheKV,
+						c.Owned && c.Kind == model.CacheWindow && n.AttentionKind == model.AttentionSWA && c.Window == n.Window:
+						r.StateBytes = statedHeadBytes(n, c, ds.cacheDType, g)
+					default:
+						return nil, fmt.Errorf("drafter layer kind %s states a %s cache, which is not mapped to a KV cache spec", id, c.Kind)
+					}
+				}
 				if n.AttentionKind == model.AttentionSWA {
 					r.Spec, r.SlidingWindow = "sliding_window", n.Window
 				}
@@ -386,6 +400,32 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 			"states no speculator to read them from", sp.Method)
 	}
 	return runs, nil
+}
+
+// statedHeadBytes is the bytes one token holds in one KV head of a grouped-query layer whose stated
+// cache is not the symmetric entry, keys and values of head_dim elements each, or 0 for a layer
+// whose entry is that (the page the kernel infers). A layer whose value head is narrower than its
+// key head (MiMo-V2: head_dim 192, v_head_dim 128) is one: vLLM's AttentionSpec sizes its page as
+// kv heads x block x (head_size + head_size_v) x dtype
+// (vllm/v1/kv_cache_interface.py:511-604@0fda86a35419), which is what the graph's entry states,
+// so the run states the page's content (state_content_bytes) as the graph gives it and the
+// engine sizes the page from that instead of from head_size elements. It is 0 too for an entry
+// that is not a whole number of bytes a head, a cache of several tokens an entry, or a cache
+// dtype whose element is not a plain width: each is a page this does not size.
+func statedHeadBytes(n model.Node, c model.Cache, cacheDType string, g *model.Graph) int {
+	if (n.AttentionKind != model.AttentionGQA && n.AttentionKind != model.AttentionSWA) ||
+		n.NumKVHeads < 1 || n.HeadDim < 1 || c.EntryTokens() != 1 {
+		return 0
+	}
+	elem, err := attentionElemBytes(cacheDType, g)
+	if err != nil || elem < 1 {
+		return 0
+	}
+	entry := int64(c.EntryBytes(cacheDType))
+	if entry == 2*int64(n.NumKVHeads)*int64(n.HeadDim)*elem || entry%int64(n.NumKVHeads) != 0 {
+		return 0
+	}
+	return int(entry / int64(n.NumKVHeads))
 }
 
 // mlaLatent turns a full-attention run of an MLA node, the target's or the drafter's, into the

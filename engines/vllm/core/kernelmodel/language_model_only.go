@@ -61,6 +61,7 @@ var pricedTowerConfigs = map[string]string{
 	"58211cb34baf5e71ef4cc12c2f17466775a0bfb2c23d5abae9ecc3bd44f770fb": "inkling-2-small",
 	"dc6617d800bacc9d3caa41570f885467f733a7cee25f8eef3a60e01c1ff98343": "mistral-large-4-1t-a52b",
 	"c09dc9ea714c8de78f42f8a86dc6c1ecec039f8a8c465eb39cc33994f2f89cfd": "mistral-large-4-1t-a52b-nvfp4",
+	"61bea4a0f7a0dd8969f8cae528761e26b697dd12ff63e98804c3f0945492e621": "mimo-v2-flash",
 }
 
 // languageModelOnlyAssumptions is the rule for engine.language_model_only, which depends on the model.

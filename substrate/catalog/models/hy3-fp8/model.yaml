@@ -1,0 +1,10 @@
+name: hy3-fp8
+source:
+  provider: huggingface
+  repo: tencent/Hy3-FP8
+  revision: ecc1d8e194e093f33177f2f0ef7ce8f397b2d68b
+  retrieved: 2026-11-22
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/tencent/Hy3-FP8/raw/ecc1d8e194e093f33177f2f0ef7ce8f397b2d68b/LICENSE
+drafters: [speculator]

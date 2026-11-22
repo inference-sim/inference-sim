@@ -1714,6 +1714,12 @@ MOE_FAMILIES: dict[str, dict[str, Any]] = {
     # GateLinear(out_dtype=float32) built with no quant config, so its weight is at the model
     # dtype; the shared expert is a gated SiLU MLP of the routed expert's width.
     "PixtralForConditionalGeneration": {"router": "base", "shared": "gated"},
+    # HYV3MoE (hy_v3.py@0fda86a35419): a ReplicatedLinear gate in float32, one gated-SiLU shared
+    # expert of the routed expert's width (num_shared_experts 1).
+    "HYV3ForCausalLM": {"router": "fp32", "shared": "gated"},
+    # MiMoV2MoE (mimo_v2.py@0fda86a35419): a ReplicatedLinear gate at moe_router_dtype (handler_mimo_v2
+    # states it), and no shared expert (n_shared_experts is null).
+    "MiMoV2ForCausalLM": {"router": "base", "shared": "gated"},
     # DeepseekV2MoE (model_executor/models/deepseek_v2.py:320-326, 359-372). Kimi-K2.5's text
     # decoder is the same class (kimi_k25.py), and GLM-5's DSA family builds it too
     # (vllm/models/deepseek_v32/nvidia/model.py:98-104).
@@ -1903,7 +1909,12 @@ DENSE_DRAFT_KIND_ID = "mtp_dense"
 
 # The architectures whose MTP layer is DeepSeekMultiTokenPredictorLayer's, with an enorm, an hnorm
 # and an eh_proj ahead of its decoder block (see handler_moe's declare_draft).
-DEEPSEEK_MTP_ARCHS = frozenset({"DeepseekV3ForCausalLM", "GlmMoeDsaForCausalLM"})
+DEEPSEEK_MTP_ARCHS = frozenset({"DeepseekV3ForCausalLM", "GlmMoeDsaForCausalLM", "HYV3ForCausalLM"})
+
+# The MTP layers that end in a norm of their own before the head: HYV3MultiTokenPredictorLayer's
+# final_layernorm, applied to the decoder block's output (vllm/model_executor/models/hy_v3_mtp.py
+# @0fda86a35419:111-138).
+MTP_FINAL_NORM_ARCHS = frozenset({"HYV3ForCausalLM"})
 
 
 # Architectures whose head width this deriver reads from the fp8 exclusion list. Keyed
@@ -1930,6 +1941,8 @@ HEAD_AT_BASE_ARCHS = frozenset({
     "GlmMoeDsaForCausalLM",               # glm-5, glm-5.1-fp8, glm-5.2-fp8, glm-5.3 (fp8)
     "KimiK25ForConditionalGeneration",    # kimi-k2.5, kimi-k2.6 (int4, lm_head ignored)
     "MiniMaxM2ForCausalLM",               # minimax-m2.5, minimax-m2.7 (fp8)
+    "HYV3ForCausalLM",                    # hy3-fp8 (fp8, lm_head ignored)
+    "MiMoV2ForCausalLM",                  # mimo-v2-flash (fp8, the head is not quantized)
     "Qwen3_5MoeForConditionalGeneration",  # qwen3.5-397b-a17b-fp8
 })
 
@@ -2838,6 +2851,8 @@ def handler_moe(cfg, raw, model):
             nodes = [norm("mtp_enorm"), norm("mtp_hnorm"),
                      dict(gemm("mtp_eh_proj", hidden, 2 * hidden), weight_dtype=base, tp="replicated"),
                      *nodes]
+            if architecture_of(raw, model) in MTP_FINAL_NORM_ARCHS:
+                nodes.append(norm("mtp_final_norm"))
         kinds.append({"id": DRAFT_KIND_ID, "nodes": nodes, "edges": chain(nodes)})
 
 
@@ -2987,6 +3002,125 @@ def handler_minimax_m2(cfg, raw, model):
             )
     result = handler_moe(cfg, raw, model)
     return modelopt_placed(result, raw, model)
+
+
+def handler_mimo_v2(cfg, raw, model):
+    """MiMo-V2 (MiMoV2ForCausalLM, vLLM models/mimo_v2.py@0fda86a35419): 48 layers, each a full or a
+    sliding-window attention over a dense or a routed-expert MLP.
+
+    Two per-layer vectors give the layers, read as written and never as a period: hybrid_layer_pattern
+    (0 full attention, 1 sliding window) and moe_layer_freq (0 dense MLP, 1 routed experts). The
+    layer kinds are the combinations the vectors produce.
+
+    The two attentions differ in more than the window. Full layers use num_key_value_heads and
+    window layers swa_num_key_value_heads (4 and 8 in the committed checkpoint), at the same 64 query
+    heads and qk head width, and both carry a value head narrower than the key head (v_head_dim 128
+    against head_dim 192). The fused qkv projection therefore has (nq + nkv) x head_dim + nkv x v_head_dim
+    rows rather than attention_block's (nq + 2 x nkv) x head_dim, o_proj reads nq x v_head_dim, and the
+    cache entry is nkv x (head_dim + v_head_dim) x 2 bytes. Every o_proj is unquantized: the checkpoint
+    lists each one under quantization_config.ignored_layers, and the MTP layer builds its o_proj with
+    quant_config None (mimo_v2.py:295-302). The routed experts are stored MXFP4 (quantization_config.store_dtype) beside
+    block-FP8 linears; the router is built at moe_router_dtype (default float32,
+    mimo_v2.py:159-167).
+
+    The config declares num_nextn_predict_layers 3, but the checkpoint holds one MTP layer
+    (model_mtp.safetensors) and vLLM builds one (MiMoV2MultiTokenPredictor, num_mtp_layers = 1,
+    mimo_v2_mtp.py:177; the speculative config pins n_predict to _MIMO_V2_PRO_NUM_MTP_LAYERS = 1,
+    mimo_v2_mtp.py:53, config/speculative.py), so the speculator states one drafted token. Its layer is a sliding-window
+    attention at the swa_* widths over a DENSE MLP (MiMoV2MTPLayer, mimo_v2_mtp.py:57-142), after the enorm, hnorm and eh_proj
+    input stage and before a final norm.
+
+    NOT PRICED, and each makes the cost model's prediction differ from the engine's: the learned attention
+    sink bias of the window layers (add_swa_attention_sink_bias), attention_value_scale 0.707 and the
+    partial rotary factor 0.334 (small elementwise work); the fused-qkv padding vLLM adds so the head
+    count divides the tensor-parallel size (MiMoV2Attention); and the value width, which the graph's
+    attention node cannot state apart from d_h, so the attention compute is priced at 192 where the
+    value half runs at 128 (an overstatement of the value-side work; the cache bytes are exact).
+    """
+    hidden = int(require(cfg, "hidden_size", model))
+    layers = int(require(cfg, "num_layers", model))
+    full_pattern = raw.get("hybrid_layer_pattern")
+    moe_freq = raw.get("moe_layer_freq")
+    for name, vec in (("hybrid_layer_pattern", full_pattern), ("moe_layer_freq", moe_freq)):
+        if not isinstance(vec, list) or len(vec) != layers:
+            raise DeriveError(f"{model}: {name} must list one entry per layer ({layers}), got {vec!r}")
+        if set(vec) - {0, 1}:
+            raise DeriveError(f"{model}: {name} names {sorted(set(vec) - {0, 1})}; only 0 and 1 are defined "
+                              f"(mimo_v2.py reads them as booleans)")
+    nq = int(require(cfg, "num_q_heads", model))
+    d_k = head_dim(cfg, model)
+    d_v = int(raw.get("v_head_dim") or d_k)
+    swa_nq = int(raw.get("swa_num_attention_heads") or nq)
+    swa_dk = int(raw.get("swa_head_dim") or d_k)
+    swa_dv = int(raw.get("swa_v_head_dim") or d_v)
+    window = int(require_key(raw, "sliding_window_size", model))
+    full_kv = int(require(cfg, "num_kv_heads", model))
+    swa_kv = int(require_key(raw, "swa_num_key_value_heads", model))
+    if (swa_nq, swa_dk, swa_dv) != (nq, d_k, d_v):
+        raise DeriveError(f"{model}: the window layers' head widths differ from the full layers' "
+                          f"({swa_nq}, {swa_dk}, {swa_dv} against {nq}, {d_k}, {d_v}); the kinds below share one set")
+    base = base_dtype(cfg, raw, model)
+    act = DTYPE_WIDTHS[base]
+
+    def attn_nodes(full: bool) -> list[dict[str, Any]]:
+        kv = full_kv if full else swa_kv
+        entry = kv * (d_k + d_v) * act
+        node: dict[str, Any] = {"op": "Attention", "holds_engine_kv": True,
+                                "kind": "gqa" if full else "swa", "n_q": nq, "n_kv": kv, "d_h": d_k}
+        if full:
+            node["caches"] = [{"name": "kv", "kind": "kv", "owned": True, "bytes_per_entry": entry,
+                               "bytes_by_cache_dtype": {"fp8": entry // 2, "fp8_e4m3": entry // 2}}]
+        else:
+            node["window"] = window
+            node["caches"] = [{"name": "swa", "kind": "window", "owned": True, "bytes_per_entry": entry,
+                               "window": window}]
+        return [norm("input_norm"),
+                gemm("qkv_proj", nq * d_k + kv * d_k + kv * d_v, hidden),
+                node,
+                dict(gemm("o_proj", hidden, nq * d_v), weight_dtype=base),
+                collective("AllReduce", "attn_out", EMIT_TENSOR_PARALLEL)]
+
+    router_dtype = DTYPES.get(str(raw.get("moe_router_dtype", "float32")).lower())
+    if router_dtype is None:
+        raise DeriveError(f"{model}: moe_router_dtype {raw.get('moe_router_dtype')!r} is not a width this "
+                          f"deriver knows")
+    store = (raw.get("quantization_config") or {}).get("store_dtype")
+    routed = DTYPES.get(str(store).lower()) if store else None
+    if store and routed is None:
+        raise DeriveError(f"{model}: quantization_config.store_dtype {store!r} is not a width this deriver knows")
+
+    def moe_nodes(full: bool) -> list[dict[str, Any]]:
+        experts = moe_block(cfg, model, hidden, raw, family=architecture_of(raw, model), routed_width=routed)
+        experts = [dict(n, weight_dtype=router_dtype) if n.get("role") == "router" else n for n in experts]
+        return [*attn_nodes(full), norm("post_attn_norm"), *experts,
+                collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
+                collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE)]
+
+    def dense_nodes(full: bool) -> list[dict[str, Any]]:
+        return [*attn_nodes(full), norm("post_attn_norm"), *dense_mlp(cfg, model, hidden),
+                collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE)]
+
+    builders = {"full_dense": lambda: dense_nodes(True), "full_moe": lambda: moe_nodes(True),
+                "swa_dense": lambda: dense_nodes(False), "swa_moe": lambda: moe_nodes(False)}
+    sequence = [("full" if not full_pattern[i] else "swa") + ("_moe" if moe_freq[i] else "_dense")
+                for i in range(layers)]
+    kinds = []
+    for kid in dict.fromkeys(sequence):
+        nodes = builders[kid]()
+        kinds.append({"id": kid, "nodes": nodes, "edges": chain(nodes)})
+
+    extras: dict[str, Any] = {}
+    if int(pick(cfg, "num_spec_tokens") or 0):
+        draft = [norm("mtp_enorm"), norm("mtp_hnorm"),
+                 dict(gemm("mtp_eh_proj", hidden, 2 * hidden), weight_dtype=base, tp="replicated"),
+                 *attn_nodes(False), norm("post_attn_norm"), *dense_mlp(cfg, model, hidden),
+                 collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE),
+                 norm("mtp_final_norm")]
+        kinds.append({"id": DENSE_DRAFT_KIND_ID, "nodes": draft, "edges": chain(draft)})
+        extras["speculator"] = {"method": speculative_method(architecture_of(raw, model), model),
+                                "num_spec_tokens": 1,
+                                "stack": {"pattern": [DENSE_DRAFT_KIND_ID], "repeat": 1}}
+    return kinds, compress(sequence), extras
 
 
 def modelopt_placed(result, raw, model, draft=None):
@@ -7968,12 +8102,11 @@ def handler_gemma4(cfg, raw, model):
 
 # Architectures a checkpoint is known to use that have no handler yet, each with the open issue
 # that adds one; the refusal for such an architecture cites the issue (X28) instead of leaving a
-# user to guess whether the gap is known. The dense Qwen3_5ForConditionalGeneration of #2412 has a
-# handler below (handler_qwen3_5_dense) and an entry (qwen3.8-27b), so it is not listed.
-UNHANDLED_ARCHITECTURE_ISSUES = {
-    "HYV3ForCausalLM": "inference-sim/inference-sim#2412",
-    "MiMoV2ForCausalLM": "inference-sim/inference-sim#2412",
-}
+# user to guess whether the gap is known. Empty now: the architectures that were listed here (the dense
+# Qwen3_5ForConditionalGeneration, HYV3ForCausalLM and MiMoV2ForCausalLM) each have a handler and
+# an entry (qwen3.8-27b, hy3-fp8, mimo-v2-flash). An entry is added with the issue that closes it
+# and removed with the handler.
+UNHANDLED_ARCHITECTURE_ISSUES: dict[str, str] = {}
 
 
 def inkling2_expert_widths(cfg: dict[str, Any], model: str, layers: int,
@@ -8575,6 +8708,11 @@ HANDLERS = {
     # Gemma 4's text decoder, which vLLM builds as Gemma4ForCausalLM over text_config
     # (model_executor/models/gemma4_mm.py:1144-1150 at v0.33.0); see handler_gemma4.
     "Gemma4ForConditionalGeneration": handler_gemma4,
+    # HYV3DecoderLayer (vllm/model_executor/models/hy_v3.py@0fda86a35419): GQA with a per-head q/k
+    # norm, a dense first layer (first_k_dense_replace) and sparse layers with one shared expert;
+    # the same layout handler_moe prices, with MOE_FAMILIES stating its fp32 router.
+    "HYV3ForCausalLM": handler_moe,
+    "MiMoV2ForCausalLM": handler_mimo_v2,
 }
 
 
@@ -8612,14 +8750,17 @@ def _norm(role: str, hidden: int, params: int, *, count: int = 1, rows: str = "p
 
 def _vit_block(hidden: int, heads: int, head_dim: int, inter: int, *, qkv_bias: bool, o_bias: bool,
                mlp_bias: bool, gated: bool, norm_params: int, extra: list[dict[str, Any]] | None = None,
-               window: int = 0, tp: bool = True) -> list[dict[str, Any]]:
+               window: int = 0, tp: bool = True, kv_heads: int = 0) -> list[dict[str, Any]]:
     """One pre-norm ViT block: two norms, fused qkv, bidirectional attention, output
     projection and a plain or gated MLP. tp False leaves every node replicated (a tower the
-    model code builds with ReplicatedLinear)."""
+    model code builds with ReplicatedLinear). kv_heads, where the tower states fewer key/value
+    heads than query heads, sizes the fused projection at (heads + 2 x kv_heads) x head_dim rows;
+    the default is one key/value head per query head."""
     col, row, shard = ("column", "row", "sharded") if tp else ("replicated",) * 3
     qkv = heads * head_dim
+    qkv_rows = (heads + 2 * (kv_heads or heads)) * head_dim
     nodes = [_norm("norms", hidden, norm_params, count=2),
-             _gemm("qkv", 3 * qkv, hidden, bias=qkv_bias, tp=col)]
+             _gemm("qkv", qkv_rows, hidden, bias=qkv_bias, tp=col)]
     nodes += extra or []
     nodes += [_vnode("attention", "attention", n_heads=heads, d_h=head_dim, window=window, tp=shard),
               _gemm("o_proj", hidden, qkv, bias=o_bias, tp=row)]
@@ -8881,6 +9022,57 @@ def tower_muse_spark(vc: dict[str, Any], raw: dict[str, Any], text_hidden: int, 
     return t
 
 
+def tower_mimo_v2(vc: dict[str, Any], raw: dict[str, Any], text_hidden: int, dtype: str, model: str) -> dict[str, Any]:
+    """MiMo-V2's vision tower (MiMoVisionTransformer, vllm/model_executor/models/mimo_v2_omni.py@0fda86a35419:
+    95-148, 360-500; vLLM serves a MiMoV2ForCausalLM config that has a vision_config as
+    MiMoV2OmniForCausalLM, transformers_utils/model_arch_config_convertor.py:615-625).
+
+    Pre-norm blocks of RMSNorm, a fused qkv with biases over grouped key/value heads (qkv rows
+    (heads + 2 x kv_heads) x head width), attention at the head width qk_channels = kv_channels, a
+    biased output projection and a gated-SiLU MLP with biases. Blocks in fullatt_block_indexes attend
+    over the whole image; the rest attend within visual_token_window_size tokens. The patch embedding
+    is the Qwen2.5-VL Conv3d (no bias) over a 2-frame, 16-pixel patch, and the merger is a norm over
+    the tower width, a 2x2 merge into a bias-free GELU MLP.
+
+    qk_channels and kv_channels are not in the checkpoint's vision_config: Mimo_VLVisionConfig defaults
+    both to 64 (configs/mimo_v2_omni.py), and the checkpoint's header agrees (qkv.weight is 3072 x 1280
+    = (32 + 2 x 8) x 64).
+
+    NOT PRICED: the per-head attention sink of every window block (32 values), and the token reorder
+    (apply_index) that moves between the row-ordered and the column-ordered windows; both are
+    small next to the blocks' GEMMs."""
+    H, I, nh, L, p, tp_, sm, out, nkv, win = _need(
+        vc, ("hidden_size", "intermediate_size", "num_heads", "depth", "patch_size", "temporal_patch_size",
+             "spatial_merge_size", "out_hidden_size", "num_key_value_heads", "visual_token_window_size"), model)
+    if int(out) != text_hidden:
+        raise DeriveError(f"{model}: out_hidden_size {out} differs from the text hidden size {text_hidden}")
+    hd = int(vc.get("qk_channels", 64))
+    if int(vc.get("kv_channels", 64)) != hd:
+        raise DeriveError(f"{model}: kv_channels differs from qk_channels; the tower's attention node states one head width")
+    if int(nh) % int(nkv):
+        raise DeriveError(f"{model}: {nh} heads do not divide over {nkv} key/value heads")
+    ch = int(vc.get("in_channels", 3))
+    full_at = set(int(i) for i in _need(vc, ("fullatt_block_indexes",), model)[0])
+    if any(i < 0 or i >= int(L) for i in full_at):
+        raise DeriveError(f"{model}: fullatt_block_indexes {sorted(full_at)} name a block outside 0..{int(L) - 1}")
+    kinds = []
+    for kid, w in (("full_block", 0), ("window_block", int(win))):
+        kinds.append({"id": kid, "nodes": _vit_block(H, int(nh), hd, I, qkv_bias=True, o_bias=True, mlp_bias=True,
+                                                     gated=True, norm_params=2 * H, window=w, kv_heads=int(nkv))})
+    emb = [_gemm("patch_embed", H, ch * tp_ * p * p, bias=False)]
+    M = H * sm * sm
+    proj = [_norm("ln_q", H, H),
+            _gemm("merge_fc1", M, M, bias=False, tp="column", rows="output_tokens"),
+            _vnode("elementwise", "merge_act", bytes_per_row=2 * M * 2, rows="output_tokens", tp="sharded"),
+            _gemm("merge_fc2", text_hidden, M, bias=False, tp="row", rows="output_tokens")]
+    t = _tower(vc, text_hidden, dtype, patch=p, temporal=tp_, channels=ch, merge=sm * sm, parallel="tensor",
+               embedding=emb, block=[], layers=0, projector=proj)
+    t["layer_kinds"] = kinds
+    seq = ["full_block" if i in full_at else "window_block" for i in range(int(L))]
+    t["stack"] = compress(seq)
+    return t
+
+
 def tower_inkling2(vc: dict[str, Any], raw: dict[str, Any], text_hidden: int, dtype: str, model: str) -> dict[str, Any]:
     """Inkling-2's vision tower (vllm/models/inkling2/nvidia/vision.py@0fda86a35419): a 20-pixel
     patch ViT replicated on every rank (nn.Linear, no TP), a class token per image, layer
@@ -8946,6 +9138,7 @@ TOWER_BUILDERS = {
     "MuseSparkForConditionalGeneration": tower_muse_spark,
     "Inkling2ForConditionalGeneration": tower_inkling2,
     "PixtralForConditionalGeneration": tower_pixtral,
+    "MiMoV2ForCausalLM": tower_mimo_v2,
 }
 # Towers the kernels cannot express or the deriver cannot yet state, by architecture.
 UNPRICED_IMAGE_TOWERS = {
@@ -8958,6 +9151,7 @@ UNPRICED_IMAGE_TOWERS = {
 AUDIO_TOWERS = {
     "MuseSparkForConditionalGeneration": "a ConvNeXt-style stack with depthwise convolutions, which have no primitive",
     "InklingForConditionalGeneration": "a discrete-mel embedding sum, which is not priced",
+    "MiMoV2ForCausalLM": "a local transformer over grouped speech-token embeddings, which is not priced",
 }
 TOWER_PREFIXES = ("vision_tower", "visual", "vision_model", "vision_encoder", "mm_projector",
                   "multi_modal_projector", "embed_vision", "vision_adapter", "vision_projection",
@@ -8968,7 +9162,7 @@ _TOWER_DTYPES = {"bfloat16": "bf16", "float16": "fp16", "float32": "fp32"}
 # Architectures whose engine builds the vision tower with no quantization config, so a
 # quantized checkpoint's tower is stored at the configuration's dtype whatever the block says
 # (Pixtral: VisionTransformer is built without quant_config, pixtral.py@0fda86a35419).
-TOWERS_UNQUANTIZED_BY_ENGINE = frozenset({"PixtralForConditionalGeneration"})
+TOWERS_UNQUANTIZED_BY_ENGINE = frozenset({"PixtralForConditionalGeneration", "MiMoV2ForCausalLM"})
 
 
 def tower_dtype(raw: dict[str, Any], model: str) -> str | None:
@@ -9522,6 +9716,8 @@ MTP_ARCHS = frozenset({
     "Glm5NextForConditionalGeneration",
     "MiniMaxM3SparseForConditionalGeneration",
     "MiniMaxM3SparseForCausalLM",
+    "HYV3ForCausalLM",
+    "MiMoV2ForCausalLM",
 })
 
 

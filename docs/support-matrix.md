@@ -8,33 +8,33 @@ Each cell is one model on one chip, over one fabric, in one serving mode, on one
 
 | | cells |
 |---|---|
-| cells | 3840 |
-| simulate | 2024 |
+| cells | 3936 |
+| simulate | 2072 |
 | refused, a limit (capacity or upstream) | 96 |
-| refused, a defect | 1720 |
+| refused, a defect | 1768 |
 
 ## By engine and chip
 
 | engine | chip | simulate | limit | defect |
 |---|---|---|---|---|
-| sglang | b200 | 34 | 16 | 270 |
-| sglang | b300 | 34 | 16 | 270 |
-| sglang | gb200-nvl72 | 34 | 16 | 270 |
-| sglang | gb300 | 34 | 16 | 270 |
-| sglang | h100 | 22 | 16 | 282 |
-| sglang | h200 | 22 | 12 | 286 |
-| vllm | b200 | 308 | 0 | 12 |
-| vllm | b300 | 308 | 0 | 12 |
-| vllm | gb200-nvl72 | 308 | 0 | 12 |
-| vllm | gb300 | 308 | 0 | 12 |
-| vllm | h100 | 304 | 4 | 12 |
-| vllm | h200 | 308 | 0 | 12 |
+| sglang | b200 | 34 | 16 | 278 |
+| sglang | b300 | 34 | 16 | 278 |
+| sglang | gb200-nvl72 | 34 | 16 | 278 |
+| sglang | gb300 | 34 | 16 | 278 |
+| sglang | h100 | 22 | 16 | 290 |
+| sglang | h200 | 22 | 12 | 294 |
+| vllm | b200 | 316 | 0 | 12 |
+| vllm | b300 | 316 | 0 | 12 |
+| vllm | gb200-nvl72 | 316 | 0 | 12 |
+| vllm | gb300 | 316 | 0 | 12 |
+| vllm | h100 | 312 | 4 | 12 |
+| vllm | h200 | 316 | 0 | 12 |
 
 ## Defects, by issue
 
 | issue | cause | cells | models |
 |---|---|---|---|
-| inference-sim/inference-sim#2344 | the SGLang engine does not lower this architecture, chip or setting | 1228 | 58 |
+| inference-sim/inference-sim#2344 | the SGLang engine does not lower this architecture, chip or setting | 1276 | 60 |
 | inference-sim/inference-sim#2346 | the SGLang engine does not lower this architecture, chip or setting | 24 | 2 |
 | inference-sim/inference-sim#2351 | the SGLang engine does not model prefill/decode disaggregation | 204 | 19 |
 | inference-sim/inference-sim#2366 | the SGLang engine does not lower this architecture, chip or setting | 120 | 5 |
