@@ -182,9 +182,10 @@
    "checkpoint_files": true
   },
   "llama-3.1-8b": {
-   "repo": "meta-llama/Llama-3.1-8B-Instruct",
-   "revision": "0e9e39f249a16976918f6564b8830bc894c89659",
-   "licence": "llama3.1 community licence"
+   "repo": "NousResearch/Meta-Llama-3.1-8B-Instruct",
+   "revision": "d10aef7999a2b5ba950ab3974312feeedbfe0b77",
+   "licence": "llama3.1 community licence",
+   "note": "A public mirror of meta-llama/Llama-3.1-8B-Instruct (a gated repository, which CI cannot read without an account's token). The two files the oracle reads, config.json and generation_config.json, are byte-identical to the gated repository at revision 0e9e39f249a16976918f6564b8830bc894c89659 (sha256 config.json 29e4c210b0d6ac178b16b2a255a568bdb23b581e50ca1ef6a6d071dd85704e6e, generation_config.json 189fb0c0d7fd8a527db217c0a60a0e013f0394cd8800f9697a666a9e75e5f7fd; compared 2026-11-22); tokenizer_config.json differs and the oracle does not read it."
   },
   "qwen2.5-7b": {
    "repo": "Qwen/Qwen2.5-7B-Instruct",
