@@ -142,13 +142,13 @@ func (r panicTagged) ResolvedAll2AllBackend(backend, moeBackend string) string {
 	return resolvedAll2AllBackend(r.EngineRules, backend, moeBackend)
 }
 
-// SelfCommunicatingMoEBackend is likewise offered by a pack that knows the binding.
-func (r panicTagged) SelfCommunicatingMoEBackend(moeBackend string) (self, known bool) {
+// All2AllBindingRefusal is likewise offered by a pack that knows the binding.
+func (r panicTagged) All2AllBindingRefusal(backend, moeBackend string) string {
 	defer tag()
 	if b, ok := r.EngineRules.(interface {
-		SelfCommunicatingMoEBackend(string) (bool, bool)
+		All2AllBindingRefusal(backend, moeBackend string) string
 	}); ok {
-		return b.SelfCommunicatingMoEBackend(moeBackend)
+		return b.All2AllBindingRefusal(backend, moeBackend)
 	}
-	return false, false
+	return ""
 }

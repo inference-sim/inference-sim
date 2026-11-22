@@ -52,7 +52,7 @@ func TestThePlanStatesTheAll2AllBackendTheEngineRuns(t *testing.T) {
 
 // vLLM refuses what bind_passthrough_all2all_backend refuses (vllm/config/kernel.py:206-227): a
 // FlashInfer MoE-EP backend beside an explicit all2all_backend, and passthrough beside any other MoE
-// backend. The lowering refuses both by name, citing the open issue, and builds the pairs vLLM
+// backend. The lowering refuses both by name, citing vLLM's source, and builds the pairs vLLM
 // accepts; the note for a bound passthrough says the communication is inside the MoE kernel.
 func TestTheLoweringRefusesWhatVLLMsPassthroughBindingRefuses(t *testing.T) {
 	for _, c := range []struct {
@@ -82,8 +82,8 @@ func TestTheLoweringRefusesWhatVLLMsPassthroughBindingRefuses(t *testing.T) {
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), "issues/2657") {
-				t.Fatalf("err %v, want a refusal naming the combination and issues/2657", err)
+			if err == nil || !strings.Contains(err.Error(), "vllm/config/kernel.py") {
+				t.Fatalf("err %v, want a refusal naming the combination and vLLM's source", err)
 			}
 		})
 	}

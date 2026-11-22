@@ -14,6 +14,7 @@
 package lowering
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -926,33 +927,19 @@ func resolvedAll2AllBackend(r enginefacts.EngineRules, backend, moeBackend strin
 	return r.EffectiveAll2AllBackend(backend)
 }
 
-// refuseAll2AllBinding refuses what bind_passthrough_all2all_backend refuses
-// (vllm/config/kernel.py:206-227@4ba787ec9959e566d3b587a796dff07673324da5): a FlashInfer MoE-EP
-// backend beside an explicit all2all_backend other than the default or passthrough, and passthrough
-// beside any other MoE backend. The rules pack refuses both too (moe-ep-backend-binds-passthrough),
-// but a caller can reach the lowering without it (inference-sim/inference-sim#2657). A release whose pack does not know
-// the binding refuses nothing here.
+// refuseAll2AllBinding refuses what bind_passthrough_all2all_backend refuses: the pack's own
+// statement of it, the one its rule uses (core/rulepack/pack All2AllBindingRefusal), since a caller
+// can reach the lowering without the rules pack's Check. A release whose pack does not know the
+// binding refuses nothing here.
 func refuseAll2AllBinding(r enginefacts.EngineRules, backend, moeBackend string) error {
 	b, ok := r.(interface {
-		SelfCommunicatingMoEBackend(string) (self, known bool)
+		All2AllBindingRefusal(backend, moeBackend string) string
 	})
 	if !ok {
 		return nil
 	}
-	self, known := b.SelfCommunicatingMoEBackend(moeBackend)
-	if !known {
-		return nil
-	}
-	stated := r.EffectiveAll2AllBackend(backend)
-	switch {
-	case self && stated != r.EffectiveAll2AllBackend("") && stated != "passthrough":
-		return fmt.Errorf("all2all_backend %q beside moe_backend %q: the MoE backend dispatches and combines itself, "+
-			"and vLLM refuses any explicit all2all_backend with it; leave all2all_backend unset "+
-			"(vllm/config/kernel.py:206-215, https://github.com/inference-sim/inference-sim/issues/2657)", backend, moeBackend)
-	case !self && stated == "passthrough":
-		return fmt.Errorf("all2all_backend passthrough beside moe_backend %q: passthrough is valid only beside a MoE backend "+
-			"that dispatches and combines itself, and vLLM refuses it otherwise "+
-			"(vllm/config/kernel.py:216-227, https://github.com/inference-sim/inference-sim/issues/2657)", moeBackend)
+	if msg := b.All2AllBindingRefusal(backend, moeBackend); msg != "" {
+		return errors.New(msg)
 	}
 	return nil
 }

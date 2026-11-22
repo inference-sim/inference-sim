@@ -6,6 +6,7 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/contracts/check"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/pack"
@@ -85,5 +86,40 @@ func TestARuleCanBeWrittenOutsideThePackage(t *testing.T) {
 	all := p.Check(pack.Input{}).All()
 	if len(all) != 1 || all[0].Rule != "always" {
 		t.Fatalf("Check found %v, want the one finding the rule reports", all)
+	}
+}
+
+// The binding to passthrough is stated once, by the pack, and the rules pack and the lowering both
+// ask it: it refuses an explicit backend beside a MoE backend that dispatches itself and
+// passthrough beside any other, accepts the default and the removed names, and says nothing for a
+// release with no such backends.
+func TestAll2AllBindingRefusal(t *testing.T) {
+	p := v0_33.Pack()
+	for _, c := range []struct {
+		a2a, moe string
+		refused  bool
+	}{
+		{"", "flashinfer_moe_ep_cutedsl", false},
+		{"passthrough", "flashinfer_moe_ep_cutedsl", false},
+		{"pplx", "flashinfer_moe_ep_mega_deep_gemm", false},
+		{"deepep_low_latency", "flashinfer_moe_ep_cutedsl", true},
+		{"mori_high_throughput", "flashinfer-moe-ep-mega-deep-gemm", true},
+		{"passthrough", "triton", true},
+		{"passthrough", "", true},
+		{"deepep_low_latency", "triton", false},
+		{"", "", false},
+	} {
+		msg := p.All2AllBindingRefusal(c.a2a, c.moe)
+		if (msg != "") != c.refused {
+			t.Errorf("all2all_backend %q beside moe_backend %q: refusal %q, refused want %v", c.a2a, c.moe, msg, c.refused)
+		}
+		if msg != "" && !strings.Contains(msg, "vllm/config/kernel.py") {
+			t.Errorf("refusal %q does not cite vLLM's source", msg)
+		}
+	}
+	none := *p
+	none.SelfCommunicatingMoEBackends = nil
+	if msg := none.All2AllBindingRefusal("passthrough", "triton"); msg != "" {
+		t.Errorf("a pack with no binding refused: %q", msg)
 	}
 }

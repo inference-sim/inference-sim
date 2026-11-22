@@ -207,11 +207,27 @@ func (p *Pack) ResolvedAll2AllBackend(backend, moeBackend string) string {
 	return eff
 }
 
-// SelfCommunicatingMoEBackend reports whether an MoE backend dispatches and combines tokens inside
-// its own kernels (the binding to passthrough), and whether this release has the binding at all. A
-// pack that states no such backends has no binding.
-func (p *Pack) SelfCommunicatingMoEBackend(moeBackend string) (self, known bool) {
-	return p.SelfCommunicatingMoEBackends[NormalizeMoEBackend(moeBackend)], len(p.SelfCommunicatingMoEBackends) > 0
+// All2AllBindingRefusal is what vLLM's bind_passthrough_all2all_backend refuses for a stated
+// all2all_backend beside a stated MoE backend (vllm/config/kernel.py:206-227), or "" when it
+// accepts the pair or this release has no such binding: an all2all_backend other than the default
+// or passthrough beside a MoE backend that dispatches and combines itself, and passthrough beside
+// any other MoE backend. The rules pack and the lowering both ask here, so the two cannot drift.
+func (p *Pack) All2AllBindingRefusal(backend, moeBackend string) string {
+	if len(p.SelfCommunicatingMoEBackends) == 0 {
+		return ""
+	}
+	stated := p.EffectiveAll2AllBackend(backend)
+	switch self := p.SelfCommunicatingMoEBackends[NormalizeMoEBackend(moeBackend)]; {
+	case self && stated != p.EffectiveAll2AllBackend("") && stated != "passthrough":
+		return fmt.Sprintf("all2all_backend %q beside moe_backend %q: the MoE backend dispatches and combines itself, "+
+			"and vLLM refuses any explicit all2all_backend with it; leave all2all_backend unset "+
+			"(vllm/config/kernel.py:206-215)", backend, moeBackend)
+	case !self && stated == "passthrough":
+		return fmt.Sprintf("all2all_backend passthrough beside moe_backend %q: passthrough is valid only beside a MoE backend "+
+			"that dispatches and combines itself, and vLLM refuses it otherwise "+
+			"(vllm/config/kernel.py:216-227)", moeBackend)
+	}
+	return ""
 }
 
 // NormalizeMoEBackend spells a --moe-backend value as the engine does before validating

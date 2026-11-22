@@ -1048,21 +1048,11 @@ func ruleList(p *pack.Pack) []pack.Rule {
 			Because: "this release binds all2all_backend passthrough (no framework all-to-all) to the MoE backends that dispatch and combine themselves, the FlashInfer MoE-EP megakernels, and refuses at startup any other explicit all2all_backend beside one and passthrough beside any other MoE backend (vllm/config/kernel.py:194-227@5df63a72), so such a pool does not run; left at the default, the backend is rebound to passthrough, which prices no all-to-all",
 			Check: func(in pack.Input, out *validate.Problems) {
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
-					moe := pack.NormalizeMoEBackend(e.MoEBackend)
-					selfCommunicating := moe == "flashinfer_moe_ep_cutedsl" || moe == "flashinfer_moe_ep_mega_deep_gemm"
 					// The binding reads the backend after ParallelConfig has renamed the removed
 					// pplx and naive to allgather_reducescatter (vllm/config/parallel.py _resolve_all2all_backend),
 					// so those start beside an EP megakernel, as the default does.
-					a2a := p.EffectiveAll2AllBackend(e.All2AllBackend)
-					switch {
-					case selfCommunicating && a2a != "passthrough" && a2a != p.EffectiveAll2AllBackend(""):
-						out.RuleErrorf("moe-ep-backend-binds-passthrough",
-							"%s.engine: moe_backend %q dispatches and combines itself; engine %s refuses it beside all2all_backend %q (leave all2all_backend unset)",
-							at, moe, p.Version, e.All2AllBackend)
-					case !selfCommunicating && e.All2AllBackend == "passthrough":
-						out.RuleErrorf("moe-ep-backend-binds-passthrough",
-							"%s.engine: all2all_backend passthrough is valid on engine %s only beside a MoE backend that dispatches and combines itself (flashinfer_moe_ep_cutedsl, flashinfer_moe_ep_mega_deep_gemm), not moe_backend %q",
-							at, p.Version, moe)
+					if msg := p.All2AllBindingRefusal(e.All2AllBackend, e.MoEBackend); msg != "" {
+						out.RuleErrorf("moe-ep-backend-binds-passthrough", "%s.engine: engine %s refuses %s", at, p.Version, msg)
 					}
 				})
 			},
