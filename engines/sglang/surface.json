@@ -3930,7 +3930,7 @@
    "site": "arg_groups/fields/device.py:16",
    "class": "Device",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:disagg",
@@ -3939,7 +3939,7 @@
    "site": "arg_groups/fields/disagg.py:21",
    "class": "Disagg",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:exec.features",
@@ -3948,7 +3948,7 @@
    "site": "arg_groups/fields/exec_.py:37",
    "class": "ExecFeatures",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:exec.kernel",
@@ -3957,7 +3957,7 @@
    "site": "arg_groups/fields/exec_.py:199",
    "class": "ExecKernel",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:exec.mamba",
@@ -3966,7 +3966,7 @@
    "site": "arg_groups/fields/exec_.py:458",
    "class": "ExecMamba",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:exec.graph",
@@ -3975,7 +3975,7 @@
    "site": "arg_groups/fields/exec_.py:598",
    "class": "ExecGraph",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:exec.comm",
@@ -3984,7 +3984,7 @@
    "site": "arg_groups/fields/exec_.py:704",
    "class": "ExecComm",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:exec.moe",
@@ -3993,7 +3993,7 @@
    "site": "arg_groups/fields/exec_.py:818",
    "class": "ExecMoe",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:exec.overlap",
@@ -4002,7 +4002,7 @@
    "site": "arg_groups/fields/exec_.py:1039",
    "class": "ExecOverlap",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:exec.offload",
@@ -4011,7 +4011,7 @@
    "site": "arg_groups/fields/exec_.py:1060",
    "class": "ExecOffload",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:exec.dllm",
@@ -4020,7 +4020,7 @@
    "site": "arg_groups/fields/exec_.py:1121",
    "class": "ExecDllm",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:exec.deterministic",
@@ -4029,7 +4029,7 @@
    "site": "arg_groups/fields/exec_.py:1145",
    "class": "ExecDeterministic",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:lora",
@@ -4038,7 +4038,7 @@
    "site": "arg_groups/fields/lora.py:26",
    "class": "Lora",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:memory",
@@ -4047,7 +4047,7 @@
    "site": "arg_groups/fields/memory.py:21",
    "class": "Memory",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:mm",
@@ -4056,7 +4056,7 @@
    "site": "arg_groups/fields/mm.py:24",
    "class": "Mm",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:model",
@@ -4065,7 +4065,7 @@
    "site": "arg_groups/fields/model.py:31",
    "class": "Model",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:observability",
@@ -4074,7 +4074,7 @@
    "site": "arg_groups/fields/observability.py:23",
    "class": "Observability",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:parallel",
@@ -4083,7 +4083,7 @@
    "site": "arg_groups/fields/parallel.py:17",
    "class": "Parallel",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:schedule",
@@ -4092,7 +4092,7 @@
    "site": "arg_groups/fields/schedule.py:19",
    "class": "Schedule",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:serving",
@@ -4101,7 +4101,7 @@
    "site": "arg_groups/fields/serving.py:22",
    "class": "Serving",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "server_args_group:spec",
@@ -4110,7 +4110,7 @@
    "site": "arg_groups/fields/spec.py:24",
    "class": "Spec",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   {
    "id": "engine_setting:SGLANG_INIT_NEW_TOKEN_RATIO",

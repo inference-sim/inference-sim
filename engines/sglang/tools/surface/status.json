@@ -1932,87 +1932,87 @@
   },
   "server_args_group:device": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:disagg": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:exec.comm": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:exec.deterministic": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:exec.dllm": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:exec.features": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:exec.graph": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:exec.kernel": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:exec.mamba": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:exec.moe": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:exec.offload": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:exec.overlap": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:lora": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:memory": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:mm": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:model": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:observability": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:parallel": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:schedule": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:serving": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "server_args_group:spec": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-sglang/issues/24"
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
   },
   "spec_algo:DFLASH": {
    "status": "refused",
