@@ -73,6 +73,8 @@ func TestGoldenChangeCheck(t *testing.T) {
 	for name, body := range map[string]string{
 		"one line": "Golden change: a.json gains moved:true because the router now reports it.\n",
 		"wrapped":  "Intro\n\nGolden change:\n  a.json gains moved:true,\n  because the router now reports it.\n\nMore\n",
+		// The newest commit's statement comes first, ahead of a body longer than a pipe buffer.
+		"long body": "Golden change: a.json gains moved:true because the router now reports it.\n\n" + strings.Repeat("an older commit message line\n", 8000),
 	} {
 		if out, err := check(golden, body); err != nil {
 			t.Errorf("%s: a stated change was refused: %v\n%s", name, err, out)

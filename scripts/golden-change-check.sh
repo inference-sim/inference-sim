@@ -17,10 +17,11 @@ if [ -z "$moved" ]; then
   exit 0
 fi
 
+# awk reads all of its input (the first statement is kept), so a long body cannot SIGPIPE printf
 statement=$(printf '%s\n' "$body" | awk '
-  found && /^[[:space:]]*$/ { exit }
+  found && /^[[:space:]]*$/ { found = 0; done = 1; next }
   found { print; next }
-  /^[[:space:]]*Golden change:/ { found = 1; sub(/^[[:space:]]*Golden change:[[:space:]]*/, ""); print }
+  !done && /^[[:space:]]*Golden change:/ { found = 1; sub(/^[[:space:]]*Golden change:[[:space:]]*/, ""); print }
 ')
 words=$(printf '%s' "$statement" | wc -w | tr -d ' ')
 if [ "$words" -lt 8 ]; then
