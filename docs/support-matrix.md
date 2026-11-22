@@ -9,37 +9,37 @@ Each cell is one model on one chip, over one fabric, in one serving mode, on one
 | | cells |
 |---|---|
 | cells | 3840 |
-| simulate | 1640 |
-| refused, a limit (capacity or upstream) | 192 |
-| refused, a defect | 2008 |
+| simulate | 2024 |
+| refused, a limit (capacity or upstream) | 96 |
+| refused, a defect | 1720 |
 
 ## By engine and chip
 
 | engine | chip | simulate | limit | defect |
 |---|---|---|---|---|
-| sglang | b200 | 0 | 24 | 296 |
-| sglang | b300 | 0 | 24 | 296 |
-| sglang | gb200-nvl72 | 0 | 24 | 296 |
-| sglang | gb300 | 0 | 24 | 296 |
-| sglang | h100 | 0 | 24 | 296 |
-| sglang | h200 | 12 | 20 | 288 |
-| vllm | b200 | 272 | 8 | 40 |
-| vllm | b300 | 272 | 8 | 40 |
-| vllm | gb200-nvl72 | 272 | 8 | 40 |
-| vllm | gb300 | 272 | 8 | 40 |
-| vllm | h100 | 268 | 12 | 40 |
-| vllm | h200 | 272 | 8 | 40 |
+| sglang | b200 | 34 | 16 | 270 |
+| sglang | b300 | 34 | 16 | 270 |
+| sglang | gb200-nvl72 | 34 | 16 | 270 |
+| sglang | gb300 | 34 | 16 | 270 |
+| sglang | h100 | 22 | 16 | 282 |
+| sglang | h200 | 22 | 12 | 286 |
+| vllm | b200 | 308 | 0 | 12 |
+| vllm | b300 | 308 | 0 | 12 |
+| vllm | gb200-nvl72 | 308 | 0 | 12 |
+| vllm | gb300 | 308 | 0 | 12 |
+| vllm | h100 | 304 | 4 | 12 |
+| vllm | h200 | 308 | 0 | 12 |
 
 ## Defects, by issue
 
 | issue | cause | cells | models |
 |---|---|---|---|
-| inference-sim/inference-sim#2344 | the SGLang engine does not lower this architecture, chip or setting | 1476 | 76 |
-| inference-sim/inference-sim#2351 | the SGLang engine does not model prefill/decode disaggregation | 12 | 6 |
-| inference-sim/inference-sim#2366 | the SGLang engine does not lower this architecture, chip or setting | 40 | 5 |
+| inference-sim/inference-sim#2344 | the SGLang engine does not lower this architecture, chip or setting | 1228 | 58 |
+| inference-sim/inference-sim#2346 | the SGLang engine does not lower this architecture, chip or setting | 24 | 2 |
+| inference-sim/inference-sim#2351 | the SGLang engine does not model prefill/decode disaggregation | 204 | 19 |
+| inference-sim/inference-sim#2366 | the SGLang engine does not lower this architecture, chip or setting | 120 | 5 |
 | inference-sim/inference-sim#2489 | sparse MLA attention beside recurrent layers is not mapped | 48 | 2 |
-| inference-sim/inference-sim#2322 | P/D with a prefill engine that backs off its last prompt tokens (a Mamba-state model, or MTP with K>1) is not modelled | 360 | 30 |
-| inference-sim/inference-sim#2323 | the P/D pools of a DSpark or DFlash model resolve no per-block KV | 72 | 6 |
+| inference-sim/inference-sim#2650 | the SGLang engine does not lower this architecture, chip or setting | 96 | 8 |
 
 The models of each issue are the `model` and `engine` columns of `support-matrix.tsv` for its `issue`.
 
@@ -49,9 +49,9 @@ The share of the prices a cell's pools hold that each method supplies, summed ov
 
 | chip | measured | calibrated | transferred | literature | vendor_spec | roofline | assumed | not_charged |
 |---|---|---|---|---|---|---|---|---|
-| h100 | 65.0% | 0.0% | 0.3% | 0.3% | 8.0% | 0.0% | 25.8% | 0.6% |
+| h100 | 65.0% | 0.0% | 0.3% | 0.3% | 8.0% | 0.0% | 25.9% | 0.6% |
 | h200 | 64.1% | 0.0% | 1.5% | 0.3% | 8.1% | 0.0% | 25.3% | 0.6% |
-| b200 | 62.3% | 0.0% | 2.3% | 0.3% | 7.9% | 0.0% | 26.6% | 0.6% |
-| b300 | 63.8% | 0.0% | 0.0% | 0.0% | 8.1% | 0.0% | 27.4% | 0.6% |
-| gb200-nvl72 | 74.0% | 0.0% | 3.5% | 0.3% | 8.2% | 0.0% | 13.5% | 0.6% |
-| gb300 | 55.5% | 0.0% | 0.0% | 0.0% | 8.3% | 0.0% | 35.5% | 0.6% |
+| b200 | 62.3% | 0.0% | 2.3% | 0.3% | 7.9% | 0.0% | 26.7% | 0.6% |
+| b300 | 63.8% | 0.0% | 0.0% | 0.0% | 8.1% | 0.0% | 27.5% | 0.6% |
+| gb200-nvl72 | 73.9% | 0.0% | 3.5% | 0.3% | 8.1% | 0.0% | 13.6% | 0.6% |
+| gb300 | 55.4% | 0.0% | 0.0% | 0.0% | 8.3% | 0.0% | 35.6% | 0.6% |
