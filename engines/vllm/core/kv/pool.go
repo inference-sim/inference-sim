@@ -39,11 +39,11 @@ type Block struct {
 // caching: a fixed set of blocks, a free queue ordered for eviction, and the map from a
 // cached block's hash to the blocks that hold it.
 type Pool struct {
-	blocks  []*Block
-	free    freeQueue
-	cached  map[string][]*Block // hash -> blocks holding it, in insertion order
-	caching bool
-	null    *Block
+	numBlocks int
+	free      freeQueue
+	cached    map[string][]*Block // hash -> blocks holding it, in insertion order
+	caching   bool
+	null      *Block
 	// events, when non-nil, collects the KV cache events vLLM's BlockPool queues
 	// (kv_event_queue, block_pool.py:179-185) until TakeEvents.
 	events *[]Event
@@ -108,18 +108,15 @@ func NewPool(numBlocks int, enableCaching bool) *Pool {
 	if numBlocks < 1 {
 		panic(fmt.Sprintf("kv: a pool needs at least one block, got %d", numBlocks))
 	}
-	p := &Pool{blocks: make([]*Block, numBlocks), cached: map[string][]*Block{}, caching: enableCaching}
-	for i := range p.blocks {
-		p.blocks[i] = &Block{ID: i}
-	}
-	p.free.init(p.blocks)
+	p := &Pool{numBlocks: numBlocks, cached: map[string][]*Block{}, caching: enableCaching}
+	p.free.init(numBlocks)
 	p.null = p.free.popLeft()
 	p.null.Null = true
 	return p
 }
 
 // NumBlocks is the pool's total block count, including the null block.
-func (p *Pool) NumBlocks() int { return len(p.blocks) }
+func (p *Pool) NumBlocks() int { return p.numBlocks }
 
 // NumFree is get_num_free_blocks (block_pool.py:868-875).
 func (p *Pool) NumFree() int { return p.free.n }
@@ -137,7 +134,7 @@ func (p *Pool) NumCached() int {
 // Usage is get_usage (block_pool.py:877-888): one minus the free share of the blocks that
 // can hold KV, the null block excluded.
 func (p *Pool) Usage() float64 {
-	total := len(p.blocks) - 1
+	total := p.numBlocks - 1
 	if total == 0 {
 		return 0
 	}
@@ -433,16 +430,23 @@ func (p *Pool) CachePartialBlock(g uint32, b *Block, hashes []BlockHash, numToke
 // freeQueue is FreeKVCacheBlockQueue (kv_cache_utils.py:246-420): a doubly linked list of
 // free blocks, LRU at the head, with O(1) removal from the middle. It starts ordered by
 // block ID.
+//
+// vLLM builds every KVCacheBlock when the pool is made. A pool here holds millions of blocks
+// (a large-memory GPU with a small KV footprint per token), a hundred bytes each, so a block
+// is built when the queue first hands it out. The blocks never handed out are the virgin run:
+// the IDs nextID to endID-1 in ascending order, stood for by the one sentinel virgin in the
+// list. A virgin block is never held by a caller, so none is ever removed from the middle,
+// prepended or appended; the run is only consumed from its low end, in the position the
+// built blocks would have taken, and the order blocks leave the queue is vLLM's.
 type freeQueue struct {
-	head, tail Block // sentinels
-	n          int
+	head, tail, virgin Block // sentinels
+	nextID, endID      int
+	n                  int
 }
 
-func (q *freeQueue) init(bs []*Block) {
-	q.head.next, q.tail.prev = &q.tail, &q.head
-	for _, b := range bs {
-		q.pushBack(b)
-	}
+func (q *freeQueue) init(numBlocks int) {
+	q.head.next, q.virgin.prev, q.virgin.next, q.tail.prev = &q.virgin, &q.head, &q.tail, &q.virgin
+	q.nextID, q.endID, q.n = 0, numBlocks, numBlocks
 }
 
 func (q *freeQueue) pushBack(b *Block) {
@@ -454,6 +458,16 @@ func (q *freeQueue) pushBack(b *Block) {
 
 func (q *freeQueue) popLeft() *Block {
 	b := q.head.next
+	if b == &q.virgin {
+		b = &Block{ID: q.nextID}
+		q.nextID++
+		q.n--
+		if q.nextID == q.endID {
+			q.virgin.prev.next, q.virgin.next.prev = q.virgin.next, q.virgin.prev
+			q.virgin.prev, q.virgin.next = nil, nil
+		}
+		return b
+	}
 	if b == &q.tail {
 		panic("kv: no free blocks")
 	}

@@ -3,6 +3,7 @@
 package kv
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -76,7 +77,8 @@ func TestFreeQueueRemove_RefusesABlockItDoesNotHold(t *testing.T) {
 // refuses it rather than splicing the other queue and miscounting this one.
 func TestFreeQueueRemove_RefusesABlockOfAnotherQueue(t *testing.T) {
 	p, other := NewPool(4, true), NewPool(4, true)
-	theirs := other.free.head.next // free and correctly linked, but in the other pool's queue
+	theirs := other.free.popLeft() // free and correctly linked, but in the other pool's queue
+	other.free.pushBack(theirs)
 	before, otherBefore := p.NumFree(), other.NumFree()
 	func() {
 		defer func() {
@@ -89,5 +91,80 @@ func TestFreeQueueRemove_RefusesABlockOfAnotherQueue(t *testing.T) {
 	if p.NumFree() != before || other.NumFree() != otherBefore {
 		t.Errorf("a refused remove changed the counts: %d and %d, want %d and %d",
 			p.NumFree(), other.NumFree(), before, otherBefore)
+	}
+}
+
+// The free queue starts ordered by block ID and gives blocks back at its head or tail as vLLM's
+// does; building a block when it is first handed out must not change the order any sequence of
+// pops, prepends and appends yields, against a queue that holds every block from the start.
+func TestFreeQueue_OrderIsThatOfAnEagerQueue(t *testing.T) {
+	const n = 40
+	var q freeQueue
+	q.init(n)
+	eager := make([]int, n)
+	for i := range eager {
+		eager[i] = i
+	}
+	var held []*Block
+	seed := uint32(7)
+	next := func(m int) int { seed = seed*1664525 + 1013904223; return int(seed>>16) % m }
+	for step := 0; step < 400; step++ {
+		switch op := next(3); {
+		case op == 0 && len(eager) > 0:
+			b := q.popLeft()
+			if b.ID != eager[0] {
+				t.Fatalf("step %d: popped block %d, want %d", step, b.ID, eager[0])
+			}
+			eager = eager[1:]
+			held = append(held, b)
+		case op == 1 && len(held) > 0:
+			k := 1 + next(len(held))
+			back := held[len(held)-k:]
+			held = held[:len(held)-k]
+			q.prependN(back)
+			ids := make([]int, 0, k)
+			for _, b := range back {
+				ids = append(ids, b.ID)
+			}
+			eager = append(ids, eager...)
+		case op == 2 && len(held) > 0:
+			k := 1 + next(len(held))
+			back := held[len(held)-k:]
+			held = held[:len(held)-k]
+			q.appendN(back)
+			for _, b := range back {
+				eager = append(eager, b.ID)
+			}
+		}
+		if q.n != len(eager) {
+			t.Fatalf("step %d: the queue counts %d free, want %d", step, q.n, len(eager))
+		}
+	}
+	for len(eager) > 0 {
+		if b := q.popLeft(); b.ID != eager[0] {
+			t.Fatalf("draining: popped block %d, want %d", b.ID, eager[0])
+		}
+		eager = eager[1:]
+	}
+}
+
+// A pool's cost is in the blocks used, not the blocks it has: a pool of millions of blocks (a
+// large-memory GPU with a small KV footprint per token) costs far less than a block each, and a
+// cluster of dozens of them is run.
+func TestNewPool_BuildsBlocksWhenHandedOut(t *testing.T) {
+	const n = 8_000_000
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	p := NewPool(n, true)
+	runtime.ReadMemStats(&after)
+	if p.NumFree() != n-1 || p.NumBlocks() != n {
+		t.Fatalf("pool has %d free of %d, want %d of %d", p.NumFree(), p.NumBlocks(), n-1, n)
+	}
+	if grown := after.TotalAlloc - before.TotalAlloc; grown > 1<<20 {
+		t.Fatalf("making a pool of %d blocks allocated %d bytes, want under 1 MiB", n, grown)
+	}
+	if got := p.New(1)[0].ID; got != 1 {
+		t.Fatalf("first block handed out has ID %d, want 1", got)
 	}
 }
