@@ -46,6 +46,7 @@ def main(golden_dir: str, fresh_dir: str) -> int:
         print(f"{golden_dir}: no goldens to compare")
         return 1
     bad = 0
+    derived = 0
     for name in names:
         fresh_path = os.path.join(fresh_dir, name + ".trace.json")
         if not os.path.exists(fresh_path):
@@ -60,10 +61,24 @@ def main(golden_dir: str, fresh_dir: str) -> int:
             bad += 1
             continue
         diff = first_difference(golden, fresh)
+        prov = golden["provenance"]
+        if "derived_from_source" in prov:
+            # A trace derived from the pinned engine source (oracle_run false), for a rule the
+            # recorded release does not have: it must say so, and the release's own trace must
+            # differ from it. If they agree, the derivation is stale and the recording replaces it.
+            if prov.get("oracle_run") is not False or not prov["derived_from_source"]:
+                print(f"{name}: a derived golden must state derived_from_source and record oracle_run false")
+                bad += 1
+            elif not diff:
+                print(f"{name}: derived from source, but the oracle's trace is the same; replace it with the recording")
+                bad += 1
+            else:
+                derived += 1
+            continue
         if diff:
             print(f"{name}: {diff}")
             bad += 1
-    print(f"{len(names)} goldens, {bad} differ from vLLM's fresh traces")
+    print(f"{len(names)} goldens, {derived} derived from source (the oracle's release differs, as stated), {bad} differ from vLLM's fresh traces")
     return 1 if bad else 0
 
 

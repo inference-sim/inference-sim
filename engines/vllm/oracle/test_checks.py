@@ -335,5 +335,43 @@ class CheckFid5Names(unittest.TestCase):
             self.assertEqual(self.check(tmp).returncode, 0)
 
 
+class CompareGoldensDerived(unittest.TestCase):
+    """A golden derived from the pinned source is compared as such, never as the release's own trace."""
+
+    def compare(self, golden_prov, golden_steps, fresh_steps):
+        with tempfile.TemporaryDirectory() as tmp:
+            g, f = os.path.join(tmp, "g"), os.path.join(tmp, "f")
+            os.mkdir(g)
+            os.mkdir(f)
+            base = {"scenario_sha256": "s"}
+            gold = {"provenance": {**base, **golden_prov}, "steps": golden_steps, "finished": {}}
+            fresh = {"provenance": base, "steps": fresh_steps, "finished": {}}
+            with open(os.path.join(g, "x.json"), "w") as fh:
+                json.dump(gold, fh)
+            with open(os.path.join(f, "x.trace.json"), "w") as fh:
+                json.dump(fresh, fh)
+            return run([sys.executable, "-I", os.path.join(HERE, "compare_goldens.py"), g, f], HERE)
+
+    def test_a_derived_golden_that_differs_from_the_release_passes(self):
+        r = self.compare({"derived_from_source": "why", "oracle_run": False}, [{"a": 1}], [{"a": 2}])
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("1 derived from source", r.stdout)
+
+    def test_a_derived_golden_the_release_also_produces_is_stale(self):
+        r = self.compare({"derived_from_source": "why", "oracle_run": False}, [{"a": 1}], [{"a": 1}])
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("replace it with the recording", r.stdout)
+
+    def test_a_derived_golden_must_record_oracle_run_false(self):
+        r = self.compare({"derived_from_source": "why", "oracle_run": True}, [{"a": 1}], [{"a": 2}])
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("oracle_run false", r.stdout)
+
+    def test_a_recorded_golden_that_differs_still_fails(self):
+        r = self.compare({"oracle_run": True}, [{"a": 1}], [{"a": 2}])
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("step 0", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
