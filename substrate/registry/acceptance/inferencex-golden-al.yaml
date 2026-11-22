@@ -65,8 +65,8 @@ shapes:
     to. Curves measured under different engines, draft samplers and verifiers are pooled within
     a method; the exponent is an estimate, not a measurement, and is not judged against held-out
     end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the
-    mean acceptance length until per-step draws land (inference-sim/inference-sim#2485), so the
-    shape prices adaptive verification only.'
+    mean acceptance length until per-step draws land (inference-sim/inference-sim#2485), so
+    the shape prices adaptive verification only.'
   method: calibrated
 - speculative_method: dspark
   decay_exponent: 1.17
@@ -88,8 +88,8 @@ shapes:
     to. Curves measured under different engines, draft samplers and verifiers are pooled within
     a method; the exponent is an estimate, not a measurement, and is not judged against held-out
     end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the
-    mean acceptance length until per-step draws land (inference-sim/inference-sim#2485), so the
-    shape prices adaptive verification only.'
+    mean acceptance length until per-step draws land (inference-sim/inference-sim#2485), so
+    the shape prices adaptive verification only.'
   method: calibrated
 - speculative_method: eagle3
   decay_exponent: 1.19
@@ -107,8 +107,8 @@ shapes:
     to. Curves measured under different engines, draft samplers and verifiers are pooled within
     a method; the exponent is an estimate, not a measurement, and is not judged against held-out
     end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the
-    mean acceptance length until per-step draws land (inference-sim/inference-sim#2485), so the
-    shape prices adaptive verification only.'
+    mean acceptance length until per-step draws land (inference-sim/inference-sim#2485), so
+    the shape prices adaptive verification only.'
   method: calibrated
 - speculative_method: mtp
   decay_exponent: 1.44
@@ -129,8 +129,8 @@ shapes:
     to. Curves measured under different engines, draft samplers and verifiers are pooled within
     a method; the exponent is an estimate, not a measurement, and is not judged against held-out
     end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the
-    mean acceptance length until per-step draws land (inference-sim/inference-sim#2485), so the
-    shape prices adaptive verification only.'
+    mean acceptance length until per-step draws land (inference-sim/inference-sim#2485), so
+    the shape prices adaptive verification only.'
   method: calibrated
 - decay_exponent: 1.27
   fitted_from:
@@ -162,8 +162,8 @@ shapes:
     to. Curves measured under different engines, draft samplers and verifiers are pooled within
     a method; the exponent is an estimate, not a measurement, and is not judged against held-out
     end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the
-    mean acceptance length until per-step draws land (inference-sim/inference-sim#2485), so the
-    shape prices adaptive verification only.'
+    mean acceptance length until per-step draws land (inference-sim/inference-sim#2485), so
+    the shape prices adaptive verification only.'
   method: calibrated
 profiles:
 - model: deepseek-v4-pro

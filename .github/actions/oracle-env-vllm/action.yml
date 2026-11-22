@@ -1,7 +1,7 @@
 name: oracle environment
 description: >-
   The pinned oracle environment, as the oracle jobs of ci.yml use it: Python, vLLM checked out at the
-  commit internal/upstream pins into vllm-source (the step fails unless the checkout is that commit), every package of oracle/requirements.lock installed from
+  commit internal/upstream names as OracleCommit (the release the oracle recordings, corpora, field dispositions and lock were taken at) into vllm-source (the step fails unless the checkout is that commit), every package of oracle/requirements.lock installed from
   oracle/requirements-hashed.txt (every archive's sha256, no resolving; the step fails unless what got
   installed is exactly the lock), and the helper model's configuration at its pinned revision in
   oracle-model. The caller has checked out the repository.
@@ -18,16 +18,17 @@ runs:
         python-version: "3.12"
         cache: pip
         cache-dependency-path: engines/vllm/oracle/requirements-hashed.txt
-    # vLLM is read from its source (for its test helpers) at the commit internal/upstream pins, the one
-    # place the release is named; the checkout is then checked against it, so moving the build to
-    # another release changes no line here.
+    # vLLM is read from its source (for its test helpers) at internal/upstream's OracleCommit, the
+    # release the oracle's recordings, fuzz corpora, field dispositions and requirements.lock are
+    # for (not Commit, the one the engine models); the checkout is then checked against it, so
+    # re-recording at another release changes only that constant.
     - id: pin
-      name: the vLLM commit internal/upstream pins
+      name: the vLLM commit internal/upstream names as OracleCommit
       shell: bash
       working-directory: engines/vllm
       run: |
         set -euo pipefail
-        commit="$(sed -n 's/^\tCommit *= *"\([0-9a-f]\{40\}\)"$/\1/p' internal/upstream/upstream.go)"
+        commit="$(sed -n 's/^\tOracleCommit *= *"\([0-9a-f]\{40\}\)"$/\1/p' internal/upstream/upstream.go)"
         test -n "$commit"
         echo "commit=$commit" >> "$GITHUB_OUTPUT"
     - name: check out vLLM at that commit

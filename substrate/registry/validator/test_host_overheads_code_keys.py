@@ -29,6 +29,14 @@ GRAPHS = {"host_launch_eager_per_layer", "host_launch_eager_per_kernel", "host_l
           "host_replay_graph_per_step"}
 
 
+# Entries the file gained after the snapshot was taken. Each is checked by the other tests here (keyed,
+# scoped to its chips' host CPU) but has no snapshot value to be carried unchanged from.
+ADDED_AFTER_SNAPSHOT = {
+    ("host_launch_eager_per_kernel", ("h200",), ("deepseek-v4-pro",), "assumed"):
+        "row 29: DeepSeek-V4-Pro's uncompiled prefill dispatch on H200, fitted on fit-role units only",
+}
+
+
 def _code_id(engine: str, path: str) -> str:
     return INPUT["engines"][engine][path]
 
@@ -55,7 +63,9 @@ def test_every_value_is_carried_to_its_new_key_unchanged():
         key = _identity(name, body)
         assert key not in after, f"{key} is stated twice"
         after[key] = body
-    assert set(before) == set(after), "an entry was added, dropped or re-scoped"
+    assert set(ADDED_AFTER_SNAPSHOT) <= set(after), "a listed later addition is gone"
+    assert not set(ADDED_AFTER_SNAPSHOT) & set(before), "a listed later addition is in the snapshot"
+    assert set(before) == set(after) - set(ADDED_AFTER_SNAPSHOT), "an entry was added, dropped or re-scoped"
     for key, old in before.items():
         new = dict(after[key])
         new.pop("rationale", None)
