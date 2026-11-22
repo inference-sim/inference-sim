@@ -35,17 +35,21 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: env
         uses: ./.github/actions/oracle-env-vllm
+        with:
+          engine-source: "true"
       - uses: ./.github/actions/go-toolchain
       - name: the mocks replace no decision code
         run: python -I oracle/check_mocks.py oracle/mocks.json
       # An unstated block_size is vLLM's own choice, from the attention backends it selects for the
       # model, GPU and KV dtype (core/vllm/blocksize.go). The oracle runs vLLM's selection on this
       # CPU, with every replacement listed in its table, and the committed table must equal what
-      # it prints. The models' config.json files are this repository's substrate/catalog.
+      # it prints. The models' config.json files are this repository's substrate/catalog. The table is
+      # derived from the source the engine models (internal/upstream Commit), not recorded at
+      # OracleCommit, so it is checked against vllm-engine-source.
       - name: the block-size table is vLLM's own selection
         run: |
           catalog="$GITHUB_WORKSPACE/substrate/catalog/models"
-          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/blocksize/oracle.py vllm-source check core/vllm/blocksize_table.json oracle/blocksize/TABLE.tsv
+          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/blocksize/oracle.py vllm-engine-source check core/vllm/blocksize_table.json oracle/blocksize/TABLE.tsv
       # The quantization vLLM serves the DeepSeek-V4 FP8 and MiniMax-M3 MXFP8 and NVFP4 checkpoints
       # with, for each value a deployment can state, from vLLM's own ModelConfig over the catalog's
       # config.json, and the layout of each class of MiniMax-M3 layers from vLLM's quantization config.
@@ -358,6 +362,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: env
         uses: ./.github/actions/oracle-env-vllm
+        with:
+          engine-source: "true"
       - name: every inertness proof is what the harness computes
         env:
           ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
@@ -365,6 +371,7 @@ jobs:
           HF_HUB_OFFLINE: "1"
           VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
           VLLM_SOURCE: ${{ github.workspace }}/engines/vllm/vllm-source
+          VLLM_SOURCE_ENGINE: ${{ github.workspace }}/engines/vllm/vllm-engine-source
           SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail

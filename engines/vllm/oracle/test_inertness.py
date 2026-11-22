@@ -9,6 +9,7 @@ import copy
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -16,6 +17,10 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 ROOT = os.environ.get("VLLM_SOURCE")
+# A proof is held to the release it records. VLLM_SOURCE is the checkout of the oracle's recordings
+# (internal/upstream OracleCommit); VLLM_SOURCE_ENGINE, when set, is the one of the commit the engine
+# models (Commit), for the proofs reviewed there.
+SOURCES = [p for p in (ROOT, os.environ.get("VLLM_SOURCE_ENGINE")) if p]
 
 
 def load():
@@ -29,6 +34,19 @@ def load():
 def proof(name):
     with open(os.path.join(HERE, "inertness", name + ".json"), encoding="utf-8") as f:
         return json.load(f)
+
+
+def root_for(spec):
+    """The checkout of the release the proof records; a proof with no checkout to hold it to fails."""
+    seen = []
+    for path in SOURCES:
+        head = subprocess.run(["git", "-C", path, "rev-parse", "HEAD"], check=True, capture_output=True,
+                              text=True).stdout.strip()
+        if head in spec["release"]:
+            return path
+        seen.append(head)
+    raise AssertionError("proof for %s records release %r; the checkouts given are at %s"
+                         % (spec.get("field"), spec["release"], seen))
 
 
 def read_in(spec, path):
@@ -165,7 +183,7 @@ class Controls(unittest.TestCase):
     def test_a_named_site_the_proof_does_not_list_fails(self):
         spec = copy.deepcopy(proof("HF_HUB_CACHE"))
         dropped = spec["sites"]["HF_HUB_CACHE"].pop()
-        r = self.h.evaluate_named(ROOT, spec)
+        r = self.h.evaluate_named(root_for(spec), spec)
         self.assertEqual(r["verdict"], "not_inert")
         want = "HF_HUB_CACHE is named at %s:%d and the proof does not list it" % (dropped["file"], dropped["line"])
         self.assertIn(want, r["problems"])
@@ -174,7 +192,7 @@ class Controls(unittest.TestCase):
         spec = copy.deepcopy(proof("HF_HUB_CACHE"))
         spec["sites"]["HF_HUB_CACHE"].append(
             {"file": "vllm/envs.py", "line": 1, "text": "HF_HUB_CACHE", "role": "load"})
-        r = self.h.evaluate_named(ROOT, spec)
+        r = self.h.evaluate_named(root_for(spec), spec)
         self.assertIn("HF_HUB_CACHE is listed at vllm/envs.py:1 and is not named there", r["problems"])
 
     def test_a_named_site_with_the_wrong_role_fails(self):
@@ -182,20 +200,20 @@ class Controls(unittest.TestCase):
         for site in spec["sites"]["HF_HUB_CACHE"]:
             if site["role"] == "test":
                 site["role"] = "load"
-        r = self.h.evaluate_named(ROOT, spec)
+        r = self.h.evaluate_named(root_for(spec), spec)
         self.assertTrue([p for p in r["problems"] if "is listed as load code and follows a #[cfg(test)] line" in p],
                         r["problems"])
         spec = copy.deepcopy(proof("HF_HUB_CACHE"))
         for site in spec["sites"]["HF_HUB_CACHE"]:
             if site["role"] == "load":
                 site["role"] = "test"
-        r = self.h.evaluate_named(ROOT, spec)
+        r = self.h.evaluate_named(root_for(spec), spec)
         self.assertTrue([p for p in r["problems"] if "is listed as test code and does not follow" in p], r["problems"])
 
     def test_a_named_site_whose_line_changed_fails(self):
         spec = copy.deepcopy(proof("HF_HUB_CACHE"))
         spec["sites"]["HF_HUB_CACHE"][0]["text"] = "something else"
-        r = self.h.evaluate_named(ROOT, spec)
+        r = self.h.evaluate_named(root_for(spec), spec)
         self.assertTrue([p for p in r["problems"] if "the proof lists 'something else'" in p], r["problems"])
 
     def test_a_read_with_no_disposition_fails(self):
@@ -353,7 +371,9 @@ class CommittedProofs(unittest.TestCase):
             if fn.endswith(".json"):
                 with self.subTest(proof=fn):
                     path = os.path.join(d, fn)
-                    self.assertEqual(h.main([ROOT, path, "--check"]), 0)
+                    with open(path, encoding="utf-8") as f:
+                        spec = json.load(f)
+                    self.assertEqual(h.main([root_for(spec), path, "--check"]), 0)
 
 
 if __name__ == "__main__":

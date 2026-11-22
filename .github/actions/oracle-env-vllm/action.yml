@@ -5,6 +5,14 @@ description: >-
   oracle/requirements-hashed.txt (every archive's sha256, no resolving; the step fails unless what got
   installed is exactly the lock), and the helper model's configuration at its pinned revision in
   oracle-model. The caller has checked out the repository.
+inputs:
+  engine-source:
+    description: >-
+      "true" also checks vLLM out at internal/upstream's Commit (the one the engine models) into
+      vllm-engine-source, for the checks of a table derived from the pinned source rather than recorded
+      at OracleCommit (the block-size table). The checkout is checked against Commit.
+    required: false
+    default: "false"
 outputs:
   python-version:
     description: The exact Python setup-python installed.
@@ -31,6 +39,9 @@ runs:
         commit="$(sed -n 's/^\tOracleCommit *= *"\([0-9a-f]\{40\}\)"$/\1/p' internal/upstream/upstream.go)"
         test -n "$commit"
         echo "commit=$commit" >> "$GITHUB_OUTPUT"
+        engine="$(sed -n 's/^\tCommit *= *"\([0-9a-f]\{40\}\)"$/\1/p' internal/upstream/upstream.go)"
+        test -n "$engine"
+        echo "engine-commit=$engine" >> "$GITHUB_OUTPUT"
     - name: check out vLLM at that commit
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
@@ -42,6 +53,19 @@ runs:
       shell: bash
       working-directory: engines/vllm
       run: test "$(git -C vllm-source rev-parse HEAD)" = "${{ steps.pin.outputs.commit }}"
+    - name: check out vLLM at the commit the engine models
+      if: inputs.engine-source == 'true'
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        repository: vllm-project/vllm
+        ref: ${{ steps.pin.outputs.engine-commit }}
+        path: engines/vllm/vllm-engine-source
+        fetch-depth: 1
+    - name: the engine-commit checkout is that commit
+      if: inputs.engine-source == 'true'
+      shell: bash
+      working-directory: engines/vllm
+      run: test "$(git -C vllm-engine-source rev-parse HEAD)" = "${{ steps.pin.outputs.engine-commit }}"
     # The whole environment is pinned (oracle/requirements.lock, every package == or a sha256
     # URL) and installed without resolving, from oracle/requirements-hashed.txt with every
     # archive's sha256 (oracle/lock.sh, X21), so neither a transitive release nor a replaced
