@@ -30,7 +30,7 @@ You are running the hypothesis experiment workflow for hypothesis **$ARGUMENTS**
 
 - **`--stderr` must come BEFORE other flags** in `blis_run` calls — harness checks position 3 only
 - **CLI defaults vs workload-spec YAML**: `--rate` mode uses CLI defaults (512/512 tokens). Workload YAMLs define own distributions. Capacity estimates MUST match the actual workload.
-- **`--total-kv-blocks` default is context-dependent**: CLI default 1000000 but `defaults.yaml` overrides to 132139 for llama/H100/TP=2. Check defaults.yaml.
+- **KV capacity comes from the scenario**: there is no `--total-kv-blocks` flag; the pool's engine settings and the cost model's memory figures fix the block count, which the Result records. Check the scenario, not a CLI default.
 - **Conservation formula**: the canonical INV-1 form is the 10-term CLUSTER equation; the 5-term form `injected == completed + still_queued + still_running + dropped_unservable + timed_out` is the SINGLE-INSTANCE specialisation only. For a cluster run add the five cluster-only buckets (`routing_rejections`, `gateway_queue_depth`, `gateway_queue_rejected`, `gateway_evicted`, `gateway_expired`) — asserting 5 terms against cluster output is incomplete and will not catch a request lost to a gateway or routing bucket. See canonical INV-1 in `.github/agent-prompts/standards/invariants.md`. `parse_blis_output` does NOT extract `dropped_unservable` or `timed_out` — parse them separately.
 - **Analyzer verdict must match FINDINGS status**: If `analyze.py` produces a different verdict than FINDINGS.md, acknowledge the discrepancy explicitly.
 - **Think before coding calibration**: Compute parameters analytically from alpha/beta coefficients FIRST, then validate with a tiny run.
@@ -138,7 +138,6 @@ setup_experiment "${1:-}"
 ```
 - Use `blis_run` for EVERY simulation call (not `$BINARY run` directly)
 - Every `blis_run` needs a timeout tier: `$TIMEOUT_QUICK` (<100 req), `$TIMEOUT_STANDARD` (100-500), `$TIMEOUT_EXTENDED` (>500)
-- If using `--total-kv-blocks`, call `preflight_kv_check` first
 - Call `python3 "$SCRIPT_DIR/analyze.py" ...` at the end
 
 **analyze.py** MUST:

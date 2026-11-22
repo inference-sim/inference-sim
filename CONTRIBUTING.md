@@ -251,10 +251,9 @@ An engine's configuration fields are listed by `blis fields`: every field and en
 ### Policy Template (lightest — ~3 files)
 
 1. Implement the interface in the repository that owns the policy (see [extension recipes](.github/agent-prompts/extension-recipes.md)): admission and routing in the llm-d router fork, the instance scheduler and its priority in `engines/vllm/core/sched`
-2. Register in `sim/bundle.go` (valid names map + `IsValid*` function)
-3. Add `case` to factory function
-4. Add behavioral tests (`TestMyPolicy_Scenario_Behavior`)
-5. Update the README (not CLAUDE.md — it holds pointers, per its charter)
+2. Select it by name where that repository selects its policies, as the recipe for it describes (`sim/bundle.go` holds only the priority policy's name and the control-loop settings, not a registry of policies)
+3. Add behavioral tests (`TestMyPolicy_Scenario_Behavior`)
+4. Update the README (not CLAUDE.md — it holds pointers, per its charter)
 
 ### Subsystem Module (heaviest — new interface + integration)
 

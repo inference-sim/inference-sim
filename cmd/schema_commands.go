@@ -38,8 +38,8 @@ func documentExitCode(err error) int {
 var schemaCmd = &cobra.Command{
 	Use:   "schema <document>",
 	Short: "Print the JSON Schema of a BLIS document",
-	Long: "Print the JSON Schema of a document that crosses a repository boundary, as the " +
-		"the substrate release this build pins publishes it. Documents: " +
+	Long: "Print the JSON Schema of a document that crosses a package boundary, as the " +
+		"substrate this build embeds publishes it. Documents: " +
 		strings.Join(schema.Names(), ", ") + ".",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,

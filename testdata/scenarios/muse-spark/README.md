@@ -3,7 +3,7 @@
 Muse-Spark-Open-816B-A42B (NVFP4 checkpoint, catalog `muse-spark-open-816b-a42b-nvfp4`) on the
 three clusters it is served on. These are the setups its vLLM recipe
 (https://recipes.vllm.ai/meta-models/Muse-Spark-Open-816B-A42B) and internal deployment
-measurements serve it with, at engine release 0.32.0.
+measurements serve it with.
 
 | Cluster | Files | Hardware | Fabric |
 |---|---|---|---|

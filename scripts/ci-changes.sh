@@ -5,7 +5,7 @@
 #
 # Prints one `name=true|false` line per job group, in a fixed order, ready for $GITHUB_OUTPUT.
 # --all (a push to main, a workflow_dispatch, a tag) turns every group on: the delivery loop
-# dispatches ci.yml and reads a green run as "the full suite passed" (docs/contributing/
+# dispatches ci.yml and reads a green run as "the full suite passed" (.github/agent-prompts/
 # automated-delivery.md), so a dispatch never filters.
 #
 # The rules are fail-closed. A path is matched against the classes below; a path that no class

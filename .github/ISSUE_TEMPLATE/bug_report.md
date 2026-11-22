@@ -12,7 +12,7 @@ What is wrong? Be specific about the incorrect behavior.
 
 **CLI command to reproduce**
 ```bash
-./blis run --model <model> [flags]
+./blis run --scenario <file> --scenarios <dir> [flags]
 ```
 
 **Expected behavior**

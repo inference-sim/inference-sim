@@ -39,7 +39,7 @@ var (
 
 func registerAgentXReplayFlags(c *cobra.Command) {
 	c.Flags().StringVar(&agxScenarioFlag, "agentic-scenario", "", `Replay an agentic harness scenario from its raw corpus instead of a TraceV2 file. "inferencex-agentx-mvp" (aiperf 0.12.0 --scenario inferencex-agentx-mvp) or "aiperf-constant-load" (aiperf 0.12.0 without --scenario: --concurrency live root sessions, recycled as they end; its load block comes from --workload-spec). Excludes --trace-header/--trace-data/--session-mode`)
-	c.Flags().StringVar(&agxWorkloadSpec, "workload-spec", "", "With --agentic-scenario: a blis-schemas replay workload YAML (a Replay, or a document whose workload.replay is one); the flags below override it")
+	c.Flags().StringVar(&agxWorkloadSpec, "workload-spec", "", "With --agentic-scenario: a substrate/contracts replay workload YAML (a Replay, or a document whose workload.replay is one); the flags below override it")
 	c.Flags().StringVar(&agxCorpusPath, "corpus", "", "With --agentic-scenario: the Weka v7 corpus file (JSONL, one trace per line), read once and streamed")
 	c.Flags().StringVar(&agxCorpusSHA256, "corpus-sha256", "", "With --agentic-scenario: the corpus file's sha256; the replay refuses a corpus that does not match (defaults to the descriptor's corpus.sha256)")
 	c.Flags().IntVar(&agxConcurrency, "concurrency", 0, "With --agentic-scenario: session-tree lanes (live trees, not requests); under aiperf-constant-load, session slots (live root sessions)")

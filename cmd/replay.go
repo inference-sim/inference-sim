@@ -54,7 +54,7 @@ Known limitations:
 
 Example:
   blis replay --trace-header t.yaml --trace-data d.csv \
-    --scenario <scenario.yaml> --scenarios <dir> --registry <blis-registry> --catalog <blis-catalog>`,
+    --scenario <scenario.yaml> --scenarios <dir>`,
 	Run: func(cmd *cobra.Command, args []string) {
 		level, err := logrus.ParseLevel(logLevel)
 		if err != nil {
