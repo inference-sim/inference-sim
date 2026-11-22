@@ -19,6 +19,8 @@ from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+# A reason that cites an issue, as a held field or a known mutant gap must. A fixture, so it is kept off any line that marks a gap.
+CITES_AN_ISSUE = "an issue stands for it (#32)"
 SGLANG = None  # the checkout, from argv
 
 
@@ -585,13 +587,13 @@ class ValueCoverage(unittest.TestCase):
 
     def test_a_map_keyed_by_request_is_one_field(self):
         goldens = [{"finished": {"r0": {"step": 2}}}, {"finished": {"r1": {"step": 2}}}]
-        held = {"finished.*.step": {"kind": "gap", "reason": "no scenario moves it (#32)"}}
+        held = {"finished.*.step": {"kind": "gap", "reason": CITES_AN_ISSUE}}
         r = self.check(self.tree(goldens, held))
         self.assertEqual(r.returncode, 0, r.stdout)
 
     def test_a_subtree_is_held_by_one_entry_that_must_match_a_path(self):
         goldens = [{"calls": [{"fn": "a", "args": {"x": 1}}]}, {"calls": [{"fn": "a", "args": {"x": 1}}]}]
-        held = {"calls**": {"kind": "gap", "reason": "the calls are records (#32)"}}
+        held = {"calls**": {"kind": "gap", "reason": CITES_AN_ISSUE}}
         r = self.check(self.tree(goldens, held))
         self.assertEqual(r.returncode, 0, r.stdout)
         r = self.check(self.tree(goldens, {"calls": held["calls**"]}))
@@ -935,10 +937,10 @@ class MutationSweep(unittest.TestCase):
         survivor = self.mutant("B", old="return 1", new="return 2")
         for name, mutants, gaps, text in [
                 ("survivor", [survivor], {}, "SURVIVED   B  guards g"),
-                ("gap now caught", [self.mutant("A")], {"A": "a gap (#32)"}, "NOW CAUGHT A"),
+                ("gap now caught", [self.mutant("A")], {"A": CITES_AN_ISSUE}, "NOW CAUGHT A"),
                 ("broken", [self.mutant("C", old="return y")], {}, "BROKEN     C"),
                 ("gap without its issue", [survivor], {"B": "later"}, "cites the open issue"),
-                ("stale gap", [], {"Z": "gone (#32)"}, "STALE      Z")]:
+                ("stale gap", [], {"Z": CITES_AN_ISSUE}, "STALE      Z")]:
             with self.subTest(name):
                 r = self.sweep(self.repo(mutants, gaps), "--only", ",".join(m["id"] for m in mutants) or "none") \
                     if name != "stale gap" else self.sweep(self.repo(mutants, gaps), "--list")

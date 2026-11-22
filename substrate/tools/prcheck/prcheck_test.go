@@ -248,17 +248,15 @@ func TestDescriptionChecksReleaseTagPins(t *testing.T) {
 
 // X28.
 func TestCitedIssues(t *testing.T) {
-	src := []byte(`// Refused: KV role kv_both is not modelled (inference-sim/blis-vllm#48).
-// The gap is tracked in #7.
-// See inference-sim/blis-vllm#3 for history.
-x := 1 // unrelated #9
-`)
-	cites := Citations("inference-sim/blis-vllm", "core/a.go", src)
+	const repo = "inference-sim/blis-vllm"
+	// The fixture is built, not written out, so that this file does not itself cite issues 48, 7 and 3.
+	src := []byte(fmt.Sprintf("// Refused: KV role kv_both is not modelled (%s#%d).\n// The gap is tracked in #%d.\n// See %s#%d for history.\nx := 1 // unrelated #%d\n", repo, 48, 7, repo, 3, 9))
+	cites := Citations(repo, "core/a.go", src)
 	if len(cites) != 2 || cites[0].Issue.N != 48 || cites[1].Issue.N != 7 {
-		t.Fatalf("citations %+v; want #48 and #7, the lines that mark a refusal or gap", cites)
+		t.Fatalf("citations %+v; want issues 48 and 7, the two lines that mark a refusal", cites)
 	}
-	fields := []byte(`{"name":"kv_role","status":"not_modelled","evidence":{"issue":"inference-sim/blis-vllm#48"}}`)
-	if c := Citations("inference-sim/blis-vllm", "fields.json", fields); len(c) != 1 || c[0].Issue.N != 48 {
+	fields := []byte(fmt.Sprintf(`{"name":"kv_role","status":"not_modelled","evidence":{"issue":"%s#48"}}`, repo))
+	if c := Citations(repo, "fields.json", fields); len(c) != 1 || c[0].Issue.N != 48 {
 		t.Fatalf("fields.json citations %+v", c)
 	}
 	if c := Citations("x/y", "a.go", []byte("// refused: llm-d/llm-d#5\n")); len(c) != 0 {

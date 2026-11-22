@@ -12,7 +12,7 @@ func listWith(est string) []byte {
   "engine": {"kind": "vllm", "version": "0.32.0"},
   "fields": [
     {"name": "VLLM_FLASHINFER_ALLREDUCE_BACKEND", "source": "env", "status": "not_modelled",
-     "evidence": {"issue": "inference-sim/blis-vllm#5"},
+     "evidence": {"issue": "a/b#5"},
      "estimation": ` + est + `}
   ]
 }`)

@@ -34,7 +34,7 @@ const valid = `{
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#5"
+        "issue": "a/b#5"
       },
       "estimation": {
         "rule": "substitute",
@@ -199,9 +199,9 @@ func TestEveryMalformedListIsRefusedNamingWhatIsWrong(t *testing.T) {
 		{"modelled with a trace named twice", edit(t, `"oracle/traces/t2-basic.json"`, `"a.json", "a.json"`), []string{"traces[1]", "twice"}},
 		{"proven inert without a proof", edit(t, `"proof": "TestMaxNumSeqsEnvIsInert"`, `"proof": ""`), []string{"evidence.proof", "required for status \"proven_inert\""}},
 		{"proven inert with a second key", edit(t, `"proof": "TestMaxNumSeqsEnvIsInert"`, `"proof": "TestMaxNumSeqsEnvIsInert", "issue": "a/b#1"`), []string{"evidence.issue", "not allowed for status \"proven_inert\""}},
-		{"not modelled without an issue", edit(t, `"issue": "inference-sim/blis-vllm#5"`, `"proof": "x"`), []string{"evidence.issue", "required for status \"not_modelled\""}},
-		{"not modelled with a malformed issue", edit(t, `"issue": "inference-sim/blis-vllm#5"`, `"issue": "blis-vllm#5"`), []string{"evidence.issue", "<owner>/<repo>#<n>"}},
-		{"not modelled with issue zero", edit(t, `"issue": "inference-sim/blis-vllm#5"`, `"issue": "inference-sim/blis-vllm#0"`), []string{"evidence.issue"}},
+		{"not modelled without an issue", edit(t, `"issue": "a/b#5"`, `"proof": "x"`), []string{"evidence.issue", "required for status \"not_modelled\""}},
+		{"not modelled with a malformed issue", edit(t, `"issue": "a/b#5"`, `"issue": "blis-vllm#5"`), []string{"evidence.issue", "<owner>/<repo>#<n>"}},
+		{"not modelled with issue zero", edit(t, `"issue": "a/b#5"`, `"issue": "a/b#0"`), []string{"evidence.issue"}},
 		{"inert unproven without a note", edit(t, `"note": "the dashboard's table marked it inert"`, `"note": ""`), []string{"evidence.note", "required for status \"inert_unproven\""}},
 		{"unknown rule", edit(t, `"rule": "none"`, `"rule": "guess"`), []string{"estimation.rule", "\"guess\""}},
 		{"substitute without a setting", edit(t, `"setting": {

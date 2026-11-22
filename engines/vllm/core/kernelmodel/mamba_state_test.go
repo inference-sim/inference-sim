@@ -129,7 +129,7 @@ func TestMambaSpecFieldsAsLayersBuildThem(t *testing.T) {
 
 // With prefix caching on a recurrent layer's state is cached in align mode; with it off the mode is
 // "none" and a state covers max_model_len tokens. The engine's block size is then the aligned one in
-// align mode only. A stated mamba_cache_mode is refused: the release has none (#63830).
+// align mode only. A stated mamba_cache_mode is refused: the release has none (vllm-project/vllm#63830).
 func TestMambaCacheModeAsTheHookRunsIt(t *testing.T) {
 	off, on := false, true
 	g := hybridGraph(mamba2, &gqa)
@@ -459,7 +459,7 @@ func TestNemotronUltraKVLayersAreVLLMs(t *testing.T) {
 
 // Settings vLLM reads that change a recurrent layer's spec and that the engine block cannot state
 // are refused where the block is read, naming the key; so is mamba_cache_mode, whatever its value,
-// which the release no longer has (#63830).
+// which the release no longer has (vllm-project/vllm#63830).
 func TestUnmatchedRecurrentSettingsStayRefusals(t *testing.T) {
 	const fixture = "nemotron3-ultra-h100-agg.yaml"
 	src, err := os.ReadFile(filepath.Join(ownRoot(), "kerneltests", "testdata", fixture))

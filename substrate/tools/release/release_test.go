@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -318,7 +319,7 @@ func TestRefusals(t *testing.T) {
 		h := sub.branch("b", "a.go", "package a\n", "Change")
 		bugs := map[string][]Bug{"blis-substrate": {{Repo: "inference-sim/blis-substrate", Number: 7, Title: "SUB-5 broken"}}}
 		st := planOne(t, env(t, bugs), "blis-substrate", sub.dir, h, "bump: patch", 1)
-		has(t, st.Refusals, "open invariant bug inference-sim/blis-substrate#7")
+		has(t, st.Refusals, fmt.Sprintf("open invariant bug %s#%d", bugs["blis-substrate"][0].Repo, bugs["blis-substrate"][0].Number))
 		st = planOne(t, env(t, bugs), "blis-substrate", sub.dir, h, "bump: patch\n    fixes: [7]", 1)
 		for _, r := range st.Refusals {
 			if strings.Contains(r, "X27") {

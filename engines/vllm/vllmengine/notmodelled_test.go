@@ -87,7 +87,7 @@ var engineKeys = map[string][]string{
 	"mamba_cache_dtype":                        {"mamba_cache_dtype"},
 	"mamba_ssm_cache_dtype":                    {"mamba_ssm_cache_dtype"},
 	"moe_backend":                              {"moe_backend", "kernel_config.moe_backend"},
-	"mamba_cache_mode":                         {}, // no name at the pin: removed by #63830, the key is kept to refuse a stated value
+	"mamba_cache_mode":                         {}, // no name at the pin: removed by vllm-project/vllm#63830, the key is kept to refuse a stated value
 	"gpu_memory_utilization":                   {"gpu_memory_utilization"},
 	"scheduling_policy":                        {"scheduling_policy"},
 	"dbo.enable_dbo":                           {"enable_dbo"},
@@ -482,7 +482,7 @@ func TestKVEventsPublisherDefaultFollowsEnableKVCacheEvents(t *testing.T) {
 	}
 }
 
-// mamba_cache_mode was removed from vLLM's CacheConfig (#63830), so the pin has no such setting and
+// mamba_cache_mode was removed from vLLM's CacheConfig (vllm-project/vllm#63830), so the pin has no such setting and
 // the engine refuses a stated value, whatever it is, naming the release.
 func TestTheEngineRefusesAMambaCacheModeTheReleaseDoesNotHave(t *testing.T) {
 	Register()

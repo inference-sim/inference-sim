@@ -38,7 +38,7 @@ type Factory struct {
 func (Factory) Kind() string { return Kind }
 
 // New implements engine.Factory: it builds the v0.33.0 engine from the Spec's engine block and
-// refuses any other release (#2021 B6: one build models one upstream release, and a version is a
+// refuses any other release (one build models one upstream release, and a version is a
 // check, not a selector).
 func (f Factory) New(s engine.Spec) (engine.Engine, error) {
 	if s.Kind != Kind {
