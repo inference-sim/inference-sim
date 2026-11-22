@@ -93,6 +93,8 @@ jobs:
         run: python -I tools/surface/test_gen_surface.py
       - name: the lowering oracle's replacement check fails on what it guards
         run: python -I oracle/lower/test_check_replacements.py
+      - name: the lowering shards partition the cases and each is compared with its own
+        run: python -I oracle/lower/test_compare_lower.py
       - name: the tree-core comparison fails on what it guards
         run: python -I oracle/test_treecore_diff.py
       # S15: every sglang:* family the release defines has a class, and the manifest is current.
@@ -115,7 +117,8 @@ jobs:
   #   shard         runs                                                         was, in one job
   #   resolve       the mock and peer checks, the import check, the inertness proofs
   #   serverargs-0..3  ServerArgs (T1): case k of cases.json going to shard k mod 4  about 6 min each
-  #   lower         lowering, then every tier-2 scenario                           about 5 min
+  #   lower-0..3    lowering (T1), case k going to shard k mod 4; lower-0 also     about 6 min each
+  #                 runs every tier-2 scenario
   #   sched-0/1/2   the scheduling loop (S13), scenario i going to shard i mod 3   about 11 min
   #   cache         the cache framework's interfaces (FID-5) and the pools (SGL-6) about 3 min
   #   hicache-metrics  HiCache (FID-5) and the metrics and KV events (S15)         about 4 min
@@ -133,7 +136,10 @@ jobs:
           - {group: serverargs-1, part: 1}
           - {group: serverargs-2, part: 2}
           - {group: serverargs-3, part: 3}
-          - {group: lower}
+          - {group: lower-0, part: 0}
+          - {group: lower-1, part: 1}
+          - {group: lower-2, part: 2}
+          - {group: lower-3, part: 3}
           - {group: sched-0, part: 0}
           - {group: sched-1, part: 1}
           - {group: sched-2, part: 2}
@@ -142,6 +148,7 @@ jobs:
     env:
       SCHED_PARTS: 3
       SERVERARGS_PARTS: 4
+      LOWER_PARTS: 4
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -164,7 +171,7 @@ jobs:
       # revisions cases.json pins. The answers must equal config/testdata/serverargs.json, which the
       # Go test (config TestResolveAgainstSGLang) compares with config.Resolve field by field.
       - name: fetch the ServerArgs cases' model configurations at their pinned revisions
-        if: startsWith(matrix.group, 'serverargs-') || matrix.group == 'lower'
+        if: startsWith(matrix.group, 'serverargs-') || startsWith(matrix.group, 'lower-')
         run: python -I oracle/serverargs/fetch_models.py oracle/serverargs/cases.json serverargs-models
       # The cases run one at a time, each in a process of its own, so a case's answer does not depend
       # on its shard. The shard compares its cases with the committed ones at the same positions;
@@ -202,25 +209,31 @@ jobs:
       # replacement listed in oracle/lower/replacements.json). The answers must equal
       # lower/testdata/sglang_lower.json, which the Go test (lower TestLowerAgainstSGLang) compares.
       - name: every replacement the lowering oracle makes is listed
-        if: matrix.group == 'lower'
+        if: startsWith(matrix.group, 'lower-')
         run: python -I oracle/lower/check_replacements.py oracle/lower/extract.py oracle/lower/replacements.json
-      - name: lower every accepted case through SGLang's own functions
-        if: matrix.group == 'lower'
+      # The cases (the ServerArgs file's, then oracle/lower/cases.json) go to the shards by position,
+      # like the ServerArgs cases; each shard compares its own with the committed answers, and the
+      # oracle job fails unless every shard of LOWER_PARTS ran and together they ran every case.
+      - name: lower this shard's accepted cases through SGLang's own functions
+        if: startsWith(matrix.group, 'lower-')
         env:
           HF_HUB_OFFLINE: "1"
+          PART: ${{ matrix.part }}
         run: |
           set -euo pipefail
           mkdir -p shard-out/oracle-traces
-          python -I oracle/lower/extract.py sglang-source oracle/serverargs/cases.json serverargs-models oracle/lower/cases.json > shard-out/oracle-traces/lower.json
-      - name: the committed lowering answers are SGLang's own
-        if: matrix.group == 'lower'
-        run: diff -u <(python3 -I oracle/goldengz.py cat lower/testdata/sglang_lower.json) shard-out/oracle-traces/lower.json
+          python -I oracle/lower/extract.py --shard "$PART/$LOWER_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models oracle/lower/cases.json > "shard-out/oracle-traces/lower-$PART.json"
+      - name: the committed lowering answers for this shard's cases are SGLang's own
+        if: startsWith(matrix.group, 'lower-')
+        env:
+          PART: ${{ matrix.part }}
+        run: python3 -I oracle/lower/compare_lower.py shard <(python3 -I oracle/goldengz.py cat lower/testdata/sglang_lower.json) "shard-out/oracle-traces/lower-$PART.json"
       # Tier 2: every scenario through SGLang's own Scheduler (run_scheduler_process), its event loop
       # unmodified. The runner fails unless every request finishes, the loop ends on the harness's
       # ShutdownReq, every forward pass was launched from SGLang's own event loop at the checkout,
       # the tree core is the Python one, and no clocked module still reads the real clock.
       - name: run every scenario through SGLang's scheduler
-        if: matrix.group == 'lower'
+        if: matrix.group == 'lower-0'
         env:
           ORACLE_LOCKFILE: oracle-env.lock
           ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
@@ -384,8 +397,10 @@ jobs:
           for s in oracle/scenarios-metrics/*.json; do
             python -I oracle/run_metrics.py sglang-source "$s" "shard-out/oracle-traces-metrics/$(basename "$s" .json).trace.json"
           done
+      # The resolve shard only checks; it writes no trace, so it uploads none (every other shard
+      # writes at least one, and uploading nothing from them is still an error).
       - name: upload the shard's traces
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.group != 'resolve' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: oracle-shard-${{ matrix.group }}
@@ -443,6 +458,13 @@ jobs:
           done
           echo "$n shards, $sum of $total cases"
           test "$sum" -eq "$total"
+      - name: every lowering shard ran, and together they are every case
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          n="$(jq -r '.shard.of' traces/oracle-traces/lower-0.json)"
+          test "$(ls traces/oracle-traces/lower-*.json | wc -l | tr -d ' ')" = "$n"
+          python3 -I oracle/lower/compare_lower.py complete <(python3 -I oracle/goldengz.py cat lower/testdata/sglang_lower.json) oracle/serverargs/cases.json oracle/lower/cases.json traces/oracle-traces/lower-*.json
       - name: every golden trace is SGLang's own output
         run: python -I oracle/compare_goldens.py traces/oracle-traces "${{ steps.pin.outputs.commit }}"
       - name: every cache interface golden is SGLang's own output

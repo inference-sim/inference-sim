@@ -20,8 +20,14 @@ Every replacement is in oracle/lower/replacements.json (oracle/lower/check_repla
 platform restore and stubs of oracle/run_serverargs.py, and a model runner that holds only the
 request pool size and server_args, which is all get_batch_sizes_to_capture reads of it.
 
-Usage: python -I oracle/lower/extract.py <sglang checkout> <cases.json> <models dir> [<extra cases.json>] > lower.json
-The extra cases (oracle/lower/cases.json) use the chips and models of <cases.json>.
+Usage: python -I oracle/lower/extract.py [--shard I/N] <sglang checkout> <cases.json> <models dir> [<extra cases.json>] > lower.json
+The extra cases (oracle/lower/cases.json) use the chips and models of <cases.json>, after them.
+
+--shard I/N lowers only the cases (the file's, then the extra ones, as one list) whose position is I
+mod N, each still in a process of its own, so a case's answer does not depend on its shard. The answer
+then also holds "shard" ({"index": I, "of": N}) and "ran", the names of the cases the shard took,
+refused ones too (a refused case writes no answer, so "ran" is how a shard says it saw it).
+compare_lower.py compares each shard with the committed answers and checks the shards together.
 """
 import json
 import os
@@ -99,7 +105,21 @@ def lower_case(case, chip, models):
     return out
 
 
+def parse_shard(arg):
+    try:
+        i, n = (int(x) for x in arg.split("/"))
+    except ValueError:
+        raise SystemExit("--shard takes I/N, got %r" % arg)
+    if not 0 <= i < n:
+        raise SystemExit("--shard I/N needs 0 <= I < N, got %r" % arg)
+    return i, n
+
+
 def main(argv):
+    shard = None
+    if len(argv) >= 2 and argv[0] == "--shard":
+        shard = parse_shard(argv[1])
+        argv = argv[2:]
     if len(argv) not in (3, 4):
         print(__doc__.split("Usage:", 1)[1].strip(), file=sys.stderr)
         return 2
@@ -115,7 +135,11 @@ def main(argv):
         with open(argv[3]) as f:
             spec["cases"] = spec["cases"] + json.load(f)["cases"]
     results = []
-    for case in spec["cases"]:
+    ran = []
+    for k, case in enumerate(spec["cases"]):
+        if shard is not None and k % shard[1] != shard[0]:
+            continue
+        ran.append(case["name"])
         r, w = os.pipe()
         pid = os.fork()
         if pid == 0:
@@ -144,7 +168,11 @@ def main(argv):
             return 1
         if not res.get("refused"):
             results.append(res)
-    sys.stdout.write(json.dumps({"cases": results}, indent=1, sort_keys=True) + "\n")
+    doc = {"cases": results}
+    if shard is not None:
+        doc["shard"] = {"index": shard[0], "of": shard[1]}
+        doc["ran"] = ran
+    sys.stdout.write(json.dumps(doc, indent=1, sort_keys=True) + "\n")
     return 0
 
 
