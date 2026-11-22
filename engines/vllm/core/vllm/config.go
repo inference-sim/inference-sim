@@ -922,9 +922,10 @@ func checkAllocatorWithConnector(c Config) error {
 // are looked for in while the model is loaded: they change where a load reads, not what a step costs
 // (the proofs cite the read sites), and the engine has no model files to look for.
 // VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD is named by no file of the pinned release (the cut-off it
-// suggests is a constant of the Kimi-K3 model file), so vLLM ignores a stated value.
+// suggests is a constant of the Kimi-K3 model file), so vLLM ignores a stated value. VLLM_USE_FLASHINFER_MOE_FP4 is
+// read by no code of the pinned release either (an earlier release chose the NVFP4 MoE backend with it).
 var inertEnv = []string{"PYTHONUNBUFFERED", "HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE", "TRANSFORMERS_CACHE",
-	"VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD"}
+	"VLLM_ROUTED_DOWN_PROJ_STREAM_TOKEN_THRESHOLD", "VLLM_USE_FLASHINFER_MOE_FP4"}
 
 // unreadEnv are env's keys this engine neither reads nor knows to be inert, sorted.
 func unreadEnv(env map[string]string) []string {

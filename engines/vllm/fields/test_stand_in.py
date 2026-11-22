@@ -32,8 +32,10 @@ VECTORS = os.path.join(HERE, "stand_in_vectors.json")
 CUMEM = [("1", True), ("0", False), ("", False), ("2", False)]
 NVLS = [("1", True), ("2", True), ("0", False), ("", False)]
 # NCCL_MNNVL_ENABLE (NCCL user guide): 2 is the default (use multi-node NVLink where the system has it, else the network);
-# 1 differs only in failing communicator initialization when MNNVL is unsupported, which a completed run did not do.
-MNNVL = [("1", True), ("2", True), ("0", False), ("", False)]
+# 1 forces the multi-node NVLink check for every communicator (src/init.cc:1377 at NCCL v2.32.6-1 ad2d192c), so it is the default
+# only where the tensor-parallel group spans nodes; the unset case on one node never runs it.
+MNNVL = [("1", 1, False), ("1", 2, True), ("1", 4, True), ("1", None, False), ("2", 1, True), ("2", 2, True), ("2", None, True),
+         ("0", 1, False), ("0", 2, False), ("", 2, False)]
 # The env vars an earlier release read (removed in v0.24.0, 03878d1c2): the rows are v0.33.0's own selection for the flags
 # that replaced them, fused_moe/oracle/mxfp4.py at 4ba787ec (map_mxfp4_backend :352-392, _filter_by_activation :614-631,
 # _get_requested_backends :634-647) and the device each kernel supports (TrtLlmMxfp4Experts: capability family 10,
@@ -119,9 +121,14 @@ def vectors_from_upstream():
                      "exact": value == rcache_final()})
     for value, exact in TLS:
         rows.append({"field": "UCX_TLS", "value": value, "owner": "ucx-faq", "exact": exact})
-    for field, values in (("NCCL_CUMEM_ENABLE", CUMEM), ("NCCL_NVLS_ENABLE", NVLS), ("NCCL_MNNVL_ENABLE", MNNVL)):
+    for field, values in (("NCCL_CUMEM_ENABLE", CUMEM), ("NCCL_NVLS_ENABLE", NVLS)):
         for value, exact in values:
             rows.append({"field": field, "value": value, "owner": "nccl-user-guide", "exact": exact})
+    for value, nodes, exact in MNNVL:
+        row = {"field": "NCCL_MNNVL_ENABLE", "value": value, "owner": "nccl-init-cc-1377", "exact": exact}
+        if nodes is not None:
+            row["tp_group_nodes"] = nodes
+        rows.append(row)
     for field, cases in (("VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8", MXFP8), ("VLLM_MXFP4_USE_MARLIN", MARLIN_MOE)):
         for value, cap, exact in cases:
             rows.append({"field": field, "value": value, "compute_capability": cap, "owner": "mxfp4-oracle-v0.33.0", "exact": exact})

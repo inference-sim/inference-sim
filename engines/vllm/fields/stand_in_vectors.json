@@ -596,26 +596,70 @@
  {
   "field": "NCCL_MNNVL_ENABLE",
   "value": "1",
-  "owner": "nccl-user-guide",
-  "exact": true
+  "owner": "nccl-init-cc-1377",
+  "exact": false,
+  "tp_group_nodes": 1
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "1",
+  "owner": "nccl-init-cc-1377",
+  "exact": true,
+  "tp_group_nodes": 2
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "1",
+  "owner": "nccl-init-cc-1377",
+  "exact": true,
+  "tp_group_nodes": 4
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "1",
+  "owner": "nccl-init-cc-1377",
+  "exact": false
  },
  {
   "field": "NCCL_MNNVL_ENABLE",
   "value": "2",
-  "owner": "nccl-user-guide",
+  "owner": "nccl-init-cc-1377",
+  "exact": true,
+  "tp_group_nodes": 1
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "2",
+  "owner": "nccl-init-cc-1377",
+  "exact": true,
+  "tp_group_nodes": 2
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "2",
+  "owner": "nccl-init-cc-1377",
   "exact": true
  },
  {
   "field": "NCCL_MNNVL_ENABLE",
   "value": "0",
-  "owner": "nccl-user-guide",
-  "exact": false
+  "owner": "nccl-init-cc-1377",
+  "exact": false,
+  "tp_group_nodes": 1
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "0",
+  "owner": "nccl-init-cc-1377",
+  "exact": false,
+  "tp_group_nodes": 2
  },
  {
   "field": "NCCL_MNNVL_ENABLE",
   "value": "",
-  "owner": "nccl-user-guide",
-  "exact": false
+  "owner": "nccl-init-cc-1377",
+  "exact": false,
+  "tp_group_nodes": 2
  },
  {
   "field": "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",

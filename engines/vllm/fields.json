@@ -1089,13 +1089,20 @@
       },
       "estimation": {
         "rule": "leave_unset",
-        "preserves": "NCCL's own choice: the default is 2, use multi-node NVLink where the system supports it and fall back to the network where it does not, and 1 differs only in failing communicator initialization when MNNVL is unsupported or cannot be enabled (NCCL user guide, NCCL_MNNVL_ENABLE), which a run that completed did not do. The latency kernel prices every collective from the NCCL sweep at NCCL's defaults, and a stated cluster's NVLink domain is a catalog fact, not a setting",
+        "preserves": "NCCL's own choice at the default, 2 (use multi-node NVLink where the system supports it, fall back to the network where it does not): NCCL runs the multi-node NVLink check only for a communicator that spans more than one node (src/init.cc:1377, nNodes > 1 && enable != 0, at NVIDIA/nccl v2.32.6-1 ad2d192c), so 2 is the default on any communicator. 1 forces the check for every communicator (src/init.cc:1074 reads the variable; src/mnnvl.cc), the single-node ones included, and NCCL's user guide says it fails initialization when MNNVL is unsupported while the code returns success when fabric is unsupported; the sweep behind the collectives ran at NCCL's defaults and did not run that path on one node, so 1 is the default only where the tensor-parallel group spans nodes. The latency kernel prices every collective from that sweep, and a stated cluster's NVLink domain is a catalog fact, not a setting",
         "valid_when": [
           {
             "value_in": [
-              "1",
               "2"
             ]
+          },
+          {
+            "value_in": [
+              "1"
+            ],
+            "tp_group_nodes": {
+              "gt": 1
+            }
           }
         ]
       }
@@ -5630,6 +5637,23 @@
       }
     },
     {
+      "name": "VLLM_USE_FLASHINFER_MOE_FP4",
+      "source": "env",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "oracle/inertness/VLLM_USE_FLASHINFER_MOE_FP4.json"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_USE_FLASHINFER_MOE_INT4",
       "source": "env",
       "status": "not_modelled",
@@ -5771,7 +5795,7 @@
             "env.VLLM_USE_NCCL_SYMM_MEM": null
           },
           "evidence": "the registry's all-reduce floors and rates, fitted on AISimulate's NCCL sweep at NCCL's defaults (cost-model-collectives)",
-          "differs": "a stated 1 registers the all-reduce buffers as NCCL symmetric memory so the all-reduce can use the NVLS symmetric kernels, which the sweep did not run; the all-reduce is priced at the default NCCL algorithm; a stated 0 is the default",
+          "differs": "a stated 1 changes how vLLM routes and allocates collectives, none of which the sweep ran: the all-reduce choice between the custom all-reduce and NCCL by message size (vllm/distributed/device_communicators/all_reduce_utils.py:123-156@0fda86a3), the all-gather and reduce-scatter (all_reduce_utils.py:159-168@0fda86a3), and the NCCL allocator pool buffers are registered from (pynccl_allocator.py:49-51, cuda_communicator.py:112@0fda86a3), so the NVLS symmetric kernels can run; every collective is priced at the default NCCL algorithm; a stated 0 is the default",
           "when": [
             {
               "value_in": [

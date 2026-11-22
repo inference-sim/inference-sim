@@ -68,3 +68,17 @@ func TestTheEngineAcceptsTheRoutedDownProjThresholdItProvesInert(t *testing.T) {
 		t.Errorf("an unproven VLLM_ variable must still be refused by name, got %v", err)
 	}
 }
+
+// VLLM_USE_FLASHINFER_MOE_FP4 is read by no file of the pinned release (oracle/inertness/VLLM_USE_FLASHINFER_MOE_FP4.json),
+// so a stated value reaches no code: the engine accepts it, and still refuses a neighbouring variable no proof covers.
+func TestTheEngineAcceptsTheFlashInferMoeFp4VariableItProvesInert(t *testing.T) {
+	for _, v := range []string{"1", "0"} {
+		if err := refuseUnmodelled(engineconfig.Engine{Env: map[string]string{"VLLM_USE_FLASHINFER_MOE_FP4": v}}); err != nil {
+			t.Errorf("VLLM_USE_FLASHINFER_MOE_FP4=%s is refused although fields.json proves it inert: %v", v, err)
+		}
+	}
+	err := refuseUnmodelled(engineconfig.Engine{Env: map[string]string{"VLLM_USE_FLASHINFER_MOE_FP8": "1"}})
+	if err == nil || !strings.Contains(err.Error(), "VLLM_USE_FLASHINFER_MOE_FP8") {
+		t.Errorf("an unproven VLLM_ variable must still be refused by name, got %v", err)
+	}
+}

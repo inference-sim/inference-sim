@@ -144,6 +144,10 @@
   "kind": "numeric",
   "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
  },
+ "VLLM_USE_FLASHINFER_MOE_FP4": {
+  "kind": "numeric",
+  "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
+ },
  "VLLM_USE_V2_MODEL_RUNNER": {
   "kind": "enumerated",
   "values": ["1"],
