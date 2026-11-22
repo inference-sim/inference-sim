@@ -52,10 +52,9 @@ var (
 func Citations(repo, file string, src []byte) []Citation {
 	var out []Citation
 	add := func(r string, n string, line int) {
-		var num int
-		fmt.Sscan(n, &num)
-		if !blisRepoRef.MatchString(r) {
-			return // only issues in a BLIS repository are covered
+		num, err := strconv.Atoi(n)
+		if err != nil || !blisRepoRef.MatchString(r) {
+			return // only issues in a BLIS repository are covered; a number past int is no issue
 		}
 		out = append(out, Citation{Issue{r, num}, file, line})
 	}

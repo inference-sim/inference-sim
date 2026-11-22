@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-func gitTree(sha string) (string, error) {
-	return git("rev-parse", sha+"^{tree}")
-}
-
 func ghJSON(v any, args ...string) error {
 	out, err := exec.Command("gh", args...).Output()
 	if err != nil {

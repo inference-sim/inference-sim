@@ -104,8 +104,8 @@ func StatusPage(repo string, now time.Time, gs []Gate, last map[string]*Run, reg
 	for _, g := range gs {
 		r := last[g.Name]
 		status, when, result := "passing", "never", "none"
-		switch {
-		case r == nil:
+		switch r {
+		case nil:
 			status = "failing: never run"
 		default:
 			when = fmt.Sprintf("[%s](%s)", r.When.UTC().Format("2006-01-02"), r.URL)

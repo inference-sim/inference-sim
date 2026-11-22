@@ -152,7 +152,7 @@ func ExampleValidate_rules() {
 func ExampleValidateAgainstCatalog() {
 	// A stand-in registry: resolution checks only that each named set's file exists.
 	registry := must(os.MkdirTemp("", "registry"))
-	defer os.RemoveAll(registry)
+	defer func() { must(0, os.RemoveAll(registry)) }()
 	must(0, os.MkdirAll(filepath.Join(registry, "coefficients"), 0o755))
 	for _, name := range []string{"cost-model-primitives", "cost-model-collectives",
 		"cost-model-host-overheads", "cost-model-attention", "cost-model-recurrent"} {

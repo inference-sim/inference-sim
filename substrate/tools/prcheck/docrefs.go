@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -99,10 +100,15 @@ func checkRef(ref, dir string, tree Tree, roots map[string]bool) string {
 	path, from, to := ref, 0, 0
 	if m := lineRef.FindStringSubmatch(ref); m != nil {
 		path = m[1]
-		fmt.Sscan(m[2], &from)
+		var err error
+		if from, err = strconv.Atoi(m[2]); err != nil {
+			return fmt.Sprintf("%s: line number %s is out of range", path, m[2])
+		}
 		to = from
 		if m[3] != "" {
-			fmt.Sscan(m[3], &to)
+			if to, err = strconv.Atoi(m[3]); err != nil {
+				return fmt.Sprintf("%s: line number %s is out of range", path, m[3])
+			}
 		}
 	}
 	if roots != nil {

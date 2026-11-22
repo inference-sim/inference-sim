@@ -153,7 +153,7 @@ def main() -> int:
             "drafters: [speculator]\n")
         (m / "graph.yaml").write_text(
             "kind: ModelGraph\nname: decoy\nspeculator:\n  stack:\n    method: eagle3\n"
-            "  method: decoy_mtp\n  num_spec_tokens: 1\n")
+            "  method: mtp\n  num_spec_tokens: 1\n")
         run = sweep(model="decoy", stated={"speculative_method": "mtp", "num_speculative_tokens": 1,
                                            "draft_model": "Org/Decoy"})
         text = emit(run, {"1024:1024"}, {"1k1k"}, cat) or ""

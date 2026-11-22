@@ -50,7 +50,9 @@ func (r *repo) git(args ...string) string {
 func (r *repo) write(name, content string) {
 	r.t.Helper()
 	p := filepath.Join(r.dir, name)
-	os.MkdirAll(filepath.Dir(p), 0o755)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		r.t.Fatal(err)
+	}
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		r.t.Fatal(err)
 	}
@@ -431,7 +433,9 @@ func TestCommandDryRun(t *testing.T) {
 	h := sub.branch("b", "a.go", "package a\n", "Change")
 	dir := t.TempDir()
 	lock := filepath.Join(dir, "stack.lock")
-	os.WriteFile(lock, []byte("set: s\nmilestone: 1\nrepos:\n  - {repo: blis-substrate, branch: b, head: "+h+", bump: patch}\n"), 0o644)
+	if err := os.WriteFile(lock, []byte("set: s\nmilestone: 1\nrepos:\n  - {repo: blis-substrate, branch: b, head: "+h+", bump: patch}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	old := fetchCheckRuns
 	t.Cleanup(func() { fetchCheckRuns = old })
 	fetchCheckRuns = func(repo, _ string) (map[string]string, error) { return everyRunSucceeded(t, repo), nil }

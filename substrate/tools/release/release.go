@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"golang.org/x/mod/modfile"
@@ -480,8 +481,12 @@ func deprecationsAt(dir, commit string) ([]Deprecation, error) {
 		if len(parts) != 3 {
 			continue
 		}
+		line, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return nil, fmt.Errorf("git grep line number %q: %w", parts[1], err)
+		}
 		for _, d := range FindDeprecations(parts[0], []byte(parts[2])) {
-			fmt.Sscan(parts[1], &d.Line)
+			d.Line = line
 			all = append(all, d)
 		}
 	}

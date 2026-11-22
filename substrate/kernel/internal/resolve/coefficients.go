@@ -588,24 +588,6 @@ func (e *MissingError) Error() string {
 		e.Name, strings.Join(e.Available, ", "), e.Refused)
 }
 
-func containsString(list []string, want string) bool {
-	for _, s := range list {
-		if strings.EqualFold(s, want) {
-			return true
-		}
-	}
-	return false
-}
-
-func containsInt(list []int, want int) bool {
-	for _, v := range list {
-		if v == want {
-			return true
-		}
-	}
-	return false
-}
-
 // describeRunning renders implementations by primitive, in a fixed order.
 func describeRunning(m map[string][]coefficient.KernelImpl) string {
 	prims := make([]string, 0, len(m))

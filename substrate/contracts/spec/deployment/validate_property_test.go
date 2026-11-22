@@ -561,8 +561,9 @@ func FuzzParallelismValidation(f *testing.F) {
 		d := singleNodeDeployment()
 		d.Pools[0].Nodes = nodes
 		d.Pools[0].Parallel = pl
-		d.Validate()
-		d.ValidateAgainstCluster(ClusterConstraints{Nodes: nodes, GPUsPerNode: gpn})
+		// The fuzz target is that neither panics; their errors are the subject of other tests.
+		_ = d.Validate()
+		_ = d.ValidateAgainstCluster(ClusterConstraints{Nodes: nodes, GPUsPerNode: gpn})
 		if w := pl.ExpertParallelWidth(); w < 1 {
 			t.Fatalf("%+v: expert width %d", pl, w)
 		}

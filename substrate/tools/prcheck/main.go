@@ -91,13 +91,13 @@ func main() {
 
 func report(w io.Writer, name string, bad []string) error {
 	for _, b := range bad {
-		fmt.Fprintln(w, b)
+		_, _ = fmt.Fprintln(w, b)
 	}
 	if len(bad) > 0 {
-		fmt.Fprintf(w, "%s: %d finding(s)\n", name, len(bad))
+		_, _ = fmt.Fprintf(w, "%s: %d finding(s)\n", name, len(bad))
 		return errFindings
 	}
-	fmt.Fprintf(w, "%s: clean\n", name)
+	_, _ = fmt.Fprintf(w, "%s: clean\n", name)
 	return nil
 }
 
@@ -159,7 +159,7 @@ func run(args []string, w io.Writer) error {
 				bad = append(bad, StrictCommitPolicy(c, maint)...)
 			}
 		}
-		fmt.Fprintf(w, "commits: %d checked\n", len(cs))
+		_, _ = fmt.Fprintf(w, "commits: %d checked\n", len(cs))
 		return report(w, "commit-policy", bad)
 	case "workflows":
 		var files []string
@@ -183,7 +183,7 @@ func run(args []string, w io.Writer) error {
 			}
 			bad = append(bad, b...)
 		}
-		fmt.Fprintf(w, "workflows: %d files checked\n", len(files))
+		_, _ = fmt.Fprintf(w, "workflows: %d files checked\n", len(files))
 		return report(w, "workflow-lint", bad)
 	case "description":
 		if *body == "" || *repo == "" || *base == "" {
@@ -232,7 +232,7 @@ func run(args []string, w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(w, "issues: %d citations\n", len(cites))
+		_, _ = fmt.Fprintf(w, "issues: %d citations\n", len(cites))
 		var bad []string
 		if *closes != "" {
 			raw, err := os.ReadFile(*closes)
@@ -282,7 +282,7 @@ func run(args []string, w io.Writer) error {
 			n++
 			bad = append(bad, DocFindings(f, src, tree, roots)...)
 		}
-		fmt.Fprintf(w, "docrefs: %d documents checked\n", n)
+		_, _ = fmt.Fprintf(w, "docrefs: %d documents checked\n", n)
 		return report(w, "doc-references", bad)
 	case "skips":
 		// prcheck skips -results <file> [-python-package <dir>]: fail on any skipped test
@@ -304,7 +304,7 @@ func run(args []string, w io.Writer) error {
 			bad = append(bad, fmt.Sprintf("%d test results; the job states a minimum of %d (X22)", ran, *minItems))
 		}
 		bad = append(bad, CheckSkips(skips, entries)...)
-		fmt.Fprintf(w, "skips: %d skipped\n", len(skips))
+		_, _ = fmt.Fprintf(w, "skips: %d skipped\n", len(skips))
 		return report(w, "skips", bad)
 	case "contracts-apidiff":
 		tags, err := git("tag", "--merged", "HEAD", "--list", "v[0-9]*.[0-9]*.[0-9]*")
@@ -396,9 +396,9 @@ func run(args []string, w io.Writer) error {
 		for _, t := range tests {
 			n += len(t)
 		}
-		fmt.Fprintf(w, "knownbad: %d test(s) in %d package(s); %d ci check(s) name no known-bad input\n", n, len(tests), len(missing))
+		_, _ = fmt.Fprintf(w, "knownbad: %d test(s) in %d package(s); %d ci check(s) name no known-bad input\n", n, len(tests), len(missing))
 		for _, m := range missing {
-			fmt.Fprintln(w, "note: "+m)
+			_, _ = fmt.Fprintln(w, "note: "+m)
 		}
 		if n == 0 {
 			return fmt.Errorf("the registry names no known-bad test for %s; the sweep processes at least one (X22)", *repoName)
@@ -477,7 +477,7 @@ func run(args []string, w io.Writer) error {
 		}
 		entries, bad := CheckQuarantine(src, day, QuarantineHistory(*list, src))
 		if *skipPkg != "" && len(bad) == 0 {
-			fmt.Fprintln(w, GoSkipPattern(entries, *skipPkg))
+			_, _ = fmt.Fprintln(w, GoSkipPattern(entries, *skipPkg))
 			return nil
 		}
 		return report(w, "quarantine", bad)

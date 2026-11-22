@@ -57,7 +57,7 @@ func main() {
 // walk testable without a subprocess.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
-		fmt.Fprintln(stderr, "usage: validate-registry <blis-registry root>")
+		_, _ = fmt.Fprintln(stderr, "usage: validate-registry <blis-registry root>")
 		return 2
 	}
 	root := args[0]
@@ -65,29 +65,29 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// validate-catalog does: without this, a nonexistent root and an empty coefficients/
 	// both read as "no sets found", so a typo looks like an empty directory.
 	if info, err := os.Stat(root); err != nil || !info.IsDir() {
-		fmt.Fprintf(stderr, "%s: registry root does not exist or is not a directory\n", root)
+		_, _ = fmt.Fprintf(stderr, "%s: registry root does not exist or is not a directory\n", root)
 		return 2
 	}
 	coeffDir := filepath.Join(root, "coefficients")
 	paths, err := registry.SetPaths(root)
 	if err != nil {
-		fmt.Fprintf(stderr, "scanning %s: %v\n", coeffDir, err)
+		_, _ = fmt.Fprintf(stderr, "scanning %s: %v\n", coeffDir, err)
 		return 2
 	}
 	if len(paths) == 0 {
-		fmt.Fprintf(stderr, "%s: no coefficient sets (*.yaml/*.yml) found\n", coeffDir)
+		_, _ = fmt.Fprintf(stderr, "%s: no coefficient sets (*.yaml/*.yml) found\n", coeffDir)
 		return 2
 	}
 
 	accPaths, err := registry.AcceptancePaths(root)
 	if err != nil {
-		fmt.Fprintf(stderr, "scanning %s: %v\n", filepath.Join(root, "acceptance"), err)
+		_, _ = fmt.Fprintf(stderr, "scanning %s: %v\n", filepath.Join(root, "acceptance"), err)
 		return 2
 	}
 
 	routePaths, err := registry.RoutingPaths(root)
 	if err != nil {
-		fmt.Fprintf(stderr, "scanning %s: %v\n", filepath.Join(root, "routing"), err)
+		_, _ = fmt.Fprintf(stderr, "scanning %s: %v\n", filepath.Join(root, "routing"), err)
 		return 2
 	}
 
@@ -129,20 +129,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// are left to the order sets are listed in (VAL-4). The loader runs the same check.
 	across := dataset.CheckOrdered(sets)
 	for _, p := range across {
-		fmt.Fprintln(stderr, p)
+		_, _ = fmt.Fprintln(stderr, p)
 	}
 	total := len(paths) + len(accPaths) + len(routePaths)
 	if len(across) > 0 {
-		fmt.Fprintf(stderr, "\n%d pair(s) of entries across sets are not ordered (VAL-4)\n", len(across))
+		_, _ = fmt.Fprintf(stderr, "\n%d pair(s) of entries across sets are not ordered (VAL-4)\n", len(across))
 		if failed == 0 {
 			return 1
 		}
 	}
 	if failed > 0 {
-		fmt.Fprintf(stderr, "\n%d of %d set(s) failed\n", failed, total)
+		_, _ = fmt.Fprintf(stderr, "\n%d of %d set(s) failed\n", failed, total)
 		return 1
 	}
-	fmt.Fprintf(stdout, "\nall %d set(s) validate\n", total)
+	_, _ = fmt.Fprintf(stdout, "\nall %d set(s) validate\n", total)
 	return 0
 }
 
@@ -170,18 +170,18 @@ func check(stdout, stderr io.Writer, base, path string,
 	if err != nil {
 		// A strict-decoder error can span several lines; prefix each with the file so
 		// every line is attributable, not just the first.
-		fmt.Fprint(stderr, prefixLines(name, err.Error()))
-		fmt.Fprintf(stdout, "%-46s FAILED (load error)\n", name)
+		_, _ = fmt.Fprint(stderr, prefixLines(name, err.Error()))
+		_, _ = fmt.Fprintf(stdout, "%-46s FAILED (load error)\n", name)
 		return 1
 	}
 	for _, problem := range p.All() {
-		fmt.Fprintf(stderr, "%s: %s\n", name, problem)
+		_, _ = fmt.Fprintf(stderr, "%s: %s\n", name, problem)
 	}
 	if !p.OK() {
-		fmt.Fprintf(stdout, "%-46s FAILED (%d problem(s))\n", name, len(p.Errors()))
+		_, _ = fmt.Fprintf(stdout, "%-46s FAILED (%d problem(s))\n", name, len(p.Errors()))
 		return 1
 	}
-	fmt.Fprintf(stdout, "%-46s %3d %s\n", name, n, noun)
+	_, _ = fmt.Fprintf(stdout, "%-46s %3d %s\n", name, n, noun)
 	return 0
 }
 

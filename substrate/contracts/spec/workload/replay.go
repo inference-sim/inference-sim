@@ -73,7 +73,7 @@ func (r *Replay) Validate() *validate.Problems {
 		p.Field("concurrency", "must be at least 1: the number of session-tree lanes")
 	}
 	if r.Workload == "" {
-		r.ReplayDefinition.validateInto(p)
+		r.validateInto(p)
 		return p
 	}
 	if fixed := r.catalogFixedFields(); len(fixed) > 0 {

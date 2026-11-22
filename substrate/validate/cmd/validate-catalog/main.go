@@ -44,12 +44,12 @@ var namespaces = []string{"models", "hardware", "networks", "workloads", "device
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
-		fmt.Fprintln(stderr, "usage: validate-catalog <blis-catalog root>")
+		_, _ = fmt.Fprintln(stderr, "usage: validate-catalog <blis-catalog root>")
 		return 2
 	}
 	root := args[0]
 	if info, err := os.Stat(root); err != nil || !info.IsDir() {
-		fmt.Fprintf(stderr, "%s: catalog root does not exist or is not a directory\n", root)
+		_, _ = fmt.Fprintf(stderr, "%s: catalog root does not exist or is not a directory\n", root)
 		return 2
 	}
 	anyNamespace := false
@@ -60,7 +60,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	if !anyNamespace {
-		fmt.Fprintf(stderr, "%s: not a catalog root — none of %v found\n", root, namespaces)
+		_, _ = fmt.Fprintf(stderr, "%s: not a catalog root — none of %v found\n", root, namespaces)
 		return 2
 	}
 
@@ -88,14 +88,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// artifact at all is a structural error, not a success — the same stance the
 	// graph-only predecessor took when it found no graph.
 	if r.total == 0 {
-		fmt.Fprintf(stderr, "%s: no catalog artifacts found to validate\n", root)
+		_, _ = fmt.Fprintf(stderr, "%s: no catalog artifacts found to validate\n", root)
 		return 2
 	}
 	if r.failed > 0 {
-		fmt.Fprintf(stderr, "\n%d of %d artifact(s) failed\n", r.failed, r.total)
+		_, _ = fmt.Fprintf(stderr, "\n%d of %d artifact(s) failed\n", r.failed, r.total)
 		return 1
 	}
-	fmt.Fprintf(stdout, "\nall %d artifact(s) validate\n", r.total)
+	_, _ = fmt.Fprintf(stdout, "\nall %d artifact(s) validate\n", r.total)
 	return 0
 }
 
@@ -108,12 +108,12 @@ type reporter struct {
 
 // section prints a heading to stdout before the entries of one artifact kind, so the
 // combined report stays readable.
-func (r *reporter) section(title string) { fmt.Fprintln(r.stdout, title) }
+func (r *reporter) section(title string) { _, _ = fmt.Fprintln(r.stdout, title) }
 
 // pass records an artifact that validated clean and prints its summary line.
 func (r *reporter) pass(summary string) {
 	r.total++
-	fmt.Fprintln(r.stdout, summary)
+	_, _ = fmt.Fprintln(r.stdout, summary)
 }
 
 // record reports an artifact's problems under name and returns whether it failed. A
@@ -121,7 +121,7 @@ func (r *reporter) pass(summary string) {
 // summary; warnings are printed but do not fail it.
 func (r *reporter) record(name string, p *validate.Problems) bool {
 	for _, pr := range p.All() {
-		fmt.Fprintf(r.stderr, "%s: %s\n", name, pr)
+		_, _ = fmt.Fprintf(r.stderr, "%s: %s\n", name, pr)
 	}
 	if !p.OK() {
 		r.total++
@@ -135,7 +135,7 @@ func (r *reporter) record(name string, p *validate.Problems) bool {
 func (r *reporter) loadFail(name, format string, args ...any) {
 	r.total++
 	r.failed++
-	fmt.Fprintf(r.stderr, "%s: "+format+"\n", append([]any{name}, args...)...)
+	_, _ = fmt.Fprintf(r.stderr, "%s: "+format+"\n", append([]any{name}, args...)...)
 }
 
 func validateModelGraphs(r *reporter, dirs []string) {

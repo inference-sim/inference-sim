@@ -664,11 +664,6 @@ func (k *Kernel) collectiveSeconds(key collKey, bytes float64) float64 {
 		k.collectiveFloors[key].Seconds())
 }
 
-// collectiveTime prices one invocation, for callers outside the step loop.
-func (k *Kernel) collectiveTime(key collKey, bytes float64) time.Duration {
-	return seconds(k.collectiveSeconds(key, bytes))
-}
-
 // crossesNodes reports whether a collective's own group spans more than one node.
 //
 // Per collective rather than per deployment: a tensor-parallel group of 8 fits inside an

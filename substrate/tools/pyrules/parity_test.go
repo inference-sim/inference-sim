@@ -45,8 +45,12 @@ func goRefuses(t *testing.T, example string) (bool, string) {
 		t.Fatal(err)
 	}
 	dst := filepath.Join(dir, "coefficients", filepath.Base(example))
-	os.MkdirAll(filepath.Dir(dst), 0o755)
-	os.WriteFile(dst, src, 0o644)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, src, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	cmd := exec.Command("go", "run", "../../validate/cmd/validate-registry", dir)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -121,7 +125,9 @@ func TestPythonRuleLint(t *testing.T) {
 		t.Fatal(err)
 	}
 	vf := filepath.Join(t.TempDir(), "vocab.json")
-	os.WriteFile(vf, vocab, 0o644)
+	if err := os.WriteFile(vf, vocab, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	cmd := exec.Command(python, "-I", "tools/pyrules/pyrules.py", vf)
 	cmd.Dir = "../.."
 	if out, err := cmd.CombinedOutput(); err != nil {

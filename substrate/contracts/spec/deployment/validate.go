@@ -108,7 +108,7 @@ func dns1123Subdomain(s string) bool {
 			return false
 		}
 		for i := 0; i < len(label); i++ {
-			if c := label[i]; !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
+			if c := label[i]; (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
 				return false
 			}
 		}

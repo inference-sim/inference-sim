@@ -172,7 +172,7 @@ func Hash(files map[string][]byte) string {
 	h := sha256.New()
 	for _, p := range paths {
 		sum := sha256.Sum256(files[p])
-		fmt.Fprintf(h, "%s  %s\n", hex.EncodeToString(sum[:]), p)
+		_, _ = fmt.Fprintf(h, "%s  %s\n", hex.EncodeToString(sum[:]), p) // a hash.Hash write never fails
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -186,9 +186,9 @@ func combinedHash(base string, overlays []Overlay) string {
 		return base
 	}
 	h := sha256.New()
-	fmt.Fprintf(h, "%s  base\n", base)
+	_, _ = fmt.Fprintf(h, "%s  base\n", base)
 	for _, o := range overlays {
-		fmt.Fprintf(h, "%s  overlay\n", o.Hash)
+		_, _ = fmt.Fprintf(h, "%s  overlay\n", o.Hash)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

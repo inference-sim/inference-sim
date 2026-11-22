@@ -168,9 +168,7 @@ func TestGateDeclaresItsPaths(t *testing.T) {
 // This repository passes its own checks, so a change that breaks one fails go test as well
 // as CI.
 func TestThisRepositoryPassesItsOwnChecks(t *testing.T) {
-	cwd, _ := os.Getwd()
-	defer os.Chdir(cwd)
-	os.Chdir("../..")
+	t.Chdir("../..")
 	for _, c := range []string{"workflows", "versions", "docrefs", "quarantine"} {
 		var out strings.Builder
 		if err := run([]string{c}, &out); err != nil {
@@ -504,16 +502,18 @@ func TestCommitsAgainstALocalRepository(t *testing.T) {
 		return strings.TrimSpace(string(out))
 	}
 	g("init", "-q", "-b", "main")
-	os.WriteFile(filepath.Join(dir, "a"), []byte("a\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "a"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	g("add", "a")
 	g("commit", "-q", "-m", "base")
 	base := g("rev-parse", "HEAD")
-	os.WriteFile(filepath.Join(dir, "a"), []byte("b\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "a"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	g("commit", "-q", "-am", "Change a\n\nAssisted-by: Claude Code\nSigned-off-by: Ada Person <ada@example.com>")
 	head := g("rev-parse", "HEAD")
-	cwd, _ := os.Getwd()
-	defer os.Chdir(cwd)
-	os.Chdir(dir)
+	t.Chdir(dir)
 	// An unsigned commit with a person's sign-off and an Assisted-by line is clean: signing
 	// is encouraged, not checked (X20).
 	var out strings.Builder
@@ -598,9 +598,7 @@ func TestKnownBadRunsEachTest(t *testing.T) {
 	}
 	// Known-bad: an entry naming a test that does not exist is reported. runKnownBad runs
 	// from the repository root.
-	cwd, _ := os.Getwd()
-	defer os.Chdir(cwd)
-	os.Chdir("../..")
+	t.Chdir("../..")
 	bad := runKnownBad(map[string][]string{"tools/internal/bot": {"TestNoSuchTest"}})
 	if len(bad) != 1 || !strings.Contains(bad[0], "TestNoSuchTest did not run") {
 		t.Fatalf("an entry naming a missing test was not reported: %v", bad)
@@ -611,10 +609,14 @@ func TestKnownBadRunsEachTest(t *testing.T) {
 func TestLicenceFiles(t *testing.T) {
 	dir := t.TempDir()
 	has(t, CheckLicenceFiles(dir, "inference-sim"), "LICENSE is missing")
-	os.WriteFile(filepath.Join(dir, "LICENSE"), []byte("Apache License\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "LICENSE"), []byte("Apache License\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	none(t, CheckLicenceFiles(dir, "inference-sim"))
 	has(t, CheckLicenceFiles(dir, "blis-vllm"), "NOTICE is missing")
-	os.WriteFile(filepath.Join(dir, "NOTICE"), []byte("Portions derived from SGLang.\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "NOTICE"), []byte("Portions derived from SGLang.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	has(t, CheckLicenceFiles(dir, "blis-vllm"), "does not name vLLM")
 	none(t, CheckLicenceFiles("../..", "blis-substrate"))
 }

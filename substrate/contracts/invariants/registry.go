@@ -389,10 +389,10 @@ func (inv Invariant) validate() []error {
 func StatusOf(nci, n int) string { return statusOf(nci, n) }
 
 func statusOf(nci, n int) string {
-	switch {
-	case nci == 0:
+	switch nci {
+	case 0:
 		return StatusNew
-	case nci == n:
+	case n:
 		return StatusCI
 	default:
 		return StatusPartial

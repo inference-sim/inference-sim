@@ -60,7 +60,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: invariants render|agents|template|check-copy|cited|questions|snapshot ...")
+		return errors.New("usage: invariants render|agents|template|check-copy|cited|questions|snapshot [flags]")
 	}
 	reg, err := invariants.Embedded()
 	if err != nil {
@@ -154,7 +154,7 @@ func render(reg *invariants.Registry, root string, check bool, stderr io.Writer)
 		if check {
 			got, err := os.ReadFile(full)
 			if err != nil || string(got) != out[p] {
-				fmt.Fprintf(stderr, "%s does not match the registry; run go run ./tools/invariants render\n", p)
+				_, _ = fmt.Fprintf(stderr, "%s does not match the registry; run go run ./tools/invariants render\n", p)
 				stale = true
 			}
 			continue
@@ -183,7 +183,7 @@ func checkCopy(reg *invariants.Registry, repo, agentsPath, templatePath string, 
 	} {
 		raw, err := os.ReadFile(c.path)
 		if err != nil {
-			fmt.Fprintf(stderr, "%s: %v\n", c.path, err)
+			_, _ = fmt.Fprintf(stderr, "%s: %v\n", c.path, err)
 			bad = true
 			continue
 		}
@@ -237,7 +237,7 @@ func cited(reg *invariants.Registry, bodyPath string, stdout, stderr io.Writer) 
 	}
 	sec, ok := invariantsSection(string(raw))
 	if !ok {
-		fmt.Fprintln(stderr, "the pull-request body has no \"## Invariants\" section (X14)")
+		_, _ = fmt.Fprintln(stderr, "the pull-request body has no \"## Invariants\" section (X14)")
 		return errCheck
 	}
 	ids := citedID.FindAllString(sec, -1)
@@ -249,19 +249,19 @@ func cited(reg *invariants.Registry, bodyPath string, stdout, stderr io.Writer) 
 		}
 		seen[id] = true
 		if strings.HasPrefix(id, "T-") {
-			fmt.Fprintf(stdout, "%s\ttrigger outcome\n", id)
+			_, _ = fmt.Fprintf(stdout, "%s\ttrigger outcome\n", id)
 			continue
 		}
 		inv, ok := reg.Get(id)
 		if !ok {
-			fmt.Fprintf(stderr, "%s is cited but is not in the invariant registry (X14)\n", id)
+			_, _ = fmt.Fprintf(stderr, "%s is cited but is not in the invariant registry (X14)\n", id)
 			bad = true
 			continue
 		}
-		fmt.Fprintf(stdout, "%s\t%s\n", id, inv.Status)
+		_, _ = fmt.Fprintf(stdout, "%s\t%s\n", id, inv.Status)
 	}
 	if len(seen) == 0 {
-		fmt.Fprintln(stderr, "the Invariants section cites no identifier (X14)")
+		_, _ = fmt.Fprintln(stderr, "the Invariants section cites no identifier (X14)")
 		bad = true
 	}
 	if bad {
@@ -363,7 +363,7 @@ func snapshot(root, designPath, planPath string, check bool, stderr io.Writer) e
 		if check {
 			got, err := os.ReadFile(full)
 			if err != nil || string(got) != out[rel] {
-				fmt.Fprintf(stderr, "%s differs from the design or plan given\n", rel)
+				_, _ = fmt.Fprintf(stderr, "%s differs from the design or plan given\n", rel)
 				stale = true
 			}
 			continue

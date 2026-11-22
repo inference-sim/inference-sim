@@ -301,7 +301,7 @@ func checkShape(n *yaml.Node, onPath map[*yaml.Node]bool, count *int) error {
 		seen := map[string]int{}
 		for i := 0; i+1 < len(n.Content); i += 2 {
 			k := n.Content[i]
-			if k.Kind == yaml.ScalarNode && !(k.Value == "<<" && (k.Tag == "!!merge" || k.Tag == "")) {
+			if k.Kind == yaml.ScalarNode && (k.Value != "<<" || (k.Tag != "!!merge" && k.Tag != "")) {
 				if first, dup := seen[k.Value]; dup {
 					return fmt.Errorf("line %d: mapping key %q already defined at line %d", k.Line, k.Value, first)
 				}

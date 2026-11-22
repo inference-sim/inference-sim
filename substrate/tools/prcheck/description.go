@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -95,15 +96,15 @@ func CheckDescription(in DescriptionInput) []string {
 		}
 		var refs []ref
 		for _, m := range prURL.FindAllStringSubmatch(line, -1) {
-			var n int
-			fmt.Sscan(m[2], &n)
-			refs = append(refs, ref{m[1], n})
+			if n, err := strconv.Atoi(m[2]); err == nil {
+				refs = append(refs, ref{m[1], n})
+			}
 		}
 		if len(refs) == 0 {
 			for _, m := range prRef.FindAllStringSubmatch(line, -1) {
-				var n int
-				fmt.Sscan(m[2], &n)
-				refs = append(refs, ref{m[1], n})
+				if n, err := strconv.Atoi(m[2]); err == nil {
+					refs = append(refs, ref{m[1], n})
+				}
 			}
 		}
 		if len(refs) == 0 {

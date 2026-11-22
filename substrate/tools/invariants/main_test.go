@@ -51,7 +51,9 @@ func TestRenderCheckFailsOnAHandEditedCopy(t *testing.T) {
 	}
 	tpl := filepath.Join(root, ".github/pull_request_template.md")
 	raw, _ := os.ReadFile(tpl)
-	os.WriteFile(tpl, bytes.Replace(raw, []byte("X13:"), []byte("X13 (optional):"), 1), 0o644)
+	if err := os.WriteFile(tpl, bytes.Replace(raw, []byte("X13:"), []byte("X13 (optional):"), 1), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	_, stderr, err := runIn(t, "render", "-check", "-root", root)
 	if !errors.Is(err, errCheck) || !strings.Contains(stderr, "pull_request_template.md does not match") {
 		t.Fatalf("a hand-edited template passed: err=%v stderr=%s", err, stderr)

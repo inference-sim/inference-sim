@@ -534,7 +534,7 @@ type restages struct {
 
 func (s restages) StageTimes(b engine.Batch) []engine.Duration {
 	*s.n++
-	d := s.FIFO.StepTime(b)
+	d := s.StepTime(b)
 	if *s.n%2 == 0 {
 		return []engine.Duration{d}
 	}

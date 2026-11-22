@@ -66,7 +66,7 @@ func LoadBundle(path string) (*scenario.Scenario, *deployment.Deployment, error)
 	if err != nil {
 		return nil, nil, fmt.Errorf("opening %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only: a close error loses nothing
 
 	data, err := io.ReadAll(f)
 	if err != nil {

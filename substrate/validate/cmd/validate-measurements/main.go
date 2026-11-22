@@ -28,36 +28,36 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	local := fs.Bool("local", false, "allow runs whose licence does not permit redistribution")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: validate-measurements [-local] <measurements dir>")
+		_, _ = fmt.Fprintln(stderr, "usage: validate-measurements [-local] <measurements dir>")
 		return 2
 	}
 	results, err := measurements.Check(fs.Arg(0), !*local, nil)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		_, _ = fmt.Fprintln(stderr, err)
 		return 2
 	}
 	failed := 0
 	for _, r := range results {
 		if r.Err != nil {
-			fmt.Fprintf(stderr, "%s: %v\n", r.Name, r.Err)
-			fmt.Fprintf(stdout, "%-60s FAILED (load error)\n", r.Name)
+			_, _ = fmt.Fprintf(stderr, "%s: %v\n", r.Name, r.Err)
+			_, _ = fmt.Fprintf(stdout, "%-60s FAILED (load error)\n", r.Name)
 			failed++
 			continue
 		}
 		for _, p := range r.Problems.All() {
-			fmt.Fprintf(stderr, "%s: %s\n", r.Name, p)
+			_, _ = fmt.Fprintf(stderr, "%s: %s\n", r.Name, p)
 		}
 		if !r.Problems.OK() {
-			fmt.Fprintf(stdout, "%-60s FAILED (%d problem(s))\n", r.Name, len(r.Problems.Errors()))
+			_, _ = fmt.Fprintf(stdout, "%-60s FAILED (%d problem(s))\n", r.Name, len(r.Problems.Errors()))
 			failed++
 			continue
 		}
-		fmt.Fprintf(stdout, "%-60s %s\n", r.Name, r.Summary)
+		_, _ = fmt.Fprintf(stdout, "%-60s %s\n", r.Name, r.Summary)
 	}
 	if failed > 0 {
-		fmt.Fprintf(stderr, "\n%d of %d file(s) failed\n", failed, len(results))
+		_, _ = fmt.Fprintf(stderr, "\n%d of %d file(s) failed\n", failed, len(results))
 		return 1
 	}
-	fmt.Fprintf(stdout, "\nall %d file(s) validate\n", len(results))
+	_, _ = fmt.Fprintf(stdout, "\nall %d file(s) validate\n", len(results))
 	return 0
 }
