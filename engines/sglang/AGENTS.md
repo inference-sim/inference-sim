@@ -1,34 +1,33 @@
-# Agent instructions for blis-sglang
+# Agent instructions for the SGLang engine
 
-These rules apply to every AI-assisted change to this repository. Human contributors follow the
-same rules; they are written here so an agent reads them first.
+These rules apply to every AI-assisted change under `engines/sglang/`. Human contributors follow the
+same rules; they are written here so an agent reads them first. The rules for the whole
+repository are in the root `CLAUDE.md`.
 
-## Cross-repository rules (all BLIS repositories)
+## Rules for the whole repository
 
-blis-sglang sits between blis-substrate and inference-sim. A change that touches more than one
-repository follows
-[Changes across the repositories](https://github.com/inference-sim/blis-substrate/blob/main/docs/contributing/changes.md#across-blis-repositories).
-In short:
+The substrate, both engines and the simulator are one Go module, so a change that touches more than
+one of them is one pull request (design: changes across directories). In short:
 
 1. **Public artifacts.** Never write internal project, customer or colleague names in a commit,
    code, comment, document, issue or pull request. Refer to private measurements by what they
    are ("internal deployment reports"). Run the name scan before every push.
 2. **Data.** Never commit third-party data. Commit derived values only, each with its source URL
    plus commit or sha256.
-3. **Versions.** Pin dependencies by release tag, or by the exact pushed head marked `TEMPORARY`
-   with its pull request. Never commit a `replace` in `go.mod`.
+3. **Versions.** Pin dependencies by release tag. The one `replace` in `go.mod` is the llm-d router
+   fork (`.github/agent-prompts/llm-d-router-fork.md`).
 4. **Tests.** Every behaviour change has a test that fails without it. Mutation-check it:
    revert the fix, see the test fail, restore, and say so in the commit message.
 
-## This repository
+## This directory
 
 - **One release.** A build models one SGLang release (`Upstream` in `provenance.go`, the
-  `harness.Upstream` type of blis-substrate's `contracts/harness`). Every statement about SGLang
+  `harness.Upstream` type of `substrate/contracts/harness`). Every statement about SGLang
   cites `python/sglang/<path>:<lines>@<commit8>` at that release. The tag sits on SGLang's
   release branch and is not an ancestor of its `main`, so an upgrade compares release tag with
   release tag.
-- **Nothing from blis-vllm.** Shared machinery comes from blis-substrate's `contracts/harness`
-  (design §5); `imports_test.go` fails on an import of blis-vllm, or of blis-substrate outside
+- **Nothing from the vLLM engine.** Shared machinery comes from `substrate/contracts/harness`
+  (design §5); `imports_test.go` fails on an import of `engines/vllm`, or of `substrate` outside
   `contracts/`.
 - **Ported files.** A Go file translated from SGLang keeps SGLang's licence and records its source:
   ```go
@@ -41,9 +40,8 @@ In short:
 - **No clock, no goroutines.** Nothing reads `time.Now`, sleeps or starts a goroutine;
   `TestNoClockNoGoroutines` enforces it (X6).
 - **Shared files are generated.** `.golangci.yml` and `oracle/check_{lock,mocks,goldens}.py` are
-  copies of `contracts/harness` at the substrate version `go.mod` selects. Never edit them;
-  regenerate with
-  `go run ./substrate/contracts/harness/cmd/harnessfiles`.
+  copies of `substrate/contracts/harness`. Never edit them; regenerate, from the repository root,
+  with `go run ./substrate/contracts/harness/cmd/harnessfiles`.
   `TestHarnessCopiesAreCurrent` fails when one differs. `oracle/harness.json` is this
   repository's configuration of the oracle checks. Its `upstream_names` are matched by function
   name alone, whatever class or module defines the function. Its `decision_prefixes`, with
@@ -59,7 +57,7 @@ In short:
   registration and selection code by `engines/sglang/tools/surface/gen_surface.py` (X9, SGL-4, SGL-6). Never edit
   it by hand: change a status in `engines/sglang/tools/surface/status.json` and regenerate with
   `python3 -I tools/surface/gen_surface.py <sglang-source> tools/surface/status.json > surface.json`.
-  A refused item cites an open blis-sglang issue (X28); a framework is modelled only with recorded
+  A refused item cites an open inference-sim issue (X28); a framework is modelled only with recorded
   and direct traces at its interface (FID-5).
   The list also records the particulars of Table DC at the modelled commit: the settings of
   `gen_surface.py`'s `SETTINGS`, the P/D allocation policy, the tree cores (the Rust core is the

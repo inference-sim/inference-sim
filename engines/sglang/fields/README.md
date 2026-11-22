@@ -2,8 +2,8 @@
 
 `fields.json` is the field list SGL-3 asks for. It holds every configuration field and every
 environment variable the pinned SGLang release reads, each with a status, its evidence and an
-estimation rule. Its form is the `FieldList` document of blis-substrate's `contracts/spec/fields`,
-the one blis-vllm publishes.
+estimation rule. Its form is the `FieldList` document of `substrate/contracts/spec/fields`,
+the one the vLLM engine publishes.
 
 | File | Written by | Holds |
 |---|---|---|

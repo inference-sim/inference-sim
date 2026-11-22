@@ -1,14 +1,14 @@
-# Agent instructions for blis-substrate
+# Agent instructions for substrate
 
-These rules apply to every change to this repository, by a person or an agent. They are written
+These rules apply to every change under `substrate/`, by a person or an agent. The rules for the whole repository are in the root `CLAUDE.md`. They are written
 here so that an agent reads them first. The rules come from the BLIS target design; each names
 its invariant identifier.
 
 ## What belongs here
 
-blis-substrate holds what is true whatever engine runs (design §2.2). Before adding a fact, ask
-whether a second engine would need the same edit. If it would not, the change belongs in an
-engine repository.
+The substrate holds what is true whatever engine runs (design §2.2). Before adding a fact, ask
+whether a second engine would need the same edit. If it would not, the change belongs under
+`engines/`.
 
 - Outside tests, no engine name, engine version or engine policy (X2).
 - The cost model resolves nothing: every default, backend choice, padding and capture decision
@@ -22,7 +22,7 @@ engine repository.
 
 ## Before a pull request
 
-Run the checks for every directory the change touches:
+Run the checks for every directory the change touches, from `substrate/`:
 
 ```sh
 gofmt -l . && go vet ./... && go test ./...
@@ -51,7 +51,7 @@ go run ./tools/prcheck docrefs
 - The JSON Schemas, with `go run ./tools/schemagen`, when a schema or data field changes.
 - The registry's engine CodeIDs, with `substrate/tools/codepaths/export_code_ids.py` (its docstring gives
   the command), when an engine's `code_paths.json` changes. The tables are regenerated from the
-  engine's pinned release by `substrate/tools/codepaths/regen.py`. This repository names no path of an
+  engine's pinned release by `substrate/tools/codepaths/regen.py`. The substrate names no path of an
   engine module (X7).
 - The registry's copy of each engine's kernel-implementation table, with
   `substrate/tools/kernelimpls/export_kernel_impls.py` (its docstring gives the command), when an engine's

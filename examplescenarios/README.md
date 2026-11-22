@@ -7,14 +7,12 @@ Point `--scenarios` at this directory:
 ```bash
 ./blis run --scenarios examplescenarios \
   --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
-  --catalog $PWD/blis-catalog --registry $PWD/blis-registry \
   --rate 10 --num-requests 100
 ```
 
-Each file is a [`blis-schemas`](https://github.com/inference-sim/blis-schemas) `Scenario` +
-`Deployment` pair, runnable against the pinned catalog (`blis-catalog` `0.3.0`) and registry
-(`blis-registry` `v0.2.0`). Nothing here is fetched at run time; BLIS needs only the binary, a
-catalog, and a registry. The scenarios that use speculative decoding pin their acceptance in
+Each file is a `Scenario` + `Deployment` pair (the contracts in `substrate/contracts`), runnable
+against the catalog and registry embedded in the binary (`substrate/`). Nothing here is fetched
+at run time; BLIS needs only the binary. The scenarios that use speculative decoding pin their acceptance in
 the file, so `blis run` needs no `--speculative-*` flag.
 
 ## The scenarios
@@ -38,7 +36,6 @@ lengths — is set on the command line. gpt-oss-120b's scored single-turn shapes
 ```bash
 ./blis run --scenarios examplescenarios \
   --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml \
-  --catalog $PWD/blis-catalog --registry $PWD/blis-registry \
   --prompt-tokens 8192 --prompt-tokens-min 8192 --prompt-tokens-max 8192 --prompt-tokens-stdev 0 \
   --output-tokens 1024 --output-tokens-min 1024 --output-tokens-max 1024 --output-tokens-stdev 0 \
   --rate 10 --num-requests 100
@@ -47,7 +44,6 @@ lengths — is set on the command line. gpt-oss-120b's scored single-turn shapes
 ## Notes
 
 The `--rate`/`--num-requests` in the quickstart is a synthetic open-loop workload, not a
-benchmark reproduction. For deployments authored from a recipe (Kimi-K3), settings BLIS does not
-model are dropped and noted in the file header (e.g. `enforce-eager`; an unset `max-model-len`
-is given a concrete BLIS sizing value). Absolute latencies for deployments outside the kernel's
+benchmark reproduction. For a deployment authored from a recipe, settings BLIS does not
+model are dropped and noted in the file header. Absolute latencies for deployments outside the kernel's
 scored set are estimates; see the design (https://inference-sim.github.io/blis-design/).
