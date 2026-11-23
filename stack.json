@@ -4,8 +4,7 @@
   "modules": [
     {
       "path": "github.com/inference-sim/llm-d-router",
-      "version": "v1.0.0-blis.5.0.20261121014725-cb8d93fcb0fa",
-      "commit": "cb8d93fcb0fa1ef52d7f6dd811706e86cd864405",
+      "version": "v1.0.0-blis.6",
       "replaces": "github.com/llm-d/llm-d-router"
     }
   ],

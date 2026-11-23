@@ -127,8 +127,8 @@ github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs
 github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
-github.com/inference-sim/llm-d-router v1.0.0-blis.5.0.20261121014725-cb8d93fcb0fa h1:e9nTa7z2TreJlxsB8+YwNHj1T8f4SZmlGtiRbTjn5VU=
-github.com/inference-sim/llm-d-router v1.0.0-blis.5.0.20261121014725-cb8d93fcb0fa/go.mod h1:odWz7cQoKhY5Xw1iuwZUpSIdVtgIijvN062ISug4eQo=
+github.com/inference-sim/llm-d-router v1.0.0-blis.6 h1:LEQIUPX5JLf2XzxOcFU+j71xUWmeWkrm6NfVRFpqhPs=
+github.com/inference-sim/llm-d-router v1.0.0-blis.6/go.mod h1:odWz7cQoKhY5Xw1iuwZUpSIdVtgIijvN062ISug4eQo=
 github.com/jellydator/ttlcache/v3 v3.4.1 h1:bOdXmXiycyK6E6Qjyuj5vl+/vU3SCOoDs8a86NbHjAQ=
 github.com/jellydator/ttlcache/v3 v3.4.1/go.mod h1:j7LO12PNghFg5+0v9budMAT4rDK4JY969jb9vOdOBBk=
 github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=

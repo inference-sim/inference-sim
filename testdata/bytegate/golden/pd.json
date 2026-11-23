@@ -1134,7 +1134,7 @@
   "revisions": {
     "simulator": "(devel)",
     "substrate": "(devel)",
-    "router": "v1.0.0-blis.5.0.20261121014725-cb8d93fcb0fa",
+    "router": "v1.0.0-blis.6",
     "llm_d": "b9393d1a9f1d5a72ecd86f8d2b643ab54c2a9b92",
     "engine_module": "(devel)"
   },

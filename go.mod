@@ -127,5 +127,5 @@ require (
 
 // The one permitted replace (design X11): the llm-d router fork keeps upstream's module path, so
 // a replace is the only way to substitute it (.github/agent-prompts/llm-d-router-fork.md). A release
-// names a -blis.N tag, and this one names router fork commit cb8d93fc (inference-sim/llm-d-router#25, built on v1.0.0-blis.5), to move to v1.0.0-blis.6 once that PR is merged and tagged.
-replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.5.0.20261121014725-cb8d93fcb0fa
+// names a -blis.N tag; this one names v1.0.0-blis.6, the merge of inference-sim/llm-d-router#26.
+replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.6
