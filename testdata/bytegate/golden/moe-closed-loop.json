@@ -15,8 +15,8 @@
     },
     "registry": {
       "source": "path",
-      "hash": "217d27a6e0dd97c3929854aa19f19bc4a58b194e97914eab7478a6a13fc8472e",
-      "combined_hash": "217d27a6e0dd97c3929854aa19f19bc4a58b194e97914eab7478a6a13fc8472e"
+      "hash": "316e7969a3e6fef0b68b5b6fb617b951977f7044e8844a06deb1db4dec9c39d7",
+      "combined_hash": "316e7969a3e6fef0b68b5b6fb617b951977f7044e8844a06deb1db4dec9c39d7"
     },
     "released_data": false,
     "build": "unreleased"

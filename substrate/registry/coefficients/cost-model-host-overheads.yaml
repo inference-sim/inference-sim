@@ -425,16 +425,25 @@ coefficients:
   - host_launch_eager_per_kernel:
       value: 70
       units: us_per_transfer
-      method: assumed
-      fitted: false
+      method: calibrated
+      fitted: true
       scope: {hardware: [h200], model: [deepseek-v4-pro], host_cpu: [x86]}
       code_ids: [83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776, e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074]
+      measures:
+        time: device_and_host
+        execution: eager
+        harness: "the dashboard scorer's end-to-end TTFT over InferenceX DeepSeek-V4-Pro units on h200, through the kernel cost model (scripts/fit_deepseek_v4_pro_eager.py); one degree of freedom, this value"
+      fit_range:
+        - {dim: requests, low: 1.0, high: 256.0}
+        - {dim: context_tokens, low: 0.0, high: 9216.0}
+      validated:
+        - "legacy-select DeepSeek-V4-Pro units on h200, not used by the fit (n=19): TTFT MAPE 57.05 to 21.00, TPOT MAPE 29.43 to 10.08"
       ci95: [60, 74]
       sources:
-        - {kind: discussion, cite: "InferenceX fit-role DeepSeek-V4-Pro units on h200 (46 units on the published fit list, concurrency 1 to 256, 1k1k and 8k1k): the per-launch value that minimises the mean absolute TTFT error of the kernel prediction (TTFT MAPE 50.5 to 13.2 on these units), scripts/fit_deepseek_v4_pro_eager.py", role: primary}
+        - {kind: measured_case, cite: "InferenceX fit-role DeepSeek-V4-Pro units on h200 (46 units on the published fit list, concurrency 1 to 256, 1k1k and 8k1k): the per-launch value that minimises the mean absolute TTFT error of the kernel prediction (TTFT MAPE 50.5 to 13.2 on these units), scripts/fit_deepseek_v4_pro_eager.py", role: primary}
         - {kind: discussion, cite: "legacy-select DeepSeek-V4-Pro units on h200, not used by the fit (n=19): TTFT MAPE 57.05 to 21.00, TPOT 29.43 to 10.08; median signed TTFT error -0.50 to -0.01. Local before/after, not the VAL-6 gate", role: supporting}
       rationale: >
-        ASSUMED (backed out of end-to-end TTFT, as host_launch_per_kernel is): the per-launch eager dispatch cost of
+        CALIBRATED (design section 9.2: one factor of the physical form host = launches x (eager + dispatch), fitted through the kernel cost model to end-to-end TTFT; the held-out check is the legacy-select units, a local before/after that is not the VAL-6 whole-run gate, which has not been run for this value): the per-launch eager dispatch cost of
         DeepSeek-V4-Pro's prefill step on H200 nodes, on top of host_launch_per_kernel. The model's prefill chunk
         runs about 1900 kernel launches that are not graph-replayed, and the kernel prices them at the generic
         eager value; the measured chunk is 110 to 145 ms longer than that, independent of the parallelism and of
@@ -447,3 +456,8 @@ coefficients:
         the dispatch cost belongs to the model family's uncompiled path (the V4.1-Flash entry above carries 92.87
         us from an enforce-eager anchor); the general form is a per-launch eager rate shared by the V4 family once
         the other V4 sizes have anchors. Reproduce with scripts/fit_deepseek_v4_pro_eager.py.
+        WHOLE-RUN EFFECT (VAL-11): with this entry the 53 InferenceX points improve and 16 ConfigIQ points regress in TTFT
+        (+30 to +237 percentage points); without it every point is bit-identical to the pre-M3.2 baseline. The regression
+        is a defect in another term of the ConfigIQ path, not in this value, and a maintainer accepted it on 2026-11-21.
+        The preregistered held-out whole-run gate (VAL-6) has not been run for this value; it is the first evaluation after
+        the release.

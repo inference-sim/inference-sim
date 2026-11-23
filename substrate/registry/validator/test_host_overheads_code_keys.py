@@ -32,7 +32,7 @@ GRAPHS = {"host_launch_eager_per_layer", "host_launch_eager_per_kernel", "host_l
 # Entries the file gained after the snapshot was taken. Each is checked by the other tests here (keyed,
 # scoped to its chips' host CPU) but has no snapshot value to be carried unchanged from.
 ADDED_AFTER_SNAPSHOT = {
-    ("host_launch_eager_per_kernel", ("h200",), ("deepseek-v4-pro",), "assumed"):
+    ("host_launch_eager_per_kernel", ("h200",), ("deepseek-v4-pro",), "calibrated"):
         "row 29: DeepSeek-V4-Pro's uncompiled prefill dispatch on H200, fitted on fit-role units only",
 }
 
