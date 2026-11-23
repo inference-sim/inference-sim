@@ -1208,12 +1208,14 @@ jobs:
           # The package's tests, split by name (scripts/ci-shard.sh): the tests with a recorded
           # -race duration (.github/ci-durations/vllmengine-race.tsv) are dealt longest first onto
           # the least-loaded shard, any other test is hashed, and vllm-race-vllmengine proves the
-          # five together ran every test once.
+          # five together ran every test once. TestEngineKVStartupFigureAgainstTheLoggedOne (223
+          # parallel subtests, about 15 min on a hosted runner) has shard 5 to itself
+          # (CI_SHARD_SOLO), on the large runner when there is one: its subtests use every CPU.
           - {name: vllmengine-1, pkgs: "./engines/vllm/vllmengine", shard: 1, shards: 5}
           - {name: vllmengine-2, pkgs: "./engines/vllm/vllmengine", shard: 2, shards: 5}
           - {name: vllmengine-3, pkgs: "./engines/vllm/vllmengine", shard: 3, shards: 5}
           - {name: vllmengine-4, pkgs: "./engines/vllm/vllmengine", shard: 4, shards: 5}
-          - {name: vllmengine-5, pkgs: "./engines/vllm/vllmengine", shard: 5, shards: 5}
+          - {name: vllmengine-5, pkgs: "./engines/vllm/vllmengine", shard: 5, shards: 5, large: true}
           # The block-size census is the slowest race test; it ran as four slices before the merge.
           # It prices the census on every CPU, so it runs on the large runner.
           - name: kernelmodel-census
@@ -1269,6 +1271,7 @@ jobs:
         if: ${{ matrix.shard }}
         env:
           CI_SHARD_DURATIONS: .github/ci-durations/vllmengine-race.tsv
+          CI_SHARD_SOLO: TestEngineKVStartupFigureAgainstTheLoggedOne
           CI_SHARD_LIST_FLAGS: -race
         run: scripts/ci-shard.sh ${{ matrix.shard }} ${{ matrix.shards }} "$RUNNER_TEMP/evidence" ${{ matrix.pkgs }} -race -count=1 -timeout 50m
 

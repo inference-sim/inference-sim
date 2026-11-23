@@ -3,7 +3,13 @@
 # matter: scripts/ci-shard.sh (CI_SHARD_DURATIONS) deals these tests longest first onto
 # vllm-race's five shards, and hashes every test not named here. A stale or missing line
 # moves a test between shards, never out of the run. Re-record with:
-#   go test -race -count=1 -json ./engines/vllm/vllmengine, keeping each top-level test's Elapsed
+#   go test -race -count=1 -json ./engines/vllm/vllmengine, keeping each top-level test's wall
+#   time: from its "run" event to the last "pass" or "fail" event of the test or its subtests.
+#   A test's own Elapsed leaves out the subtests that call t.Parallel (they run after it returns),
+#   so a parent of parallel subtests would read as a few milliseconds.
+# TestEngineKVStartupFigureAgainstTheLoggedOne runs 223 parallel subtests, so it gains more from
+# CPUs than the others: its line is right for 18 CPUs but too short on a 4-vCPU runner, and ci.yml
+# gives it a shard of its own (CI_SHARD_SOLO) rather than relying on this figure.
 TestAConnectorOptionTierThatIsNotP2PIsRefused	7.6
 TestADecodePoolInheritingMultiConnectorWithoutATierIsRefusedByName	5.1
 TestADeploymentStatesDPSyncInterval	5.2
@@ -43,6 +49,7 @@ TestDenseDataParallelLocalCadenceIsRefusedByName	10.7
 TestDisablingTheHybridManagerOnDeepSeekIsVLLMsOwnStartupFailure	11.4
 TestDisablingTheHybridManagerUnifiesTheKVGroups	13.7
 TestEngineDisclosesWhatLanguageModelOnlyLeavesUnpriced	15.7
+TestEngineKVStartupFigureAgainstTheLoggedOne	99.6
 TestEngineStatesStepFLOPsAndPeak	5.3
 TestEngineStatesWhetherItsServerAnswersRenderCalls	7.8
 TestEnginesGivenOneDataShareItsReport	7.7

@@ -84,7 +84,7 @@ python -I oracle/compare_refusals.py sglangengine/testdata/sglang_refusals.json 
 Each case of `oracle/refusals/cases.json` is the input of one refusal SGLang makes itself
 (`schedule_policy.py:332-344`, `registry.py:261-271`, `ServerArgs.check_server_args`) and the same
 site's accepted partner. `run_refusals.py` calls SGLang's own function and records the exception's
-type and message, or "accepted". The `oracle-sglang` `serverargs-lower` job re-runs it and
+type and message, or "accepted". The `oracle-sglang` job that runs the refusals re-runs it and
 `compare_refusals.py` fails unless the committed `sglangengine/testdata/sglang_refusals.json` is what
 SGLang gave; the Go test `TestRefusalsAreSGLangsOwn` compares it with the port's refusals and fails
 when the file is missing or was recorded at another commit. Record a changed golden by copying
