@@ -62,6 +62,10 @@ func applyFromResult(command string, cmd *cobra.Command) func() {
 	if p := doc.Validate(); !p.OK() {
 		logrus.Fatalf("--from-result %s: the Result does not validate: %v", fromResultPath, p)
 	}
+	if doc.Estimate.Interval != nil {
+		logrus.Fatalf("--from-result %s: this Result is an interval over %d replications, which a single reproduction does not recreate; rerun with `--replications %d --max-replications %d` and the scenario's own options instead",
+			fromResultPath, doc.Estimate.Replications, doc.Estimate.Interval.MinReplications, doc.Estimate.Interval.MaxReplications)
+	}
 	isTrace := replaysATrace(&doc)
 	if (command == "replay") != isTrace {
 		other := map[string]string{"run": "replay", "replay": "run"}[command]

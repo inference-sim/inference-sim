@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
@@ -66,4 +67,20 @@ func mustMarshal(t *testing.T, r *result.Result) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+// An interval Result is not reproduced by one run: --from-result refuses it rather than
+// returning a single replication under a rerun_of that names the interval.
+func TestFromResult_RefusesAnIntervalResult(t *testing.T) {
+	out, stderr, err := runKernelCLI(t, intervalArgs()...)
+	if err != nil {
+		t.Fatalf("run --replications 5: %v\n%s", err, lastLines(stderr, 5))
+	}
+	file := filepath.Join(t.TempDir(), "interval.json")
+	if err := os.WriteFile(file, []byte(out), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, stderr, err := runKernelCLI(t, "run", "--from-result", file); err == nil || !strings.Contains(stderr, "is an interval over") {
+		t.Fatalf("--from-result on an interval Result: err = %v, want a refusal naming the interval\n%s", err, lastLines(stderr, 3))
+	}
 }
