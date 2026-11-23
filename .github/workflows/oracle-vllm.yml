@@ -442,20 +442,20 @@ jobs:
       # The property and metamorphic tests (#2021 B8) run over fixed seeds in Go alone; their
       # verbose results go into the artifact beside the provenance.
       - name: property and metamorphic tests
-        if: contains(matrix.corpora, 't2')
+        if: ${{ !cancelled() && contains(matrix.corpora, 't2') }}
         run: |
           set -o pipefail
           mkdir -p oracle/out
           go test -v -count=1 -run 'TestPropertiesHoldOnRandomScenarios|TestMoreKVNeverAddsPreemptionsOneAtATime|TestLargerBudgetNeverDelaysALoneRequestsFirstToken' ./core/sched/ | tee oracle/out/property-results.txt
       - name: blis-vllm against vLLM (differential + fuzz)
-        if: contains(matrix.corpora, 't2')
+        if: ${{ !cancelled() && contains(matrix.corpora, 't2') }}
         env:
           BLIS_VLLM_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz
         run: |
           set -o pipefail
           go test -v -count=1 -run 'TestDifferentialAgainstVLLM|TestFuzzCorpusAgainstVLLM' ./core/sched/ | tee oracle/out/diff-results.txt
       - name: blis-vllm against vLLM (hybrid Mamba fuzz)
-        if: contains(matrix.corpora, 'mamba')
+        if: ${{ !cancelled() && contains(matrix.corpora, 'mamba') }}
         env:
           BLIS_VLLM_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-mamba
         run: |
@@ -465,7 +465,7 @@ jobs:
       # Tier 5: every exact vllm:* family, after every step, against vLLM's own Prometheus
       # logger on the same scenarios and fuzz seeds.
       - name: blis-vllm's metrics against vLLM's (scenarios + fuzz)
-        if: contains(matrix.corpora, 't2')
+        if: ${{ !cancelled() && contains(matrix.corpora, 't2') }}
         env:
           BLIS_VLLM_METRICS_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz
         run: |
@@ -473,7 +473,7 @@ jobs:
           go test -v -count=1 -run 'TestMetricsAgainstVLLM|TestMetricsFuzzCorpusAgainstVLLM' ./core/metrics/ | tee oracle/out/metrics-results.txt
       # Tier 3: blis-vllm's core/engine against the EngineCore traces of the 1000 fuzz seeds, and the DP loop's.
       - name: blis-vllm's EngineCore against vLLM's (scenarios + fuzz)
-        if: contains(matrix.corpora, 't3')
+        if: ${{ !cancelled() && contains(matrix.corpora, 't3') }}
         env:
           BLIS_VLLM_T3_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-t3
           BLIS_VLLM_DP_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-t3-dp
@@ -482,7 +482,7 @@ jobs:
           mkdir -p oracle/out
           go test -v -count=1 -run 'TestEngineCoreAgainstVLLM|TestEngineCoreFuzzCorpusAgainstVLLM|TestDPAgainstVLLM|TestDPAsyncAgainstVLLM|TestDPNixlAgainstVLLM|TestDPFuzzCorpusAgainstVLLM' ./core/engine/ | tee oracle/out/engine-results.txt
       - name: blis-vllm's NIXL connector against vLLM's (scenarios + fuzz)
-        if: contains(matrix.corpora, 'connector')
+        if: ${{ !cancelled() && contains(matrix.corpora, 'connector') }}
         env:
           BLIS_VLLM_CONNECTOR_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-connector
         run: |
@@ -490,7 +490,7 @@ jobs:
           mkdir -p oracle/out
           go test -v -count=1 -run 'TestNIXLAgainstVLLM|TestNIXLFuzzCorpusAgainstVLLM' ./core/connector/nixl/ | tee oracle/out/connector-results.txt
       - name: blis-vllm's OffloadingConnector against vLLM's (scenarios + fuzz)
-        if: contains(matrix.corpora, 'offloading')
+        if: ${{ !cancelled() && contains(matrix.corpora, 'offloading') }}
         env:
           BLIS_VLLM_OFFLOAD_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-offloading
         run: |
@@ -500,7 +500,7 @@ jobs:
       # Tier 4: vLLM's real MultiConnector over its NIXL and offloading children, both orders, on 3000 fuzz seeds
       # (1000 with hybrid KV cache groups, 1000 with async scheduling).
       - name: blis-vllm's MultiConnector against vLLM's (scenarios + fuzz)
-        if: contains(matrix.corpora, 'multi')
+        if: ${{ !cancelled() && contains(matrix.corpora, 'multi') }}
         env:
           BLIS_VLLM_MULTI_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-multi
         run: |

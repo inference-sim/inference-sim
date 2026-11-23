@@ -168,7 +168,7 @@ jobs:
       # on its shard. The shard compares its cases with the committed ones at the same positions;
       # the oracle job fails unless every shard of SERVERARGS_PARTS wrote its answers.
       - name: resolve each part's ServerArgs cases through SGLang's own pipeline
-        if: matrix.group == 'serverargs-lower'
+        if: ${{ !cancelled() && matrix.group == 'serverargs-lower' }}
         env:
           HF_HUB_OFFLINE: "1"
         run: |
@@ -177,7 +177,7 @@ jobs:
           # shellcheck disable=SC2016
           ../../scripts/ci-parallel.sh "$SERVERARGS_PARTS" 'python -I oracle/run_serverargs.py --shard "$1/$SERVERARGS_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models > "shard-out/oracle-traces/serverargs-$1.json"'
       - name: the committed ServerArgs answers are SGLang's own
-        if: matrix.group == 'serverargs-lower'
+        if: ${{ !cancelled() && matrix.group == 'serverargs-lower' }}
         run: |
           # shellcheck disable=SC2016
           ../../scripts/ci-parallel.sh "$SERVERARGS_PARTS" 'python -I oracle/compare_serverargs.py config/testdata/serverargs.json "shard-out/oracle-traces/serverargs-$1.json"'
@@ -187,7 +187,7 @@ jobs:
       # with the port's. A missing or stale golden fails here and in the Go test; nothing is recorded
       # by hand (BLIS_SGLANG_ALLOW_GOLDEN_UPDATE copies it from the oracle-traces artifact).
       - name: run SGLang's own refusals
-        if: matrix.group == 'serverargs-lower'
+        if: ${{ !cancelled() && matrix.group == 'serverargs-lower' }}
         env:
           HF_HUB_OFFLINE: "1"
         run: |
@@ -195,7 +195,7 @@ jobs:
           mkdir -p shard-out/oracle-traces
           ORACLE_MODEL="$PWD/oracle-model" python -I oracle/run_refusals.py sglang-source oracle/refusals/cases.json > shard-out/oracle-traces/refusals.json
       - name: the committed refusals are SGLang's own
-        if: matrix.group == 'serverargs-lower'
+        if: ${{ !cancelled() && matrix.group == 'serverargs-lower' }}
         run: python -I oracle/compare_refusals.py sglangengine/testdata/sglang_refusals.json shard-out/oracle-traces/refusals.json
       # T1 (issue #2350): each proof of kind observed_reads is re-run through SGLang's scheduler at the
       # field's default and probes, and the file must be what the runs give (oracle/inertness.py).
@@ -216,13 +216,13 @@ jobs:
       # replacement listed in oracle/lower/replacements.json). The answers must equal
       # lower/testdata/sglang_lower.json, which the Go test (lower TestLowerAgainstSGLang) compares.
       - name: every replacement the lowering oracle makes is listed
-        if: matrix.group == 'serverargs-lower'
+        if: ${{ !cancelled() && matrix.group == 'serverargs-lower' }}
         run: python -I oracle/lower/check_replacements.py oracle/lower/extract.py oracle/lower/replacements.json
       # The cases (the ServerArgs file's, then oracle/lower/cases.json) go to the shards by position,
       # like the ServerArgs cases; each shard compares its own with the committed answers, and the
       # oracle job fails unless every shard of LOWER_PARTS ran and together they ran every case.
       - name: lower each part's accepted cases through SGLang's own functions
-        if: matrix.group == 'serverargs-lower'
+        if: ${{ !cancelled() && matrix.group == 'serverargs-lower' }}
         env:
           HF_HUB_OFFLINE: "1"
         run: |
@@ -231,7 +231,7 @@ jobs:
           # shellcheck disable=SC2016
           ../../scripts/ci-parallel.sh "$LOWER_PARTS" 'python -I oracle/lower/extract.py --shard "$1/$LOWER_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models oracle/lower/cases.json > "shard-out/oracle-traces/lower-$1.json"'
       - name: the committed lowering answers for each part's cases are SGLang's own
-        if: matrix.group == 'serverargs-lower'
+        if: ${{ !cancelled() && matrix.group == 'serverargs-lower' }}
         run: |
           # shellcheck disable=SC2016
           ../../scripts/ci-parallel.sh "$LOWER_PARTS" 'python3 -I oracle/lower/compare_lower.py shard <(python3 -I oracle/goldengz.py cat lower/testdata/sglang_lower.json) "shard-out/oracle-traces/lower-$1.json"'
@@ -240,7 +240,7 @@ jobs:
       # ShutdownReq, every forward pass was launched from SGLang's own event loop at the checkout,
       # the tree core is the Python one, and no clocked module still reads the real clock.
       - name: run every scenario through SGLang's scheduler
-        if: matrix.group == 'serverargs-lower'
+        if: ${{ !cancelled() && matrix.group == 'serverargs-lower' }}
         env:
           ORACLE_LOCKFILE: oracle-env.lock
           ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}

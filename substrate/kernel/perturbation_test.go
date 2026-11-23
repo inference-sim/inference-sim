@@ -114,10 +114,6 @@ func perturbationPairs(d *load.Data, only []string) []perturbationPair {
 	return pairs
 }
 
-// forEachPerturbationPair builds the scenarios of each pair on the given number of workers and
-// hands them to use, which runs on the worker that built them: a caller that prices them there
-// holds a pair's scenarios at a time per worker, not every scenario of the catalog at once. A pair
-// that cannot be built fails the test (the first in the list of pairs reported).
 // perturbationWorkers is how many workers the memory-bound perturbation tests use: at most two
 // by default, since each holds about 3 GB and the runners that execute them may have 16 GB, or
 // BLIS_PERTURBATION_WORKERS when it is set (ci.yml sets it only on a runner with the memory for
@@ -134,6 +130,10 @@ func perturbationWorkers(t *testing.T) int {
 	return min(runtime.GOMAXPROCS(0), n)
 }
 
+// forEachPerturbationPair builds the scenarios of each pair on the given number of workers and
+// hands them to use, which runs on the worker that built them: a caller that prices them there
+// holds a pair's scenarios at a time per worker, not every scenario of the catalog at once. A pair
+// that cannot be built fails the test (the first in the list of pairs reported).
 func forEachPerturbationPair(t *testing.T, d *load.Data, pairs []perturbationPair, workers int, use func(i int, cases []perturbationCase)) {
 	t.Helper()
 	offload, sets := perturbationTexts(d)
