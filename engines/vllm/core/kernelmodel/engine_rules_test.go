@@ -1,0 +1,83 @@
+// Moved from inference-sim/sim/kernelmodel/engine_rules_test.go at ca532abca209af41425c007974a5f3ef336f5981.
+
+package kernelmodel
+
+import (
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/upstream"
+	"strings"
+	"testing"
+
+	vllmrules "github.com/inference-sim/inference-sim/engines/vllm/core/rulepack"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+)
+
+// The engine rules come from the caller, the vLLM rules packs of blis-vllm (inference-sim#2021
+// B4): a Repos that states none is given them, so every entry point prices a release against
+// the same pack, and a caller that states its own rules is never overridden.
+func TestReposGetTheVLLMRulesUnlessTheyStateTheirOwn(t *testing.T) {
+	r := withEngineRules(Repos{})
+	if r.Rules == nil || r.RulesVersions == nil {
+		t.Fatal("a Repos that states no rules was not given the vLLM packs")
+	}
+	for _, v := range vllmrules.Versions() {
+		got := r.Rules(v)
+		if got == nil || got.EngineVersion() != v {
+			t.Errorf("Rules(%q) = %v, want the %s pack", v, got, v)
+		}
+	}
+	if got := r.Rules("9.9.9"); got != nil {
+		t.Errorf("Rules for a release with no pack = %v, want nil (a nil pack must not read as rules)", got)
+	}
+	called := false
+	own := Repos{Rules: func(string) enginefacts.EngineRules { called = true; return nil }}
+	if r := withEngineRules(own); r.Rules == nil {
+		t.Fatal("a caller's own rules were dropped")
+	} else if r.Rules(upstream.Version); !called {
+		t.Error("a caller's own rules were replaced by the vLLM packs")
+	}
+	if DefaultRepos().Rules == nil {
+		t.Error("DefaultRepos states no rules, so every test and tool opening through it would be refused")
+	}
+}
+
+// A rules value that is not a *rules.Pack is read through enginefacts.EngineRules alone, so a
+// speculative method is checked whatever the rules' concrete type. Before the switch, any
+// other type was refused outright as "not a blis-schemas rules pack".
+func TestTheSpeculativeMethodIsCheckedThroughTheInterface(t *testing.T) {
+	r := repos()
+	r.Scenarios = "../../testdata/scenarios"
+	pack := func(v string) enginefacts.EngineRules {
+		if p := vllmrules.Lookup(v); p != nil {
+			return wrapped{p}
+		}
+		return nil
+	}
+	r.Rules = pack
+	r.RulesKind = "vllm"
+	if _, err := OpenPool(dspark, r, 0); err != nil {
+		t.Errorf("DSpark through rules that are not a *rules.Pack: %v", err)
+	}
+	_, err := openDraftingWith(t, r, "llama-3.1-70b-instruct-h200-tp4-4node.yaml",
+		&engineconfig.Speculative{Method: "bogus", NumSpecTokens: 3})
+	if err == nil || !strings.Contains(err.Error(), `"bogus" is not accepted by engine `+upstream.Version) {
+		t.Errorf("got %v, want the release's refusal of an unknown method", err)
+	}
+}
+
+// wrapped is a rules value of another concrete type that answers as its pack does. It holds
+// the pack behind the interface, not embedded, so no *rules.Pack method or field (Names,
+// SpeculativeMethods) is reachable on it: the check must go through enginefacts.EngineRules.
+type wrapped struct{ enginefacts.EngineRules }
+
+func openDraftingWith(t *testing.T, r Repos, scenario string, sp *engineconfig.Speculative) (*Model, error) {
+	t.Helper()
+	in, err := latencykernel.OpenInputs(scenario, r, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	editPoolEngine(t, &in.Deployment.Pools[0], func(e *engineconfig.Engine) { e.Speculative = sp })
+	return fromInputs(in)
+}

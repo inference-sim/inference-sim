@@ -1,0 +1,96 @@
+name: oracle-traces-vllm
+
+# Re-runs vLLM v0.33.0, in CI's pinned environment, on every scenario that has a committed golden
+# trace, and uploads the fresh traces with their provenance. It is run by hand
+# (workflow_dispatch) when a golden's provenance must be refreshed from CI's own environment:
+# oracle/refresh_provenance.py then copies each fresh trace's provenance block into its golden,
+# after checking that every decision is identical, which check_goldens.py accepts without a
+# reviewer's trailer (oracle/README.md, "Golden traces").
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+defaults:
+  run:
+    working-directory: engines/vllm
+
+jobs:
+  traces:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/go-toolchain
+      - id: env
+        uses: ./.github/actions/oracle-env-vllm
+      - name: the mocks replace no decision code
+        run: python -I oracle/check_mocks.py oracle/mocks.json
+      - name: run every scenario that has a golden trace
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/engines/vllm/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          # the helper model's config states 2048 positions; a dashboard scenario states its deployment's
+          # max_model_len (oracle/README.md)
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          set -o pipefail
+          mkdir -p oracle/out/scenarios oracle/out/scenarios-metrics oracle/out/scenarios-t3 \
+                   oracle/out/scenarios-dp oracle/out/scenarios-connector
+          python -I oracle/run_scheduler.py vllm-source oracle/scenarios oracle/out/scenarios
+          mkdir -p oracle/out/scenarios-swa
+          python -I oracle/run_swa_layout.py vllm-source oracle/scenarios/swa oracle/out/scenarios-swa
+          mkdir -p oracle/out/scenarios-lora-cache
+          python -I oracle/run_lora_cache.py vllm-source oracle/scenarios/lora-cache oracle/out/scenarios-lora-cache
+          mkdir -p oracle/out/scenarios-render
+          python -I oracle/run_render.py vllm-source oracle/scenarios/render oracle/out/scenarios-render
+          for g in core/metrics/testdata/golden/*.metrics.json*; do
+            n="${g##*/}"; n="${n%%.metrics.json*}"
+            python -I oracle/run_metrics.py vllm-source "oracle/scenarios/$n.json" > "oracle/out/scenarios-metrics/$n.metrics.json"
+          done
+          python -I oracle/run_enginecore.py vllm-source oracle/scenarios-t3 oracle/out/scenarios-t3
+          python -I oracle/run_dp.py vllm-source oracle/scenarios-dp oracle/out/scenarios-dp
+          mkdir -p oracle/out/scenarios-dp-async
+          python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-async oracle/out/scenarios-dp-async
+          mkdir -p oracle/out/scenarios-dp-nixl
+          python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-nixl oracle/out/scenarios-dp-nixl
+          python -I oracle/run_connector.py vllm-source oracle/scenarios/connector oracle/out/scenarios-connector
+          mkdir -p oracle/out/scenarios-offloading
+          python -I oracle/run_offloading.py vllm-source oracle/scenarios/offloading oracle/out/scenarios-offloading
+          mkdir -p oracle/out/scenarios-offloading-tiering
+          python -I oracle/run_offloading.py vllm-source oracle/scenarios/offloading-tiering oracle/out/scenarios-offloading-tiering
+          mkdir -p oracle/out/scenarios-multi
+          python -I oracle/run_multiconnector.py vllm-source oracle/scenarios/multiconnector oracle/out/scenarios-multi
+          mkdir -p oracle/out/scenarios-tiering
+          python -I oracle/run_tiering.py vllm-source oracle/scenarios/tiering oracle/out/scenarios-tiering
+          # core/kv's block hashes: the generator refuses to write if any hash differs.
+          python -I oracle/gen_block_hashes.py vllm-source core/kv/testdata/block_hashes.json > oracle/out/block_hashes.json
+      # FID-5: the offload interface traces, recorded (the offloading and multi-connector scenarios) and
+      # direct (oracle/scenarios-fid5), for core/connector/offloading/testdata/golden-fid5.
+      - name: record the offload interface traces
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/engines/vllm/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/engines/vllm/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out/fid5
+          python -I oracle/run_kv_interfaces.py vllm-source oracle/out/fid5 oracle/scenarios/offloading oracle/scenarios/multiconnector
+          python -I oracle/drive_kv_interfaces.py vllm-source oracle/scenarios-fid5 oracle/out/fid5
+      - name: record the Go side's provenance
+        run: go run ./cmd/provenance > oracle/out/provenance.json
+      # Uploaded whatever the steps did, so a failing run still shows the traces it wrote.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: oracle-traces
+          path: |
+            engines/vllm/oracle/out/
+            engines/vllm/oracle-env.lock

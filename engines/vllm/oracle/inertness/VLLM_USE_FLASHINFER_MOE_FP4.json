@@ -1,0 +1,25 @@
+{
+ "field": "VLLM_USE_FLASHINFER_MOE_FP4",
+ "kind": "unread",
+ "release": "0.34.0+0fda86a35419 0fda86a35419c9c70dbfada224c838c10fbb62ad",
+ "claim": "Reviewed static fact, not a run of vLLM's code: no file of the pinned vLLM release's serving process (vllm/, csrc/, rust/) names VLLM_USE_FLASHINFER_MOE_FP4; the result lists the files the scan read. An earlier release read it to choose the NVFP4 MoE backend and removed it in vllm-project/vllm#44992 (03878d1c2); the pinned release's vllm/envs.py lists no such key, and its removed_environment_variables (vllm/envs.py:661-668) holds only VLLM_MARLIN_INPUT_DTYPE, so the name is neither read nor refused. At start-up vLLM warns about a VLLM_-prefixed variable it does not list and raises only when fail_on_environ_validation is set, which defaults to false (vllm/platforms/interface.py:1666-1693 validate_environ, called from EngineArgs.create_engine_config at vllm/engine/arg_utils.py:2271 with that flag, declared at vllm/engine/arg_utils.py:863), so a stated value reaches no code. vLLM's own recipe for Llama-4-Scout still states the variable (recipes/models/meta-llama/Llama-4-Scout-17B-16E-Instruct.yaml:86), a file the serving process does not read. Which MoE backend the pinned release picks is the backend resolution of moe_backend, a separate field with its own status. Recorded Kimi K2.5 NVFP4 recipes state it.",
+ "argument": "reviewed_static_fact",
+ "names": [
+  "VLLM_USE_FLASHINFER_MOE_FP4"
+ ],
+ "probes": [
+  {
+   "label": "set (1: the recorded runs)",
+   "value": 1
+  }
+ ],
+ "result": {
+  "vllm_commit": "0.34.0+0fda86a35419 0fda86a35419c9c70dbfada224c838c10fbb62ad",
+  "files_scanned": 5312,
+  "occurrences": {
+   "VLLM_USE_FLASHINFER_MOE_FP4": []
+  },
+  "problems": [],
+  "verdict": "inert"
+ }
+}

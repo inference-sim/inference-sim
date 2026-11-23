@@ -251,8 +251,9 @@ uses, so a stalled probe cannot hang a job. Tested by `scripts/deliver_author_ga
 
 ## catalog-load-gate.sh — the strict catalog-load CI gate (R1/C6)
 
-Loads **every** entry in the authoritative [`blis-catalog`](https://github.com/inference-sim/blis-catalog)
-through the same loader code path `blis run` uses, and fails on any rejection. C6 says there is *no
+Loads **every** entry in a catalog checkout (the authoritative catalog is `substrate/catalog/`, which
+the substrate's own `validate-catalog` check and the module's tests cover on every pull request; this
+script is the on-demand form for an external checkout) through the same loader code path `blis run` uses, and fails on any rejection. C6 says there is *no
 validate command* — the simulator validates whatever it reads and fails naming the file and the
 problem — so the gate is this script driving `cmd.TestCatalogStrictLoad_RealCatalog`, not a
 subcommand and not a bespoke validator that could accept what a run rejects (#1750).
@@ -327,8 +328,8 @@ either one would quietly hand grading back to the PR.
 ## find-saturation.sh — Rate-sweep saturation finder
 
 Drives `blis run` across a configurable rate sweep against one scenario (a
-blis-schemas Scenario + Deployment file that fixes model, hardware, parallelism
-and engine settings; `blis-latency-kernel` prices every step). For each rate it:
+Scenario + Deployment file that fixes model, hardware, parallelism
+and engine settings; the cost model prices every step). For each rate it:
 
 1. Runs `blis run` once with the steady-state detector (`--detectors settle`, DEV-10).
 2. Reads the detector's state from the run's `--saturation-report`.
@@ -337,24 +338,22 @@ and engine settings; `blis-latency-kernel` prices every step). For each rate it:
 ### Quick start
 
 ```bash
-# The script passes --catalog and --registry on every run, so it needs a checkout of
-# blis-substrate's catalog and registry at the commit this build pins
-# (README.md shows the checkout)
-export BLIS_CATALOG=$PWD/blis-substrate/catalog
+# The script passes --catalog and --registry on every run; the data is this checkout's
+# substrate/catalog and substrate/registry
+export BLIS_CATALOG=$PWD/substrate/catalog
 
 # Sweep 0.5..100 req/s on the chatbot preset
 SCENARIO=llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  SCENARIOS=<dir of scenario files> REGISTRY=$PWD/blis-substrate/registry \
+  SCENARIOS=<dir of scenario files> REGISTRY=$PWD/substrate/registry \
   ./scripts/find-saturation.sh
 
-# Narrower sweep, different preset, one detector
+# Narrower sweep, different preset
 SCENARIO=... SCENARIOS=... REGISTRY=... \
-  WORKLOAD=summarization NUM_REQUESTS=2000 RATES="4 6 8 10 12" DETECTORS=composite \
+  WORKLOAD=summarization NUM_REQUESTS=2000 RATES="4 6 8 10 12" \
   ./scripts/find-saturation.sh
 ```
 
-The kernel module's own scenarios are at
-`$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate`;
+This repository's own scenarios are at `testdata/kernel/aisimulate` and `examplescenarios/`;
 any directory of scenario YAMLs works.
 
 ### Inputs (all environment variables)
@@ -363,8 +362,8 @@ any directory of scenario YAMLs works.
 |---|---|---|
 | `SCENARIO` | — (required) | Scenario file name, passed as `--scenario` |
 | `SCENARIOS` | — (required) | Directory holding the scenario, passed as `--scenarios` |
-| `REGISTRY` | — (required by the script) | A directory with the layout of blis-substrate's `registry/`, passed as `--registry` |
-| `CATALOG` | `$BLIS_CATALOG`, else `blis-catalog` | A directory with the layout of blis-substrate's `catalog/`, passed as `--catalog`. The script always passes it, so it does not use the embedded catalog. The scenario's model must have an entry; a missing one is refused, never fetched. |
+| `REGISTRY` | — (required by the script) | A directory with the layout of the substrate's `registry/` (for example `substrate/registry`), passed as `--registry` |
+| `CATALOG` | `$BLIS_CATALOG`, else `blis-catalog` | A directory with the layout of the substrate's `catalog/` (for example `substrate/catalog`), passed as `--catalog`. The script always passes it, so it does not use the embedded catalog. The scenario's model must have an entry; a missing one is refused, never fetched. |
 | `WORKLOAD` | `chatbot` | Catalog workload preset (chatbot/summarization/contentgen/multidoc) |
 | `NUM_REQUESTS` | `6000` | `--num-requests` per rate |
 | `HORIZON_US` | `600000000` (600s) | `--horizon` per rate |
@@ -379,10 +378,10 @@ The script exits with an error naming the variable if `SCENARIO`, `SCENARIOS` or
 
 ```
 $OUT_DIR/
-├── summary.csv                          # one row per rate (12 columns)
+├── summary.csv                          # one row per rate (10 columns)
 ├── rate-{R}.json                        # blis run stdout (metrics)
 ├── rate-{R}.stderr                      # blis run stderr (progress logs)
-└── rate-{R}.saturation.json             # {"final":{...},"trace":[...]} report
+└── rate-{R}.saturation.json             # the `settle` verdict report (`state`, `reason`, ...)
 ```
 
 `summary.csv` columns:
@@ -390,39 +389,34 @@ $OUT_DIR/
 | Column | Source | Meaning |
 |---|---|---|
 | `intended_rate` | input flag | What `--rate` was set to |
-| `sustained_throughput` | `injected_requests / vllm_estimated_duration_s` | Actual req/s injected over total sim time |
-| `goodput_rps` | `responses_per_sec` | Completed req/s |
+| `sustained_throughput` | `requests.injected / engine.cluster.simulated_duration_s` | Actual req/s injected over total sim time |
+| `goodput_rps` | `metrics.request_throughput` | Completed req/s |
 | `goodput_vs_intended` | `goodput_rps / intended_rate` | Ratio; <100% indicates the engine couldn't sustain intended load |
-| `timeout_frac` | `timed_out_requests / injected_requests` | Fraction culled by client timeout |
+| `timeout_frac` | `requests.timed_out / requests.injected` | Fraction culled by client timeout |
 | `e2e_p99_ms` / `ttft_p99_ms` | metrics | Tail latencies |
 | `still_queued` / `still_running` | metrics | End-state residue |
-| `composite_verdict` | report `.final.composite` | STABLE / BACKLOGGED / OVERLOADED |
-| `threshold_verdict` | report `.final.threshold` | STABLE / OVERLOADED (binary) |
-| `backlog_drift_verdict` | report `.final["backlog-drift"]` | STABLE / BACKLOGGED / OVERLOADED |
-| `peak_rate_verdict` | report `.final["peak-rate"]` | STABLE / BACKLOGGED / OVERLOADED |
-
-A detector that is not in `DETECTORS` shows `n/a` in its column.
+| `settle_verdict` | report `.state` | SETTLED / OVERLOADED / INCOMPLETE |
 
 ### Reading the output
 
 A clean read of "where does this configuration saturate?" looks like:
 
 ```
-intended_rate  goodput_rps  ratio  composite     threshold   backlog-drift  peak-rate
-0.5            0.50         100%   STABLE        STABLE      STABLE
+intended_rate  goodput_rps  ratio  settle
+0.5            0.50         100%   SETTLED
 …
-60             56.29        94%    BACKLOGGED    STABLE      BACKLOGGED
-80             64.49        81%    OVERLOADED    OVERLOADED  OVERLOADED   ← knee
-100            64.76        65%    OVERLOADED    OVERLOADED  OVERLOADED
+60             56.29        94%    OVERLOADED
+80             64.49        81%    OVERLOADED   ← knee
+100            64.76        65%    OVERLOADED
 ```
 
-The saturation knee is the first rate where `ratio` falls below ~100% OR a
-detector's final verdict flips to `OVERLOADED`. The detectors measure
-different things — composite blends rate deficit with a latency trend,
-threshold is a pure mean-E2E cutoff, and backlog-drift tracks the slope of
-in-flight — so a rate where they disagree (e.g. backlog-drift flags
-`BACKLOGGED` while threshold is still `STABLE`) is itself informative: the queue
-is growing before mean latency crosses the cutoff.
+The saturation knee is the first rate where `ratio` falls below ~100% OR the
+`settle` verdict flips to `OVERLOADED`. `settle` classifies the measured window from
+the trend of the backlog: SETTLED (no trend in the number of requests in the system),
+OVERLOADED (a significant upward trend), or INCOMPLETE (too few completions or too heavy
+a latency tail to say). The two signals
+can disagree near the knee, and that is informative: the queue is growing before
+throughput visibly falls short.
 
 ### Tips
 
@@ -437,13 +431,12 @@ is growing before mean latency crosses the cutoff.
 - **Fine sweep after coarse.** First pass with the default 17 rates spanning
   200×; identify the knee zone (e.g., between 60 and 80); then re-run with
   `RATES="62 64 66 68 70 72 74 76 78"` to pin the exact transition.
-- **Tune the final window.** `FINAL_WINDOW` controls how much of the run's tail
-  the plurality vote considers. Use `--horizon` to end observation while load is
-  still active — if you let all requests drain, the tail looks STABLE.
+- **End observation under load.** Use `--horizon` (`HORIZON_US`) to stop while load is
+  still active — if you let all requests drain, the tail looks SETTLED.
 
 ### Running on a custom configuration
 
 Point `SCENARIO`/`SCENARIOS` at any scenario file. To probe a new deployment, write a
-scenario for it (the blis-schemas Scenario + Deployment format); its model must be in the
+scenario for it (the Scenario + Deployment format); its model must be in the
 catalog and its coefficient sets in the registry. BLIS does not fetch model configs at run
 time.

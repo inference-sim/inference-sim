@@ -1,0 +1,204 @@
+kind: ModelGraph
+name: inkling
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 58720f145bcecef9a7ab2b419ab346e7c634af8d2f3e7362e900d00f789ea46c
+  deriver_version: 1
+global:
+  hidden_size: 6144
+  vocab_size: 201024
+  tie_word_embeddings: false
+  weight_dtype: bf16
+  architecture: InklingForConditionalGeneration
+  pipeline_boundary_bytes_per_token: 12288
+layer_kinds:
+- id: swa_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 10240
+    k: 6144
+  - op: Attention
+    holds_engine_kv: true
+    kind: swa
+    n_q: 64
+    n_kv: 8
+    d_h: 128
+    window: 512
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 258
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 3072
+    k: 6144
+    experts: 256
+    top_k: 6
+  - op: GEMM
+    role: shared_gate_up
+    n: 12288
+    k: 6144
+    tp: column
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 36864
+  - op: GEMM
+    role: shared_down
+    n: 6144
+    k: 6144
+    tp: row
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+- id: full_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 10240
+    k: 6144
+  - op: Attention
+    holds_engine_kv: true
+    kind: gqa
+    n_q: 64
+    n_kv: 8
+    d_h: 128
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 258
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 3072
+    k: 6144
+    experts: 256
+    top_k: 6
+  - op: GEMM
+    role: shared_gate_up
+    n: 12288
+    k: 6144
+    tp: column
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 36864
+  - op: GEMM
+    role: shared_down
+    n: 6144
+    k: 6144
+    tp: row
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+stack:
+  pattern:
+  - swa_moe
+  - swa_moe
+  - swa_moe
+  - swa_moe
+  - swa_moe
+  - full_moe
+  repeat: 11
+modality: text_decoder_of_multimodal
+encoder:
+  towers: []
+  omitted:
+  - modality: image
+    reason: the hmlp tower's layer widths come from a planner that has been read, not run
+    issue: inference-sim/inference-sim#2476
+  - modality: audio
+    reason: a discrete-mel embedding sum, which is not priced
+    issue: inference-sim/inference-sim#2474
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 201024
+  k: 6144

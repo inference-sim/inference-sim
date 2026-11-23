@@ -1,0 +1,888 @@
+// Package plan holds the boundary between an engine and the cost model (design §3.3, §6.3):
+// the PoolPlan an engine hands over once per pool, the StepShape it forms each step, and the
+// Transfer it states for each KV move (as the Move of the engine.Transfer it reports). The
+// engine resolves its configuration, lowers the model and sizes its KV budget; the cost model
+// prices what it is given and knows no engine.
+//
+// Three rules shape every type here, and each is a test.
+//
+//   - No field takes its values from an engine's vocabulary. A field holds a size, a count, a
+//     catalog name or a word from a fixed list in contracts, never an engine's setting name or
+//     default (X2).
+//   - A zero value means "absent" or the field's documented neutral value (stage 0, one step in
+//     flight), never an engine's default (X2, SUB-6).
+//   - Every field changes some price, or is listed as not yet priced with an issue (SUB-11).
+//
+// Sizes carry their units and their basis as types (SUB-16, package units): a figure states
+// whether it is per rank, per node or for the group, and the compiler refuses to mix them.
+package plan
+
+import (
+	"fmt"
+	"slices"
+	"sort"
+
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
+)
+
+// PoolPlan is fixed for the life of one engine pool.
+type PoolPlan struct {
+	// Hardware is the catalog chip's name, and Fabric the catalog network's name; Fabric is ""
+	// on one node.
+	Hardware string
+	Fabric   string
+	// Layout is the parallel widths and where ranks sit.
+	Layout Layout
+	// Layers has one entry per (layer, primitive) the engine runs.
+	Layers []LoweredLayer
+	// KV describes each cache group; KVBudget is the bytes per rank available for KV, one value
+	// per pipeline stage.
+	KV       []KVGroup
+	KVBudget []units.PerRank[units.Bytes]
+	// Tiers are the KV tiers below GPU memory, as the engine resolved them.
+	Tiers []KVTier
+	// Graphs says which launch shapes the engine captures.
+	Graphs GraphPolicy
+	// Drafts is speculative decoding; DraftLayers are the draft model's own layers, lowered like
+	// the target's.
+	Drafts      DraftPolicy
+	DraftLayers []LoweredLayer
+	// Host is per-request and per-token host work.
+	Host HostPlan
+	// Weights are the resident tensors per rank after weight post-processing; Buffers are the
+	// buffers and workspaces the engine chooses, sized as its upstream sizes them. Together
+	// with the cost model's activations and graph pools they make the memory breakdown close
+	// (SUB-14).
+	Weights []ResidentTensor
+	Buffers []Buffer
+	// InFlight is the most steps in flight at once; 0 means 1, the value without asynchronous
+	// or overlap scheduling.
+	InFlight int
+
+	// The settings the engine resolved that the cost model prices (resolved.go). Each is stated
+	// in neutral words, and the cost model applies no default to any of them (SUB-6).
+
+	// Batch is the most requests and tokens one step may schedule.
+	Batch BatchLimits
+	// MaxContext is the longest sequence the engine admits, in tokens; 0 when neither the
+	// deployment nor the model states one.
+	MaxContext units.Tokens
+	// PageTokens is the tokens one KV page holds; 0 is not stated.
+	PageTokens units.Tokens
+	// MemoryFraction is the share of each GPU's memory the engine may take, in (0, 1]; 0 is not
+	// stated.
+	MemoryFraction float64
+	// WeightFormat is the format, in the catalog's dtype words (model.DType: bf16, fp8, nvfp4,
+	// ...), that every weight whose graph node states no format of its own is served in; "" is
+	// the checkpoint's own.
+	WeightFormat string
+	// Cache is how the engine stores KV and recurrent state.
+	Cache CacheFormat
+	// MoE is how the engine runs mixture-of-experts layers.
+	MoE MoEPlan
+	// Collectives says which collectives the engine's layers run.
+	Collectives CollectivePlan
+	// DecodeContext is how a decode-context-parallel group combines and stripes; read only when
+	// the layout's decode-context width exceeds one.
+	DecodeContext DecodeContextPlan
+	// Microbatch is true when the engine splits a large enough step into two micro-batches whose
+	// compute and communication overlap.
+	Microbatch bool
+	// Engram is where the model's Engram lookup tables live, for a model that has them.
+	Engram EngramPlacement
+	// Launches is how the engine's own fused kernels change the step's launch count from the
+	// count the model graph's nodes give, by the tokens the step launches. The engine resolves
+	// which fusions run for its version, chip, layout and the step's size, so the cost model
+	// counts launches from the graph and adds what the engine states (SUB-6). Empty is no change.
+	Launches []LaunchChange
+	// DecodeShards are the replicated GEMMs of the model graph whose output columns the engine
+	// splits over the tensor-parallel ranks, and the steps it does so for. Which GEMMs a layout
+	// shards, and when, is the engine's lowering of the model (SUB-15), so the graph states only
+	// that a GEMM is replicated and the engine names the ones it splits. Empty is none.
+	DecodeShards []DecodeShard
+	// TokenShardedRoles are the roles of the model graph's nodes that, under the model's own
+	// sequence parallelism (Collectives.SequenceParallelModel), run on their rank's shard of the
+	// step's tokens rather than on all of them. Which nodes of a model the engine's code runs
+	// on the sharded stream is the engine's lowering of the model (SUB-15), so the graph
+	// states only what each node is and the engine names the ones it shards. Every node of
+	// the pool's model with a listed role is token-sharded. Empty is none.
+	TokenShardedRoles []string
+}
+
+// DecodeShard is one replicated GEMM the engine splits over the tensor-parallel ranks for a step
+// of between FromTokens and ToTokens scheduled tokens, both included. Each rank holds the whole
+// weight, computes its tp-th of the output columns, and an all-gather over the tensor-parallel
+// group of the step's rows by the GEMM's output width at the activation width reassembles them.
+// A step outside the range runs the GEMM whole on every rank.
+type DecodeShard struct {
+	// Role is the graph role of the node (model.Node.Role), a replicated GEMM (tp: replicated)
+	// of the pool's model. Every GEMM of the model with that role is split.
+	Role                 string
+	FromTokens, ToTokens units.Tokens
+}
+
+// LaunchChange is the change the engine's fused kernels make to each layer's launches in a step
+// whose rank launches between FromTokens and ToTokens tokens, both included: its scheduled tokens
+// and padding (kernel.Batch.PaddedTokens). Ranges do not overlap; a step in none launches the
+// graph's count.
+type LaunchChange struct {
+	FromTokens, ToTokens units.Tokens
+	// PerLayer is the launches each layer of the target's stack makes beyond the graph's count
+	// (positive) or short of it (negative), e.g. -3 where three of a layer's nodes run fused into
+	// kernels the layer already launches. It is never zero (Validate).
+	PerLayer int
+}
+
+// LaunchChangeAt is the per-layer launch change the plan states for a step of n launched tokens,
+// 0 for a step no range covers.
+func (p PoolPlan) LaunchChangeAt(n units.Tokens) int {
+	for _, c := range p.Launches {
+		if n >= c.FromTokens && n <= c.ToTokens {
+			return c.PerLayer
+		}
+	}
+	return 0
+}
+
+// Implementations are the distinct kernel implementations the pool runs: those of Layers and of
+// DraftLayers, each once, sorted by library, variant, code hash and toolkit: the pool-wide list a
+// Result records. The cost model matches a coefficient against the implementations of the
+// primitive it prices, which ImplementationsByPrimitive gives, or against the operations that
+// consume it, which Operations gives.
+func (p PoolPlan) Implementations() []KernelImpl {
+	var all []KernelImpl
+	for _, ls := range [][]LoweredLayer{p.Layers, p.DraftLayers} {
+		for _, l := range ls {
+			all = append(all, l.KernelImpl)
+		}
+	}
+	return distinctSorted(all)
+}
+
+// distinctSorted returns each implementation once, sorted by library, variant, code hash and
+// toolkit.
+func distinctSorted(in []KernelImpl) []KernelImpl {
+	seen := map[KernelImpl]bool{}
+	var out []KernelImpl
+	for _, k := range in {
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, k)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Library != b.Library {
+			return a.Library < b.Library
+		}
+		if a.Variant != b.Variant {
+			return a.Variant < b.Variant
+		}
+		if a.CodeHash != b.CodeHash {
+			return a.CodeHash < b.CodeHash
+		}
+		return a.Toolkit < b.Toolkit
+	})
+	return out
+}
+
+// ImplementationsByPrimitive are the distinct kernel implementations the pool runs for each
+// lowered primitive, from Layers and DraftLayers, each list sorted as Implementations is. It is
+// what the cost model binds a coefficient to (design VAL-8): a coefficient that prices a
+// primitive is matched against the implementations of that primitive, not against everything
+// the pool runs. A caller building a kernel for this pool passes it as
+// latencykernel.Inputs.Implementations.
+func (p PoolPlan) ImplementationsByPrimitive() map[Primitive][]KernelImpl {
+	return ImplementationsOf(p.Operations())
+}
+
+// ImplementationsOf pools operations by primitive: the distinct implementations of each,
+// sorted as Implementations is.
+func ImplementationsOf(ops []Operation) map[Primitive][]KernelImpl {
+	out := map[Primitive][]KernelImpl{}
+	for _, op := range ops {
+		out[op.Primitive] = append(out[op.Primitive], op.Impl)
+	}
+	for prim, impls := range out {
+		out[prim] = distinctSorted(impls)
+	}
+	return out
+}
+
+// Operation is one lowered operation and the kernel implementation that executes it: which
+// layer of which graph (the target's, or the draft model's), which node of it (Scorer), which
+// primitive, in which stored format, which kernel. It is the identity the cost model keeps when
+// it binds a coefficient to the kernel that consumes it (design VAL-8, 6.2), so a coefficient
+// read only by the sliding-window layers is matched against the kernel those layers run, one
+// read only by the BF16 GEMMs against the kernel that runs those, and one read only by a
+// layer's block-index scorer against the scorer's, and not against every kernel that runs the
+// primitive.
+type Operation struct {
+	// Draft is true for an entry of DraftLayers, whose Layer indexes the draft model's own
+	// stack; false for an entry of Layers, whose Layer indexes the target graph's.
+	Draft bool
+	Layer int
+	// Scorer is the node of the layer (LoweredLayer.Scorer); false is the primary.
+	Scorer    bool
+	Primitive Primitive
+	// Format is the stored format of the weight or the cache the operation reads
+	// (PrimitiveShape.Format); the zero value is not stated.
+	Format units.QuantFormat
+	// Dtype is the element type of the cache the operation reads (PrimitiveShape.Dtype).
+	Dtype Dtype
+	Impl  KernelImpl
+}
+
+// Operations lists every lowered operation of the pool, the target's then the draft model's, in
+// plan order. A caller building a kernel for this pool passes it as
+// latencykernel.Inputs.Operations.
+func (p PoolPlan) Operations() []Operation {
+	var out []Operation
+	for _, l := range p.Layers {
+		out = append(out, Operation{Layer: l.Layer, Scorer: l.Scorer, Primitive: l.Primitive, Format: l.Shape.Format, Dtype: l.Shape.Dtype, Impl: l.KernelImpl})
+	}
+	for _, l := range p.DraftLayers {
+		out = append(out, Operation{Draft: true, Layer: l.Layer, Scorer: l.Scorer, Primitive: l.Primitive, Format: l.Shape.Format, Dtype: l.Shape.Dtype, Impl: l.KernelImpl})
+	}
+	return out
+}
+
+// Layout is the parallel widths of a pool and the placement of its ranks. A width of 0 is
+// read as 1: a layout that shards along no axis has one rank along it.
+type Layout struct {
+	Tensor, Pipeline, Data, Expert, Context int
+	// RanksPerNode and Nodes place the pool's ranks: Nodes nodes of RanksPerNode ranks. A pool
+	// that fills one node states Nodes 1.
+	RanksPerNode int
+	Nodes        int
+}
+
+// Width returns a width with its floor applied.
+func width(w int) int {
+	if w < 1 {
+		return 1
+	}
+	return w
+}
+
+// Ranks is the number of ranks in the pool: tensor x pipeline x data. Expert and context
+// parallelism reuse these ranks and add none (design §9.2).
+func (l Layout) Ranks() int { return width(l.Tensor) * width(l.Pipeline) * width(l.Data) }
+
+// StageRanks is the ranks in one pipeline stage.
+func (l Layout) StageRanks() int { return width(l.Tensor) * width(l.Data) }
+
+// Stages is the pipeline depth.
+func (l Layout) Stages() int { return width(l.Pipeline) }
+
+// Primitive is a word from a fixed list: what a lowered layer's kernel does. The list is in
+// this package, not in an engine; an engine maps its own operation names onto it in its
+// lowering.
+type Primitive string
+
+const (
+	PrimAttentionPrefill Primitive = "attention.prefill"
+	PrimAttentionDecode  Primitive = "attention.decode"
+	PrimGEMM             Primitive = "gemm"
+	PrimMoEGroupedGEMM   Primitive = "moe.grouped_gemm"
+	PrimRecurrentUpdate  Primitive = "recurrent.update"
+	PrimElementwise      Primitive = "elementwise"
+	PrimGather           Primitive = "gather"
+	PrimAllReduce        Primitive = "all_reduce"
+	PrimAllGather        Primitive = "all_gather"
+	PrimReduceScatter    Primitive = "reduce_scatter"
+	PrimAllToAll         Primitive = "all2all"
+)
+
+var primitives = map[Primitive]bool{
+	PrimAttentionPrefill: true, PrimAttentionDecode: true, PrimGEMM: true, PrimMoEGroupedGEMM: true,
+	PrimRecurrentUpdate: true, PrimElementwise: true, PrimGather: true, PrimAllReduce: true,
+	PrimAllGather: true, PrimReduceScatter: true, PrimAllToAll: true,
+}
+
+// Valid reports whether p is in the fixed list.
+func (p Primitive) Valid() bool { return primitives[p] }
+
+// IsCollective reports whether the primitive is a collective across ranks.
+func (p Primitive) IsCollective() bool {
+	switch p {
+	case PrimAllReduce, PrimAllGather, PrimReduceScatter, PrimAllToAll:
+		return true
+	}
+	return false
+}
+
+// LoweredLayer is one primitive of one layer, as the engine lowered it.
+type LoweredLayer struct {
+	// Layer is the index in the model graph, and Stage the pipeline stage that runs it.
+	Layer int
+	Stage int
+	// Primitive is from the fixed list above.
+	Primitive Primitive
+	// Scorer is true when this entry executes the layer's block-index scorer, a node of its own
+	// beside a sparse layer's primary attention, and false for the layer's primary node. A layer
+	// that runs both has two entries for the primitive. The coefficient registry prices the two
+	// apart (attention_decode_*_block_index_scores), so the cost model binds a coefficient to
+	// the kernel of the node that reads it.
+	Scorer bool
+	// KernelImpl is what executes it; the coefficient registry looks coefficients up by this.
+	KernelImpl KernelImpl
+	// Shape is the primitive's geometry.
+	Shape PrimitiveShape
+	// Collective is set exactly when Primitive is a collective.
+	Collective *Collective
+}
+
+// KernelImpl names the exact kernel that runs a primitive. The coefficient registry's lookup
+// key is its CodeHash, not a package version (design §6.4): a version bump that leaves a kernel
+// unchanged needs no substrate change.
+type KernelImpl struct {
+	// Library names the library, such as a named attention library. A plan requires only that it
+	// is stated. The coefficient lookup matches Library, Variant and CodeHash together (VAL-8), so
+	// a library name outside the registry's matches no keyed entry.
+	Library string
+	// Variant is the library's own exported kernel name; an engine's backend names map to it in
+	// the engine's lowering.
+	Variant string
+	// CodeHash is the hash of the kernel's source and target GPU architecture, or of a binary
+	// library's file and architecture. Empty means the engine could not identify the build; the
+	// lookup then matches no coefficient that names an implementation.
+	CodeHash string
+	// Toolkit is the compiler or CUDA toolkit version the kernel was built with. A toolkit
+	// change can change a kernel's speed without changing its source; the landing gate shows
+	// whether the old value still holds.
+	Toolkit string
+}
+
+// Dtype is a number format, in the catalog's words: the closed list of the catalog's dtypes, restated
+// here because the plan imports no document type. A test in the kernel holds the two lists equal.
+// The zero value is not stated.
+type Dtype string
+
+const (
+	DtypeBF16  Dtype = "bf16"
+	DtypeFP16  Dtype = "fp16"
+	DtypeFP32  Dtype = "fp32"
+	DtypeFP8   Dtype = "fp8"
+	DtypeINT8  Dtype = "int8"
+	DtypeINT4  Dtype = "int4"
+	DtypeNVFP4 Dtype = "nvfp4"
+	DtypeMXFP4 Dtype = "mxfp4"
+)
+
+// Dtypes lists the words, in the catalog's order.
+func Dtypes() []Dtype {
+	return []Dtype{DtypeBF16, DtypeFP16, DtypeFP8, DtypeNVFP4, DtypeMXFP4, DtypeINT8, DtypeINT4, DtypeFP32}
+}
+
+// Bits is the size of one element's payload, 0 for a word that is not a dtype.
+func (d Dtype) Bits() int {
+	switch d {
+	case DtypeFP32:
+		return 32
+	case DtypeBF16, DtypeFP16:
+		return 16
+	case DtypeFP8, DtypeINT8:
+		return 8
+	case DtypeINT4, DtypeNVFP4, DtypeMXFP4:
+		return 4
+	}
+	return 0
+}
+
+// Valid reports whether d is one of the words.
+func (d Dtype) Valid() bool { return d.Bits() > 0 }
+
+// PrimitiveShape is the geometry of a lowered primitive. Which fields apply depends on the
+// primitive; the others are zero. Every figure is per rank unless its name says otherwise.
+type PrimitiveShape struct {
+	// M, N, K are a matrix multiply's dimensions: M rows per token of the step (the step's
+	// token count multiplies it), N and K the weight's. A grouped multiply states Experts.
+	M, N, K int
+	Experts int
+	// Heads, KVHeads and HeadDim are an attention primitive's geometry on this rank.
+	Heads, KVHeads, HeadDim int
+	// Window bounds context-dependent work in tokens; 0 is unbounded.
+	Window int
+	// Format is the stored format of the weight or the cache this primitive reads: its size, in
+	// bits and scale blocks. It does not say which number format those bits hold, so BF16 and FP16
+	// are both {PayloadBits 16}, and FP8 and INT8 both 8 bits.
+	Format units.QuantFormat
+	// Dtype is the element type of the cache an attention primitive reads, one of the catalog's
+	// dtypes (model.DType: bf16, fp16, fp8, int8, ...); the zero value is not stated. Only an
+	// attention primitive states it, and a stated Format must be the size of the type (a bf16
+	// cache is 16 bits). The cost model prices a coefficient measured on one element type only for
+	// that type, which Format cannot tell.
+	Dtype Dtype
+}
+
+// Collective is a collective's group, message and whether it leaves its node.
+type Collective struct {
+	// Group is the number of ranks in the group.
+	Group int
+	// Bytes is the message each rank contributes.
+	Bytes units.PerRank[units.Bytes]
+	// CrossesNodes is true when the group spans more than one node.
+	CrossesNodes bool
+}
+
+// KVGroup is one KV-cache group.
+type KVGroup struct {
+	// BytesPerPage and TokensPerPage describe a page; a sliding-window group states Window.
+	BytesPerPage  units.Bytes
+	TokensPerPage units.Tokens
+	// Window is the sliding-window length in tokens; 0 is full attention.
+	Window units.Tokens
+}
+
+// KVTier is a KV tier below GPU memory.
+type KVTier struct {
+	// Device is the catalog device's name, such as host DRAM or local NVMe.
+	Device string
+	// Bytes is the capacity per rank, as the engine sized it.
+	Bytes units.PerRank[units.Bytes]
+	// Shared is true when one copy serves the node rather than one per rank. A shared figure
+	// counts once per node (SUB-14).
+	Shared bool
+}
+
+// GraphPolicy says which launch shapes the engine captures.
+type GraphPolicy struct {
+	// Mode is how captured graphs are keyed: by token count, by batch size, or none.
+	Mode GraphMode
+	// Buckets are the captured sizes, in tokens or in requests according to Mode.
+	Buckets []int
+	// Decode is how a uniform decode step launches when its size is captured, and Other how any
+	// other step does: a full graph, a piecewise graph with the attention run eagerly, or eagerly
+	// (LaunchEager, the zero value).
+	Decode Launch
+	Other  Launch
+	// Ceiling is the largest token count a captured graph covers; a step above it launches
+	// eagerly. 0 is none.
+	Ceiling units.Tokens
+	// CodeID identifies the engine's graph-capture and launch code that the launch costs depend on
+	// (engines/*/code_paths.json): the key of the host_launch_* and host_replay_graph_* coefficients.
+	// Empty means the engine states none, and then only an unkeyed coefficient prices a launch.
+	CodeID string
+}
+
+// GraphMode is how captured graphs are keyed.
+type GraphMode string
+
+const (
+	GraphNone      GraphMode = ""
+	GraphByTokens  GraphMode = "tokens"
+	GraphByBatch   GraphMode = "batch"
+	GraphPiecewise GraphMode = "piecewise"
+)
+
+// Valid reports whether m is a known mode.
+func (m GraphMode) Valid() bool {
+	switch m {
+	case GraphNone, GraphByTokens, GraphByBatch, GraphPiecewise:
+		return true
+	}
+	return false
+}
+
+// DraftPolicy is speculative decoding. A zero value is no speculation.
+type DraftPolicy struct {
+	// Chain is the draft length of a chain; Tree is top-k and steps of a tree, both 0 for none.
+	Chain     int
+	TreeTopK  int
+	TreeSteps int
+	// FirstPassRows and PassRequests state how a drafter's passes run: which rows an
+	// autoregressive drafter's first pass processes, and for which requests the head and the
+	// later passes run (a parallel-block drafter's query pass and sequential head). They are the
+	// engine's execution decisions, resolved by the engine and stated here in neutral words, so
+	// the cost model prices what it is told and resolves nothing (SUB-6). Empty means not
+	// stated; the cost model refuses a pool that speculates and leaves PassRequests empty, or
+	// that drafts autoregressively and leaves FirstPassRows empty. A parallel-block drafter,
+	// whose target-wide work is its context stack, needs no FirstPassRows.
+	FirstPassRows FirstPassRows
+	PassRequests  PassRequests
+	// Adaptive is true when the verifier runs a draft budget chosen each step from the expected
+	// acceptance, rather than every drafted token.
+	Adaptive bool
+	// RetainedTokens is the KV tokens a request keeps beyond its context for the drafter to read
+	// ahead; 0 is none.
+	RetainedTokens units.Tokens
+	// OwnWorkspace is true when the drafter's attention runs in a workspace of its own, held
+	// beside the target's, rather than inside the target's.
+	OwnWorkspace bool
+}
+
+// FirstPassRows is which rows an autoregressive drafter's first pass processes. Every pass
+// after the first processes one row per drafting request.
+type FirstPassRows string
+
+// The words FirstPassRows takes. Empty is not stated.
+const (
+	// FirstPassPerRequest: the first pass processes one row per request, like every later pass.
+	FirstPassPerRequest FirstPassRows = "per_request"
+	// FirstPassScheduled: the first pass processes every token the target scheduled this step on
+	// this rank, prefill tokens included, because the drafter writes its own KV for each.
+	FirstPassScheduled FirstPassRows = "scheduled"
+)
+
+// Valid reports whether r is a stated word.
+func (r FirstPassRows) Valid() bool { return r == FirstPassPerRequest || r == FirstPassScheduled }
+
+// PassRequests is for which requests a drafter's head and later passes run: an autoregressive
+// drafter's, or a parallel-block drafter's query pass and sequential head.
+type PassRequests string
+
+// The words PassRequests takes. Empty is not stated.
+const (
+	// PassRequestsSampling: the head and the later passes run for the requests that complete
+	// their prompt this step.
+	PassRequestsSampling PassRequests = "sampling"
+	// PassRequestsAll: the head and the later passes run for every request of the step, a
+	// request still in the middle of its prompt included.
+	PassRequestsAll PassRequests = "all"
+)
+
+// Valid reports whether r is a stated word.
+func (r PassRequests) Valid() bool { return r == PassRequestsSampling || r == PassRequestsAll }
+
+// Enabled reports whether any speculation is configured.
+func (d DraftPolicy) Enabled() bool { return d.Chain > 0 || d.TreeTopK > 0 || d.TreeSteps > 0 }
+
+// HostPlan is per-request and per-token host work the engine runs: admission, sampling,
+// detokenizing. The cost model prices it from host-overhead coefficients; the plan says which
+// lane applies. The zero value is the default lane.
+type HostPlan struct {
+	// NativeFrontend is true when request admission and detokenizing run in a compiled
+	// frontend, whose per-token cost differs from an interpreted one's.
+	NativeFrontend bool
+	// Admission is the shape of the queue a request waits in before the engine admits it: the
+	// host work of tokenizing it, which only so many requests do at once. The engine states it
+	// from its own settings; what a request asks of it is the cost model's answer
+	// (kernel.HostDemand). The zero value is no queue.
+	Admission AdmissionQueue
+	// CodeID identifies the engine's host and scheduler code that admission, per-token, completion
+	// and scheduler costs depend on (engines/*/code_paths.json): the key of the host_admission_*,
+	// host_output_token, host_completion and host_step_per_request coefficients. Empty means the
+	// engine states none, and then only an unkeyed coefficient prices that work.
+	CodeID string
+}
+
+// AdmissionQueue is Servers independent first-in first-out queues, each served by
+// WorkersPerServer servers. A request joins the queues in turn, takes the server of its queue
+// that frees first, and holds it for its HostDemand.Service. WorkersPerServer 0 is no queue: a
+// request waits only its HostDemand.Delay. Servers 0 is one queue.
+type AdmissionQueue struct {
+	Servers          int
+	WorkersPerServer int
+}
+
+// Enabled reports whether requests queue for a server.
+func (q AdmissionQueue) Enabled() bool { return q.WorkersPerServer > 0 }
+
+// Queues is the number of independent queues: Servers, at least one.
+func (q AdmissionQueue) Queues() int { return max(q.Servers, 1) }
+
+// Validate refuses a negative count.
+func (q AdmissionQueue) Validate() error {
+	if q.Servers < 0 || q.WorkersPerServer < 0 {
+		return fmt.Errorf("admission queue has %d servers of %d workers; neither is negative", q.Servers, q.WorkersPerServer)
+	}
+	return nil
+}
+
+// ResidentTensor is one tensor resident on each rank after weight post-processing.
+type ResidentTensor struct {
+	// Name identifies the tensor in the model graph.
+	Name string
+	// Elements is the element count on this rank, and Format the stored format.
+	Elements int64
+	Format   units.QuantFormat
+	// Where says whether the tensor is in GPU memory or in host memory, and Shared whether the
+	// engines on a node share one copy of a host-resident tensor.
+	Where  Residence
+	Shared bool
+}
+
+// Residence is where a resident tensor lives.
+type Residence string
+
+const (
+	ResidentGPU  Residence = ""
+	ResidentHost Residence = "host"
+)
+
+// Valid reports whether r is a known residence.
+func (r Residence) Valid() bool { return r == ResidentGPU || r == ResidentHost }
+
+// Bytes returns the bytes the tensor occupies on one rank.
+func (t ResidentTensor) Bytes() (units.PerRank[units.Bytes], error) {
+	b, err := t.Format.StoredBytes(t.Elements)
+	if err != nil {
+		return units.PerRank[units.Bytes]{}, fmt.Errorf("tensor %q: %w", t.Name, err)
+	}
+	return units.Rank(b), nil
+}
+
+// Buffer is a buffer or workspace an engine chooses, sized as its upstream sizes it.
+type Buffer struct {
+	// Name says what the buffer is, from the engine's own function that sizes it.
+	Name string
+	// Bytes is its size, per rank or per node according to Basis.
+	Bytes units.Bytes
+	Basis Basis
+	// Host is true for a pinned host buffer.
+	Host bool
+}
+
+// Basis says what a sized figure is per.
+type Basis string
+
+const (
+	BasisRank  Basis = "rank"
+	BasisNode  Basis = "node"
+	BasisGroup Basis = "group"
+)
+
+// Valid reports whether b is a known basis.
+func (b Basis) Valid() bool { return b == BasisRank || b == BasisNode || b == BasisGroup }
+
+// StepShape is one engine step on the data-parallel ranks that run in lockstep, already padded
+// by the engine. The cost model prices the padded shape; the engine decides the padding.
+type StepShape struct {
+	Mode StepMode
+	// Ranks has one entry per data-parallel rank in the lockstep group.
+	Ranks []RankStep
+	// Padded has one entry per rank: the shape actually launched.
+	Padded []PaddedShape
+	// Drafts is the tokens drafted and verified this step.
+	Drafts DraftShape
+	// Stage is the pipeline stage; 0 without pipeline parallelism.
+	Stage int
+	// DecodeQueryLen is the most tokens a request may schedule and still be priced as a decode:
+	// the engine's own decode threshold, 1 plus the draft length under speculation and 1
+	// without. A request that schedules more is priced as a prefill chunk. The engine states it
+	// because only the engine knows which of its requests its attention kernels treat as a
+	// decode, and the cost model resolves nothing (SUB-6). The zero value means 1.
+	DecodeQueryLen units.Tokens
+	// TailFrom is the index, in the model graph's layer stack, of the first layer that runs over
+	// fewer rows than the requests scheduled: the layers from TailFrom to the end run each
+	// request's RequestStep.TailRows last tokens, not its Scheduled ones. The engine states it
+	// when its forward pass runs a layer suffix on a subset of the step's rows (an engine can run
+	// the layers past the last one that produces KV on each request's trailing window only), for
+	// only the steps that do; the cost model resolves nothing (SUB-6). The embedding, the layers
+	// before TailFrom, the head and any drafter keep the scheduled tokens, and the step still
+	// launches every layer. The zero value is no tail: every layer runs every scheduled token.
+	TailFrom int
+}
+
+// DecodeWidth returns DecodeQueryLen with its floor applied: a step has no request that
+// decodes in fewer than one token, so zero reads as one.
+func (s StepShape) DecodeWidth() units.Tokens {
+	if s.DecodeQueryLen < 1 {
+		return 1
+	}
+	return s.DecodeQueryLen
+}
+
+// StepMode is what one step contains.
+type StepMode string
+
+const (
+	StepMixed      StepMode = "mixed"
+	StepExtendOnly StepMode = "extend_only"
+	StepDecodeOnly StepMode = "decode_only"
+	StepVerify     StepMode = "verify"
+	// StepPrebuilt is a decode merge of a batch whose KV arrived from a prefill pool: the step
+	// runs no forward pass and is priced at no compute, but still has scheduler and host cost.
+	StepPrebuilt StepMode = "prebuilt"
+	StepIdle     StepMode = "idle"
+)
+
+// Valid reports whether m is a known mode.
+func (m StepMode) Valid() bool {
+	switch m {
+	case StepMixed, StepExtendOnly, StepDecodeOnly, StepVerify, StepPrebuilt, StepIdle:
+		return true
+	}
+	return false
+}
+
+// RankStep is one data-parallel rank's requests in a step.
+type RankStep struct {
+	Requests []RequestStep
+}
+
+// RequestStep is one request's contribution to a step.
+type RequestStep struct {
+	// Scheduled is tokens scheduled this step. Under speculation it is the draft length plus
+	// one, so a value of one does not imply a decode.
+	Scheduled units.Tokens
+	// Computed is tokens already computed; Prompt is the prompt length. Computed against Prompt
+	// separates a chunked-prefill tail from a decode.
+	Computed units.Tokens
+	Prompt   units.Tokens
+	// Cached is the prefix-cache hit, already subtracted from Scheduled.
+	Cached units.Tokens
+	// TailRows is how many of Scheduled the layers from StepShape.TailFrom run: the request's
+	// last TailRows tokens, at their own positions. Zero means all of Scheduled (a decode row
+	// that the engine does not trim). It never exceeds Scheduled, and a step with no TailFrom
+	// states none.
+	TailRows units.Tokens
+}
+
+// PaddedShape is the shape one rank actually launches.
+type PaddedShape struct {
+	// Tokens is the launched token count after graph-bucket and data-parallel padding.
+	Tokens units.Tokens
+	// Launch says how the step launches; the three cost differently, so the engine states which.
+	Launch Launch
+	// TailTokens is the rows the layers from StepShape.TailFrom launch on this rank, when the
+	// engine pads that batch to a size of its own (a captured graph's): at least the rows the
+	// requests state in TailRows. Zero means the tail launches exactly its rows.
+	TailTokens units.Tokens
+}
+
+// Launch is how a step launches.
+type Launch string
+
+const (
+	LaunchEager     Launch = ""
+	LaunchGraph     Launch = "graph"
+	LaunchPiecewise Launch = "piecewise"
+)
+
+// Valid reports whether l is a known launch.
+func (l Launch) Valid() bool { return l == LaunchEager || l == LaunchGraph || l == LaunchPiecewise }
+
+// DraftShape is the speculative tokens in a step. Zero is none.
+type DraftShape struct {
+	Drafted  units.Tokens
+	Verified units.Tokens
+	// Passes is the drafter's launch on each data-parallel rank, in the order of StepShape.Ranks.
+	// It is empty when the step runs no drafter pass. A drafter coordinates its own padding across
+	// the lockstep group, apart from the target's, so a rank's draft pass can be wider than its own
+	// draft rows, and the engine states how wide (the target's padding is PaddedShape).
+	Passes []DraftPass
+	// Skip says the drafter proposes no drafts in this step, because no request on any rank of
+	// the data-parallel group can use them; the engine decides it (vLLM v0.33.0's skip_drafts,
+	// vllm/v1/worker/gpu/model_runner.py:2117-2135@4ba787ec) and the cost model prices the step
+	// without the passes that propose (kernel.Batch.SkipDrafts). The drafter still keeps its KV in
+	// step with the target, which the cost model prices from the requests. A skipped step states
+	// no drafted tokens and no drafter pass (Validate). False is a step that proposes as before.
+	Skip bool
+}
+
+// DraftPass is one rank's drafter launch. The zero value is no drafter pass.
+type DraftPass struct {
+	// Padded is the token count the drafter launches after its graph bucket and the group's
+	// agreed width, at least the rank's own draft rows.
+	Padded units.Tokens
+	// Launch says how the drafter launches: a captured graph, a piecewise replay or eager.
+	Launch Launch
+}
+
+// Transfer is one KV move, with enough for the cost model to say what each link must carry.
+// The engine states it, as the Move of the engine.Transfer it reports; the simulator hands it
+// to Environment.TransferDemand unchanged.
+//
+// For a move to or from a tier, both ends are on the node whose memory or storage holds the
+// tier. For a move between pools, each end is in its own pool's numbering: the engine states its
+// own end, and the far end is the peer the request named (engine.Request.Peer).
+//
+// A move between pools may carry no tokens (Tokens 0): a remote prefill can find all of its KV
+// already here. Its demand is zero bytes, with no link and no floor. A move to or from a tier
+// always carries tokens; Validate refuses an empty one.
+//
+// Two optional fields state what one From and one To and one Tokens cannot (design 6.3). Nodes
+// states a move that every node of a pool makes at once, as an offload job or a pull runs on every
+// worker of a pool that spans nodes: one NodeMove for each node, each moving the move's Tokens for
+// its own node's share of the KV. Groups states the tokens each KV cache group of a hybrid model
+// moves, which differ because a sliding-window group keeps only its window. A move that states
+// neither is one node's move of one count of tokens, as before.
+type Transfer struct {
+	// Tokens moved, and the node and rack at each end: where the bytes leave and where they land.
+	Tokens units.Tokens
+	From   Endpoint
+	To     Endpoint
+	// Kind says which tier or peer the bytes move to or from.
+	Kind TransferKind
+	// Tier names the catalog device for an offload move; "" for a move between pools.
+	Tier string
+	// Nodes, when not nil, is the move as every node of the pool makes it: one entry for each
+	// node whose workers move their own share at the same time. From and To are the first entry.
+	// The cost model prices each entry over its own path and adds the results into one demand
+	// (kernel.Concurrent). Nil is the single move From to To.
+	Nodes *NodeMoves
+	// Groups, when not nil, is the tokens each KV cache group moves, by its index in the plan's
+	// KV. Tokens is the largest count. Nil means Tokens for every group.
+	Groups *GroupMoves
+}
+
+// NodeMoves is the list of a Transfer's Nodes. The lists sit behind pointers so that Transfer stays a
+// comparable type (SUB-1): a nil pointer is a Transfer that states none, which is what every
+// Transfer was before the fields existed. Compare two Transfers with Equal, which compares the
+// lists' contents; == compares the pointers.
+type NodeMoves struct{ Moves []NodeMove }
+
+// GroupMoves is the list of a Transfer's Groups, behind a pointer for the same reason.
+type GroupMoves struct{ Moves []GroupMove }
+
+// NodeList returns the node moves, nil when the transfer states none.
+func (t Transfer) NodeList() []NodeMove {
+	if t.Nodes == nil {
+		return nil
+	}
+	return t.Nodes.Moves
+}
+
+// GroupList returns the group moves, nil when the transfer states none.
+func (t Transfer) GroupList() []GroupMove {
+	if t.Groups == nil {
+		return nil
+	}
+	return t.Groups.Moves
+}
+
+// Equal reports whether two transfers state the same move: the same fields, and node and group
+// lists with the same entries in the same order. A nil list and an empty one are the same.
+func (t Transfer) Equal(u Transfer) bool {
+	return t.Tokens == u.Tokens && t.From == u.From && t.To == u.To && t.Kind == u.Kind && t.Tier == u.Tier &&
+		slices.Equal(t.NodeList(), u.NodeList()) && slices.Equal(t.GroupList(), u.GroupList())
+}
+
+// NodeMove is one node's move within a Transfer that every node of a pool makes: where its bytes
+// leave and where they land, numbered as Transfer.From and To are.
+type NodeMove struct {
+	From Endpoint
+	To   Endpoint
+}
+
+// GroupMove is the tokens one KV cache group moves within a Transfer: Group is the group's index
+// in PoolPlan.KV.
+type GroupMove struct {
+	Group  int
+	Tokens units.Tokens
+}
+
+// Endpoint names where a transfer starts or ends, by node and rack. A transfer within one
+// node uses no NIC (SUB-17). Both coordinates are relative to the pool the endpoint is in: Node
+// from the pool's first node, Rack from its lowest rack, never the cluster's. The two ends of a
+// move between pools are each in the numbering of their own pool.
+type Endpoint struct {
+	Node int
+	Rack int
+}
+
+// TransferKind says what a move is.
+type TransferKind string
+
+const (
+	TransferToTier   TransferKind = "to_tier"
+	TransferFromTier TransferKind = "from_tier"
+	TransferPeer     TransferKind = "peer"
+)
+
+// Valid reports whether k is a known kind.
+func (k TransferKind) Valid() bool {
+	return k == TransferToTier || k == TransferFromTier || k == TransferPeer
+}

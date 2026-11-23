@@ -1,0 +1,47 @@
+# Storage tiers for KV-cache offload: the classes a deployment's offload block may name.
+#
+# A tier is an identity and a description here, and states no number. What a transfer to or
+# from a tier costs (the read rate, the write rate and the fixed cost of one transfer) is not a
+# declared fact of a device, so it is not in this file (SUB-18, SUB-3). Every figure this file
+# held was one of two things: a fit to one host's measurements (cpu_dram), or a value the
+# simulator's authors chose for a class (the rest), with no datasheet, benchmark or other
+# source cited for it. A fitted or assumed value is a coefficient, and the coefficient registry
+# holds each one scoped to the hardware it describes, with its method and its evidence:
+#
+#   offload_tier_<tier>_read_rate     bytes per microsecond (equal to MB/s), tier to GPU
+#   offload_tier_<tier>_write_rate    bytes per microsecond, GPU to tier
+#   offload_tier_<tier>_base_latency  microseconds per transfer
+#
+# in the registry set cost-model-offload-tiers, written by
+# registry/scripts/emit_offload_tiers.py. The kernel's TierTime reads them from the scenario's
+# coefficient sets. A tier added here needs those three entries for every catalog chip, and a
+# test fails until it has them. A file that states read_bandwidth_mb_s, write_bandwidth_mb_s or
+# base_latency_us for a tier is refused.
+#
+# The tiers were split verbatim from the kv_offload_devices: section of inference-sim's
+# defaults.yaml (blis-catalog b20b7f1), added by inference-sim PR #1594 (commit 3673d3655e),
+# whose own comment describes them as "representative device classes seeded for the multi-tier
+# offload holes (#1588/#1589); operators override per run for their hardware". The tiers are
+# classes (an NVMe Gen4 drive, object storage), not specific products, so no single datasheet
+# could state them.
+nvme_gen4:
+  _comment: "A PCIe Gen4 NVMe drive, as a class and not a product. Its terms are the registry's offload_tier_nvme_gen4_* entries, assumed."
+nvme_gen3:
+  _comment: "A PCIe Gen3 NVMe drive, as a class and not a product. Its terms are the registry's offload_tier_nvme_gen3_* entries, assumed."
+sata_ssd:
+  _comment: "A SATA SSD, as a class and not a product. Its terms are the registry's offload_tier_sata_ssd_* entries, assumed."
+cpu_dram:
+  _comment: >-
+    Pinned host DRAM, reached across the host link. Its terms are the registry's offload_tier_cpu_dram_* entries:
+    the rates were fitted to InferenceX CollectiveX swap_blocks rows on one H100 host (sku h100-dgxc) and are
+    scoped to that host as transferred rates, with the floor assumed; every other chip carries the same figures
+    as transferred and assumed entries until its own host is timed. The host link's own ceiling is the registry's
+    host_link_bandwidth, per chip.
+s3:
+  _comment: "An object store reached over the network, as a class and not a product. Its terms are the registry's offload_tier_s3_* entries, assumed."
+nvme_gen4_raid0_8x:
+  _comment: >-
+    A DGX/HGX H100 node's local NVMe data volume. NVIDIA's DGX H100 user guide and datasheet state 8 x 3.84 TB
+    NVMe U.2 drives in RAID 0 at /raid (PCIe Gen4); the drive model is not public. Its terms are the registry's
+    offload_tier_nvme_gen4_raid0_8x_* entries: assumed, scoped to the DGX H100 node, and carried unchanged,
+    as assumed, to the other chips.

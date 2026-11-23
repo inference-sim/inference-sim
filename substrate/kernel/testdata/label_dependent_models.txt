@@ -1,0 +1,9 @@
+# Catalog models whose price moves when every graph node's Role is renamed to a string nothing
+# compares with (design SUB-20). TestChangingALabelChangesNoPriceOrIsListed renames the role of
+# every node, rewrites every reference to it, and prices the model again on every chip and layout
+# the perturbation tries. A model listed here has a price that depends on a label.
+# The list may only shrink: the test fails on a model not listed and on a listed model whose price
+# no longer moves.
+#
+# It is empty. The cost model reads holds_engine_kv and shared, which the deriver sets, and the
+# graph's context.decode_extent; it reads no label.

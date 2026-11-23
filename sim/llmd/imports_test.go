@@ -16,7 +16,7 @@ import (
 const (
 	routerModule = "github.com/llm-d/llm-d-router"
 	// routerConstructor is the one fork package BLIS may import, and New the one identifier it
-	// may use from it: the fork's implementation of blis-schemas embed.Constructor.
+	// may use from it: the fork's implementation of blisembed.Constructor.
 	routerConstructor = routerModule + "/pkg/embed"
 	forkGuide         = ".github/agent-prompts/llm-d-router-fork.md"
 	// routerReferenceConfigs is the one other fork package BLIS may import, and FS the one
@@ -24,17 +24,21 @@ const (
 	// EndpointPicker configurations and their index. It holds no router code, so it ties BLIS to
 	// the fork's data files and not to router internals; `blis router-configs` prints them.
 	routerReferenceConfigs = routerModule + "/reference-configs"
+	// routerContract is the hosting contract (package embed), which the fork owns; BLIS may use
+	// every identifier of it and no other package below it.
+	routerContract = routerModule + "/blisembed"
 )
 
 // allowedRouterPackages maps each llm-d-router package BLIS may import to the package's name and
-// the only identifier BLIS may use from it.
+// the only identifier BLIS may use from it ("" allows every identifier).
 var allowedRouterPackages = map[string]struct{ name, only string }{
 	routerConstructor:      {"embed", "New"},
 	routerReferenceConfigs: {"referenceconfigs", "FS"},
+	routerContract:         {"embed", ""},
 }
 
 // TestRouterImportsOnlyTheEmbedConstructor guards the router contract: BLIS programs against
-// blis-schemas embed, and takes only the constructor pkg/embed.New and the reference configurations'
+// the fork's blisembed, and takes only the constructor pkg/embed.New and the reference configurations'
 // embed.FS (reference-configs.FS) from the llm-d-router fork. A
 // router-internal import would tie BLIS to code upstream semver does not cover, so a same-major
 // router release could no longer reach BLIS as a pin bump alone.
@@ -43,7 +47,7 @@ func TestRouterImportsOnlyTheEmbedConstructor(t *testing.T) {
 	problems := routerImportProblems(t, root)
 	if len(problems) > 0 {
 		t.Fatalf("BLIS may take only %s.New and %s.FS from the llm-d-router fork; everything else comes from "+
-			"blis-schemas embed (see %s):\n  %s", routerConstructor, routerReferenceConfigs, forkGuide, strings.Join(problems, "\n  "))
+			"the fork's blisembed (see %s):\n  %s", routerConstructor, routerReferenceConfigs, forkGuide, strings.Join(problems, "\n  "))
 	}
 }
 
@@ -64,6 +68,10 @@ func TestRouterImportGuardDetects(t *testing.T) {
 		{"reference configs other identifier", "package p\nimport rc " + q(routerReferenceConfigs) + "\nvar _ = rc.Index", "uses rc.Index"},
 		{"reference configs subpackage", "package p\nimport _ " + q(routerReferenceConfigs+"/guides"), "imports " + q(routerReferenceConfigs+"/guides")},
 		{"constructor identifier on reference configs", "package p\nimport rc " + q(routerReferenceConfigs) + "\nvar _ = rc.New", "uses rc.New"},
+		{"hosting contract, any identifier", "package p\nimport " + q(routerContract) + "\nvar _ = embed.Router", ""},
+		{"hosting contract, renamed", "package p\nimport e " + q(routerContract) + "\nvar _ = e.Decision{}", ""},
+		{"hosting contract dot import", "package p\nimport . " + q(routerContract), "dot-imports"},
+		{"hosting contract subpackage", "package p\nimport _ " + q(routerContract+"/embedtest"), "imports " + q(routerContract+"/embedtest")},
 		// A blank import of the constructor package uses no identifier of it: allowed, as New alone is.
 		{"blank constructor import", "package p\nimport _ " + q(routerConstructor), ""},
 	} {
@@ -149,7 +157,9 @@ func fileProblems(rel string, f *ast.File) []string {
 		case "_":
 			// A blank import uses no identifier of the package.
 		default:
-			only[local] = pkg.only
+			if pkg.only != "" {
+				only[local] = pkg.only
+			}
 		}
 	}
 	if len(only) == 0 {

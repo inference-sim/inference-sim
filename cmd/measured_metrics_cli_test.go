@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/metrics"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/substrate/contracts/metrics"
 )
 
 // dsparkScenariosWithoutBoundedReplay is a directory holding dsparkScenario with its pool
@@ -84,28 +84,20 @@ func TestResult_DSparkRequestITLIsTheStepIntervalOverTheAcceptedLength(t *testin
 	}
 }
 
-// The build pins come from the binary's build information: the main module's version with
-// its VCS revision, and the blis-substrate version, which is both the kernel's and the schemas'
-// (a replaced module reports its replacement). Nothing is guessed when the information is absent.
+// The build pins come from the binary's build information: the main module's version with its
+// VCS revision, which is also the kernel's and the schemas' version (one module holds all three).
+// Nothing is guessed when the information is absent.
 func TestVersionsFromBuildInfo(t *testing.T) {
 	info := &debug.BuildInfo{
-		Main: debug.Module{Path: "github.com/inference-sim/inference-sim", Version: "(devel)"},
-		Deps: []*debug.Module{
-			{Path: "github.com/inference-sim/blis-substrate", Version: "v0.11.0",
-				Replace: &debug.Module{Path: "github.com/inference-sim/blis-substrate", Version: "v0.11.1"}},
-		},
+		Main:     debug.Module{Path: "github.com/inference-sim/inference-sim", Version: "(devel)"},
 		Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "abc123"}, {Key: "vcs.modified", Value: "true"}},
 	}
 	got := versionsFrom(info)
-	if got.BLIS != "(devel)+abc123-dirty" || got.Kernel != "v0.11.1" || got.Schemas != "v0.11.1" {
+	if got.BLIS != "(devel)+abc123-dirty" || got.Kernel != got.BLIS || got.Schemas != got.BLIS {
 		t.Errorf("versionsFrom = %+v", *got)
 	}
-	local := versionsFrom(&debug.BuildInfo{Main: debug.Module{Version: "v1.2.3"}, Deps: []*debug.Module{
-		{Path: "github.com/inference-sim/blis-substrate", Version: "v0.11.0",
-			Replace: &debug.Module{Path: "../blis-substrate"}},
-	}})
-	if local.BLIS != "v1.2.3" || local.Kernel != "replace:../blis-substrate" || local.Schemas != "replace:../blis-substrate" {
-		t.Errorf("a filesystem replace must be reported as such, got %+v", *local)
+	if rel := versionsFrom(&debug.BuildInfo{Main: debug.Module{Version: "v1.2.3"}}); rel.BLIS != "v1.2.3" || rel.Kernel != "v1.2.3" {
+		t.Errorf("a release build must report its tag for all three, got %+v", *rel)
 	}
 	// A worktree build carries no VCS settings; the -ldflags revision names the commit, and a
 	// stamped revision wins over it.

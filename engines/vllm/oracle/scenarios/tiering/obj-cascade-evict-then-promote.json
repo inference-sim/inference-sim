@@ -1,0 +1,183 @@
+{
+ "description": "A chunk stored to the CPU tier is cascaded to the obj tier as one WRITE; once the CPU tier evicts it, a lookup probes the bucket: RETRY until the step's probe batch resolves, then HIT_PENDING while it is promoted by a READ, then HIT, loaded from DISK. KV events are on, so the stored job is reported as BlockStored with the tier's locality.",
+ "spec": {
+  "name": "TieringOffloadingSpec",
+  "cpu_bytes_to_use": 49152,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1,
+  "extra": {
+   "secondary_tiers": [
+    {
+     "type": "obj",
+     "store_config": {
+      "bucket": "kv",
+      "endpoint_override": "http://127.0.0.1:9000"
+     },
+     "io_threads": 1,
+     "prefix": "kvcache",
+     "enable_kv_events": true,
+     "locality": "REMOTE"
+    }
+   ]
+  },
+  "enable_kv_cache_events": true
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "has_pending_work"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "a"
+   ]
+  },
+  {
+   "m": "take_events"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  },
+  {
+   "m": "on_new_request",
+   "ctx": "b"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "b",
+   "keys": [
+    "k3",
+    "k4",
+    "k5"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "b",
+   "keys": [
+    "k3",
+    "k4",
+    "k5"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k2"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "b"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k2"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k6"
+  },
+  {
+   "m": "has_pending_work"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k2"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k6"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k6"
+  },
+  {
+   "m": "get_load_source",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "prepare_load",
+   "ctx": "b",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "complete_load",
+   "ctx": "b",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "has_pending_work"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "b"
+  },
+  {
+   "m": "take_events"
+  }
+ ]
+}

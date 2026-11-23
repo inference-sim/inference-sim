@@ -10,17 +10,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Engine selection (design SIM-1, LIF-6). A scenario names the engine it runs by kind and
-// upstream release, in engine: {kind, version}. This build runs one release of each kind it
-// registers; a scenario that names another release is refused with the message LIF-6 asks for.
-// A scenario that still states engine_version, the field engine: {kind, version} replaced, is
-// refused with a message naming the replacement: v0.16.0 deprecated it, and flagsRemovedIn
-// removed it (LIF-7).
+// Engine selection (design SIM-1, LIF-6). A scenario names the engine it runs by kind alone,
+// in engine: {kind}. It states no release of an engine: this build runs one upstream commit of
+// each kind it registers (stack.json), and every Result records it. A scenario that states
+// engine.version, or the older engine_version, is refused as an unknown field.
 
-// engineRef is the engine a scenario names: its kind and the upstream release it models.
+// engineRef is the engine a run uses: its kind, and the upstream release and commit this build
+// runs for it.
 type engineRef struct {
-	Kind    string `yaml:"kind"`
-	Version string `yaml:"version"`
+	Kind    string
+	Version string
+	Commit  string
 }
 
 func (e engineRef) String() string { return e.Kind + " " + e.Version }
@@ -28,40 +28,39 @@ func (e engineRef) String() string { return e.Kind + " " + e.Version }
 // engineKindVLLM is the vLLM engine kind.
 const engineKindVLLM = "vllm"
 
-// builtEngineReleases maps each engine kind this build registers to the upstream release it
-// runs. It is the list stack.json records (LIF-6); one release per kind.
-func builtEngineReleases() map[string]string {
-	return map[string]string{engineKindVLLM: "0.33.0", engineKindSGLang: "0.5.23"}
+// builtEngines maps each engine kind this build registers to the upstream release and commit
+// it runs, as stack.json records them (LIF-6); one per kind.
+func builtEngines() map[string]engineRef {
+	out := map[string]engineRef{}
+	for _, u := range EngineReleases() {
+		out[u.Kind] = engineRef{Kind: u.Kind, Version: u.Version, Commit: u.Commit}
+	}
+	return out
 }
 
-// lastReleaseRunning maps an engine release this build does not run to the newest
-// inference-sim release that runs it. v0.15.0 is the last release that runs vLLM 0.29.0 and
-// 0.31.0 (release plan §3.3, "Removing blis-vllm's 0.29 and 0.31 code").
-func lastReleaseRunning() map[engineRef]string {
-	return map[engineRef]string{
-		{Kind: engineKindVLLM, Version: "0.29.0"}: "v0.15.0",
-		{Kind: engineKindVLLM, Version: "0.31.0"}: "v0.15.0",
-		// v0.17.0 is the last release that runs vLLM 0.32.0 (its stack.json), before the move to 0.33.0.
-		{Kind: engineKindVLLM, Version: "0.32.0"}: "v0.17.0",
-	}
+// scenarioEngineBlock is the engine block of a scenario as the selector reads it. Version is
+// read only to refuse it.
+type scenarioEngineBlock struct {
+	Kind    string `yaml:"kind"`
+	Version string `yaml:"version"`
 }
 
 // scenarioEngineFields is the part of a scenario file the selector reads. EngineVersion is read
-// only to refuse it by name.
+// only to refuse it.
 type scenarioEngineFields struct {
-	Engine        *engineRef `yaml:"engine"`
-	EngineVersion string     `yaml:"engine_version"`
+	Engine        *scenarioEngineBlock `yaml:"engine"`
+	EngineVersion string               `yaml:"engine_version"`
 }
 
-// selectEngine reads the engine a scenario file names and refuses one this build does not
-// run. It returns an error and never exits.
+// selectEngine reads the engine a scenario file names and refuses a scenario that states an
+// engine release or a kind this build does not run. It returns an error and never exits.
 func selectEngine(path string) (engineRef, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return engineRef{}, fmt.Errorf("scenario %s: %w", path, err)
 	}
 	var f scenarioEngineFields
-	// The scenario is decoded strictly elsewhere (blis-substrate's scenario loader); this
+	// The scenario is decoded strictly elsewhere (the substrate's scenario loader); this
 	// reads two fields of its first document and ignores the rest.
 	if err := yaml.Unmarshal(firstDocument(data), &f); err != nil {
 		return engineRef{}, fmt.Errorf("scenario %s: %w", path, err)
@@ -81,43 +80,40 @@ func firstDocument(data []byte) []byte {
 
 // resolveEngine is selectEngine over the decoded fields of the scenario called name.
 func resolveEngine(name string, f scenarioEngineFields) (engineRef, error) {
-	example := fmt.Sprintf("engine: {kind: %s, version: %q}", engineKindVLLM, builtEngineReleases()[engineKindVLLM])
+	built := builtEngines()
 	if f.EngineVersion != "" {
-		suggest := fmt.Sprintf("engine: {kind: %s, version: %q}", engineKindVLLM, f.EngineVersion)
-		if f.Engine != nil {
-			suggest = "engine: {kind, version} alone"
-		}
-		return engineRef{}, fmt.Errorf("scenario %q states engine_version %q, which was removed in %s: "+
-			"state %s instead", name, f.EngineVersion, flagsRemovedIn, suggest)
+		return engineRef{}, fmt.Errorf("scenario %q: field engine_version not found in type scenario.Scenario: "+
+			"a scenario states no engine release, so state engine: {kind: %s} and no version (LIF-6)",
+			name, engineKindVLLM)
 	}
 	if f.Engine == nil {
-		return engineRef{}, fmt.Errorf("scenario %q names no engine: state engine: {kind, version}, for example %s",
-			name, example)
+		return engineRef{}, fmt.Errorf("scenario %q names no engine: state engine: {kind}, for example engine: {kind: %s}",
+			name, engineKindVLLM)
 	}
-	ref := *f.Engine
-	if ref.Kind == "" || ref.Version == "" {
-		return engineRef{}, fmt.Errorf("scenario %q: engine: {kind: %q, version: %q} must state both kind and version",
-			name, ref.Kind, ref.Version)
+	if f.Engine.Version != "" {
+		b := built[f.Engine.Kind]
+		runs := "this build does not run that kind"
+		if b.Kind != "" {
+			runs = fmt.Sprintf("this build runs %s at commit %s; a user who needs another upstream commit "+
+				"uses the inference-sim release that runs it", b, b.Commit)
+		}
+		return engineRef{}, fmt.Errorf("scenario %q: field engine.version %q not found in type scenario.Engine: "+
+			"a scenario states no engine release, the build fixes it (stack.json) and the Result records it; %s",
+			name, f.Engine.Version, runs)
 	}
-	built := builtEngineReleases()
-	runs, ok := built[ref.Kind]
+	if f.Engine.Kind == "" {
+		return engineRef{}, fmt.Errorf("scenario %q: engine: {kind} must state the kind", name)
+	}
+	ref, ok := built[f.Engine.Kind]
 	if !ok {
 		return engineRef{}, fmt.Errorf("scenario %q names engine kind %q; this build runs the kinds %s",
-			name, ref.Kind, strings.Join(sortedKinds(built), ", "))
-	}
-	if ref.Version != runs {
-		newest := "no inference-sim release runs it"
-		if r, ok := lastReleaseRunning()[ref]; ok {
-			newest = "the newest inference-sim release that runs it is " + r
-		}
-		return engineRef{}, fmt.Errorf("scenario %q names engine %s; this build runs %s %s, and %s",
-			name, ref, ref.Kind, runs, newest)
+			name, f.Engine.Kind, strings.Join(sortedKinds(built), ", "))
 	}
 	return ref, nil
 }
 
 // sortedKinds is the kinds of built, sorted.
-func sortedKinds(built map[string]string) []string {
+func sortedKinds(built map[string]engineRef) []string {
 	out := make([]string, 0, len(built))
 	for k := range built {
 		out = append(out, k)

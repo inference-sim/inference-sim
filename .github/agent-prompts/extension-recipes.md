@@ -10,11 +10,11 @@ A new llm-d plugin type becomes usable in BLIS once the fork has audited it for 
 
 ## Adding New Instance Schedulers
 
-The instance scheduler is vLLM's, translated in blis-vllm (`core/sched`), so a change there is a blis-vllm change, released and repinned in `go.mod` ([cross-repo changes](cross-repo-changes.md)).
+The instance scheduler is vLLM's, translated in the vLLM engine (`engines/vllm/core/sched`), so a change there is a change to that directory, checked by its oracle (`engines/vllm/oracle/README.md`).
 
 ## Extending KV Cache Tiers
 
-The KV cache is vLLM's, translated in blis-vllm (`core/kv`), so a change there is a blis-vllm change, released and repinned in `go.mod` ([cross-repo changes](cross-repo-changes.md)). Tier transfer *time* is priced by `blis-latency-kernel` from a catalog `device_class`.
+The KV cache is vLLM's, translated in the vLLM engine (`engines/vllm/core/kv`), so a change there is a change to that directory, checked by its oracle (`engines/vllm/oracle/README.md`). Tier transfer *time* is priced by the cost model (`substrate/kernel`) from a catalog `device_class`.
 
 ## Adding New Trace Record Types
 
@@ -57,22 +57,14 @@ Examples:
 
 ## Extending Latency Pricing
 
-Latency pricing is not extended in this repository. BLIS takes every step time, memory figure, P/D transfer time, offload tier transfer time and host overhead from `blis-latency-kernel` (adapter blis-vllm `compat/kernelmodel`); there is no `LatencyModel` factory or backend flag to add a case to.
+Latency pricing is not extended in `sim/` or `cmd/`. BLIS takes every step time, memory figure, P/D transfer time, offload tier transfer time and host overhead from the cost model (`substrate/kernel`; adapter `engines/vllm/core/kernelmodel`); there is no `LatencyModel` factory or backend flag to add a case to.
 
-- **A new pricing term, engine feature or model shape** → change `blis-latency-kernel`, release it, and bump the pinned module version in `go.mod`.
-- **New or refitted coefficients** → publish them in blis-substrate's `registry/` and name the coefficient sets in the scenario's `coefficients:` list.
-- **A new model, chip, fabric or storage device** → add it to blis-substrate's `catalog/`.
-- **A new scenario or engine-setting field** → change the format in `blis-schemas` first.
+- **A new pricing term, engine feature or model shape** → change `substrate/kernel` (and the engine's lowering, `engines/vllm/core/lowering` or `engines/sglang/lower`), in the same pull request.
+- **New or refitted coefficients** → add them to `substrate/registry/` and name the coefficient sets in the scenario's `coefficients:` list.
+- **A new model, chip, fabric or storage device** → add it to `substrate/catalog/` (CONTRIBUTING.md, "Adding a New Model to the Catalog").
+- **A new scenario or engine-setting field** → change the format in `substrate/contracts/spec` first, then regenerate the schemas (`cd substrate && go run ./tools/schemagen`).
 
-On the BLIS side, a new kernel capability usually needs only the adapter in blis-vllm `compat/kernelmodel` and the scenario-to-`SimConfig` wiring (blis-vllm `compat/build`, called from `cmd/engine_build.go`). See the design (https://inference-sim.github.io/blis-design/).
-
-## Adding New Batch Formation Strategies
-
-Batch formation is vLLM's scheduler, translated in blis-vllm (`core/sched`), so a change there is a blis-vllm change, released and repinned in `go.mod` ([cross-repo changes](cross-repo-changes.md)).
-
-## Adding New Quantization Formats
-
-Quantization is stated per pool in the scenario (`engine.quantization`, `engine.kv_cache_dtype`) and priced by `blis-latency-kernel`. A new format is added there (and to `blis-schemas` if the field's allowed values change), not in this repository.
+Quantization is stated per pool in the scenario (`engine.quantization`, `engine.kv_cache_dtype`) and priced by the cost model. A new format is added in `substrate/kernel` (and to the contract in `substrate/contracts/spec` if the field's allowed values change), not in `sim/` or `cmd/`.
 
 ## Adding a New Engine
 
@@ -108,10 +100,10 @@ Examples:
 
 To add a new field to the per-request rows of the Result (`request_rows`):
 
-1. **Add field to `Request`** in blis-vllm `compat/engine/request.go` (runtime state, zero-value safe; `sim.Request` is an alias of it). When constructing `Request` structs, use `RequestState` typed constants (`StateQueued`, `StateRunning`, `StateCompleted`) — never bare strings.
+1. **Add field to `Request`** in `sim/request.go` (runtime state, zero-value safe). When constructing `Request` structs, use `RequestState` typed constants (`StateQueued`, `StateRunning`, `StateCompleted`) — never bare strings.
 2. **Record it**: a tag known when the request is created goes in `RequestFact` (`sim/cluster/fates.go`, set by `noteFacts`); a value the engine produces goes in `RequestMetrics` (`sim/metrics_utils.go`, propagated by `NewRequestMetrics()` or set where the engine records it).
 3. **State it in the row**: `requestRows` (`cmd/result_rows.go`) copies it onto the `result.RequestRow`. A member the row does not have is a blis-substrate change (`contracts/spec/result`), released and repinned in `go.mod`.
-4. **Document it** in the Per-Request Rows table of `docs/guide/results.md`.
+4. **Document it** with the row member's description in `substrate/contracts/spec/result`.
 5. **Add behavioral tests** covering multi-instance, single-instance, and standalone boundaries
 
 Examples:

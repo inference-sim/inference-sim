@@ -1,0 +1,148 @@
+{
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 256,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_consumer",
+   "kv_load_failure_policy": "recompute",
+   "extra_config": {
+    "kv_recompute_threshold": 0
+   }
+  }
+ },
+ "requests": [
+  {
+   "id": "d0",
+   "arrival_step": 0,
+   "prompt": [
+    1101,
+    4663,
+    517,
+    2090,
+    966,
+    4059,
+    3683,
+    3869,
+    3110,
+    1720,
+    769,
+    3997,
+    233
+   ],
+   "output": [
+    3194,
+    3546,
+    4977
+   ],
+   "remote_prefill": true,
+   "recv_delay": 3
+  },
+  {
+   "id": "d1",
+   "arrival_step": 0,
+   "prompt": [
+    464,
+    751,
+    696,
+    2958,
+    1386,
+    2525,
+    2061,
+    4964,
+    1739
+   ],
+   "output": [
+    4971,
+    293
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1
+  },
+  {
+   "id": "d2",
+   "arrival_step": 1,
+   "prompt": [
+    1950,
+    4855,
+    4459,
+    1069,
+    3031,
+    4948,
+    3884,
+    4759,
+    537,
+    4962,
+    108,
+    3844,
+    2125,
+    4513,
+    1920,
+    1571,
+    3853
+   ],
+   "output": [
+    4432,
+    4503,
+    3903,
+    3254
+   ],
+   "remote_prefill": true,
+   "recv_delay": 0
+  },
+  {
+   "id": "l0",
+   "arrival_step": 0,
+   "prompt": [
+    1934,
+    2485,
+    846,
+    3245,
+    3923,
+    1270
+   ],
+   "output": [
+    739,
+    545,
+    163
+   ]
+  },
+  {
+   "id": "l1",
+   "arrival_step": 2,
+   "prompt": [
+    2093,
+    2938,
+    4343,
+    238,
+    3815,
+    2041,
+    425,
+    1285,
+    928,
+    3046,
+    3843,
+    2020,
+    3120,
+    4455,
+    836,
+    4702,
+    2043,
+    108,
+    1776,
+    3344,
+    2290
+   ],
+   "output": [
+    1492,
+    3191
+   ]
+  }
+ ],
+ "name": "nixl-d-landing-order"
+}

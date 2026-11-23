@@ -1,0 +1,87 @@
+{
+ "description": "A chunk looked up while its store is in flight is HIT_PENDING; one request loads the same chunk twice; schedule ends with new and preempted requests change nothing on a CPU tier.",
+ "spec": {
+  "name": "CPUOffloadingSpec",
+  "cpu_bytes_to_use": 32768,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "a"
+   ],
+   "preempted": []
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "s1"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "s1"
+  },
+  {
+   "m": "has_pending_work"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [],
+   "preempted": [
+    "a"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "s1"
+   ],
+   "success": true
+  },
+  {
+   "m": "prepare_load",
+   "ctx": "a",
+   "keys": [
+    "s1"
+   ]
+  },
+  {
+   "m": "prepare_load",
+   "ctx": "a",
+   "keys": [
+    "s1"
+   ]
+  },
+  {
+   "m": "complete_load",
+   "ctx": "a",
+   "keys": [
+    "s1"
+   ]
+  },
+  {
+   "m": "complete_load",
+   "ctx": "a",
+   "keys": [
+    "s1"
+   ]
+  },
+  {
+   "m": "take_events"
+  },
+  {
+   "m": "get_stats"
+  }
+ ]
+}

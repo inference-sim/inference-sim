@@ -13,14 +13,14 @@ Describe what's missing or limiting. What can't users or researchers do today?
 **Proposed solution**
 Describe the capability you'd like. Include a CLI example if applicable:
 ```bash
-./blis run --model <model> --new-flag <value>
+./blis run --scenario <file> --scenarios <dir> --new-flag <value>
 ```
 
 **Which components are affected?**
 - [ ] Core simulator (`sim/`)
 - [ ] Cluster simulation (`sim/cluster/`)
 - [ ] Workload generation (`sim/workload/`)
-- [ ] KV cache (an engine repository: blis-vllm `compat/kv`)
+- [ ] KV cache (the vLLM engine: `engines/vllm/core/kv`)
 - [ ] Decision tracing (`sim/trace/`)
 - [ ] CLI (`cmd/`)
 - [ ] New package needed

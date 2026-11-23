@@ -1,0 +1,17 @@
+{
+  "kind": "EngineCodeIDs",
+  "engines": {
+    "sglang": {
+      "version": "0.5.23",
+      "commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+      "host": "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096",
+      "graphs": "e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074"
+    },
+    "vllm": {
+      "version": "0.34.0+0fda86a35419",
+      "commit": "0fda86a35419c9c70dbfada224c838c10fbb62ad",
+      "host": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
+      "graphs": "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776"
+    }
+  }
+}

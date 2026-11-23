@@ -1,0 +1,1954 @@
+{
+ "description": "Tier-1 default-resolution cases: each is a ServerArgs a target scenario hands SGLang, run through SGLang's own resolution on CPU with the chip's CUDA platform restored (oracle/run_serverargs.py). Chip facts are the device's own reports, each with its source; models are configuration only, at a pinned revision. Chips named probe-*GiB are boundary probes: a memory exactly at a threshold of memory_hook.py, not a device; they let a case tell a < from a <=. Cases past the first 25 were added so that every branch an accepted input can reach changes an answer (the mutation sweep, oracle/mutate.py).",
+ "chips": {
+  "H100": {
+   "capability": [
+    9,
+    0
+   ],
+   "device_name": "NVIDIA H100 80GB HBM3",
+   "nvidia_smi_memory_total_mib": 81559,
+   "source": "nvidia-smi memory.total on H100 80GB HBM3, https://thundergolfer.com/blog/nvidia-gpu-memory-capacity; compute capability https://developer.nvidia.com/cuda-gpus"
+  },
+  "H200": {
+   "capability": [
+    9,
+    0
+   ],
+   "device_name": "NVIDIA H200",
+   "nvidia_smi_memory_total_mib": 143771,
+   "source": "nvidia-smi memory.total on H200, https://github.com/NVIDIA/cuda-samples/issues/311; compute capability https://developer.nvidia.com/cuda-gpus"
+  },
+  "B200": {
+   "capability": [
+    10,
+    0
+   ],
+   "device_name": "NVIDIA B200",
+   "nvidia_smi_memory_total_mib": 183359,
+   "source": "nvidia-smi memory.total on B200, https://github.com/NVIDIA/gpu-operator/issues/2155; compute capability https://developer.nvidia.com/cuda-gpus"
+  },
+  "GB200-NVL72": {
+   "capability": [
+    10,
+    0
+   ],
+   "device_name": "NVIDIA GB200",
+   "nvidia_smi_memory_total_mib": 189471,
+   "source": "nvidia-smi memory.total on GB200, as AISimulate's gb200 descriptor records it ('189471MiB reported by nvidia-smi'), https://github.com/ai-dynamo/aisimulate/blob/2f0f4cd8606d580567b253d02f3d699fe36db865/python/aisimulate/src/aisimulate_core/systems/gb200.yaml; compute capability https://developer.nvidia.com/cuda-gpus; no case runs this chip"
+  },
+  "GB300": {
+   "capability": [
+    10,
+    3
+   ],
+   "device_name": "NVIDIA GB300",
+   "nvidia_smi_memory_total_mib": 284208,
+   "source": "nvidia-smi memory.total on GB300, as AISimulate's gb300 descriptor records it ('284208MiB reported by nvidia-smi'), https://github.com/ai-dynamo/aisimulate/blob/2f0f4cd8606d580567b253d02f3d699fe36db865/python/aisimulate/src/aisimulate_core/systems/gb300.yaml; compute capability https://developer.nvidia.com/cuda-gpus; no case runs this chip"
+  },
+  "probe-20GiB": {
+   "capability": [
+    9,
+    0
+   ],
+   "device_name": "boundary probe (not a device)",
+   "nvidia_smi_memory_total_mib": 20480,
+   "source": "a boundary probe, not a device's report: 20 GiB is exactly the threshold of gpu_mem < 20 * 1024 at python/sglang/srt/arg_groups/memory_hook.py:90@297e54fd, so the case tells < from <=; compute capability as the H100's"
+  },
+  "probe-35GiB": {
+   "capability": [
+    9,
+    0
+   ],
+   "device_name": "boundary probe (not a device)",
+   "nvidia_smi_memory_total_mib": 35840,
+   "source": "a boundary probe, not a device's report: 35 GiB is exactly the threshold of gpu_mem < 35 * 1024 at python/sglang/srt/arg_groups/memory_hook.py:101@297e54fd, so the case tells < from <=; compute capability as the H100's"
+  },
+  "probe-60GiB": {
+   "capability": [
+    9,
+    0
+   ],
+   "device_name": "boundary probe (not a device)",
+   "nvidia_smi_memory_total_mib": 61440,
+   "source": "a boundary probe, not a device's report: 60 GiB is exactly the threshold of gpu_mem < 60 * 1024 at python/sglang/srt/arg_groups/memory_hook.py:118@297e54fd, so the case tells < from <=; compute capability as the H100's"
+  },
+  "probe-160GiB": {
+   "capability": [
+    9,
+    0
+   ],
+   "device_name": "boundary probe (not a device)",
+   "nvidia_smi_memory_total_mib": 163840,
+   "source": "a boundary probe, not a device's report: 160 GiB is exactly the threshold of gpu_mem < 160 * 1024 at python/sglang/srt/arg_groups/memory_hook.py:146@297e54fd, so the case tells < from <=; compute capability as the H100's"
+  },
+  "B300": {
+   "capability": [
+    10,
+    3
+   ],
+   "device_name": "NVIDIA B300 SXM6 AC",
+   "nvidia_smi_memory_total_mib": 275040,
+   "source": "nvidia-smi memory.total on an eight-GPU BM.GPU.B300.8 node, 0MiB / 275040MiB for each NVIDIA B300 SXM6 AC, https://github.com/oracle-quickstart/oci-gpu-quickstarts/blob/main/nvidia/B300/README-B300.md; compute capability 10.3 from NVIDIA's device-properties dump for NVIDIA B300 SXM6 AC, https://github.com/NVIDIA/trt-samples-for-hackathon-cn/blob/fe36094390a4c9293e0ed398dbb29ac336853ffa/cookbook/90-Misc/DeviceInfo/output/b300.txt"
+  }
+ },
+ "models": {
+  "qwen2.5-0.5b": {
+   "repo": "Qwen/Qwen2.5-0.5B-Instruct",
+   "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+   "licence": "apache-2.0"
+  },
+  "deepseek-v3": {
+   "repo": "deepseek-ai/DeepSeek-V3",
+   "revision": "e815299b0bcbac849fa540c768ef21845365c9eb",
+   "licence": "deepseek (model card)",
+   "checkpoint_files": true
+  },
+  "glm-5.3": {
+   "repo": "zai-org/GLM-5.3",
+   "revision": "ba32f8c19c8738e2c57c71798c601d477a7bf844",
+   "licence": "model card"
+  },
+  "deepseek-v4.1-flash": {
+   "repo": "deepseek-ai/DeepSeek-V4.1-Flash",
+   "revision": "314113f8a7dadb388215396ba5fbee2c610a04d6",
+   "licence": "mit"
+  },
+  "deepseek-v4-flash": {
+   "repo": "deepseek-ai/DeepSeek-V4-Flash",
+   "revision": "60d8d70770c6776ff598c94bb586a859a38244f1",
+   "licence": "mit"
+  },
+  "qwen3.5-397b-a17b": {
+   "repo": "Qwen/Qwen3.5-397B-A17B",
+   "revision": "8472618112abcbd45acbcdc58436aff4233c23f7",
+   "licence": "apache-2.0"
+  },
+  "qwen3.5-397b-a17b-fp8": {
+   "repo": "Qwen/Qwen3.5-397B-A17B-FP8",
+   "revision": "ea5b4f81096f3901c91dea97f81324302495781d",
+   "licence": "apache-2.0"
+  },
+  "qwen3.5-397b-a17b-nvfp4": {
+   "repo": "nvidia/Qwen3.5-397B-A17B-NVFP4",
+   "revision": "12b28061efd8145b11226e4fab2528ee4f39ef09",
+   "licence": "apache-2.0"
+  },
+  "qwen3.5-397b-a17b-nvfp4-v2": {
+   "repo": "nvidia/Qwen3.5-397B-A17B-NVFP4-V2",
+   "revision": "8f590eae8f10bf55d9a46f79ea0280bde435c9f8",
+   "licence": "apache-2.0"
+  },
+  "deepseek-r1-0528": {
+   "repo": "deepseek-ai/DeepSeek-R1-0528",
+   "revision": "4236a6af538feda4548eca9ab308586007567f52",
+   "licence": "mit",
+   "checkpoint_files": true
+  },
+  "deepseek-r1-0528-nvfp4": {
+   "repo": "nvidia/DeepSeek-R1-0528-NVFP4",
+   "revision": "14d2781f5bbc3578387152af672558efc1d093f5",
+   "licence": "mit",
+   "checkpoint_files": true
+  },
+  "deepseek-r1-0528-nvfp4-v2": {
+   "repo": "nvidia/DeepSeek-R1-0528-NVFP4-v2",
+   "revision": "25a138f28f49022958b9f2d205f9b7de0cdb6e18",
+   "licence": "mit",
+   "checkpoint_files": true
+  },
+  "deepseek-r1-0528-bf16": {
+   "repo": "unsloth/DeepSeek-R1-0528-BF16",
+   "revision": "1277c854b2e3d3a41f8d0a4f76ae5971757fcd2e",
+   "licence": "mit",
+   "checkpoint_files": true
+  },
+  "glm-5": {
+   "repo": "zai-org/GLM-5",
+   "revision": "c183ef8c61faee82855eca1ed9bb3a9a7ce3b0b2",
+   "licence": "mit",
+   "checkpoint_files": true
+  },
+  "glm-5-fp8": {
+   "repo": "zai-org/GLM-5-FP8",
+   "revision": "4f96cc5eec29dcee5d6ded54f7ffe889438f9516",
+   "licence": "mit",
+   "checkpoint_files": true
+  },
+  "glm-5-nvfp4": {
+   "repo": "nvidia/GLM-5-NVFP4",
+   "revision": "dc54ff55a7e9e71b85db953d8bc22eca894b44c6",
+   "licence": "mit",
+   "checkpoint_files": true
+  },
+  "llama-3.1-8b": {
+   "repo": "NousResearch/Meta-Llama-3.1-8B-Instruct",
+   "revision": "d10aef7999a2b5ba950ab3974312feeedbfe0b77",
+   "licence": "llama3.1 community licence",
+   "note": "A public mirror of meta-llama/Llama-3.1-8B-Instruct (a gated repository, which CI cannot read without an account's token). The two files the oracle reads, config.json and generation_config.json, are byte-identical to the gated repository at revision 0e9e39f249a16976918f6564b8830bc894c89659 (sha256 config.json 29e4c210b0d6ac178b16b2a255a568bdb23b581e50ca1ef6a6d071dd85704e6e, generation_config.json 189fb0c0d7fd8a527db217c0a60a0e013f0394cd8800f9697a666a9e75e5f7fd; compared 2026-11-22); tokenizer_config.json differs and the oracle does not read it."
+  },
+  "qwen2.5-7b": {
+   "repo": "Qwen/Qwen2.5-7B-Instruct",
+   "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+   "licence": "apache-2.0"
+  },
+  "qwen3-14b": {
+   "repo": "Qwen/Qwen3-14B",
+   "revision": "40c069824f4251a91eefaf281ebe4c544efd3e18",
+   "licence": "apache-2.0"
+  },
+  "mistral-nemo": {
+   "repo": "mistralai/Mistral-Nemo-Instruct-2407",
+   "revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+   "licence": "apache-2.0"
+  },
+  "yi-34b": {
+   "repo": "01-ai/Yi-34B",
+   "revision": "e1fa7c83283f2e1d5a12cb4adea37c3f829e28f8",
+   "licence": "apache-2.0"
+  }
+ },
+ "cases": [
+  {
+   "name": "qwen-h100-defaults",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {}
+  },
+  {
+   "name": "qwen-h200-defaults",
+   "model": "qwen2.5-0.5b",
+   "chip": "H200",
+   "args": {}
+  },
+  {
+   "name": "qwen-b200-defaults",
+   "model": "qwen2.5-0.5b",
+   "chip": "B200",
+   "args": {}
+  },
+  {
+   "name": "qwen-h100-tp2-explicit",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "tp_size": 2,
+    "chunked_prefill_size": 4096,
+    "max_running_requests": 64,
+    "page_size": 16,
+    "schedule_policy": "lpm"
+   }
+  },
+  {
+   "name": "qwen-h100-no-radix",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "disable_radix_cache": true,
+    "schedule_policy": "lpm"
+   }
+  },
+  {
+   "name": "qwen-h100-hicache",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "enable_hierarchical_cache": true
+   }
+  },
+  {
+   "name": "qwen-h100-hicache-file",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "enable_hierarchical_cache": true,
+    "hicache_storage_backend": "file",
+    "hicache_ratio": 3.0
+   }
+  },
+  {
+   "name": "qwen-h100-pd-prefill-nixl",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "disaggregation_mode": "prefill",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "qwen-h100-pd-decode-nixl",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "qwen-h100-pd-decode-nixl-mrr16",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl",
+    "max_running_requests": 16
+   }
+  },
+  {
+   "name": "qwen-h100-mem-fraction",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "mem_fraction_static": 0.7
+   }
+  },
+  {
+   "name": "glm53-h100-tp8",
+   "model": "glm-5.3",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "glm53-h100-tp8-dp8-attn",
+   "model": "glm-5.3",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 8,
+    "enable_dp_attention": true
+   }
+  },
+  {
+   "name": "glm53-h100-tp8-mtp",
+   "model": "glm-5.3",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8,
+    "speculative_algorithm": "EAGLE",
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 1,
+    "speculative_num_draft_tokens": 4
+   }
+  },
+  {
+   "name": "glm53-h100-tp8-nextn",
+   "model": "glm-5.3",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8,
+    "speculative_algorithm": "NEXTN",
+    "speculative_num_steps": 2,
+    "speculative_eagle_topk": 1,
+    "speculative_num_draft_tokens": 4
+   }
+  },
+  {
+   "name": "glm53-h100-tp8-pd-decode",
+   "model": "glm-5.3",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8,
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "dsv3-h200-tp8",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "dsv3-h200-tp8-deepep",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "ep_size": 8,
+    "moe_a2a_backend": "deepep",
+    "dp_size": 8,
+    "enable_dp_attention": true
+   }
+  },
+  {
+   "name": "dsv3-h200-tp8-deepep-tp-attn",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "moe_a2a_backend": "deepep"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-pd-prefill",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "disaggregation_mode": "prefill",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-pd-decode",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-mtp",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "speculative_algorithm": "EAGLE",
+    "speculative_num_steps": 1,
+    "speculative_eagle_topk": 1,
+    "speculative_num_draft_tokens": 2
+   }
+  },
+  {
+   "name": "dsv41-b200-tp8",
+   "model": "deepseek-v4.1-flash",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-hicache",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "enable_hierarchical_cache": true
+   }
+  },
+  {
+   "name": "dsv41-b200-tp4-deepep-dp4-attn-pd-decode",
+   "model": "deepseek-v4.1-flash",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4,
+    "moe_a2a_backend": "deepep",
+    "dp_size": 4,
+    "enable_dp_attention": true,
+    "ep_size": 4,
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "dsv41-b200-tp4-pd-decode",
+   "model": "deepseek-v4.1-flash",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4,
+    "moe_a2a_backend": "none",
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "dsv3-h200-tp8-mtp-topk2-page16",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "speculative_algorithm": "EAGLE",
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 2,
+    "speculative_num_draft_tokens": 6,
+    "tp_size": 8,
+    "page_size": 16
+   }
+  },
+  {
+   "name": "dsv41-b200-tp8-dp8-attn-chunk-disabled",
+   "model": "deepseek-v4.1-flash",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 8,
+    "enable_dp_attention": true,
+    "chunked_prefill_size": -1
+   }
+  },
+  {
+   "name": "dsv3-h200-tp8-pd-decode-mrr0-draft8001",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "max_running_requests": 0,
+    "speculative_algorithm": "EAGLE",
+    "speculative_num_steps": 8000,
+    "speculative_eagle_topk": 1,
+    "speculative_num_draft_tokens": 8001,
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "glm53-probe60-pd-decode-mrr16",
+   "model": "glm-5.3",
+   "chip": "probe-60GiB",
+   "args": {
+    "max_running_requests": 16,
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp4-dp2-attn-chunk-minus4",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 4,
+    "dp_size": 2,
+    "enable_dp_attention": true,
+    "chunked_prefill_size": -4
+   }
+  },
+  {
+   "name": "glm53-h100-tp8-dp8-attn-mtp-topk2-pd-decode",
+   "model": "glm-5.3",
+   "chip": "H100",
+   "args": {
+    "speculative_algorithm": "EAGLE",
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 2,
+    "speculative_num_draft_tokens": 6,
+    "tp_size": 8,
+    "dp_size": 8,
+    "enable_dp_attention": true,
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "qwen-h100-tp8-dp8-attn-pd-decode-mrr300",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 8,
+    "enable_dp_attention": true,
+    "max_running_requests": 300,
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "dsv41-b200-tp8-dp8-attn-mtp-topk2",
+   "model": "deepseek-v4.1-flash",
+   "chip": "B200",
+   "args": {
+    "speculative_algorithm": "EAGLE",
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 2,
+    "speculative_num_draft_tokens": 6,
+    "tp_size": 8,
+    "dp_size": 8,
+    "enable_dp_attention": true
+   }
+  },
+  {
+   "name": "glm53-probe20-tp8-dp8-attn",
+   "model": "glm-5.3",
+   "chip": "probe-20GiB",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 8,
+    "enable_dp_attention": true
+   }
+  },
+  {
+   "name": "qwen-probe35-defaults",
+   "model": "qwen2.5-0.5b",
+   "chip": "probe-35GiB",
+   "args": {}
+  },
+  {
+   "name": "glm53-h100-tp4-deepep-dp4-attn",
+   "model": "glm-5.3",
+   "chip": "H100",
+   "args": {
+    "tp_size": 4,
+    "moe_a2a_backend": "deepep",
+    "dp_size": 4,
+    "enable_dp_attention": true,
+    "ep_size": 4
+   }
+  },
+  {
+   "name": "qwen-probe160-tp8-deepep",
+   "model": "qwen2.5-0.5b",
+   "chip": "probe-160GiB",
+   "args": {
+    "tp_size": 8,
+    "moe_a2a_backend": "deepep",
+    "ep_size": 8
+   }
+  },
+  {
+   "name": "qwen-h100-tp2-dp2",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "dp_size": 2,
+    "tp_size": 2
+   }
+  },
+  {
+   "name": "glm53-h100-tp8-dp8-attn-mtp-pd-decode",
+   "model": "glm-5.3",
+   "chip": "H100",
+   "args": {
+    "speculative_algorithm": "EAGLE",
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 1,
+    "speculative_num_draft_tokens": 5,
+    "tp_size": 8,
+    "dp_size": 8,
+    "enable_dp_attention": true,
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "qwen-h100-pd-decode-mrr32",
+   "model": "qwen2.5-0.5b",
+   "chip": "H100",
+   "args": {
+    "max_running_requests": 32,
+    "disaggregation_mode": "decode",
+    "disaggregation_transfer_backend": "nixl"
+   }
+  },
+  {
+   "name": "qwen-b200-page256",
+   "model": "qwen2.5-0.5b",
+   "chip": "B200",
+   "args": {
+    "page_size": 256
+   }
+  },
+  {
+   "name": "dsv41-b200-tp8-nextn-page16",
+   "model": "deepseek-v4.1-flash",
+   "chip": "B200",
+   "args": {
+    "speculative_algorithm": "NEXTN",
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 1,
+    "speculative_num_draft_tokens": 5,
+    "tp_size": 8,
+    "page_size": 16
+   }
+  },
+  {
+   "name": "dsv4flash-b200-tp8",
+   "model": "deepseek-v4-flash",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-chunk0",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "chunked_prefill_size": 0
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-recipe-1k",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-recipe-8k",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 256,
+    "cuda_graph_max_bs_decode": 256,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-recipe",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888
+   }
+  },
+  {
+   "name": "dsv3-h200-tp8-fa3-explicit",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "attention_backend": "fa3"
+   }
+  },
+  {
+   "name": "dsv3-h200-tp1-fusion-flag",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 1,
+    "enable_flashinfer_allreduce_fusion": true
+   }
+  },
+  {
+   "name": "dsv3-h200-tp8-deprecated-tool-parser",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "qwen25"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-deprecated-glm-parser",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm45"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-flashinfer-attn",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "attention_backend": "flashinfer"
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-context-length",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "context_length": 163840
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-context-length",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "context_length": 202752
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-context-length-short",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "context_length": 32768
+   }
+  },
+  {
+   "name": "dsv3-h200-tp8-pp1",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "pp_size": 1
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-tokenizer-workers",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "tokenizer_worker_num": 8
+   }
+  },
+  {
+   "name": "dsv3-h200-tp8-mtp-topk2-page1",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "speculative_algorithm": "EAGLE",
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 2,
+    "speculative_num_draft_tokens": 6,
+    "tp_size": 8,
+    "page_size": 1
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-custom-loader-empty",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "custom_weight_loader": []
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-kv-fp8",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-kv-fp8",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-quant-fp8",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "quantization": "fp8"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-kv-bf16",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "kv_cache_dtype": "bf16"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-kv-bfloat16",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "kv_cache_dtype": "bfloat16"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-kv-fp8-e5m2",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "kv_cache_dtype": "fp8_e5m2"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-kv-bfloat16",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "kv_cache_dtype": "bfloat16"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-kv-fp8",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "dsv41-h200-tp8-kv-fp8-e5m2",
+   "model": "deepseek-v4.1-flash",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "kv_cache_dtype": "fp8_e5m2"
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-tokenizer-path",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "tokenizer_path": "/models/deepseek-r1/tokenizer"
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-loader-extra-config",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "model_loader_extra_config": "{\"enable_multithread_load\": true, \"num_threads\": 8}"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-dsa-flashmla-sparse",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "dsa_prefill_backend": "flashmla_sparse",
+    "dsa_decode_backend": "flashmla_sparse"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-dsa-fa3-trtllm",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888,
+    "dsa_prefill_backend": "fa3",
+    "dsa_decode_backend": "trtllm"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-nsa-alias",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "attention_backend": "nsa"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-dsa-explicit",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "attention_backend": "dsa"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-nsa-recipe",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "attention_backend": "nsa",
+    "chunked_prefill_size": 8192,
+    "mem_fraction_static": 0.85,
+    "enable_flashinfer_allreduce_fusion": true,
+    "context_length": 202752,
+    "trust_remote_code": true,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h100-tp4",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H100",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-bf16-h100-tp8",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp4",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-bf16-b200-tp4",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-bf16-b200-tp8",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-fp8-h100-tp4",
+   "model": "qwen3.5-397b-a17b-fp8",
+   "chip": "H100",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-fp8-h100-tp8",
+   "model": "qwen3.5-397b-a17b-fp8",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-fp8-h200-tp4",
+   "model": "qwen3.5-397b-a17b-fp8",
+   "chip": "H200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-fp8-h200-tp8",
+   "model": "qwen3.5-397b-a17b-fp8",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-fp8-b200-tp4",
+   "model": "qwen3.5-397b-a17b-fp8",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-fp8-b200-tp8",
+   "model": "qwen3.5-397b-a17b-fp8",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-nvfp4-h100-tp4",
+   "model": "qwen3.5-397b-a17b-nvfp4",
+   "chip": "H100",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-nvfp4-h100-tp8",
+   "model": "qwen3.5-397b-a17b-nvfp4",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-nvfp4-h200-tp4",
+   "model": "qwen3.5-397b-a17b-nvfp4",
+   "chip": "H200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-nvfp4-h200-tp8",
+   "model": "qwen3.5-397b-a17b-nvfp4",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-nvfp4-b200-tp4",
+   "model": "qwen3.5-397b-a17b-nvfp4",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-nvfp4-b200-tp8",
+   "model": "qwen3.5-397b-a17b-nvfp4",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-nvfp4v2-h100-tp4",
+   "model": "qwen3.5-397b-a17b-nvfp4-v2",
+   "chip": "H100",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-nvfp4v2-h100-tp8",
+   "model": "qwen3.5-397b-a17b-nvfp4-v2",
+   "chip": "H100",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-nvfp4v2-h200-tp4",
+   "model": "qwen3.5-397b-a17b-nvfp4-v2",
+   "chip": "H200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-nvfp4v2-h200-tp8",
+   "model": "qwen3.5-397b-a17b-nvfp4-v2",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-nvfp4v2-b200-tp4",
+   "model": "qwen3.5-397b-a17b-nvfp4-v2",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "qwen35-nvfp4v2-b200-tp8",
+   "model": "qwen3.5-397b-a17b-nvfp4-v2",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "qwen35-bf16-b200-tp8-noradix",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "disable_radix_cache": true
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-no-buffer",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mamba_radix_cache_strategy": "no_buffer"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-extra-buffer-lazy",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mamba_radix_cache_strategy": "extra_buffer_lazy"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-ssm-float32",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mamba_ssm_dtype": "float32"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-ssm-bfloat16",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mamba_ssm_dtype": "bfloat16"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-ssm-float16",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mamba_ssm_dtype": "float16"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-mm-sdpa",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mm_attention_backend": "sdpa"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-mm-fa3",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mm_attention_backend": "fa3"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-mm-flashinfer_cudnn",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mm_attention_backend": "flashinfer_cudnn"
+   }
+  },
+  {
+   "name": "qwen35-bf16-b200-tp8-mm-fa3",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "mm_attention_backend": "fa3"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-mem-fraction",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "mem_fraction_static": 0.85,
+    "max_running_requests": 64
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-page16",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "page_size": 16
+   }
+  },
+  {
+   "name": "qwen35-bf16-b200-tp8-page64",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "page_size": 64
+   }
+  },
+  {
+   "name": "qwen35-bf16-b200-tp8-attention-fa3",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "attention_backend": "fa3"
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-dp-attention",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 8,
+    "enable_dp_attention": true
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-ep8",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "ep_size": 8
+   }
+  },
+  {
+   "name": "qwen35-fp8-b200-tp8-ep8",
+   "model": "qwen3.5-397b-a17b-fp8",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "ep_size": 8
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp1",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 1
+   }
+  },
+  {
+   "name": "qwen35-bf16-h200-tp8-context-length",
+   "model": "qwen3.5-397b-a17b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "context_length": 262144,
+    "chunked_prefill_size": 16384
+   }
+  },
+  {
+   "name": "dsr1-fp8-b200-tp4",
+   "model": "deepseek-r1-0528",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "dsr1-fp8-b200-tp8",
+   "model": "deepseek-r1-0528",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "dsr1-fp8-b300-tp4",
+   "model": "deepseek-r1-0528",
+   "chip": "B300",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "dsr1-fp8-b300-tp8",
+   "model": "deepseek-r1-0528",
+   "chip": "B300",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "dsr1-nvfp4-b200-tp4",
+   "model": "deepseek-r1-0528-nvfp4",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "dsr1-nvfp4-b200-tp8",
+   "model": "deepseek-r1-0528-nvfp4",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "dsr1-nvfp4-b300-tp4",
+   "model": "deepseek-r1-0528-nvfp4",
+   "chip": "B300",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "dsr1-nvfp4-b300-tp8",
+   "model": "deepseek-r1-0528-nvfp4",
+   "chip": "B300",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "dsr1-nvfp4v2-b200-tp4",
+   "model": "deepseek-r1-0528-nvfp4-v2",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "dsr1-nvfp4v2-b200-tp8",
+   "model": "deepseek-r1-0528-nvfp4-v2",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "dsr1-nvfp4v2-b300-tp4",
+   "model": "deepseek-r1-0528-nvfp4-v2",
+   "chip": "B300",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "dsr1-nvfp4v2-b300-tp8",
+   "model": "deepseek-r1-0528-nvfp4-v2",
+   "chip": "B300",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "dsr1-bf16-b200-tp4",
+   "model": "deepseek-r1-0528-bf16",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "dsr1-bf16-b200-tp8",
+   "model": "deepseek-r1-0528-bf16",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "dsr1-bf16-b300-tp4",
+   "model": "deepseek-r1-0528-bf16",
+   "chip": "B300",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "dsr1-bf16-b300-tp8",
+   "model": "deepseek-r1-0528-bf16",
+   "chip": "B300",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "glm5-bf16-b200-tp4",
+   "model": "glm-5",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "glm5-bf16-b200-tp8",
+   "model": "glm-5",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "glm5-bf16-b300-tp4",
+   "model": "glm-5",
+   "chip": "B300",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "glm5-bf16-b300-tp8",
+   "model": "glm-5",
+   "chip": "B300",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "glm5-fp8-b200-tp4",
+   "model": "glm-5-fp8",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "glm5-fp8-b200-tp8",
+   "model": "glm-5-fp8",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "glm5-fp8-b300-tp4",
+   "model": "glm-5-fp8",
+   "chip": "B300",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "glm5-fp8-b300-tp8",
+   "model": "glm-5-fp8",
+   "chip": "B300",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "glm5-nvfp4-b200-tp4",
+   "model": "glm-5-nvfp4",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "glm5-nvfp4-b200-tp8",
+   "model": "glm-5-nvfp4",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "glm5-nvfp4-b300-tp4",
+   "model": "glm-5-nvfp4",
+   "chip": "B300",
+   "args": {
+    "tp_size": 4
+   }
+  },
+  {
+   "name": "glm5-nvfp4-b300-tp8",
+   "model": "glm-5-nvfp4",
+   "chip": "B300",
+   "args": {
+    "tp_size": 8
+   }
+  },
+  {
+   "name": "dsr1-fp8-b200-tp8-deepep-dp8-attn",
+   "model": "deepseek-r1-0528",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "ep_size": 8,
+    "moe_a2a_backend": "deepep",
+    "dp_size": 8,
+    "enable_dp_attention": true
+   }
+  },
+  {
+   "name": "dsr1-fp8-b300-tp8-dp8-attn",
+   "model": "deepseek-r1-0528",
+   "chip": "B300",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 8,
+    "enable_dp_attention": true
+   }
+  },
+  {
+   "name": "dsr1-fp8-b200-tp8-mem-fraction",
+   "model": "deepseek-r1-0528",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "mem_fraction_static": 0.85
+   }
+  },
+  {
+   "name": "glm5-fp8-b200-tp8-deepep-dp8-attn",
+   "model": "glm-5-fp8",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "ep_size": 8,
+    "moe_a2a_backend": "deepep",
+    "dp_size": 8,
+    "enable_dp_attention": true
+   }
+  },
+  {
+   "name": "glm5-fp8-b300-tp8-dp8-attn",
+   "model": "glm-5-fp8",
+   "chip": "B300",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 8,
+    "enable_dp_attention": true
+   }
+  },
+  {
+   "name": "glm5-fp8-b200-tp8-mem-fraction",
+   "model": "glm-5-fp8",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "mem_fraction_static": 0.85
+   }
+  },
+  {
+   "name": "dsr1-fp8-b200-tp8-no-radix-recipe",
+   "model": "deepseek-r1-0528",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.85
+   }
+  },
+  {
+   "name": "dsr1-nvfp4-b200-tp4-mtp",
+   "model": "deepseek-r1-0528-nvfp4",
+   "chip": "B200",
+   "args": {
+    "tp_size": 4,
+    "speculative_algorithm": "EAGLE",
+    "speculative_num_steps": 3,
+    "speculative_eagle_topk": 1,
+    "speculative_num_draft_tokens": 4
+   }
+  },
+  {
+   "name": "glm5-nvfp4-b200-tp8-modelopt-fp4",
+   "model": "glm-5-nvfp4",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "quantization": "modelopt_fp4",
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "glm5-nvfp4-b300-tp8-modelopt-fp4",
+   "model": "glm-5-nvfp4",
+   "chip": "B300",
+   "args": {
+    "tp_size": 8,
+    "quantization": "modelopt_fp4",
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "dsr1-nvfp4v2-b200-tp8-modelopt-fp4",
+   "model": "deepseek-r1-0528-nvfp4-v2",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "quantization": "modelopt_fp4",
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "dsr1-nvfp4v2-b300-tp8-modelopt-fp4",
+   "model": "deepseek-r1-0528-nvfp4-v2",
+   "chip": "B300",
+   "args": {
+    "tp_size": 8,
+    "quantization": "modelopt_fp4",
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "dsr1-fp8-b200-tp8-modelopt-fp4",
+   "model": "deepseek-r1-0528",
+   "chip": "B200",
+   "args": {
+    "tp_size": 8,
+    "quantization": "modelopt_fp4",
+    "kv_cache_dtype": "fp8_e4m3"
+   }
+  },
+  {
+   "name": "llama31-8b-h100-defaults",
+   "model": "llama-3.1-8b",
+   "chip": "H100",
+   "args": {}
+  },
+  {
+   "name": "llama31-8b-h200-tp2-explicit",
+   "model": "llama-3.1-8b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 2,
+    "max_running_requests": 64,
+    "chunked_prefill_size": 4096
+   }
+  },
+  {
+   "name": "llama31-8b-b200-defaults",
+   "model": "llama-3.1-8b",
+   "chip": "B200",
+   "args": {}
+  },
+  {
+   "name": "qwen25-7b-h100-defaults",
+   "model": "qwen2.5-7b",
+   "chip": "H100",
+   "args": {}
+  },
+  {
+   "name": "qwen25-7b-h200-tp2-explicit",
+   "model": "qwen2.5-7b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 2,
+    "max_running_requests": 64,
+    "chunked_prefill_size": 4096
+   }
+  },
+  {
+   "name": "qwen25-7b-b200-defaults",
+   "model": "qwen2.5-7b",
+   "chip": "B200",
+   "args": {}
+  },
+  {
+   "name": "qwen3-14b-h100-defaults",
+   "model": "qwen3-14b",
+   "chip": "H100",
+   "args": {}
+  },
+  {
+   "name": "qwen3-14b-h200-tp2-explicit",
+   "model": "qwen3-14b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 2,
+    "max_running_requests": 64,
+    "chunked_prefill_size": 4096
+   }
+  },
+  {
+   "name": "qwen3-14b-b200-defaults",
+   "model": "qwen3-14b",
+   "chip": "B200",
+   "args": {}
+  },
+  {
+   "name": "nemo-h100-defaults",
+   "model": "mistral-nemo",
+   "chip": "H100",
+   "args": {}
+  },
+  {
+   "name": "nemo-h200-tp2-explicit",
+   "model": "mistral-nemo",
+   "chip": "H200",
+   "args": {
+    "tp_size": 2,
+    "max_running_requests": 64,
+    "chunked_prefill_size": 4096
+   }
+  },
+  {
+   "name": "nemo-b200-defaults",
+   "model": "mistral-nemo",
+   "chip": "B200",
+   "args": {}
+  },
+  {
+   "name": "yi34b-h100-defaults",
+   "model": "yi-34b",
+   "chip": "H100",
+   "args": {}
+  },
+  {
+   "name": "yi34b-h200-tp2-explicit",
+   "model": "yi-34b",
+   "chip": "H200",
+   "args": {
+    "tp_size": 2,
+    "max_running_requests": 64,
+    "chunked_prefill_size": 4096
+   }
+  },
+  {
+   "name": "yi34b-b200-defaults",
+   "model": "yi-34b",
+   "chip": "B200",
+   "args": {}
+  }
+ ]
+}

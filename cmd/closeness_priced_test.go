@@ -7,14 +7,14 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	specmodel "github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/contracts/units"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	vllmrules "github.com/inference-sim/blis-vllm/rules"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	vllmrules "github.com/inference-sim/inference-sim/engines/vllm/core/rulepack"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	specmodel "github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 )
 
 // The engine reports which implementation each lowered operation runs (plan.Operation.Impl); the
@@ -245,11 +245,11 @@ func TestResult_AnFP16CacheDoesNotPriceTheBF16Lane(t *testing.T) {
 	var wideRead bool
 	for n, e := range fp {
 		if strings.HasPrefix(n, "attention_prefill_") && !slices.Contains(laneNames, n) && !strings.Contains(n, "trtllm_gen") &&
-			slices.Equal(implList(e["priced"]), keysOf(laneBF)) {
+			e["primitive"] == "attention.prefill" && e["kernel_match"] == "unkeyed" && len(implList(e["priced"])) == 0 {
 			wideRead = true
 		}
 	}
 	if !wideRead {
-		t.Errorf("an fp16 cache: no part-wide prefill entry reports the kernel the prefill runs as priced; got %v", fp)
+		t.Errorf("an fp16 cache: no part-wide prefill entry is selected (unkeyed, so it names no priced build); got %v", fp)
 	}
 }

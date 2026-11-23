@@ -1,0 +1,1057 @@
+[
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 1,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend+multicast",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend+multicast",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 2,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 4,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 1,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend+multicast",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend+multicast",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 2,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 4,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 1,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend+multicast",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend+multicast",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 2,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 4,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 1,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend+multicast",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend+multicast",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 2,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 4,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "UCX_RCACHE_MAX_UNRELEASED",
+  "value": "1024",
+  "owner": "_maybe_set_ucx_rcache_limit",
+  "exact": true
+ },
+ {
+  "field": "UCX_RCACHE_MAX_UNRELEASED",
+  "value": "0",
+  "owner": "_maybe_set_ucx_rcache_limit",
+  "exact": false
+ },
+ {
+  "field": "UCX_RCACHE_MAX_UNRELEASED",
+  "value": "inf",
+  "owner": "_maybe_set_ucx_rcache_limit",
+  "exact": false
+ },
+ {
+  "field": "UCX_RCACHE_MAX_UNRELEASED",
+  "value": "2048",
+  "owner": "_maybe_set_ucx_rcache_limit",
+  "exact": false
+ },
+ {
+  "field": "UCX_TLS",
+  "value": "cuda_copy,rc",
+  "owner": "ucx-faq",
+  "exact": true
+ },
+ {
+  "field": "UCX_TLS",
+  "value": "cuda_copy,cuda_ipc,rc",
+  "owner": "ucx-faq",
+  "exact": true
+ },
+ {
+  "field": "UCX_TLS",
+  "value": "all",
+  "owner": "ucx-faq",
+  "exact": true
+ },
+ {
+  "field": "UCX_TLS",
+  "value": "cuda_copy,cuda_ipc,tcp",
+  "owner": "ucx-faq",
+  "exact": false
+ },
+ {
+  "field": "UCX_TLS",
+  "value": "tcp",
+  "owner": "ucx-faq",
+  "exact": false
+ },
+ {
+  "field": "UCX_TLS",
+  "value": "^rc",
+  "owner": "ucx-faq",
+  "exact": false
+ },
+ {
+  "field": "UCX_TLS",
+  "value": "sm,self",
+  "owner": "ucx-faq",
+  "exact": false
+ },
+ {
+  "field": "NCCL_CUMEM_ENABLE",
+  "value": "1",
+  "owner": "nccl-user-guide",
+  "exact": true
+ },
+ {
+  "field": "NCCL_CUMEM_ENABLE",
+  "value": "0",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_CUMEM_ENABLE",
+  "value": "",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_CUMEM_ENABLE",
+  "value": "2",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_NVLS_ENABLE",
+  "value": "1",
+  "owner": "nccl-user-guide",
+  "exact": true
+ },
+ {
+  "field": "NCCL_NVLS_ENABLE",
+  "value": "2",
+  "owner": "nccl-user-guide",
+  "exact": true
+ },
+ {
+  "field": "NCCL_NVLS_ENABLE",
+  "value": "0",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_NVLS_ENABLE",
+  "value": "",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "1",
+  "owner": "nccl-init-cc-1377",
+  "exact": false,
+  "tp_group_nodes": 1
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "1",
+  "owner": "nccl-init-cc-1377",
+  "exact": true,
+  "tp_group_nodes": 2
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "1",
+  "owner": "nccl-init-cc-1377",
+  "exact": true,
+  "tp_group_nodes": 4
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "1",
+  "owner": "nccl-init-cc-1377",
+  "exact": false
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "2",
+  "owner": "nccl-init-cc-1377",
+  "exact": true,
+  "tp_group_nodes": 1
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "2",
+  "owner": "nccl-init-cc-1377",
+  "exact": true,
+  "tp_group_nodes": 2
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "2",
+  "owner": "nccl-init-cc-1377",
+  "exact": true
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "0",
+  "owner": "nccl-init-cc-1377",
+  "exact": false,
+  "tp_group_nodes": 1
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "0",
+  "owner": "nccl-init-cc-1377",
+  "exact": false,
+  "tp_group_nodes": 2
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "",
+  "owner": "nccl-init-cc-1377",
+  "exact": false,
+  "tp_group_nodes": 2
+ },
+ {
+  "field": "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
+  "value": "true",
+  "compute_capability": "10.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": true
+ },
+ {
+  "field": "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
+  "value": "false",
+  "compute_capability": "10.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": false
+ },
+ {
+  "field": "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
+  "value": "1",
+  "compute_capability": "10.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": true
+ },
+ {
+  "field": "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
+  "value": "1",
+  "compute_capability": "10.3",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": true
+ },
+ {
+  "field": "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
+  "value": "1",
+  "compute_capability": "9.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": false
+ },
+ {
+  "field": "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
+  "value": "1",
+  "compute_capability": "12.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": false
+ },
+ {
+  "field": "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
+  "value": "0",
+  "compute_capability": "10.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": false
+ },
+ {
+  "field": "VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8",
+  "value": "",
+  "compute_capability": "10.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": false
+ },
+ {
+  "field": "VLLM_MXFP4_USE_MARLIN",
+  "value": "true",
+  "compute_capability": "9.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": true
+ },
+ {
+  "field": "VLLM_MXFP4_USE_MARLIN",
+  "value": "false",
+  "compute_capability": "9.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": false
+ },
+ {
+  "field": "VLLM_MXFP4_USE_MARLIN",
+  "value": "1",
+  "compute_capability": "9.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": true
+ },
+ {
+  "field": "VLLM_MXFP4_USE_MARLIN",
+  "value": "1",
+  "compute_capability": "7.5",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": true
+ },
+ {
+  "field": "VLLM_MXFP4_USE_MARLIN",
+  "value": "1",
+  "compute_capability": "10.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": true
+ },
+ {
+  "field": "VLLM_MXFP4_USE_MARLIN",
+  "value": "1",
+  "compute_capability": "7.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": false
+ },
+ {
+  "field": "VLLM_MXFP4_USE_MARLIN",
+  "value": "0",
+  "compute_capability": "9.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": false
+ },
+ {
+  "field": "VLLM_MXFP4_USE_MARLIN",
+  "value": "",
+  "compute_capability": "9.0",
+  "owner": "mxfp4-oracle-v0.33.0",
+  "exact": false
+ },
+ {
+  "field": "DYN_REQUEST_PLANE_CODEC",
+  "value": "msgpack",
+  "owner": "dynamo-request-plane-codec",
+  "exact": true
+ },
+ {
+  "field": "DYN_REQUEST_PLANE_CODEC",
+  "value": "json",
+  "owner": "dynamo-request-plane-codec",
+  "exact": false
+ },
+ {
+  "field": "DYN_REQUEST_PLANE_CODEC",
+  "value": "",
+  "owner": "dynamo-request-plane-codec",
+  "exact": false
+ },
+ {
+  "field": "NCCL_P2P_LEVEL",
+  "value": "NVL",
+  "compute_capability": "10.0",
+  "owner": "nccl-paths-p2p-level",
+  "exact": true
+ },
+ {
+  "field": "NCCL_P2P_LEVEL",
+  "value": "NVL",
+  "compute_capability": "10.3",
+  "owner": "nccl-paths-p2p-level",
+  "exact": true
+ },
+ {
+  "field": "NCCL_P2P_LEVEL",
+  "value": "NVL",
+  "compute_capability": "9.0",
+  "owner": "nccl-paths-p2p-level",
+  "exact": false
+ },
+ {
+  "field": "NCCL_P2P_LEVEL",
+  "value": "NVL",
+  "compute_capability": "12.0",
+  "owner": "nccl-paths-p2p-level",
+  "exact": false
+ },
+ {
+  "field": "NCCL_P2P_LEVEL",
+  "value": "PXB",
+  "compute_capability": "10.0",
+  "owner": "nccl-paths-p2p-level",
+  "exact": false
+ },
+ {
+  "field": "NCCL_P2P_LEVEL",
+  "value": "SYS",
+  "compute_capability": "10.0",
+  "owner": "nccl-paths-p2p-level",
+  "exact": false
+ },
+ {
+  "field": "NCCL_P2P_LEVEL",
+  "value": "",
+  "compute_capability": "10.0",
+  "owner": "nccl-paths-p2p-level",
+  "exact": false
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "10.0",
+  "compute_capability": "10.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": true
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "10.0",
+  "compute_capability": "10.3",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "10.0",
+  "compute_capability": "9.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "9.0",
+  "compute_capability": "10.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "",
+  "compute_capability": "10.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "9.0",
+  "compute_capability": "9.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": true
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "9.0",
+  "compute_capability": "8.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "9.0",
+  "compute_capability": "12.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "8.0",
+  "compute_capability": "9.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
+  "field": "TORCH_CUDA_ARCH_LIST",
+  "value": "",
+  "compute_capability": "9.0",
+  "owner": "torch-cpp-extension-arch-flags",
+  "exact": false
+ },
+ {
+  "field": "NCCL_WATCHDOG_TIMEOUT",
+  "value": "1800",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "NCCL_WATCHDOG_TIMEOUT",
+  "value": "60",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC",
+  "value": "1800",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC",
+  "value": "60",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "UCX_MAX_RMA_RAILS",
+  "value": "1",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "UCX_MAX_RMA_RAILS",
+  "value": "4",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "UCX_MAX_RNDV_RAILS",
+  "value": "1",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "UCX_MAX_RNDV_RAILS",
+  "value": "4",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "UCX_RNDV_SCHEME",
+  "value": "put_zcopy",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "UCX_RNDV_SCHEME",
+  "value": "get_zcopy",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "UCX_MEMTYPE_CACHE",
+  "value": "n",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "UCX_MEMTYPE_CACHE",
+  "value": "y",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "UCX_MEMTYPE_REG_WHOLE",
+  "value": "n",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "UCX_MEMTYPE_REG_WHOLE",
+  "value": "y",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "TILELANG_CLEANUP_TEMP_FILES",
+  "value": "1",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "TILELANG_CLEANUP_TEMP_FILES",
+  "value": "0",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "VLLM_SERVER_DEV_MODE",
+  "value": "1",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "VLLM_SERVER_DEV_MODE",
+  "value": "0",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "VLLM_LOG_STATS_INTERVAL",
+  "value": "1",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "VLLM_LOG_STATS_INTERVAL",
+  "value": "0",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "GLOO_SOCKET_IFNAME",
+  "value": "eth0",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "GLOO_SOCKET_IFNAME",
+  "value": "ib0",
+  "owner": "cited-source",
+  "exact": false
+ },
+ {
+  "field": "NCCL_SOCKET_IFNAME",
+  "value": "eth0",
+  "owner": "cited-source",
+  "exact": true
+ },
+ {
+  "field": "NCCL_SOCKET_IFNAME",
+  "value": "ib0",
+  "owner": "cited-source",
+  "exact": false
+ }
+]

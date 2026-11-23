@@ -1,0 +1,382 @@
+# Agent instructions for substrate
+
+These rules apply to every change under `substrate/`, by a person or an agent. The rules for the whole repository are in the root `CLAUDE.md`. They are written
+here so that an agent reads them first. The rules come from the BLIS target design; each names
+its invariant identifier.
+
+## What belongs here
+
+The substrate holds what is true whatever engine runs (design §2.2). Before adding a fact, ask
+whether a second engine would need the same edit. If it would not, the change belongs under
+`engines/`.
+
+- Outside tests, no engine name, engine version or engine policy (X2).
+- The cost model resolves nothing: every default, backend choice, padding and capture decision
+  arrives in the plan or the step shape (SUB-6).
+- The catalog holds declared facts, each with a citation. A fitted or assumed value is a
+  coefficient, and belongs in the coefficient registry (SUB-3, SUB-18).
+- Every coefficient is written by its family's writer script, never by hand (SUB-4).
+- Packages under `contracts/` import only the Go standard library, the YAML parser and each
+  other, and change only compatibly (SUB-1).
+- One Go module: no `go.mod` below the root (SUB-13).
+
+## Before a pull request
+
+Run the checks for every directory the change touches, from `substrate/`:
+
+```sh
+gofmt -l . && go vet ./... && go test ./...
+go run ./validate/cmd/validate-catalog catalog
+go run ./validate/cmd/validate-registry registry
+(cd catalog && python3 scripts/derive_graph.py --check && python3 -m pytest tests -q)
+(cd registry && python3 -m pytest validator -q)
+go run ./tools/invariants render -check
+go run ./tools/prcheck workflows
+go run ./tools/prcheck versions
+go run ./tools/prcheck docrefs
+```
+
+- Every behaviour change has a test that fails without it (X13).
+- A new or changed data field ships with its validator, a failing example for each way it can
+  be wrong, and regenerated JSON Schemas: `go run ./tools/schemagen` (SUB-2).
+- Never commit third-party data; a derived value cites its source by URL and commit or hash
+  (X12). Never write a private name in a file, commit or pull request (X12).
+
+## A change here must also update
+
+- The README and the doc comments that describe what the change removes, renames or alters. A path,
+  symbol, issue reference or supported-feature statement in a page is checked (X26).
+- The generated copies, with `go run ./tools/invariants render`, when an invariant registry record
+  changes; and the record itself, when a check is added or a status moves (design §13.1).
+- The JSON Schemas, with `go run ./tools/schemagen`, when a schema or data field changes.
+- The registry's engine CodeIDs, with `substrate/tools/codepaths/export_code_ids.py` (its docstring gives
+  the command), when an engine's `code_paths.json` changes. The tables are regenerated from the
+  engine's pinned release by `substrate/tools/codepaths/regen.py`. The substrate names no path of an
+  engine module (X7).
+- The registry's copy of each engine's kernel-implementation table, with
+  `substrate/tools/kernelimpls/export_kernel_impls.py` (its docstring gives the command), when an engine's
+  `kernel_impls.json` changes.
+- The issue the change closes, named on a `Closes` line; an issue cited as a gap stays open until
+  the change that removes its last citation (X28).
+
+## Agents may not
+
+Edit a generated file by hand; weaken, skip or delete a check; change a success criterion after
+reading held-out data, or the ledger's cut-points or partition version; approve a pull request
+they wrote or pushed to; cut a release; review a change they wrote themselves (design §13.7). An
+agent may act as the review agent: it answers each review question below in a review comment,
+with the files and lines that support the answer, and its approving review counts toward branch
+protection. After each fix an author agent replies on the review thread with the outcome and the
+commit and resolves the thread (X24); no check waits for a person to do either.
+
+## Reruns
+
+CI reruns a failed run automatically in one case only: the hosted runner was shut down ("The
+runner has received a shutdown signal"), on the first attempt, for every failed job
+(the `rerun` subcommand of `substrate/tools/prcheck`). It is announced in the job summary and a
+comment. Any other red is a defect or a gate: read the log, fix it, and do not rerun it hoping
+it passes. A flaky test is reported, not quarantined or retried.
+
+## Where to look next
+
+The design is the target this repository implements; each rule above names its invariant
+identifier, which the invariant registry (`contracts/invariants`) defines. The design is at
+<https://inference-sim.github.io/blis-design/>.
+
+<!-- BEGIN GENERATED: invariants (go run ./tools/invariants render; do not edit) -->
+## Invariants checked in blis-substrate
+
+Generated from the invariant registry, `blis-substrate/contracts/invariants`, at the
+substrate version this repository pins (design §13.1). Each line is an invariant this
+repository runs a check for: its identifier, the first sentence of its statement, its
+status, and each of its checks here. `ci` means the check runs in CI; `new` means it does not
+yet, and the target milestone says when it must. A pull request cites the identifiers it
+keeps or introduces; CI refuses an identifier that does not exist (X14).
+
+- **X1** (partial; target ci by M3) What a user would hand llm-d, vLLM or SGLang is what they hand BLIS, in the upstream's own field names, types, defaults and errors.
+  - `new`, pull_request: Every scenario key outside the engine and router blocks is on a fixed list of environment facts
+- **X2** (new; target ci by M4) Outside its tests, blis-substrate contains no engine name, no engine version and no engine's policy.
+  - `new`, pull_request: No engine identifier in non-test Go identifiers, string literals or registry keys: engine names, engine version strings, upstream source-path citations, and engine-only setting names. The word list is committed in the substrate (invariants/engine-words.txt). A bot regenerates it from each engine release's field list in a pull request, leaving out words the architecture vocabulary also uses, such as dtype or quantization. The count per directory may only go down, measured against the word list of the same version, until it reaches zero
+  - `new`, pull_request: The cost model's public functions accept only plans, step shapes, transfers, and catalog and registry handles
+  - `new`, pull_request: Coefficient scope keys come from a fixed set with no engine key
+  - `new`, pull_request: Model graphs use only architecture vocabulary
+- **X3** (partial; target ci by M4) Scheduling, KV management, KV connectors and tiering decisions, default resolution, and lowering a model to kernel implementations belong to blis-vllm or blis-sglang.
+  - `ci`, pull_request: The cost model imports no engine module (`kernel: TestTheLibraryImportsNoEngineModel`)
+  - `new`, pull_request: Scheduler and KV types exist only in engine modules
+- **X6** (partial; target ci by M3) For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and coefficient registry content hashes, the simulator's standard output is identical byte for byte across runs, thread counts and supported platforms.
+  - `new`, pull_request: No clock reads and no goroutines in engine or cost-model code
+  - `new`, pull_request: No unsorted map iteration on an output path, and no unnamed randomness. In the router fork this lint covers files the fork wrote; upstream code is covered by the differential test in X4
+- **X7** (partial; target ci by M4) Contracts live in blis-substrate/contracts.
+  - `new`, pull_request: A lower repository refers to accuracy-dashboard only through the harness pin file
+  - `new`, pull_request: The module graph across all repositories follows Figure 1
+  - `ci`, pull_request: Every generated file matches its generator's output (`tools/schemagen: TestPublishedSchemasMatchTheTypes`)
+- **X8** (new; target ci by M3) Every number records the exact versions and data it came from, and can be regenerated from them.
+  - `new`, pull_request: No ledger unit is cited under two roles by any fit, gate or dashboard point
+  - `new`, pull_request: Every data source is pinned to an exact revision
+  - `new`, pull_request: Published numbers regenerate: on redistributable fixtures on every pull request, on the full data nightly
+  - `new`, pull_request: An accuracy change's success criteria are committed before any commit that reads its held-out data
+- **X10** (ci; target reached) Repositories are merged bottom-up, and inference-sim is the only repository whose release is required.
+  - `ci`, release: Release bot (§13.6) (`substrate/tools/release`)
+- **X11** (partial; target ci by M1) Pins are exact commits.
+  - `ci`, pull_request: Selected-version lint (LIF-2), in every repository: no replace outside inference-sim (`tools/modlint: TestEachRuleHasAKnownBadInput`)
+  - `ci`, pull_request: No other module requiring github.com/llm-d/llm-d-router (`tools/modlint: TestEachRuleHasAKnownBadInput`)
+  - `ci`, pull_request: No committed go.work (`TestNoNestedModule`)
+- **X12** (partial; target ci by M1) Only derived values are committed, never third-party data, with one exception: vendor config.json files whose licence is on the allow-list.
+  - `new`, pull_request: Name scan in every repository, which also reads the text of every open issue each night
+  - `ci`, pull_request: Provenance schema rules (`go run ./validate/cmd/validate-catalog catalog`)
+  - `ci`, pull_request: A check that every committed config.json has an allow-listed licence in its model.yaml. It runs in CI on the project's own catalog; the loader does not require a licence record (`validate/cmd/validate-catalog: TestRunLicenceCheck`)
+- **X13** (partial; target ci by M1) Every behaviour change has a test that fails without it.
+  - `new`, pull_request: The corpus comparison, run by the scoring harness at the pinned digest from each repository's CI, for pull requests declared as refactors
+  - `new`, pull_request: Landing gate (VAL-6)
+  - `ci`, pull_request: Mutation check of the cost model's guarded properties: each is broken in turn and the test that guards it must fail (`ci.yml: mutants`)
+  - `new`, pull_request: Mutation checks: on a pull request, the functions it changes and the functions covered by any test it changes are mutated, and only the tests that cover them run
+  - `new`, nightly: The full sweep runs nightly and on release tags
+- **X14** (new; target ci by M1) A pull request's description is accurate: the commit hashes it lists are the branch heads, it merges cleanly, and every invariant it cites exists.
+  - `new`, pull_request: The description check, a shared workflow run in every repository (`shared-pr-checks.yml: prcheck description, invariants cited`)
+- **X15** (ci; target reached) Each validation rule exists once, in Go, in blis-substrate.
+  - `ci`, pull_request: The parity test in blis-substrate (`tools/pyrules: TestEveryRestatementAgreesWithGo`)
+  - `ci`, pull_request: A lint that flags schema-like rule code in Python scripts (`substrate/tools/pyrules/pyrules.py`)
+- **X16** (new; target ci by M1) A skipped test in a required or gate job is a failure, not a pass, unless it is on the quarantine list of X25.
+  - `new`, pull_request: Each repository's CI configuration (`prcheck workflows, prcheck skips`)
+  - `new`, nightly: The nightly status page (§13.4) (`shared-nightly.yml: prcheck status`)
+- **X17** (partial; target ci by M1) Every repository's protected branch requires its named checks, including formatting and lint.
+  - `ci`, practice: The protected branch requires the repository's named checks, including formatting and lint
+- **X18** (new; target ci by M2) Every check in the invariant registry names a known-bad input that must make it fail.
+  - `new`, nightly: A nightly job in blis-substrate that runs each check on its known-bad input and fails if the check passes (`nightly.yml: prcheck knownbad`)
+  - `new`, nightly: The nightly mutation sweep (T7), which covers substrate validators and the simulator's own checks as well as engine code
+- **X19** (new; target ci by M2) Scripts and generators, in every language, never write an engine default.
+  - `new`, pull_request: The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
+- **X20** (new; target ci by after M4) A commit written with an agent's help says so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the tool.
+  - `new`, pull_request: A commit-policy check, required on every pull request in every repository, over the commits the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool (`shared-pr-checks.yml: prcheck commits`)
+  - `new`, practice: The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+- **X21** (new; target ci by M1) Everything a build or a release runs is pinned and traceable.
+  - `new`, pull_request: A workflow lint that refuses an action not pinned by commit (`prcheck workflows`)
+  - `new`, pull_request: Pip install --require-hashes in every Python CI job (`prcheck workflows`)
+  - `new`, pull_request: A check that LICENSE and any required NOTICE exist
+- **X22** (partial; target ci by M3) Every verdict (a CI result or the review agent's review, including its answers to review questions) names the git tree hash of the exact tree it judged.
+  - `new`, pull_request: The shared pull-request check in blis-substrate/.github/workflows, called by every repository, which records each review-agent answer with the head tree
+  - `new`, pull_request: A workflow lint that refuses ignored exit codes (`prcheck workflows`)
+  - `ci`, pull_request: Each job's item count (`ci.yml job required`)
+- **X23** (new; target ci by M1) A version is written in one place.
+  - `new`, pull_request: A lint in every repository, over every file type, for version literals of BLIS modules or Go that are not generated (`prcheck versions`)
+- **X24** (new; target ci by M3) Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason.
+  - `new`, pull_request: A pull-request step that lists each review thread that is open or resolved with no outcome, as a notice and in the job summary; it never fails, so no check waits on a thread (`shared-pr-checks.yml: prcheck threads`)
+  - `new`, practice: Branch protection requires every review conversation to be resolved before a merge; the author agent resolves each thread with its outcome
+  - `new`, nightly: A nightly job that reopens an issue closed any other way
+- **X25** (new; target ci by M1) Tests read only their declared inputs, never sibling checkouts, ignored directories or the user's environment.
+  - `new`, pull_request: CI in a clean container with no sibling checkouts
+  - `new`, pull_request: The quarantine list, which fails CI when an entry expires (`prcheck quarantine`)
+  - `new`, pull_request: A required check that fails while main is failing and the pull request does not name the failing test's issue
+- **X26** (new; target ci by M1) In documentation, every source path, symbol, issue or pull-request reference, and every statement that a feature is supported, is either generated (from surface.json, stack.json or the code) or checked against the pinned tree.
+  - `new`, pull_request: A documentation reference check in every repository (`prcheck docrefs`)
+- **X27** (ci; target reached) An open bug labelled as breaking an invariant blocks a release of the repository where the bug lives, and of each repository that ships that code, unless the release fixes only that bug or a security issue, or a release owner records a waiver in the release notes.
+  - `ci`, release: The release bot (`tools/release: CheckBugs`)
+- **X28** (new; target ci by M1) An issue in a BLIS repository that is cited as the reason for a refusal, for a refused or not-modelled item in a field or surface list, or in a code comment that marks a gap or a divergence, stays open.
+  - `new`, nightly: A nightly job in every repository that resolves each cited issue and fails on a closed one (`shared-nightly.yml: prcheck issues -resolve`)
+  - `new`, pull_request: A pull-request check that refuses a change closing an issue still cited elsewhere (`shared-pr-checks.yml: prcheck issues -closes`)
+  - `new`, nightly: The nightly job also reports an issue closed outside a merge
+- **X29** (new; target ci by M1) Each engine module, the substrate, the router fork and inference-sim document themselves in one README.md.
+  - `new`, practice: GitHub Pages is not enabled and no workflow generates or deploys documentation
+- **SUB-1** (ci; target reached) Packages under contracts/ import only the Go standard library, the YAML parser and each other.
+  - `ci`, pull_request: Import test (`contracts: TestKernelImportsOnlySpec`)
+  - `ci`, pull_request: API-compatibility check of the contracts/ packages against the last substrate tag (`ci.yml job contracts: prcheck contracts-apidiff`)
+- **SUB-2** (ci; target reached) Every new or changed data field ships with its validator, a failing example for each way it can be wrong, and the JSON Schema the simulator prints for it (schema); no separate reference page is kept (X29).
+  - `ci`, pull_request: Documentation-matches-types test (`contracts: TestDocFieldTablesMatchTypes`)
+  - `ci`, pull_request: Strict loaders (`contracts: TestLoadRejectsUnknownFields`)
+  - `ci`, pull_request: Examples must validate (`contracts: TestDocExamplesValidate`)
+- **SUB-3** (partial; target ci by M4) The catalog holds declared facts only: figures read from a published source, each with a citation a reader can follow.
+  - `ci`, pull_request: Deriver --check (`catalog/scripts/derive_graph.py --check`)
+  - `new`, pull_request: The validators, including the packaging check and its test pair
+  - `new`, pull_request: A test that no runtime package opens config.json
+  - `new`, pull_request: A lint for model-name literals in kernel/ and in engine lowering code. Review: that each citation supports its figure
+- **SUB-4** (partial; target ci by M1) Every coefficient is generated by its family's writer script, never edited by hand.
+  - `new`, pull_request: Writers --check on fixtures per pull request, on full data nightly
+  - `ci`, pull_request: Provenance rules (`go run ./validate/cmd/validate-registry registry`)
+- **SUB-5** (partial; target ci by M2) Coefficients obey physics: no compute rate above the chip's dense datasheet peak for that data type; no memory bandwidth above the datasheet peak for a working set larger than the chip's L2 cache; at a fixed algorithm, topology tier and bytes per rank, a collective never gets faster as the group grows; no transfer rate above the catalog peak of the link a leg crosses.
+  - `ci`, pull_request: Property tests: no compute rate above the dense datasheet peak, and a collective never gets faster as the group grows (`registry/validator/test_coefficient_properties.py`)
+  - `new`, pull_request: Property tests: the per-data-type peak and the L2-bounded memory bandwidth
+- **SUB-6** (new; target ci by M4) The cost model resolves nothing.
+  - `new`, pull_request: A test that the cost model's public functions accept only plans, step shapes, transfers, and catalog and registry handles
+- **SUB-7** (ci; target reached) The cost model has a price for every primitive it can be asked about, and for every move form (§6.1) on every catalog device, link and NIC it can cross.
+  - `ci`, pull_request: Completeness test over every primitive and every catalog chip (`kernel: TestEveryValueTheKernelSuppliesItselfIsListed`)
+- **SUB-8** (partial; target ci by M1) A change to the substrate never breaks the data it releases: validators, deriver and writers all pass on the tree being released.
+  - `ci`, pull_request: The validators run on every pull request (`ci.yml jobs catalog, registry`)
+  - `ci`, pull_request: The graph deriver --check runs on every pull request (`ci.yml job catalog: derive_graph.py --check`)
+  - `new`, pull_request: Every registry writer --check runs on every pull request, on redistributable fixtures
+- **SUB-9** (ci; target reached) Data is loaded the same way from a path or from the embedded copy: the same file patterns, the same validators (including the checks between the catalog and the coefficient registry), and the same content hash.
+  - `ci`, pull_request: A test that loads the embedded copy and an exported checkout of the same commit, and gets identical data and an identical hash (`load: TestEmbeddedAndExportedCheckoutAreTheSame`)
+  - `ci`, pull_request: A test comparing the two pattern lists (`TestEmbedPatternsEqualLoaderPatterns`)
+- **SUB-10** (new; target ci by M2) contracts/conformance includes a set of unusual model shapes: every layer windowed, every layer recurrent, MLA only, a draft layer declared last, a single layer, and no attention at all.
+  - `new`, pull_request: The conformance suite, run in blis-substrate, blis-vllm and blis-sglang
+- **SUB-11** (new; target ci by M2) Every field of PoolPlan, StepShape and Transfer, and every coefficient family, changes some price when it is changed, or is listed as not yet priced with an issue.
+  - `new`, pull_request: A perturbation test in kernel/ (`kernel: TestEveryCoefficientFamilyChangesSomePriceOrIsListed`)
+  - `new`, pull_request: A perturbation test over every field of PoolPlan, StepShape and Transfer (`contracts/engine/plan: TestEveryPlanFieldIsPricedOrListed`)
+  - `new`, pull_request: A ratchet on the not-yet-priced list, which may only shrink (`kernel: TestEveryCoefficientFamilyChangesSomePriceOrIsListed`)
+- **SUB-12** (partial; target ci by M2) Every loader of a BLIS document refuses unknown keys, duplicate keys, numbers that do not convert exactly, non-finite numbers and recursive aliases.
+  - `ci`, pull_request: Each loader refuses unknown keys (`contracts: TestLoadRejectsUnknownFields`)
+  - `ci`, pull_request: A shared set of malformed documents in contracts/conformance, run against every loader (`contracts: TestEveryLoaderRefusesTheMalformedSet`)
+  - `ci`, pull_request: A test that every declared field is read (`contracts: TestEveryLoaderReadsEveryFieldItsExampleStates`)
+  - `ci`, pull_request: Non-finite numbers are refused in every field, except +infinity in a field that names itself with the infinity tag, and a test names each such field (`contracts/check: TestAFieldThatOptsInHoldsPlusInfinity`)
+  - `ci`, pull_request: A write-then-read test of every field a Result writer can emit, in both encodings, filled from the type so a new field is covered (`contracts/spec/result: TestEveryFieldAWriterCanEmitRoundTripsInBothEncodings`)
+- **SUB-13** (ci; target reached) blis-substrate is one Go module: no go.mod exists below the repository root, and the files in the module zip that Go fetches total under 100 MB uncompressed (Go's limit is 500 MB).
+  - `ci`, pull_request: A check that fails on any nested go.mod (`TestNoNestedModule`)
+  - `ci`, pull_request: A check of that uncompressed total (`TestModuleZipIsUnder100MB`)
+- **SUB-14** (new; target ci by M2) The memory breakdown closes.
+  - `new`, pull_request: In blis-substrate's error job, a comparison of the total with recorded GPU start-up logs, which are ledger units with role validate
+- **SUB-15** (new; target ci by M4) A model graph holds only what the checkpoint states: the tensors, their shapes and stored data types, scale tensors, and the layer structure.
+  - `new`, pull_request: A test that rederives every graph field from those inputs
+  - `new`, pull_request: A check that graph vocabulary has no emit conditions. The deriver records each header's SHA-256 and the revision, under the same licence rule as config.json (X12)
+- **SUB-16** (ci; target reached) Quantities carry units as types.
+  - `ci`, pull_request: The compiler (`contracts/units: TestMixedUnitsDoNotCompile`)
+  - `ci`, pull_request: A load-time unit check in the cost model (`contracts/spec/coefficient: TestAUnitThatTheFormulaDoesNotNeedIsRefused`)
+  - `ci`, pull_request: Validator rules that catalog peaks are dense figures and that their ratios between data types match the datasheet. The bounds on rates are SUB-5's (`contracts/spec/hardware: TestPeaksAreDenseFigures`)
+- **SUB-17** (new; target ci by M3) A transfer or collective names its endpoints by rank, and the cost model prices it over the path between them through the catalog's links: the NVLink domain, the NIC and each switch tier.
+  - `new`, pull_request: A property test over random placements, in blis-substrate
+- **SUB-18** (ci; target reached) Provenance is recorded per field, not per file.
+  - `ci`, pull_request: Validator rules on catalog provenance fields (`contracts/spec/hardware: TestFieldProvenance; TestInheritedProvenanceObeysTheFieldSourceContract; TestCommittedChipsRecordTheirExceptions; TestLosingAnExceptionFailsTheCheck; TestEveryCommittedFactHasASource`)
+  - `ci`, pull_request: No catalog field holds a fitted or assumed value: the storage tiers state no rate or latency, and a file that states one is refused with the reason (`contracts/spec/hardware: TestStorageTierStatesNoRateOrLatency`)
+  - `ci`, pull_request: Each storage tier's terms are hardware-scoped coefficients, present for every catalog tier on every catalog chip at the figures the catalog held, that the kernel's TierTime reads (`kernel: TestEveryTierHasItsTermsOnEveryChip; TestTierTimeReadsTheRegistryAndPricesAsTheCatalogDid`)
+- **SUB-19** (partial; target ci by M1) Every document that crosses a repository boundary has one definition, in contracts/spec: the scenario, the deployment, the Result, and the per-point record the scoring harness writes.
+  - `ci`, pull_request: A generator test in blis-substrate that the published schemas match the Go types (`tools/schemagen: TestPublishedSchemasMatchTheTypes`)
+- **SUB-20** (partial; target ci by M2) No price, size or engine decision depends on a free-text label.
+  - `ci`, pull_request: A syntax-tree lint in blis-substrate and each engine repository that refuses a comparison on a documentation-only string field outside tests (`contracts: TestNoPriceDependsOnAFreeTextLabel`)
+  - `ci`, pull_request: A perturbation test (SUB-11) that changing such a label changes no price (`kernel: TestChangingALabelChangesNoPriceOrIsListed`)
+- **SUB-21** (new; target ci by M3) Every move is priced by the form it states (§6.1), as legs over paths the catalog states, with the coefficients the registry holds for that form, device, link and chip.
+  - `new`, pull_request: The perturbation test of SUB-11 changes each move-form field and expects a price to change
+  - `new`, pull_request: Every move stated without a form gets the price it got before
+  - `new`, pull_request: Property tests in kernel/ for pipelined moves, single-chunk buffers, rates that fall, and buffered against unbuffered storage moves
+  - `new`, pull_request: The completeness test of SUB-7
+- **SUB-22** (new; target ci by M3) The form a transport library chooses comes from one function in contracts/transport, over a table in catalog/transport keyed on the library, its version, its settings and catalog facts about the two ends (§6.1).
+  - `new`, pull_request: A table test against what UCX and NCCL report choosing, recorded with ledger units on each catalog chip and NIC
+  - `new`, pull_request: The catalog validators refuse an entry without a citation (SUB-3)
+  - `new`, pull_request: A refusal test for a setting the table does not cover
+  - `new`, pull_request: The review question of X2 for any entry that names an engine
+- **VLM-8** (new; target ci by M3) A step that consumes a layered transfer follows the timing rule of §6.2.
+  - `new`, pull_request: The shared suite in contracts/conformance for the layered-transfer timing rule (§6.2), with its property tests
+  - `new`, pull_request: The perturbation test of SUB-11 covers layered_transfer_compute_efficiency
+- **SGL-7** (new; target ci by M3) A step that consumes a layered transfer follows the timing rule of §6.2.
+  - `new`, pull_request: The shared suite in contracts/conformance for the layered-transfer timing rule (§6.2), with its property tests
+- **DEV-8** (partial; target ci by M2) Every reported metric names its definition and scope (§8.7), and a comparison is refused unless both sides have the same definition, scope and aggregate.
+  - `ci`, pull_request: The metric registry in contracts/ states each metric's scopes and aggregates and refuses a comparison unless metric, scope and aggregate are the same (`contracts/metrics: TestComparableFiguresRefusesEachDifference`)
+- **DEV-12** (new; target ci by M1) Each change is a verification change or a validation change by what it does (§8.9), and is judged as such.
+  - `new`, pull_request: In every repository, the change class in the pull-request template, and a check that the outputs that moved match the declared class (`.github/pull_request_template.md (generated)`)
+- **VAL-1** (ci; target reached) Every coefficient records exactly one method from the list in §9.2, or not_charged, with the sources that method needs: measured, calibrated: the data units it was fitted to; transferred: the source coefficient and the transfer rule; literature: an exact citation; vendor_spec: a datasheet citation; roofline: the catalog facts it was computed from; assumed, not_charged: a written reason.
+  - `ci`, pull_request: Schema rules in blis-substrate/validate for the method vocabulary in use (`contracts/spec/coefficient: TestRationaleRequiredForEveryMethodButMeasured`)
+  - `ci`, pull_request: Schema rules in blis-substrate/validate for the method list of §9.2, with the sources each method needs (`contracts/vocab: TestRankFollowsDesignSection92`)
+- **VAL-2** (ci; target reached) For every primitive family and every catalog chip, some rank has a value.
+  - `ci`, pull_request: Completeness test over every primitive and catalog chip (SUB-7) (`kernel: TestEveryValueTheKernelSuppliesItselfIsListed`)
+- **VAL-3** (ci; target reached) Each price records, among the coefficients it used, the least trusted effective rank, and names its method and any flag.
+  - `ci`, pull_request: Step-time result field (`kernel: TestTrustIsTheLeastTrustedEffectiveRank`)
+  - `ci`, pull_request: Checked in kernel tests (`kernel: TestTheKernelMeetsTheTrustAndStageLaws`)
+- **VAL-4** (partial; target ci by M2) Each lookup resolves to one entry per rank, and the entry with the smallest rank number is used; flags do not change which entry is chosen, only how the price reports it.
+  - `new`, pull_request: Validator check against the previous release, plus a review question
+  - `ci`, pull_request: A validator rule that refuses unordered matches (`validate/dataset: TestCheckOrdered`)
+  - `ci`, pull_request: A cost-model test that resolves every pair of scope kinds in both load orders and agrees with the validator (X15) (`kernel/internal/resolve: TestLookupAgreesWithTheValidatorOnPrecedenceInBothLoadOrders`)
+- **VAL-5** (partial; target ci by M2) The typical error of each method is measured by leaving one chip out, and published per primitive family, using data units with role validate (§10).
+  - `ci`, nightly: Nightly job: leave one chip out and compare each method's estimate with the chip's measured value, per primitive family, over the registry's measured coefficients (`nightly.yml job method-error: ledger method-error`)
+  - `ci`, pull_request: The cross-generation transfer rule is validated by leaving one generation out and compared with roofline on the same held-out points; the committed validation equals what the registry and catalog compute, and a transfer ranks as the rule only where it beats roofline (`ledger: TestCommittedTransferValidationIsCurrent`)
+  - `new`, nightly: The same comparison over data units with role validate, which the AISimulate and forward-pass sources do not list yet
+- **VAL-6** (partial; target ci by M1) A change to a measured or calibrated value passes the landing gate.
+  - `ci`, pull_request: On fixtures per pull request (`registry/validator (pytest)`)
+  - `new`, nightly: On full data nightly
+  - `new`, pull_request: Operator-level gates in blis-substrate
+- **VAL-7** (new; target ci by M2) A coefficient is a measured constant of a law the kernel evaluates, not a correction for one model.
+  - `new`, pull_request: Ratchet test
+- **VAL-8** (partial; target ci by M2) A lookup matches a coefficient only for the exact kernel implementation that runs.
+  - `new`, pull_request: The cost model's lookup, which has no fallback to a sibling implementation
+  - `new`, pull_request: A test that lists entries matching neither condition, which are removed in the next substrate release
+- **VAL-9** (new; target ci by M2) A coefficient states what its measurement includes: device time only or host issue time as well, captured or eager execution, and which harness collected it.
+  - `new`, pull_request: A validator rule matching each coefficient's measurement boundary with the boundary its reading formula declares
+- **VAL-10** (partial; target ci by M2) A measured or calibrated entry records the interval its fit supports (95%, by bootstrap or profile likelihood) and the range of inputs its fit data covered: shapes, token counts, ranks, chip and kernel.
+  - `ci`, pull_request: Validator rules on the interval and range fields (`contracts/spec/coefficient: TestEvidenceRecords`)
+  - `ci`, pull_request: A test that extrapolated lookups report it (`contracts/spec/coefficient: TestUnidentifiedExtrapolatedAndEffectiveRank`)
+  - `new`, pull_request: The fitting scripts' identifiability check
+- **VAL-11** (new; target ci by M2) An operator-level check judges a pricing form; an end-to-end check judges how forms combine.
+  - `new`, pull_request: A review question
+  - `new`, pull_request: A lint that refuses comments or entries marked as a known over-charge or under-charge without a linked defect
+- **D1** (partial; target ci by M2) Every value computed from ledger units cites them, whatever its method.
+  - `ci`, pull_request: A validator rule (`go run ./validate/cmd/validate-registry registry`)
+  - `new`, pull_request: The fitting scripts, which write the units they read
+- **D2** (new; target ci by M1) No unit is read under two roles across all consumers.
+  - `new`, nightly: A nightly join over every consumer's record of the units it read, run inside the nightly run of blis-substrate's gate job
+- **D3** (ci; target reached) Every source revision is pinned by commit, hash or run id.
+  - `ci`, pull_request: A ledger check that refuses latest, main and unknown as revisions (`ledger: TestUnpinnedRevisionsRefused`)
+  - `ci`, pull_request: A workflow artifact a tool reads is pinned by run id, attempt, evaluated commit and the SHA-256 of its zip and file, and a revision of latest is refused (`ledger: TestWorkflowArtifactPinIsExact`)
+  - `ci`, pull_request: The extractor's pin file equals the ledger's entry for the artifact (`ledger: TestExtractorPinEqualsTheLedgerEntry`)
+- **D4** (partial; target ci by M3) Roles are drawn by the keyed rule, per role key, so every unit sharing a role key has the same role, except a legacy unit, which keeps its legacy side even where units of its role key fall on both sides.
+  - `ci`, pull_request: A check against the ledger at the pull request's merge base (`ledger: TestCheckAgainstBase`)
+  - `ci`, pull_request: A check that no committed file lists roles, other than the two published lists that the release job writes and the legacy labels in legacy-map.yaml (`ledger: TestNoCommittedRoles`)
+  - `new`, pull_request: A check that the committed unit list equals the ingest tool's output for the pinned source
+  - `ci`, pull_request: A check that every unit at the merge base keeps its unit_id and role key, or is covered by an alias table, and a new partition version is the next number with a new seed record (`ledger: TestCheckAgainstBase`)
+  - `new`, pull_request: A check that each alias table equals the one generated from the merge-base and candidate ingest tools on the same source revision
+- **D5** (new; target ci by M2) A coefficient's fit data exercised the kernel implementation the coefficient is keyed by, meaning the same library, variant and kernel hash (CodeHash).
+  - `new`, pull_request: A validator rule that a coefficient's fit units were collected on the kernel implementation it is keyed by
+- **D6** (new; target ci by M4) Only redistributable artefacts are committed.
+  - `new`, pull_request: A check that every committed data file is listed in the ledger as redistributable
+  - `new`, nightly: A nightly job comparing fixtures with the full data
+- **D7** (partial; target ci by M3) The role seed is 256 random bits and a CI secret until its partition version is retired.
+  - `new`, pull_request: The seed is stored in one CI environment per repository (blis-substrate and accuracy-dashboard) whose branch policy allows only main, available only to the release, select, error and gate jobs
+  - `ci`, pull_request: A workflow lint that those jobs check out only main (`ledger: TestLintWorkflows`)
+  - `ci`, pull_request: The two published lists are read back and checked against the ledger that drew them: the seed hash and partition version it records, units that exist, one role per unit (`ledger: TestPublishedListsAreCheckedAgainstTheLedger`)
+  - `ci`, pull_request: A release carries both published lists, each nonempty; the release job, the ledger check and the release tool refuse otherwise (`ledger: TestReleaseRefusesAnEmptyPublishedSet`)
+  - `new`, pull_request: Their outputs are checked to contain no per-unit rows and no aggregate over fewer than 10 units
+- **D8** (partial; target ci by M2) A quantity BLIS simulates, such as prefix-cache hits or queueing, is never stored.
+  - `new`, pull_request: A validator rule refusing such families in the registry without a workload key
+  - `ci`, pull_request: A test per borrowing step, for a tie, for each bound of K with and without stated per-position rates, for an ambiguous key, for the exact-only option and for the refusal (`contracts/spec/acceptance: TestBorrowingAcrossK; TestTheProportionalRuleDoesNotOverstate; TestBorrowingAnotherDrafter; TestBorrowingAnotherTarget; TestTheTieBreakOrder; TestAmbiguityIsRefused; TestExactOnlyAndRefusal; TestFallbackCategoryPrecedence; TestFallbackWaitsForTheWorkloadsOwnCategory; TestTheSameDrafterUnderAnotherMethodIsNotBorrowed`)
+  - `ci`, pull_request: The catalog's drafter link holds in both directions: a target lists its drafters, each separate drafter names its target, and a graph with a speculator is listed as having one (`validate/dataset: TestCheckDraftersHoldsInBothDirections`)
+- **COV-1** (partial; target ci by M1) One scorer produces every number, and it lives only in accuracy-dashboard: no other repository compares a simulation with a measured end-to-end benchmark.
+  - `new`, pull_request: A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to compute an error
+- **LIF-1** (new; target ci by M1) A tag names one commit forever, and a pinned commit stays on its branch forever.
+  - `new`, practice: Branch protection blocks force-pushes to main and release branches
+- **LIF-2** (partial; target ci by M1) In every build, each BLIS module resolves to the exact commit the release records in stack.json, and the router fork resolves to the commit stack.json records through inference-sim's one replace directive (X11).
+  - `ci`, pull_request: Selected-version lint (go list -m all), which for the router reads the replace target that go list -m -json reports, not the placeholder version on the require line (`tools/modlint: TestEachRuleHasAKnownBadInput`)
+  - `ci`, pull_request: A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain (`tools/modlint: TestEachRuleHasAKnownBadInput`)
+  - `ci`, pull_request: A CI step that fails if go version differs from it (`tools/modlint: TestEachRuleHasAKnownBadInput`)
+  - `ci`, pull_request: prcheck workflows refuses a step that uses actions/setup-go outside the go-toolchain action, so a job in any repository that calls the shared checks installs contracts/toolchain's version (`tools/prcheck: TestAJobThatInstallsGoFromGoModIsRefused`)
+- **LIF-3** (new; target ci by M1) Only the release bot cuts releases.
+  - `new`, practice: Repository settings that let only the release bot and people with write access create tags
+  - `new`, pull_request: The bot's own check of every ci invariant (`tools/release: CheckInvariants`)
+  - `new`, nightly: A nightly check that every tag made by a person is annotated and listed in its release notes
+- **LIF-4** (ci; target reached) Release notes are generated (§13.3).
+  - `ci`, release: The release bot, which writes the notes from the release's changes (`tools/release: Notes`)
+- **LIF-5** (new; target ci by M4) An engine module, or the router fork, models one upstream release.
+  - `new`, release: A tag check in the release bot: format, N one above the previous tag on the same upstream release, no plain tag (`tools/release: CheckEngineTag`)
+- **LIF-7** (new; target ci by M1) A deprecated feature is removed by the first inference-sim release after its deprecation that may break compatibility: a MAJOR release, or a MINOR release while inference-sim is at v0.
+  - `new`, release: The release bot, which refuses a MAJOR release, or a MINOR release at v0, that still contains a feature deprecated in an earlier release (`tools/release: CheckDeprecations`)
+
+### Maintainer practices
+
+No program checks these. A maintainer with write access keeps each one for this
+repository as a whole and confirms it when the repository's settings change (design §4.2).
+
+- [ ] **X17** The protected branch requires the repository's named checks, including formatting and lint
+- [ ] **X20** The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+- [ ] **X24** Branch protection requires every review conversation to be resolved before a merge; the author agent resolves each thread with its outcome
+- [ ] **X29** GitHub Pages is not enabled and no workflow generates or deploys documentation
+- [ ] **LIF-1** Branch protection blocks force-pushes to main and release branches
+- [ ] **LIF-3** Repository settings that let only the release bot and people with write access create tags
+
+### Agent guidance
+
+Follow these on every change you write or review. They are not checked by a program
+(design §4.2).
+
+- **X24** After each fix, reply on the thread with "Outcome: fixed" and the commit, "Outcome: filed" and the issue, or "Outcome: rejected:" and the reason, and resolve the thread. The author agent does this; no check waits for it and no person has to.
+
+### Review questions
+
+Each question below is guidance for the review agent (design §13.2). When a pull request
+changes one of its paths, the agent answers it yes or no in a review comment, with the
+files and lines that support the answer. No CI job lists, records or waits on a question,
+and no person has to answer one.
+
+- **X1** Does this new scenario field describe something the real system would observe, rather than a setting the upstream does not have? Expertise: contracts expertise. Applies when: a key is added to the environment list. Paths: `contracts/spec/scenario/**`.
+- **X2** Does this change hide one engine's policy (a default, threshold, backend choice or padding rule) behind a neutral name? Would the other engine need the same edit? Expertise: expertise in the changed directory. Applies when: any non-test change under catalog/, registry/ or kernel/. Paths: `catalog/**`, `registry/**`, `kernel/**`, except `**/*_test.go`, `**/testdata/**`, `**/tests/**`.
+- **X6** Could this floating-point reduction give a different result on another platform? Expertise: expertise in the changed repository. Applies when: a parallel or floating-point reduction is added, or the cross-platform check fails. The review agent decides whether it applies, and may mark it with the label `review:X6`.
+- **X7** Does this change give a second home to a fact another repository owns? Expertise: expertise in the changed repository. Applies when: a pull request adds a literal list or table, or a constant that cites another repository. The review agent decides whether it applies, and may mark it with the label `review:X7`.
+- **X8** Was this fitting method, gate or threshold chosen after seeing evaluation results? Expertise: expertise in the repository landing the change. Applies when: a pull request changes a fitting method, gate or threshold. Paths: `registry/scripts/**`, `registry/validator/**`.
+- **DEV-12** Does this change alter what is modelled? Expertise: expertise in the changed directory. Applies when: a pull request is declared a verification change but moves a Result outside the byte gate. The review agent decides whether it applies, and may mark it with the label `review:DEV-12`.
+- **VAL-11** Is this change kept or rejected because it offsets an error elsewhere? Expertise: expertise in the changed directory. Applies when: a pricing change lands or is rejected with end-to-end evidence that contradicts its operator-level evidence. The review agent decides whether it applies, and may mark it with the label `review:VAL-11`.
+- **D1** Was this value read from, or tuned against, any measurement? Expertise: registry expertise. Applies when: an assumed entry is added or changed. Paths: `registry/coefficients/**`.
+- **D7** Was the new seed generated as the ledger records? Expertise: ledger expertise. Applies when: a seed is created or rotated. The review agent decides whether it applies, and may mark it with the label `review:D7`.
+<!-- END GENERATED: invariants -->

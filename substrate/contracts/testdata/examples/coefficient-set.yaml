@@ -1,0 +1,34 @@
+kind: CoefficientSet
+name: example-set
+coefficients:
+  - gemm_eps_max_bf16:
+      value: 0.78
+      units: dimensionless
+      method: measured
+      fitted: true
+      ci95: [0.74, 0.81]
+      scope: {hardware: [h100]}
+  - gemm_eps_max_bf16:
+      value: 0.81
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+  - mfu_prefill:
+      value: 0.32
+      units: dimensionless
+      method: literature
+      fitted: false
+      sources:
+        - {kind: discussion, cite: "inference-sim#589", role: primary}
+      rationale: >
+        L40S prefill MFU discount; see the cited discussion.
+      scope: {hardware: [l40s]}
+  - pd_transfer_base_latency:
+      value: 50
+      units: us_per_transfer
+      method: assumed
+      fitted: false
+      rationale: >
+        A placeholder until a measurement exists.
+      scope: {hardware: [h100, h200]}

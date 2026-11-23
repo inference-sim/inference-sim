@@ -9,13 +9,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/env"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/units"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/env"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
 	"pgregory.net/rapid"
 )
 
@@ -42,7 +42,7 @@ func dpPoolScenarios(t *testing.T, prefillNodes, decodeNodes int) (dir, name str
 	body = strings.Replace(body, "    nodes: 17\n", fmt.Sprintf("    nodes: %d\n", prefillNodes), 1)
 	body = strings.Replace(body, "    nodes: 2\n", fmt.Sprintf("    nodes: %d\n", decodeNodes), 1)
 	// A prefill (kv_producer) group may not span nodes: the engine refuses it until a handoff carries the
-	// owning rank's endpoint (blis-substrate#48). The prefill pool's group is therefore one tray, TP2 x DP2;
+	// owning rank's endpoint (inference-sim/inference-sim#2369). The prefill pool's group is therefore one tray, TP2 x DP2;
 	// the decode pool keeps TP4 x DP2, two trays a group, which a consumer may span.
 	if strings.Count(body, "      tp: 4\n") != 2 {
 		t.Fatalf("the fixture no longer states tp 4 once in each pool")

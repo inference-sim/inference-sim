@@ -3,9 +3,9 @@ package sim
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 )
 
 // Peer messages and peer WRITEs (engine.Peered, engine.PeerPlaced). An engine that talks to other
@@ -30,7 +30,7 @@ func (d *EngineDriver) PeerAddr() string {
 }
 
 // SetPeerAddr gives the engine the address its peers reach it at, when the engine takes one
-// (interface{ SetPeerAddr(string) error }, an engine-specific method of blis-vllm's v0.33.0
+// (interface{ SetPeerAddr(string) error }, an engine-specific method of the vLLM engine's v0.33.0
 // engine); false when it does not. It is called before the engine's first Schedule.
 func (d *EngineDriver) SetPeerAddr(addr string) (bool, error) {
 	s, ok := d.eng.(interface{ SetPeerAddr(string) error })

@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/schema"
+	"github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/schema"
 )
 
 // The commands the applications read the document schemas through (design §5, SUB-19):
@@ -38,8 +38,8 @@ func documentExitCode(err error) int {
 var schemaCmd = &cobra.Command{
 	Use:   "schema <document>",
 	Short: "Print the JSON Schema of a BLIS document",
-	Long: "Print the JSON Schema of a document that crosses a repository boundary, as the " +
-		"blis-substrate release this build pins publishes it. Documents: " +
+	Long: "Print the JSON Schema of a document that crosses a package boundary, as the " +
+		"substrate this build embeds publishes it. Documents: " +
 		strings.Join(schema.Names(), ", ") + ".",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
@@ -57,7 +57,7 @@ var schemaValidateCmd = &cobra.Command{
 	Use:   "validate <document> <file>",
 	Short: "Validate a file as a BLIS document with the Go validators",
 	Long: "Read <file> (JSON or YAML, strictly: a key no field declares is an error) as a " +
-		"<document> and run the validators of the blis-substrate release this build pins. Exit " +
+		"<document> and run the validators of this build's substrate. Exit " +
 		"0 when valid, 1 when the document is refused (each finding is printed to standard " +
 		"error), 2 when the command could not run. Documents: " + strings.Join(validatable(), ", ") + ".",
 	Args:         cobra.ExactArgs(2),

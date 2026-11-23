@@ -1,0 +1,134 @@
+{
+ "name": "prefill-interval-2",
+ "description": "prefill_schedule_interval 2 on an engine without data parallelism: while a request decodes, a new prefill waits until two executed steps have passed since the last step that carried prefill (local_prefill_interval, vllm/v1/core/sched/scheduler.py:395-425, 770-790, 1612-1629@4ba787ec).",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 64,
+  "block_size": 4,
+  "num_blocks": 120,
+  "max_model_len": 64,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": false,
+  "scheduling_policy": "fcfs",
+  "scheduler_config": {
+   "prefill_schedule_interval": 2
+  }
+ },
+ "requests": [
+  {
+   "id": "p0",
+   "arrival_step": 0,
+   "prompt": [
+    15823,
+    19342,
+    16258,
+    15805,
+    17640,
+    7222,
+    7050,
+    17774,
+    16589,
+    7100,
+    4084,
+    15633,
+    10941,
+    5646,
+    3971,
+    18651,
+    2372,
+    13981,
+    15843,
+    6160
+   ],
+   "output": [
+    1491,
+    18313,
+    3069,
+    2951,
+    2168,
+    7232,
+    8927,
+    1985,
+    16202,
+    11691,
+    15435,
+    7400
+   ]
+  },
+  {
+   "id": "p1",
+   "arrival_step": 2,
+   "prompt": [
+    18010,
+    8656,
+    10638,
+    17376,
+    1150,
+    3784,
+    15985,
+    10114,
+    14329,
+    19063,
+    3726,
+    9322
+   ],
+   "output": [
+    11331,
+    8525,
+    17806,
+    10471,
+    1974,
+    3301,
+    19453,
+    4536
+   ]
+  },
+  {
+   "id": "p2",
+   "arrival_step": 3,
+   "prompt": [
+    14120,
+    4532,
+    10532,
+    13665,
+    3189,
+    1553,
+    1017,
+    7996,
+    7872,
+    2714,
+    16400,
+    13303
+   ],
+   "output": [
+    14022,
+    14755,
+    3393,
+    19554,
+    7504,
+    9840
+   ]
+  },
+  {
+   "id": "p3",
+   "arrival_step": 7,
+   "prompt": [
+    12039,
+    3855,
+    11197,
+    11898,
+    1496,
+    14436,
+    4866,
+    5410
+   ],
+   "output": [
+    9073,
+    4311,
+    1358,
+    2962,
+    16235
+   ]
+  }
+ ]
+}

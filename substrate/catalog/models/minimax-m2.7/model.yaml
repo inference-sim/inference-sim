@@ -1,0 +1,11 @@
+name: minimax-m2.7
+source:
+  provider: huggingface
+  repo: MiniMaxAI/MiniMax-M2.7
+  revision: d494266a4affc0d2995ba1fa35c8481cbd84294b
+  retrieved: 2026-10-03
+licence:
+  id: LicenseRef-minimax-m2.7
+  evidence: https://huggingface.co/MiniMaxAI/MiniMax-M2.7/raw/d494266a4affc0d2995ba1fa35c8481cbd84294b/LICENSE
+config:
+  sha256: 697c30492781d55ac516011f937b5cdec045710b5b0c9ca39a6ea277785df9aa

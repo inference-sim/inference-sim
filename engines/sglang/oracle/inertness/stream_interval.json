@@ -1,0 +1,249 @@
+{
+ "field": "stream_interval",
+ "kind": "observed_reads",
+ "release": "v0.5.23 297e54fd105e974cdf401e5b4d20253a22c16f90",
+ "claim": "The output streamer sends a request's first token at once and then every stream_interval tokens (managers/scheduler_components/output_streamer.py:455-470@297e54fd): it batches what is sent to the detokenizer and decides no batch, admission or price. The scheduler stores the value at start-up (managers/scheduler.py:508) and passes it to the streamer (output_streamer.py:189), which uses it only to choose the step a streamed frame leaves at. The runs set the field at the default and at each probe on two oracle scenarios, as the harness runs them (no request streams, so the whole trace is the scenario's golden) and with every request streaming, where the first token and the last leave at the same steps at any value and only the spacing of the tokens between them, the inter-token latency the client sees, changes (the projection `frames` compares every step and state, and for each request the tokens it was handed in total and the step it finished). No graded latency is computed from the spacing. lower.TestInertFieldsChangeNoDecision additionally resolves and lowers the DeepSeek-R1 and GLM-5 pools of the h200 recipes with the field at each probe value, and finds every other resolved ServerArgs field and the lowered plan equal to the unset pool's.",
+ "probes": [
+  {
+   "value": 1
+  },
+  {
+   "value": 10
+  },
+  {
+   "value": 64
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "ov-page16",
+   "path": "oracle/scenarios-sched/ov-page16.json",
+   "golden": "core/sched/testdata/golden-sched/ov-page16.trace.json"
+  },
+  {
+   "name": "heavy-fcfs",
+   "path": "oracle/scenarios-sched/heavy-fcfs.json",
+   "golden": "core/sched/testdata/golden-sched/heavy-fcfs.trace.json"
+  }
+ ],
+ "consumers": [
+  {
+   "at": "python/sglang/srt/managers/scheduler_components/output_streamer.py:456",
+   "expr": "self.default_stream_interval",
+   "why": "the streamer's use of the value the read at output_streamer.py:189 stored: a streaming request without its own interval takes it as the interval that decides the step a frame is sent"
+  }
+ ],
+ "reads": [
+  {
+   "at": "python/sglang/srt/managers/scheduler.py:508",
+   "to": 508,
+   "expr": "get_serving().stream_interval"
+  },
+  {
+   "at": "python/sglang/srt/managers/scheduler_components/output_streamer.py:189",
+   "to": 189,
+   "expr": "get_serving().stream_interval"
+  }
+ ],
+ "observed": {
+  "golden": {
+   "ov-page16": "9438616210e71fbb65b9ac958ad898244e450385049b50be5795d3112d4d4831",
+   "heavy-fcfs": "5c6a89e60c041e8b3c2b1034c27ebe0fe944af8ea66a139a81123cc5dfb409ca"
+  },
+  "runs": [
+   {
+    "scenario": "ov-page16",
+    "stream": false,
+    "value": null,
+    "digest": "9438616210e71fbb65b9ac958ad898244e450385049b50be5795d3112d4d4831",
+    "consumers": [],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   },
+   {
+    "scenario": "ov-page16",
+    "stream": false,
+    "value": 1,
+    "digest": "9438616210e71fbb65b9ac958ad898244e450385049b50be5795d3112d4d4831",
+    "consumers": [],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   },
+   {
+    "scenario": "ov-page16",
+    "stream": false,
+    "value": 10,
+    "digest": "9438616210e71fbb65b9ac958ad898244e450385049b50be5795d3112d4d4831",
+    "consumers": [],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   },
+   {
+    "scenario": "ov-page16",
+    "stream": false,
+    "value": 64,
+    "digest": "9438616210e71fbb65b9ac958ad898244e450385049b50be5795d3112d4d4831",
+    "consumers": [],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   },
+   {
+    "scenario": "ov-page16",
+    "stream": true,
+    "value": null,
+    "digest": "e9141e2827957a8c748251f8df8f8fe063e874d59c78bde42ddef65aacbaec4c",
+    "consumers": [
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:456"
+    ],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   },
+   {
+    "scenario": "ov-page16",
+    "stream": true,
+    "value": 1,
+    "digest": "e9141e2827957a8c748251f8df8f8fe063e874d59c78bde42ddef65aacbaec4c",
+    "consumers": [
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:456"
+    ],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   },
+   {
+    "scenario": "ov-page16",
+    "stream": true,
+    "value": 10,
+    "digest": "e9141e2827957a8c748251f8df8f8fe063e874d59c78bde42ddef65aacbaec4c",
+    "consumers": [
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:456"
+    ],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   },
+   {
+    "scenario": "ov-page16",
+    "stream": true,
+    "value": 64,
+    "digest": "e9141e2827957a8c748251f8df8f8fe063e874d59c78bde42ddef65aacbaec4c",
+    "consumers": [
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:456"
+    ],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   },
+   {
+    "scenario": "heavy-fcfs",
+    "stream": false,
+    "value": null,
+    "digest": "5c6a89e60c041e8b3c2b1034c27ebe0fe944af8ea66a139a81123cc5dfb409ca",
+    "consumers": [],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   },
+   {
+    "scenario": "heavy-fcfs",
+    "stream": false,
+    "value": 1,
+    "digest": "5c6a89e60c041e8b3c2b1034c27ebe0fe944af8ea66a139a81123cc5dfb409ca",
+    "consumers": [],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   },
+   {
+    "scenario": "heavy-fcfs",
+    "stream": false,
+    "value": 10,
+    "digest": "5c6a89e60c041e8b3c2b1034c27ebe0fe944af8ea66a139a81123cc5dfb409ca",
+    "consumers": [],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   },
+   {
+    "scenario": "heavy-fcfs",
+    "stream": false,
+    "value": 64,
+    "digest": "5c6a89e60c041e8b3c2b1034c27ebe0fe944af8ea66a139a81123cc5dfb409ca",
+    "consumers": [],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   },
+   {
+    "scenario": "heavy-fcfs",
+    "stream": true,
+    "value": null,
+    "digest": "3251a228d3fb105193bb66361061a8be6b5f8befbc0253a727e5d3e92e8575cb",
+    "consumers": [
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:456"
+    ],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   },
+   {
+    "scenario": "heavy-fcfs",
+    "stream": true,
+    "value": 1,
+    "digest": "3251a228d3fb105193bb66361061a8be6b5f8befbc0253a727e5d3e92e8575cb",
+    "consumers": [
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:456"
+    ],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   },
+   {
+    "scenario": "heavy-fcfs",
+    "stream": true,
+    "value": 10,
+    "digest": "3251a228d3fb105193bb66361061a8be6b5f8befbc0253a727e5d3e92e8575cb",
+    "consumers": [
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:456"
+    ],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   },
+   {
+    "scenario": "heavy-fcfs",
+    "stream": true,
+    "value": 64,
+    "digest": "3251a228d3fb105193bb66361061a8be6b5f8befbc0253a727e5d3e92e8575cb",
+    "consumers": [
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:456"
+    ],
+    "executed": [
+     "python/sglang/srt/managers/scheduler.py:508",
+     "python/sglang/srt/managers/scheduler_components/output_streamer.py:189"
+    ]
+   }
+  ],
+  "verdict": "inert"
+ }
+}

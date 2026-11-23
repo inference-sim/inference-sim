@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
 )
 
 // sim11Trace is the fixture TestSIM11_TraceFieldsConsumedChangeTheResult toggles: 120 requests
@@ -221,6 +221,9 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 	}
 	notToggled := map[string]bool{
 		"TraceHeader.KVOffload": true, "TraceHeader.Mode": true, "TraceHeader.SessionContextGrowth": true,
+		// Acceptance selects a speculative profile, and the fixture's scenario does not speculate;
+		// TestAcceptanceTermsOfPresetSurviveReplay changes the resolved profile with it.
+		"TraceHeader.Acceptance":  true,
 		"TraceRecord.ThinkTimeUs": true, "TraceRecord.InputTokensReset": true, "TraceRecord.ImageTokens": true,
 		"TraceRecord.AudioTokens": true, "TraceRecord.VideoTokens": true, "TraceRecord.Streaming": true,
 		// Phases and the phase column are consumed together; a header with phases needs every row to
@@ -244,6 +247,8 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 	sort.Strings(consumed)
 
 	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+	// The precise-prefix router reads token IDs the engines' render endpoints give it.
+	scenarios := kernelScenariosDirServingRender(t)
 	raw := func(muts ...mutate) string {
 		h, r := sim11Trace()
 		for _, m := range muts {
@@ -255,7 +260,7 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 			t.Fatal(err)
 		}
 		return runReplayCaptureStdout(t, []string{"--trace-header", hp, "--trace-data", dp,
-			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t),
+			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", scenarios,
 			"--registry", kernelRegistryDir(t), "--defaults-filepath", defaultsPath,
 			"--num-instances", "2", "--horizon", "60000000"})
 	}

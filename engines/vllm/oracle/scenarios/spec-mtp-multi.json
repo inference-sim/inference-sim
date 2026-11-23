@@ -1,0 +1,155 @@
+{
+ "name": "spec-mtp-multi",
+ "description": "Multi-module MTP K=3 (four nextn layers): prefill lookahead K keeps chunk ends away from the prefill end, two reprefillable tokens stay uncached, and the block drop applies.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 60,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "speculative": {
+   "method": "mtp",
+   "num_speculative_tokens": 3,
+   "draft": "mtp-4"
+  }
+ },
+ "requests": [
+  {
+   "id": "m1",
+   "arrival_step": 0,
+   "prompt": [
+    23693,
+    30751,
+    31489,
+    18674,
+    27326,
+    14854,
+    29279,
+    384,
+    26839,
+    16965,
+    15589,
+    14578,
+    664,
+    19438,
+    19795,
+    21959,
+    9303,
+    39460,
+    20324,
+    1454,
+    14441,
+    39505,
+    16614,
+    1336,
+    10090,
+    39718,
+    1794,
+    30457,
+    29937,
+    39236
+   ],
+   "output": [
+    19414,
+    14703,
+    20303,
+    23710,
+    16924,
+    27544,
+    5633,
+    22793,
+    32394
+   ],
+   "accepted": [
+    3,
+    2,
+    0,
+    1
+   ]
+  },
+  {
+   "id": "m2",
+   "arrival_step": 3,
+   "prompt": [
+    23693,
+    30751,
+    31489,
+    18674,
+    27326,
+    14854,
+    29279,
+    384,
+    26839,
+    16965,
+    15589,
+    14578,
+    664,
+    19438,
+    19795,
+    21959,
+    27730,
+    33866,
+    11290,
+    36874,
+    19204,
+    37930
+   ],
+   "output": [
+    2885,
+    18534,
+    5480,
+    406,
+    34300,
+    24450,
+    15388,
+    32106
+   ],
+   "accepted": [
+    1,
+    3,
+    3
+   ]
+  },
+  {
+   "id": "m3",
+   "arrival_step": 4,
+   "prompt": [
+    10126,
+    20243,
+    19939,
+    20737,
+    30205,
+    29727,
+    4308,
+    10765,
+    31605,
+    857,
+    29173,
+    32214,
+    917,
+    31135,
+    8057,
+    29771,
+    5122,
+    32718,
+    1492
+   ],
+   "output": [
+    9434,
+    15222,
+    26622,
+    24200,
+    2165
+   ],
+   "accepted": [
+    0,
+    0,
+    2
+   ]
+  }
+ ],
+ "max_steps": 400
+}

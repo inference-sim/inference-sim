@@ -1,0 +1,431 @@
+// Package coefficient defines a coefficient set: the learned numbers a cost
+// estimate depends on, each recording where it came from and where it holds.
+//
+// The schema mirrors blis-registry, which owns the data. What this package adds is
+// a typed form of the same contract, so a Go consumer validates against the same
+// vocabulary the registry's own validator enforces rather than a second copy of it.
+//
+// Sets are standalone. There is no inheritance between them, because a coefficient
+// is valid only for the functional form it was fitted against: a set fitted for a
+// machine-utilization model has no bearing on a model that decomposes work by
+// resource, however similar the names look.
+package coefficient
+
+import (
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/inference-sim/inference-sim/substrate/contracts/check"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
+)
+
+// Set is one immutable collection of coefficients feeding one cost model.
+//
+// The wire form nests each entry under its own name — a list of single-key maps —
+// which is how blis-registry writes them:
+//
+//	coefficients:
+//	  - mfu_prefill:
+//	      value: 0.45
+//	      units: dimensionless
+//
+// In Go an Entry carries its Name as a field instead, because a map with one key per
+// element is awkward to range over and impossible to validate positionally. The
+// UnmarshalYAML below converts between the two, so the committed files parse as
+// written and callers get a flat list.
+type Set struct {
+	Kind         string  `yaml:"kind"` // "CoefficientSet"
+	Name         string  `yaml:"name"`
+	Coefficients []Entry `yaml:"coefficients"`
+}
+
+// UnmarshalYAML reads the registry's nested entry form into a flat list.
+func (s *Set) UnmarshalYAML(node *yaml.Node) error {
+	// Unknown top-level keys are rejected here: a custom unmarshal does not inherit the
+	// decoder's KnownFields, so `backend:` or `extends:` (or a typo) would otherwise decode
+	// to nothing silently. This matches blis-registry's strict top-level parse.
+	if err := validate.RejectUnknownKeys(node, Set{}, nil); err != nil {
+		return err
+	}
+	// An alias type without this method, so decoding it does not recurse.
+	type setShape struct {
+		Kind         string      `yaml:"kind"`
+		Name         string      `yaml:"name"`
+		Coefficients []yaml.Node `yaml:"coefficients"`
+	}
+	var raw setShape
+	if err := validate.DecodeNode(node, &raw); err != nil {
+		return err
+	}
+	s.Kind, s.Name = raw.Kind, raw.Name
+	s.Coefficients = nil
+	for i, item := range raw.Coefficients {
+		if item.Kind != yaml.MappingNode || len(item.Content) != 2 {
+			return fmt.Errorf("coefficients[%d]: each entry is a single-key map naming the coefficient", i)
+		}
+		var e Entry
+		if err := validate.RejectUnknownKeys(item.Content[1], Entry{}, nil); err != nil {
+			return fmt.Errorf("coefficients[%d] (%s): %w", i, item.Content[0].Value, err)
+		}
+		// fitted's Go zero value (false) is itself valid, so a plain decode cannot tell an
+		// absent `fitted:` from an intentional `fitted: false`. The registry requires the
+		// field present — it records a real provenance distinction (a datasheet figure is
+		// not fitted; a curve fit is) — so enforce presence at the node here, keeping
+		// Entry.Fitted a plain bool for every consumer that reads it.
+		if !nodeHasKey(item.Content[1], "fitted") {
+			return fmt.Errorf("coefficients[%d] (%s): missing required field %q",
+				i, item.Content[0].Value, "fitted")
+		}
+		if err := validate.DecodeNode(item.Content[1], &e); err != nil {
+			return fmt.Errorf("coefficients[%d] (%s): %w", i, item.Content[0].Value, err)
+		}
+		// A present `sources:` must be a non-empty list, matching the registry's validator.
+		// Presence is read from the node because an absent key and `sources: []` both decode
+		// to an empty slice, and only the latter is an error.
+		if nodeHasKey(item.Content[1], "sources") && len(e.Sources) == 0 {
+			return fmt.Errorf("coefficients[%d] (%s): sources, when present, must be a non-empty list",
+				i, item.Content[0].Value)
+		}
+		e.Name = item.Content[0].Value
+		s.Coefficients = append(s.Coefficients, e)
+	}
+	return nil
+}
+
+// nodeHasKey reports whether a mapping node declares key. It is how a required entry field
+// whose decoded zero value is itself valid (fitted: false) is told apart from absent.
+func nodeHasKey(node *yaml.Node, key string) bool {
+	if node.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return true
+		}
+	}
+	return false
+}
+
+// Entry is one coefficient. Value, Units, Method, Fitted and Scope are required:
+// a value without a unit is unusable, and a value without a method cannot be told
+// apart from a measurement.
+type Entry struct {
+	Name   string       `yaml:"name"`
+	Value  float64      `yaml:"value"`
+	Units  vocab.Unit   `yaml:"units"`
+	Method vocab.Method `yaml:"method"`
+	// Fitted distinguishes a number obtained by fitting a curve from one read off a
+	// datasheet or asserted. It is independent of Method: a vendor spec is not
+	// fitted, and an assumed value may be a fitted curve's extrapolation.
+	Fitted bool  `yaml:"fitted"`
+	Scope  Scope `yaml:"scope"`
+
+	// RateBasis says what a rate in bytes per microsecond measures (SUB-5). Empty means
+	// memory: a rate at which a kernel moves bytes through device memory, which cannot
+	// exceed the chip's datasheet memory bandwidth. "work" marks a rate over counted work
+	// that may exceed it, and requires a rationale. It is allowed only on a bytes_per_us
+	// entry.
+	RateBasis vocab.RateBasis `yaml:"rate_basis,omitempty"`
+
+	// KernelImpls lists the kernel implementations the value is valid for: the library, its
+	// variant and the hash of the kernel's source (design D5, VAL-8). It is the lookup key. A
+	// lookup matches the entry only when one of them is what runs, by library, variant and code
+	// hash together; a different hash of the same kernel does not match. An entry that lists
+	// none is unkeyed and applies to every implementation, but nothing shows it was measured on
+	// the one that runs. A measured or calibrated entry lists the implementation its fit data
+	// exercised; a transferred entry lists the implementation it is moved to and records the
+	// one it came from in MeasuredOn. Optional while the registry is being filled in; the
+	// ratchet in registry/validator counts the measured and calibrated entries that state none.
+	KernelImpls []KernelImpl `yaml:"kernel_impls,omitempty"`
+
+	// CodeIDs lists the engine-path code the value is valid for: the CodeIDs an engine states for
+	// the host, scheduler or graph-launch path the entry's name prices (CodePathOf). It is the
+	// lookup key of an engine-path coefficient, as KernelImpls is of a kernel's: a lookup matches
+	// the entry only when one of them is what runs, and a different CodeID does not match. An
+	// entry that lists none is unkeyed and applies to every code.
+	CodeIDs []string `yaml:"code_ids,omitempty"`
+
+	// MeasuredOn lists the kernel implementations a transferred value was measured on. It is
+	// evidence and is never matched by a lookup: the target of a transfer is KernelImpls.
+	// Required on a transferred entry that states KernelImpls; not allowed on any other method,
+	// whose fit data exercised the implementation KernelImpls names (D5).
+	MeasuredOn []KernelImpl `yaml:"measured_on,omitempty"`
+
+	// Measures says what the number includes (design VAL-9). The formula that reads the
+	// coefficient declares the same, and the two must agree.
+	Measures *Measures `yaml:"measures,omitempty"`
+
+	// FitRange records the range of inputs the fit's data covered, one bound per dimension
+	// (design VAL-10): shapes, token counts, ranks. A price that reads the entry outside the
+	// range is extrapolated and ranks with transferred.
+	FitRange []Bound `yaml:"fit_range,omitempty"`
+
+	// CI95 is a confidence interval, where the fit produced one.
+	CI95 *Interval `yaml:"ci95,omitempty"`
+	// Sources cite the evidence. A Method that claims evidence should carry at
+	// least one; a rules pack, not this schema, decides how strictly to require it.
+	Sources []Source `yaml:"sources,omitempty"`
+	// Rationale explains a judgement. It is where the reasoning behind an assumed
+	// value belongs, and it is what lets a reader weigh an estimate.
+	Rationale string `yaml:"rationale,omitempty"`
+	// TransferredFrom names the scope a transferred value was measured in, as the scope
+	// renders (hardware=h200,model=...). TransferRule states how the value was moved to this
+	// scope. Both are required for method transferred (design §9.2, VAL-1).
+	TransferredFrom string `yaml:"transferred_from,omitempty"`
+	TransferRule    string `yaml:"transfer_rule,omitempty"`
+	// Supersedes names an entry this one replaces.
+	Supersedes string `yaml:"supersedes,omitempty"`
+	// Validated and Unsupported record asymmetric evidence: a term may be checked
+	// against one metric and explicitly not against another.
+	//
+	// Both accept a single metric name or a list. The registry writes the common case
+	// as a scalar, and requiring a one-element list there would reject every
+	// committed entry for no gain.
+	Validated   MetricList `yaml:"validated,omitempty"`
+	Unsupported MetricList `yaml:"unsupported,omitempty"`
+}
+
+// KernelImpl names one kernel implementation (design §6.2): the library, the library's own
+// exported kernel name, and the hash of the kernel's source and target GPU architecture, or
+// of a binary library.
+type KernelImpl struct {
+	Library  string `yaml:"library"`
+	Variant  string `yaml:"variant"`
+	CodeHash string `yaml:"code_hash"`
+}
+
+// UnmarshalYAML rejects unknown keys, as every nested object of an entry does.
+func (k *KernelImpl) UnmarshalYAML(node *yaml.Node) error {
+	if err := validate.RejectUnknownKeys(node, KernelImpl{}, nil); err != nil {
+		return err
+	}
+	type shape KernelImpl
+	var raw shape
+	if err := validate.DecodeNode(node, &raw); err != nil {
+		return err
+	}
+	*k = KernelImpl(raw)
+	return nil
+}
+
+// Measures is a coefficient's measurement boundary (design VAL-9).
+type Measures struct {
+	Time      vocab.MeasurementTime      `yaml:"time"`
+	Execution vocab.MeasurementExecution `yaml:"execution"`
+	// Harness names the harness that collected the data, such as the benchmark and its pin.
+	Harness string `yaml:"harness"`
+}
+
+// UnmarshalYAML rejects unknown keys.
+func (m *Measures) UnmarshalYAML(node *yaml.Node) error {
+	if err := validate.RejectUnknownKeys(node, Measures{}, nil); err != nil {
+		return err
+	}
+	type shape Measures
+	var raw shape
+	if err := validate.DecodeNode(node, &raw); err != nil {
+		return err
+	}
+	*m = Measures(raw)
+	return nil
+}
+
+// Bound is the range one input dimension took in a fit's data, closed at both ends.
+type Bound struct {
+	Dim  string  `yaml:"dim"`
+	Low  float64 `yaml:"low"`
+	High float64 `yaml:"high"`
+}
+
+// UnmarshalYAML rejects unknown keys.
+func (b *Bound) UnmarshalYAML(node *yaml.Node) error {
+	if err := validate.RejectUnknownKeys(node, Bound{}, nil); err != nil {
+		return err
+	}
+	type shape Bound
+	var raw shape
+	if err := validate.DecodeNode(node, &raw); err != nil {
+		return err
+	}
+	*b = Bound(raw)
+	return nil
+}
+
+// Interval is a closed numeric range. The wire form is a two-element sequence —
+// [lower, upper] — which is what blis-registry validates and writes.
+type Interval struct {
+	Low  float64
+	High float64
+}
+
+// UnmarshalYAML reads the two-element sequence form.
+func (iv *Interval) UnmarshalYAML(node *yaml.Node) error {
+	var pair []float64
+	if err := validate.DecodeNode(node, &pair); err != nil {
+		return fmt.Errorf("an interval is a two-element sequence [lower, upper]: %w", err)
+	}
+	if len(pair) != 2 {
+		return fmt.Errorf("an interval has two elements, got %d", len(pair))
+	}
+	iv.Low, iv.High = pair[0], pair[1]
+	return nil
+}
+
+// MarshalYAML writes the two-element sequence form, so a round trip is stable.
+func (iv Interval) MarshalYAML() (any, error) {
+	return []float64{iv.Low, iv.High}, nil
+}
+
+// Source is one citation.
+type Source struct {
+	Kind vocab.SourceKind `yaml:"kind"`
+	Cite string           `yaml:"cite"`
+	Role vocab.SourceRole `yaml:"role"`
+}
+
+// UnmarshalYAML rejects unknown keys in a source object before decoding, so a stray field
+// (a typo, or a key the registry's own validator forbids) is an error rather than silently
+// dropped — the custom unmarshal that gives the entry its name would otherwise lose the
+// decoder's KnownFields for the nested source nodes too.
+func (s *Source) UnmarshalYAML(node *yaml.Node) error {
+	if err := validate.RejectUnknownKeys(node, Source{}, nil); err != nil {
+		return err
+	}
+	type sourceShape Source // no UnmarshalYAML, so decoding does not recurse
+	var raw sourceShape
+	if err := validate.DecodeNode(node, &raw); err != nil {
+		return err
+	}
+	*s = Source(raw)
+	return nil
+}
+
+// Scope bounds where an entry holds. An empty scope is not "everywhere" but "not
+// stated", and validation rejects it: a coefficient whose applicability is unknown
+// cannot be applied safely.
+//
+// Dtype and backend are absent by design. Both vary a coefficient, and both ride
+// in the entry name, following the convention blis-registry established for its
+// per-backend dials.
+type Scope struct {
+	Hardware     []string `yaml:"hardware,omitempty"`
+	Model        []string `yaml:"model,omitempty"`
+	TP           []int    `yaml:"tp,omitempty"`
+	EP           []int    `yaml:"ep,omitempty"`
+	NodesSpanned []int    `yaml:"nodes_spanned,omitempty"`
+	// Fabric lists the inter-node interconnect classes the value holds over, by catalog
+	// identity (the stem of networks/<name>.yaml). Matched without regard to case, like
+	// hardware and model.
+	Fabric []string `yaml:"fabric,omitempty"`
+	// HostCPU lists the host CPU families the value holds on, by the catalog's host_cpu fact of
+	// the chip's node packaging (x86 or grace). An engine-path cost is paid on the host's cores, so
+	// it moves with the CPU and not with the GPU it drives. Matched without regard to case.
+	HostCPU []string `yaml:"host_cpu,omitempty"`
+}
+
+// UnmarshalYAML rejects unknown scope keys before decoding. The typed fields alone would
+// silently drop a key the resolver does not know — a custom unmarshal does not inherit the
+// decoder's KnownFields — so an unrecognized dimension would read as "no such scoping"
+// rather than an error. This restores the strict check, matching blis-registry's own
+// validator.
+func (s *Scope) UnmarshalYAML(node *yaml.Node) error {
+	if err := validate.RejectUnknownKeys(node, Scope{}, nil); err != nil {
+		return err
+	}
+	type scopeShape Scope // no UnmarshalYAML, so decoding does not recurse
+	var raw scopeShape
+	if err := validate.DecodeNode(node, &raw); err != nil {
+		return err
+	}
+	*s = Scope(raw)
+	return nil
+}
+
+// Empty reports whether no dimension is stated.
+func (s Scope) Empty() bool {
+	return len(s.Hardware) == 0 && len(s.Model) == 0 && len(s.TP) == 0 &&
+		len(s.EP) == 0 && len(s.NodesSpanned) == 0 && len(s.Fabric) == 0 && len(s.HostCPU) == 0
+}
+
+// Key returns a canonical string identifying this scope, for use as a map key.
+//
+// Order-independent within each dimension: hardware [h100, h200] and [h200, h100] are
+// the same scope, so two entries differing only in that ordering are duplicates rather
+// than alternatives. The separators cannot appear in a scope value, so two different
+// scopes cannot collide on one key.
+func (s Scope) Key() string {
+	var b strings.Builder
+	writeStrings := func(label string, vs []string) {
+		if len(vs) == 0 {
+			return
+		}
+		sorted := append([]string(nil), vs...)
+		sort.Strings(sorted)
+		b.WriteString(label)
+		b.WriteByte('=')
+		b.WriteString(strings.Join(sorted, ","))
+		b.WriteByte(';')
+	}
+	writeInts := func(label string, vs []int) {
+		if len(vs) == 0 {
+			return
+		}
+		sorted := append([]int(nil), vs...)
+		sort.Ints(sorted)
+		b.WriteString(label)
+		b.WriteByte('=')
+		for i, v := range sorted {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			b.WriteString(strconv.Itoa(v))
+		}
+		b.WriteByte(';')
+	}
+	writeStrings("hardware", s.Hardware)
+	writeStrings("model", s.Model)
+	writeInts("tp", s.TP)
+	writeInts("ep", s.EP)
+	writeInts("nodes_spanned", s.NodesSpanned)
+	writeStrings("fabric", s.Fabric)
+	writeStrings("host_cpu", s.HostCPU)
+	return b.String()
+}
+
+// Describe renders a scope for an error message.
+func (s Scope) Describe() string {
+	if s.Empty() {
+		return "unscoped"
+	}
+	return strings.TrimSuffix(s.Key(), ";")
+}
+
+// MetricList is one or more metric names. YAML may give either a scalar or a
+// sequence; both decode to the same slice so a caller never branches on the form.
+type MetricList []string
+
+// UnmarshalYAML accepts a scalar or a sequence of scalars.
+func (m *MetricList) UnmarshalYAML(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		var one string
+		if err := validate.DecodeNode(node, &one); err != nil {
+			return err
+		}
+		*m = MetricList{one}
+		return nil
+	case yaml.SequenceNode:
+		var many []string
+		if err := validate.DecodeNode(node, &many); err != nil {
+			return err
+		}
+		*m = many
+		return nil
+	default:
+		return fmt.Errorf("expected a metric name or a list of them")
+	}
+}

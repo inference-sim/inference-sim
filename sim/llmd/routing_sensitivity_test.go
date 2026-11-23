@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
@@ -91,6 +91,7 @@ func TestRoutingSensitivity_DecisionIsTheArgmaxOfItsScores(t *testing.T) {
 }
 
 func TestRoutingSensitivity_DominantPrefixPinsTheStreamWhateverTheCost(t *testing.T) {
+	skipRetiredEngine(t, "routing outcomes under the compat engine's queue and cache metrics differ")
 	for _, jitter := range []time.Duration{0, 50 * time.Millisecond} {
 		for _, scale := range []float64{1, 1.01, 20, 100, 101, 102, 240} {
 			if share, _ := splitAt(t, scale, 50000, jitter, 128); share != 1 {

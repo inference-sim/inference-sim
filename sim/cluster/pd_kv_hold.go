@@ -9,7 +9,7 @@ import (
 // A prefill engine under a NIXL handoff keeps a finished request's KV blocks allocated until
 // the decode side pulls them, aborts the request, or vanishes and the lease runs out. When a
 // lease expires, and which release a handoff's outcome takes, are the connector's rules
-// (NIXLLease, NIXLReleaseOnDrop, NIXLReleaseAt, from blis-vllm compat/nixl). The
+// (NIXLLease, NIXLReleaseOnDrop, NIXLReleaseAt, in pd_nixl_rules.go). The
 // cluster keeps the holds, the
 // block reference counts and the lease event. It maps the handoff outcomes onto those rules: a
 // completed transfer frees at its completion; a drop at transfer start (the decode side never

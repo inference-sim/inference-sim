@@ -1,0 +1,698 @@
+# Original to blis-vllm.
+"""Tier-1 inertness proofs (design 7.4): vary a field over its value classes, run vLLM's own code, compare.
+
+A field is proven inert when two things hold at its default and at each probe value: the scenario set
+produces identical traces and identical kernel choices, and code coverage shows every upstream function
+that reads the field ran. This harness does both for one field and writes the result into the field's
+proof file, oracle/inertness/<field>.json, which the Go test TestEveryInertFieldHasAPassingProof reads.
+
+    python3 -I oracle/inertness.py <vllm checkout> oracle/inertness/<field>.json          (print the result)
+    python3 -I oracle/inertness.py <vllm checkout> oracle/inertness/<field>.json --write  (update the file)
+    python3 -I oracle/inertness.py <vllm checkout> oracle/inertness/<field>.json --check  (fail if the file differs)
+
+The proof file holds the claim, the probes (one value per value class of fields/value_classes.json,
+chosen by the file, checked by the Go test), the runs, a disposition for every read of the field, and,
+after --write, the result. Runs:
+
+  A proof file may instead be of kind "unread": {"kind": "unread", "names": [...]}, for a variable no file of
+  the serving process (vllm/, csrc/, rust/) names; the result lists the files scanned.
+
+  A proof file of kind "named" is for a variable the serving process names only at the sites the file lists,
+  each a reviewed static fact: {"kind": "named", "names": [...], "sites": {name: [{"file", "line", "text",
+  "role"}]}}. The role is "load" (a site that runs once at start-up, before the first request) or "test"
+  (after the file's first #[cfg(test)] line, which the harness checks). The check fails when the source
+  names the variable anywhere the file does not list, or a listed site is not there.
+
+  scheduler   vLLM's real Scheduler on an oracle scenario (oracle/run_scheduler.py) with the probe applied
+              through the scenario's scheduler_config; the trace without provenance is the decisions.
+  config      EngineArgs(...).create_engine_config(): the value the field resolves to and what the
+              resolved scheduler/cache/parallel config holds; this is the tier's "defaults resolved".
+  handshake   the code that starts the engine cores and hands each the address of the front end's handshake
+              socket, for a field that sets that address (data_parallel_rpc_port): launch_core_engines,
+              run_headless (vllm serve --headless) or ExternalElasticEPScaleCoordinator's scale-up handshake
+              server, each run with the process and socket layer replaced by recorders (nothing is bound and
+              no process is started). The engine-facing decisions are what the engine cores are started with
+              (the resolved parallel, scheduler and cache config, how many cores, which are local, whether the
+              handshake is local) with the stated port removed from the endpoint; the endpoint itself is
+              recorded and must carry the stated port (the run shows the read reaches the address).
+  outputproc  vLLM's OutputProcessor fed a scripted EngineCoreOutput stream, for a front-end field: what it
+              hands back to the engine core (requests to abort) is compared; what it delivers to the
+              client is recorded as frontend_effect and may differ.
+
+A read of the field is found by fields/gen_classes.py (--reads) and must have a disposition:
+  run                    a line of the read executed in a named run (line coverage, sys.settrace; the hits
+                         are those of that run alone, not of the runs before it);
+  pass_through           the read is a keyword argument of a call to a named callee and does nothing else
+                         (checked on the syntax tree), and that callee's own read has a disposition.
+A read the file does not list, or a listed read that is not there, fails the check (a new release changes
+the reads and the field is classified again). A read the scan cannot follow (the value was passed to another
+function) is listed with "reviewed": true, its line and the text found there, which the check verifies.
+Design 7.4 also admits a reviewed static argument for reads in a surface item the engine refuses by name
+and for reads behind a platform check false on CUDA. This harness does not take them: a disposition of
+another kind is an error ("unknown disposition"), until a proof needs one and the harness checks it.
+
+The scan of the reads is of Python (vllm/**/*.py). A file may add "named_in": {"vllm": [...], "rust": [...]},
+the files under vllm/ and rust/ (tests excluded for rust) that name the field at all, and the check
+compares the list with the tree ("named_aliases" adds other spellings of the name, such as a command-line flag): a read in a front end the scan does not parse (the Rust front end) is
+then listed and reviewed, and a file of the engine that starts to name the field fails the check.
+
+Coverage names a vLLM file by its path inside vLLM and matches the executed file by that path's suffix, so
+it counts the code that runs whether vLLM is imported from the checkout or installed from a wheel (CI).
+
+Verdict. inert when every run's engine-facing decisions are identical across the probes and every read has
+a disposition that holds; not_inert, naming the first run and the probes that differ, otherwise; a
+field that selects a kernel is not inert for pricing unless the file states a priced-equivalent argument
+the design accepts (it never does here).
+"""
+
+import ast
+import contextlib
+import dataclasses
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import sys
+import tempfile
+import types
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(HERE)
+
+
+def sibling(path, name):
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise SystemExit("inertness: cannot load %s" % path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def read_lines(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read().splitlines()
+
+
+def digest(obj):
+    return hashlib.sha256(json.dumps(obj, sort_keys=True).encode()).hexdigest()
+
+
+class Coverage:
+    """Which lines of a set of files ran (sys.settrace, Python 3.12).
+
+    A file is named by its path inside vLLM ("vllm/v1/engine/output_processor.py") and matched by the
+    suffix "/" + that path on the file a frame runs. It is not matched by the checkout's own path: the
+    oracle's environment installs vLLM from a wheel (site-packages/vllm/...), and the runner appends the
+    checkout to sys.path after it, so the code that runs is the installed copy, not the checkout's. Both
+    carry the same text at the pinned release, which the version pin in requirements.lock holds.
+
+    The hits are kept for one run: reset() clears them, and the caller reads ran() after each run."""
+
+    def __init__(self, vllm_root, files):
+        self.suffixes = {"/" + f: f for f in files}
+        self.hit = {f: set() for f in files}
+        self.cache = {}
+
+    def rel_of(self, filename):
+        """The vLLM-relative name of an executed file, or None when the file is not one we count."""
+        if filename in self.cache:
+            return self.cache[filename]
+        path = filename.replace(os.sep, "/")
+        rel = None
+        for suffix, f in self.suffixes.items():
+            if path.endswith(suffix):
+                rel = f
+                break
+        self.cache[filename] = rel
+        return rel
+
+    def reset(self):
+        for lines in self.hit.values():
+            lines.clear()
+
+    def tracer(self, frame, event, arg):
+        rel = self.rel_of(frame.f_code.co_filename)
+        if rel is None:
+            return None
+
+        def local(fr, ev, ar):
+            if ev == "line":
+                self.hit[rel].add(fr.f_lineno)
+            return local
+
+        self.hit[rel].add(frame.f_lineno)
+        return local
+
+    def __enter__(self):
+        sys.settrace(self.tracer)
+        return self
+
+    def __exit__(self, *exc):
+        sys.settrace(None)
+
+    def ran(self, at, to):
+        rel, line = at.rsplit(":", 1)
+        return any(int(line) <= n <= to for n in self.hit.get(rel, ()))
+
+
+def patched_scenario(path, apply_to, value, tmp):
+    """The scenario with the probe applied, written to tmp under its own name (the runner reads a path)."""
+    with open(path, encoding="utf-8") as f:
+        sc = json.load(f)
+    if "scheduler_config" in apply_to:
+        sc["config"].setdefault("scheduler_config", {})[apply_to["scheduler_config"]] = value
+    out = os.path.join(tmp, os.path.basename(path))
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(sc, f)
+    return out
+
+
+def run_scheduler(vllm_root, run, value):
+    rs = sibling(os.path.join(HERE, "run_scheduler.py"), "run_scheduler")
+    with tempfile.TemporaryDirectory() as tmp:
+        decisions = {}
+        for sc in run["scenarios"]:
+            p = patched_scenario(os.path.join(REPO, sc), run["apply"], value, tmp)
+            trace = rs.run_one(vllm_root, p)
+            trace.pop("provenance", None)
+            decisions[sc] = trace
+    return decisions
+
+
+def dump(obj):
+    """A plain value for a resolved config: dataclasses by field, containers by element, anything else by
+    repr with memory addresses removed (two probes must not differ by where an object was allocated)."""
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+        return {f.name: dump(getattr(obj, f.name)) for f in dataclasses.fields(obj)}
+    if isinstance(obj, (list, tuple)):
+        return [dump(x) for x in obj]
+    if isinstance(obj, (set, frozenset)):
+        return sorted(repr(dump(x)) for x in obj)
+    if isinstance(obj, dict):
+        return {str(k): dump(v) for k, v in sorted(obj.items(), key=lambda kv: str(kv[0]))}
+    if isinstance(obj, (bool, int, float, str, type(None))):
+        return obj
+    return re.sub(r" at 0x[0-9a-fA-F]+", "", repr(obj))
+
+
+def without(tree, path):
+    """tree without the value at the dotted path (the probed field itself, which differs by construction)."""
+    parts = path.split(".")
+    node = tree
+    for part in parts[:-1]:
+        node = node.get(part) if isinstance(node, dict) else None
+        if node is None:
+            return
+    if isinstance(node, dict):
+        node.pop(parts[-1], None)
+
+
+def differing(a, b, path=""):
+    """The dotted paths at which two dumped configs differ."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        out = []
+        for k in sorted(set(a) | set(b)):
+            out += differing(a.get(k), b.get(k), path + "." + k if path else k)
+        return out
+    return [] if a == b else [path]
+
+
+def run_config(vllm_root, run, value):
+    """EngineArgs(...).create_engine_config() with the probe stated. "observe" lists the resolved values the
+    file wants to see in the result; "compare" lists the config sections (scheduler_config, cache_config, ...)
+    whose every field is compared across the probes, except the field the probe states ("echo"), which holds
+    the stated value by construction, and the paths in "ignore" (values the config draws at random on every
+    call, such as a free port; the file says why)."""
+    if vllm_root not in sys.path:
+        sys.path.append(vllm_root)
+    from vllm.engine.arg_utils import EngineArgs  # noqa: E402
+
+    model = os.environ.get("ORACLE_MODEL", "facebook/opt-125m")
+    args = EngineArgs(model=model, **{run["apply"]["engine_args"]: value}, **run.get("base", {}))
+    cfg = args.create_engine_config()
+
+    def dig(path):
+        obj = cfg
+        for part in path.split("."):
+            obj = getattr(obj, part)
+        return obj if isinstance(obj, (bool, int, float, str, type(None))) else repr(obj)
+
+    whole = {section: dump(getattr(cfg, section)) for section in run.get("compare", [])}
+    without(whole, run["echo"])
+    for path in run.get("ignore", []):
+        without(whole, path)
+    # echo is where the field itself resolves: it must be the stated value, and is not compared across probes.
+    return {"resolved": {path: dig(path) for path in run["observe"]}, "echo": dig(run["echo"]), "stated": value,
+            "whole": whole}
+
+
+def run_outputproc(vllm_root, run, value):
+    if vllm_root not in sys.path:
+        sys.path.append(vllm_root)
+    from vllm.sampling_params import RequestOutputKind, SamplingParams  # noqa: E402
+    from vllm.v1.engine import EngineCoreOutput, EngineCoreRequest, FinishReason  # noqa: E402
+    from vllm.v1.engine.output_processor import OutputProcessor  # noqa: E402
+
+    # The probe is the processor's stream_interval, or, for a control that shows the run sees an
+    # engine-facing change, the step at which the script aborts the requests apply["abort_step"] names.
+    apply = run.get("apply", {})
+    script = dict(run["script"])
+    if "abort_step" in apply:
+        script["abort"] = {"step": value, "ids": apply["abort_step"]}
+        value = 1
+    proc = OutputProcessor(None, log_stats=False, stream_interval=value)
+    # script: {"requests": {id: {"prompt": n, "tokens": [[token ids of step 0], ...]}}}
+    for rid in sorted(script["requests"]):
+        params = SamplingParams(max_tokens=1 << 20, detokenize=False, output_kind=RequestOutputKind.DELTA,
+                                stream_interval=script["requests"][rid].get("stream_interval"))
+        req = EngineCoreRequest(request_id=rid, prompt_token_ids=[1] * script["requests"][rid]["prompt"],
+                                mm_features=None, sampling_params=params, pooling_params=None, arrival_time=0.0,
+                                lora_request=None, cache_salt=None, data_parallel_rank=None, external_req_id=rid)
+        proc.add_request(req, None)
+    aborted, delivered = [], []
+    steps = max(len(r["tokens"]) for r in script["requests"].values())
+    for step in range(steps):
+        outs = []
+        aborts = []
+        if script.get("abort", {}).get("step") == step:
+            aborts = sorted(proc.abort_requests(script["abort"]["ids"], internal=True))
+        for rid in sorted(script["requests"]):
+            toks = script["requests"][rid]["tokens"]
+            if step < len(toks):
+                last = step == len(toks) - 1
+                outs.append(EngineCoreOutput(request_id=rid, new_token_ids=list(toks[step]),
+                                             finish_reason=FinishReason.STOP if last else None))
+        result = proc.process_outputs(outs)
+        aborted.append(aborts + sorted(result.reqs_to_abort))
+        for o in result.request_outputs:
+            delivered.append([step, o.request_id, [len(c.token_ids) for c in o.outputs], bool(o.finished)])
+    return {"to_engine": {"aborted_per_step": aborted, "open_requests": sorted(proc.request_states)},
+            "frontend_effect": delivered}
+
+
+@contextlib.contextmanager
+def replaced(module, **attrs):
+    """module with the named attributes replaced for the duration (the process and socket layer of a handshake run)."""
+    old = {k: getattr(module, k) for k in attrs}
+    for k, v in attrs.items():
+        setattr(module, k, v)
+    try:
+        yield
+    finally:
+        for k, v in old.items():
+            setattr(module, k, v)
+
+
+def endpoint_form(addr, port):
+    """An address with the stated port removed ("tcp://host:<port>"), or its transport alone for an ipc path
+    (whose name is random). Everything else in the address must agree across probes."""
+    if addr.startswith("ipc://"):
+        return "ipc"
+    suffix = ":%d" % port
+    return addr[: -len(suffix)] + ":<port>" if addr.endswith(suffix) else addr
+
+
+def handshake_config(cfg, field, ignore=()):
+    """The resolved parallel, scheduler and cache config of a handshake run without the probed field and the
+    paths in "ignore" (values the config draws at random on each call, such as free ports)."""
+    whole = {s: dump(getattr(cfg, s)) for s in ("parallel_config", "scheduler_config", "cache_config")}
+    without(whole, "parallel_config." + field)
+    for path in ignore:
+        without(whole, path)
+    return whole
+
+
+def run_handshake(vllm_root, run, value):
+    if vllm_root not in sys.path:
+        sys.path.append(vllm_root)
+    from vllm.engine.arg_utils import EngineArgs  # noqa: E402
+
+    model = os.environ.get("ORACLE_MODEL", "facebook/opt-125m")
+    field = run["echo"]
+    base = dict(run.get("base", {}))
+    seen = {"procs": [], "sockets": [], "waits": [], "coordinators": [], "servers": []}
+    endpoints = []
+
+    class Proc:
+        """CoreEngineProcManager: records what the engine cores would be started with."""
+
+        def __init__(self, **kw):
+            kw.pop("vllm_config", None)
+            kw.pop("executor_class", None)
+            endpoints.append(kw.pop("handshake_address", None))
+            kw.pop("client_handshake_address", None)
+            seen["procs"].append(kw)
+
+        def monitor_engine_liveness(self):
+            pass
+
+        def shutdown(self, timeout=None):
+            pass
+
+    class Coordinator:
+        def __init__(self, parallel_config, enable_wave_coordination, **kw):
+            seen["coordinators"].append({"wave": enable_wave_coordination})
+            self.proc = types.SimpleNamespace(pid=1, sentinel=0, exitcode=None, name="coordinator")
+
+        def get_engine_socket_addresses(self):
+            return "ipc://coordinator-in", "ipc://coordinator-out"
+
+        def get_stats_publish_address(self):
+            return "ipc://coordinator-stats"
+
+    @contextlib.contextmanager
+    def socket_ctx(path, socket_type, bind=None, **kw):
+        endpoints.append(path)
+        seen["sockets"].append({"type": str(socket_type), "bind": bind})
+        yield None
+
+    def wait(sock, engines, parallel_config, coordinated, cache_config, launch):
+        seen["waits"].append([[int.from_bytes(e.identity, "little"), e.local] for e in engines] + [coordinated])
+
+    import vllm.distributed.utils as dist_utils  # noqa: E402
+    import vllm.v1.engine.utils as eng_utils  # noqa: E402
+
+    entry = run["entry"]
+    if entry == "run_headless":
+        from vllm.entrypoints.common.cli_args import make_arg_parser, validate_parsed_serve_args  # noqa: E402
+        import vllm.entrypoints.cli.serve as serve  # noqa: E402
+        from vllm.utils.argparse_utils import FlexibleArgumentParser  # noqa: E402
+
+        args = make_arg_parser(FlexibleArgumentParser()).parse_args(
+            ["--model", model, "--headless"] + list(run["cli"]) + [run["apply"]["cli"], str(value)])
+        validate_parsed_serve_args(args)
+        args.api_server_count = 1
+        captured = {}
+
+        class HeadlessProc(Proc):
+            def __init__(self, **kw):
+                captured["config"] = kw["vllm_config"]
+                super().__init__(**kw)
+
+        with replaced(serve, CoreEngineProcManager=HeadlessProc, Executor=types.SimpleNamespace(get_class=lambda c: None)):
+            serve.run_headless(args)
+        cfg = captured["config"]
+    else:
+        args = EngineArgs(model=model, **{run["apply"]["engine_args"]: value}, **base)
+        cfg = args.create_engine_config()
+        if entry == "launch_core_engines":
+            store = types.SimpleNamespace(port=0)
+            with replaced(eng_utils, CoreEngineProcManager=Proc, DPCoordinator=Coordinator, zmq_socket_ctx=socket_ctx,
+                          wait_for_engine_startup=wait), replaced(dist_utils, create_tcp_store=lambda *a, **k: store):
+                with eng_utils.launch_core_engines(cfg, None, False, eng_utils.EngineZmqAddresses(inputs=[], outputs=[])):
+                    pass
+        elif entry == "elastic_scale_up":
+            import vllm.distributed.elastic_ep.external_elastic_ep as ee  # noqa: E402
+            from vllm.v1.engine import ReconfigureDistributedRequest  # noqa: E402
+
+            class Server:
+                def __init__(self, handshake_address, **kw):
+                    endpoints.append(handshake_address)
+                    seen["servers"].append({k: kw[k] for k in ("expected_new_ranks", "num_redundant_experts", "elastic_ep_max_dp_size")})
+
+                def start(self):
+                    pass
+
+            bootstrap = ReconfigureDistributedRequest(
+                new_data_parallel_size=4, new_data_parallel_rank=-1, new_data_parallel_rank_local=-1,
+                new_data_parallel_master_ip="10.0.0.1", new_data_parallel_master_port=29500,
+                new_data_parallel_master_port_list=[29501], coord_store_port=29502)
+            me = types.SimpleNamespace(client=types.SimpleNamespace(vllm_config=cfg), _get_existing_engine_zmq_address=lambda: {})
+            with replaced(ee, ExternalElasticEPScaleUpHandshakeServer=Server):
+                ee.ExternalElasticEPScaleCoordinator._start_scale_up_handshake_server(me, bootstrap, 2, 0, 8)
+        else:
+            raise SystemExit("inertness: unknown handshake entry %r" % entry)
+    forms = [endpoint_form(e, value) for e in endpoints if e is not None]
+    return {"to_engine": {"started_with": seen, "endpoints": forms, "config": handshake_config(cfg, field, run.get("ignore", []))},
+            "endpoint": [e for e in endpoints if e is not None], "stated": value}
+
+
+RUNNERS = {"handshake": run_handshake, "scheduler": run_scheduler, "config": run_config, "outputproc": run_outputproc}
+
+
+def reader_ok(vllm_root, r, source_lines):
+    """Check a pass_through reader's syntax: the read is the value of a keyword of a call to the callee."""
+    d = r["disposition"]
+    rel, line = r["at"].rsplit(":", 1)
+    tree = ast.parse("\n".join(source_lines))
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call):
+            callee = ast.unparse(n.func).split(".")[-1]
+            for k in n.keywords:
+                if k.arg == d["keyword"] and callee == d["callee"] and k.value.lineno <= int(line) <= (k.value.end_lineno or k.value.lineno):
+                    return True
+    return False
+
+
+def files_naming(root, top, name, suffixes, skip=lambda rel: False):
+    """The files under root/top with one of the suffixes whose text contains name, relative to root."""
+    found = []
+    for dirpath, _, files in os.walk(os.path.join(root, top)):
+        for fn in sorted(files):
+            rel = os.path.relpath(os.path.join(dirpath, fn), root)
+            if not fn.endswith(suffixes) or skip(rel):
+                continue
+            try:
+                with open(os.path.join(root, rel), encoding="utf-8") as f:
+                    text = f.read()
+                    if any(n in text for n in ((name,) if isinstance(name, str) else name)):
+                        found.append(rel)
+            except (UnicodeDecodeError, OSError):
+                continue
+    return sorted(found)
+
+
+def rust_test_file(rel):
+    return "/tests/" in rel or rel.endswith("/tests.rs")
+
+
+def evaluate(vllm_root, spec):
+    gc = sibling(os.path.join(REPO, "fields", "gen_classes.py"), "gen_classes")
+    root = os.path.realpath(vllm_root)
+    fl = os.path.join(REPO, "fields.json")
+    reads = gc.reads_of(root, fl, spec["field"])
+    listed = {r["at"]: r for r in spec["readers"] if not r.get("reviewed")}
+    found = {r["at"] for r in reads}
+    result = {"vllm_commit": spec["release"], "problems": []}
+    for at in sorted(found - set(listed)):
+        result["problems"].append("a read of the field has no disposition: %s" % at)
+    for at in sorted(set(listed) - found):
+        result["problems"].append("a listed read is not in the source: %s" % at)
+    for r in spec["readers"]:
+        if r.get("reviewed"):
+            rel, line = r["at"].rsplit(":", 1)
+            text = read_lines(os.path.join(root, rel))[int(line) - 1]
+            if r["expr"] not in text:
+                result["problems"].append("the reviewed read %s no longer holds %r" % (r["at"], r["expr"]))
+    if "named_in" in spec:
+        # The field's name, and the spellings the proof lists in "named_aliases" (a command-line flag, a Rust field).
+        name = (spec["field"],) + tuple(spec.get("named_aliases", []))
+        tree = {"vllm": files_naming(root, "vllm", name, (".py",)),
+                "rust": files_naming(root, "rust", name, (".rs",), rust_test_file)}
+        for top, have in sorted(tree.items()):
+            want = sorted(spec["named_in"].get(top, []))
+            for rel in sorted(set(have) - set(want)):
+                result["problems"].append("%s names the field and the proof does not list it (named_in)" % rel)
+            for rel in sorted(set(want) - set(have)):
+                result["problems"].append("%s is listed in named_in and does not name the field" % rel)
+        result["named_in"] = {top: len(have) for top, have in sorted(tree.items())}
+    want_files = sorted({r["at"].rsplit(":", 1)[0] for r in spec["readers"]})
+    cov = Coverage(root, want_files)
+    probes = spec["probes"]
+    runs_out = {}
+    ran_in = {}
+    with cov:
+        for run in spec["runs"]:
+            cov.reset()  # a line counts for the run that executed it, not for every later run
+            outs = {}
+            for p in probes:
+                outs[p["label"]] = RUNNERS[run["kind"]](root, run, p["value"])
+            engine_facing = {k: (v.get("to_engine", v) if run["kind"] in ("outputproc", "handshake") else v) for k, v in outs.items()}
+            whole_same = True
+            if run["kind"] == "config":
+                for k, v in outs.items():
+                    if v["echo"] != v["stated"]:
+                        result["problems"].append("config run: %s resolved to %r, not the stated %r" % (run["echo"], v["echo"], v["stated"]))
+                engine_facing = {k: v["resolved"] for k, v in outs.items()}
+                # The whole of the named config sections must agree too, not only the observed values.
+                labels = sorted(outs)
+                for other in labels[1:]:
+                    diff = differing(outs[labels[0]]["whole"], outs[other]["whole"])
+                    if diff:
+                        whole_same = False
+                        result["problems"].append("config run %s: %s resolves differently at %r and %r" % (run["id"], ", ".join(diff[:5]), labels[0], other))
+            hashes = {k: digest(v) for k, v in engine_facing.items()}
+            entry = {"decisions": hashes, "identical": len(set(hashes.values())) == 1 and whole_same}
+            if run["kind"] == "config":
+                entry["compared_sections"] = run.get("compare", [])
+            if run["kind"] == "handshake":
+                # The endpoint is the field's own effect: it must carry the stated port, and it differs by it.
+                for k, v in outs.items():
+                    carried = [e for e in v["endpoint"] if not e.startswith("ipc://")]
+                    if run.get("expect_port", True) and (not carried or any(not e.endswith(":%d" % v["stated"]) for e in carried)):
+                        result["problems"].append("handshake run %s: the endpoint %r does not carry the stated port %r" % (run["id"], v["endpoint"], v["stated"]))
+                entry["endpoint"] = {k: ["ipc" if e.startswith("ipc://") else e for e in v["endpoint"]] for k, v in outs.items()}
+            if run["kind"] == "outputproc":
+                entry["frontend_effect"] = {k: digest(v["frontend_effect"]) for k, v in outs.items()}
+                entry["frontend_effect_differs"] = len(set(entry["frontend_effect"].values())) > 1
+            if run["kind"] == "config":
+                entry["resolved"] = {k: v["resolved"] for k, v in outs.items()}
+                entry["echo"] = {k: v["echo"] for k, v in outs.items()}
+            runs_out[run["id"]] = entry
+            for r in spec["readers"]:
+                rel = r["at"].rsplit(":", 1)[0]
+                to = r.get("to", int(r["at"].rsplit(":", 1)[1]))
+                if cov.ran(r["at"], to):
+                    ran_in.setdefault(r["at"], []).append(run["id"])
+    result["runs"] = runs_out
+    result["readers"] = []
+    for r in spec["readers"]:
+        d = r["disposition"]
+        rec = {"at": r["at"], "disposition": d["kind"]}
+        if d["kind"] == "run":
+            rec["ran_in"] = ran_in.get(r["at"], [])
+            if d["run"] not in rec["ran_in"]:
+                result["problems"].append("%s is marked run in %s and that run did not execute it" % (r["at"], d["run"]))
+        elif d["kind"] == "pass_through":
+            rel = r["at"].rsplit(":", 1)[0]
+            lines = read_lines(os.path.join(root, rel))
+            if not reader_ok(root, r, lines):
+                result["problems"].append("%s is not a keyword %s of a call to %s" % (r["at"], d["keyword"], d["callee"]))
+        else:
+            result["problems"].append("%s: unknown disposition %r" % (r["at"], d["kind"]))
+        result["readers"].append(rec)
+    for rid, e in runs_out.items():
+        if not e["identical"]:
+            result["problems"].append("the decisions of run %s differ across the probes" % rid)
+    result["verdict"] = "inert" if not result["problems"] else "not_inert"
+    return result
+
+
+def evaluate_unread(vllm_root, spec):
+    """A proof of kind "unread": no file of the serving process names the variable. The scan reads every text
+    file under vllm/, csrc/ and rust/ (the paths gen_fields.py does not exclude are all of them) for each
+    name, as a whole word. A name found there is a read or a write the generator's rule would list, so the
+    verdict is not_inert and the field is classified again."""
+    import re
+
+    root = os.path.realpath(vllm_root)
+    found = {n: [] for n in spec["names"]}
+    pats = {n: re.compile(r"\b%s\b" % re.escape(n)) for n in spec["names"]}
+    scanned = 0
+    for top in ("vllm", "csrc", "rust"):
+        for dirpath, _, files in os.walk(os.path.join(root, top)):
+            for fn in sorted(files):
+                path = os.path.join(dirpath, fn)
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        text = f.read()
+                except (UnicodeDecodeError, OSError):
+                    continue
+                scanned += 1
+                for n, pat in pats.items():
+                    if pat.search(text):
+                        found[n].append(os.path.relpath(path, root))
+    result = {"vllm_commit": spec["release"], "files_scanned": scanned, "occurrences": {n: sorted(v) for n, v in found.items()},
+              "problems": ["%s is named in %s" % (n, ", ".join(v)) for n, v in sorted(found.items()) if v]}
+    if scanned < 1000:
+        result["problems"].append("only %d files were scanned: the checkout is not a vLLM tree" % scanned)
+    result["verdict"] = "inert" if not result["problems"] else "not_inert"
+    return result
+
+
+def evaluate_named(vllm_root, spec):
+    """A proof of kind "named": the serving process names each variable only at the sites the proof lists. Every
+    line of every text file under vllm/, csrc/ and rust/ is searched for the name as a whole word; the lines
+    found must equal the listed sites (file, line and text), and a site with role "test" must follow the first
+    #[cfg(test)] line of its Rust file. That each "load" site runs only at start-up is the reviewed
+    claim of the proof; the harness holds the list to the tree."""
+    import re
+
+    root = os.path.realpath(vllm_root)
+    pats = {n: re.compile(r"\b%s\b" % re.escape(n)) for n in spec["names"]}
+    found = {n: [] for n in spec["names"]}
+    first_test = {}
+    scanned = 0
+    for top in ("vllm", "csrc", "rust"):
+        for dirpath, _, files in os.walk(os.path.join(root, top)):
+            for fn in sorted(files):
+                path = os.path.join(dirpath, fn)
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        lines = f.read().split("\n")
+                except (UnicodeDecodeError, OSError):
+                    continue
+                scanned += 1
+                rel = os.path.relpath(path, root)
+                for i, line in enumerate(lines, 1):
+                    if rel.endswith(".rs") and rel not in first_test and line.strip() == "#[cfg(test)]":
+                        first_test[rel] = i
+                    for n, pat in pats.items():
+                        if pat.search(line):
+                            found[n].append({"file": rel, "line": i, "text": line.strip()})
+    problems = []
+    occurrences = {}
+    for n in spec["names"]:
+        found[n].sort(key=lambda o: (o["file"], o["line"]))
+        listed = spec.get("sites", {}).get(n, [])
+        by_at = {(s["file"], s["line"]): s for s in listed}
+        occurrences[n] = []
+        for o in found[n]:
+            s = by_at.pop((o["file"], o["line"]), None)
+            if s is None:
+                problems.append("%s is named at %s:%d and the proof does not list it" % (n, o["file"], o["line"]))
+                continue
+            role = s.get("role")
+            if s.get("text") != o["text"]:
+                problems.append("%s at %s:%d reads %r, the proof lists %r" % (n, o["file"], o["line"], o["text"], s.get("text")))
+            if role == "test" and not (o["file"] in first_test and o["line"] > first_test[o["file"]]):
+                problems.append("%s at %s:%d is listed as test code and does not follow a #[cfg(test)] line" % (n, o["file"], o["line"]))
+            elif role == "load" and o["file"] in first_test and o["line"] > first_test[o["file"]]:
+                problems.append("%s at %s:%d is listed as load code and follows a #[cfg(test)] line" % (n, o["file"], o["line"]))
+            elif role not in ("load", "test"):
+                problems.append("%s at %s:%d has role %r, not load or test" % (n, o["file"], o["line"], role))
+            occurrences[n].append({"file": o["file"], "line": o["line"], "role": role})
+        for (f, ln) in sorted(by_at):
+            problems.append("%s is listed at %s:%d and is not named there" % (n, f, ln))
+    result = {"vllm_commit": spec["release"], "files_scanned": scanned, "occurrences": occurrences, "problems": problems}
+    if scanned < 1000:
+        result["problems"].append("only %d files were scanned: the checkout is not a vLLM tree" % scanned)
+    result["verdict"] = "inert" if not result["problems"] else "not_inert"
+    return result
+
+
+def main(argv):
+    if len(argv) < 2:
+        print(__doc__)
+        return 2
+    vllm_root, path = argv[0], argv[1]
+    with open(path, encoding="utf-8") as f:
+        spec = json.load(f)
+    kind = spec.get("kind")
+    if kind == "unread":
+        result = evaluate_unread(vllm_root, spec)
+    elif kind == "named":
+        result = evaluate_named(vllm_root, spec)
+    else:
+        result = evaluate(vllm_root, spec)
+    if "--check" in argv:
+        if spec.get("result") != result:
+            sys.stderr.write("inertness: %s differs from what the harness computes now\n" % path)
+            sys.stderr.write(json.dumps(result, indent=1) + "\n")
+            return 1
+        return 0
+    if "--write" in argv:
+        spec["result"] = result
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(spec, f, indent=1)
+            f.write("\n")
+    else:
+        print(json.dumps(result, indent=1))
+    return 0 if result["verdict"] == "inert" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

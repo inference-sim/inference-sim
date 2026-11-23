@@ -1,0 +1,12 @@
+name: glm-5.3-nvfp4
+source:
+  provider: huggingface
+  repo: nvidia/GLM-5.3-NVFP4
+  revision: e3b8f9f2fad29727dfa95e766c5cac18ea1414bf
+  retrieved: 2026-11-16
+licence:
+  id: LicenseRef-nvidia-open-model-license
+  evidence: https://huggingface.co/nvidia/GLM-5.3-NVFP4/raw/e3b8f9f2fad29727dfa95e766c5cac18ea1414bf/README.md
+config:
+  sha256: b0b6b9ab922a82e3688bc39a4117bc443e106fcf88969ef48b3627778f4bdf7b
+drafters: [speculator]

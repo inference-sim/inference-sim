@@ -4,7 +4,7 @@
 # deployment is a test input for the recurrent-state mapping, not a published arm.
 kind: Scenario
 name: recurrent-kimi-k3-h200-dep16
-engine: {kind: vllm, version: "0.33.0"}
+engine: {kind: vllm}
 
 model: kimi-k3
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
@@ -32,12 +32,7 @@ pools:
       enable_expert_parallel: true
     engine:
       kv_cache_dtype: fp8
-      # KDA layers carry recurrent state. The mode is not stated. "none" sizes state per
-      # sequence rather than per position; it is the config default, but the engine runs
-      # "align" for a hybrid model whenever prefix caching is on
-      # (vllm/model_executor/models/config.py:640-642 at v0.31.0), so this is a choice held
-      # fixed, not the engine's effective default.
-      mamba_cache_mode: none
+      # KDA layers carry recurrent state. Whether it is cached follows enable_prefix_caching.
       block_size: 16
       max_num_batched_tokens: 8192
       max_num_seqs: 256

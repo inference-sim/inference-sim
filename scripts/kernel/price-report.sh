@@ -13,9 +13,11 @@ OUT=${2:?output directory}
 BASE=${REPORT_BASE:?commit holding the old testdata/kernel (the parent of the regeneration)}
 HERE=$(cd "$(dirname "$0")/../.." && pwd)
 mkdir -p "$OUT/old-fixtures" "$OUT/attr"
-SUB=$(cd "$HERE" && go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)
+SUB="$HERE/substrate"
 (cd "$HERE" && git archive "$BASE" testdata/kernel) | tar -x -C "$OUT/old-fixtures"
 # v0.15.0's probe: the same probe.go, with repos.go naming directories (its adapter takes them).
+# v0.15.0 imports the engine as the separate module blis-vllm, so the import below is correct in
+# that checkout only; on the current tree the adapter is engines/vllm/core/kernelmodel.
 mkdir -p "$OLD_REPO/scripts/kernel/priceprobe"
 cp "$HERE/scripts/kernel/priceprobe/probe.go" "$OLD_REPO/scripts/kernel/priceprobe/probe.go"
 cat > "$OLD_REPO/scripts/kernel/priceprobe/repos.go" <<'GO'

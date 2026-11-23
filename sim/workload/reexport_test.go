@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
 )
 
 // mkReq builds a minimal COMPLETED replayed request for re-export reconstruction tests.

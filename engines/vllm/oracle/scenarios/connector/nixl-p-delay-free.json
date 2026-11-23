@@ -1,0 +1,118 @@
+{
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 256,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_producer",
+   "kv_load_failure_policy": "fail",
+   "extra_config": {}
+  }
+ },
+ "requests": [
+  {
+   "id": "p0",
+   "arrival_step": 0,
+   "prompt": [
+    4417,
+    2370,
+    247,
+    1721,
+    2108,
+    398,
+    3254,
+    3082,
+    1099,
+    667,
+    3781,
+    63,
+    4280,
+    1988
+   ],
+   "output": [
+    212
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 2
+  },
+  {
+   "id": "p1",
+   "arrival_step": 0,
+   "prompt": [
+    101,
+    3847,
+    921,
+    3219,
+    1154,
+    355,
+    1137,
+    922,
+    4385
+   ],
+   "output": [
+    1899
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 1
+  },
+  {
+   "id": "p2",
+   "arrival_step": 1,
+   "prompt": [
+    635,
+    1750,
+    1185,
+    2484,
+    1949,
+    4066,
+    200,
+    316,
+    822,
+    2661,
+    4170,
+    2707,
+    468,
+    4283,
+    3841,
+    3039,
+    4926,
+    7,
+    4444,
+    1036,
+    4299,
+    78
+   ],
+   "output": [
+    3977
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 3
+  },
+  {
+   "id": "l0",
+   "arrival_step": 0,
+   "prompt": [
+    4673,
+    1371,
+    1911,
+    2272,
+    3924,
+    4364
+   ],
+   "output": [
+    4321,
+    1528,
+    4124
+   ]
+  }
+ ],
+ "name": "nixl-p-delay-free"
+}

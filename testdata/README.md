@@ -3,8 +3,8 @@
 ## Golden Dataset (`goldendataset.json`)
 
 The golden dataset contains known-good simulation outputs for regression testing.
-Tests in `sim/cluster/cluster_test.go` and `sim/cluster/instance_golden_test.go` compare
-simulation output against these values.
+Tests in `sim/cluster/cluster_test.go` and `sim/cluster/instance_golden_test.go` read
+this file and compare simulation output against these values.
 
 Steps are priced by the deterministic fake latency model in `sim/internal/testutil`
 (`testutil.DefaultFakeLatency`, adapted to the engine contract by
@@ -13,35 +13,22 @@ not by any real latency backend. The dataset therefore pins simulation behavior
 (scheduling, batch formation, KV allocation, workload generation, metric aggregation),
 never pricing; each case records `"approach": "fake-latency"`.
 
-### When to regenerate
+### When it changes
 
-Regenerate after ANY deliberate change that affects simulation output:
-- The fake latency model's formula or default coefficients
-- Request scheduling or batch formation logic
-- KV cache allocation or eviction
-- Workload generation (RNG, distribution parameters)
-- Metric collection or aggregation
-
-### How to regenerate
-
-```bash
-REGEN_GOLDEN=1 go test ./sim/ -run TestRegenGoldenDataset -count=1
-go test ./sim/... -run Golden -v
-```
-
-`TestRegenGoldenDataset` (sim/simulator_test.go) re-runs every case with the default
-fake and rewrites the `metrics` section. (`go test ./sim/ -run TestSimulator_GoldenDataset
--update-golden` does the same while preserving each case's wall-clock
-`simulation_duration_s`.) Read the diff before committing it: only the metrics the
-change is meant to move should move.
+The dataset's `metrics` section is read, never written, by the tests: nothing rewrites it. After a
+deliberate change that affects simulation output (the fake latency model's formula or default
+coefficients, request scheduling or batch formation, KV allocation or eviction, workload
+generation, metric collection) the failing test prints the new value; read the diff, then edit
+`goldendataset.json` by hand so that only the metrics the change is meant to move move.
+(`testutil.UpdateGolden` / `-update-golden` is declared in `sim/internal/testutil/golden.go`, but
+no test reads it.)
 
 ### Companion invariant tests
 
 Per R7 (.github/agent-prompts/standards/rules.md), every golden test MUST have a companion
 invariant test. The companions are:
-- `TestSimulator_GoldenDataset` -> inline INV-1, INV-4, INV-5 checks (sim/simulator_test.go)
-- `TestInstanceSimulator_GoldenDataset_Equivalence` -> `TestInstanceSimulator_GoldenDataset_Invariants` (sim/cluster/instance_test.go)
 - `TestClusterSimulator_SingleInstance_GoldenEquivalence` -> `TestClusterSimulator_SingleInstance_GoldenInvariants` (sim/cluster/cluster_test.go)
+- `TestInstance_GoldenDataset_KeepsTheInstanceLaws` (sim/cluster/instance_golden_test.go) checks INV-1, INV-3 and INV-5 on the same workloads
 
 ---
 
@@ -56,6 +43,5 @@ repository imports both the engine and the cost model (release plan §2).
 
 ## The catalog and registry
 
-Tests read the `catalog/` and `registry/` directories of the blis-substrate module that
-`go.mod` selects (`internal/substratedata`). There is no copy here and no lock file: the
-substrate requirement in `go.mod` is the one place that names the data.
+Tests read the `catalog/` and `registry/` directories under `substrate/` (`internal/substratedata`).
+There is no copy here and no lock file: `substrate/` is the one place that holds the data.

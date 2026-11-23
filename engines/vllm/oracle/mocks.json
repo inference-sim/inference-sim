@@ -1,0 +1,272 @@
+{
+  "version": "gpu-mock/9+2ee0b3b47a9c",
+  "description": "Everything the oracle replaces. Only the GPU, the clock, transports and external services may be replaced; check_mocks.py fails if an entry names decision code.",
+  "mocks": [
+    {
+      "symbol": "vllm.v1.outputs.ModelRunnerOutput",
+      "kind": "gpu",
+      "how": "constructed by the harness instead of by a model runner: each scheduled request that reaches the end of its known tokens samples its next assigned output token from the scenario"
+    },
+    {
+      "symbol": "tests.v1.core.utils.create_scheduler",
+      "kind": "environment",
+      "how": "vLLM's own CPU test helper builds the real Scheduler with a fixed KV capacity (num_blocks) and a 1-head, 1-dim float32 full-attention spec, so no tensors are allocated; it is called, not modified"
+    },
+    {
+      "symbol": "sampled token stream",
+      "kind": "gpu",
+      "how": "the assigned output's last token is sampled as EOS_TOKEN_ID (tests/v1/core/utils.py:43), so the simulator's output-length input ends the request through vLLM's own check_stop; max_tokens carries only a client budget"
+    },
+    {
+      "symbol": "vllm.v1.core.sched.scheduler.time",
+      "kind": "clock",
+      "how": "oracle/run_metrics.py only: time.time and time.monotonic read the virtual clock (the step index), so the scheduler's event timestamps are deterministic; no decision reads them in the scenarios run",
+      "sites": [
+        "run_metrics.py:sched_mod.time"
+      ]
+    },
+    {
+      "symbol": "vllm.v1.metrics.stats.time",
+      "kind": "clock",
+      "how": "oracle/run_metrics.py only: IterationStats' iteration_timestamp reads the virtual clock (the step index), so latency series are deterministic; they are derived families and not compared",
+      "sites": [
+        "run_metrics.py:stats_mod.time"
+      ]
+    },
+    {
+      "symbol": "vllm.v1.engine.time",
+      "kind": "clock",
+      "how": "oracle/run_metrics.py only: EngineCoreEvent timestamps (QUEUED, SCHEDULED, PREEMPTED) read the virtual clock (the step index), so the queue-time series is deterministic; a derived family, not compared",
+      "sites": [
+        "run_metrics.py:engine_mod.time"
+      ]
+    },
+    {
+      "symbol": "vllm.v1.outputs.DraftTokenIds",
+      "kind": "gpu",
+      "how": "constructed by the harness instead of by a drafter: after each step that ran, every request in it is proposed num_speculative_tokens draft ids and handed to Scheduler.update_draft_token_ids, as EngineCore.post_step does (vllm/v1/engine/core.py:689-696); only the count reaches a decision"
+    },
+    {
+      "symbol": "spec-decode acceptance",
+      "kind": "gpu",
+      "how": "a verify step samples one token plus the scenario's accepted count for that request and step (at most the drafts it verified; a placeholder -1 draft is always rejected, rejection_sampler.py:762-763): acceptance is an input (#2021 B3), the rejection algorithm is outside parity"
+    },
+    {
+      "symbol": "tests.v1.core.utils.VllmConfig",
+      "kind": "environment",
+      "how": "the helper's VllmConfig is called with vLLM's own SpeculativeConfig, LoRAConfig and KVEventsConfig built from the scenario (oracle/run_scheduler.py build_scheduler); a speculative draft is a configuration-only checkpoint under oracle/drafts (architecture, no weights); vLLM derives every value the scheduler reads",
+      "sites": [
+        "run_scheduler.py:helpers.VllmConfig"
+      ]
+    },
+    {
+      "symbol": "tests.v1.core.utils.SchedulerConfig",
+      "kind": "environment",
+      "how": "the helper's SchedulerConfig is called with the scenario's watermark, max_num_active_seqs, max_num_scheduled_tokens and long_prefill_token_threshold_adaptive, which the helper fixes (watermark=0.0) or does not expose",
+      "sites": [
+        "run_scheduler.py:helpers.SchedulerConfig"
+      ]
+    },
+    {
+      "symbol": "vllm.config.vllm.HAS_TRITON",
+      "kind": "environment",
+      "how": "DSpark scenarios only: set True with VLLM_USE_V2_MODEL_RUNNER=1, as on a GPU host, so vLLM accepts the DSpark config (it runs only on the V2 model runner, vllm/config/vllm.py:2976-2979); the Scheduler class and its decisions are the same on either runner",
+      "sites": [
+        "run_scheduler.py:vllm_config_module.HAS_TRITON",
+        "run_scheduler.py:os.environ[]"
+      ]
+    },
+    {
+      "symbol": "KV event publisher",
+      "kind": "transport",
+      "how": "with kv_events on, the scheduler's null publisher object's publish method is wrapped to keep a copy of each step's KVEventBatch (scheduler.py:2371-2385) for the trace; the events themselves are vLLM's",
+      "sites": [
+        "run_scheduler.py:pub.publish"
+      ]
+    },
+    {
+      "symbol": "tests.v1.core.utils.KVCacheConfig",
+      "kind": "environment",
+      "how": "hybrid scenarios only (kv_groups): the helper's KVCacheConfig is called with one layer per group built from vLLM's own FullAttentionSpec and SlidingWindowSpec (1 head, 1 dim, float32, as the helper's single group), each sliding-window layer tagged with extra_retained_tokens = num_prefill_lookahead_tokens - 1 read from the built VllmConfig, as get_kv_cache_configs tags it at launch (vllm/v1/core/kv_cache_utils.py:2582-2589); and with disable_hybrid_kv_cache_manager the layers pass through vLLM's own unify_hybrid_kv_cache_specs first; vLLM's KVCacheManager picks the coordinator and per-group managers",
+      "sites": [
+        "run_scheduler.py:helpers.KVCacheConfig"
+      ]
+    },
+    {
+      "symbol": "tests.v1.core.utils.CacheConfig",
+      "kind": "environment",
+      "how": "hybrid Mamba scenarios only (kv_layers with a mamba run): the helper's CacheConfig is called with vLLM's own mamba_cache_mode and mamba_block_size from the scenario's mamba runs, and the CacheConfig fields the scenario names in cache_config (prefix_cache_retention_interval, prefix_match_unit, enable_mamba_shared_prefix_checkpoint), so the Scheduler reads them as a launch sets them and VllmConfig's validators (validate_mamba_block_size, validate_block_size) run on them; the helper's other arguments are passed through and nothing is set on a built object",
+      "sites": [
+        "run_scheduler.py:helpers.CacheConfig"
+      ]
+    },
+    {
+      "symbol": "vllm.v1.executor.abstract.Executor",
+      "kind": "gpu",
+      "how": "oracle/run_enginecore.py only: execute_model and sample_tokens return futures that resolve, when the batch queue pops them, to the shared GPU mock's ModelRunnerOutput; which requests sample is read from the scheduler's own is_prefill_chunk when the batch executes",
+      "sites": [
+        "run_enginecore.py:core.model_executor"
+      ]
+    },
+    {
+      "symbol": "EngineCore construction",
+      "kind": "environment",
+      "how": "oracle/run_enginecore.py only: EngineCore.__init__ (vllm/v1/engine/core.py:118-259) loads a model and profiles a GPU, so the EngineCore is built with object.__new__ holding the real scheduler and the attributes __init__ would set (batch_queue_size = VllmConfig.max_concurrent_batches, the deque, no structured output, no spec decode); step_with_batch_queue and step run unmodified",
+      "sites": [
+        "run_enginecore.py:object.__new__(EngineCore)",
+        "run_enginecore.py:core.vllm_config",
+        "run_enginecore.py:core.log_stats",
+        "run_enginecore.py:core.scheduler",
+        "run_enginecore.py:core.batch_queue_size",
+        "run_enginecore.py:core.batch_queue",
+        "run_enginecore.py:core.is_mm_encoder_only",
+        "run_enginecore.py:core.is_pooling_model",
+        "run_enginecore.py:core.check_for_draft_tokens",
+        "run_enginecore.py:core.use_spec_decode",
+        "run_enginecore.py:core.async_scheduling",
+        "run_enginecore.py:core._weight_version",
+        "run_enginecore.py:core.aborts_queue"
+      ]
+    },
+    {
+      "symbol": "vllm.platforms.cpu async override",
+      "kind": "environment",
+      "how": "oracle/run_enginecore.py only: the CPU platform turns async scheduling off (vllm/platforms/cpu.py:329-331); the scenario's value is set back after it ran, with the scheduler class get_scheduler_cls() picks for it",
+      "sites": [
+        "run_enginecore.py:vllm_config.scheduler_config.async_scheduling"
+      ]
+    },
+    {
+      "symbol": "use_v2_model_runner (CPU wheel without Triton)",
+      "kind": "environment",
+      "how": "oracle/run_enginecore.py only: the V2 model runner needs Triton, which the CPU wheel lacks (inference-sim/blis-vllm#3), so the scenario's choice is passed to create_scheduler and to VllmConfig.max_concurrent_batches' own code, as vLLM's own CPU tests do (tests/v1/core/test_async_scheduler.py:499-517)"
+    },
+    {
+      "symbol": "vllm.config.ParallelConfig.sync_dp_state",
+      "kind": "transport",
+      "how": "oracle/run_dp.py only: the DP process group's all-reduce is answered with the sum it would compute over the ranks' votes of this step (any rank has unfinished requests); DPEngineCoreProc._has_global_unfinished_reqs runs unmodified, as vLLM's own tests script it (tests/v1/engine/test_engine_core.py:641-657)",
+      "sites": [
+        "run_dp.py:ParallelConfig.sync_dp_state"
+      ]
+    },
+    {
+      "symbol": "DP coordinator stats transport",
+      "kind": "transport",
+      "how": "oracle/run_dp.py only: the coordinator's [waiting, running, kv_cache_usage] publication reaches the client every stats_interval steps and stats_lag steps late, from the ranks' own counts; DPLBAsyncMPClient.get_core_engine_for_request runs unmodified on a client holding exactly the state it reads (tests/v1/engine/test_engine_core_client.py:208-222)",
+      "sites": [
+        "run_dp.py:client.lb_engines"
+      ]
+    },
+    {
+      "symbol": "DPLBAsyncMPClient construction",
+      "kind": "environment",
+      "how": "oracle/run_dp.py only: the client is built with object.__new__ holding exactly the state get_core_engine_for_request and process_engine_outputs read (client_count 1, the in-flight maps, the empty set of open streaming-input sessions (core_client.py:1728-1729@4ba787ec), one engine identity per rank, the rotating start, a config naming the V1 runner and allgather_reducescatter), as vLLM's own tests build it (tests/v1/engine/test_engine_core_client.py:208-222@5df63a72); the method runs unmodified. The finished-request bookkeeping is process_engine_outputs' own two lines (core_client.py:1703-1710), applied by the harness when a request finishes",
+      "sites": [
+        "run_dp.py:object.__new__(DPLBAsyncMPClient)",
+        "run_dp.py:client.client_count",
+        "run_dp.py:client.reqs_in_flight",
+        "run_dp.py:client.streaming_reqs",
+        "run_dp.py:client.engine_inflight",
+        "run_dp.py:client.core_engines",
+        "run_dp.py:client.eng_start_index",
+        "run_dp.py:client.vllm_config",
+        "run_dp.py:client.engine_inflight[]"
+      ]
+    },
+    {
+      "symbol": "DPEngineCoreProc construction",
+      "kind": "environment",
+      "how": "oracle/run_dp.py only: each rank's DP engine core is built with object.__new__ holding exactly the state _should_throttle_prefills and _has_global_unfinished_reqs read (dp_group, the rank's own vllm_config, through which v0.33.0 reads the DP state (core.py:2560@4ba787ec), dp_sync_interval, prefill_schedule_interval, step_counter, current_wave, pending_pause, ignore_start_dp_wave, engines_running), as vLLM's own tests build it (tests/v1/engine/test_engine_core.py:641-657@5df63a72); those two methods run unmodified",
+      "sites": [
+        "run_dp.py:object.__new__(DPEngineCoreProc)",
+        "run_dp.py:core.dp_group",
+        "run_dp.py:core.vllm_config",
+        "run_dp.py:core.dp_sync_interval",
+        "run_dp.py:core.prefill_schedule_interval",
+        "run_dp.py:core.pending_pause",
+        "run_dp.py:core.ignore_start_dp_wave"
+      ]
+    },
+    {
+      "symbol": "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+      "kind": "environment",
+      "how": "oracle/run_dp.py only, and NOT vLLM's code: run_busy_loop (vllm/v1/engine/core.py:2328-2405@5df63a72) blocks on ZMQ queues and a process group, so the harness writes its per-step decisions itself, transcribed from it: a rank that ran nothing while it has unfinished requests or the wave runs executes a dummy batch (:2354-2368); _has_global_unfinished_reqs is skipped on a rank that is idle and not running (:2357-2358); when it returns False the wave number advances and the step counter resets (:2384-2393); and a request reaching a rank whose wave is not running starts every rank's wave at once, a simplification of the FIRST_REQ / START_DP_WAVE round trip through the coordinator (core_client.py:1590-1593, coordinator.py:363-374, core.py:2234-2248, 2281-2298). These are the harness's decisions, so the trace's dummy, waves, running and step_counter fields, and mutants D4-D7, show that blis-vllm matches this transcription, not vLLM's loop itself (docs/testing.md, tier 3)",
+      "sites": [
+        "run_dp.py:core.engines_running",
+        "run_dp.py:c.engines_running",
+        "run_dp.py:core.current_wave",
+        "run_dp.py:core.step_counter"
+      ]
+    },
+    {
+      "symbol": "NIXL connector scheduler config",
+      "kind": "environment",
+      "how": "oracle/run_connector.py only: vLLM's create_vllm_config helper (tests/v1/kv_connector/unit/utils.py:111-180@5df63a72) always enables prefix caching, fixes the scheduling policy, the long-prefill cap and the watermark, and builds ModelConfig without the scenario's max_model_len (it reaches SchedulerConfig only, :132-142), while the Scheduler reads model_config.max_model_len (vllm/v1/core/sched/scheduler.py:145). So the scenario's values are set on the CacheConfig, SchedulerConfig and ModelConfig after construction and before the Scheduler is built, which reads them at construction, and SchedulerConfig.verify_max_model_len (vllm/config/scheduler.py:314-357), which those edits bypass, is run again on the result",
+      "sites": [
+        "run_connector.py:vllm_config.cache_config.enable_prefix_caching",
+        "run_connector.py:vllm_config.scheduler_config.policy",
+        "run_connector.py:vllm_config.scheduler_config.long_prefill_token_threshold",
+        "run_connector.py:vllm_config.scheduler_config.watermark",
+        "run_connector.py:vllm_config.model_config.max_model_len"
+      ]
+    },
+    {
+      "symbol": "KV-transfer parameters on a request",
+      "kind": "transport",
+      "how": "oracle/run_connector.py only: the kv_transfer_params a P/D proxy hands each side (do_remote_prefill and the remote block ids for a decoder, do_remote_decode for a prefiller) are set on the Request as vLLM's own create_request builds them (tests/v1/kv_connector/unit/utils.py:246-264@5df63a72); the connector reads them unmodified",
+      "sites": [
+        "run_connector.py:req.kv_transfer_params"
+      ]
+    },
+    {
+      "symbol": "OffloadingConnector scheduler config",
+      "kind": "environment",
+      "how": "oracle/run_offloading.py only: the scenario's VllmConfig is built by vLLM's own config constructors (ModelConfig with the scenario's max_model_len, SchedulerConfig with its policy, long-prefill cap and watermark, CacheConfig with prefix_cache_retention_interval None, dense retention, which core/kv models, and KVTransferConfig naming OffloadingConnector with the scenario's kv_connector_extra_config), the values tests/v1/kv_connector/unit/utils.py:111-180@5df63a72 create_vllm_config fixes; the KV cache groups are vLLM's own FullAttentionSpec and SlidingWindowSpec of the scenario's page, each window tagged with extra_retained_tokens as get_kv_cache_configs tags it (vllm/v1/core/kv_cache_utils.py:2582-2589). The spec is CPUOffloadingSpec (vllm/v1/kv_offload/factory.py:31): TieringOffloadingSpec's scheduler-side manager needs a /dev/shm region (vllm/v1/kv_offload/tiering/spec.py:342-350) and with no secondary tiers forwards every scheduler call to its CPU primary tier, a CPUOffloadingManager (tiering/manager.py:396-417, 569-661, 736-781, 843-873, 912-921), so a scenario stating it is refused, not substituted. Nothing is written into a built object",
+      "sites": []
+    },
+    {
+      "symbol": "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+      "kind": "transport",
+      "how": "oracle/run_offloading.py only: the worker side (OffloadingConnectorWorker, vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:40-323@5df63a72) is the transport mock. On each step's OffloadingConnectorMetadata it follows the worker's protocol: jobs_to_flush are submitted and waited for at once (handle_preemptions, :198-224), the stores the previous step deferred and this step's loads are submitted (start_kv_transfers, :226-238) and this step's stores are deferred to the next step (prepare_store_kv, :240-249). A submitted load completes load_delay steps later and a store store_delay steps later (the scenario's, per request or for all). Completions reach the scheduler as vLLM's own OffloadingWorkerMetadata(completed_jobs={job: num_workers}) (offloading/common.py:76-104): every worker of the engine's world size (the scenario's tensor_parallel_size, the connector's num_workers, offloading/scheduler.py:335) reports the job in the same step, merged as KVOutputAggregator merges the workers' counts (vllm/distributed/kv_transfer/kv_connector/utils.py:144-150; common.py:92-104) in the step's KVConnectorOutput.kv_connector_worker_meta, and a completed load's request in finished_recving (worker.py:273-309); the worker reports both as sets, so the mock fixes their order: jobs by job id, requests by request id. The Go side (core/connector/offloading) reports them in the same order",
+      "sites": []
+    },
+    {
+      "symbol": "finished_req_ids iteration order (per-process hash seed)",
+      "kind": "environment",
+      "how": "oracle/run_offloading.py only: the Scheduler's finished_req_ids is a set of request-id strings (vllm/v1/core/sched/scheduler.py:237, 2736), and str hashing is randomised per process (python -I ignores PYTHONHASHSEED), so vLLM's own iteration order over it is not reproducible from run to run. OffloadingConnectorScheduler iterates it to store a finished request's last chunks and to tell the CPU manager the request finished (offloading/scheduler.py:1576-1579, 1889-1896@5df63a72), which orders prepare_store (CPU evictions) and the LRU's recency updates when two or more requests finish between steps. Before each schedule() the runner replaces the attribute with a set holding the same ids that iterates in sorted order; membership and size are unchanged and the scheduler reads it only through iteration and membership. The Go side's offloading connector (core/connector/offloading, added after this mock) iterates the step's finished requests in the same sorted request-id order",
+      "sites": [
+        "run_offloading.py:scheduler.finished_req_ids"
+      ]
+    },
+    {
+      "symbol": "nixl._api.nixl_agent (OBJ and UCX backends)",
+      "kind": "transport",
+      "how": "oracle/run_tiering.py only: oracle/fake_nixl is NIXL's agent with an in-memory OBJ backend and UCX backend, imported by vllm.distributed.nixl_utils as nixl._api (nixl_utils.py:40-78@4ba787ec), because neither NIXL nor an S3 bucket is in the CPU environment. It stores and reads each block's bytes in a bucket shared by name, answers query_memory with None for a missing object, fails a READ of a missing object as a whole (state ERR), and finishes the transfers in flight in submission order after each driver call or inside the tier's drain_jobs, which blocks until NIXL finishes. The driver may hold an agent's transfers in flight across calls (a slow transfer), make a bucket refuse writes, or make an agent's next transfer() fail at submission, through the package's own functions. For the p2p tier's NixlTransport (tiering/p2p/data/nixl.py@4ba787ec) an agent's metadata is its name, add_remote_agent makes a peer's host blocks addressable, and a WRITE copies the local blocks into the peer's (both instances are in this process); a WRITE to an instance the driver took down ends ERR. A peer registration NixlTransport runs on its worker thread (add_remote_agent) waits until the driver's after-call transport rule, so it resolves between calls rather than when the thread scheduler lets it. ObjectStoreSecondaryTierManager and NixlTransport run unmodified. The Go side (core/connector/tiering ObjTier, MemBucket) follows the same rule",
+      "sites": []
+    },
+    {
+      "symbol": "zmq (pyzmq, as tiering/p2p/control/zmq.py uses it)",
+      "kind": "transport",
+      "how": "oracle/run_tiering.py only: the p2p control module's zmq is oracle/fake_zmq, in-memory ROUTER, DEALER and monitor sockets, because real loopback sockets deliver on the operating system's schedule. Messages, their encoding and their order are vLLM's (ZmqTransport, ZmqConnection and msgspec run unmodified); after each driver call every message on the wire reaches the ROUTER bound at its address, in send order, unless the sequence holds the wire, and a sequence may take an instance down, which unbinds its ROUTER, drops what was sent to it and reports EVENT_DISCONNECTED on every DEALER connected to it",
+      "sites": [
+        "run_tiering.py:zmq_control.zmq"
+      ]
+    },
+    {
+      "symbol": "time.monotonic",
+      "kind": "clock",
+      "how": "oracle/run_tiering.py only: a virtual clock that stands still until the sequence advances it, installed before any vLLM module is imported so default_factory fields that captured time.monotonic read it too. The p2p tier's deadlines (handshake, load, abort, lookup, store and unbound-store timeouts, idle reaps, reconnect backoff) run on it (#13); the driver's own waits use time.perf_counter",
+      "sites": [
+        "run_tiering.py:time.monotonic"
+      ]
+    },
+    {
+      "symbol": "vLLM environment variables of a tiering sequence",
+      "kind": "environment",
+      "how": "oracle/run_tiering.py only: a sequence's \"env\" (such as VLLM_P2P_HANDSHAKE_TIMEOUT_S or VLLM_P2P_MAX_PEERS) is set in os.environ for that sequence and restored after it; vllm.envs reads each when used",
+      "sites": [
+        "run_tiering.py:os.environ[]"
+      ]
+    }
+  ]
+}

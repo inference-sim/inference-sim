@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 )
@@ -37,6 +37,9 @@ var resultFlagsExempt = map[string]map[string]string{
 		"output":            "output path only",
 		"view":              "stderr rendering only",
 		"log":               "stderr verbosity only",
+		"replications":      "estimate.replications and estimate.interval",
+		"max-replications":  "estimate.interval.max_replications",
+		"interval-width":    "estimate.interval.target_relative_width",
 		"from-result":       "the reproduction source; recorded as rerun_of",
 		"trace-output":      "output path only (the files are artifacts)",
 		"saturation-report": "output path only",
@@ -170,6 +173,9 @@ var optionsExcluded = map[string]string{
 	"help": "no effect", "format": "output encoding only", "output": "output path only",
 	"view": "stderr rendering only", "log": "stderr verbosity only",
 	"saturation-report": "output path only; the report is not referenced by the Result",
+	"replications":      "estimate.replications and estimate.interval",
+	"max-replications":  "estimate.interval.max_replications",
+	"interval-width":    "estimate.interval.target_relative_width",
 	"counterfactual-k":  "adds in-memory decision-trace rows; no Result byte reads them",
 	"corpus-cache":      "a parse cache; output is identical with or without it",
 	"from-result":       "the reproduction source; recorded as rerun_of",

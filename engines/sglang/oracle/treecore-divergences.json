@@ -1,0 +1,19 @@
+{
+  "description": "Differences between SGLang's Rust and Python tree cores on the cache sequences that oracle/run_treecore_diff.py finds, each with the open issue that records it (X28).",
+  "divergences": [
+    {
+      "sequence": "namespaced-keys",
+      "call": 17,
+      "what": "prefix_cache.take_events answers differently",
+      "issue": "https://github.com/inference-sim/inference-sim/issues/2345",
+      "why": "the Rust core queues one BlockRemoved per namespace where the Python core merges them into one (events.py:140-170)"
+    },
+    {
+      "sequence": "namespaced-keys-dynamo",
+      "call": 13,
+      "what": "prefix_cache.take_events answers differently",
+      "issue": "https://github.com/inference-sim/inference-sim/issues/2345",
+      "why": "as namespaced-keys, in the dynamo event format"
+    }
+  ]
+}

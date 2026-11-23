@@ -5,10 +5,10 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/trace"
@@ -136,7 +136,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		return
 	}
 	if params, ok := cs.p2pDecodeParams(e.parentReq); ok {
-		// A p2p handoff (blis-vllm#204): the decode engine admits the request by its own scheduler (the
+		// A p2p handoff (inference-sim/inference-sim#2439): the decode engine admits the request by its own scheduler (the
 		// P/D connector's rule below does not apply) and loads the prompt through its own p2p tier,
 		// from the prefill instance's CPU tier, whose stores wait for its fetch; the WRITEs are the
 		// prefill engine's transfers. The cluster's handoff moves nothing and ends at once.

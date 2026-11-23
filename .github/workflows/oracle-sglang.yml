@@ -1,0 +1,693 @@
+name: oracle-sglang
+
+# The SGLang engine's oracle (engines/sglang/oracle, engines/sglang/AGENTS.md): SGLang's own scheduler and
+# helpers, run from source on CPU in a hash-locked environment, re-derive every committed golden, and the Go
+# engine is compared with them. Ported from blis-sglang's ci.yml jobs oracle-checks, fields, oracle-run,
+# oracle and treecore-diff (its go, lint and goldens-reviewed jobs are ci.yml's now). ci.yml calls it when a
+# change touches engines/sglang or substrate (the `sglang` group of scripts/ci-changes.sh); a person can start it
+# on any branch with workflow_dispatch. The mutation shards are mutation-sglang.yml.
+#
+# Needs the network (SGLang's source at the commit provenance.go pins, the scenario model's config files, the
+# hash-locked wheels, the Rust toolchain) and so runs on GitHub-hosted Linux only; a skipped step or a scenario
+# no shard ran is a failure (X16, compare_goldens.py).
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: engines/sglang
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  # The oracle's guards over this repository's files (X18): every sglang module the scheduler's files
+  # import is classified as a decision module or listed with a reason (check_modules.py, FID-1), every
+  # platform read, clock read and thread start reachable from the decision modules is listed and
+  # covered by a manifest entry (gen_platform_reads.py, FID-1, FID-8), every golden trace's
+  # provenance matches this tree (check_provenance.py, FID-2), every compared field takes two
+  # values in the scenario set or is held with its reason (value_coverage.py, FID-10), and
+  # oracle/test_checks.py runs each guard on what it guards. SGLang's source is read at the commit
+  # provenance.go pins; nothing is installed.
+  oracle-checks:
+    name: oracle-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - id: pin
+        name: the SGLang commit provenance.go pins
+        run: |
+          set -euo pipefail
+          commit="$(sed -n 's/^\tCommit: *"\([0-9a-f]\{40\}\)",$/\1/p' provenance.go)"
+          test -n "$commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: check out SGLang at that commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: sgl-project/sglang
+          ref: ${{ steps.pin.outputs.commit }}
+          path: engines/sglang/sglang-source
+          fetch-depth: 1
+          persist-credentials: false
+      - name: the checkout is that commit
+        run: test "$(git -C sglang-source rev-parse HEAD)" = "${{ steps.pin.outputs.commit }}"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: every module the scheduler imports is classified
+        run: python -I oracle/check_modules.py sglang-source
+      - name: every platform read, clock read and thread start reachable from the decision modules is listed and named in the manifest
+        run: python -I oracle/gen_platform_reads.py sglang-source
+      - name: every golden trace records this tree's SGLang commit, lock, manifest version, scenario and seed
+        run: python -I oracle/check_provenance.py
+      - name: every compared field of the goldens takes two values, or is held with its reason
+        run: python -I oracle/value_coverage.py
+      - name: every allocator and pool class SGLang defines is modelled or refused (SGL-6)
+        run: python -I oracle/check_pool_classes.py sglang-source
+      - name: every refusal the port quotes from SGLang is in its source at the pin, in the port and in its test (SGL-6, SIM-9)
+        run: python -I oracle/check_refusal_quotes.py sglang-source
+      - name: the refusal-quote guard fails on what it guards
+        run: python -I oracle/test_check_refusal_quotes.py
+      - name: the guards fail on what they guard
+        run: python -I oracle/test_checks.py sglang-source
+      - name: the step-driven runner and its step hook run at the declared boundary
+        run: python -I oracle/test_step_runner.py
+      - name: the inertness verdict fails on what it guards
+        run: python -I oracle/test_inertness.py
+      - name: the ServerArgs shards partition the cases and each is compared with its own
+        run: python -I oracle/test_compare_serverargs.py
+      - name: the refusal comparison fails on what it guards
+        run: python -I oracle/test_compare_refusals.py
+      # The surface list (X9, SGL-4, SGL-6, FID-5): surface.json is what tools/surface/gen_surface.py
+      # writes from SGLang's registration and selection code at the pinned commit, every item has a
+      # status X9 allows, and the generator's tests (its known-bad inputs among them) pass.
+      - name: surface.json is current
+        run: python -I tools/surface/gen_surface.py sglang-source tools/surface/status.json --check surface.json
+      - name: the surface generator fails on what it guards
+        run: python -I tools/surface/test_gen_surface.py
+      - name: the lowering oracle's replacement check fails on what it guards
+        run: python -I oracle/lower/test_check_replacements.py
+      - name: the lowering shards partition the cases and each is compared with its own
+        run: python -I oracle/lower/test_compare_lower.py
+      - name: the tree-core comparison fails on what it guards
+        run: python -I oracle/test_treecore_diff.py
+      # S15: every sglang:* family the release defines has a class, and the manifest is current.
+      - uses: ./.github/actions/go-toolchain
+      - name: every sglang:* metric family is classified and the manifest is current
+        run: go run ./cmd/metricsmanifest -sglang sglang-source -check
+
+  # The oracle's environment (SGL-1, FID-2): SGLang checked out at the commit provenance.go pins, the
+  # locked environment installed by hash and checked against the lock (.github/actions/oracle-env),
+  # the manifest check (FID-1, FID-8), and the scheduler importing from the checkout on CPU.
+  #
+  # The oracle is two kinds of job. `oracle-run` is a matrix of shards: each shard builds the
+  # environment, runs its share of the oracle's runners, and uploads the traces it wrote. `oracle`,
+  # the check branch protection requires, runs when every shard has finished, puts the shards'
+  # traces together and compares them with the goldens, so every golden is compared against a
+  # trace written in this run exactly as before, and a scenario no shard ran fails there (X16,
+  # compare_goldens.py: "the runner wrote no trace"). The shards need the cheap checks, so a push
+  # that fails a one-minute check gets its verdict then, not after the oracle.
+  #
+  #   shard         runs                                                         was, in one job
+  #   resolve       the mock and peer checks, the import check, the inertness proofs
+  #   serverargs-0..3  ServerArgs (T1): case k of cases.json going to shard k mod 4  about 6 min each
+  #   lower-0..3    lowering (T1), case k going to shard k mod 4; lower-0 also     about 6 min each
+  #                 runs every tier-2 scenario
+  #   sched-0/1/2   the scheduling loop (S13), scenario i going to shard i mod 3   about 11 min
+  #   cache         the cache framework's interfaces (FID-5) and the pools (SGL-6) about 3 min
+  #   hicache-metrics  HiCache (FID-5) and the metrics and KV events (S15)         about 4 min
+  oracle-run:
+    name: oracle-run (${{ matrix.group }})
+    needs: [oracle-checks, fields]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {group: resolve}
+          - {group: serverargs-0, part: 0}
+          - {group: serverargs-1, part: 1}
+          - {group: serverargs-2, part: 2}
+          - {group: serverargs-3, part: 3}
+          - {group: lower-0, part: 0}
+          - {group: lower-1, part: 1}
+          - {group: lower-2, part: 2}
+          - {group: lower-3, part: 3}
+          - {group: sched-0, part: 0}
+          - {group: sched-1, part: 1}
+          - {group: sched-2, part: 2}
+          - {group: cache}
+          - {group: hicache-metrics}
+    env:
+      SCHED_PARTS: 3
+      SERVERARGS_PARTS: 4
+      LOWER_PARTS: 4
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - id: env
+        uses: ./.github/actions/oracle-env-sglang
+      # resolve
+      - name: every replacement the harness makes is listed, and none is decision code
+        if: matrix.group == 'resolve'
+        run: python -I oracle/check_mocks.py oracle/mocks.json
+      - name: a KV-transfer or KV-store client in the lock is at its peers.json pin
+        if: matrix.group == 'resolve'
+        run: python -I oracle/check_peers.py
+      - name: the scheduler imports from the pinned checkout in the locked environment
+        if: matrix.group == 'resolve'
+        run: python -I oracle/run_import.py sglang-source
+      # Tier 1: default resolution. Each case of oracle/serverargs/cases.json runs through SGLang's
+      # own ServerArgs(...).resolve_once() on CPU with the case's CUDA chip restored (each
+      # replacement listed in oracle/mocks.json); its models are read as configuration only, at the
+      # revisions cases.json pins. The answers must equal config/testdata/serverargs.json, which the
+      # Go test (config TestResolveAgainstSGLang) compares with config.Resolve field by field.
+      - name: fetch the ServerArgs cases' model configurations at their pinned revisions
+        if: startsWith(matrix.group, 'serverargs-') || startsWith(matrix.group, 'lower-')
+        run: python -I oracle/serverargs/fetch_models.py oracle/serverargs/cases.json serverargs-models
+      # The cases run one at a time, each in a process of its own, so a case's answer does not depend
+      # on its shard. The shard compares its cases with the committed ones at the same positions;
+      # the oracle job fails unless every shard of SERVERARGS_PARTS wrote its answers.
+      - name: resolve this shard's ServerArgs cases through SGLang's own pipeline
+        if: startsWith(matrix.group, 'serverargs-')
+        env:
+          HF_HUB_OFFLINE: "1"
+          PART: ${{ matrix.part }}
+        run: |
+          set -euo pipefail
+          mkdir -p shard-out/oracle-traces
+          python -I oracle/run_serverargs.py --shard "$PART/$SERVERARGS_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models > "shard-out/oracle-traces/serverargs-$PART.json"
+      - name: the committed ServerArgs answers are SGLang's own
+        if: startsWith(matrix.group, 'serverargs-')
+        env:
+          PART: ${{ matrix.part }}
+        run: python -I oracle/compare_serverargs.py config/testdata/serverargs.json "shard-out/oracle-traces/serverargs-$PART.json"
+      # S18 (issue #2349): the refusals SGLang makes itself (schedule_policy.py:332-344, registry.py:261-271,
+      # and ServerArgs.check_server_args) are run through SGLang's own code, and the messages must be
+      # the ones committed in sglangengine/testdata/sglang_refusals.json, which the Go test compares
+      # with the port's. A missing or stale golden fails here and in the Go test; nothing is recorded
+      # by hand (BLIS_SGLANG_ALLOW_GOLDEN_UPDATE copies it from the oracle-traces artifact).
+      - name: run SGLang's own refusals
+        if: matrix.group == 'serverargs-0'
+        env:
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p shard-out/oracle-traces
+          ORACLE_MODEL="$PWD/oracle-model" python -I oracle/run_refusals.py sglang-source oracle/refusals/cases.json > shard-out/oracle-traces/refusals.json
+      - name: the committed refusals are SGLang's own
+        if: matrix.group == 'serverargs-0'
+        run: python -I oracle/compare_refusals.py sglangengine/testdata/sglang_refusals.json shard-out/oracle-traces/refusals.json
+      # T1 (issue #2350): each proof of kind observed_reads is re-run through SGLang's scheduler at the
+      # field's default and probes, and the file must be what the runs give (oracle/inertness.py).
+      - name: the inertness proofs are what SGLang's scheduler gives
+        if: matrix.group == 'resolve'
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          for p in oracle/inertness/*.json; do
+            python -I oracle/inertness.py sglang-source "$p" --check
+          done
+      # Lowering: SGLang's own decode CUDA-graph, gather, attention and MoE functions, run after
+      # SGLang resolves and publishes each accepted case (oracle/lower/extract.py; every
+      # replacement listed in oracle/lower/replacements.json). The answers must equal
+      # lower/testdata/sglang_lower.json, which the Go test (lower TestLowerAgainstSGLang) compares.
+      - name: every replacement the lowering oracle makes is listed
+        if: startsWith(matrix.group, 'lower-')
+        run: python -I oracle/lower/check_replacements.py oracle/lower/extract.py oracle/lower/replacements.json
+      # The cases (the ServerArgs file's, then oracle/lower/cases.json) go to the shards by position,
+      # like the ServerArgs cases; each shard compares its own with the committed answers, and the
+      # oracle job fails unless every shard of LOWER_PARTS ran and together they ran every case.
+      - name: lower this shard's accepted cases through SGLang's own functions
+        if: startsWith(matrix.group, 'lower-')
+        env:
+          HF_HUB_OFFLINE: "1"
+          PART: ${{ matrix.part }}
+        run: |
+          set -euo pipefail
+          mkdir -p shard-out/oracle-traces
+          python -I oracle/lower/extract.py --shard "$PART/$LOWER_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models oracle/lower/cases.json > "shard-out/oracle-traces/lower-$PART.json"
+      - name: the committed lowering answers for this shard's cases are SGLang's own
+        if: startsWith(matrix.group, 'lower-')
+        env:
+          PART: ${{ matrix.part }}
+        run: python3 -I oracle/lower/compare_lower.py shard <(python3 -I oracle/goldengz.py cat lower/testdata/sglang_lower.json) "shard-out/oracle-traces/lower-$PART.json"
+      # Tier 2: every scenario through SGLang's own Scheduler (run_scheduler_process), its event loop
+      # unmodified. The runner fails unless every request finishes, the loop ends on the harness's
+      # ShutdownReq, every forward pass was launched from SGLang's own event loop at the checkout,
+      # the tree core is the Python one, and no clocked module still reads the real clock.
+      - name: run every scenario through SGLang's scheduler
+        if: matrix.group == 'lower-0'
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          mkdir -p shard-out/oracle-traces
+          for s in oracle/scenarios/*.json; do
+            name="$(basename "$s" .json)"
+            python -I oracle/run_scheduler.py sglang-source "$s" "shard-out/oracle-traces/$name.trace.json"
+          done
+      # FID-5 (design §7.6): the cache framework's interfaces traced as SGLang's own classes answer
+      # them. Recorded: each tier-2 scenario through the scheduler, every call at the six cache
+      # interfaces observed (oracle/cache_interfaces.py). Direct: the driver's own sequences.
+      - name: trace the cache framework's interfaces
+        if: ${{ !cancelled() && matrix.group == 'cache' }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          o=shard-out/oracle-traces-fid5
+          mkdir -p $o/recorded $o/t2 $o/direct
+          for s in oracle/scenarios/*.json; do
+            python -I oracle/run_cache_iface.py recorded sglang-source "$s" "$o/recorded/$(basename "$s" .json).trace.json"
+          done
+          # T2 for the radix cache: scheduler scenarios that evict (oracle/scenarios/cache).
+          for s in oracle/scenarios/cache/*.json; do
+            python -I oracle/run_cache_iface.py recorded sglang-source "$s" "$o/t2/$(basename "$s" .json).trace.json"
+          done
+          # The radix cache's depth-first weight order (oracle/scenarios-dfs-order).
+          mkdir -p $o/dfs
+          for s in oracle/scenarios-dfs-order/*.json; do
+            python -I oracle/run_dfs_order.py sglang-source "$s" "$o/dfs/$(basename "$s" .json).trace.json"
+          done
+          for s in oracle/scenarios-cache-iface/*.json; do
+            python -I oracle/run_cache_iface.py direct sglang-source "$s" "$o/direct/$(basename "$s" .json).trace.json"
+          done
+      # SGL-6: the allocators and pools alone, in orderings no scheduler makes, with each pool's
+      # buffer bytes and the configurator's per-token cell (oracle/run_pools.py).
+      - name: trace the allocators and pools
+        if: ${{ !cancelled() && matrix.group == 'cache' }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p shard-out/oracle-traces-pools/direct
+          for s in oracle/scenarios-pools/*.json; do
+            python -I oracle/run_pools.py direct sglang-source "$s" "shard-out/oracle-traces-pools/direct/$(basename "$s" .json).trace.json"
+          done
+      # S48 (#94): the hybrid mamba pools, the state budget and the request-slot cap
+      # (oracle/run_mamba_pools.py).
+      - name: trace the hybrid mamba pools
+        if: ${{ !cancelled() && matrix.group == 'cache' }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p shard-out/oracle-traces-mamba-pools
+          for s in oracle/scenarios-mamba-pools/*.json; do
+            python -I oracle/run_mamba_pools.py direct sglang-source "$s" "shard-out/oracle-traces-mamba-pools/$(basename "$s" .json).trace.json"
+          done
+          mkdir -p shard-out/oracle-traces-mamba-pools/component
+          for s in oracle/scenarios-mamba-component/*.json; do
+            python -I oracle/run_mamba_component.py direct sglang-source "$s" "shard-out/oracle-traces-mamba-pools/component/$(basename "$s" .json).trace.json"
+          done
+      # FID-5 (design §7.6) for HiCache: the controller, layer counter, L2 transfer, host pool and
+      # storage interfaces traced as SGLang's own classes answer them, the controller's threads and
+      # device events run by the step-driven runner (oracle/step_runner.py, FID-1). Recorded: each
+      # HiCache scheduler scenario; direct: the driver's own sequences (oracle/run_hicache.py).
+      - name: trace the HiCache framework's interfaces
+        if: ${{ !cancelled() && matrix.group == 'hicache-metrics' }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          o=shard-out/oracle-traces-hicache
+          mkdir -p $o/recorded $o/direct
+          for s in oracle/scenarios/hicache/recorded/*.json; do
+            python -I oracle/run_hicache.py recorded sglang-source "$s" "$o/recorded/$(basename "$s" .json).trace.json"
+          done
+          for s in oracle/scenarios/hicache/direct/*.json; do
+            python -I oracle/run_hicache.py direct sglang-source "$s" "$o/direct/$(basename "$s" .json).trace.json"
+          done
+      # FID-5 (design §7.6) for HiCache's L2 host tier: the write policies, load-back and host
+      # eviction through SGLang's own scheduler (recorded) and the driver's own sequences (direct),
+      # no storage backend (oracle/scenarios/hicache-l2, oracle/run_hicache.py).
+      - name: trace the HiCache host tier
+        if: ${{ !cancelled() && matrix.group == 'hicache-metrics' }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          o=shard-out/oracle-traces-hicache-l2
+          mkdir -p $o/l2-recorded $o/l2-direct
+          for s in oracle/scenarios/hicache-l2/recorded/*.json; do
+            python -I oracle/run_hicache.py recorded sglang-source "$s" "$o/l2-recorded/$(basename "$s" .json).trace.json"
+          done
+          for s in oracle/scenarios/hicache-l2/direct/*.json; do
+            python -I oracle/run_hicache.py direct sglang-source "$s" "$o/l2-direct/$(basename "$s" .json).trace.json"
+          done
+      # HiCache host pools' sizing and layout refusals (oracle/run_host_pools.py): SGLang's own
+      # MHA, MLA and DSA host pools, as the assembler builds them.
+      - name: trace the HiCache host pools
+        if: ${{ !cancelled() && matrix.group == 'hicache-metrics' }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          mkdir -p shard-out/oracle-traces-host-pools
+          for s in oracle/scenarios-host-pools/*.json; do
+            python -I oracle/run_host_pools.py direct sglang-source "$s" "shard-out/oracle-traces-host-pools/$(basename "$s" .json).trace.json"
+          done
+      # S13: the normal scheduling loop, with the state each step leaves (oracle/run_sched.py).
+      # The scenarios, sorted by name, go to the shards in turn: shard i runs scenarios i, i+N, ...
+      - name: trace the scheduling loop
+        if: ${{ !cancelled() && startsWith(matrix.group, 'sched-') }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+          PART: ${{ matrix.part }}
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          mkdir -p shard-out/oracle-traces-sched
+          i=0
+          for s in $(ls oracle/scenarios-sched/*.json | LC_ALL=C sort); do
+            if [ $((i % SCHED_PARTS)) -eq "$PART" ]; then
+              python -I oracle/run_sched.py sglang-source "$s" "shard-out/oracle-traces-sched/$(basename "$s" .json).trace.json"
+            fi
+            i=$((i + 1))
+          done
+      # S15: the metrics registry and the KV-event bytes after each step (oracle/run_metrics.py).
+      - name: trace the metrics and KV events
+        if: ${{ !cancelled() && matrix.group == 'hicache-metrics' }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          mkdir -p shard-out/oracle-traces-metrics
+          for s in oracle/scenarios-metrics/*.json; do
+            python -I oracle/run_metrics.py sglang-source "$s" "shard-out/oracle-traces-metrics/$(basename "$s" .json).trace.json"
+          done
+      # The resolve shard only checks; it writes no trace, so it uploads none (every other shard
+      # writes at least one, and uploading nothing from them is still an error).
+      - name: upload the shard's traces
+        if: ${{ !cancelled() && matrix.group != 'resolve' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-shard-${{ matrix.group }}
+          path: engines/sglang/shard-out/
+          if-no-files-found: error
+
+  # The required check. It fails unless every shard passed, then compares the
+  # shards' traces with the goldens: the same compare_goldens.py runs, on the same directories, as
+  # when one job wrote them all, and it reports a scenario that no shard ran.
+  oracle:
+    name: oracle
+    needs: [oracle-run]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: every shard passed
+        working-directory: .
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' > /dev/null
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - id: pin
+        name: the SGLang commit provenance.go pins (every shard checked its checkout out at it)
+        run: |
+          set -euo pipefail
+          commit="$(sed -n 's/^\tCommit: *"\([0-9a-f]\{40\}\)",$/\1/p' provenance.go)"
+          test -n "$commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - id: dl
+        name: download the shards' traces
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: oracle-shard-*
+          merge-multiple: true
+          path: engines/sglang/traces
+      - name: every ServerArgs shard ran, and together they are every case
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          n="$(jq -r '.shard.of' traces/oracle-traces/serverargs-0.json)"
+          total="$(python3 -I -c 'import gzip,json,os;p="config/testdata/serverargs.json";print(len(json.load(open(p) if os.path.exists(p) else gzip.open(p+".gz"))["cases"]))')"
+          sum=0
+          for i in $(seq 0 $((n - 1))); do
+            jq -e --argjson i "$i" --argjson n "$n" '.shard == {index: $i, of: $n}' "traces/oracle-traces/serverargs-$i.json" > /dev/null
+            sum=$((sum + $(jq '.cases | length' "traces/oracle-traces/serverargs-$i.json")))
+          done
+          echo "$n shards, $sum of $total cases"
+          test "$sum" -eq "$total"
+      - name: every lowering shard ran, and together they are every case
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          n="$(jq -r '.shard.of' traces/oracle-traces/lower-0.json)"
+          test "$(ls traces/oracle-traces/lower-*.json | wc -l | tr -d ' ')" = "$n"
+          python3 -I oracle/lower/compare_lower.py complete <(python3 -I oracle/goldengz.py cat lower/testdata/sglang_lower.json) oracle/serverargs/cases.json oracle/lower/cases.json traces/oracle-traces/lower-*.json
+      - name: every golden trace is SGLang's own output
+        run: python -I oracle/compare_goldens.py traces/oracle-traces "${{ steps.pin.outputs.commit }}"
+      - name: every cache interface golden is SGLang's own output
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          commit="${{ steps.pin.outputs.commit }}"
+          python -I oracle/compare_goldens.py traces/oracle-traces-fid5/recorded "$commit" oracle/scenarios core/cache/testdata/golden-fid5/recorded
+          python -I oracle/compare_goldens.py traces/oracle-traces-fid5/t2 "$commit" oracle/scenarios/cache core/cache/testdata/golden-fid5/t2
+          python -I oracle/compare_goldens.py traces/oracle-traces-fid5/dfs "$commit" oracle/scenarios-dfs-order core/cache/testdata/golden-fid5/dfs
+          python -I oracle/compare_goldens.py traces/oracle-traces-fid5/direct "$commit" oracle/scenarios-cache-iface core/cache/testdata/golden-fid5/direct
+      - name: every HiCache interface golden is SGLang's own output
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          commit="${{ steps.pin.outputs.commit }}"
+          python -I oracle/compare_goldens.py traces/oracle-traces-hicache/recorded "$commit" oracle/scenarios/hicache/recorded core/hicache/testdata/golden-fid5/recorded
+          python -I oracle/compare_goldens.py traces/oracle-traces-hicache/direct "$commit" oracle/scenarios/hicache/direct core/hicache/testdata/golden-fid5/direct
+      - name: every HiCache host tier golden is SGLang's own output
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          commit="${{ steps.pin.outputs.commit }}"
+          python -I oracle/compare_goldens.py traces/oracle-traces-hicache-l2/l2-recorded "$commit" oracle/scenarios/hicache-l2/recorded core/hicache/testdata/golden-fid5/l2-recorded
+          python -I oracle/compare_goldens.py traces/oracle-traces-hicache-l2/l2-direct "$commit" oracle/scenarios/hicache-l2/direct core/hicache/testdata/golden-fid5/l2-direct
+      - name: every HiCache host pool golden is SGLang's own output
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        run: python -I oracle/compare_goldens.py traces/oracle-traces-host-pools "${{ steps.pin.outputs.commit }}" oracle/scenarios-host-pools core/hicache/testdata/golden-fid5/host-pools
+      - name: every allocator and pool golden is SGLang's own output
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        run: python -I oracle/compare_goldens.py traces/oracle-traces-pools/direct "${{ steps.pin.outputs.commit }}" oracle/scenarios-pools core/cache/testdata/golden-pools/direct
+      - name: every scheduling golden is SGLang's own output
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        run: python -I oracle/compare_goldens.py traces/oracle-traces-sched "${{ steps.pin.outputs.commit }}" oracle/scenarios-sched core/sched/testdata/golden-sched
+      - name: every hybrid mamba pool golden is SGLang's own output
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        run: python -I oracle/compare_goldens.py traces/oracle-traces-mamba-pools "${{ steps.pin.outputs.commit }}" oracle/scenarios-mamba-pools core/cache/testdata/golden-pools/mamba
+      - name: every MambaComponent lifecycle golden is SGLang's own output
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        run: python -I oracle/compare_goldens.py traces/oracle-traces-mamba-pools/component "${{ steps.pin.outputs.commit }}" oracle/scenarios-mamba-component core/cache/testdata/golden-pools/mamba-component
+      - name: every metrics golden is SGLang's own output
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        run: python -I oracle/compare_goldens.py traces/oracle-traces-metrics "${{ steps.pin.outputs.commit }}" oracle/scenarios-metrics core/metrics/testdata/golden-metrics
+      # The traces, under the names they were uploaded under before the oracle was sharded (the
+      # goldens are re-recorded from them).
+      - name: upload the traces
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces
+          path: engines/sglang/traces/oracle-traces/
+      - name: upload the cache interface traces
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-fid5
+          path: engines/sglang/traces/oracle-traces-fid5/
+      - name: upload the HiCache interface traces
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-hicache
+          path: engines/sglang/traces/oracle-traces-hicache/
+      - name: upload the HiCache host tier traces
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-hicache-l2
+          path: engines/sglang/traces/oracle-traces-hicache-l2/
+      - name: upload the HiCache host pool traces
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-host-pools
+          path: engines/sglang/traces/oracle-traces-host-pools/
+      - name: upload the allocator and pool traces
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-pools
+          path: engines/sglang/traces/oracle-traces-pools/
+      - name: upload the scheduling traces
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-sched
+          path: engines/sglang/traces/oracle-traces-sched/
+      - name: upload the hybrid mamba pool traces
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-mamba-pools
+          path: engines/sglang/traces/oracle-traces-mamba-pools/
+      - name: upload the metrics traces
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-metrics
+          path: engines/sglang/traces/oracle-traces-metrics/
+
+  # S45 (design §6.4, SGL-1, SGL-5): SGLang's Rust tree core, its production default on Linux,
+  # against the Python one the oracle pins, on every cache sequence. The Rust core is built from
+  # the pinned checkout (rust/sglang-radix-tree, cargo build --locked) with the toolchain its
+  # rust-toolchain.toml pins: SGLang's default build mode builds from a source checkout
+  # (tree_core_registry.py:75-87), and the runner refuses a fallback to the Python core. A difference passes only when oracle/treecore-divergences.json lists
+  # it with an open issue.
+  treecore-diff:
+    name: treecore-diff
+    needs: [oracle-checks, fields]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - id: env
+        uses: ./.github/actions/oracle-env-sglang
+      - name: install the Rust toolchain the checkout pins
+        run: |
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' sglang-source/rust/rust-toolchain.toml)"
+          test -n "$channel"
+          rustup toolchain install "$channel" --profile minimal
+          (cd sglang-source/rust && cargo --version --verbose && rustc -vV)
+      - name: compare the two tree cores on every cache sequence
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          python -I oracle/run_treecore_diff.py sglang-source treecore-diff.json
+      - name: upload the comparison
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: treecore-diff
+          path: engines/sglang/treecore-diff.json
+
+      # HiCache host pools' sizing and layout refusals (oracle/run_host_pools.py): SGLang's own
+      # MHA, MLA and DSA host pools, as the assembler builds them.
+      - name: trace the HiCache host pools
+        if: ${{ !cancelled() }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          mkdir -p oracle-traces-host-pools
+          for s in oracle/scenarios-host-pools/*.json; do
+            python -I oracle/run_host_pools.py direct sglang-source "$s" "oracle-traces-host-pools/$(basename "$s" .json).trace.json"
+          done
+      - name: upload the HiCache host pool traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-host-pools
+          path: engines/sglang/oracle-traces-host-pools/
+      - name: every HiCache host pool golden is SGLang's own output
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          python -I oracle/compare_goldens.py oracle-traces-host-pools "$(git -C sglang-source rev-parse HEAD)" oracle/scenarios-host-pools core/hicache/testdata/golden-fid5/host-pools
+
+  fields:
+    name: fields
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - id: pin
+        name: the SGLang commit provenance.go pins
+        run: |
+          set -euo pipefail
+          commit="$(sed -n 's/^\tCommit: *"\([0-9a-f]\{40\}\)",$/\1/p' provenance.go)"
+          test -n "$commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: check out SGLang at that commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: sgl-project/sglang
+          ref: ${{ steps.pin.outputs.commit }}
+          path: engines/sglang/sglang-source
+          fetch-depth: 1
+          persist-credentials: false
+      - name: the checkout is that commit
+        run: test "$(git -C sglang-source rev-parse HEAD)" = "${{ steps.pin.outputs.commit }}"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: fields.json is what the generator writes
+        run: python -W ignore::SyntaxWarning -I fields/gen_fields.py sglang-source fields/status.json --value-classes fields/value_classes.json --check fields.json
+      - name: fields/declarations.json is what the generator writes
+        run: python -W ignore::SyntaxWarning -I fields/gen_fields.py sglang-source --declarations --check fields/declarations.json
+      - name: config/serverargs_gen.go is what the generator writes
+        run: python -I config/gen_serverargs.py fields/declarations.json --check config/serverargs_gen.go
+      - name: fields/value_classes.json is what the generator writes
+        run: python -W ignore::SyntaxWarning -I fields/gen_classes.py sglang-source fields.json fields/declarations.json --check fields/value_classes.json
+      - name: the generators' tests
+        run: |
+          set -euo pipefail
+          python -I fields/test_gen_fields.py
+          python -I fields/test_classes.py

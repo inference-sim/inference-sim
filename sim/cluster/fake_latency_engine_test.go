@@ -3,7 +3,7 @@ package cluster
 import (
 	"fmt"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
@@ -11,7 +11,7 @@ import (
 // fakeLatency is the deterministic, stateless fake latency model (testutil.FakeLatency) as the
 // compatibility engine's LatencyModel, which this package's tests hand the engines they build.
 // It was sim/internal/testutil/fakelatency's Model, moved into each test package's files when
-// the engine left the host (phase 2c), so no non-test file under sim/ imports blis-vllm.
+// the engine left the host (phase 2c), so no non-test file under sim/ imports the vLLM engine.
 type fakeLatency struct{ c testutil.FakeLatency }
 
 var _ cengine.LatencyModel = fakeLatency{}

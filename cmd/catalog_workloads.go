@@ -3,9 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
-	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
+	schemaworkload "github.com/inference-sim/inference-sim/substrate/contracts/spec/workload"
+	"github.com/inference-sim/inference-sim/substrate/load"
 
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -29,7 +29,7 @@ const (
 // for its model, and nothing about a run is inferred from a bundled default.
 //
 // The FILE format is not declared here. It is the contracts' workload.Shape, decoded and
-// checked by blis-substrate's loader with the rest of the catalog. This struct is the value BLIS
+// checked by the substrate's loader with the rest of the catalog. This struct is the value BLIS
 // reads out of a Shape, so there is one parser per catalog format.
 type presetWorkload struct {
 	PrefixTokens      int
@@ -122,7 +122,7 @@ func readCatalogPresetWorkload(name string, data *load.Data) (*presetWorkload, e
 // replay workload.
 type presetSource struct{ Shape *schemaworkload.Shape }
 
-// catalogPreset reads the catalog's workload entry called name through blis-substrate's reader.
+// catalogPreset reads the catalog's workload entry called name through the substrate's reader.
 func catalogPreset(data *load.Data, name string) (*presetSource, error) {
 	entry, err := data.Workload(name)
 	if err != nil {

@@ -1,0 +1,95 @@
+{
+ "name": "model-len-boundary",
+ "description": "A request whose prompt plus output reaches max_model_len exactly is capped at max_model_len - computed - 1 per step and stops by length.",
+ "config": {
+  "max_num_seqs": 2,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 30,
+  "max_model_len": 20
+ },
+ "requests": [
+  {
+   "id": "r00",
+   "arrival_step": 0,
+   "prompt": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17
+   ],
+   "output": [
+    90000,
+    90001,
+    90002,
+    90003,
+    90004,
+    90005,
+    90006,
+    90007,
+    90008,
+    90009
+   ],
+   "priority": 0
+  },
+  {
+   "id": "r01",
+   "arrival_step": 0,
+   "prompt": [
+    1000,
+    1001,
+    1002,
+    1003,
+    1004,
+    1005
+   ],
+   "output": [
+    90010,
+    90011,
+    90012,
+    90013,
+    90014,
+    90015,
+    90016,
+    90017,
+    90018,
+    90019,
+    90020,
+    90021,
+    90022,
+    90023,
+    90024,
+    90025,
+    90026,
+    90027,
+    90028,
+    90029,
+    90030,
+    90031,
+    90032,
+    90033,
+    90034,
+    90035,
+    90036,
+    90037,
+    90038,
+    90039
+   ],
+   "priority": 0
+  }
+ ]
+}

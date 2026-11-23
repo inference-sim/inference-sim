@@ -1,21 +1,22 @@
 {
   "kind": "Result",
-  "schema_version": 3,
+  "schema_version": 4,
   "name": "muse-h200-ib-tep8-dspark.r4-s2",
   "engine": {
     "kind": "vllm",
-    "version": "0.33.0"
+    "version": "0.34.0+0fda86a35419",
+    "commit": "0fda86a35419c9c70dbfada224c838c10fbb62ad"
   },
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "88ad45237e84b11d89e79e925e0189fcdf95341ed65a4e4ece1ac9c81a625e3e",
-      "combined_hash": "88ad45237e84b11d89e79e925e0189fcdf95341ed65a4e4ece1ac9c81a625e3e"
+      "hash": "49d62c569f6092a8168459f15543fc76b41227588dffd46d0e02e3a2343696ef",
+      "combined_hash": "49d62c569f6092a8168459f15543fc76b41227588dffd46d0e02e3a2343696ef"
     },
     "registry": {
       "source": "path",
-      "hash": "5d818ced48d99d319b87ff6afe1ad03f88992d788b3a95a33158df54d6855144",
-      "combined_hash": "5d818ced48d99d319b87ff6afe1ad03f88992d788b3a95a33158df54d6855144"
+      "hash": "316e7969a3e6fef0b68b5b6fb617b951977f7044e8844a06deb1db4dec9c39d7",
+      "combined_hash": "316e7969a3e6fef0b68b5b6fb617b951977f7044e8844a06deb1db4dec9c39d7"
     },
     "released_data": false,
     "build": "unreleased"
@@ -299,9 +300,17 @@
             "h200",
             "l40s",
             "rtx6000pro-server"
+          ],
+          "host_cpu": [
+            "x86",
+            "grace"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
+        "code_ids": [
+          "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
+          "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
+        ],
         "kernel_match": "unkeyed"
       },
       {
@@ -320,9 +329,17 @@
             "h200",
             "l40s",
             "rtx6000pro-server"
+          ],
+          "host_cpu": [
+            "x86",
+            "grace"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
+        "code_ids": [
+          "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
+          "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
+        ],
         "kernel_match": "unkeyed"
       },
       {
@@ -341,9 +358,17 @@
             "h200",
             "l40s",
             "rtx6000pro-server"
+          ],
+          "host_cpu": [
+            "x86",
+            "grace"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
+        "code_ids": [
+          "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
+          "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
+        ],
         "kernel_match": "unkeyed"
       },
       {
@@ -362,9 +387,17 @@
             "h200",
             "l40s",
             "rtx6000pro-server"
+          ],
+          "host_cpu": [
+            "x86",
+            "grace"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
+        "code_ids": [
+          "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
+          "e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074"
+        ],
         "kernel_match": "unkeyed"
       },
       {
@@ -381,9 +414,17 @@
             "h200",
             "l40s",
             "rtx6000pro-server"
+          ],
+          "host_cpu": [
+            "x86",
+            "grace"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
+        "code_ids": [
+          "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
+          "e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074"
+        ],
         "kernel_match": "unkeyed",
         "ci95": [
           3.1,
@@ -406,9 +447,17 @@
             "h200",
             "l40s",
             "rtx6000pro-server"
+          ],
+          "host_cpu": [
+            "x86",
+            "grace"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
+        "code_ids": [
+          "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
+          "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096"
+        ],
         "kernel_match": "unkeyed"
       },
       {
@@ -427,9 +476,17 @@
             "h200",
             "l40s",
             "rtx6000pro-server"
+          ],
+          "host_cpu": [
+            "x86",
+            "grace"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
+        "code_ids": [
+          "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
+          "e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074"
+        ],
         "kernel_match": "unkeyed"
       },
       {
@@ -726,8 +783,7 @@
         }
       },
       "engine": {
-        "kind": "vllm",
-        "version": "0.33.0"
+        "kind": "vllm"
       },
       "cluster": {
         "hardware": "h200",
@@ -862,9 +918,14 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.15.1-0.20261118162118-b6748ca9d757",
-    "router": "v1.0.0-blis.5.0.20261118163949-601ff6e9d37d",
-    "engine_module": "v0.33.0-blis.1.0.20261118171935-af87ac53acaf"
+    "substrate": "(devel)",
+    "router": "v1.0.0-blis.6",
+    "llm_d": "b9393d1a9f1d5a72ecd86f8d2b643ab54c2a9b92",
+    "engine_module": "(devel)"
+  },
+  "estimate": {
+    "replications": 1,
+    "no_interval": "one replication: the figures are point estimates with no interval, so the randomness of the workload is not covered"
   },
   "window": {
     "start_us": 250000,
@@ -1614,7 +1675,7 @@
             "Name": "max_cudagraph_capture_size",
             "Primitive": "",
             "Running": "",
-            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+            "Scope": "512: vLLM main's default (VllmConfig._set_cudagraph_sizes and _split_cudagraph_capture_sizes, vllm/config/vllm.py:2465-2870 at 0fda86a), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes: the interface default: one shared token ladder up to 512 (CudaPlatformBase.get_cudagraph_capture_defaults, vllm/platforms/cuda.py:640-652); a step above it runs with no graph",
             "Set": "blis-latency-kernel"
           },
           {
@@ -1659,7 +1720,7 @@
             "Name": "all_reduce_message_limit",
             "Primitive": "",
             "Running": "",
-            "Scope": "the custom lane for every message size: the engine runs a message above the custom kernel's size limit on NCCL; the pool's tensor-parallel all-reduce is priced from the custom lane at every size (inference-sim/blis-substrate#392)",
+            "Scope": "the custom lane for every message size: the engine runs a message above the custom kernel's size limit on NCCL; the pool's tensor-parallel all-reduce is priced from the custom lane at every size (inference-sim/inference-sim#2478)",
             "Set": "blis-latency-kernel"
           },
           {
@@ -1686,7 +1747,7 @@
             "Name": "engine_version",
             "Primitive": "",
             "Running": "",
-            "Scope": "0.31.0: the scenario declares vLLM 0.33.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+            "Scope": "0.31.0: the scenario declares vLLM 0.34.0+0fda86a35419 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
         ],
@@ -1973,6 +2034,8 @@
             "Set": "cost-model-primitives"
           },
           {
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_admission_per_request",
@@ -1982,6 +2045,8 @@
             "Set": "cost-model-host-overheads"
           },
           {
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_admission_per_token",
@@ -1991,6 +2056,8 @@
             "Set": "cost-model-host-overheads"
           },
           {
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_completion",
@@ -2009,6 +2076,8 @@
             "Set": "cost-model-primitives"
           },
           {
+            "CodeID": "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_launch_eager_per_layer",
@@ -2018,6 +2087,8 @@
             "Set": "cost-model-host-overheads"
           },
           {
+            "CodeID": "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_launch_per_kernel",
@@ -2027,6 +2098,8 @@
             "Set": "cost-model-host-overheads"
           },
           {
+            "CodeID": "1226cbf6d263677d0a3a56d37b914386fc4cd9b945eccdf96b038c6b0299d521",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_output_token",
@@ -2036,6 +2109,8 @@
             "Set": "cost-model-host-overheads"
           },
           {
+            "CodeID": "83cd605daf97a2ed4d96602bb5b26435e0c60586da3922a3a503cad2a0415776",
+            "CodeMatch": "exact",
             "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_replay_graph_per_step",

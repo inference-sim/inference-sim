@@ -6,8 +6,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
 )
 
 // ReExportClosedLoopRecords reconstructs a faithful TraceV2 record set from the

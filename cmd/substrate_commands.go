@@ -8,11 +8,10 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/invariants"
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
+	specmodel "github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // The commands the applications read substrate data through (design §5, accuracy-dashboard
@@ -21,61 +20,6 @@ import (
 // non-zero exit. None writes a file.
 
 var substrateJSON bool
-
-var invariantsCmd = &cobra.Command{
-	Use:   "invariants",
-	Short: "Print the invariant registry of the blis-substrate version this build pins",
-	Long: "Print every invariant of the registry embedded in blis-substrate's contracts/invariants, " +
-		"at the version this build selects (stack.json names it). With --json the output is " +
-		"{\"invariants\": [...]}, each record with the registry's own keys; without it, one line " +
-		"per invariant: identifier, status, title.",
-	Args:         cobra.NoArgs,
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		return printInvariants(cmd.OutOrStdout(), substrateJSON)
-	},
-}
-
-func printInvariants(w io.Writer, asJSON bool) error {
-	reg, err := invariants.Embedded()
-	if err != nil {
-		return fmt.Errorf("the embedded invariant registry: %w", err)
-	}
-	if !asJSON {
-		for _, inv := range reg.Invariants {
-			title := inv.Title
-			if title == "" {
-				title = firstSentence(inv.Statement)
-			}
-			if _, err := fmt.Fprintf(w, "%-8s %-8s %s\n", inv.ID, inv.Status, title); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	// The records carry yaml tags only; their JSON keys are the registry's own, so each record
-	// is converted through its YAML form rather than given a second set of names here.
-	records := make([]any, 0, len(reg.Invariants))
-	for _, inv := range reg.Invariants {
-		b, err := yaml.Marshal(inv)
-		if err != nil {
-			return err
-		}
-		var m map[string]any
-		if err := yaml.Unmarshal(b, &m); err != nil {
-			return err
-		}
-		records = append(records, m)
-	}
-	return writeJSON(w, map[string]any{"invariants": records})
-}
-
-func firstSentence(s string) string {
-	if i := strings.Index(s, ". "); i >= 0 {
-		return s[:i+1]
-	}
-	return s
-}
 
 var catalogCmd = &cobra.Command{
 	Use:   "catalog",
@@ -90,14 +34,17 @@ var (
 var catalogResolveCmd = &cobra.Command{
 	Use:   "resolve",
 	Short: "Map a model or chip name to its catalog identity, or report that none exists",
-	Long: "Resolve --model or --chip against the catalog in use: the one embedded in the blis-substrate " +
+	Long: "Resolve --model or --chip against the catalog in use: the one embedded in the substrate " +
 		"release this build pins, or the directory --catalog or BLIS_CATALOG names. A model " +
 		"resolves when the catalog has an entry of that name, or exactly one entry whose " +
 		"model.yaml source repository is that name (compared without regard to letter case); a " +
 		"chip resolves when hardware/<name>.yaml exists. The output is {\"query\": ..., " +
 		"\"identity\": <catalog name> | null, \"reason\": ...}; a resolved chip adds " +
 		"\"packaging\": {\"gpus_per_node\", \"gpus_per_rack\"}, each the value its entry fixes or null " +
-		"where the scenario states it. A name two entries claim is an error, never a choice.",
+		"where the scenario states it; a resolved model adds \"drafters\": [{\"name\", \"method\", " +
+		"\"num_spec_tokens\"}], what the entry lists as able to draft for it (\"speculator\" for its " +
+		"own in-graph one, else a drafter checkpoint's catalog name; the --drafter of `blis " +
+		"acceptance`), omitted for a model that lists none. A name two entries claim is an error, never a choice.",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -116,6 +63,9 @@ var catalogResolveCmd = &cobra.Command{
 		}
 		if err != nil {
 			return err
+		}
+		if r.Identity != nil && resolveModel != "" {
+			r.Drafters = draftersOf(data, *r.Identity)
 		}
 		if substrateJSON {
 			return writeJSON(cmd.OutOrStdout(), r)
@@ -138,8 +88,46 @@ type catalogResolution struct {
 	// node and per rack the product fixes, each null where the entry leaves it to the
 	// scenario. Absent for a model, or a chip that does not resolve. A generator writes
 	// neither field for a value stated here, and the scenario's own for a null one
-	// (blis-substrate scenario.Cluster.Packaging, design SUB-3).
+	// (the substrate scenario.Cluster.Packaging, design SUB-3).
 	Packaging *chipPackaging `json:"packaging,omitempty"`
+	// Drafters is a resolved model's drafters as its entry lists them (model.Identity.Drafters,
+	// design D8), in the entry's order: the in-graph speculator and each separate drafter
+	// checkpoint, with the method and draft length the drafter's graph defaults to. Absent for a
+	// chip, a model that does not resolve, and a model that lists none. `blis acceptance
+	// --drafter` takes the name (inference-sim#2141).
+	Drafters []drafterInfo `json:"drafters,omitempty"`
+}
+
+// drafterInfo is one entry of a target's drafters: the word "speculator" for its own
+// in-graph speculator, or the catalog name of a separate drafter checkpoint.
+type drafterInfo struct {
+	Name string `json:"name"`
+	// Method and NumSpecTokens are the speculator the drafter's graph states (the target's own
+	// graph for the in-graph speculator); NumSpecTokens is the draft length the checkpoint
+	// defaults to, not a limit (the substrate model.Speculator.NumSpec). Empty and 0 when the
+	// catalog has no graph for the name.
+	Method        string `json:"method"`
+	NumSpecTokens int    `json:"num_spec_tokens"`
+}
+
+func draftersOf(data *load.Data, target string) []drafterInfo {
+	id, err := data.ModelIdentity(target)
+	if err != nil || len(id.Drafters) == 0 {
+		return nil
+	}
+	var out []drafterInfo
+	for _, d := range id.Drafters {
+		graphOf := d
+		if d == specmodel.InGraphSpeculator {
+			graphOf = target
+		}
+		info := drafterInfo{Name: d}
+		if g, err := data.Model(graphOf); err == nil && g.Speculator != nil {
+			info.Method, info.NumSpecTokens = g.Speculator.Method, g.Speculator.NumSpec
+		}
+		out = append(out, info)
+	}
+	return out
 }
 
 // chipPackaging is what a chip's catalog entry states about its packaging.
@@ -212,12 +200,12 @@ func writeJSON(w io.Writer, v any) error {
 }
 
 func init() {
-	for _, c := range []*cobra.Command{invariantsCmd, catalogResolveCmd} {
+	for _, c := range []*cobra.Command{catalogResolveCmd} {
 		c.Flags().BoolVar(&substrateJSON, "json", false, "print JSON")
 	}
 	catalogResolveCmd.Flags().StringVar(&resolveModel, "model", "", "a model name: a catalog entry name or a source repository such as meta-llama/Llama-3.1-70B-Instruct")
 	catalogResolveCmd.Flags().StringVar(&resolveChip, "chip", "", "a chip name, such as h200")
 	registerCatalogFlag(catalogResolveCmd)
 	catalogCmd.AddCommand(catalogResolveCmd)
-	rootCmd.AddCommand(invariantsCmd, catalogCmd)
+	rootCmd.AddCommand(catalogCmd)
 }

@@ -48,10 +48,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
-	"github.com/inference-sim/blis-substrate/load"
-	"github.com/inference-sim/blis-vllm/compat/build"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/build"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 // Corpus is the evaluation set as blis-latency-kernel's extractor writes it.
@@ -277,7 +277,8 @@ func scaled(v int64, factor float64) int64 {
 // scheduling, the router's default admission), that is:
 //
 //   - the KV cache's block-hash map, which keeps the hashes of released blocks
-//     (blis-vllm compat/kv/cache.go ReleaseKVBlocks). It is read for cross-request reuse only when prefix
+//     (the engine's block pool, engines/vllm/core/kv/pool.go, which keeps a freed block's hash until
+//     the block is reused). It is read for cross-request reuse only when prefix
 //     caching is enabled (sim/batch_formation.go skips GetCachedBlocks when
 //     PrefixCachingDisabled); there is no offload tier to read it otherwise. The only main
 //     request whose prompt it holds is request 0: the others share no prefix with it;
@@ -806,7 +807,7 @@ func Logs(errs []float64) LogStats {
 	}
 }
 
-// OpenRepos opens catalog and registry (empty: the embedded copy) through blis-substrate's
+// OpenRepos opens catalog and registry (empty: the embedded copy) through the substrate's
 // loader, as a run does, and returns the roots a Config holds.
 func OpenRepos(scenarios, catalog, registry string) (kernelmodel.Repos, error) {
 	d, err := kernelmodel.OpenData(load.Options{Catalog: catalog, Registry: registry})

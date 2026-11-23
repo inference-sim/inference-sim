@@ -1,0 +1,431 @@
+// Original to blis-vllm.
+
+package vllm
+
+import (
+	"fmt"
+	"sort"
+
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/multi"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/offloading"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/placement"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
+)
+
+// KV offload through engine.Engine, with vLLM's OffloadingConnector (core/connector/offloading)
+// on the scheduler and its CPU tier.
+//
+// Each schedule's connector metadata lists the step's load and store jobs. The engine reports
+// each job as a Transfer among the batch's TransfersStarted (a load into the device cache, a
+// store out of it, both Tier "cpu"), and the simulator prices it and reports its end with
+// TransferDone. The outcome reaches the scheduler with the next applied output, as vLLM's
+// workers report completed jobs in the next step's kv_connector_worker_meta and a completed
+// load's request in finished_recving (offloading/worker.py:273-309@5df63a72). Nothing waits on
+// a store: vLLM's worker submits it at the start of the next step and runs it beside the
+// forward passes (prepare_store_kv, worker.py:240-249), so a store in flight holds no step open.
+// The engine only steps again for it, as vLLM's loop does (has_pending_push_work keeps
+// has_requests true, vllm/v1/core/sched/scheduler.py:2823-2838), when its completion is due.
+//
+// Two of the worker's protocol points are the simulator's to time: jobs_to_flush, the in-flight
+// jobs a step's metadata tells the worker to finish before the step runs (a preempted
+// request's, or one reading a block the step reallocated; handle_preemptions,
+// worker.py:198-224), are reported done with that step's output, whatever the simulator's
+// price, since vLLM's worker waits for them there; and every worker of the engine's world size
+// reports a job in the same step (the one-transfer-per-job price is the slowest worker's).
+//
+// With a batch queue (async scheduling or pipeline parallelism) several batches are in flight.
+// Their metadata reaches the worker in schedule order, and a batch's output reports what the
+// worker finished up to it: the transfers the simulator ended since the last applied output, and
+// the batch's own flushed jobs. That is the oracle's order (oracle/run_offloading.py run_queued),
+// diff-tested against vLLM's step_with_batch_queue.
+
+// offloadConfig is the engine block's kv_offload: the offload connector and its CPU tier, as
+// kv_connector_extra_config states them for the OffloadingConnector
+// (vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:98-134,
+// vllm/v1/kv_offload/cpu/spec.py:96-139@5df63a72).
+type offloadConfig struct {
+	// Connector is kv_connector: OffloadingConnector.
+	Connector string `yaml:"connector"`
+	// Spec is spec_name: CPUOffloadingSpec (vLLM's default) or TieringOffloadingSpec with no
+	// secondary tiers.
+	Spec string `yaml:"spec,omitempty"`
+	// CPUBytes is cpu_bytes_to_use, required (cpu/spec.py:97-101).
+	CPUBytes int64 `yaml:"cpu_bytes"`
+	// BlockSize is block_size, the CPU chunk's tokens, a multiple of the GPU block size; 0 is one
+	// GPU block a chunk (config.py:98-134).
+	BlockSize int `yaml:"block_size,omitempty"`
+	// BlocksPerChunk is blocks_per_chunk, the chunk size in GPU blocks; vLLM refuses it beside
+	// block_size and refuses a value of 0 or less (offloading/config.py:121-135@4ba787ec). Nil is
+	// unstated, which is one block a chunk unless block_size says otherwise.
+	BlocksPerChunk *int `yaml:"blocks_per_chunk,omitempty"`
+	// EvictionPolicy is eviction_policy, lru unstated (cpu/spec.py:131).
+	EvictionPolicy string `yaml:"eviction_policy,omitempty"`
+	// OffloadPromptOnly is offload_prompt_only, true unstated (vllm/v1/kv_offload/base.py:617-623).
+	OffloadPromptOnly *bool `yaml:"offload_prompt_only,omitempty"`
+	// BytesPerBlock is one worker's KV bytes for one GPU block over the offloaded groups
+	// (worker_kv_bytes_per_block, config.py:136-151): the caller's memory model states it, as it
+	// states num_gpu_blocks. With PageSize, the host's mmap.PAGESIZE (4096 unstated), and Copies
+	// it sizes the CPU tier in chunks (cpu/spec.py:103-121).
+	BytesPerBlock int64 `yaml:"bytes_per_block"`
+	PageSize      int64 `yaml:"page_size,omitempty"`
+	// MLA is model_config.use_mla: the model's attention is compressed (MLA), which the connector's
+	// layout gates read (offloadLayout).
+	MLA bool `yaml:"mla,omitempty"`
+	// Workers is the engine's world size, the connector's num_workers (offloading/scheduler.py:335):
+	// every job is pending on each worker. 1 unstated.
+	Workers int `yaml:"workers,omitempty"`
+	// Copies is how many workers' copies of a block the CPU tier holds: the world size, or 1 for
+	// the replicated latent layout (num_copies, cpu/spec.py:106-109; offloading/config.py:158-171).
+	// Workers unstated. The oracle runs num_copies = world size only (its CPU platform has no
+	// shared region, cpu/spec.py:161-166); 1 changes only the chunk count.
+	Copies int `yaml:"copies,omitempty"`
+	// ModulePath is kv_connector_module_path; SpecModulePath, CachePolicyModulePath, SecondaryTiers and
+	// Backpressure are kv_connector_extra_config's spec_module_path (vllm/v1/kv_offload/factory.py:30-51),
+	// cache_policy_module_path (cpu/spec.py:135-137), secondary_tiers and backpressure
+	// (tiering/spec.py:285-313@5df63a72). They choose the code vLLM runs: what it would load from
+	// outside the release is refused (refuseNotVisible), and a secondary tier is refused by its type.
+	ModulePath            *string          `yaml:"kv_connector_module_path,omitempty"`
+	SpecModulePath        string           `yaml:"spec_module_path,omitempty"`
+	CachePolicyModulePath string           `yaml:"cache_policy_module_path,omitempty"`
+	SecondaryTiers        []map[string]any `yaml:"secondary_tiers,omitempty"`
+	Backpressure          map[string]any   `yaml:"backpressure,omitempty"`
+	// TierPollIntervalS is the extra config's tier_poll_interval_s: the pause between rounds of the
+	// tier-poll thread, 1 ms unstated; zero or negative runs no thread (tiering/manager.py:65-70,
+	// 312-314@4ba787ec). Only a tier that asks for polling (p2p) reads it.
+	TierPollIntervalS *float64 `yaml:"tier_poll_interval_s,omitempty"`
+
+	// env is the engine's environment (the engine block's env:), which the p2p tier reads its
+	// VLLM_P2P_* limits and the hash seed from. It is not a key of the block.
+	env map[string]string
+}
+
+// offloadKeys are the block's code-choosing keys.
+func (c *offloadConfig) offloadKeys() offloadKeys {
+	return offloadKeys{spec: c.Spec, specModulePath: c.SpecModulePath, policy: c.EvictionPolicy,
+		policyModulePath: c.CachePolicyModulePath, tiers: c.SecondaryTiers, backpressure: c.Backpressure}
+}
+
+// offload is an engine's KV offload side: its connector, the jobs in flight as transfers, and
+// the outcome the next applied output reports.
+type offload struct {
+	conn      *offloading.Scheduler
+	blockSize int
+	// at is the node and rack that hold the CPU tier: the pool's node this engine's workers sit on,
+	// where the bytes of a load or a store start and land.
+	at plan.Endpoint
+	// next is the last transfer ID started, shared with the P/D side of an engine that has one.
+	next *engine.TransferID
+	// stride and lane make the IDs of a data-parallel group's ranks distinct, as pd's do: rank r of n
+	// states IDs r+1, r+1+n, ... A zero stride is an engine alone, whose IDs are 1, 2, 3 ...
+	stride, lane int
+	// multi is the MultiConnector the offloading connector is a child of, at index child; nil
+	// when it runs alone. Its metadata and worker metadata are the child's slice of the list's.
+	multi *multi.Connector
+	child int
+	// early are the transfers of flushed jobs already reported complete: their TransferDone is
+	// accepted and changes nothing.
+	early map[engine.TransferID]bool
+	// jobs are the transfers in flight, by transfer, with the job each is; flushed are the jobs a
+	// schedule told the worker to finish, which the next applied output reports done.
+	jobs map[engine.TransferID]int
+	ids  map[int]engine.TransferID
+	// groups are the transfers in flight's GPU blocks in each KV cache group of the engine, in the
+	// scheduler's group order (Job.GroupSizes, which count only the offloaded groups, expanded: a
+	// group that is not offloaded moves no block).
+	groups map[engine.TransferID][]int
+	// kvGroups is the KV cache group of each offloaded group, and numGroups the engine's groups.
+	kvGroups  []int
+	numGroups int
+	// flushed are, by the core batch whose metadata names them, the jobs its worker finishes
+	// before the batch runs (handle_preemptions), which that batch's output reports.
+	flushed map[int][]int
+	// completed are the jobs completed since the last applied output, and recv the requests whose
+	// load completed.
+	completed []int
+	recv      map[string]bool
+	// loadReq are the loads in flight, by job, with their request.
+	loadReq map[int]string
+	// lastFlush are the last schedule's jobs_to_flush, for a test.
+	lastFlush []int
+	// tiers are TieringOffloadingSpec's secondary tiers (offloadtiers.go); nil with none.
+	tiers *tierSet
+}
+
+// buildOffload installs the OffloadingConnector on the scheduler, refusing what it does not
+// model. Each KV cache group is offloaded at its block size, a sliding window with the
+// extra_retained_tokens the drafter's prefill lookahead sets (get_kv_cache_configs,
+// vllm/v1/core/kv_cache_utils.py:2582-2589@5df63a72).
+func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method string, prefixCaching bool, layout offloadLayoutFacts, at plan.Endpoint, install installer) (*offload, error) {
+	if c.Connector != "OffloadingConnector" {
+		return nil, fmt.Errorf("vllm: kv_offload.connector %q is not modelled through the engine (modelled: "+
+			"OffloadingConnector; registry/connectors.yaml)", c.Connector)
+	}
+	if c.CPUBytes <= 0 {
+		return nil, fmt.Errorf("vllm: kv_offload.cpu_bytes must be stated: vLLM requires cpu_bytes_to_use " +
+			"(vllm/v1/kv_offload/cpu/spec.py:97-101@5df63a72)")
+	}
+	if c.BytesPerBlock <= 0 {
+		return nil, fmt.Errorf("vllm: kv_offload.bytes_per_block must be stated: one worker's KV bytes a GPU block, " +
+			"which sizes the CPU tier in chunks (offloading/config.py:136-151@5df63a72); the caller's memory model states it")
+	}
+	if c.Spec == "TieringOffloadingSpec" {
+		// Each secondary tier type vLLM v0.33.0 registers is built if modelledTiers holds it and
+		// refused by name otherwise; refuseNotVisible has refused any other. CPUOffloadingSpec reads
+		// no secondary_tiers.
+		for i, t := range c.SecondaryTiers {
+			typ, _ := t["type"].(string)
+			if modelledTiers[typ] {
+				continue
+			}
+			return nil, fmt.Errorf("vllm: kv_offload secondary_tiers[%d] type %q is not modelled: TieringOffloadingSpec runs only "+
+				"its CPU primary tier here (vllm/v1/kv_offload/tiering/factory.py:146-174@4ba787ec; %s)", i, typ, issueSim+"2621")
+		}
+	}
+	if err := offloading.Check(offloading.Options{SpecName: c.Spec, EvictionPolicy: c.EvictionPolicy}); err != nil {
+		return nil, fmt.Errorf("vllm: %w", err)
+	}
+	bs := s.BlockSize()
+	bpc := 1
+	if c.BlocksPerChunk != nil && c.BlockSize != 0 {
+		return nil, fmt.Errorf("vllm: kv_offload states both block_size and blocks_per_chunk: vLLM accepts only " +
+			"one of them (vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:125-129@4ba787ec)")
+	}
+	if c.BlocksPerChunk != nil {
+		if *c.BlocksPerChunk <= 0 {
+			return nil, fmt.Errorf("vllm: kv_offload.blocks_per_chunk %d must be greater than 0, which vLLM requires "+
+				"(vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:131-135@4ba787ec)", *c.BlocksPerChunk)
+		}
+		bpc = *c.BlocksPerChunk
+	} else if c.BlockSize != 0 {
+		if c.BlockSize < 0 || c.BlockSize%bs != 0 {
+			return nil, fmt.Errorf("vllm: kv_offload.block_size %d must be a multiple of the GPU block size %d "+
+				"(offloading/config.py:121-134@5df63a72)", c.BlockSize, bs)
+		}
+		bpc = c.BlockSize / bs
+	}
+	// vLLM offloads only the prefix-cacheable groups (get_offloading_group_ids, offloading/config.py:38-45
+	// at v0.33.0): a ring or a bounded-replay window (DeepSeek V4.1's) is not offloaded.
+	var groups []offloading.Group
+	var kvGroups []int
+	extra := max(0, spec.PrefillLookahead-1)
+	for g := 0; g < s.KV.NumGroups(); g++ {
+		if !s.KV.PrefixCacheable(g) {
+			continue
+		}
+		spec := s.KV.GroupSpec(g)
+		gb := s.KV.GroupBlockSize(g)
+		gr := offloading.Group{BlockSize: gb}
+		if spec.Window > 0 {
+			gr.Window, gr.ExtraRetained = spec.Window, extra
+		}
+		groups = append(groups, gr)
+		kvGroups = append(kvGroups, g)
+	}
+	if len(groups) == 0 {
+		return nil, fmt.Errorf("vllm: kv_offload finds no eligible KV cache group: none is prefix-cacheable " +
+			"(KV offloading found no eligible cache groups, offloading/config.py:101-102@4ba787ec)")
+	}
+	page := c.PageSize
+	if page == 0 {
+		page = 4096
+	}
+	promptOnly := c.OffloadPromptOnly == nil || *c.OffloadPromptOnly
+	world := max(c.Workers, 1)
+	copies := c.Copies
+	if copies == 0 {
+		copies = world
+	}
+	if copies != 1 && copies != world {
+		return nil, fmt.Errorf("vllm: kv_offload.copies %d: the CPU tier holds one copy of a block per worker (%d) or "+
+			"one for the replicated latent layout (cpu/spec.py:106-109@5df63a72)", copies, world)
+	}
+	chunks := offloading.NumChunks(c.CPUBytes, c.BytesPerBlock, copies, bpc, page)
+	if chunks < 1 {
+		return nil, fmt.Errorf("vllm: kv_offload.cpu_bytes %d holds no chunk of %d block(s) of %d bytes for %d "+
+			"worker copies (cpu/spec.py:107-121@5df63a72)", c.CPUBytes, bpc, c.BytesPerBlock, copies)
+	}
+	// The groups that hold a drafter's layers (an MTP, EAGLE or EAGLE-3 drafter's, when its block drop is on): the
+	// connector treats the trailing chunk of such a group as volatile (offloading/scheduler.py:208-232@4ba787ec),
+	// diff-tested against vLLM on the offloading-eagle3-* and offloading-mtp* scenarios.
+	eagle := make([]bool, len(kvGroups))
+	for i, g := range kvGroups {
+		eagle[i] = spec.EagleBlockDrop && s.KV.GroupSpec(g).Eagle
+	}
+	tiers, err := buildTiers(c, bpc, bs, offloading.ChunkBytes(c.BytesPerBlock, copies, bpc, page), chunks, tierNamespace(s, bpc, world, layout, c.MLA))
+	if err != nil {
+		return nil, err
+	}
+	conn, err := offloading.New(offloading.Config{Groups: groups, KVGroups: kvGroups, BlocksPerChunk: bpc, TokensPerHash: s.KV.HashBlockSize(),
+		NumChunks: chunks, OffloadPromptOnly: promptOnly, PrefixCaching: prefixCaching, Workers: world, EagleGroups: eagle,
+		Manager: tiers.manager()})
+	if err != nil {
+		return nil, fmt.Errorf("vllm: %w", err)
+	}
+	o := &offload{conn: conn, kvGroups: kvGroups, numGroups: s.KV.NumGroups(), blockSize: bs, at: at, next: new(engine.TransferID), early: map[engine.TransferID]bool{}, jobs: map[engine.TransferID]int{}, ids: map[int]engine.TransferID{},
+		groups: map[engine.TransferID][]int{}, flushed: map[int][]int{}, recv: map[string]bool{}, loadReq: map[int]string{}, tiers: tiers}
+	// kv_both: the CPU tier is both stored to and loaded from.
+	if err := install(conn, sched.ConnectorConfig{Consumer: true, Producer: true}); err != nil {
+		return nil, fmt.Errorf("vllm: %w", err)
+	}
+	return o, nil
+}
+
+// started reports the jobs a schedule's metadata lists as transfers: the step's loads, then its
+// stores, each in job order. The jobs it tells the worker to flush complete with the step.
+func (o *offload) started(batch int, cb any) []engine.Transfer {
+	if o == nil {
+		return nil
+	}
+	if o.multi != nil {
+		cb = cb.(multi.Meta).At(o.child)
+	}
+	m, ok := cb.(offloading.Meta)
+	if !ok {
+		return nil
+	}
+	var out []engine.Transfer
+	add := func(j offloading.Job, kind engine.TransferKind) {
+		id := o.newID()
+		o.jobs[id], o.ids[j.ID] = j.ID, id
+		sizes := make([]int, o.numGroups)
+		for i, n := range j.GroupSizes {
+			sizes[o.kvGroups[i]] = n
+		}
+		o.groups[id] = sizes
+		// Tokens are the widest group's blocks: every group is at one block size (offloading.New),
+		// and a full-attention group moves every block of the range, a window only its own.
+		widest := 0
+		for _, n := range j.GroupSizes {
+			widest = max(widest, n)
+		}
+		// Move is the same transfer in the cost model's terms: the catalog device the tier name "cpu" stands
+		// for (cpu_dram), a load from it or a store to it, on the node that holds the tier at both ends.
+		move := plan.Transfer{Tokens: units.Tokens(widest * o.blockSize), From: o.at, To: o.at, Tier: placement.CPUDRAM,
+			Kind: plan.TransferToTier}
+		if kind == engine.TransferLoad {
+			move.Kind = plan.TransferFromTier
+		}
+		out = append(out, engine.Transfer{ID: id, Request: j.Req, Kind: kind, Tier: "cpu",
+			Tokens: widest * o.blockSize, Blocks: len(j.GPU), Move: move})
+	}
+	for _, j := range m.Loads {
+		o.loadReq[j.ID] = j.Req
+		add(j, engine.TransferLoad)
+	}
+	for _, j := range m.Stores {
+		add(j, engine.TransferStore)
+	}
+	out = append(out, o.tierTransfers()...)
+	if len(m.Flush) > 0 {
+		o.flushed[batch] = append([]int(nil), m.Flush...)
+	}
+	o.lastFlush = append(o.lastFlush[:0], m.Flush...)
+	return out
+}
+
+// newID is the next transfer's ID (stride, lane).
+func (o *offload) newID() engine.TransferID {
+	*o.next++
+	return (*o.next-1)*engine.TransferID(max(o.stride, 1)) + engine.TransferID(o.lane) + 1
+}
+
+// groupSizes is a transfer in flight's GPU blocks in each KV cache group, nil for one this
+// offload did not start.
+func (o *offload) groupSizes(id engine.TransferID) []int {
+	if o == nil {
+		return nil
+	}
+	return o.groups[id]
+}
+
+// done records a transfer's end for the next applied output. A failed transfer is refused: vLLM
+// v0.32.0's offloading worker asserts every job succeeds (worker.py:293-294@5df63a72).
+func (o *offload) done(id engine.TransferID, ok bool) error {
+	if o == nil {
+		return engine.ErrUnknownTransfer
+	}
+	if o.early[id] {
+		delete(o.early, id)
+		return nil
+	}
+	if tier, err := o.tierDone(id, ok); tier {
+		return err
+	}
+	j, known := o.jobs[id]
+	if !known {
+		return engine.ErrUnknownTransfer
+	}
+	if !ok {
+		return fmt.Errorf("vllm: offload transfer %d failed, which vLLM's offloading worker does not support "+
+			"(it asserts success, offloading/worker.py:293-294@5df63a72)", id)
+	}
+	o.complete(j)
+	return nil
+}
+
+func (o *offload) complete(j int) {
+	id := o.ids[j]
+	delete(o.jobs, id)
+	delete(o.groups, id)
+	delete(o.ids, j)
+	delete(o.flushed, j)
+	o.completed = append(o.completed, j)
+	if r, isLoad := o.loadReq[j]; isLoad {
+		delete(o.loadReq, j)
+		o.recv[r] = true
+	}
+}
+
+// take is the outcome the workers report with batch's applied output, once: the jobs completed
+// since the last, and the jobs batch's own metadata flushed, each by every worker, in job order, and the requests whose
+// load completed, by request ID (the transport's order, oracle/mocks.json).
+func (o *offload) take(batch int) (jobs []offloading.Completion, recv []string) {
+	if o == nil {
+		return nil, nil
+	}
+	for _, j := range o.flushed[batch] {
+		if id, inFlight := o.ids[j]; inFlight {
+			o.early[id] = true
+			o.complete(j)
+		}
+	}
+	delete(o.flushed, batch)
+	o.tierStep()
+	sort.Ints(o.completed)
+	for _, j := range o.completed {
+		jobs = append(jobs, offloading.Completion{Job: j, Workers: o.conn.Workers()})
+	}
+	for r := range o.recv {
+		recv = append(recv, r)
+	}
+	sort.Strings(recv)
+	o.completed, o.recv = nil, map[string]bool{}
+	return jobs, recv
+}
+
+// offloadTiers are the KV tiers below GPU memory a pool's offload makes: the CPU tier, the catalog's
+// cpu_dram. Its capacity per rank is cpu_bytes_to_use over the workers, which each hold their share
+// (cpu/spec.py:96-121@5df63a72). A pool with no offload has none.
+func offloadTiers(c *offloadConfig) []plan.KVTier {
+	if c == nil {
+		return nil
+	}
+	cpu := plan.KVTier{Device: placement.CPUDRAM, Bytes: units.Rank(units.Bytes(c.CPUBytes / int64(max(c.Workers, 1))))}
+	return append([]plan.KVTier{cpu}, secondaryPlanTiers(c)...)
+}
+
+// workerMeta is the worker metadata the next applied output carries for the jobs completed: the
+// offload connector's own, or, beside other connectors, the list's with the offload's at its index
+// (MultiKVConnectorWorkerMetadata, multi_connector.py:55-72@5df63a72).
+func (o *offload) workerMeta(jobs []offloading.Completion) any {
+	if o.multi == nil {
+		return jobs
+	}
+	wm := make(multi.WorkerMeta, o.multi.Len())
+	wm[o.child] = jobs
+	return wm
+}

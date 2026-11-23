@@ -101,5 +101,5 @@ tests are not run in CI. Run them by hand.
 
 ## See also
 
-- blis-substrate, file docs/registry/fitting-principles.md (in that repository): how coefficients are fitted and held out.
+- the substrate, file docs/registry/fitting-principles.md (in that repository): how coefficients are fitted and held out.
 - `.github/agent-prompts/cross-repo-changes.md` (here and in each BLIS repo): the cross-repository change process.

@@ -1,0 +1,2 @@
+{"name": "lora-cache-more-adapters-than-slots", "config": {"max_loras": 2, "max_cpu_loras": 4},
+ "steps": [{"adapters": ["a", "b"]}, {"adapters": ["c", "d", "a"]}, {"adapters": ["c", "e"]}, {"adapters": ["a", "b"]}]}

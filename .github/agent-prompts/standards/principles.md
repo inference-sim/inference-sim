@@ -90,14 +90,14 @@ Every piece of documentation lives in exactly one canonical location. Other file
 
 | Content | Canonical Source | Working Copies |
 |---------|-----------------|----------------|
-| Antipattern rules (R1-R23) | `.github/agent-prompts/standards/rules.md` | CLAUDE.md (pointer), CONTRIBUTING.md (checklist), `.github/pull_request_template.md` (PR checklist), `.github/agent-prompts/templates/micro-plan.md` (sanity checklist), `docs/contributing/index.md` (landing page table), `docs/guide/skills-and-plugins.md` (rules count) |
-| System invariants (INV-1–INV-19, plus INV-A, INV-A2, INV-W3, the LoRA family INV-L*, INV-PD-* and INV-P2-*) | `.github/agent-prompts/standards/invariants.md` | CLAUDE.md (summary), `docs/concepts/core-engine.md` (formulas), `docs/concepts/architecture.md` (signal freshness), CONTRIBUTING.md (count), `docs/contributing/index.md` (landing page table), `mkdocs.yml` (nav label), `.github/pull_request_template.md` (INV-1 checklist), `.github/ISSUE_TEMPLATE/bug_report.md` (INV-1 formula), `.github/agent-prompts/templates/micro-plan.md` (sanity checklist), `.github/agent-prompts/hypothesis.md` (INV-1 formula), `.claude/skills/hypothesis-experiment/SKILL.md` (INV-1 formula) |
+| Antipattern rules (R1-R23) | `.github/agent-prompts/standards/rules.md` | CLAUDE.md (pointer), CONTRIBUTING.md (checklist), `.github/pull_request_template.md` (PR checklist), `.github/agent-prompts/templates/micro-plan.md` (sanity checklist) |
+| System invariants (INV-1–INV-19, plus INV-A, INV-A2, INV-W3, the LoRA family INV-L*, INV-PD-* and INV-P2-*) | `.github/agent-prompts/standards/invariants.md` | CLAUDE.md (summary), CONTRIBUTING.md (count), `.github/pull_request_template.md` (INV-1 checklist), `.github/ISSUE_TEMPLATE/bug_report.md` (INV-1 formula), `.github/agent-prompts/templates/micro-plan.md` (sanity checklist), `.github/agent-prompts/hypothesis.md` (INV-1 formula), `.claude/skills/hypothesis-experiment/SKILL.md` (INV-1 formula) |
 | Engineering principles | `.github/agent-prompts/standards/principles.md` | CLAUDE.md (summary) |
-| Agent trust boundaries | `.github/agent-prompts/standards/agent-trust.md` | CLAUDE.md (pointer), `docs/contributing/index.md` (landing page table) |
+| Agent trust boundaries | `.github/agent-prompts/standards/agent-trust.md` | CLAUDE.md (pointer) |
 | Extension recipes (schedulers, KV tiers, trace records) | `.github/agent-prompts/extension-recipes.md` | — |
 | RFC template | `.github/agent-prompts/rfc.md` | CONTRIBUTING.md (summary) |
 | RFC-to-plan prompt | `.github/agent-prompts/templates/rfc-to-plan.md` | CONTRIBUTING.md (summary) |
-| File organization and architecture | `docs/reference/project-structure.md` | CLAUDE.md (pointer), README.md (Project Structure tree) |
+| File organization and architecture | README.md (Project Structure tree) | CLAUDE.md (pointer) |
 | Completed experiments and coverage catalog | [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) | — (not on `main`) |
 | PR workflow | `.github/agent-prompts/pr-workflow.md` | CONTRIBUTING.md (summary) |
 | Body-vs-comments authority (which issue comments refine the body) | `.github/agent-prompts/pr-workflow.md` (Step 1.5) | CLAUDE.md (summary), `.github/agent-prompts/automated-delivery.md` (L1 restatement), `.github/agent-prompts/issue-comment-authority.md` (decision record — reasoning and rejected alternative), CONTRIBUTING.md (journey step), `scripts/README.md` (script entry), `scripts/deliver-issue-refinements.jq` (the mechanical half: which comments count) |

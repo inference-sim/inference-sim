@@ -13,52 +13,88 @@ this page.
   cluster and its placement, the control loops that run beside the router (autoscaler, LoRA
   placement), metrics, and the `blis` command.
 - It **owns** the simulation of the whole stack and the Result document of a run. It drives each
-  instance's engine only through the engine interface of blis-substrate's contracts, and asks the
+  instance's engine only through the engine interface of `substrate/contracts`, and asks the
   engine for every step.
-- It **never holds** an engine's scheduling logic (blis-vllm), a price (the latency kernel in
-  blis-substrate), a catalog fact or a fitted coefficient (blis-substrate), or a router
-  algorithm (the llm-d router fork). It has no routing, admission or flow-control logic of its
-  own. Nothing is fetched at run time.
+- It **never holds** an engine's scheduling logic (`engines/`), a price (the latency kernel in
+  `substrate/kernel`), a catalog fact or a fitted coefficient (`substrate/catalog`,
+  `substrate/registry`), or a router algorithm (the llm-d router fork). `sim/` and `cmd/` have no
+  routing, admission or flow-control logic of their own. Nothing is fetched at run time.
 
 ## How it connects
 
-`stack.json` records what this release pins, and the build selects exactly those versions.
+This is one Go module, `github.com/inference-sim/inference-sim`. `stack.json` records what this
+release pins, and the build selects exactly those versions.
 
-- **Pins** blis-substrate (contracts, the cost model, the catalog and the coefficient registry,
-  embedded in its module), blis-vllm (the vLLM engine), blis-sglang (the SGLang engine) and the llm-d router fork
-  `inference-sim/llm-d-router`, which replaces `github.com/llm-d/llm-d-router` at a `-blis.N`
-  tag. The dependencies run one way: blis-substrate, then blis-vllm and blis-sglang, then inference-sim.
+- **Contains** the substrate (`substrate/`: contracts, the cost model, the catalog and the
+  coefficient registry), the vLLM engine (`engines/vllm/`) and the SGLang engine
+  (`engines/sglang/`). Imports run one way: the substrate, then the engines, then `sim/` and
+  `cmd/` (`internal/repocheck` holds the rule).
+- **Pins** the llm-d router fork `inference-sim/llm-d-router`, which replaces
+  `github.com/llm-d/llm-d-router` at a `-blis.N` tag.
 - **Pinned by** blis-config-search and accuracy-dashboard, which pin the inference-sim release
   tag. No other repository pins it.
-- **Implements and consumes** blis-substrate's contracts: the Scenario and Deployment documents
-  it reads, the `engine.Engine` interface it drives, the router `embed` contract it hosts, and
-  the Result document it writes. Non-test code imports blis-vllm at one build site,
-  `cmd/engine_build.go`, and blis-sglang at another, `cmd/sglang_engine.go`.
+- **Implements and consumes** the contracts in `substrate/contracts`: the Scenario and Deployment
+  documents it reads, the `engine.Engine` interface it drives, the router `embed` contract it
+  hosts, and the Result document it writes. Non-test code imports the vLLM engine at one build
+  site, `cmd/engine_build.go`, and the SGLang engine at another, `cmd/sglang_engine.go`.
 
 The reference is printed from the data and the code, not written: `blis schema`, `blis fields`,
-`blis metrics`, `blis invariants`, `blis catalog` and `blis router-configs`, with `--help` on
+`blis metrics`, `blis catalog` and `blis router-configs`, with `--help` on
 every command, the JSON Schemas and the Go doc comments.
+
+## Layout
+
+| Path | What it holds |
+|---|---|
+| `cmd/` | the `blis` command (`run`, `replay`, `convert`, `schema`, `fields`, `catalog`, ...) and the one site that builds each engine |
+| `sim/` | the simulator library: clock, event loop, cluster (`sim/cluster`), workloads (`sim/workload`), the embedded router host (`sim/llmd`), saturation detection |
+| `internal/` | repository machinery: `stack` (the `stack.json` record), `repocheck` (layering and path checks), `bytegate` (the byte-identity gate), `substratedata` |
+| `substrate/` | `contracts/`, `kernel/` (the cost model), `catalog/`, `registry/`, `ledger/`, `validate/`, `tools/`; its [README](./substrate/README.md) says what each holds |
+| `engines/vllm`, `engines/sglang` | the two engine models; see their READMEs |
+| `examplescenarios/`, `testdata/` | ready-to-run scenarios; test inputs, the byte-gate goldens |
+| `tools/`, `scripts/` | scoring and validation harnesses; CI and delivery scripts |
+| `docs/` | [support-matrix.md](./docs/support-matrix.md) (generated, below) and [deferred.md](./docs/deferred.md) |
+
+The router fork is the one external module that is substituted: `go.mod` carries a single
+`replace` of `github.com/llm-d/llm-d-router` by `github.com/inference-sim/llm-d-router` at the
+tag `stack.json` records. `blis version` prints every pin.
+
+## Testing and CI
+
+`go test ./...` runs everything that needs no Python or network; `golangci-lint run ./...`
+(v2.14.0) lints. CI (`.github/workflows/ci.yml`) runs the jobs a change needs: `scripts/ci-changes.sh`
+maps each changed path to path classes (`core`, `cluster`, `kernel`, `cmd`, `substrate`, `vllm`,
+`sglang`, ...) and a path no class names runs everything. A change under `substrate/` runs every
+class, one under `engines/vllm` or `engines/sglang` every class but the other engine's and
+`substrate`, and a test file or a `testdata/` file only its own class. The substrate's catalog and
+registry validators, the cost model's mutation check, and the engines' oracle jobs (each
+engine's decisions compared with the upstream project's own classes, GPU mocked) are jobs of the
+same workflow; each engine's README gives its commands. `docs/support-matrix.md` is generated:
+`go test ./cmd -run ClusterMatrix -update-matrix` rewrites it and `docs/support-matrix.tsv` by
+running every cell; never edit either by hand.
 
 ## Engines
 
-A scenario names its engine: `engine: {kind: vllm, version: "0.33.0"}` or
-`engine: {kind: sglang, version: "0.5.23"}`; `stack.json` lists the releases this build runs. An SGLang
+A scenario names its engine kind: `engine: {kind: vllm}` or `engine: {kind: sglang}`, and states no
+release (a `version` field is refused as unknown). `stack.json` names the engine commits this build runs,
+`blis version` prints them, and every Result records them under `engine`. An SGLang
 pool's `engine:` block states SGLang's own `ServerArgs` field names (`mem_fraction_static`,
 `chunked_prefill_size`, ...) and a name that is not one is refused naming it; `blis fields` prints each
 engine's field list. Two SGLang scenarios run in CI, `testdata/kernel/sglang/glm-5-h200-fp8-sglang-tp8.yaml`
-and `deepseek-r1-h200-fp8-sglang-tp8.yaml`. A scenario states `context_length` (the catalog graph carries
-none), the memory CUDA holds before a model loads is known for the H200 only, and speculative decoding,
-DP attention, pipeline parallelism, HiCache and P/D disaggregation are each refused naming their issue.
+and `deepseek-r1-h200-fp8-sglang-tp8.yaml`. A feature an engine does not model is refused, naming the
+issue that holds it; [docs/support-matrix.md](./docs/support-matrix.md) lists every model, chip and
+serving mode that runs or is refused, and [docs/deferred.md](./docs/deferred.md) lists what M3.2
+leaves out on purpose.
 
 One named substitution stands on every SGLang point: the host-side facts (model, hardware, parallelism,
-KV store, host overheads) are read through blis-vllm's adapter from a copy of the scenario in vLLM form,
+KV store, host overheads) are read through the vLLM engine's adapter from a copy of the scenario in vLLM form,
 so the Result lists `host_side_facts` and `host_overheads` in its kernel substitutions; SGLang's own
 scheduler, KV pool and step pricing decide every step (`adoptSGLangTwin`, `cmd/sglang_engine.go`).
 
 ## Build, test and run
 
 <!-- BEGIN GENERATED from stack.json: toolchain -->
-Requires Go 1.27.2, the toolchain blis-substrate's contracts/toolchain names at the pinned release.
+Requires Go 1.27.2, the toolchain substrate/contracts/toolchain names.
 <!-- END GENERATED -->
 
 ```bash
@@ -73,16 +109,14 @@ go test ./...                      # CI runs the full set; run the packages you 
 
 Every `blis run` and `blis replay` needs a scenario directory (`--scenarios <dir>`, any directory
 of scenario YAMLs; `examplescenarios/` ships ready-to-run ones) and a scenario (`--scenario <file>`
-within it). The catalog and the coefficient registry default to the copies embedded in the
-blis-substrate module this build pins; `--catalog`/`BLIS_CATALOG` and
+within it). The catalog and the coefficient registry default to the copies embedded from
+`substrate/catalog` and `substrate/registry`; `--catalog`/`BLIS_CATALOG` and
 `--registry`/`BLIS_REGISTRY` replace them whole (the flag wins). The Result records which data the
 run read under `data`. To read a catalog of your own:
 
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
-git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout b6748ca9d757f149ba760cf821f96feed3bbf5bf
-export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
+export BLIS_CATALOG=$PWD/substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
 

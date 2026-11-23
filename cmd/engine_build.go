@@ -12,42 +12,37 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/env"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
-	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
-	"github.com/inference-sim/blis-substrate/contracts/units"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/env"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/units"
+	"github.com/inference-sim/inference-sim/substrate/load"
 
-	blisvllm "github.com/inference-sim/blis-vllm"
-	"github.com/inference-sim/blis-vllm/compat/build"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	coreengine "github.com/inference-sim/blis-vllm/vllmengine"
+	blisvllm "github.com/inference-sim/inference-sim/engines/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/build"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
+	coreengine "github.com/inference-sim/inference-sim/engines/vllm/vllmengine"
 
-	// Linking these registers the compatibility engine's constructors: compat/kv the KV store
-	// sim.NewEngine builds (sim.NewKVStoreFromConfig), compat/lora the adapter registry
-	// (sim.NewAdapterRegistryFunc). The build site is the one place that links them.
 	"math"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
-	specmodel "github.com/inference-sim/blis-substrate/contracts/spec/model"
-	_ "github.com/inference-sim/blis-vllm/compat/kv"
-	_ "github.com/inference-sim/blis-vllm/compat/lora"
 	"github.com/inference-sim/inference-sim/internal/stack"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
+	specmodel "github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 )
 
-// The one place inference-sim builds blis-vllm (#2021 B2). The engine's configuration -- the
-// scenario's engine-side blocks -- is decoded and resolved by blis-vllm's compat/build, which cmd
+// The one place inference-sim builds the vLLM engine (#2021 B2). The engine's configuration -- the
+// scenario's engine-side blocks -- is decoded and resolved by the engine's build package (engines/vllm/core/build), which cmd
 // calls only from here, handing the inputs over unread. A refusal comes back as an error; the CLI boundary turns it into the fatal exit.
 
 // resolveKVOffloadConfig resolves the run's KV offload from the scenario's offload block
@@ -95,7 +90,7 @@ func runOffloads(sh scenarioShapeT) (first, decode *deployment.Offload) {
 // openEngineData opens the catalog and registry the options name: a fresh load.Data with an
 // empty selected-entry report (kernelmodel.OpenData keeps no cache). runData calls it once for
 // a run and hands that Data to the simulator and to every engine (newContractEngine). It is the
-// build site's, as every use of blis-vllm is.
+// build site's, as every use of the vLLM engine is.
 var openEngineData = func(o load.Options) (*load.Data, error) { return kernelmodel.OpenData(o) }
 
 func loadCatalogStorageDevices(data *load.Data) (map[string]build.KVOffloadDevice, error) {
@@ -159,11 +154,25 @@ const (
 // workload states and the command line. CLI boundary: a refusal is fatal; a selector flag
 // given to a run that does not speculate is warned about and ignored.
 func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptance, bool) {
+	return resolveAcceptanceFor(cmd, kernelOpened, k, method)
+}
+
+// resolveAcceptanceFor is resolveAcceptance for the pool m (nil when no pool is open): the lookup's
+// key takes m's own speculative block, so each P/D pool resolves its own acceptance
+// (inference-sim#2125).
+func resolveAcceptanceFor(cmd *cobra.Command, m *engineModel, k int, method string) (build.Acceptance, bool) {
 	fl := cmd.Flags()
 	if err := checkRealisationFlag(fl); err != nil {
 		logrus.Fatalf("%v", err)
 	}
-	a, speculating, err := build.ResolveAcceptance(poolAcceptanceInputs(build.AcceptanceInputs{
+	if sglangSpeculation.Algorithm != "" {
+		for _, f := range []string{build.AcceptanceRateFlag, build.AcceptanceLengthFlag} {
+			if fl.Changed(f) {
+				logrus.Fatalf("%v", sglangSpeculationRefusal(f))
+			}
+		}
+	}
+	a, speculating, err := build.ResolveAcceptance(poolAcceptanceInputs(m, build.AcceptanceInputs{
 		Scenario: kernelScenario, Shape: scenarioShape, Data: mustRunData(), Hardware: gpu,
 		Workload: workloadAcceptance,
 		Flags: build.AcceptanceFlags{
@@ -189,19 +198,32 @@ func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptan
 	return a, speculating
 }
 
-// poolAcceptanceInputs is in with the first pool's part of the lookup's key, from the speculative
-// block of the engine it opened (none when no pool is open): the drafter it names
+// acceptanceEngineVLLM is the engine name `blis acceptance --engine` takes.
+const acceptanceEngineVLLM = build.Engine
+
+// vllmAcceptanceRequest is req with the vLLM engine's part of the lookup's key stated as a run
+// states it: the engine, its defaults, and the draft sampler and verifier the speculative block's
+// sample methods (or the defaults) resolve to.
+func vllmAcceptanceRequest(req acceptance.Request, draftSample, rejectionSample string) acceptance.Request {
+	in := build.AcceptanceInputs{}.VLLMInputsSampling(draftSample, rejectionSample)
+	req.Engine, req.DefaultDraftSampler, req.DefaultVerifier = in.Engine, in.DefaultDraftSampler, in.DefaultVerifier
+	req.DraftSampler, req.Verifier = in.DraftSampler, in.Verifier
+	return req
+}
+
+// poolAcceptanceInputs is in with pool m's part of the lookup's key, from the speculative
+// block of the engine it opened (none when m is nil): the drafter it names
 // (speculative_config.model, the catalog drafter; inference-sim/inference-sim#2142), its draft
 // sampler and verifier as vLLM resolves them, defaults included, the engine "vllm" and vLLM's own
 // defaults (build.AcceptanceInputs.VLLMInputs). A pool that names no drafter drafts with the
 // target's own speculator.
-func poolAcceptanceInputs(in build.AcceptanceInputs) build.AcceptanceInputs {
-	if kernelOpened == nil {
+func poolAcceptanceInputs(m *engineModel, in build.AcceptanceInputs) build.AcceptanceInputs {
+	if m == nil {
 		return in.VLLMInputs(nil)
 	}
-	e, err := kernelOpened.Engine()
+	e, err := m.Engine()
 	if err != nil {
-		logrus.Fatalf("reading the first pool's speculative settings: %v", err)
+		logrus.Fatalf("reading the %s pool's speculative settings: %v", m.Role(), err)
 	}
 	in = in.VLLMInputs(e.Speculative)
 	if e.Speculative != nil {
@@ -378,7 +400,7 @@ func setEngineFrontend(eng engine.Engine, version string) error {
 	// An unstated count is vLLM's default for the balancing mode (serve.py:113-129): the ranks
 	// behind one endpoint, which is every rank of an internal balancer, a node's under hybrid, and
 	// one under external. The engine takes an unstated count as one client, so the host states it
-	// (blis-vllm api_server_count: "a caller states the count it ran").
+	// (the vLLM engine api_server_count: "a caller states the count it ran").
 	count := apiServerCount
 	if g, ok := eng.(interface{ EndpointRanks(int) (int, int) }); ok && count == 0 {
 		if _, n := g.EndpointRanks(0); n > 1 {
@@ -446,8 +468,8 @@ func (p *kernelPools) environmentOf(c sim.InstanceConfig, colocated *kernelmodel
 var wrapEnvironment = func(e env.Environment) env.Environment { return e }
 
 // defaultDPLoadBalancing is vLLM's default DP load-balancing mode, which a pool that states no
-// parallel.data_parallel_load_balancing runs (sim.DPLoadBalancingInternal, from blis-vllm
-// compat/dplb).
+// parallel.data_parallel_load_balancing runs (sim.DPLoadBalancingInternal, defined in
+// sim/dp_modes.go; the engine's balancer is engines/vllm/core/engine/dp.go).
 const defaultDPLoadBalancing = sim.DPLoadBalancingInternal
 
 // adoptFirstPoolEngine takes the run's engine from the first pool's kernel
@@ -522,7 +544,7 @@ func (p *kernelPools) overrides() (prefill, decode poolOverrides) {
 	return poolOverridesOf(p.prefill), poolOverridesOf(p.decode)
 }
 
-// poolOverridesOf is a P/D pool's engine as the cluster takes it: the settings blis-vllm
+// poolOverridesOf is a P/D pool's engine as the cluster takes it: the settings the vLLM engine
 // resolves for the pool (build.PoolSettingsOf), copied into the cluster's per-pool overrides.
 // The pool runs its own engine's scheduling policy.
 func poolOverridesOf(m *engineModel) poolOverrides {
@@ -542,6 +564,65 @@ func poolOverridesOf(m *engineModel) poolOverrides {
 		Scheduler: ps.Policy.Scheduler, PreemptionPolicy: ps.Policy.Preemption,
 	}
 	return o
+}
+
+// poolsDraftDifferently reports whether the P/D pools state different speculative blocks
+// (build.PoolsDraftDifferently).
+func poolsDraftDifferently(p *kernelPools) bool {
+	if p == nil {
+		return false
+	}
+	different, err := build.PoolsDraftDifferently(p.prefill, p.decode)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	return different
+}
+
+// resolvePoolSpeculation resolves each P/D pool's speculation from its own block (resolveSpeculation)
+// and records it in poolSpeculation. It returns the run-wide config, the first drafting pool's,
+// which names the run in the places that state one speculation. The command line's acceptance
+// flags apply to every pool.
+func resolvePoolSpeculation(cmd *cobra.Command, p *kernelPools) speculativeConfig {
+	poolSpeculation = map[string]poolSpeculative{}
+	var run speculativeConfig
+	var have bool
+	for _, pool := range []struct {
+		role string
+		m    *engineModel
+	}{{"prefill", p.prefill}, {"decode", p.decode}} {
+		d, err := build.PoolDrafting(pool.m)
+		if err != nil {
+			logrus.Fatalf("%v", err)
+		}
+		var c speculativeConfig
+		var rec *sim.AcceptanceRecord
+		if !d.Drafts() {
+			// A pool that drafts nothing takes no acceptance (the other pool's selectors and
+			// length are not refused for it).
+			c = speculativeConfigOf(0, 0, d.Method)
+		} else {
+			c, rec = resolveSpeculation(cmd, pool.m, d.Tokens, d.Method, " in the "+pool.role+" pool")
+		}
+		poolSpeculation[pool.role] = poolSpeculative{Config: c, Record: rec}
+		if !have && c.IsEnabled() {
+			run, have = c, true
+		}
+	}
+	if !have {
+		return poolSpeculation["prefill"].Config
+	}
+	return run
+}
+
+// adoptPoolSpeculation puts each pool's own speculation on its overrides when the pools draft
+// differently; a no-op otherwise, so same-config pools and colocated runs are unchanged.
+func adoptPoolSpeculation(prefill, decode *poolOverrides) {
+	if poolSpeculation == nil {
+		return
+	}
+	pre, dec := poolSpeculation["prefill"].Config, poolSpeculation["decode"].Config
+	prefill.Speculative, decode.Speculative = &pre, &dec
 }
 
 // rankInPool is an instance's rank within its pool (build.RankInPool).
@@ -612,12 +693,8 @@ func takePDTopologyFromPools(cmd *cobra.Command, a build.Adopted) (bool, error) 
 		if err != nil {
 			return 0, fmt.Errorf("the scenario's %s pool: %w", role, err)
 		}
-		// A group is one instance for the v0.33.0 engine; the compatibility engine runs one
-		// instance per rank (build.RequireGroupCapacity, build.RequireCapacity).
-		n := m.RankCapacity()
-		if a.CoreEngine {
-			n = m.GroupCapacity()
-		}
+		// A group is one instance (build.RequireGroupCapacity).
+		n := m.GroupCapacity()
 		if n < 1 {
 			return 0, fmt.Errorf("the scenario's %s pool holds no instance at its layout (%v); give it the nodes its layout needs",
 				role, m.GroupLayoutError())
@@ -671,7 +748,7 @@ func openChipModel(name, dir string) (*engineModel, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := m.Settings(); err != nil {
+	if _, err := m.SettingsCheckedByGroups(); err != nil {
 		return nil, fmt.Errorf("the scenario does not run on this chip: %w", err)
 	}
 	return m, nil
@@ -1081,7 +1158,7 @@ func frontendConfigFromCLI() cengine.FrontendConfig {
 }
 
 // registerContractEngines registers the engine kind a contract-built release is built by:
-// blis-vllm's translated v0.33.0 engine, with the latency kernel's step pricing and KV sizing
+// the vLLM engine's translated v0.33.0 engine, with the latency kernel's step pricing and KV sizing
 // (its Register). It is the one place this binary links an engine the contract reaches;
 // later calls are no-ops.
 func registerContractEngines() { coreengine.Register() }
@@ -1191,6 +1268,11 @@ type poolOverrides struct {
 	// ("" = use global; #76): vLLM sets both per engine, so prefill and decode pools may differ.
 	LongPrefillTokenThreshold *int64
 	DPLoadBalancing           string
+
+	// Speculative is the pool's own speculative configuration (nil = use global): vLLM takes each
+	// server's speculative_config, and the P/D connector's fingerprint carries none of its fields,
+	// so the prefill and decode pools may draft differently (inference-sim#2125).
+	Speculative *speculativeConfig
 }
 
 // Validate checks that non-nil pointer fields satisfy their constraints (R3).
@@ -1235,7 +1317,7 @@ func (o poolOverrides) IsEmpty() bool {
 		o.LatencyModel == nil && o.MaxNumSeqs == nil && o.MaxNumBatchedTokens == nil &&
 		o.PrefixCachingDisabled == nil && o.KVOffload == nil &&
 		o.SequenceState == nil && o.PrefixHit == nil && o.Scheduler == "" && o.PreemptionPolicy == "" &&
-		o.LongPrefillTokenThreshold == nil && o.DPLoadBalancing == ""
+		o.LongPrefillTokenThreshold == nil && o.DPLoadBalancing == "" && o.Speculative == nil
 }
 
 // resolvePoolConfig applies per-pool overrides to a global SimConfig.
@@ -1290,6 +1372,9 @@ func resolvePoolConfig(global engineConfig, overrides poolOverrides) engineConfi
 	if overrides.LongPrefillTokenThreshold != nil {
 		resolved.LongPrefillTokenThreshold = *overrides.LongPrefillTokenThreshold
 	}
+	if overrides.Speculative != nil {
+		resolved.SpeculativeConfig = *overrides.Speculative
+	}
 
 	return resolved
 }
@@ -1301,7 +1386,7 @@ func resolvePoolConfig(global engineConfig, overrides poolOverrides) engineConfi
 // fabric: its payload, its floor and the links it crosses with their full rates. This is
 // the cost model's side of that question for a kernel-backed run, and the only place the
 // simulator turns a move into a demand. It prices nothing else: the engines at this pin open
-// their pools' kernels themselves (blis-vllm compat/kernelmodel), so Graph, Chip, Memory, Price
+// their pools' kernels themselves (engines/vllm/core/kernelmodel), so Graph, Chip, Memory, Price
 // and Acceptance are refused here by name, never answered with a number nobody computed.
 //
 // One transferEnvironment is built for each engine, from the kernels of its own pool and, for a
@@ -1370,7 +1455,7 @@ func poolOrigin(m *kernelmodel.Model) engine.PoolOrigin {
 // errHostEnvironment says which questions this Environment does not answer, and why.
 func errHostEnvironment(what string) error {
 	return fmt.Errorf("cmd: the host's Environment answers transfers only: %s is asked of the cost model by the "+
-		"engine, which at this pin opens its pool's kernel itself (compat/kernelmodel)", what)
+		"engine, which at this pin opens its pool's kernel itself (engines/vllm/core/kernelmodel)", what)
 }
 
 // Graph implements env.Environment; it is not answered here.
@@ -1469,7 +1554,7 @@ func (e *transferEnvironment) pullDemand(p plan.PoolPlan, t plan.Transfer) (kern
 // peer's pool numbering: in a colocated run the engine's own pool, in a disaggregated run the
 // other pool (placement of the opposite pool).
 //
-// Named limit (blis-vllm#204): a WRITE between two instances of one pool in a disaggregated run
+// Named limit (inference-sim/inference-sim#2439): a WRITE between two instances of one pool in a disaggregated run
 // is read as crossing to the other pool, because a Move names an endpoint and not its pool.
 //
 // Between different global nodes the WRITE crosses the fabric: the kernel's PDTransferDemand links
@@ -1675,8 +1760,8 @@ func requireWeightSource(tier string, def *engineModel, variants map[string]*poo
 	}
 }
 
-// Peer endpoints: where each instance sits, for the engines that send it KV (blis-vllm#204). They are
-// here, with every other use of blis-vllm, because only this file reaches it.
+// Peer endpoints: where each instance sits, for the engines that send it KV (inference-sim/inference-sim#2439). They are
+// here, with every other use of the vLLM engine, because only this file reaches it.
 
 // peerEndpoint is where each instance's workers sit, in the numbering of its own pool, for an
 // engine that sends it KV directly (engine.PeerPlaced; a p2p tier's WRITE ends there). A

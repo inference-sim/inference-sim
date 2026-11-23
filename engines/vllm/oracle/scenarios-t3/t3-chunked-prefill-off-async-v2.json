@@ -1,0 +1,186 @@
+{
+ "name": "t3-chunked-prefill-off-async-v2",
+ "description": "enable_chunked_prefill false with async scheduling on the V2 runner at PP 1, priority scheduling and prefix caching, budget 24 equal to max_model_len.",
+ "config": {
+  "max_num_seqs": 3,
+  "max_num_batched_tokens": 24,
+  "block_size": 4,
+  "num_blocks": 64,
+  "max_model_len": 24,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "priority",
+  "pipeline_parallel_size": 1,
+  "async_scheduling": true,
+  "use_v2_model_runner": true,
+  "enable_chunked_prefill": false
+ },
+ "requests": [
+  {
+   "id": "0",
+   "arrival_step": 0,
+   "prompt": [
+    10166,
+    18475,
+    3686,
+    8604,
+    1999,
+    1328,
+    3088,
+    9488,
+    7366,
+    6168,
+    4471,
+    6282,
+    18761,
+    17408,
+    5975,
+    8748,
+    14824,
+    13208,
+    16611,
+    6037
+   ],
+   "output": [
+    15007,
+    6585,
+    4481,
+    19024
+   ],
+   "priority": 1
+  },
+  {
+   "id": "1",
+   "arrival_step": 0,
+   "prompt": [
+    11634,
+    18064,
+    11763,
+    416,
+    4963,
+    12299,
+    6446,
+    16508,
+    4312,
+    4804,
+    7130,
+    6136,
+    7336,
+    17540,
+    18024,
+    14286
+   ],
+   "output": [
+    13470,
+    7703,
+    4990,
+    16238
+   ]
+  },
+  {
+   "id": "2",
+   "arrival_step": 0,
+   "prompt": [
+    9763,
+    12042,
+    16124,
+    13719,
+    2782,
+    19751,
+    14377,
+    12524,
+    12183,
+    852
+   ],
+   "output": [
+    7388,
+    5293,
+    10331
+   ],
+   "priority": 2
+  },
+  {
+   "id": "3",
+   "arrival_step": 1,
+   "prompt": [
+    5969,
+    7351,
+    13095,
+    1969,
+    17732,
+    10429,
+    4209,
+    9559,
+    13336,
+    18810,
+    5051,
+    17029,
+    12520,
+    14860,
+    2879,
+    7448,
+    19356,
+    3049
+   ],
+   "output": [
+    5047,
+    610,
+    15115
+   ]
+  },
+  {
+   "id": "4",
+   "arrival_step": 2,
+   "prompt": [
+    4293,
+    8428,
+    2073,
+    7622,
+    12599,
+    19228,
+    19483,
+    9422,
+    6696,
+    16325,
+    4711,
+    15070
+   ],
+   "output": [
+    7894,
+    17033,
+    16415,
+    13113
+   ],
+   "priority": 1
+  },
+  {
+   "id": "5",
+   "arrival_step": 3,
+   "prompt": [
+    1241,
+    13998,
+    17765,
+    19147,
+    9435,
+    6758,
+    5729,
+    1056,
+    19798,
+    3673,
+    10538,
+    5081,
+    451,
+    1763,
+    17385,
+    8924,
+    5429,
+    17086,
+    6381,
+    13993
+   ],
+   "output": [
+    6714,
+    6259
+   ]
+  }
+ ]
+}

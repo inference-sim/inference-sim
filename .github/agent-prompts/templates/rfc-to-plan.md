@@ -13,7 +13,7 @@ Here is the agreed tracking issue: #<NUMBER> [paste link or content]
 
 Read the tracking issue discussions and final decisions. Then:
 
-1. ENCODE: Follow docs/contributing/archon/encode-plan.md to encode the agreed
+1. ENCODE: Follow .github/agent-prompts/archon/encode-plan.md to encode the agreed
    holes, surfaces, contracts, and allowed imports into a .archon file.
 
 2. COMPILE + DISTANCE: Compile the plan and measure baseline distance.
@@ -54,7 +54,7 @@ Read the tracking issue discussions and final decisions. Then:
 
 4. Report: summary of baseline dist, number of holes, delivery order.
 
-Use the sub-issue format from docs/contributing/templates/archon-issue-examples.md.
+Use the sub-issue format from .github/agent-prompts/templates/archon-issue-examples.md.
 Each sub-issue must include the full hole content (surface, contracts,
 evidence types, invariants, no-op default) so blis-pr-review can verify
 delivery without reading .archon files.

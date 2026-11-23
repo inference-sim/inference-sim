@@ -1,6 +1,6 @@
 package cmd
 
-// Behavioral contracts of the Result document (#1871, inference-sim/blis-substrate#154 sections A and D):
+// Behavioral contracts of the Result document (#1871, inference-sim/inference-sim#2467 sections A and D):
 //
 //	BC-R1 stdout of run and replay is exactly one Result that blis-schemas validates: JSON by
 //	      default, YAML with --format yaml, the same document in both.
@@ -30,9 +30,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/metrics"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
-	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
+	"github.com/inference-sim/inference-sim/substrate/contracts/metrics"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
 
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -303,7 +303,7 @@ func TestResult_InputRecordsWhatTheRunWasGiven(t *testing.T) {
 		t.Errorf("input.policy = %v, want the bundle verbatim", in.Policy)
 	}
 	if r.Revisions.Simulator == "" || r.Revisions.Substrate == "" || r.Engine.Kind != "vllm" ||
-		r.Engine.Version != in.Scenario.EngineRelease() {
+		r.Engine.Version != builtEngines()["vllm"].Version || r.Engine.Commit != builtEngines()["vllm"].Commit {
 		t.Errorf("revisions %+v, engine %+v", r.Revisions, r.Engine)
 	}
 	if r.Data.Catalog.Hash == "" || r.Data.Registry.Hash == "" || r.Data.Build == "" {
@@ -1483,5 +1483,26 @@ cohorts:
 		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv")
 	if err == nil || !strings.Contains(stderr, "fixed-accumulate") {
 		t.Fatalf("replay in the default mode: err %v, stderr %q; want a refusal naming fixed-accumulate", err, lastLines(stderr, 3))
+	}
+}
+
+// DEV-11, design 8.8: one replication is the default for every run and replay, and its Result
+// says its figures are point estimates with no interval.
+func TestResult_OneReplicationByDefaultStatesItHasNoInterval(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "trace")
+	runOut, stderr, err := runKernelCLI(t, resultRunArgs("--trace-output", prefix)...)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	repOut, stderr, err := runKernelCLI(t, "replay", "--scenario", kernelTestScenario, "--seed", "7",
+		"--horizon", "600000000", "--trace-header", prefix+".yaml", "--trace-data", prefix+".csv")
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
+	}
+	for name, out := range map[string]string{"run": runOut, "replay": repOut} {
+		e := parseResult(t, out).Estimate
+		if e.Replications != 1 || e.NoInterval != result.NoIntervalStatement {
+			t.Errorf("%s: estimate %+v, want one replication stating it has no interval", name, e)
+		}
 	}
 }

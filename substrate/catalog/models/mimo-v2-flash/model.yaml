@@ -1,0 +1,10 @@
+name: mimo-v2-flash
+source:
+  provider: huggingface
+  repo: XiaomiMiMo/MiMo-V2.6-Flash-RL
+  revision: f657ba2f7d24c9adc5730675baaa2d34de878a49
+  retrieved: 2026-11-22
+licence:
+  id: MIT
+  evidence: https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL/raw/f657ba2f7d24c9adc5730675baaa2d34de878a49/README.md
+drafters: [speculator]

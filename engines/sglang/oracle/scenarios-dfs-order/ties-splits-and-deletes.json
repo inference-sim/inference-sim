@@ -1,0 +1,201 @@
+{
+ "description": "Depth-first weight order over branches of equal weight: children in the order they entered the root's dict; a split prefix keeps its branch's place; an evicted branch inserted again comes last; a heavier subtree first.",
+ "model": "none: the driver builds SGLang's pools and cache from the sequence's cache block",
+ "seed": 0,
+ "cache": {
+  "page_size": 1,
+  "kv_size": 128,
+  "max_num_reqs": 4,
+  "max_context_len": 64,
+  "layer_num": 2,
+  "head_num": 2,
+  "head_dim": 16,
+  "kv_cache_events": false
+ },
+ "calls": [
+  {
+   "m": "insert",
+   "tokens": [
+    1,
+    2,
+    3,
+    4
+   ]
+  },
+  {
+   "m": "insert",
+   "tokens": [
+    5,
+    6,
+    7,
+    8
+   ]
+  },
+  {
+   "m": "insert",
+   "tokens": [
+    9,
+    10,
+    11,
+    12
+   ]
+  },
+  {
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "as": "a"
+  },
+  {
+   "m": "match_prefix",
+   "tokens": [
+    5,
+    6,
+    7,
+    8
+   ],
+   "as": "b"
+  },
+  {
+   "m": "match_prefix",
+   "tokens": [
+    9,
+    10,
+    11,
+    12
+   ],
+   "as": "c"
+  },
+  {
+   "m": "dfs_weight_order",
+   "nodes": [
+    "c",
+    "b",
+    "a"
+   ]
+  },
+  {
+   "m": "dfs_weight_order",
+   "nodes": [
+    "a",
+    "c",
+    "b",
+    "b"
+   ]
+  },
+  {
+   "m": "dfs_weight_order",
+   "nodes": [
+    "c",
+    "a"
+   ]
+  },
+  {
+   "m": "insert",
+   "tokens": [
+    1,
+    2,
+    20,
+    21
+   ]
+  },
+  {
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "as": "a1"
+  },
+  {
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2,
+    20,
+    21
+   ],
+   "as": "a2"
+  },
+  {
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2
+   ],
+   "as": "ap"
+  },
+  {
+   "m": "dfs_weight_order",
+   "nodes": [
+    "c",
+    "a2",
+    "b",
+    "a1"
+   ]
+  },
+  {
+   "m": "dfs_weight_order",
+   "nodes": [
+    "ap",
+    "c",
+    "b"
+   ]
+  },
+  {
+   "m": "evict",
+   "num_tokens": 4
+  },
+  {
+   "m": "insert",
+   "tokens": [
+    5,
+    6,
+    7,
+    8
+   ]
+  },
+  {
+   "m": "match_prefix",
+   "tokens": [
+    5,
+    6,
+    7,
+    8
+   ],
+   "as": "b2"
+  },
+  {
+   "m": "match_prefix",
+   "tokens": [
+    9,
+    10,
+    11,
+    12
+   ],
+   "as": "c2"
+  },
+  {
+   "m": "dfs_weight_order",
+   "nodes": [
+    "b2",
+    "c2",
+    "a1",
+    "a2"
+   ]
+  },
+  {
+   "m": "dfs_weight_order",
+   "nodes": [
+    "c2",
+    "b2"
+   ]
+  }
+ ]
+}

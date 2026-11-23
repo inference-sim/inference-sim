@@ -1,0 +1,257 @@
+package main
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/inference-sim/inference-sim/substrate/contracts/invariants"
+)
+
+// Markers delimit the generated part of a file that people also edit by hand. The text
+// between them is rendered from the registry; everything outside them is left alone.
+const (
+	beginMarker = "<!-- BEGIN GENERATED: invariants (go run ./tools/invariants render; do not edit) -->"
+	endMarker   = "<!-- END GENERATED: invariants -->"
+)
+
+// firstSentence returns the statement up to the first full stop outside parentheses that
+// ends a sentence, with a trailing colon turned into a full stop. It is the plan's rule.
+func firstSentence(s string) string {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case '.':
+			if depth == 0 && (i+1 == len(s) || s[i+1] == ' ') {
+				return s[:i+1]
+			}
+		}
+	}
+	return strings.TrimSuffix(s, ":") + "."
+}
+
+// applies reports whether an invariant has a check in the repository.
+func applies(inv invariants.Invariant, repo string) bool {
+	for _, r := range inv.Scope {
+		if r == repo {
+			return true
+		}
+	}
+	return false
+}
+
+// renderAgents writes the AGENTS.md section for one repository: every invariant whose
+// checks run there, with each of its checks in that repository and their status, and the
+// review questions that can be added to its pull requests.
+func renderAgents(reg *invariants.Registry, repo string) string {
+	var b strings.Builder
+	b.WriteString(beginMarker + "\n")
+	fmt.Fprintf(&b, "## Invariants checked in %s\n\n", repo)
+	b.WriteString("Generated from the invariant registry, `blis-substrate/contracts/invariants`, at the\n")
+	b.WriteString("substrate version this repository pins (design §13.1). Each line is an invariant this\n")
+	b.WriteString("repository runs a check for: its identifier, the first sentence of its statement, its\n")
+	b.WriteString("status, and each of its checks here. `ci` means the check runs in CI; `new` means it does not\n")
+	b.WriteString("yet, and the target milestone says when it must. A pull request cites the identifiers it\n")
+	b.WriteString("keeps or introduces; CI refuses an identifier that does not exist (X14).\n\n")
+	for _, inv := range reg.Invariants {
+		if !applies(inv, repo) {
+			continue
+		}
+		target := "target reached"
+		if inv.Target.Milestone != nil {
+			target = fmt.Sprintf("target %s by %s", inv.Target.Status, invariants.MilestoneLabel(inv.Target.Milestone))
+		}
+		fmt.Fprintf(&b, "- **%s** (%s; %s) %s\n", inv.ID, inv.Status, target, firstSentence(inv.Statement))
+		for _, c := range inv.Checks {
+			if c.Repo != repo {
+				continue
+			}
+			line := fmt.Sprintf("  - `%s`, %s: %s", c.Status, c.Runs, c.Check)
+			if c.Test != "" {
+				line += fmt.Sprintf(" (`%s`)", c.Test)
+			}
+			b.WriteString(line + "\n")
+		}
+	}
+	b.WriteString(renderPractices(reg, repo))
+	b.WriteString(renderGuidance(reg, repo))
+	qs := reg.Questions(repo)
+	if len(qs) > 0 {
+		b.WriteString("\n### Review questions\n\n")
+		b.WriteString("Each question below is guidance for the review agent (design §13.2). When a pull request\n")
+		b.WriteString("changes one of its paths, the agent answers it yes or no in a review comment, with the\n")
+		b.WriteString("files and lines that support the answer. No CI job lists, records or waits on a question,\n")
+		b.WriteString("and no person has to answer one.\n\n")
+		for _, q := range qs {
+			fmt.Fprintf(&b, "- **%s** %s Expertise: %s. Applies when: %s. %s\n", q.ID, q.Question, q.Expertise, q.When, triggerText(q.ID, q.AppliesWhen))
+		}
+	}
+	b.WriteString(endMarker + "\n")
+	return b.String()
+}
+
+// renderPractices writes the maintainer checklist for one repository: one item for each
+// practice check that concerns it (design §4.2). No program checks these. A maintainer with
+// write access keeps each one and confirms it when the repository's settings change.
+func renderPractices(reg *invariants.Registry, repo string) string {
+	var items []string
+	for _, inv := range reg.Invariants {
+		for _, c := range inv.Checks {
+			if c.Repo == repo && c.Runs == invariants.RunsPractice {
+				items = append(items, fmt.Sprintf("- [ ] **%s** %s\n", inv.ID, c.Check))
+			}
+		}
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n### Maintainer practices\n\n")
+	b.WriteString("No program checks these. A maintainer with write access keeps each one for this\n")
+	b.WriteString("repository as a whole and confirms it when the repository's settings change (design §4.2).\n\n")
+	for _, it := range items {
+		b.WriteString(it)
+	}
+	return b.String()
+}
+
+// renderGuidance writes the agent guidance for one repository: the part of each rule that
+// shapes how an agent writes or reviews a change and that no program can decide.
+func renderGuidance(reg *invariants.Registry, repo string) string {
+	var b strings.Builder
+	for _, inv := range reg.Invariants {
+		if inv.Guidance == "" || !applies(inv, repo) {
+			continue
+		}
+		if b.Len() == 0 {
+			b.WriteString("\n### Agent guidance\n\n")
+			b.WriteString("Follow these on every change you write or review. They are not checked by a program\n")
+			b.WriteString("(design §4.2).\n\n")
+		}
+		fmt.Fprintf(&b, "- **%s** %s\n", inv.ID, strings.TrimSpace(inv.Guidance))
+	}
+	return b.String()
+}
+
+func triggerText(id string, t invariants.Trigger) string {
+	if t.Manual {
+		return "The review agent decides whether it applies, and may mark it with the label `review:" + id + "`."
+	}
+	s := "Paths: `" + strings.Join(t.Paths, "`, `") + "`"
+	if len(t.Exclude) > 0 {
+		s += ", except `" + strings.Join(t.Exclude, "`, `") + "`"
+	}
+	return s + "."
+}
+
+// renderTemplate writes the pull-request template for one repository. The sections are
+// those of the brief every BLIS pull request follows; the change-class field is DEV-12's.
+func renderTemplate(reg *invariants.Registry, repo string) string {
+	var b strings.Builder
+	b.WriteString(beginMarker + "\n")
+	b.WriteString(`## Summary
+
+<!-- One to three sentences: what this pull request does and why. -->
+
+## Change class
+
+<!-- Exactly one, by what the change does (DEV-12, design §8.9). A change that is both is split. -->
+
+- [ ] Verification: the model's behaviour must not change (a refactor, a speed-up, or a fix that
+      makes the code match an oracle or a written rule).
+- [ ] Validation: it changes what is modelled (a pricing form, a coefficient, an input model).
+
+## Invariants
+
+<!-- The identifiers this change keeps or introduces, one per line, such as "- SUB-6". CI fails
+if an identifier does not exist (X14). The list of identifiers is in AGENTS.md. -->
+
+## Closes
+
+<!-- One "Closes <owner>/<repo>#<n>" line per issue. -->
+
+## Tests
+
+<!-- Commands run and their results. For each behaviour change, the test that fails without
+it (X13). -->
+
+## Evidence
+
+<!-- Required for a validation change, and for a verification change that moves a published
+number: the success criteria committed in advance, the held-out evidence, the price-change
+report and the scoring harness's figures on published units (X13, VAL-6). Otherwise write
+"Not needed: no published number moves." -->
+
+## Depends on
+
+<!-- Other pull requests, by URL and commit. "None" if none. -->
+
+## Not in this pull request
+
+<!-- What remains, and why. -->
+
+## Checklist
+
+`)
+	for _, line := range checklist(reg, repo) {
+		b.WriteString("- [ ] " + line + "\n")
+	}
+	b.WriteString(endMarker + "\n")
+	return b.String()
+}
+
+// checklist returns the items every pull request in the repository confirms: the process
+// invariants whose checks run there and that a contributor keeps by hand.
+func checklist(reg *invariants.Registry, repo string) []string {
+	items := []struct{ id, text string }{
+		{"X12", "No third-party data committed; each derived value cites its source by URL and commit or hash; no private names."},
+		{"X13", "Each behaviour change has a test that fails without it."},
+		{"X14", "The commit hashes listed in this description are the branch heads."},
+		{"X20", "Each commit written with an agent's help has one Assisted-by line and no Co-authored-by line naming a tool; the person responsible adds the DCO sign-off, which no check requires."},
+		{"X24", "Every review finding is fixed, filed as a linked issue, or rejected with a reason."},
+		{"X26", "Every path, symbol, issue and supported-feature statement in changed documentation is generated or checked."},
+	}
+	var out []string
+	for _, it := range items {
+		inv, ok := reg.Get(it.id)
+		if ok && applies(inv, repo) {
+			out = append(out, it.id+": "+it.text)
+		}
+	}
+	return out
+}
+
+// splice replaces the generated block in an existing file, or appends one if the file has
+// none. It refuses a file with unbalanced markers.
+func splice(existing, block string) (string, error) {
+	b := strings.Index(existing, beginMarker)
+	e := strings.Index(existing, endMarker)
+	switch {
+	case b < 0 && e < 0:
+		if existing != "" && !strings.HasSuffix(existing, "\n") {
+			existing += "\n"
+		}
+		if existing != "" {
+			existing += "\n"
+		}
+		return existing + block, nil
+	case b < 0 || e < 0 || e < b || strings.Count(existing, beginMarker) != 1 || strings.Count(existing, endMarker) != 1:
+		return "", fmt.Errorf("the generated block's markers are missing, repeated or out of order")
+	}
+	return existing[:b] + block + existing[e+len(endMarker)+1:], nil
+}
+
+// extract returns the generated block of a file, markers included.
+func extract(s string) (string, bool) {
+	b := strings.Index(s, beginMarker)
+	e := strings.Index(s, endMarker)
+	if b < 0 || e < b {
+		return "", false
+	}
+	return s[b : e+len(endMarker)+1], true
+}

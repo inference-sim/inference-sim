@@ -17,30 +17,26 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 
-	blisschemas "github.com/inference-sim/blis-substrate/contracts"
-	"github.com/inference-sim/blis-substrate/contracts/embed"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
-	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
-	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
-	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
-	"github.com/inference-sim/blis-substrate/load"
+	blisschemas "github.com/inference-sim/inference-sim/substrate/contracts"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/measurement"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
+	schemaworkload "github.com/inference-sim/inference-sim/substrate/contracts/spec/workload"
+	"github.com/inference-sim/inference-sim/substrate/load"
+	embed "github.com/llm-d/llm-d-router/blisembed"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
-// Module paths whose versions a Result records.
-const (
-	modulePathSubstrate = "github.com/inference-sim/blis-substrate"
-	modulePathRouter    = "github.com/llm-d/llm-d-router"
-	modulePathEngine    = "github.com/inference-sim/blis-vllm"
-	modulePathSGLang    = "github.com/inference-sim/blis-sglang"
-)
+// Module path whose version a Result records beyond this module's own.
+const modulePathRouter = "github.com/llm-d/llm-d-router"
 
 // resultRevisions are the versions of the BLIS modules the run was built from.
 func resultRevisions() result.Revisions {
@@ -48,26 +44,19 @@ func resultRevisions() result.Revisions {
 	return revisionsFrom(info)
 }
 
-// revisionsFrom is resultRevisions over given build information, for tests. A module the build
-// information does not carry is "unknown" for the simulator and the substrate, which the
-// document requires, and empty for the others.
+// revisionsFrom is resultRevisions over given build information, for tests. The substrate and
+// the engines are packages of the simulator's module, so the substrate and engine_module
+// revisions are the simulator's own build; only the router fork is a separate module. A module
+// the build information does not carry is "unknown" for the simulator and the substrate, which
+// the document requires.
 func revisionsFrom(info *debug.BuildInfo) result.Revisions {
 	v := versionsFrom(info)
-	r := result.Revisions{Simulator: v.BLIS, Substrate: v.Schemas}
+	r := result.Revisions{Simulator: v.BLIS, Substrate: v.Schemas, LLMD: llmdCommit()}
 	if info != nil {
+		r.EngineModule = v.BLIS
 		for _, dep := range info.Deps {
-			switch dep.Path {
-			case modulePathRouter:
+			if dep.Path == modulePathRouter {
 				r.Router = depVersion(dep)
-			case modulePathEngine:
-				if scenarioEngine.Kind != engineKindSGLang {
-					r.EngineModule = depVersion(dep)
-				}
-			case modulePathSGLang:
-				// An SGLang run's engine module is blis-sglang's, not blis-vllm's.
-				if scenarioEngine.Kind == engineKindSGLang {
-					r.EngineModule = depVersion(dep)
-				}
 			}
 		}
 	}
@@ -96,8 +85,8 @@ var releaseTag = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 // resultData is the Result's record of the catalog and registry the run read (design §3.3,
 // X8): each one's source, content hash, overlay hashes and combined hash, the build, and
 // whether the run used released data. Released data is a tagged simulator release that read
-// the embedded copy of both with no overlay; the release's stack.json names the substrate tag
-// whose embedded hashes these are.
+// the embedded copy of both with no overlay; the embedded data is the release's own substrate/
+// directory.
 func resultData(d *load.Data) result.Data {
 	out := result.Data{Catalog: d.Catalog.Result(), Registry: d.Registry.Result(), Build: resultBuild()}
 	out.ReleasedData = out.Build != result.BuildUnreleased &&
@@ -256,7 +245,8 @@ func resultLedger(cs *cluster.ClusterSimulator) result.Requests {
 }
 
 // runGPUs is the number of GPUs the run's instances occupy: each instance its own pool's
-// tensor x pipeline x prefill-context-parallel width, the GPUs one engine replica spans.
+// tensor x pipeline x prefill-context-parallel x data-parallel width, the GPUs one engine
+// instance (a whole data-parallel group) spans.
 // An instance whose role names no pool (a test cluster) counts its tensor-parallel degree.
 func runGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) int {
 	all, _ := runGPUsByRole(cs, dep)
@@ -281,15 +271,43 @@ func runGPUsByRole(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (al
 	return all, decode
 }
 
-// instanceGPUs is the GPUs each instance occupies, by instance id, and which of them are
-// decode instances.
-func instanceGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (gpus map[string]int, decode map[string]bool) {
+// poolGPUs is the GPUs one instance of each pool role occupies, tp x pp x pcp x dp
+// (sim.GPUsPerInstance): the one count node-pool placement, node span, cost and the Result's GPU
+// totals read. Empty without a deployment.
+func poolGPUs(dep *deployment.Deployment) map[deployment.Role]int {
 	perRole := map[deployment.Role]int{}
 	if dep != nil {
 		for _, p := range dep.Pools {
-			perRole[p.Role] = max(p.Parallel.TP, 1) * max(p.Parallel.PP, 1) * max(p.Parallel.PCP, 1)
+			perRole[p.Role] = sim.GPUsPerInstance(p.Parallel.TP, p.Parallel.PP, p.Parallel.PCP, p.Parallel.DP)
 		}
 	}
+	return perRole
+}
+
+// stateInstanceGPUs states in config the GPUs one instance of each pool occupies, so a node pool
+// reserves, spans and bills an instance for its whole layout and not its tensor-parallel degree
+// alone (#2260). A role the deployment has no pool for keeps the unstated count (its TP).
+func stateInstanceGPUs(config *cluster.DeploymentConfig) {
+	docs, err := resultScenarioDocs()
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	perRole := poolGPUs(docs.Deployment)
+	if g, ok := perRole[deployment.RoleColocated]; ok {
+		config.GPUs = g
+	}
+	if g, ok := perRole[deployment.RolePrefill]; ok && config.Roles.Prefill != nil {
+		config.Roles.Prefill.GPUs = g
+	}
+	if g, ok := perRole[deployment.RoleDecode]; ok && config.Roles.Decode != nil {
+		config.Roles.Decode.GPUs = g
+	}
+}
+
+// instanceGPUs is the GPUs each instance occupies, by instance id, and which of them are
+// decode instances.
+func instanceGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (gpus map[string]int, decode map[string]bool) {
+	perRole := poolGPUs(dep)
 	gpus, decode = map[string]int{}, map[string]bool{}
 	membership := cs.PoolMembership()
 	for _, inst := range cs.Instances() {
@@ -318,7 +336,7 @@ func instanceGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (gpu
 // prefix-cache hit rate, the acceptance record and the server series), under each pool role
 // its resolved prefix-cache record, and under "instances" each instance's own figures by id.
 func engineSection(m *sim.Metrics, sum sim.MeasuredSummary, raw *cluster.RawMetrics, series *sim.ServerSeriesOutput,
-	prefix map[string]sim.PrefixCacheRecord, acceptance *sim.AcceptanceRecord, perInstance map[string]any, agentic any) map[string]any {
+	prefix map[string]sim.PrefixCacheRecord, acceptance *sim.AcceptanceRecord, poolAcceptance map[string]*sim.AcceptanceRecord, perInstance map[string]any, agentic any) map[string]any {
 	c := map[string]any{
 		"preemptions":                        m.PreemptionCount,
 		"kv_allocation_failures":             m.KVAllocationFailures,
@@ -353,7 +371,7 @@ func engineSection(m *sim.Metrics, sum sim.MeasuredSummary, raw *cluster.RawMetr
 	if len(whole.Adapters) > 0 {
 		c["adapters"] = toGeneric(whole.Adapters)
 	}
-	// The whole-run figures stdout printed before the Result (inference-sim/blis-substrate#154 section A: "whole-run
+	// The whole-run figures stdout printed before the Result (inference-sim/inference-sim#2467 section A: "whole-run
 	// values, when wanted, are a second named window"; schema v1 states one window, so they are
 	// the engine's): latencies over every completed request, the per-decode-step interval the
 	// legacy itl_* keys held, and the rates over the simulated run.
@@ -379,6 +397,16 @@ func engineSection(m *sim.Metrics, sum sim.MeasuredSummary, raw *cluster.RawMetr
 	}
 	for role, rec := range prefix {
 		out[role] = map[string]any{"prefix_cache": toGeneric(rec)}
+	}
+	// Pools that draft differently each state their own acceptance (inference-sim#2125); the
+	// cluster states none then, as there is no one acceptance of the run.
+	for role, rec := range poolAcceptance {
+		section, _ := out[role].(map[string]any)
+		if section == nil {
+			section = map[string]any{}
+			out[role] = section
+		}
+		section["acceptance"] = toGeneric(rec)
 	}
 	return out
 }

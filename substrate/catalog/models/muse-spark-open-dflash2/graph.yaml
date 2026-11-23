@@ -1,0 +1,210 @@
+kind: ModelGraph
+name: muse-spark-open-dflash2
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 2f88d111418b4018678b8a80ed0bdf83c14b0e395cd6cc163153bce4dd8ba0ae
+  deriver_version: 1
+global:
+  hidden_size: 8192
+  vocab_size: 202048
+  tie_word_embeddings: false
+  weight_dtype: bf16
+  architecture: DFlash2DraftModel
+layer_kinds:
+- id: dflash_layer
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: attention_conv_kernel_projection
+    n: 2048
+    k: 8192
+    tp: replicated
+  - op: Elementwise
+    role: attention_conv_prepare
+    bytes_per_token: 32768
+    tp: replicated
+  - op: GEMM
+    role: qkv_proj
+    n: 10240
+    k: 8192
+  - op: Elementwise
+    role: qk_norm_rope
+    bytes_per_token: 36864
+  - op: Attention
+    holds_engine_kv: true
+    kind: swa
+    n_q: 64
+    n_kv: 8
+    d_h: 128
+    window: 2056
+  - op: GEMM
+    role: o_proj
+    n: 8192
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: attention_conv_finish
+    bytes_per_token: 32768
+    tp: replicated
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: mlp_conv_kernel_projection
+    n: 2048
+    k: 8192
+    tp: replicated
+  - op: Elementwise
+    role: mlp_conv_prepare
+    bytes_per_token: 32768
+    tp: replicated
+  - op: GEMM
+    role: mlp_gate_up
+    n: 57344
+    k: 8192
+  - op: GEMM
+    role: mlp_down
+    n: 8192
+    k: 28672
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: mlp_conv_finish
+    bytes_per_token: 32768
+    tp: replicated
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+- id: dflash_context
+  nodes:
+  - op: GEMM
+    role: dflash_fc
+    n: 8192
+    k: 40960
+    tp: replicated
+  - op: Elementwise
+    role: dflash_hidden_norm
+    bytes_per_token: 32768
+    tp: replicated
+  - op: GEMM
+    role: dflash_context_kv
+    n: 10240
+    k: 8192
+  - op: Elementwise
+    role: dflash_context_kv_insert_0
+    bytes_per_token: 8192
+  - op: Elementwise
+    role: dflash_context_kv_insert_1
+    bytes_per_token: 8192
+  - op: Elementwise
+    role: dflash_context_kv_insert_2
+    bytes_per_token: 8192
+  - op: Elementwise
+    role: dflash_context_kv_insert_3
+    bytes_per_token: 8192
+  - op: Elementwise
+    role: dflash_context_kv_insert_4
+    bytes_per_token: 8192
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+stack:
+  pattern:
+  - dflash_layer
+  repeat: 5
+head:
+- op: Elementwise
+  role: final_norm
+  bytes_per_token: 32768
+  tp: replicated
+- op: GEMM
+  role: lm_head
+  n: 202048
+  k: 8192
+  tp: column
+speculator:
+  method: dflash
+  num_spec_tokens: 1
+  drafting: parallel_block
+  shares_target_head: true
+  stack:
+    pattern:
+    - dflash_layer
+    repeat: 5
+  context_stack:
+    pattern:
+    - dflash_context
+    repeat: 1
+  head:
+  - op: Elementwise
+    role: dflash_final_norm
+    bytes_per_token: 32768
+    tp: replicated
+  - op: GEMM
+    role: dflash_lm_head
+    n: 202048
+    k: 8192
+    tp: column
+    aliases: head.lm_head
+  - op: GEMM
+    role: selector_hidden_projection
+    n: 256
+    k: 8192
+    tp: replicated
+  - op: Gather
+    role: selector_codebooks
+    rows: 404096
+    row_bytes: 512
+    rows_per_token: 32
+    out_bytes_per_token: 16384
+  aux_hidden_state_layers:
+  - 2
+  - 17
+  - 31
+  - 45
+  - 60
+  aux_hidden_state_bytes_per_token: 32768

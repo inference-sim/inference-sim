@@ -26,10 +26,10 @@ import (
 	"sort"
 	"strings"
 
-	blisschemas "github.com/inference-sim/blis-substrate/contracts"
+	blisschemas "github.com/inference-sim/inference-sim/substrate/contracts"
 
-	"github.com/inference-sim/blis-vllm/compat/build"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/build"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 )
 
 // The repositories a gap can be closed in.

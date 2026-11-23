@@ -19,7 +19,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 )
 
 // fromResultPath is --from-result: a Result file to reproduce.
@@ -61,6 +61,10 @@ func applyFromResult(command string, cmd *cobra.Command) func() {
 	}
 	if p := doc.Validate(); !p.OK() {
 		logrus.Fatalf("--from-result %s: the Result does not validate: %v", fromResultPath, p)
+	}
+	if doc.Estimate.Interval != nil {
+		logrus.Fatalf("--from-result %s: this Result is an interval over %d replications, which a single reproduction does not recreate; rerun with `--replications %d --max-replications %d` and the scenario's own options instead",
+			fromResultPath, doc.Estimate.Replications, doc.Estimate.Interval.MinReplications, doc.Estimate.Interval.MaxReplications)
 	}
 	isTrace := replaysATrace(&doc)
 	if (command == "replay") != isTrace {
@@ -201,6 +205,8 @@ func markRerun(r *result.Result) {
 		{"simulator", old.Revisions.Simulator, r.Revisions.Simulator},
 		{"substrate", old.Revisions.Substrate, r.Revisions.Substrate},
 		{"router", old.Revisions.Router, r.Revisions.Router},
+		{"llm_d", old.Revisions.LLMD, r.Revisions.LLMD},
+		{"engine", old.Engine.Commit, r.Engine.Commit},
 		{"engine_module", old.Revisions.EngineModule, r.Revisions.EngineModule},
 		{"catalog", old.Data.Catalog.CombinedHash, r.Data.Catalog.CombinedHash},
 		{"registry", old.Data.Registry.CombinedHash, r.Data.Registry.CombinedHash},

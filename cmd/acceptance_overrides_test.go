@@ -5,9 +5,9 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/acceptance"
 
-	"github.com/inference-sim/blis-vllm/compat/build"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/build"
 )
 
 // The kernel sizes an adaptive verify budget from the run's acceptance

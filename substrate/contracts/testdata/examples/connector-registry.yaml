@@ -1,0 +1,15 @@
+# A KV-connector registry. The built-in entries for vLLM live in blis-vllm; this example
+# shows the shape with two of them.
+kind: ConnectorRegistry
+name: example
+connectors:
+  OffloadingConnector:
+    upstream: KVConnectorBase_V1
+    behaves_like: offloading
+    roles: [offload]
+    evidence: diff-test @ vLLM v0.32.0
+  NixlConnector:
+    upstream: KVConnectorBase_V1
+    behaves_like: nixl-pull
+    roles: [pd_transfer]
+    evidence: diff-test @ vLLM v0.32.0

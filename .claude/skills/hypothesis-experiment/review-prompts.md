@@ -89,7 +89,7 @@ YOUR FOCUS: Parameter Calibration
   - CLI mode (--rate): uses defaults prompt=512, output=512 -> step ~17.4ms, capacity ~57.4 req/s
   - Workload-spec YAML: uses distributions defined in the YAML (compute step time from YAML params)
 - Is the operating point correct? (near saturation for queueing effects, sub-saturation for baseline)
-- Is --total-kv-blocks appropriate? (CLI default is overridden by defaults.yaml to 132139 for llama/H100/TP=2)
+- Is the KV capacity appropriate? (the scenario's engine settings and the cost model's memory figures fix it; there is no --total-kv-blocks flag)
 
 For each finding, you MUST provide:
 - Severity: CRITICAL, IMPORTANT, or SUGGESTION

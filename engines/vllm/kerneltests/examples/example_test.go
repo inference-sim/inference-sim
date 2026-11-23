@@ -1,0 +1,202 @@
+// Moved from blis-latency-kernel/examples/example_test.go at f556c19c1b1b7cb58c7f279a131c94b78a66b36b.
+
+package latencykernel_test
+
+// The Go examples on the documentation site are sections of this file, included between the
+// --8<-- markers. Go runs each Example and compares what it prints with its // Output:
+// comment, so a page cannot show a call that no longer compiles or a number this kernel no
+// longer computes. They read the catalog and registry of the blis-substrate release go.mod pins.
+
+import (
+	"fmt"
+	"maps"
+	"slices"
+	"time"
+
+	vllmrules "github.com/inference-sim/inference-sim/engines/vllm/core/rulepack"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/load"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllmsettings"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
+)
+
+// --8<-- [start:repos]
+// The roots a scenario's names resolve against (its model, chip, fabric and coefficient
+// sets), and the engine rules its engine_version selects: vLLM's, from the engine model.
+var repos = latencykernel.Repos{
+	Scenarios:     "../testdata",
+	Data:          exampleData(), // the pinned blis-substrate's embedded catalog and registry
+	Rules:         latencykernel.RulesFrom(vllmrules.Lookup),
+	RulesVersions: vllmrules.Versions,
+	RulesKind:     "vllm",
+	DraftModel:    kernelmodel.DraftModelOf, // the drafter the pool's engine block names
+	Lower:         kernelmodel.LowerPool,    // the pool's settings, resolved into its plan
+}
+
+// exampleData is the catalog and registry the pinned blis-substrate release embeds, opened and
+// checked by its loader: data, err := load.Embedded().
+func exampleData() *load.Data {
+	d, err := load.Embedded()
+	if err != nil {
+		panic(err)
+	}
+	return d
+}
+
+func ms(d time.Duration) float64 { return d.Seconds() * 1e3 }
+
+// Pricing a decode step: open a scenario, describe the batch, read the estimate.
+func ExampleOpen() {
+	// --8<-- [start:open]
+	// DeepSeek-V3, served in fp8 on eight H200s at tensor-parallel width 8.
+	const scenario = "aisimulate/deepseek-v3-h200-fp8-sglang-tp8.yaml"
+	k, err := latencykernel.Open(scenario, repos)
+	if err != nil {
+		panic(err)
+	}
+
+	// 32 requests, each decoding one token against a context of 4,096 tokens.
+	batch := kernel.Batch{DecodeThreshold: 8}
+	for range 32 {
+		batch.Reqs = append(batch.Reqs, kernel.ReqShape{
+			Scheduled: 1, Computed: 4095, PromptLen: 4096,
+		})
+	}
+
+	e := k.StepTime(batch)
+	fmt.Printf("between %.1f and %.1f ms, bottleneck %s\n",
+		ms(e.Overlap), ms(e.NoOverlap), e.Bottleneck)
+	for _, r := range []kernel.Resource{kernel.ResourceSM, kernel.ResourceHBM,
+		kernel.ResourceNVLink, kernel.ResourceHost} {
+		fmt.Printf("%-7s %5.1f ms\n", r, ms(e.PerResource[r]))
+	}
+	// --8<-- [end:open]
+
+	// Output:
+	// between 23.3 and 24.8 ms, bottleneck hbm
+	// sm        2.6 ms
+	// hbm      16.8 ms
+	// nvlink    0.9 ms
+	// host      4.5 ms
+}
+
+// Memory: what one rank holds before any request arrives, and what each request adds.
+func ExampleKernel_FixedBytes() {
+	k, err := latencykernel.Open("aisimulate/deepseek-v3-h200-fp8-sglang-tp8.yaml", repos)
+	if err != nil {
+		panic(err)
+	}
+	// --8<-- [start:memory]
+	const gib = 1 << 30
+	m := k.FixedBytes()
+	fmt.Printf("weights      %5.1f GiB\n", float64(m.Weights)/gib)
+	fmt.Printf("activations  %5.1f GiB\n", float64(m.ActivationPeak)/gib)
+	fmt.Printf("CUDA graphs  %5.1f GiB\n", float64(m.CUDAGraph)/gib)
+	fmt.Printf("comm buffers %5.1f GiB\n", float64(m.CommBuffers)/gib)
+	fmt.Printf("EPLB         %5.1f GiB\n", float64(m.EPLBRedundant)/gib)
+	fmt.Printf("total        %5.1f GiB per rank\n", float64(m.Total())/gib)
+	// The communicator and engine workspace, held before the budget is measured.
+	fmt.Printf("before the budget %4.1f GiB\n", float64(k.PreSnapshotBytes())/gib)
+
+	// KV cache for one request, rounded up to whole pages.
+	fmt.Printf("a 4,096-token request: %.0f MiB of KV cache per rank\n",
+		float64(k.SequenceVariableBytes(4096))/(1<<20))
+	// --8<-- [end:memory]
+
+	// Output:
+	// weights       79.3 GiB
+	// activations    1.1 GiB
+	// CUDA graphs    0.8 GiB
+	// comm buffers   0.0 GiB
+	// EPLB           0.0 GiB
+	// total         81.2 GiB per rank
+	// before the budget  3.9 GiB
+	// a 4,096-token request: 137 MiB of KV cache per rank
+}
+
+// Evidence: how much of what a kernel used was measured, and what it assumed.
+func ExampleKernel_Evidence() {
+	k, err := latencykernel.Open("aisimulate/deepseek-v3-h200-fp8-sglang-tp8.yaml", repos)
+	if err != nil {
+		panic(err)
+	}
+	// --8<-- [start:evidence]
+	measured, total, assumed := k.Evidence()
+	fmt.Printf("%d of %d values rest on evidence; %d were assumed\n",
+		measured, total, len(assumed))
+
+	// The same entries, counted by the method that produced each.
+	byMethod := map[string]int{}
+	for _, o := range k.Provenance() {
+		byMethod[o.Method]++
+	}
+	for _, m := range slices.Sorted(maps.Keys(byMethod)) {
+		fmt.Printf("  %-12s %3d\n", m, byMethod[m])
+	}
+
+	// The kernel's own assumptions, as distinct from registry values whose method is
+	// "assumed", carry the set name KernelAssumptionSet.
+	for _, o := range k.Provenance() {
+		if o.Set == latencykernel.KernelAssumptionSet {
+			fmt.Println("the kernel assumed", o.Name)
+		}
+	}
+	// --8<-- [end:evidence]
+
+	// Output:
+	// 124 of 171 values rest on evidence; 41 were assumed
+	//   assumed       41
+	//   measured     110
+	//   not_charged    1
+	//   transferred    5
+	//   vendor_spec   14
+	// the kernel assumed max_cudagraph_capture_size
+	// the kernel assumed all_reduce_message_limit
+	// the kernel assumed nontorch_in_budget_bytes_8rank
+	// the kernel assumed engine_version
+}
+
+// A deployment variant that was never written to disk: load the documents once, change one
+// setting, and build a kernel from the result.
+func ExampleNew() {
+	// --8<-- [start:new]
+	in, err := latencykernel.OpenInputs("aisimulate/deepseek-v3-h200-fp8-sglang-tp8.yaml",
+		repos, 0)
+	if err != nil {
+		panic(err)
+	}
+	base, err := latencykernel.New(in)
+	if err != nil {
+		panic(err)
+	}
+
+	// The same deployment with a 16-bit KV cache instead of fp8. The kernel prices the plan
+	// the engine's lowering resolved from the pool's engine block (Inputs.Lowered), and New
+	// copied what it needed, so lowering an edited block now leaves base as it was.
+	pool := &in.Deployment.Pools[in.PoolIndex]
+	e, err := vllmsettings.Decode(*pool)
+	if err != nil {
+		panic(err)
+	}
+	e.CacheDType = "bfloat16"
+	if pool.Engine, err = engineconfig.Encode(e); err != nil {
+		panic(err)
+	}
+	if in.Lowered, err = kernelmodel.LowerPool(in); err != nil {
+		panic(err)
+	}
+	wide, err := latencykernel.New(in)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("fp8:  %d bytes of KV per token per rank\n", base.SequenceVariableBytes(64)/64)
+	fmt.Printf("bf16: %d bytes of KV per token per rank\n", wide.SequenceVariableBytes(64)/64)
+	// --8<-- [end:new]
+
+	// Output:
+	// fp8:  35136 bytes of KV per token per rank
+	// bf16: 70272 bytes of KV per token per rank
+}

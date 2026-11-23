@@ -15,10 +15,10 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/env"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/env"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 )
 
 // EngineDriverConfig is the host side of an engine-driven instance.
@@ -532,7 +532,7 @@ func (e *driverQueuedEvent) run(d *EngineDriver) {
 }
 
 // KVTransferParamsTag is the engine.Request tag that carries a request's kv_transfer_params
-// (blis-vllm core/vllm TagKVTransferParams).
+// (the vLLM engine core/vllm TagKVTransferParams).
 const KVTransferParamsTag = "kv_transfer_params"
 
 // engineRequest is req as the engine is told it.
@@ -885,7 +885,7 @@ func (d *EngineDriver) pushStage(sb stagedBatch, preempted []string, pp int) {
 	}
 }
 
-// runnerStepper is an engine that counts its runner steps: blis-vllm core/vllm's RunnerSteps, the
+// runnerStepper is an engine that counts its runner steps: the vLLM engine core/vllm's RunnerSteps, the
 // execute_model calls it has made, one per schedule, including those that ran no tokens. It is
 // optional, outside blis-schemas' contract; without it the driver counts the batches it times.
 type runnerStepper interface{ RunnerSteps() int }
@@ -1058,14 +1058,13 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 			firstStep = true
 		}
 		if n > 0 {
-			// A step emitting n tokens is one ITL entry, as the compatibility engine's
-			// executeBatchStep records it: the step's advance since the request's last emitting
-			// step plus n tokens of output processing (currStepAdvance + NumNewTokens x OTPT,
-			// blis-vllm compat/engine/engine.go:996). The first token's own OTPT is TTFT's.
+			// A step emitting n tokens is one ITL entry: the step's advance since the
+			// request's last emitting step plus n tokens of output processing (end - lastEnd +
+			// n x OutputTokenProcessingTime). The first token's own output processing is TTFT's.
 			gap := end - r.lastEnd + int64(n)*d.cfg.OutputTokenProcessingTime
 			if d.cfg.ResumeGapFromLastToken && r.resumed {
 				// A resumed prefill's sampled token: its gap runs from the last token emitted
-				// before the preemption (compat/engine/engine.go:969-976).
+				// before the preemption.
 				last := r.req.ArrivalTime + r.req.FirstTokenTime
 				for _, v := range r.req.ITL {
 					last += v
@@ -1338,7 +1337,7 @@ func (d *EngineDriver) KVEventsCarryIdentity() bool {
 }
 
 // KVEventsRefusal is why a router cannot index the engine's KV events, for an engine that says
-// (a KVEventsRefusal method, blis-vllm's v0.33.0 engine for a full-attention group at a block size
+// (a KVEventsRefusal method, the vLLM engine's v0.33.0 engine for a full-attention group at a block size
 // other than its hash block size); nil otherwise.
 func (d *EngineDriver) KVEventsRefusal() error {
 	if q, ok := d.eng.(interface{ KVEventsRefusal() error }); ok {

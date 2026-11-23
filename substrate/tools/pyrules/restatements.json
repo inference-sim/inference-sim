@@ -1,0 +1,4 @@
+{
+  "_comment": "Each Python check that restates a Go validation rule (X15): the command that runs it on one failing example (with {file} for the example's path), and the examples under parity/ it must refuse. The parity test runs the Go validator and each command on every example and requires both to refuse it. Empty: no Python check restates a Go rule today; the registry's own schema checks were removed when blis-schemas took them over (registry/validator/test_coefficient_properties.py).",
+  "restatements": []
+}

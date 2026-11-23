@@ -1,0 +1,179 @@
+// Moved from inference-sim/blis-schemas/rules/cudagraph_test.go at 70246460a379f8b1898fbf6c36a3091364118950.
+
+package pack_test
+
+import (
+	"encoding/json"
+	"errors"
+	"path/filepath"
+	"reflect"
+	"slices"
+	"testing"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/v0_33"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
+)
+
+func ip(n int) *int { return &n }
+
+// stride is the sizes the engine generates for a maximum m, with nothing else added:
+// 1, 2, 4, multiples of 8 below 256, multiples of 16 from 256.
+func stride(m int) []int {
+	var out []int
+	for _, s := range []int{1, 2, 4} {
+		if s <= m {
+			out = append(out, s)
+		}
+	}
+	for s := 8; s <= m && s < 256; s += 8 {
+		out = append(out, s)
+	}
+	for s := 256; s <= m; s += 16 {
+		out = append(out, s)
+	}
+	return out
+}
+
+func TestCUDAGraphCaptureSizes(t *testing.T) {
+	p := v0_33.Pack()
+	for _, c := range []struct {
+		name     string
+		in       enginefacts.CUDAGraphCaptureInput
+		resolved bool
+		want     enginefacts.CUDAGraphCapture
+		err      error
+	}{
+		{"unstated is the release default", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 8192}, false, enginefacts.CUDAGraphCapture{}, nil},
+		{"mode NONE captures nothing", enginefacts.CUDAGraphCaptureInput{Mode: "NONE", MaxCaptureSize: ip(64)}, true,
+			enginefacts.CUDAGraphCapture{Sizes: []int{}}, nil},
+		{"an internal deployment's 64", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 8192, MaxCaptureSize: ip(64)}, true,
+			enginefacts.CUDAGraphCapture{Sizes: stride(64), Max: 64}, nil},
+		{"above 256 on the 16 stride", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 8192, MaxCaptureSize: ip(512)}, true,
+			enginefacts.CUDAGraphCapture{Sizes: stride(512), Max: 512}, nil},
+		{"off the stride truncates", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 8192, MaxCaptureSize: ip(100)}, true,
+			enginefacts.CUDAGraphCapture{Sizes: stride(100), Max: 96, Truncated: true}, nil},
+		{"capped at max_num_batched_tokens, which is added", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 100, MaxCaptureSize: ip(512)}, true,
+			enginefacts.CUDAGraphCapture{Sizes: append(stride(100), 100), Max: 100, Capped: true}, nil},
+		{"max_num_batched_tokens inside the range is added", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 100, MaxCaptureSize: ip(100)}, true,
+			enginefacts.CUDAGraphCapture{Sizes: append(stride(100), 100), Max: 100}, nil},
+		{"stated sizes de-duplicated, sorted, filtered", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 64,
+			CaptureSizes: []int{32, 8, 128, 8, 1}}, true,
+			enginefacts.CUDAGraphCapture{Sizes: []int{1, 8, 32}, Max: 32, Dropped: []int{128}}, nil},
+		{"consistent pair", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 64, MaxCaptureSize: ip(32),
+			CaptureSizes: []int{8, 32}}, true, enginefacts.CUDAGraphCapture{Sizes: []int{8, 32}, Max: 32}, nil},
+		{"inconsistent pair", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 64, MaxCaptureSize: ip(64),
+			CaptureSizes: []int{8, 32}}, true, enginefacts.CUDAGraphCapture{Sizes: []int{8, 32}, Max: 32},
+			enginefacts.ErrCUDAGraphCaptureInconsistent},
+		{"pair made inconsistent by the filter", enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: 16, MaxCaptureSize: ip(32),
+			CaptureSizes: []int{8, 32}}, true, enginefacts.CUDAGraphCapture{Sizes: []int{8}, Max: 8, Dropped: []int{32}},
+			enginefacts.ErrCUDAGraphCaptureInconsistent},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, resolved, err := p.CUDAGraphCaptureSizes(c.in)
+			if resolved != c.resolved || !errors.Is(err, c.err) || (c.err == nil && err != nil) {
+				t.Fatalf("resolved %v err %v, want %v %v", resolved, err, c.resolved, c.err)
+			}
+			if c.resolved && !reflect.DeepEqual(got, c.want) {
+				t.Errorf("got %+v\nwant %+v", got, c.want)
+			}
+		})
+	}
+	if _, resolved, err := p.CUDAGraphCaptureSizes(enginefacts.CUDAGraphCaptureInput{MaxCaptureSize: ip(64)}); !resolved || err == nil {
+		t.Error("resolved a capture without max_num_batched_tokens")
+	}
+}
+
+// Properties over many stated maxima: the sizes are ascending, at least 1, within both
+// the stated maximum and max_num_batched_tokens, and the last is the maximum that runs.
+func TestCUDAGraphCaptureSizesProperties(t *testing.T) {
+	p := v0_33.Pack()
+	for m := 1; m <= 1100; m++ {
+		for _, mnbt := range []int{1, 7, 64, 100, 512, 8192} {
+			c, _, err := p.CUDAGraphCaptureSizes(enginefacts.CUDAGraphCaptureInput{MaxNumBatchedTokens: mnbt, MaxCaptureSize: ip(m)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			limit := min(m, mnbt)
+			for i, s := range c.Sizes {
+				if s < 1 || s > limit || (i > 0 && s <= c.Sizes[i-1]) {
+					t.Fatalf("m %d mnbt %d: sizes %v", m, mnbt, c.Sizes)
+				}
+			}
+			if c.Max != c.Sizes[len(c.Sizes)-1] || c.Capped != (m > mnbt) || c.Truncated != (c.Max < limit) {
+				t.Fatalf("m %d mnbt %d: %+v", m, mnbt, c)
+			}
+		}
+	}
+}
+
+// The v0.32.0 pack gives vLLM's own sizes for every configuration the oracle holds that states
+// max_cudagraph_capture_size or cudagraph_capture_sizes (core/lower/testdata/vllm_lower.json,
+// resolved by VllmConfig._set_cudagraph_sizes at vllm/config/vllm.py@5df63a72): the stated
+// values 2048, 2 and 1000 (992 on the stride), a maximum above or equal to
+// max_num_batched_tokens, and stated sizes. A deployment that states neither is the consumer's
+// to resolve, and the pack says so.
+func TestCUDAGraphCaptureSizesAreVLLMs032(t *testing.T) {
+	raw, err := testgz.ReadFile(filepath.Join("..", "..", "lower", "testdata", "vllm_lower.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Capture []struct {
+			Case struct {
+				Name       string `json:"name"`
+				Mode       string `json:"mode"`
+				MaxBatched int    `json:"max_num_batched_tokens"`
+				MaxCapture *int   `json:"max_capture"`
+				Sizes      []int  `json:"sizes"`
+				SpecTokens int    `json:"spec_tokens"`
+				Eager      bool   `json:"enforce_eager"`
+				Perf       string `json:"performance_mode"`
+			} `json:"case"`
+			Resolved struct {
+				Max   int     `json:"max"`
+				Sizes []int   `json:"sizes"`
+				Error *string `json:"error"`
+			} `json:"resolved"`
+		} `json:"capture"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	p := v0_33.Pack()
+	stated := 0
+	for _, c := range f.Capture {
+		k := c.Case
+		if k.Eager || k.Perf == "interactivity" || k.MaxBatched <= 0 || k.SpecTokens > 0 {
+			continue // no schema field, or vLLM adds sizes the pack does not model
+		}
+		t.Run(k.Name, func(t *testing.T) {
+			got, resolved, err := p.CUDAGraphCaptureSizes(enginefacts.CUDAGraphCaptureInput{Mode: k.Mode,
+				MaxNumBatchedTokens: k.MaxBatched, MaxCaptureSize: k.MaxCapture, CaptureSizes: k.Sizes})
+			if k.Mode != "NONE" && k.MaxCapture == nil && k.Sizes == nil {
+				if resolved {
+					t.Errorf("resolved a capture where nothing is stated: %+v", got)
+				}
+				return
+			}
+			stated++
+			if c.Resolved.Error != nil {
+				// An empty stated list is refused by the engine block's validation
+				// (engineconfig), not by the pack; the disagreeing pair is the pack's.
+				if len(k.Sizes) > 0 && !errors.Is(err, enginefacts.ErrCUDAGraphCaptureInconsistent) {
+					t.Errorf("vLLM refuses (%s); the pack gave %+v, %v", *c.Resolved.Error, got, err)
+				}
+				return
+			}
+			if err != nil || !resolved {
+				t.Fatalf("resolved %v, err %v", resolved, err)
+			}
+			if got.Max != c.Resolved.Max || !slices.Equal(got.Sizes, c.Resolved.Sizes) {
+				t.Errorf("max %d sizes %v; vLLM max %d sizes %v", got.Max, got.Sizes, c.Resolved.Max, c.Resolved.Sizes)
+			}
+		})
+	}
+	if stated < 12 {
+		t.Errorf("only %d stated cases checked", stated)
+	}
+}

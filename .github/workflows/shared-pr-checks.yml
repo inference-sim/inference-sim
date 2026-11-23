@@ -1,0 +1,108 @@
+name: shared pull-request checks
+
+# The checks every pull request runs (design §13.2). Called by blis.yml of this repository as a
+# local reusable workflow (`uses: ./.github/workflows/shared-pr-checks.yml`), so it runs at the
+# commit of the calling workflow, which on a pull request is the pull request's own merge commit:
+# a pull request is judged by its own changed checks and by the invariant registry it carries.
+# The tools (substrate/tools/...) and the toolchain (substrate/contracts/toolchain) are built from
+# the checked-out pull request; there is no second checkout. Before the single module this was
+# called at a blis-substrate commit (X21) by every BLIS repository.
+#
+#   commit-policy   X20: one Assisted-by line, no tool as co-author or sign-off (reads commits)
+#   workflow-lint   X21, X22, X16: actions pinned by commit, --require-hashes, no ignored exit
+#                   codes, no skipped tests, gate trigger paths as declared
+#   versions        X23: version literals outside the sources of versions
+#   doc-references  X26: paths, line ranges and repeated table rows in documentation
+#   licence-files   X21: LICENSE, and an engine repository's NOTICE naming its upstream
+#   generated       design §13.1: AGENTS.md and the pull-request template match the registry
+#   selected-version  X11, LIF-2: the module graph's selected versions
+#
+# No check reads the text of a pull request or of an issue (design §4.2). Signing and sign-off,
+# the descriptions, the review threads, the cited issues and the quarantine list are maintainer
+# practice or branch protection.
+#
+# Every job fails rather than passes when it cannot run (X16).
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: The repository's BLIS name (inference-sim).
+        type: string
+        required: true
+
+# The checks run the pull request's own code with a read-only token, so a pull request is judged
+# by its own changed checks. That is by design.
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  checks:
+    name: blis checks
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PR: ${{ github.event.pull_request.number }}
+      BASE: ${{ github.event.pull_request.base.sha }}
+      HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.HEAD }}
+          fetch-depth: 0
+          path: repo
+      - uses: ./repo/.github/actions/go-toolchain
+      - name: Build the checks
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/bin/" ./substrate/tools/prcheck ./substrate/tools/invariants ./substrate/tools/modlint
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Commit policy (X20)
+        if: ${{ !cancelled() && (env.PR != '') }}
+        working-directory: repo
+        # The form an agent can get wrong: one Assisted-by line, no tool as Co-authored-by or
+        # Signed-off-by. Reads the commits only. Signing and sign-off are set in branch protection.
+        run: prcheck commits -base "$BASE" -head "$HEAD"
+      - name: Workflow lint (X21, X22, X16)
+        if: ${{ !cancelled() }}
+        working-directory: repo
+        run: prcheck workflows
+      - name: Version literals (X23)
+        if: ${{ !cancelled() }}
+        working-directory: repo
+        run: prcheck versions
+      - name: Documentation references (X26)
+        if: ${{ !cancelled() }}
+        working-directory: repo
+        run: prcheck docrefs
+      - name: Licence and notice files (X21)
+        if: ${{ !cancelled() }}
+        working-directory: repo
+        run: prcheck licence-files -repo-name "${{ inputs.repo }}"
+      - name: Generated copies of the registry (design §13.1)
+        if: ${{ !cancelled() }}
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.repo }}" = "blis-substrate" ]; then
+            invariants render -check
+          else
+            invariants check-copy -repo "${{ inputs.repo }}" -agents AGENTS.md -template .github/pull_request_template.md
+          fi
+      - name: Selected-version lint (X11, LIF-2)
+        if: ${{ !cancelled() && (hashFiles('repo/go.mod') != '') }}
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          # modlint reads the module graph and the substrate's contracts/toolchain from the
+          # module cache, so the modules must be downloaded first.
+          go mod download
+          # A BLIS module pinned by commit is deferred while the substrate's deferral file
+          # holds (plan §3.1: drafts depend on commits; tags follow review).
+          modlint -deferral "$GITHUB_WORKSPACE/repo/.github/modlint-deferral.yaml"

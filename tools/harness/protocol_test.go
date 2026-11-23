@@ -1,15 +1,14 @@
 package harness
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 	"slices"
 	"strconv"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/compat/build"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	kvcache "github.com/inference-sim/blis-vllm/compat/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/build"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	kvcache "github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -350,21 +349,26 @@ func TestADrainedCopyLeavesOnlyRequestZerosPromptReadable(t *testing.T) {
 		t.Fatal(err)
 	}
 	const block = 16
-	kv := kvcache.NewKVCacheState(4096, block)
-	copyOfZero := engineRequestOf(r0[0]) // warm-up session 0's round 0
-	if !kv.AllocateKVBlocks(copyOfZero, 0, copyOfZero.InputLen(), nil) {
+	cache := kvcache.NewManager(4096, block, 4096*block, true, 0)
+	hashesOf := func(in []sim.TokenID) []kvcache.BlockHash {
+		return kvcache.BlockHashes(engineTokens(in), block, kvcache.BlockKeys{})
+	}
+	cachedBlocks := func(in []sim.TokenID) int {
+		blocks, _ := cache.ComputedBlocks(hashesOf(in), len(in)+1) // +1: the last token is always recomputed
+		return len(blocks[0])
+	}
+	copyOfZero := r0[0] // warm-up session 0's round 0
+	if !cache.Allocate(copyOfZero.ID, kvcache.Alloc{New: len(copyOfZero.InputTokens), Hashes: hashesOf(copyOfZero.InputTokens),
+		NumTokens: len(copyOfZero.InputTokens)}) {
 		t.Fatal("could not allocate the copy's prompt")
 	}
-	kv.ReleaseKVBlocks(copyOfZero)
-	if kv.UsedBlocks() != 0 {
-		t.Errorf("%d blocks in use after the copy drained", kv.UsedBlocks())
-	}
+	cache.Free(copyOfZero.ID)
 	main := r0[1:] // main requests 0..n-1, in order
-	if got, want := len(kv.GetCachedBlocks(engineTokens(main[0].InputTokens))), int(main[0].InputLen())/block; got != want {
+	if got, want := cachedBlocks(main[0].InputTokens), int(main[0].InputLen())/block; got != want {
 		t.Errorf("main request 0 finds %d cached blocks of its prompt, want all %d full blocks", got, want)
 	}
 	for i, r := range main[1:] {
-		if n := len(kv.GetCachedBlocks(engineTokens(r.InputTokens))); n != 0 {
+		if n := cachedBlocks(r.InputTokens); n != 0 {
 			t.Errorf("main request %d finds %d cached blocks; only request 0's prompt was cached", i+1, n)
 		}
 	}
@@ -397,17 +401,11 @@ func TestCheckPrimedRefusesAnUndrainedWarmup(t *testing.T) {
 	}
 }
 
-// engineRequestOf is a host request as the compatibility engine's KV store takes it: its ID and
-// its prompt and output tokens.
-func engineRequestOf(r *sim.Request) *cengine.Request {
-	return &cengine.Request{ID: r.ID, InputTokens: engineTokens(r.InputTokens), OutputTokens: engineTokens(r.OutputTokens)}
-}
-
-// engineTokens is a host token sequence as the compatibility engine's.
-func engineTokens(in []sim.TokenID) []cengine.TokenID {
-	out := make([]cengine.TokenID, len(in))
+// engineTokens is a host token sequence as the engine's KV cache hashes it.
+func engineTokens(in []sim.TokenID) []int64 {
+	out := make([]int64, len(in))
 	for i, t := range in {
-		out[i] = cengine.TokenID(t)
+		out[i] = int64(t)
 	}
 	return out
 }

@@ -32,7 +32,7 @@ package cmd
 
 import (
 	"bytes"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 	"io"
 	"os"
 	"path/filepath"

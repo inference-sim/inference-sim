@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -10,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 func sglangTestSpec(t *testing.T, scenario string) (engine.Spec, *load.Data) {
@@ -213,21 +214,22 @@ func sglangScenarioText(t *testing.T, name string) string {
 	return string(b)
 }
 
-// An SGLang run's Result names blis-sglang as its engine module, not blis-vllm.
-func TestSGLangResultNamesTheSGLangModule(t *testing.T) {
+// A Result's substrate and engine_module revisions are the simulator's own build for either
+// engine: both engines are packages of its module; the router fork is the only other revision.
+func TestResultRevisionsAreOneModuleAndTheRouterFork(t *testing.T) {
 	saved := scenarioEngine
 	defer func() { scenarioEngine = saved }()
-	info := &debug.BuildInfo{Deps: []*debug.Module{
-		{Path: "github.com/inference-sim/blis-vllm", Version: "v0.33.0-blis.1"},
-		{Path: "github.com/inference-sim/blis-sglang", Version: "v0.5.23-blis.1"},
-	}}
-	scenarioEngine = engineRef{Kind: "sglang", Version: "0.5.23"}
-	if got := revisionsFrom(info).EngineModule; got != "v0.5.23-blis.1" {
-		t.Errorf("an SGLang run's engine_module = %q, want blis-sglang's v0.5.23-blis.1", got)
+	info := &debug.BuildInfo{
+		Main: debug.Module{Version: "v0.19.0"},
+		Deps: []*debug.Module{{Path: "github.com/llm-d/llm-d-router", Version: "v1.0.0",
+			Replace: &debug.Module{Path: "github.com/inference-sim/llm-d-router", Version: "v1.0.0-blis.5"}}},
 	}
-	scenarioEngine = engineRef{Kind: "vllm", Version: "0.33.0"}
-	if got := revisionsFrom(info).EngineModule; got != "v0.33.0-blis.1" {
-		t.Errorf("a vLLM run's engine_module = %q, want blis-vllm's v0.33.0-blis.1", got)
+	for _, kind := range []string{"vllm", "sglang"} {
+		scenarioEngine = engineRef{Kind: kind}
+		got := revisionsFrom(info)
+		if got.Simulator != "v0.19.0" || got.Substrate != "v0.19.0" || got.EngineModule != "v0.19.0" || got.Router != "v1.0.0-blis.5" {
+			t.Errorf("%s run revisions = %+v", kind, got)
+		}
 	}
 }
 
@@ -376,5 +378,68 @@ func TestSGLangResultNamesTheDSAAttentionBackendsAsSubstitutions(t *testing.T) {
 	r1 := subs("deepseek-r1-h200-fp8-sglang-tp8.yaml")
 	if r1["dsa_decode_backend"] != nil || r1["dsa_prefill_backend"] != nil {
 		t.Errorf("a pool with no DSA layer states DSA backends: %v", r1)
+	}
+}
+
+// The memory CUDA and the driver hold before a model loads is each chip's own: it is the total
+// the driver reports less the free figure vLLM's start-up logs on that chip (the substrate
+// catalog/hardware/<chip>.yaml _comment_memory), and the pool the host opens carries exactly that
+// much less than the chip's total. A chip with no such figure is refused by name.
+func TestSGLangPreModelLoadMemoryIsTheChipsOwn(t *testing.T) {
+	const name = "glm-5-h200-fp8-sglang-tp8.yaml"
+	tests := []struct {
+		chip     string
+		logTotal float64
+		logFree  float64
+		perNode  int
+		fabric   string
+	}{
+		{chip: "h100", logTotal: 79.19, logFree: 76.0},
+		{chip: "h200", logTotal: 139.8, logFree: 137.64},
+		{chip: "b200", logTotal: 178.35, logFree: 175.93},
+		{chip: "b300", logTotal: 267.69, logFree: 265.24},
+		{chip: "gb200-nvl72", logTotal: 184.0, logFree: 180.15, perNode: 4, fabric: "400g"},
+		{chip: "gb300", logTotal: 276.62, logFree: 273.04, perNode: 4, fabric: "800g"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.chip, func(t *testing.T) {
+			dir := sglangScenarioCopy(t, name, func(s string) string {
+				s = strings.Replace(s, "hardware: h200", "hardware: "+tc.chip, 1)
+				if tc.perNode == 4 {
+					s = strings.Replace(s, "  gpus_per_node: 8\n", "  fabric: ib-"+tc.fabric+"\n", 1)
+					s = strings.ReplaceAll(s, "nodes: 1", "nodes: 2")
+				}
+				return s
+			})
+			_, data := sglangTestSpec(t, name)
+			spec := engine.Spec{Kind: engineKindSGLang, UpstreamVersion: "0.5.23", Roots: contractRoots(filepath.Join(dir, name)), Seed: 1}
+			pool, err := sglangHost{data: data}.Open(spec)
+			if err != nil {
+				t.Fatalf("opening the pool on %s: %v", tc.chip, err)
+			}
+			held := tc.logTotal - tc.logFree
+			chipGiB := pool.Chip.MemoryMiB / 1024.0
+			if math.Abs(chipGiB-tc.logTotal) > 12 {
+				t.Fatalf("%s: nvidia-smi total %.2f GiB is not near the driver total %.2f GiB", tc.chip, chipGiB, tc.logTotal)
+			}
+			total := pool.PreModelLoadGiB + held
+			if math.Abs(total-tc.logTotal) > 0.01 {
+				t.Errorf("%s: PreModelLoadGiB %.4f + the logged %.2f GiB held = %.4f, want the driver total %.2f", tc.chip, pool.PreModelLoadGiB, held, total, tc.logTotal)
+			}
+		})
+	}
+}
+
+// A chip whose pre-load memory is not measured is refused by name before the run starts.
+func TestSGLangChipWithoutPreModelLoadFigureIsRefused(t *testing.T) {
+	const name = "glm-5-h200-fp8-sglang-tp8.yaml"
+	dir := sglangScenarioCopy(t, name, func(s string) string {
+		return strings.Replace(s, "hardware: h200", "hardware: a100-80", 1)
+	})
+	_, data := sglangTestSpec(t, name)
+	spec := engine.Spec{Kind: engineKindSGLang, UpstreamVersion: "0.5.23", Roots: contractRoots(filepath.Join(dir, name)), Seed: 1}
+	_, err := sglangHost{data: data}.Open(spec)
+	if err == nil || !strings.Contains(err.Error(), "not lowered") || !strings.Contains(err.Error(), "a100") {
+		t.Fatalf("an unlisted chip must be refused by name; got %v", err)
 	}
 }

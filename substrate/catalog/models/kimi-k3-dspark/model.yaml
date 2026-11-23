@@ -1,0 +1,10 @@
+name: kimi-k3-dspark
+source:
+  provider: huggingface
+  repo: Inferact/Kimi-K3-DSpark
+  revision: cf6b8244620e7ea4b0651d214f28e89eac75bed6
+  retrieved: 2026-11-10
+licence:
+  id: LicenseRef-kimi-k3
+  evidence: https://huggingface.co/Inferact/Kimi-K3-DSpark/raw/cf6b8244620e7ea4b0651d214f28e89eac75bed6/LICENSE
+targets: [kimi-k3]

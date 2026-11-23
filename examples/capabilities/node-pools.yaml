@@ -9,7 +9,7 @@
 #     --policy-config examples/capabilities/node-pools-bundle.yaml --rate 4 --num-requests 40
 kind: Scenario
 name: node-pools
-engine: {kind: vllm, version: "0.33.0"}
+engine: {kind: vllm}
 
 model: llama-3.1-70b-instruct
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

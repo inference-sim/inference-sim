@@ -1,0 +1,138 @@
+{
+ "name": "knob-max-active-seqs",
+ "description": "max_num_active_seqs 2 under max_num_seqs 6: admission into RUNNING stops at two.",
+ "config": {
+  "max_num_seqs": 6,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 60,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "max_num_active_seqs": 2
+ },
+ "requests": [
+  {
+   "id": "s0",
+   "arrival_step": 0,
+   "prompt": [
+    25092,
+    38193,
+    11967,
+    14305,
+    10967,
+    12721,
+    11101,
+    6016
+   ],
+   "output": [
+    9916,
+    18572,
+    834,
+    28927
+   ]
+  },
+  {
+   "id": "s1",
+   "arrival_step": 0,
+   "prompt": [
+    30656,
+    7576,
+    1847,
+    33876,
+    11053,
+    32199,
+    29112,
+    19963,
+    32753
+   ],
+   "output": [
+    5579,
+    16641,
+    10336,
+    21422,
+    20012
+   ]
+  },
+  {
+   "id": "s2",
+   "arrival_step": 0,
+   "prompt": [
+    4883,
+    35527,
+    24052,
+    2180,
+    14007,
+    20721,
+    22213,
+    4562,
+    20368,
+    6351
+   ],
+   "output": [
+    16121,
+    39091,
+    10023,
+    32083,
+    18622,
+    17460
+   ]
+  },
+  {
+   "id": "s3",
+   "arrival_step": 0,
+   "prompt": [
+    36849,
+    17949,
+    12982,
+    6134,
+    37774,
+    32403,
+    10111,
+    9379,
+    21251,
+    31428,
+    12972
+   ],
+   "output": [
+    39606,
+    8609,
+    31185,
+    33125,
+    16999,
+    33348,
+    14794
+   ]
+  },
+  {
+   "id": "s4",
+   "arrival_step": 0,
+   "prompt": [
+    34872,
+    15900,
+    5540,
+    8954,
+    17103,
+    20539,
+    35529,
+    15100,
+    25643,
+    13537,
+    20054,
+    26446
+   ],
+   "output": [
+    4361,
+    30729,
+    23760,
+    21349,
+    16419,
+    12158,
+    37642,
+    28481
+   ]
+  }
+ ],
+ "max_steps": 400
+}

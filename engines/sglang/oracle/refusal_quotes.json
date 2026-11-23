@@ -1,0 +1,84 @@
+{
+  "release": "v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90)",
+  "quotes": [
+    {
+      "name": "unknown schedule policy",
+      "file": "managers/schedule_policy.py",
+      "lines": [340, 344],
+      "source_literals": ["Unknown schedule_policy: policy={policy!r}"],
+      "source_code": ["except ValueError:", "return CacheAgnosticPolicy(policy)"],
+      "go": {"file": "core/sched/policy.go", "fragments": ["Unknown schedule_policy: policy="]},
+      "test": {"file": "sglangengine/refusals_test.go", "fragments": ["Unknown schedule_policy: policy='nope'"]}
+    },
+    {
+      "name": "shortest-prefill-first without a prefix cache",
+      "file": "managers/schedule_policy.py",
+      "lines": [332, 344],
+      "source_literals": [
+        "Experimental shortest-prefill-first requires prefix caching",
+        "Unknown schedule_policy: policy={policy!r}"
+      ],
+      "source_code": [
+        "if policy_enum == CacheAwarePolicy.SHORTEST_PREFILL_FIRST:",
+        "except ValueError:"
+      ],
+      "go": {"file": "core/sched/policy.go", "fragments": ["Unknown schedule_policy: policy="]},
+      "test": {"file": "sglangengine/refusals_test.go", "fragments": ["Unknown schedule_policy: policy='shortest-prefill-first'"]}
+    },
+    {
+      "name": "radix eviction policy tlru off the unified tree",
+      "file": "mem_cache/registry.py",
+      "lines": [261, 271],
+      "source_literals": [
+        "--radix-eviction-policy tlru requires UnifiedRadixCache, but tree_cache is {type(cache).__name__}. Drop the flag or the option that selected another tree cache for this model."
+      ],
+      "source_code": ["if not isinstance(cache, UnifiedRadixCache):"],
+      "go": {
+        "file": "config/accepted.go",
+        "fragments": [
+          "--radix-eviction-policy tlru requires UnifiedRadixCache, but tree_cache is FlexKVRadixCache. ",
+          "Drop the flag or the option that selected another tree cache for this model."
+        ]
+      },
+      "test": {
+        "file": "sglangengine/refusals_test.go",
+        "fragments": [
+          "--radix-eviction-policy tlru requires UnifiedRadixCache, but tree_cache is FlexKVRadixCache. ",
+          "Drop the flag or the option that selected another tree cache for this model."
+        ]
+      }
+    },
+    {
+      "name": "priority scheduling over a policy other than fcfs or lof",
+      "file": "arg_groups/validation_hook.py",
+      "lines": [281, 287],
+      "source_literals": [
+        "To use priority scheduling, schedule_policy must be 'fcfs' or 'lof'. '{cfg.schedule_policy}' is not supported."
+      ],
+      "source_code": ["if cfg.enable_priority_scheduling:", "\"fcfs\","],
+      "go": {
+        "file": "config/check.go",
+        "fragments": ["To use priority scheduling, schedule_policy must be 'fcfs' or 'lof'. '", "' is not supported."]
+      },
+      "test": {
+        "file": "sglangengine/refusals_test.go",
+        "fragments": ["To use priority scheduling, schedule_policy must be 'fcfs' or 'lof'. 'lpm' is not supported."]
+      }
+    },
+    {
+      "name": "priority retraction without priority scheduling",
+      "file": "arg_groups/validation_hook.py",
+      "lines": [303, 306],
+      "source_literals": ["--retraction-policy priority requires --enable-priority-scheduling"],
+      "source_code": ["if cfg.retraction_policy == \"priority\" and not cfg.enable_priority_scheduling:"],
+      "go": {
+        "file": "config/check.go",
+        "fragments": ["--retraction-policy priority requires --enable-priority-scheduling"]
+      },
+      "test": {
+        "file": "sglangengine/refusals_test.go",
+        "fragments": ["--retraction-policy priority requires --enable-priority-scheduling"]
+      }
+    }
+  ]
+}

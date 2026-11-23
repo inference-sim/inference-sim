@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/embed"
-	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	embed "github.com/llm-d/llm-d-router/blisembed"
 
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -124,7 +124,7 @@ func TestKVEventBatch_RemovalNamesTheGroupOfTheStore(t *testing.T) {
 }
 
 // identityEngine is an engine whose stored blocks carry the adapter of the request that stored
-// them, as blis-vllm's v0.33.0 engine publishes (requests run one at a time in the test, so the
+// them, as the vLLM engine's v0.33.0 engine publishes (requests run one at a time in the test, so the
 // request a step serves is the last one added).
 type identityEngine struct {
 	engine.Engine
@@ -199,7 +199,7 @@ func TestPrecisePrefix_RoutesAnAdapterToTheEndpointHoldingItsBlocks(t *testing.T
 			c.LoRAConfig = cengine.LoRAConfig{AdapterCapacity: &capacity, LoadBaseLatencyUs: &base,
 				LoadBandwidthBytesUs: &bw, FootprintBytesPerRank: &fp, Adapters: []cengine.AdapterSpec{{ID: "a0", Rank: 8}}}
 		})
-		inner := compatEngineFactory(0)
+		inner := compatEngineFactory(false)
 		dep.NewEngine = func(i int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
 			d, err := inner(i, ic)
 			if err != nil {

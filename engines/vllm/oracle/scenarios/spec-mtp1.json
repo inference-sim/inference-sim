@@ -1,0 +1,89 @@
+{
+ "name": "spec-mtp1",
+ "description": "MTP K=1 (one nextn layer): verify width 2, EAGLE-family block drop, prefill lookahead 1.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 60,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "speculative": {
+   "method": "mtp",
+   "num_speculative_tokens": 1,
+   "draft": "mtp-1"
+  }
+ },
+ "requests": [
+  {
+   "id": "p",
+   "arrival_step": 0,
+   "prompt": [
+    13696,
+    764,
+    34166,
+    2371,
+    10356,
+    15660,
+    1107,
+    3602,
+    9651,
+    24071,
+    15710,
+    7677,
+    22157
+   ],
+   "output": [
+    30562,
+    23314,
+    18389,
+    25709,
+    17257,
+    22567,
+    14983,
+    13525,
+    23277,
+    20538,
+    14641,
+    20031
+   ],
+   "accepted": [
+    1,
+    1,
+    0,
+    1,
+    0,
+    1
+   ]
+  },
+  {
+   "id": "q",
+   "arrival_step": 1,
+   "prompt": [
+    33514,
+    27556,
+    15165,
+    37825,
+    29855,
+    27517,
+    32088
+   ],
+   "output": [
+    5175,
+    30220,
+    37008,
+    23591,
+    28791,
+    37331
+   ],
+   "accepted": [
+    0,
+    1,
+    1
+   ]
+  }
+ ],
+ "max_steps": 400
+}

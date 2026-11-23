@@ -1,0 +1,108 @@
+# Original to blis-vllm.
+"""Regenerate kernel_impls.json for a vLLM release in one command.
+
+    python3 -I kernels/regen.py              # the release this build models (internal/upstream's Tag and Commit)
+    python3 -I kernels/regen.py v0.33.0      # another release tag
+    python3 -I kernels/regen.py <40-hex>     # any vLLM commit
+    python3 -I kernels/regen.py --check      # fail when kernel_impls.json is not current
+
+It fetches vLLM at the tag or commit, reads from vLLM's own build files the pin of every library the
+classification (kernels/attention.json, the same for every commit) names, fetches each library's source at
+that pin (a pip library at its release tag, a library vLLM's build fetches at the commit its
+GIT_TAG names), and runs gen_kernel_impls.py over them. Each fetch is one commit, without history
+or submodules: the generator reads a submodule's pinned commit from the tree. The fetched
+sources are deleted afterwards; pass --keep DIR to keep them there.
+"""
+
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gen_kernel_impls as gen  # noqa: E402
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+VLLM_REPO = "https://github.com/vllm-project/vllm"
+
+
+def modelled_release():
+    """The vLLM (tag, commit) this build models: Tag and Commit in internal/upstream/upstream.go,
+    the one place the release is named (provenance.go's Upstream reads it)."""
+    rel = os.path.join("internal", "upstream", "upstream.go")
+    with open(os.path.join(ROOT, rel), encoding="utf-8") as f:
+        text = f.read()
+    found = [re.search(r'^\s*%s\s*=\s*"([^"]+)"' % name, text, re.M) for name in ("Tag", "Commit")]
+    if not all(found):
+        raise gen.Refused(f"{rel} names no Tag and Commit")
+    return found[0].group(1), found[1].group(1)
+
+
+def fetch(repo, ref, into):
+    """One commit of repo at ref into the new directory into. A ref of 40 hexadecimal digits is a
+    commit; any other is a release tag, fetched as a tag so the generator can check it."""
+    if os.path.exists(into):
+        raise gen.Refused(f"{into} exists; regen.py fetches into a new directory (choose another --keep)")
+    os.makedirs(into)
+    spec = ref if re.fullmatch(r"[0-9a-f]{40}", ref) else f"+refs/tags/{ref}:refs/tags/{ref}"
+    for args in (["init", "-q"], ["fetch", "-q", "--depth", "1", repo, spec], ["checkout", "-q", "FETCH_HEAD"]):
+        r = subprocess.run(["git", "-C", into, *args], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise gen.Refused(f"fetching {repo} at {ref}: {r.stderr.strip()}")
+    return into
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("ref", nargs="?", help="a vLLM release tag or a 40-hex commit (default: the Tag and Commit "
+                    "internal/upstream names)")
+    ap.add_argument("--out", default=os.path.join(ROOT, "kernel_impls.json"), help="the table to write or check")
+    ap.add_argument("--check", action="store_true", help="fail when --out is not current instead of writing it")
+    ap.add_argument("--keep", metavar="DIR", help="fetch into DIR and keep the sources")
+    args = ap.parse_args(argv)
+    try:
+        if args.ref:
+            is_commit = re.fullmatch(r"[0-9a-f]{40}", args.ref) is not None
+            tag, commit = (None, args.ref) if is_commit else (args.ref, None)
+        else:
+            tag, commit = modelled_release()
+        label = tag or commit
+        cls = gen.load_classification()
+        if args.keep and os.path.exists(args.keep) and os.listdir(args.keep):
+            raise gen.Refused(f"--keep {args.keep} is not empty; regen.py fetches into an empty directory")
+        work = args.keep or tempfile.mkdtemp(prefix="kernel-impls-")
+        try:
+            # A build label ("v0.34.0+<12 digits>", internal/upstream) names a commit past a release,
+            # not a git tag, so such a Tag is fetched by its Commit and keeps its name in the table.
+            by_commit = tag is None or (not args.ref and "+" in tag)
+            vllm = fetch(VLLM_REPO, commit if by_commit else tag, os.path.join(work, "vllm"))
+            sources = {}
+            for name, (_, pin, repo, ref) in gen.library_pins(vllm, cls).items():
+                if repo is not None:
+                    print(f"regen: {name} at {ref} ({pin})", file=sys.stderr)
+                    sources[name] = fetch(repo, ref, os.path.join(work, name))
+            out = gen.render(gen.generate(vllm, cls, sources, tag, commit))
+        finally:
+            if not args.keep:
+                shutil.rmtree(work, ignore_errors=True)
+    except gen.Refused as e:
+        print(f"regen: {e}", file=sys.stderr)
+        return 1
+    if args.check:
+        with open(args.out, encoding="utf-8") as f:
+            if f.read() != out:
+                print(f"regen: {args.out} is not current for vLLM {label}; run python3 -I kernels/regen.py {label}",
+                      file=sys.stderr)
+                return 1
+        return 0
+    with open(args.out, "w", encoding="utf-8") as f:
+        f.write(out)
+    print(f"regen: wrote {args.out} for vLLM {label}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

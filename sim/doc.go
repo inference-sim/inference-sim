@@ -12,8 +12,8 @@
 // # Architecture
 //
 // The engine -- batch formation, schedulers, the request record, the KV store, LoRA and the
-// blis-latency-kernel adapter -- lives in blis-vllm's compatibility engine (compat/engine,
-// compat/kv, compat/lora, compat/kernelmodel; inference-sim#2021). The host reaches it through
+// blis-latency-kernel adapter -- lives in the vLLM engine under engines/vllm/core (core/vllm,
+// core/kv, core/lora, core/kernelmodel; inference-sim#2021). The host reaches it through
 // one seam, engine_aliases.go, which gives the engine's types their sim names (sim.Request,
 // sim.KVStore, sim.LatencyModel, ...). The cluster, the workload and the trace stay here:
 //   - sim/cluster/: multi-instance cluster orchestration
@@ -22,8 +22,8 @@
 //   - sim/llmd/: the embedded llm-d router, which makes every admission, routing and
 //     flow-control decision
 //
-// The engine's KV store and adapter registry register their constructors when blis-vllm's
-// compat/kv and compat/lora are linked (NewKVStoreFromConfig); inference-sim links them at its
+// The engine's KV store and adapter registry register their constructors when the vLLM engine's
+// core/kv and core/lora are linked (NewKVStoreFromConfig); inference-sim links them at its
 // one build site, cmd/engine_build.go. The latency model is not registered: the caller builds
 // it and passes it in (SimConfig.LatencyModel).
 package sim

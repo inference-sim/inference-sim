@@ -1,0 +1,162 @@
+{
+ "config": {
+  "block_size": 4,
+  "connector": {
+   "extra_config": {
+    "cpu_bytes_to_use": 196608,
+    "offload_prompt_only": false
+   },
+   "kv_role": "kv_both",
+   "name": "OffloadingConnector"
+  },
+  "enable_prefix_caching": true,
+  "kv_page": {
+   "head_size": 512,
+   "num_kv_heads": 1
+  },
+  "long_prefill_token_threshold": 7,
+  "max_model_len": 64,
+  "max_num_batched_tokens": 16,
+  "max_num_seqs": 4,
+  "num_blocks": 14,
+  "scheduling_policy": "priority",
+  "transfer": {
+   "load_delay": 0,
+   "store_delay": 0
+  }
+ },
+ "max_steps": 400,
+ "name": "offloading-fuzz-restart-offers-chunks-again",
+ "requests": [
+  {
+   "arrival_step": 17,
+   "id": "q00",
+   "output": [
+    39599
+   ],
+   "priority": 0,
+   "prompt": [
+    1004,
+    4477,
+    205,
+    2033,
+    3685,
+    2127,
+    1662,
+    3710,
+    16206,
+    45201,
+    43330,
+    32594,
+    40636,
+    34852,
+    40746,
+    36646,
+    24523,
+    25042,
+    38627,
+    21877,
+    12837,
+    45150,
+    4142
+   ]
+  },
+  {
+   "arrival_step": 8,
+   "id": "q01",
+   "output": [
+    8600,
+    41841,
+    2787,
+    48772,
+    31629,
+    15244
+   ],
+   "priority": 2,
+   "prompt": [
+    9946,
+    23533,
+    4448,
+    18772
+   ]
+  },
+  {
+   "arrival_step": 6,
+   "id": "q02",
+   "output": [
+    9988,
+    49873,
+    39072
+   ],
+   "priority": 1,
+   "prompt": [
+    4005,
+    20796,
+    22621,
+    25007,
+    5003,
+    5372,
+    46690,
+    23946,
+    43447,
+    39181,
+    45277,
+    5433,
+    17796,
+    30995,
+    9194,
+    26213,
+    41927,
+    42735,
+    43055,
+    10237
+   ]
+  },
+  {
+   "arrival_step": 2,
+   "id": "q03",
+   "output": [
+    43868,
+    32336,
+    31360,
+    13450,
+    33294,
+    46871,
+    48165,
+    30220,
+    7369,
+    24224
+   ],
+   "priority": 2,
+   "prompt": [
+    1004,
+    4477,
+    205,
+    2033,
+    3685,
+    2127,
+    1662,
+    3710,
+    12151,
+    40102,
+    17275,
+    29765,
+    35697,
+    7900,
+    49181,
+    8500,
+    1337,
+    48386,
+    44751,
+    14590,
+    7300,
+    555,
+    32075,
+    25301,
+    36955,
+    26482
+   ]
+  }
+ ],
+ "seed": 132
+}

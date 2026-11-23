@@ -11,9 +11,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation. Every step time and memory figure is priced by blis-substrate's cost model (`kernel/`, the only latency backend; adapter blis-vllm `compat/kernelmodel`).
+BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation. Every step time and memory figure is priced by the cost model in `substrate/kernel/` (the only latency backend; adapter `engines/vllm/core/kernelmodel`).
 
-This repo holds no vLLM code: it keeps the clock, event loop, cluster, router, workloads and reports, and drives every engine through blis-substrate's `contracts/engine.Engine` interface (`sim.EngineDriver`, `sim/engine_driver.go`). The engine is **blis-vllm** (`github.com/inference-sim/blis-vllm`), which non-test code under `sim/` and `cmd/` imports at one build site, `cmd/engine_build.go`; the SGLang engine is **blis-sglang**, imported at `cmd/sglang_engine.go` alone. Dependencies run one way: blis-substrate ← blis-vllm, blis-sglang and the router fork ← inference-sim; the exact versions are in `stack.json`. Every scenario states `engine: {kind: vllm, version: "0.33.0"}` or `{kind: sglang, version: "0.5.23"}` (no default).
+This repo holds no vLLM code: it keeps the clock, event loop, cluster, router, workloads and reports, and drives every engine through the `Engine` interface of `substrate/contracts/engine` (`sim.EngineDriver`, `sim/engine_driver.go`). This is one Go module, `github.com/inference-sim/inference-sim`, with the substrate in `substrate/`, the vLLM engine in `engines/vllm/` and the SGLang engine in `engines/sglang/`. Non-test code under `sim/` and `cmd/` imports the vLLM engine at one build site, `cmd/engine_build.go`, and the SGLang engine at `cmd/sglang_engine.go` alone; imports run one way, substrate ← engines ← `sim/`, `cmd/` (`internal/repocheck`). The router fork is the one other pinned module; the exact versions are in `stack.json`. Every scenario states `engine: {kind: vllm}` or `{kind: sglang}` (no default, no version: the build runs the commits `stack.json` names).
 
 The simulator is CPU-only, deterministic, and designed for capacity planning, policy optimization research, and performance prediction across deployments without requiring real GPUs.
 
@@ -21,17 +21,15 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 
 Every `blis run` / `blis replay` obeys these; see README.md and `blis --help` for detail.
 
-1. **The data in use.** A run reads the catalog and registry embedded in the blis-substrate module `stack.json` pins; no flag or env var is needed, and nothing is fetched. `--catalog <dir>` (or `BLIS_CATALOG`) and `--registry <dir>` (or `BLIS_REGISTRY`) name a directory with the layout of blis-substrate's `catalog/` or `registry/` that replaces that embedded copy whole; the flag wins, announced on stderr. `--catalog-overlay`/`--registry-overlay` add entries by identity (the run opens its data once, overlays included, and every engine reads that Data). The Result records the data under `data`. To use a checkout (`README.md` is canonical):
+1. **The data in use.** A run reads the catalog and registry embedded from `substrate/catalog` and `substrate/registry`; no flag or env var is needed, and nothing is fetched. `--catalog <dir>` (or `BLIS_CATALOG`) and `--registry <dir>` (or `BLIS_REGISTRY`) name a directory with the layout of `substrate/catalog/` or `substrate/registry/` that replaces that embedded copy whole; the flag wins, announced on stderr. `--catalog-overlay`/`--registry-overlay` add entries by identity (the run opens its data once, overlays included, and every engine reads that Data). The Result records the data under `data`. To use a checkout (`README.md` is canonical):
 
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
-git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout b6748ca9d757f149ba760cf821f96feed3bbf5bf
-export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
+export BLIS_CATALOG=$PWD/substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
-2. **A model runs iff it is in the catalog.** It is resolved from its derived graph, `<catalog>/models/<short-name>/graph.yaml`, never from `config.json`; an absent entry is refused naming that path (NS-6). No run-time HuggingFace fetch; no command creates or modifies a catalog file. Add a model by adding its catalog entry to blis-substrate's `catalog/`.
-3. **A scenario is required** on both `run` and `replay`: `--scenario <file> --scenarios <dir>`. The scenario (a blis-substrate contracts Scenario + Deployment YAML) fixes model, hardware, parallelism and engine settings; there are no `--model`/`--hardware`/`--tp` flags. Pinned releases: `stack.json` (README.md prints them).
+2. **A model runs iff it is in the catalog.** It is resolved from its derived graph, `<catalog>/models/<short-name>/graph.yaml`, never from `config.json`; an absent entry is refused naming that path (NS-6). No run-time HuggingFace fetch; no command creates or modifies a catalog file. Add a model by adding its catalog entry to `substrate/catalog/`.
+3. **A scenario is required** on both `run` and `replay`: `--scenario <file> --scenarios <dir>`. The scenario (a `substrate/contracts` Scenario + Deployment YAML) fixes model, hardware, parallelism and engine settings; there are no `--model`/`--hardware`/`--tp` flags. Pinned releases: `stack.json` (README.md prints them).
 4. **Named workload presets** come from `<catalog>/workloads/<name>.yaml` — used by `run --workload` and `convert preset --name` (both read the catalog in use).
 
 ## Build and Run Commands
@@ -116,11 +114,11 @@ Every cluster run routes with the real llm-d router (EPP) embedded in-process (`
 
 GitHub Actions run on all PRs to main:
 
-- `.github/workflows/ci.yml` — build (`go build ./...`), lint (`golangci-lint`, v2.14.0), tests, and a CLAUDE.md size-ceiling check.
+- `.github/workflows/ci.yml` — build (`go build ./...`), lint (`golangci-lint`, v2.14.0), tests, the substrate and engine checks, and a CLAUDE.md size-ceiling check. `scripts/ci-changes.sh` maps changed paths to the jobs a change runs; a path it does not classify runs everything.
 
 ## Cross-Repository Changes (BLIS repositories)
 
-A change that also touches blis-substrate, blis-vllm or the llm-d router fork is one review set, released bottom-up; this repo's steps: `.github/agent-prompts/cross-repo-changes.md`. Rules an agent must follow: never write internal project, customer or colleague names in public artifacts (run the name scan before a push); never commit third-party data, and give derived values their source URL plus commit or sha256; pin dependencies by release tag or exact pushed head, never a `go.mod` `replace` (sole exception: the llm-d router fork, see `.github/agent-prompts/llm-d-router-fork.md`), and push blis-substrate -> blis-vllm and the router fork -> inference-sim; compare the same quantity on the same points, with gates declared before the data and held-out evidence from a script; mutation-check every behaviour-change test; use the shared tooling (the substrate's validators, push gate, `git merge-tree --write-tree origin/main HEAD`).
+A change that also touches the llm-d router fork is one review set, released bottom-up (substrate and engines are directories of this repository); this repo's steps: `.github/agent-prompts/cross-repo-changes.md`. Rules an agent must follow: never write internal project, customer or colleague names in public artifacts (run the name scan before a push); never commit third-party data, and give derived values their source URL plus commit or sha256; pin dependencies by release tag or exact pushed head, never a `go.mod` `replace` (sole exception: the llm-d router fork, see `.github/agent-prompts/llm-d-router-fork.md`), and push the router fork -> inference-sim; compare the same quantity on the same points, with gates declared before the data and held-out evidence from a script; mutation-check every behaviour-change test; use the shared tooling (the substrate's validators, push gate, `git merge-tree --write-tree origin/main HEAD`).
 
 ## Agent Behavioral Instructions
 
@@ -154,7 +152,7 @@ Pick the template that matches your situation, reproduce its structure, and appl
 
 ## Latency Estimation
 
-The cost model (blis-substrate `kernel/`, adapter blis-vllm `compat/kernelmodel`) is the only backend: it prices step time, KV/fixed memory, P/D transfer, offload tier transfer and host overheads; coefficients come from blis-substrate's `registry/`. There is no `--latency-model` flag.
+The cost model (`substrate/kernel/`, adapter `engines/vllm/core/kernelmodel`) is the only backend: it prices step time, KV/fixed memory, P/D transfer, offload tier transfer and host overheads; coefficients come from `substrate/registry/`. There is no `--latency-model` flag.
 
 ## Post-Hoc Saturation Detection
 
@@ -162,6 +160,7 @@ Analyzes completed runs (distinct from the real-time flow-control detector). Pac
 
 ## File Organization
 
+The layout table is in `README.md`; per-directory rules are in `substrate/AGENTS.md`, `engines/vllm/AGENTS.md` and `engines/sglang/AGENTS.md`.
 
 ## Key Data Flow
 

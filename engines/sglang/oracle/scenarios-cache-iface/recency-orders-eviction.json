@@ -1,0 +1,130 @@
+{
+ "description": "Three unrelated branches are inserted in turn; the first is matched and the second inserted again, so the third is the least recently used. Evictions of one branch at a time take the third, then the first, then the second: recency, not creation, orders them.",
+ "model": "none: the driver builds SGLang's pools and cache from the sequence's cache block",
+ "seed": 0,
+ "cache": {
+  "page_size": 1,
+  "kv_size": 64,
+  "max_num_reqs": 4,
+  "max_context_len": 64,
+  "layer_num": 2,
+  "head_num": 2,
+  "head_dim": 16,
+  "kv_cache_events": true
+ },
+ "calls": [
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 4,
+   "as": "a"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "value": "a"
+  },
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 4,
+   "as": "b"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    5,
+    6,
+    7,
+    8
+   ],
+   "value": "b"
+  },
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 4,
+   "as": "c"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    9,
+    10,
+    11,
+    12
+   ],
+   "value": "c"
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2,
+    3,
+    4
+   ]
+  },
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 4,
+   "as": "b2"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    5,
+    6,
+    7,
+    8
+   ],
+   "value": "b2"
+  },
+  {
+   "on": "cache",
+   "m": "take_events"
+  },
+  {
+   "on": "cache",
+   "m": "evict",
+   "num_tokens": 4
+  },
+  {
+   "on": "cache",
+   "m": "take_events"
+  },
+  {
+   "on": "cache",
+   "m": "evict",
+   "num_tokens": 4
+  },
+  {
+   "on": "cache",
+   "m": "take_events"
+  },
+  {
+   "on": "cache",
+   "m": "evict",
+   "num_tokens": 4
+  },
+  {
+   "on": "cache",
+   "m": "take_events"
+  },
+  {
+   "on": "cache",
+   "m": "evictable_size"
+  }
+ ]
+}

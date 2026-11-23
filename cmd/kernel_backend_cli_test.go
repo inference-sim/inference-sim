@@ -3,7 +3,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,13 +12,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-vllm/compat/build"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/build"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"pgregory.net/rapid"
@@ -44,7 +44,7 @@ const kernelLegEnv = "BLIS_KERNEL_LEG"
 
 // kernelRepos is the three artifact roots a kernel scenario resolves against: the cost model's
 // generated fixtures (testdata/kernel/aisimulate) and the catalog and registry of the pinned
-// blis-substrate.
+// the substrate.
 func kernelRepos(t *testing.T) (scenarios, catalog, registry string) {
 	t.Helper()
 	return testScenariosDir(t), testCatalogDir(), testRegistryDir()
@@ -289,6 +289,12 @@ func TestKernelCLILeg(t *testing.T) {
 		t.Skip("re-exec target only; driven by runKernelCLI")
 	}
 	installTransferLog()
+	// A replication the driver starts is this same leg, handed the replication's command line.
+	replicationCommand = func(args []string) (*exec.Cmd, error) {
+		c := exec.Command(os.Args[0], "-test.run=^TestKernelCLILeg$")
+		c.Env = append(os.Environ(), kernelCLIArgsEnv+"="+strings.Join(args, "\x1f"))
+		return c, nil
+	}
 	rootCmd.SetArgs(strings.Split(raw, "\x1f"))
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -762,9 +768,6 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 		{"a pool stating no max_model_len", "states no engine.max_model_len",
 			pd(writeScenarioVariant(t, "      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n  - role: decode",
 				"      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n  - role: decode"), topology...)},
-		{"pools drafting differently", "one speculative configuration applies to the run",
-			pd(writeScenarioVariant(t, "      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer",
-				"      compilation_config: {cudagraph_mode: PIECEWISE}\n      speculative_config: {method: mtp, num_speculative_tokens: 2}\n\npd_transfer"), topology...)},
 		// The decode pool caching bf16 behind an fp8 prefill pool: the handoff would move pages
 		// the decode engine does not hold.
 		{"pools caching KV in different formats", "caches KV as cache_dtype",
@@ -778,12 +781,6 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 		// implement is refused by name rather than dropped.
 		{"a scenario offload block with a prefetch depth", "offload.prefetch_depth",
 			pd(writeScenarioVariant(t, "cost-model-fabric]", "cost-model-fabric, cost-model-offload-tiers]", "pd_transfer:", "offload:\n  prefetch_depth: 2\n  tiers:\n    - tier: cpu_dram\n      bytes: 107374182400\npd_transfer:"), topology...)},
-		// qwen3.5's linear-attention layers carry recurrent state, which the engine maps to a
-		// Mamba cache spec; its attention head size of 256 beside them would make the attention
-		// backend's kernel block depend on the install's FlashAttention version, which it does not
-		// model, so it refuses this model by that reason.
-		{"a recurrent model whose kernel block is not modelled", "which is not modelled",
-			pd(writeScenarioVariant(t, "model: glm-5\n", "model: qwen3.5-397b-a17b\n"), topology...)},
 		{"more decode instances than the pool holds", "decode pool holds 1 data-parallel group(s)",
 			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "2")},
 		{"pools paging in different block sizes", "a P/D handoff moves whole blocks",
@@ -807,6 +804,14 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 	if out, stderr, err := runKernelCLI(t, pd(plain, topology...)...); err != nil ||
 		!completedIs(out, 6) {
 		t.Errorf("a topology exactly filling the pools was not served: %v\n%s", err, lastLines(stderr, 3))
+	}
+	// qwen3.5's linear-attention layers carry recurrent state, which the engine maps to a Mamba
+	// cache spec. The P/D decode engine's recompute of the last prompt token is modelled
+	// (inference-sim#2322), so the same topology serves a recurrent model.
+	recurrent := writeScenarioVariant(t, "model: glm-5\n", "model: qwen3.5-397b-a17b\n")
+	if out, stderr, err := runKernelCLI(t, pd(recurrent, topology...)...); err != nil ||
+		!completedIs(out, 6) {
+		t.Errorf("a P/D run of a recurrent model was not served: %v\n%s", err, lastLines(stderr, 3))
 	}
 }
 

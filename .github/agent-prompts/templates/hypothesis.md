@@ -65,7 +65,7 @@ If a mechanism is proposed, describe the control experiment that would confirm i
 
 ## Standards Audit
 
-Findings checked against docs/contributing/standards/:
+Findings checked against .github/agent-prompts/standards/:
 - [ ] Any violations of existing rules? <list or "none found">
 - [ ] Any new rules needed? <list or "none">
 - [ ] Any new invariants needed? <list or "none">

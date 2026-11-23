@@ -1,0 +1,150 @@
+{
+ "name": "spec-model-len-cap",
+ "description": "EAGLE3 K=3 near max_model_len 24: the running request's input cap max_model_len - computed - 1 binds, and a request scheduled no tokens is skipped, not a stop.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 60,
+  "max_model_len": 24,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "speculative": {
+   "method": "eagle3",
+   "num_speculative_tokens": 3,
+   "draft": "llama-eagle"
+  }
+ },
+ "requests": [
+  {
+   "id": "e1",
+   "arrival_step": 0,
+   "prompt": [
+    11880,
+    8049,
+    29415,
+    21926,
+    15696,
+    12973,
+    32081,
+    32378,
+    11992,
+    31443,
+    19365,
+    30038,
+    17337,
+    12853
+   ],
+   "output": [
+    16634,
+    7734,
+    21263,
+    34217,
+    11426,
+    15372,
+    11078,
+    15559,
+    13122,
+    23956,
+    37719,
+    33276,
+    13230,
+    32353,
+    14163,
+    19592,
+    17367,
+    437,
+    22463,
+    26568
+   ],
+   "accepted": [
+    3,
+    3,
+    3,
+    3,
+    3
+   ]
+  },
+  {
+   "id": "e2",
+   "arrival_step": 0,
+   "prompt": [
+    14447,
+    26603,
+    35252,
+    22670,
+    38894,
+    37566,
+    34521,
+    17836,
+    17667
+   ],
+   "output": [
+    39318,
+    19870,
+    36167,
+    7526,
+    18438,
+    31288,
+    37218,
+    32818,
+    9516,
+    32509,
+    10503,
+    12442,
+    13556,
+    28639,
+    8610,
+    26674,
+    33652,
+    31480,
+    37601,
+    6634,
+    13189,
+    38561,
+    17001,
+    35011,
+    22259,
+    35709,
+    30759,
+    5813,
+    32223,
+    9694
+   ],
+   "accepted": [
+    3,
+    3,
+    3,
+    3,
+    3,
+    3
+   ]
+  },
+  {
+   "id": "e3",
+   "arrival_step": 1,
+   "prompt": [
+    31298,
+    9974,
+    32080,
+    5168,
+    16356
+   ],
+   "output": [
+    6070,
+    35618,
+    23097,
+    13361,
+    25777,
+    37935
+   ],
+   "accepted": [
+    3,
+    0,
+    3
+   ]
+  }
+ ],
+ "max_steps": 400
+}

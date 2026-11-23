@@ -1,0 +1,15 @@
+{
+  "name": "lora-cache-pre-placement-then-serve",
+  "config": {"max_loras": 2, "max_cpu_loras": 4},
+  "steps": [
+    {"load": "a"},
+    {"load": "b"},
+    {"load": "c"},
+    {"load": "d"},
+    {"adapters": ["a"]},
+    {"adapters": ["b", "c"]},
+    {"adapters": ["d", "a"]},
+    {"load": "e"},
+    {"adapters": ["b"]}
+  ]
+}

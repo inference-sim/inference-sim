@@ -1,0 +1,396 @@
+# The data ledger
+
+This directory is the data ledger of design §10. It lists every external data unit BLIS
+uses, and holds the rule that gives each unit its role. The code that reads and checks it is
+the Go package `ledger/` at the repository root, with its command `go run ./ledger/cmd/ledger`.
+
+A unit's role is computed when it is needed, never stored. The only exceptions are the three
+lists the release job publishes, and the FIT and HELD sides of the legacy table (D4). The
+check `ledger scan-roles` refuses any other committed file that pairs a unit with a role.
+
+## Files
+
+| File | What it holds | Written by |
+|---|---|---|
+| `ledger.yaml` | the partition version, the seed's SHA-256 and who made it, and each source's cut-points | a ledger owner |
+| `sources.yaml` | each source, pinned to an exact revision (D3), with its licence and the quoted evidence (X12, D6) | a ledger owner or an agent |
+| `units/<source>.jsonl.gz` | the units: unit_id, role key, identifying fields, and each measurement's source record and the hash of its measured values. No measured value is committed. | the ingest tool |
+| `reports/<source>.yaml` | the ingest report: records read, units, role keys, duplicates, merged and joined records, and every record left out, by reason | the ingest tool |
+| `legacy-map.yaml` | the legacy table: each legacy unit's side, the units whose records carry both labels, and the new units whose role key holds legacy units | the ingest tool |
+| `legacy-points.jsonl.gz` | each point of the old partition, its label and the units its records fell in | the ingest tool |
+| `aliases/<source>-<n>.yaml` | alias tables, old to new unit_id and role key, after a change to how identities are computed | `ledger generate-aliases`, in the pull request that makes the change |
+| `published/{fit,anchor}.yaml` | the two published lists | the release job, at each substrate release |
+
+`published/` does not exist yet. The release job writes it once a ledger owner has created the
+seed. Nothing else may write it.
+
+A tree without the lists can merge, but it cannot be released. `ledger check -release catalog/ledger`
+and the release tool (`substrate/tools/release`, at `-tag`) refuse a tree that lacks either list
+or whose fit or anchor list holds no unit; the release job itself refuses to write such lists. The
+fit list is what every fitted coefficient cites (D1) and the anchor list is what the dashboard
+scores (COV-2), so a release without them has nothing to fit from or score.
+
+No other file may sit in this directory. `ledger check` refuses one, so a role list cannot be
+added under another name.
+
+## The InferenceX source
+
+The pinned revision is the InferenceX-app release `db-dump/2026-09-28`: 17 parts, each named in
+`sources.yaml` with its SHA-256. To regenerate the unit list:
+
+```sh
+ledger/inferencex/restore.sh ix               # 34 GB download, checked part by part
+psql -d ix -At -f ledger/inferencex/export.sql -o rows.jsonl
+curl -fsSLO https://raw.githubusercontent.com/inference-sim/inference-sim/8e344596c35272e6f505df65c0935aeb5e0000ec/tools/validation/inferencex/partition/partition.v5.json.gz
+go run ./ledger/cmd/ledger ingest-inferencex -rows rows.jsonl -partition partition.v5.json.gz catalog/ledger
+```
+
+`ledger check-generated` runs the same steps into memory and requires every generated file to
+equal the committed one byte for byte (D4). It needs the dump, so it runs in the nightly
+`gate-nightly` job of the seed-holding ledger workflow, which is not part of this tree, and not on each pull request. Each pull request
+runs `ledger check`, `ledger scan-roles`, `ledger lint-workflows` and `ledger check-base`, which
+need no source data (`.github/workflows/ci.yml`, job `ledger`).
+
+The rules the ingest tool applies are those of design §10.2:
+
+- The identity is the source plus ten fields: model, hardware, precision, framework,
+  benchmark_type, configuration_hash, recipe_fingerprint, conc, measured_date and
+  benchmark_run. The configuration hash covers 17 serving fields, with the image's
+  `@sha256:` digest removed. The digest is kept on the measurement as `image_digest`.
+- The measured date of a record with a run id is the earliest date among all records of its
+  benchmark run. A record with no run id keeps its own date.
+- The role key is the source, model, hardware, precision, framework, benchmark_type and
+  configuration_hash.
+- A record is not a measurement when it reports an error or its metrics are empty. Such a
+  record is left out and counted. The run's conclusion is recorded on the measurement and
+  never removes it.
+- Records with the same identity and the same metrics are one measurement. The record with
+  the smallest `benchmark_results.id` is kept, and the others are its duplicates.
+- Records with the same identity and different metrics are one unit that holds each
+  measurement.
+- The same metrics under two identities with one role key are one unit, under the identity
+  of the smallest row id. With two different role keys, both records are left out.
+
+## Records published after the pinned dump
+
+The dump is weekly and the benchmarks are not. A record InferenceX published after the pinned
+dump is added as a supplement, listed under the source in `sources.yaml`: the URL of the API
+that serves it, the upstream run, and each record's id and the SHA-256 of its content (the
+canonical JSON of the whole record as served, numbers as printed). The ingest tool fetches the
+API, refuses any pinned record whose content differs or that is no longer served, reads no
+record that is not pinned, and ingests the supplement's records together with the dump's, so
+every rule above applies to them unchanged. Their units are in the same
+`units/inferencex.jsonl.gz`, with the same identity, role key and keyed role assignment (D4)
+as a unit from the dump. A supplement unit that carried any other role key would fail
+`ledger check`, which recomputes every role key from the identity.
+
+No value of a supplement record is committed (X12): the unit holds identifying fields and the
+hash of the record's metrics. A consumer that needs the values asks the tool for them:
+
+```sh
+go run ./ledger/cmd/ledger supplement-records -out records.json catalog/ledger   # needs the network
+```
+
+`records.json` holds the pinned records as the API served them, each equal to its pin. It is an
+input for one run and is never committed. A unit's `measurements[].record` is the record id.
+
+To add records, a ledger owner runs the pin tool and opens a pull request that adds the
+supplement and the regenerated unit list and report:
+
+```sh
+go run ./ledger/cmd/ledger pin-supplement -url 'https://inferencex.semianalysis.com/api/v1/benchmarks?model=DeepSeek-V4.1-Flash' -ids 447774-447789
+```
+
+Rules the tool enforces:
+
+- Each record id is above every id of the pinned dump. A record the dump holds is not a
+  supplement, because the dump's copy and the API's could print a number differently and become
+  two measurements of one unit. When a new source revision holds a supplement's records, the
+  pull request that moves the revision removes the supplement.
+- The dump owns the record ids up to its last (the cutoff) and the API those above it, so a run
+  whose records are on both sides is ingested as one run: it keeps the earliest date of its
+  dump records, and the API's records of it take that date. A supplement's records may be
+  pinned in any number of supplements; the ingest reads them in increasing id order.
+- The run's attempt is read from the record's `run_url`; a record with no run is refused. The
+  API does not serve the run's conclusion, so the unit records `run_conclusion: null`.
+- The measured hash of an API record is the hash of the metrics as the API prints them. It is
+  not compared with a dump's copy of the same record.
+- `ledger check-generated` fetches the supplements, so it needs the network as well as the dump.
+  `TestEverySupplementRecordHasAUnit` checks offline that every pinned record has a unit.
+
+### Following the API (the feed)
+
+`ledger feed` reads the API as a whole, so every record InferenceX publishes joins the ledger
+once, and not only the records a ledger owner pinned by hand:
+
+```sh
+go run ./ledger/cmd/ledger feed -rows rows.jsonl -url '<API list URL>' -out feed catalog/ledger   # needs the network
+```
+
+It takes the dump's rows (as `ingest-inferencex` does) and one or more `-url` (the API's list
+endpoints, as a supplement's `url`). It splits what the API serves at the dump's last record id:
+a record at or below it is never pulled again, and is counted in `owned_by_dump`, and listed in
+`row_differs_from_dump` when the API prints it differently from the dump (the dump's copy
+stays); a record above it is ingested with the dump and with the committed supplements, which
+must still have the content they pin. A record the tool cannot read (a record with no run to
+take its attempt from) is left out and listed under `unreadable`. It writes two files to `-out`
+and changes nothing under the ledger:
+
+- `feed-report.yaml`: the ingest report with a `feed` section: the cutoff, the counts, the runs
+  on both sides of the cutoff (`straddling_runs`), and the units by source revision
+  (`units_by_source_revision`: `dump`, `api`, or `both`, from whether each measurement's record
+  id is at or below the cutoff). The report holds ids and counts, no value.
+- `proposed-supplements.yaml`: the records above the cutoff that no supplement pins yet, by
+  record id and content SHA-256, one supplement per upstream run and attempt. A ledger owner
+  reviews it and adds the supplements to `sources.yaml`, then runs `ingest-inferencex`, in a
+  pull request.
+
+No workflow runs it. A ledger owner runs `ledger feed` by hand, with the dump restored (34 GB) and
+the API's URLs as `-url` flags; it needs the network and commits nothing.
+
+A unit's role is still drawn only by the seed-holding jobs. Until a ledger owner creates the
+seed, no supplement unit, like no other unit, is on the fit or anchor list, and so the dashboard
+cannot score it (COV-2). After the release job publishes the lists, a supplement unit that draws
+anchor is scored and one that draws fit is fitted from, with no case made for it.
+
+## Writing a source's licence entry
+
+A source is redistributable, and its artefacts may be committed, when `licence.spdx` is on the
+allow-list (`contracts/vocab/licence.go`) and the entry lists no restriction. No sign-off is
+needed, so the entry itself must be right:
+
+- Record the licence that governs the data, not the code that produces it or the repository that
+  hosts it. A repository's LICENSE file covers its code unless it says otherwise; a dataset's
+  README or card, or a separate data licence, is the evidence for the data.
+- Quote each file at a commit or dataset revision, never a branch: the URL, the file's SHA-256,
+  the lines and the quotation.
+- Set `spdx` only to a licence that actually covers the data. When no file states terms for the
+  data, or the terms are unclear, set it to `NOASSERTION`, which is not on the allow-list, and
+  say why in `note`. Quote any statement that narrows what may be done under `restrictions`.
+  The artefacts then stay out of the repository. InferenceX is such a source: neither the
+  Apache-2.0 licence of the code that runs the benchmarks nor the GPL-3.0 licence of the
+  repository that publishes the dump speaks of the results.
+- When in doubt, commit only identifiers and hashes, as the unit lists do.
+- Discuss anything unclear with the person you are working with, and record the conclusion in the
+  entry's `note`.
+
+## Changing how identities are computed
+
+If a pull request changes the ingest tool so that some unit_ids or role keys change, the
+units would be drawn again, and a held unit could become a fit unit. To prevent that, the
+pull request regenerates the unit list from the same pinned revision. It then commits the
+alias table generated by pairing the old and new identities of the same records:
+
+```sh
+git archive "$(git merge-base origin/main HEAD)" catalog/ledger | tar -x -C /tmp/base
+go run ./ledger/cmd/ledger generate-aliases -source inferencex -reason "..." \
+  -out catalog/ledger/aliases/inferencex-1.yaml /tmp/base/catalog/ledger catalog/ledger
+```
+
+`ledger check-base` requires every added alias table to equal the generated one. It refuses a
+change that would give one new unit or role key two old role keys, which could carry two
+roles; such a change needs a new partition version: the next number, with a new seed record
+(`ledger check-base` accepts it; no one approves it in the pull request, and the seed itself is a
+ledger owner's release-time step below). A change of
+source revision and a change of identities go in separate pull requests, so the pairing is
+always made on one revision.
+
+## Creating the seed
+
+The seed is created once per partition version, in this repository and, with a seed of its own,
+in accuracy-dashboard (D7). It is 256 random bits. No person, agent, file, log or shell history
+ever holds it: one pipeline writes it straight into the environment secret and prints only its
+hash. A person with admin rights on the repository, or an agent acting for one, runs these steps.
+
+1. Create the environment `ledger`, or check an existing one:
+   - Deployment branches: selected branches only, with the single rule `main`.
+   - No required reviewers. A reviewer rule would make every seed-holding job wait for a person.
+     The branch policy keeps pull-request code out of the environment.
+   - No other secret in it.
+
+   ```sh
+   gh api -X PUT repos/<owner>/<repo>/environments/ledger \
+     -F 'deployment_branch_policy[protected_branches]=false' \
+     -F 'deployment_branch_policy[custom_branch_policies]=true'
+   gh api -X POST repos/<owner>/<repo>/environments/ledger/deployment-branch-policies \
+     -f name=main -f type=branch
+   ```
+2. Generate the seed into the secret and print only the SHA-256 of its 32 bytes. The seed
+   never lands in a variable or a file:
+
+   ```sh
+   set -o pipefail; h=$(mktemp)
+   openssl rand -hex 32 | tr -d '\n' \
+     | tee >(xxd -r -p | shasum -a 256 | cut -d' ' -f1 > "$h") \
+     | gh secret set LEDGER_SEED --env ledger -R <owner>/<repo>
+   sleep 1; cat "$h"; rm -f "$h"
+   ```
+
+3. In a pull request, record the hash and the facts in `ledger.yaml`: `seed.sha256`,
+   `seed.generated_by` (the ledger owner's GitHub login), `seed.generated_on` (YYYY-MM-DD)
+   and `seed.rotation_owner`. The review question "Was the new seed generated as the ledger
+   records?" (D7) is guidance for the review agent. The seed-holding jobs refuse a secret whose
+   SHA-256 is not the recorded one, so a record without its secret draws no role.
+4. Run the seed-holding ledger workflow with `job: release` on main. The job checks the seed
+   against the recorded hash before it draws anything. Its artifact `published` holds
+   `fit.yaml` and `anchor.yaml`. The release bot commits them under
+   `published/` in the release pull request. The lists are not embedded in the simulator's
+   data (`CatalogPatterns` names nothing under `ledger/`, and the loader ignores everything
+   under `catalog/ledger/`); the dashboard reads them from the release checkout.
+   `ledger check -release` fails a tree without them.
+5. Check the result before tagging:
+
+   ```sh
+   go run ./ledger/cmd/ledger check -release catalog/ledger     # exit 0; fit and anchor nonempty
+   go test -count=1 -run 'TestNothingUnderTheLedgerIsEmbedded|TestEmbedPatterns' .
+   ```
+
+When a partition version is retired, publish its seed in the pull request that retires it,
+so that anyone can check the split against the committed hash.
+
+## The jobs
+
+The candidate workflow holds the candidate job. It runs a pull request's
+code with no secret, no environment and a read-only token. It predicts every unit not on the
+published lists with no network, and uploads `predictions.json`, nothing else.
+
+The seed-holding ledger workflow holds the seed-holding jobs: release, select, error and
+gate-nightly. Each runs only from main, in the environment `ledger`. Each checks out main and
+reads the predictions as untrusted input with a strict loader (`ledger.ReadPredictions`). Each
+reduces its own role's units to aggregates over at least 10 units, and checks that its report
+names no unit (`ledger.CheckReport`). Units on a legacy side, legacy or new, are reduced
+apart and reported as separate figures marked `not_blind`, because the old labels and the
+side rules are public. `ledger lint-workflows` refuses any change to that shape.
+
+What the reports protect. A report names no unit and covers at least 10 units, and the units
+it covers are fixed by the seed and the measured data, not by the candidate: the loader refuses
+predictions that omit a handed unit, and an absent prediction scores as a full error. Select
+and error reports exist only for main-branch candidates, so differencing across a pull
+request's pushes is not possible; a candidate on main is a merged change, so the number of
+evaluations is the number of merges. The operator level reports method error on validate units
+(the `error` job); no operator-level job reads held units, and only InferenceX has a held
+cut-point from partition version 2.
+
+What is not in place yet:
+
+- The operator-level predictor. The candidate job records every unit as not predicted, so
+  the seed-holding jobs report nothing.
+- The consumers' records of units read. The nightly join (D2) fails until at least one
+  consumer uploads an artifact named `unit-reads-<consumer>` in the format of `ledger.Reads`. The join reads only artifacts uploaded by a run on main of
+  this repository; an artifact from a pull request run or a fork is ignored.
+
+## Moving to partition version 2
+
+From version 2 the roles have holders: only InferenceX has a held
+cut-point, only InferenceX and configiq have an anchor cut-point, AISimulate's units take the
+training roles (fit 0-69, select 70-84, validate 85-99), and configiq's units are anchor 0 to 99
+except those a consumer read under fit, select or validate, which `left_out` lists and which get
+no role. InferenceX's rule is carried over byte for byte, so no InferenceX unit changes role. The
+version keeps the seed: `ledger check-base` accepts a version bump with the same seed record
+only when InferenceX's rule is unchanged.
+
+`ledger partition-prep` is the D2 join report. It reads no seed: it works from the consumers'
+`unit-reads-<consumer>` records, and writes the report and, with `-propose`, the next
+`ledger.yaml`. Maintainer steps (A3; the agent does not run them):
+
+1. Download the `unit-reads-*` artifacts of the latest nightly join on main.
+2. `ledger partition-prep -require <each consumer> -out report.yaml -propose ledger.yaml catalog/ledger unit-reads-*.json`.
+   Read the report: the `conflicts` count must be 0, and every consumer must be listed.
+3. In a pull request, replace `catalog/ledger/ledger.yaml` with the proposal and delete
+   `catalog/ledger/published/*.yaml` (version 1; `Published.Check` refuses a list of another version).
+4. `ledger check-base` against main passes (seed kept, InferenceX unchanged); CI is green. A
+   pre-registration that pins the cut-points of configiq or AISimulate is stale after the move
+   (`prereg verify` says so) and is registered again before its family fits; InferenceX's pin is unchanged.
+5. Merge, then dispatch the release job on main. It writes the version 2 lists.
+6. In accuracy-dashboard, add a `partitions["2"]` entry with a budget to `state/gate/ledger.json`
+   (A5); until then the whole-run gate refuses partition version 2.
+
+## The AISimulate end-to-end artifact
+
+`kernel/scripts/extract_aisimulate_e2e.py` turns the `e2e-accuracy-web` artifact of NVIDIA's
+`E2E Accuracy Matrix` workflow into a per-point corpus of relative TTFT and TPOT. The ledger pins
+the artifact under source `aisimulate`, `artifacts[e2e-accuracy-web]` (D3):
+
+| Field | Value |
+|---|---|
+| Run | `ai-dynamo/aisim` actions run 43584761964, attempt 1 (the repository was `ai-dynamo/aisimulate`) |
+| Evaluated commit | `a4bbb52b3adebc57c5cb264a6924e82e02af676b` (branch `main`) |
+| Artifact | `e2e-accuracy-web-0d6e4079e36703eb`, zip SHA-256 `47c03314e552b442e6716fd0fdc0b865ee031d391b39b14d066f23592f775aaa` |
+| File read | `summary.json`, SHA-256 `d5012fef06f4e63abebf0cdb43104b699c303f937b77d0de9ba0db6b2350b8c2` |
+| Measured values | InferenceX, through the Hugging Face dataset `ai-dynamo/aisim-infx-cache` at `37cdb0319a7e695f560e43ba79441dcea6029374` (the artifact's `measurement_source_url`; not publicly readable) |
+| Kept by GitHub until | 2027-02-12; a copy is authentic when its SHA-256 matches |
+
+The extractor reads the pin from `kernel/scripts/aisimulate_e2e.pin.json`, and
+`TestExtractorPinEqualsTheLedgerEntry` requires that file to equal the ledger entry. It refuses a
+`summary.json` whose SHA-256 differs, whose snapshot states another run id or attempt, another
+evaluated commit (or "latest", or no commit record) or another release tag, whose campaign
+status is not `complete`, whose totals have no `aisim` block, that yields no point, or whose
+sweep and point counts differ from the pin's. The artifact names each checkpoint by its Hugging
+Face path; the extractor keeps a topology when exactly one catalog model's `source.repo` is that
+path. To reproduce:
+
+```sh
+gh api repos/ai-dynamo/aisim/actions/artifacts/14111555985/zip > a.zip
+shasum -a 256 a.zip                                  # 47c03314...75aaa
+mkdir x && (cd x && unzip ../a.zip)
+python3 -I kernel/scripts/extract_aisimulate_e2e.py x/summary.json -o corpus.json
+# 103 sweeps, 561 points, 73 distinct deployments -> corpus.json
+#   skipped  215  checkpoint not in catalog
+#   skipped  271  fewer than three successful points
+#   skipped  143  serving=aggregated spec=mtp
+#   skipped  563  serving=disaggregated spec=none
+shasum -a 256 corpus.json                            # dee98391...96c0 (Python 3.15)
+```
+
+The skipped figures count points, so the kept and skipped points add up to the artifact's 1,753.
+The corpus is shape only: every value is normalised to its sweep's lowest concurrency, so it says
+nothing about absolute latency, and the artifact's absolute latencies are not carried. It is an
+evaluation set, never fitted to. The predictions are NVIDIA's; the ground truth is InferenceX's.
+Disaggregated and speculative topologies are not in the corpus: a step-time ratio at one
+deployment cannot price two pools or a drafter. To move to a newer artifact, change the ledger
+entry and the pin file in one pull request. The artifact has no unit list yet: it holds
+relatives, not InferenceX units, so no role is drawn for it.
+
+## The calibration sources (training only)
+
+Three sources are calibration data for the kernel and are never held out: `vllm-ci-perf`,
+`sglang-nightly` and `sglang-traces`. Their rules in `ledger.yaml` assign fit (0 to 69), select
+(70 to 84) and validate (85 to 99) only, and have no legacy side; `ledger check` refuses a
+held or anchor role, or a legacy side, for any of them. Their licence is NOASSERTION, so
+only identifiers and hashes are committed (X12, D6) and each input is pinned by hash (D3).
+
+| source | unit | role key |
+| --- | --- | --- |
+| `vllm-ci-perf` | a benchmark configuration at one commit | commit, model, hardware, benchmark name, configuration hash |
+| `sglang-nightly` | a test case in one nightly run | commit, test name, model, hardware |
+| `sglang-traces` | one trace file | the file |
+
+```bash
+# vllm-ci-perf: rows of https://ci.vllm.ai/api/perf up to the cutoff day, joined with the
+# perf-eval recipes at the commit sources.yaml pins (rows and recipes are not committed)
+python3 ledger/vllmperf/export.py --api perf.json --cutoff 2026-11-19 --perf-eval perf-eval --out vexp
+go run ./ledger/cmd/ledger ingest-vllm-perf -rows vexp/rows.jsonl -recipes vexp/recipes.jsonl catalog/ledger
+
+# sglang-nightly: the pinned artifacts, downloaded as <artifact id>.zip into one directory
+go run ./ledger/cmd/ledger sglang-nightly-assets catalog/ledger
+go run ./ledger/cmd/ledger ingest-sglang-nightly -artifacts DIR catalog/ledger
+
+# sglang-traces: a listing of the pinned ci-data commit (git blob ids and sizes, never a trace)
+python3 ledger/sglangtraces/export.py --repo sgl-project/ci-data --commit SHA > listing.jsonl
+go run ./ledger/cmd/ledger ingest-sglang-traces -listing listing.jsonl catalog/ledger
+```
+
+Each `ingest-*` command takes `-check` to regenerate and compare byte for byte (D4). Rows that
+cannot be placed are left out under a stated reason and counted in the report
+(`catalog/ledger/reports/<source>.yaml`): for `vllm-ci-perf` an image tag that is not a full
+commit, no unique recipe, or an empty metric; for `sglang-traces` an empty file or one that is
+not rank zero. GitHub expires workflow artifacts, so `sglang-nightly` can be regenerated only
+while its pinned artifacts are still downloadable.
+
+## Other sources
+
+AISimulate (`ai-dynamo/aisimulate` at `2f0f4cd8`, since renamed `ai-dynamo/aisim`) and the forward-pass dataset
+(`nvidia/aisimulate-fpm-dataset` at `dbfcdd9e`) are listed in `sources.yaml` with their
+licences, but they have no unit list yet. Both are reachable from CI, and their ingest tools
+are not yet written. The forward-pass dataset's README states that it has no approved
+redistribution licence, so its records are never committed.

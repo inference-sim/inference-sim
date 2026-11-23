@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -263,23 +263,6 @@ func capRunRows(t *testing.T, args ...string) (capOut, []capRequest) {
 	return parseCapOut(t, stdout), rows
 }
 
-// meanTTFTBy is the mean TTFT of completed requests, by key, with the count of each.
-func meanTTFTBy(rows []capRequest, key func(capRequest) string) (mean map[string]float64, n map[string]int) {
-	mean, n = map[string]float64{}, map[string]int{}
-	for _, r := range rows {
-		if r.E2E > 0 {
-			mean[key(r)] += r.TTFT
-			n[key(r)]++
-		}
-	}
-	for k := range mean {
-		mean[k] /= float64(n[k])
-	}
-	return mean, n
-}
-
-func bySLOClass(r capRequest) string { return r.SLOClass }
-
 // classMix is a burst of three SLO classes on one engine, enough to queue: critical (30%),
 // sheddable (40%) and batch (30%), 120 requests of 2000 prompt and 128 output tokens.
 func classMix(t *testing.T) string {
@@ -373,7 +356,7 @@ func TestCapabilityMatrix_Policies(t *testing.T) {
 }
 
 // capRawCLI runs `blis args...` exactly as given (no repository flags appended), for the
-// commands that take neither a scenario nor a registry: convert and compose.
+// command that takes neither a scenario nor a registry: convert.
 func capRawCLI(t *testing.T, args ...string) string {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestKernelCLILeg$")
@@ -443,7 +426,7 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 		t.Parallel()
 		const draft = "      speculative_config: {method: mtp, num_speculative_tokens: 3}\n"
 		// The decode pool runs a smaller engine than the prefill pool: fewer sequences and
-		// less of its memory for KV. Both draft (speculation must agree across a handoff).
+		// less of its memory for KV. Both draft (here the same speculation; pools may also differ, TestPDPools_).
 		variant := func(decodeSeqs string) string {
 			return writeScenarioVariant(t,
 				"      compilation_config: {cudagraph_mode: PIECEWISE}\n  - role: decode", "      compilation_config: {cudagraph_mode: PIECEWISE}\n"+draft+"  - role: decode",
@@ -923,26 +906,5 @@ func TestCapabilityMatrix_Workloads(t *testing.T) {
 			t.Errorf("servegen: mean prompt %.1f and %v output tokens over %v requests; the dataset states 500 and 40",
 				o.meanPrompt(), o.num("total_output_tokens"), o.num("completed_requests"))
 		}
-	})
-
-	t.Run("compose: the merged spec serves both sources", func(t *testing.T) {
-		t.Parallel()
-		a := capSpec(t, 4, 20, capClient("chat", "critical", 1, 500, 64, ""))
-		b := capSpec(t, 2, 10, capClient("batch", "batch", 1, 3000, 32, ""))
-		composed := capRawCLI(t, "compose", "--from", a, "--from", b)
-		// Composing keeps what the inputs bound: num_requests is the sum (20 + 10), so the merged
-		// spec runs on its own, without a horizon to bound it.
-		if !strings.Contains(composed, "num_requests: 30") {
-			t.Fatalf("the composed spec lost the inputs' num_requests:\n%s", composed)
-		}
-		merged := capFile(t, "merged.yaml", composed)
-		args := colocated(1)[:len(colocated(1))-2] // without --horizon: num_requests bounds the run
-		o, rows := capRunRows(t, runArgs(args, "--workload-spec", merged)...)
-		o.conserves(t, int(o.num("injected_requests")))
-		_, n := meanTTFTBy(rows, bySLOClass)
-		if n["critical"] == 0 || n["batch"] == 0 {
-			t.Errorf("the composed spec served %v; both sources must contribute", n)
-		}
-		capRunReplay(t, args, []string{"--workload-spec", merged}, nil)
 	})
 }

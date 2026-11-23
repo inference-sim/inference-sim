@@ -1,0 +1,128 @@
+{
+ "name": "uniform-full-layers",
+ "description": "Two full-attention layers with one spec: vLLM forms one KV cache group (get_kv_cache_groups' uniform spec), so the pool is shared by one block table per request, not two.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 30,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_groups": [
+   {
+    "kind": "full"
+   },
+   {
+    "kind": "full"
+   }
+  ]
+ },
+ "requests": [
+  {
+   "id": "u0",
+   "arrival_step": 0,
+   "prompt": [
+    24196,
+    38927,
+    31643,
+    543,
+    5783,
+    40108,
+    35521,
+    26522,
+    17619,
+    35429,
+    3000,
+    43204,
+    38323,
+    8934,
+    38066,
+    45803,
+    4795,
+    4772,
+    34414,
+    14344,
+    40753,
+    44434,
+    43154,
+    34367,
+    46925
+   ],
+   "output": [
+    25967,
+    3326,
+    32588,
+    50256
+   ]
+  },
+  {
+   "id": "u1",
+   "arrival_step": 2,
+   "prompt": [
+    6117,
+    26420,
+    8369,
+    38172,
+    13020,
+    658,
+    40250,
+    48496,
+    37576,
+    39899,
+    23512,
+    1559,
+    46939,
+    20748,
+    20022,
+    33072,
+    20140,
+    28974,
+    26801,
+    416
+   ],
+   "output": [
+    25570,
+    17746,
+    42748,
+    17667,
+    50256
+   ]
+  },
+  {
+   "id": "u2",
+   "arrival_step": 5,
+   "prompt": [
+    24196,
+    38927,
+    31643,
+    543,
+    5783,
+    40108,
+    35521,
+    26522,
+    17619,
+    35429,
+    3000,
+    43204,
+    38323,
+    8934,
+    38066,
+    45803,
+    7987,
+    20701,
+    48345,
+    4975,
+    31363,
+    21811
+   ],
+   "output": [
+    14206,
+    6035,
+    50256
+   ]
+  }
+ ],
+ "max_steps": 400
+}

@@ -1,0 +1,3590 @@
+{
+ "comment": "Layout classes of the Dynamo vLLM prefill/decode runs whose pools are free of data-parallel attention. See sweep.py.",
+ "layouts": [
+  {
+   "id": "minimaxm2.5-b200-fp4-1k1k-p1-d4e",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "b200",
+   "fabric": "ib-400g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "balanced",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": true
+   },
+   "shapes": [
+    "1P1D",
+    "1P2D",
+    "1P3D",
+    "2P3D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "1P3D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "2P3D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 4,
+   "points": 14,
+   "scored_points": 14
+  },
+  {
+   "id": "minimaxm2.5-gb200-fp4-1k1k-p1-d4e",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "gb200-nvl72",
+   "fabric": "ib-400g",
+   "gpus_per_node": 4,
+   "engine_version": "0.33.0",
+   "workload": "balanced",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": true
+   },
+   "shapes": [
+    "1P1D",
+    "1P2D",
+    "1P3D",
+    "2P3D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "1P3D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "2P3D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 4,
+   "points": 14,
+   "scored_points": 14
+  },
+  {
+   "id": "minimaxm2.5-b300-fp8-1k1k-p1-d4",
+   "model": "minimax-m2.5",
+   "hardware": "b300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "balanced",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "1P1D",
+    "1P2D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 2,
+   "points": 10,
+   "scored_points": 10
+  },
+  {
+   "id": "minimaxm2.5-gb300-fp8-1k1k-p1-d4",
+   "model": "minimax-m2.5",
+   "hardware": "gb300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 4,
+   "engine_version": "0.33.0",
+   "workload": "balanced",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "1P1D",
+    "1P2D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 2,
+   "points": 10,
+   "scored_points": 10
+  },
+  {
+   "id": "minimaxm2.5-b300-fp8-8k1k-p1-d4e",
+   "model": "minimax-m2.5",
+   "hardware": "b300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": true
+   },
+   "shapes": [
+    "1P1D",
+    "2P1D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "2P1D": {
+     "prefill": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 2,
+   "points": 9,
+   "scored_points": 9
+  },
+  {
+   "id": "minimaxm2.5-gb300-fp8-8k1k-p1-d4e",
+   "model": "minimax-m2.5",
+   "hardware": "gb300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 4,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": true
+   },
+   "shapes": [
+    "1P1D",
+    "2P1D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "2P1D": {
+     "prefill": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 2,
+   "points": 9,
+   "scored_points": 9
+  },
+  {
+   "id": "minimaxm3-b300-fp4-8k1k-p1-d4",
+   "model": "minimax-m3-nvfp4",
+   "hardware": "b300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "1P1D",
+    "2P1D",
+    "3P1D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 8192,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "block_size": 128,
+       "stream_interval": 32,
+       "compilation_config": {
+        "cudagraph_mode": "NONE"
+       },
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [
+       "attention_config"
+      ],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_cudagraph_capture_size",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_seqs": 512,
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "block_size": 128,
+       "max_cudagraph_capture_size": 4096,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [
+       "attention_config"
+      ],
+      "stated_by_no_recipe": [
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend"
+      ]
+     }
+    },
+    "2P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 8192,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "block_size": 128,
+       "stream_interval": 32,
+       "compilation_config": {
+        "cudagraph_mode": "NONE"
+       },
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [
+       "attention_config"
+      ],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_cudagraph_capture_size",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_seqs": 512,
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "block_size": 128,
+       "max_cudagraph_capture_size": 4096,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [
+       "attention_config"
+      ],
+      "stated_by_no_recipe": [
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend"
+      ]
+     }
+    },
+    "3P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 8192,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "block_size": 128,
+       "stream_interval": 32,
+       "compilation_config": {
+        "cudagraph_mode": "NONE"
+       },
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [
+       "attention_config"
+      ],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_cudagraph_capture_size",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_seqs": 512,
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "block_size": 128,
+       "max_cudagraph_capture_size": 4096,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [
+       "attention_config"
+      ],
+      "stated_by_no_recipe": [
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend"
+      ]
+     }
+    }
+   },
+   "topologies": 3,
+   "points": 8,
+   "scored_points": 8
+  },
+  {
+   "id": "minimaxm2.5-gb300-fp4-1k1k-p1-d4e",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "gb300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 4,
+   "engine_version": "0.33.0",
+   "workload": "balanced",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": true
+   },
+   "shapes": [
+    "1P1D",
+    "1P3D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "1P3D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 2,
+   "points": 8,
+   "scored_points": 8
+  },
+  {
+   "id": "minimaxm2.5-b300-fp4-1k1k-p1-d4e",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "b300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "balanced",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": true
+   },
+   "shapes": [
+    "1P1D",
+    "1P3D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "1P3D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 2,
+   "points": 7,
+   "scored_points": 7
+  },
+  {
+   "id": "minimaxm2.5-gb300-fp4-1k1k-p1-d4",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "gb300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 4,
+   "engine_version": "0.33.0",
+   "workload": "balanced",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "1P1D",
+    "1P2D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 2,
+   "points": 7,
+   "scored_points": 7
+  },
+  {
+   "id": "minimaxm2.5-b200-fp4-1k1k-p1-d4",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "b200",
+   "fabric": "ib-400g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "balanced",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "1P1D",
+    "1P2D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 2,
+   "points": 6,
+   "scored_points": 6
+  },
+  {
+   "id": "minimaxm2.5-b300-fp4-8k1k-p1-d4e",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "b300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": true
+   },
+   "shapes": [
+    "1P1D",
+    "2P1D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "2P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 2,
+   "points": 6,
+   "scored_points": 6
+  },
+  {
+   "id": "minimaxm2.5-gb200-fp4-1k1k-p1-d4",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "gb200-nvl72",
+   "fabric": "ib-400g",
+   "gpus_per_node": 4,
+   "engine_version": "0.33.0",
+   "workload": "balanced",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "1P1D",
+    "1P2D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 2,
+   "points": 6,
+   "scored_points": 6
+  },
+  {
+   "id": "minimaxm2.5-gb300-fp4-8k1k-p1-d4e",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "gb300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 4,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": true
+   },
+   "shapes": [
+    "1P1D",
+    "2P1D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "2P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 2,
+   "points": 6,
+   "scored_points": 6
+  },
+  {
+   "id": "kimik2.5-gb300-fp4-1k1k-p4e-d4",
+   "model": "kimi-k2.5-nvfp4",
+   "hardware": "gb300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 4,
+   "engine_version": "0.33.0",
+   "workload": "balanced",
+   "prefill": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": true
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "1P7D"
+   ],
+   "engine_by_shape": {
+    "1P7D": {
+     "prefill": {
+      "set": {
+       "max_num_seqs": 1024,
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 3072,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "block_size": 64,
+       "compilation_config": {
+        "cudagraph_mode": "NONE"
+       },
+       "enable_chunked_prefill": false,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [
+       "attention_backend",
+       "attention_config",
+       "compilation_config.custom_ops",
+       "compilation_config.pass_config"
+      ],
+      "stated_by_no_recipe": [
+       "max_cudagraph_capture_size",
+       "stream_interval",
+       "async_scheduling",
+       "no_async_scheduling"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_seqs": 1024,
+       "max_num_batched_tokens": 10240,
+       "max_model_len": 3072,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "block_size": 64,
+       "max_cudagraph_capture_size": 1024,
+       "stream_interval": 50,
+       "compilation_config": {
+        "cudagraph_mode": "FULL_DECODE_ONLY"
+       },
+       "async_scheduling": true,
+       "enable_chunked_prefill": false,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [
+       "attention_backend",
+       "compilation_config.custom_ops",
+       "compilation_config.pass_config"
+      ],
+      "stated_by_no_recipe": [
+       "enforce_eager",
+       "no_async_scheduling",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 5,
+   "scored_points": 5
+  },
+  {
+   "id": "minimaxm2.5-b200-fp4-8k1k-p1-d4e",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "b200",
+   "fabric": "ib-400g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": true
+   },
+   "shapes": [
+    "1P1D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 5,
+   "scored_points": 5
+  },
+  {
+   "id": "minimaxm2.5-gb200-fp4-8k1k-p1-d4e",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "gb200-nvl72",
+   "fabric": "ib-400g",
+   "gpus_per_node": 4,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": true
+   },
+   "shapes": [
+    "1P1D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 5,
+   "scored_points": 5
+  },
+  {
+   "id": "minimaxm3-b300-fp4-8k1k-p1-d8",
+   "model": "minimax-m3-nvfp4",
+   "hardware": "b300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 8,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "1P1D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 8192,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "block_size": 128,
+       "stream_interval": 32,
+       "compilation_config": {
+        "cudagraph_mode": "NONE"
+       },
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [
+       "attention_config"
+      ],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_cudagraph_capture_size",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_seqs": 256,
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "block_size": 128,
+       "max_cudagraph_capture_size": 256,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [
+       "attention_config"
+      ],
+      "stated_by_no_recipe": [
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 5,
+   "scored_points": 5
+  },
+  {
+   "id": "minimaxm2.5-b300-fp4-1k1k-p1-d4",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "b300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "balanced",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "1P1D",
+    "1P2D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 2,
+   "points": 4,
+   "scored_points": 4
+  },
+  {
+   "id": "minimaxm2.5-b300-fp4-8k1k-p1-d4",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "b300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "1P1D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 4,
+   "scored_points": 4
+  },
+  {
+   "id": "minimaxm2.5-gb300-fp4-8k1k-p1-d4",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "gb300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 4,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "1P1D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 4,
+   "scored_points": 4
+  },
+  {
+   "id": "minimaxm2.5-b200-fp4-8k1k-p1-d4",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "b200",
+   "fabric": "ib-400g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "1P1D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 3,
+   "scored_points": 3
+  },
+  {
+   "id": "minimaxm2.5-b300-fp8-1k1k-p1-d4e",
+   "model": "minimax-m2.5",
+   "hardware": "b300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "balanced",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": true
+   },
+   "shapes": [
+    "1P2D"
+   ],
+   "engine_by_shape": {
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 3,
+   "scored_points": 3
+  },
+  {
+   "id": "minimaxm2.5-gb200-fp4-8k1k-p1-d4",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "gb200-nvl72",
+   "fabric": "ib-400g",
+   "gpus_per_node": 4,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "1P1D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 3,
+   "scored_points": 3
+  },
+  {
+   "id": "minimaxm2.5-gb300-fp8-1k1k-p1-d4e",
+   "model": "minimax-m2.5",
+   "hardware": "gb300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 4,
+   "engine_version": "0.33.0",
+   "workload": "balanced",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": true
+   },
+   "shapes": [
+    "1P2D"
+   ],
+   "engine_by_shape": {
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 3,
+   "scored_points": 3
+  },
+  {
+   "id": "minimaxm2.5-b300-fp4-1k1k-p1-d8",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "b300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "balanced",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 8,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "1P1D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 1,
+   "scored_points": 1
+  },
+  {
+   "id": "minimaxm2.5-b300-fp4-8k1k-p1-d8",
+   "model": "minimax-m2.5-nvfp4",
+   "hardware": "b300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 8,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "1P1D"
+   ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "gpu_memory_utilization",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "max_cudagraph_capture_size": 2048,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "block_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 1,
+   "scored_points": 1
+  },
+  {
+   "id": "minimaxm2.5-b300-fp8-8k1k-p1-d2",
+   "model": "minimax-m2.5",
+   "hardware": "b300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 2,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "2P1D"
+   ],
+   "engine_by_shape": {
+    "2P1D": {
+     "prefill": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 1,
+   "scored_points": 1
+  },
+  {
+   "id": "minimaxm2.5-b300-fp8-8k1k-p1-d4",
+   "model": "minimax-m2.5",
+   "hardware": "b300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "3P1D"
+   ],
+   "engine_by_shape": {
+    "3P1D": {
+     "prefill": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 1,
+   "scored_points": 1
+  },
+  {
+   "id": "minimaxm2.5-gb300-fp8-8k1k-p1-d2",
+   "model": "minimax-m2.5",
+   "hardware": "gb300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 4,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 2,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "2P1D"
+   ],
+   "engine_by_shape": {
+    "2P1D": {
+     "prefill": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 1,
+   "scored_points": 1
+  },
+  {
+   "id": "minimaxm2.5-gb300-fp8-8k1k-p1-d4",
+   "model": "minimax-m2.5",
+   "hardware": "gb300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 4,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "shapes": [
+    "3P1D"
+   ],
+   "engine_by_shape": {
+    "3P1D": {
+     "prefill": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "kv_cache_dtype": "fp8",
+       "stream_interval": 32,
+       "enable_prefix_caching": false,
+       "max_model_len": 196608
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization",
+       "block_size",
+       "max_cudagraph_capture_size",
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 1,
+   "scored_points": 1
+  },
+  {
+   "id": "minimaxm3-b300-fp4-8k1k-p1-d4e",
+   "model": "minimax-m3-nvfp4",
+   "hardware": "b300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 8,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 1,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": true
+   },
+   "shapes": [
+    "4P1D"
+   ],
+   "engine_by_shape": {
+    "4P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 8192,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "block_size": 128,
+       "stream_interval": 32,
+       "compilation_config": {
+        "cudagraph_mode": "NONE"
+       },
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [
+       "attention_config"
+      ],
+      "stated_by_no_recipe": [
+       "max_num_seqs",
+       "max_cudagraph_capture_size",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_seqs": 1024,
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "block_size": 128,
+       "max_cudagraph_capture_size": 4096,
+       "stream_interval": 32,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [
+       "attention_config"
+      ],
+      "stated_by_no_recipe": [
+       "enforce_eager",
+       "compilation_config",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 1,
+   "scored_points": 1
+  },
+  {
+   "id": "dsv4-gb300-fp4-8k1k-p4e-d4",
+   "model": "deepseek-v4-pro-nvfp4",
+   "hardware": "gb300",
+   "fabric": "ib-800g",
+   "gpus_per_node": 4,
+   "engine_version": "0.33.0",
+   "workload": "long-prompt",
+   "prefill": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": true
+   },
+   "decode": {
+    "tp": 4,
+    "pp": 1,
+    "dp": 1,
+    "expert_parallel": false
+   },
+   "block_size": 256,
+   "shapes": [
+    "1P9D"
+   ],
+   "engine_by_shape": {
+    "1P9D": {
+     "prefill": {
+      "set": {
+       "max_num_seqs": 256,
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 16384,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "block_size": 256,
+       "compilation_config": {
+        "cudagraph_mode": "NONE"
+       },
+       "async_scheduling": false,
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [],
+      "stated_by_no_recipe": [
+       "max_cudagraph_capture_size",
+       "stream_interval",
+       "compilation_config",
+       "async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_seqs": 512,
+       "max_num_batched_tokens": 512,
+       "max_model_len": 16384,
+       "gpu_memory_utilization": 0.9,
+       "kv_cache_dtype": "fp8",
+       "block_size": 256,
+       "max_cudagraph_capture_size": 512,
+       "stream_interval": 50,
+       "compilation_config": {
+        "cudagraph_mode": "FULL_DECODE_ONLY"
+       },
+       "enable_prefix_caching": false
+      },
+      "stated_but_not_modelled": [
+       "compilation_config.mode"
+      ],
+      "stated_by_no_recipe": [
+       "enforce_eager",
+       "async_scheduling",
+       "no_async_scheduling",
+       "no_enable_chunked_prefill",
+       "attention_backend",
+       "attention_config"
+      ]
+     }
+    }
+   },
+   "topologies": 1,
+   "points": 1,
+   "scored_points": 0
+  }
+ ]
+}

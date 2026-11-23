@@ -11,11 +11,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts/metrics"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
-	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
-	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/metrics"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
+	schemaworkload "github.com/inference-sim/inference-sim/substrate/contracts/spec/workload"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -31,7 +31,7 @@ type resultInputs struct {
 	Options []result.Option
 	// Files are the small input files the run read, whole, sorted by path (resultFiles).
 	Files []result.File
-	// Packaging is the cluster's packaging the kernel resolved (blis-substrate
+	// Packaging is the cluster's packaging the kernel resolved (the substrate
 	// scenario.Cluster.Packaging), recorded when a value came from the chip's catalog entry
 	// rather than the scenario (SIM-10). Nil when the scenario states every value, which
 	// input.scenario then records as stated.
@@ -107,6 +107,7 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 		Data:            in.Data,
 		SelectedEntries: in.Selected,
 		Revisions:       in.Revisions,
+		Estimate:        result.Estimate{Replications: 1, NoInterval: result.NoIntervalStatement},
 		Requests:        out.Ledger,
 		RequestRows:     out.Rows,
 		Reports:         result.Reports{Engine: out.Engine, Router: out.Router, Kernel: out.Kernel},

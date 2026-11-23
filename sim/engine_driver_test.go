@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/env"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/env"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
@@ -258,9 +258,9 @@ func TestEngineDriver_SameInstantArrivalsShareOneBatch(t *testing.T) {
 }
 
 // Each ITL entry is the step's advance since the request's last emitting step plus the output
-// processing of the tokens it emits, as the compatibility engine records it (currStepAdvance +
-// NumNewTokens x OutputTokenProcessingTime, blis-vllm compat/engine/engine.go:996); TTFT carries
-// the first token's own output processing.
+// processing of the tokens it emits, as the driver records it (sim/engine_driver.go: the step's
+// advance + NumNewTokens x OutputTokenProcessingTime); TTFT carries the first token's own output
+// processing.
 func TestEngineDriver_ITLIncludesOutputProcessingAsTheCompatibilityEngine(t *testing.T) {
 	eng, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 4, TokenBudget: 64, StepBaseUs: 100, StepPerTokenUs: 1})
 	if err != nil {
@@ -602,7 +602,7 @@ func TestEngineDriver_PipelinedStepWaitsOnTheSampledStepPPBack(t *testing.T) {
 }
 
 // ringStages is unevenStages through an engine that counts its runner steps (RunnerSteps), as
-// blis-vllm core/vllm does: steps is set by the test, one per schedule.
+// the vLLM engine core/vllm does: steps is set by the test, one per schedule.
 type ringStages struct {
 	*unevenStages
 	steps int

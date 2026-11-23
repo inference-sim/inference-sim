@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/fields"
 )
 
 // fieldsFixture is a scenario of the engine this build registers.
@@ -107,7 +107,7 @@ func TestFieldsCommand_TheComparisonFindsAnAddedAMissingAndAnAlteredField(t *tes
 	missing.Fields = missing.Fields[1:]
 	added := clone()
 	added.Fields = append(added.Fields, fields.Field{Name: "ZZZ_NOT_THE_ENGINES", Source: fields.SourceEnv,
-		Status: fields.StatusNotModelled, Evidence: fields.Evidence{Issue: "inference-sim/blis-vllm#53"},
+		Status: fields.StatusNotModelled, Evidence: fields.Evidence{Issue: "inference-sim/inference-sim#2611"},
 		Estimation: fields.Estimation{Rule: "none"}})
 	altered := clone()
 	altered.Fields[2].Status = fields.StatusProvenInert

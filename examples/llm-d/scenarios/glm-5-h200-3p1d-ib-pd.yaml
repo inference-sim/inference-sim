@@ -2,7 +2,7 @@
 # disaggregated.
 kind: Scenario
 name: glm-5-h200-3p1d-ib
-engine: {kind: vllm, version: "0.33.0"}
+engine: {kind: vllm}
 
 model: glm-5
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]

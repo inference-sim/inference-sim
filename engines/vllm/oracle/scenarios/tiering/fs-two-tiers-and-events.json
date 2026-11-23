@@ -1,0 +1,116 @@
+{
+ "description": "Two fs tiers over different directories, the second REMOTE with KV events on: each stored chunk is cascaded to both; a chunk only the second tier holds is promoted from it, and the second tier reports a BlockStored event for each stored job.",
+ "spec": {
+  "name": "TieringOffloadingSpec",
+  "cpu_bytes_to_use": 32768,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1,
+  "extra": {
+   "secondary_tiers": [
+    {
+     "type": "fs",
+     "root_dir": "@root/a",
+     "n_read_threads": 1,
+     "n_write_threads": 0
+    },
+    {
+     "type": "fs",
+     "root_dir": "@root/b",
+     "n_read_threads": 1,
+     "n_write_threads": 0,
+     "locality": "REMOTE",
+     "enable_kv_events": true
+    }
+   ]
+  },
+  "enable_kv_cache_events": true
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "a"
+   ]
+  },
+  {
+   "m": "take_events"
+  },
+  {
+   "m": "rm",
+   "tier": 0,
+   "key": "k1"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "k3",
+    "k4"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "k3",
+    "k4"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "get_load_source",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "take_events"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  }
+ ]
+}

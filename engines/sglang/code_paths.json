@@ -1,0 +1,117 @@
+{
+  "kind": "CodePathTable",
+  "engine": {
+    "kind": "sglang",
+    "version": "0.5.23",
+    "commit": "297e54fd105e974cdf401e5b4d20253a22c16f90"
+  },
+  "paths": [
+    {
+      "path": "host",
+      "code_id": "6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096",
+      "functions": [
+        {
+          "id": "python/sglang/srt/managers/detokenizer_manager.py::DetokenizerManager._decode_batch_token_id_output",
+          "source": "python/sglang/srt/managers/detokenizer_manager.py:310@297e54fd",
+          "hash": "644dc0413b4056ec4425072b676008c7267e5c906539aad4ae09650247917a98"
+        },
+        {
+          "id": "python/sglang/srt/managers/detokenizer_manager.py::DetokenizerManager.handle_batch_token_id_out",
+          "source": "python/sglang/srt/managers/detokenizer_manager.py:450@297e54fd",
+          "hash": "e2759ddb4cd78dedd17a91eb607c0e9282dcf93ccff876130668bae5bfb4bf87"
+        },
+        {
+          "id": "python/sglang/srt/managers/schedule_batch.py::Req._check_token_based_finish",
+          "source": "python/sglang/srt/managers/schedule_batch.py:1856@297e54fd",
+          "hash": "c18c4a1e2b57dd4e4aaa433d5f72709437f1af3adfd188e177343e7bc9e507a1"
+        },
+        {
+          "id": "python/sglang/srt/managers/scheduler.py::Scheduler.get_new_batch_prefill",
+          "source": "python/sglang/srt/managers/scheduler.py:4052@297e54fd",
+          "hash": "2fd69ff422a28f726a3fb2a270ff1c3f923641b31f04463eae8ce6e58c5b6b42"
+        },
+        {
+          "id": "python/sglang/srt/managers/scheduler.py::Scheduler.get_next_batch_to_run",
+          "source": "python/sglang/srt/managers/scheduler.py:3894@297e54fd",
+          "hash": "8a4c4c5f3f3161a9087d65e3804f68fdcdda5d7d262b4b4996c8d124143b094c"
+        },
+        {
+          "id": "python/sglang/srt/managers/scheduler.py::Scheduler.handle_generate_request",
+          "source": "python/sglang/srt/managers/scheduler.py:2943@297e54fd",
+          "hash": "37f40c687ec3bace8feb86af6a1b849bde635eeb66f61c0d0ebbb131e23f5ff1"
+        },
+        {
+          "id": "python/sglang/srt/managers/scheduler_components/batch_result_processor.py::SchedulerBatchResultProcessor.process_batch_result_decode",
+          "source": "python/sglang/srt/managers/scheduler_components/batch_result_processor.py:952@297e54fd",
+          "hash": "1d201aa724f14cd0c0937b5ab06b5e8fbc719485842b66839fa08e8d6c7c03b4"
+        },
+        {
+          "id": "python/sglang/srt/managers/scheduler_components/batch_result_processor.py::SchedulerBatchResultProcessor.process_batch_result_prefill",
+          "source": "python/sglang/srt/managers/scheduler_components/batch_result_processor.py:258@297e54fd",
+          "hash": "59591245e8d4f95f69a019235ac4ef4d8b188fb2f9c6ee0aab69bd6aebc74080"
+        },
+        {
+          "id": "python/sglang/srt/managers/scheduler_components/output_streamer.py::SchedulerOutputStreamer.stream_output",
+          "source": "python/sglang/srt/managers/scheduler_components/output_streamer.py:135@297e54fd",
+          "hash": "434552ebe9827e032fc174ad4182c34caff093d49aa26254e8f250392ade44bf"
+        },
+        {
+          "id": "python/sglang/srt/managers/tokenizer_manager.py::TokenizerManager._create_tokenized_object",
+          "source": "python/sglang/srt/managers/tokenizer_manager.py:1533@297e54fd",
+          "hash": "14dcc524c3632503dc931a70834e26a05a2a1a4074340b17aef90fa58c15d04b"
+        },
+        {
+          "id": "python/sglang/srt/managers/tokenizer_manager.py::TokenizerManager._handle_batch_output",
+          "source": "python/sglang/srt/managers/tokenizer_manager.py:2480@297e54fd",
+          "hash": "f874ea7f7d460e1be5a202b8bc43beb890839316fc6a7dafe75274f5056189e8"
+        },
+        {
+          "id": "python/sglang/srt/managers/tokenizer_manager.py::TokenizerManager._tokenize_one_request",
+          "source": "python/sglang/srt/managers/tokenizer_manager.py:1096@297e54fd",
+          "hash": "e84c782c7679eec6c537ced07bf2e3a3912bc87b3c325a408b8b8b53ca3f62fc"
+        },
+        {
+          "id": "python/sglang/srt/mem_cache/common.py::release_kv_cache",
+          "source": "python/sglang/srt/mem_cache/common.py:400@297e54fd",
+          "hash": "d9d947a81353fda1b962e762f740519cd7b54738f594e7cc80c66704dfdae83c"
+        }
+      ]
+    },
+    {
+      "path": "graphs",
+      "code_id": "e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074",
+      "functions": [
+        {
+          "id": "python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py::DecodeCudaGraphRunner._copy_replay_inputs",
+          "source": "python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py:1908@297e54fd",
+          "hash": "3a4fe517ea7a724e4afca01e616cf72c83f81e2d2e3469b3d2422b241b1c3f63"
+        },
+        {
+          "id": "python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py::DecodeCudaGraphRunner.can_run_graph",
+          "source": "python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py:845@297e54fd",
+          "hash": "590684eb382f2871b16a07d594f26598aca542d3e475ac457045388f35b8665d"
+        },
+        {
+          "id": "python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py::DecodeCudaGraphRunner.execute",
+          "source": "python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py:1981@297e54fd",
+          "hash": "3c8e15138590f442fde11933e8b099acd5605581147bdf751cc285fa2ccc2c0d"
+        },
+        {
+          "id": "python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py::DecodeCudaGraphRunner.load_batch",
+          "source": "python/sglang/srt/model_executor/runner/decode_cuda_graph_runner.py:1521@297e54fd",
+          "hash": "b33d039029a61986f5f1fd1e7c9b16b202610be407511db72b3e04533e33a5d8"
+        },
+        {
+          "id": "python/sglang/srt/model_executor/runner/eager_runner.py::EagerRunner._execute_decode",
+          "source": "python/sglang/srt/model_executor/runner/eager_runner.py:242@297e54fd",
+          "hash": "bc99310572cfacc775aeb01e51b59dc1bc41cdb64f59db79ef010833356651d7"
+        },
+        {
+          "id": "python/sglang/srt/model_executor/runner/eager_runner.py::EagerRunner._execute_extend",
+          "source": "python/sglang/srt/model_executor/runner/eager_runner.py:275@297e54fd",
+          "hash": "8dcc4824002bfbc5bd1baf1cc896425f108410de9b85895f3506b44f494ae4d6"
+        }
+      ]
+    }
+  ]
+}

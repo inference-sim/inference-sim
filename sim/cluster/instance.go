@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -29,7 +29,7 @@ type InstanceSimulator struct {
 	onTransition func(*InstanceSimulator)
 	id           InstanceID
 	// drv is the instance's engine, driven through blis-schemas' engine.Engine contract: the
-	// engine its release builds (blis-vllm core/vllm for 0.32.0, compat/contract for 0.29/0.31).
+	// engine its release builds (engines/vllm/core/vllm for vLLM, engines/sglang for SGLang).
 	// nil only for an instance a test builds with no engine.
 	drv    *sim.EngineDriver
 	hasRun bool
@@ -66,6 +66,15 @@ func NewEngineInstance(id InstanceID, cfg sim.InstanceConfig, drv *sim.EngineDri
 // When NodePools are configured, this reflects the pool's gpu_type (authoritative).
 // When NodePools are absent, this reflects config.GPU (the CLI flag).
 func (i *InstanceSimulator) GPU() string { return i.gpu }
+
+// gpusHeld is the GPUs the instance occupies: those its node pool allocated to it, else its
+// tensor-parallel degree when it was not placed through a pool.
+func (i *InstanceSimulator) gpusHeld() int {
+	if len(i.allocatedGPUIDs) > 0 {
+		return len(i.allocatedGPUIDs)
+	}
+	return i.TPDegree
+}
 
 // Run executes the simulation to completion.
 // Delegates directly to wrapped Simulator.Run().

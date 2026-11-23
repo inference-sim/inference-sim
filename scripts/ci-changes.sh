@@ -5,7 +5,7 @@
 #
 # Prints one `name=true|false` line per job group, in a fixed order, ready for $GITHUB_OUTPUT.
 # --all (a push to main, a workflow_dispatch, a tag) turns every group on: the delivery loop
-# dispatches ci.yml and reads a green run as "the full suite passed" (docs/contributing/
+# dispatches ci.yml and reads a green run as "the full suite passed" (.github/agent-prompts/
 # automated-delivery.md), so a dispatch never filters.
 #
 # The rules are fail-closed. A path is matched against the classes below; a path that no class
@@ -24,11 +24,21 @@
 # repository guards scan every Go source). A path under .github/ is NOT "shared": only the
 # workflow files are read, by the scripts tests and actionlint.
 #
+# substrate/, engines/vllm and engines/sglang (the DC3 merge, design v4.2.0 section 3.4) are
+# classed by directory. Their non-test, non-testdata files are imported by the simulator, so a
+# change there runs the jobs that link them: substrate/ runs every group, engines/vllm every group
+# but `substrate` and `sglang`, engines/sglang every group but `substrate` and `vllm`. A test file
+# or a testdata/ file there turns on only its own group (plus lint and cmd for a Go file, which
+# scan every Go source). Any other path under engines/, even a .go file, is unclassified and runs
+# everything. `structure` is the cross-directory checks (import graph, path references, module
+# size): every change runs it, because it reads the whole tree.
+#
 # Groups: build lint core cluster kernel workload cmd root scripts llmd bytegate other stack
-#         selected actionlint claudemd
+#         selected actionlint claudemd structure substrate vllm sglang
 set -euo pipefail
 
-groups="build lint core cluster kernel workload cmd root scripts llmd bytegate other stack selected actionlint claudemd"
+base_groups="build lint core cluster kernel workload cmd root scripts llmd bytegate other stack selected actionlint claudemd"
+groups="$base_groups structure substrate vllm sglang"
 
 all=0
 if [ "${1:-}" = "--all" ]; then all=1; shift; fi
@@ -53,6 +63,7 @@ any_of() { local f=$1 d; shift; for d in "$@"; do "$f" "$d" && return 0; done; r
 classify() {
   local hit=0
   mark() { hit=1; local g; for g in "$@"; do on "$g"; done; }
+  on structure
 
   # -- Go packages: the job that tests the package, plus the jobs whose tests import it. ----------
   # Closures are from `go list -deps -test`; scripts/ci_changes_test.go re-derives them.
@@ -68,7 +79,7 @@ classify() {
   any_of own sim/llmd                       && mark llmd
   any_of own internal/bytegate              && mark bytegate
   any_of own internal/invariantscan internal/kernelfixtures internal/stack internal/stack/cmd/stackgen \
-         internal/stack/cmd/versions-doc internal/substratedata sim/check sim/saturation && mark other
+         internal/stack/cmd/versions-doc internal/substratedata internal/val8 sim/check sim/saturation && mark other
 
   # The stack job runs internal/stack's tests and its two generators.
   case "$p" in internal/stack/*) mark stack ;; esac
@@ -83,6 +94,7 @@ classify() {
   any_of dep sim/saturation                 && mark cmd root other bytegate
   any_of dep sim/internal/testutil          && mark core cluster llmd
   any_of dep internal/kernelfixtures        && mark cluster kernel
+  any_of dep internal/vllmtest              && mark cluster llmd
   any_of dep internal/stack                 && mark cmd root other bytegate
   any_of dep internal/substratedata         && mark cmd scripts bytegate other
   any_of dep cmd                            && mark root other bytegate
@@ -102,10 +114,33 @@ classify() {
     *.go)      mark lint cmd build ;;
   esac
 
+  # -- The merged modules: one directory each (design v4.2.0 section 3.4). ----------------------
+  case "$p" in
+    substrate/*)
+      mark substrate
+      case "$p" in
+        *_test.go|*/testdata/*) ;;
+        *) for g in $groups; do mark "$g"; done ;;
+      esac ;;
+    engines/vllm/*)
+      mark vllm
+      case "$p" in
+        *_test.go|*/testdata/*) ;;
+        *) for g in $base_groups structure; do mark "$g"; done ;;
+      esac ;;
+    engines/sglang/*)
+      mark sglang
+      case "$p" in
+        *_test.go|*/testdata/*) ;;
+        *) for g in $base_groups structure; do mark "$g"; done ;;
+      esac ;;
+    engines/*) return 1 ;;
+  esac
+
   # -- Modules and the stack record. -----------------------------------------------------------
   case "$p" in
     go.mod|go.sum)           for g in $groups; do mark "$g"; done ;;
-    stack.json|guides.lock)  mark cmd other stack selected root ;;
+    stack.json|guides.lock)  mark cmd other stack selected root bytegate ;;
   esac
 
   # -- Data trees (grep evidence + deletion run in the header). --------------------------------
@@ -132,6 +167,14 @@ classify() {
     scripts/*)                            mark scripts ;;
     tools/validation/*)                   mark cmd ;;
     tools/*)                              mark kernel ;;
+    # An engine's oracle and mutation workflows (and the actions only they use) are the engine's own
+    # tooling: they select that engine's jobs, and the actionlint and scripts jobs that read them.
+    .github/workflows/oracle-vllm.yml|.github/workflows/oracle-traces-vllm.yml|.github/workflows/mutation-vllm.yml|\
+    .github/actions/oracle-env-vllm/*|.github/actions/oracle-fuzz-vllm/*)
+                                          mark vllm scripts actionlint ;;
+    .github/workflows/oracle-sglang.yml|.github/workflows/mutation-sglang.yml|\
+    .github/actions/oracle-env-sglang/*)
+                                          mark sglang scripts actionlint ;;
     .github/workflows/*|.github/actionlint.yaml) mark scripts actionlint ;;
     # Read by the scripts package's tests (archon_workflow, dockerfile_go_version, pr_review).
     Dockerfile|k8s/*|.github/archon-trigger-anchor.patch|.archon-version)

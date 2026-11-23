@@ -3,7 +3,7 @@
 // times, the per-sequence and fixed memory, the KV budget and memory, the host costs, adaptive
 // verification, the kernel's Resolved() and Provenance(), the engine assumptions and sources,
 // and a refusal's text. It is the price-equality check of the engine-settings review set
-// (inference-sim/blis-substrate#58): build it against two module sets, run both over the same
+// (inference-sim/inference-sim#2479): build it against two module sets, run both over the same
 // scenario directories, and compare the outputs with -compare, which reports every field that
 // differs and exits 1 when a price, a figure, a refusal or a record differs. A provenance field
 // may be allowed to differ in order only (-order-only).
@@ -11,7 +11,7 @@
 // Every pool of every scenario is priced: pools are opened from 0 up until the scenario states
 // no more. A file that does not decode as a scenario is recorded once, with its error.
 //
-// It uses only blis-vllm compat/kernelmodel APIs that both the M2 release's substrate and engine
+// It uses only kernelmodel APIs (blis-vllm compat/kernelmodel in the M2 release, engines/vllm/core/kernelmodel here) that both the M2 release's substrate and engine
 // (the pins stack.json names on main before this review set) and this checkout's pins have, so the
 // same file builds in both.
 //
@@ -31,9 +31,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/load"
-	sim "github.com/inference-sim/blis-vllm/compat/engine"
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
+	"github.com/inference-sim/inference-sim/substrate/load"
 )
 
 type Price struct {

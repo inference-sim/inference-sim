@@ -9,10 +9,10 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
-	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
-	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/measurement"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/scenario"
+	schemaworkload "github.com/inference-sim/inference-sim/substrate/contracts/spec/workload"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -143,11 +143,11 @@ func emitRunResult(p postRun) {
 		GoodputTargets: p.goodputTargets,
 		Saturation:     satFinal,
 		Artifacts:      artifacts,
-		Engine:         result.Engine{Kind: scenarioEngine.Kind, Version: scenarioEngine.Version},
+		Engine:         result.Engine{Kind: scenarioEngine.Kind, Version: scenarioEngine.Version, Commit: scenarioEngine.Commit},
 		Revisions:      resultRevisions(),
 		Data:           resultData(data),
 	}
-	eng := engineSection(aggregated, sum, raw, series, prefixCacheRecords, acceptanceRecord, instanceSections(cs, sum), p.agentic)
+	eng := engineSection(aggregated, sum, raw, series, prefixCacheRecords, acceptanceRecord, poolAcceptanceRecords(), instanceSections(cs, sum), p.agentic)
 	addBusy(eng, cs, docs.Deployment, sum)
 	out := resultMetrics{
 		Aggregated:      aggregated,

@@ -1,0 +1,20 @@
+name: nemotron-3-super-120b-a12b-fp8
+# config.json states a ModelOpt FP8 checkpoint (quant_method modelopt, quant_algo FP8) and the
+# modules it leaves unquantized (`ignore`): every conv1d, every fc1/fc2_latent_proj, the eight
+# attention layers whole, lm_head and the MTP module. The deriver places each node's width from
+# that list at the module names vLLM builds. The shards' safetensors headers, read by range
+# request and not committed, state the same layout: F8_E4M3 Mamba in_proj and out_proj, routed
+# and shared experts, each with an F32 scale; BF16 attention, latent projections, router, head
+# and every MTP tensor. The card's licence is the NVIDIA Nemotron Open Model License, which is
+# not on the allow-list, so only the config's hash and the derived graph are committed (X12).
+source:
+  provider: huggingface
+  repo: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8
+  revision: 744b1880a37996c5d56bf454ae164dfd74d77c4e
+  retrieved: 2026-11-17
+licence:
+  id: LicenseRef-nvidia-nemotron-open-model-license
+  evidence: https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8/raw/744b1880a37996c5d56bf454ae164dfd74d77c4e/README.md
+config:
+  sha256: ff5d6d643b288d4149b0bf820ecb5fe87dd9bbc08b6b811241c57840e11e30e3
+drafters: [speculator]

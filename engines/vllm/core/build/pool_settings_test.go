@@ -1,0 +1,159 @@
+// Original to blis-vllm.
+
+package build
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
+)
+
+// A P/D pool's settings are its own kernel's and its own scenario pool's: the sizing the kernel
+// resolves (KV blocks, window, caps, prefix caching, the sequence state), the pool's
+// parallelism and hardware, its own long-prefill threshold and DP balancing mode, and its own
+// scheduling policy. Two pools that state different knobs get different settings.
+func TestPoolSettingsOf_AreThePoolsOwn(t *testing.T) {
+	repos := pdVariant(t,
+		"      long_prefill_token_threshold: 512\n      scheduling_policy: priority\n",
+		"      enable_prefix_caching: false\n")
+	hit := runconfig.KVPrefixHit{}
+	for _, c := range []struct {
+		role deployment.Role
+		want func(t *testing.T, ps PoolSettings)
+	}{
+		{deployment.RolePrefill, func(t *testing.T, ps PoolSettings) {
+			if ps.LongPrefillTokenThreshold != 512 || ps.Policy != (EnginePolicy{Scheduler: "priority-fcfs", Preemption: "priority"}) ||
+				ps.PrefixCachingDisabled {
+				t.Errorf("prefill: %+v; want its own threshold 512, priority policy, prefix caching on", ps)
+			}
+		}},
+		{deployment.RoleDecode, func(t *testing.T, ps PoolSettings) {
+			if ps.LongPrefillTokenThreshold != 0 || ps.Policy != (EnginePolicy{Scheduler: "fcfs", Preemption: "fcfs"}) ||
+				!ps.PrefixCachingDisabled {
+				t.Errorf("decode: %+v; want vLLM's defaults (no threshold, fcfs) and its own prefix caching off", ps)
+			}
+		}},
+	} {
+		m := openRole(t, repos, c.role)
+		ps, err := PoolSettingsOf("variant.yaml", m, 0, hit, EngineKnobFlags{})
+		if err != nil {
+			t.Fatalf("%s: %v", c.role, err)
+		}
+		s, err := m.Settings()
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := m.Deployment()
+		if ps.TP != d.TP || ps.GPU != d.Hardware || ps.TotalKVBlocks != s.KVBlocks || ps.MaxModelLen != int64(s.MaxModelLen) ||
+			ps.MaxNumSeqs != int64(s.MaxNumSeqs) || ps.MaxNumBatchedTokens != int64(s.MaxNumBatchedTokens) ||
+			ps.PrefixCachingDisabled != s.PrefixCachingDisabled || ps.DPLoadBalancing != string(m.DPLoadBalancing().Mode()) {
+			t.Errorf("%s: %+v does not carry the kernel's sizing and the pool's deployment (%+v, %+v)", c.role, ps, s, d)
+		}
+		if (ps.SequenceState.Hold == nil) != (s.SequenceState.Hold == nil) {
+			t.Errorf("%s: the sequence state was not carried", c.role)
+		}
+		c.want(t, ps)
+	}
+}
+
+// A pool whose model holds bounded per-sequence state (DeepSeek-V4.1's window rings and
+// compressor state) carries it, as the pool's kernel sizes it.
+func TestPoolSettingsOf_CarriesTheSequenceState(t *testing.T) {
+	m, err := kernelmodel.OpenRole("deepseek-v4.1-flash-h100-1p1d-dspark5.yaml", vendoredRepos(t), deployment.RoleDecode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := m.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.SequenceState.Hold == nil {
+		t.Fatal("non-vacuity: the fixture's decode pool holds no sequence state")
+	}
+	ps, err := PoolSettingsOf("deepseek-v4.1-flash-h100-1p1d-dspark5.yaml", m, 0, runconfig.KVPrefixHit{}, EngineKnobFlags{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ps.SequenceState.Hold == nil || ps.SequenceState.Gate == nil {
+		t.Errorf("the pool's sequence state was dropped: %+v", ps.SequenceState)
+	}
+	if len(ps.Notes) == 0 {
+		t.Error("a pool with a sequence state reports its fixed charge as a startup note")
+	}
+}
+
+// The LoRA reservation comes out of the pool's KV budget, and the run's balancing flag, when
+// given, sets the mode for every pool.
+func TestPoolSettingsOf_ReservationAndFlag(t *testing.T) {
+	repos := pdVariant(t, "", "")
+	m := openRole(t, repos, deployment.RoleDecode)
+	full, err := PoolSettingsOf("variant.yaml", m, 0, runconfig.KVPrefixHit{}, EngineKnobFlags{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := m.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reserve := 64 * s.KVBytesPerBlock
+	less, err := PoolSettingsOf("variant.yaml", m, reserve, runconfig.KVPrefixHit{}, EngineKnobFlags{DPLoadBalancing: "external", DPLoadBalancingFromFlag: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if less.TotalKVBlocks >= full.TotalKVBlocks {
+		t.Errorf("a %d-byte reservation left %d blocks of %d; want fewer", reserve, less.TotalKVBlocks, full.TotalKVBlocks)
+	}
+	if less.DPLoadBalancing != "external" || full.DPLoadBalancing != "internal" {
+		t.Errorf("modes %q (flag) and %q (none); want external and the pool's internal", less.DPLoadBalancing, full.DPLoadBalancing)
+	}
+	if _, err := PoolSettingsOf("variant.yaml", m, 1<<62, runconfig.KVPrefixHit{}, EngineKnobFlags{}); err == nil ||
+		!strings.Contains(err.Error(), "decode pool") {
+		t.Errorf("a reservation larger than the device: %v, want a refusal naming the decode pool", err)
+	}
+}
+
+// A model whose every KV layer is a sliding window has no growing-context page, and vLLM still
+// starts it: its pool is cut from the window groups' pages
+// (get_kv_cache_config_from_groups, vllm/v1/core/kv_cache_utils.py:1622-1628@5df63a72). A P/D
+// deployment of such a model opens both pools and sizes each one, as the colocated deployment
+// does (inference-sim#2323).
+func TestAnAllWindowModelOpensAndSizesBothPDPools(t *testing.T) {
+	repos := vendoredRepos(t)
+	dir := t.TempDir()
+	const pool = "    nodes: 1\n    parallel: {tp: 8, pp: 1, dp: 1, enable_expert_parallel: true}\n" +
+		"    engine: &e\n      block_size: 16\n      max_num_seqs: 64\n      max_num_batched_tokens: 8192\n" +
+		"      max_model_len: 262144\n      moe_backend: marlin\n      enable_prefix_caching: true\n" +
+		"      gpu_memory_utilization: 0.9\n      async_scheduling: true\n"
+	body := "kind: Scenario\nname: variant\nengine: {kind: vllm}\nmodel: muse-spark-open-dspark\n" +
+		"coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]\n" +
+		"cluster:\n  hardware: h100\n  fabric: roce-200g\n  nodes: 2\n  gpus_per_node: 8\n---\n" +
+		"kind: Deployment\nname: variant\npools:\n  - role: prefill\n" + pool +
+		"  - role: decode\n    nodes: 1\n    parallel: {tp: 8, pp: 1, dp: 1, enable_expert_parallel: true}\n    engine: *e\n" +
+		"pd_transfer:\n  connector: NixlConnector\n"
+	if err := os.WriteFile(filepath.Join(dir, "variant.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repos.Scenarios = dir
+	p, _, err := OpenPools("variant.yaml", repos, true, Topology{NumInstances: 2, Prefill: 1, Decode: 1})
+	if err != nil || p == nil {
+		t.Fatalf("an all-window P/D deployment: %+v, %v", p, err)
+	}
+	for _, m := range []*kernelmodel.Model{p.Prefill, p.Decode} {
+		if got := m.Kernel().SequenceVariableBytes(16); got != 0 {
+			t.Fatalf("non-vacuity: %s pool SequenceVariableBytes(16) = %d; the fixture must be all-window (0)", m.Role(), got)
+		}
+		ps, err := PoolSettingsOf("variant.yaml", m, 0, runconfig.KVPrefixHit{}, EngineKnobFlags{})
+		if err != nil {
+			t.Fatalf("%s pool: %v", m.Role(), err)
+		}
+		if ps.TotalKVBlocks <= 0 {
+			t.Errorf("%s pool sized %d KV blocks, want a positive pool", m.Role(), ps.TotalKVBlocks)
+		}
+	}
+}

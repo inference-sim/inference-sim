@@ -10,7 +10,7 @@
 #     --num-instances 3 --prefill-instances 2 --decode-instances 1 --rate 2 --num-requests 6
 kind: Scenario
 name: pd-p2p
-engine: {kind: vllm, version: "0.33.0"}
+engine: {kind: vllm}
 
 model: llama-3.1-70b-instruct
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric, cost-model-offload-tiers]

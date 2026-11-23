@@ -1,0 +1,18 @@
+kind: MeasurementSources
+sources:
+  - id: synthetic-fixture
+    title: Synthetic test fixture; every value is invented, none is measured
+    license: Apache-2.0
+    status: verified
+    permits:
+      - score
+      - derive_coefficients
+      - redistribute
+    evidence:
+      - url: https://github.com/inference-sim/blis-schemas/blob/main/LICENSE
+        quote: Apache License
+        location: LICENSE:1
+  - id: hud
+    title: PyTorch HUD
+    status: unverified
+    note: no terms found

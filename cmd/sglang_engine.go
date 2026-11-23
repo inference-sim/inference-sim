@@ -8,38 +8,47 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
-	"github.com/inference-sim/blis-substrate/contracts/vocab"
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/vocab"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
+	"github.com/inference-sim/inference-sim/substrate/load"
 	"gopkg.in/yaml.v3"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 
-	blissglang "github.com/inference-sim/blis-sglang"
-	sglanglower "github.com/inference-sim/blis-sglang/lower"
-	sglangrules "github.com/inference-sim/blis-sglang/rules"
-	"github.com/inference-sim/blis-sglang/sglangengine"
+	blissglang "github.com/inference-sim/inference-sim/engines/sglang"
+	sglanglower "github.com/inference-sim/inference-sim/engines/sglang/lower"
+	sglangrules "github.com/inference-sim/inference-sim/engines/sglang/rules"
+	"github.com/inference-sim/inference-sim/engines/sglang/sglangengine"
 )
 
-// The SGLang engine kind. blis-sglang builds the engine from a host's pool (sglangengine.Host); this
+// The SGLang engine kind. the SGLang engine builds the engine from a host's pool (sglangengine.Host); this
 // file is the host. It opens the scenario's pool through the latency kernel, with SGLang's rules
-// (blis-sglang/rules) and its lowering of the pool (blis-sglang/lower), and hands the engine the
+// (engines/sglang/rules) and its lowering of the pool (engines/sglang/lower), and hands the engine the
 // kernel and the facts SGLang's resolution reads of the chip and the model.
 
 // engineKindSGLang is the SGLang engine kind.
 const engineKindSGLang = "sglang"
 
 // sglangContextOverheadGiB is the device memory CUDA and the driver hold before a model loads, on
-// the H200: vLLM's start-up reads 137.64 GiB free of the 139.8 GiB the driver reports
-// (blis-substrate catalog/hardware/h200.yaml, _comment_memory). SGLang reads the same free figure
-// before it loads the weights (get_available_gpu_memory, tp_worker.py@297e54fd). It is measured on
-// the H200 only, so any other chip is refused until its figure is.
-const sglangContextOverheadGiB = 2.16
+// each chip: the total the driver reports less the free figure vLLM's start-up logs on that chip
+// (the substrate catalog/hardware/<chip>.yaml, _comment_memory, each with its InferenceX run). On
+// the H200 vLLM reads 137.64 GiB free of the 139.8 GiB, 2.16 GiB. SGLang reads the same free figure
+// before it loads the weights (get_available_gpu_memory, tp_worker.py@297e54fd), but no SGLang log
+// states it, so it is vLLM's measurement carried over. A chip with no entry is refused until its
+// figure is measured.
+var sglangContextOverheadGiB = map[string]float64{
+	"h100":        79.19 - 76.0,
+	"h200":        2.16,
+	"b200":        178.35 - 175.93,
+	"b300":        267.69 - 265.24,
+	"gb200-nvl72": 184.0 - 180.15,
+	"gb300":       276.62 - 273.04,
+}
 
 type sglangHost struct{ data *load.Data }
 
@@ -83,8 +92,9 @@ func (h sglangHost) Open(s engine.Spec) (sglangengine.Pool, error) {
 	if err != nil {
 		return sglangengine.Pool{}, err
 	}
-	if in.Chip.Name != "h200" {
-		return sglangengine.Pool{}, fmt.Errorf("sglang engine: the memory CUDA holds before a model loads is measured on the h200 only, not %q (inference-sim/blis-sglang#49)", in.Chip.Name)
+	overhead, ok := sglangContextOverheadGiB[in.Chip.Name]
+	if !ok {
+		return sglangengine.Pool{}, fmt.Errorf("sglang engine: the memory CUDA holds before a model loads is not measured on the chip %q (inference-sim/inference-sim#2344)", in.Chip.Name)
 	}
 	facts, err := sglanglower.ModelFactsOf(in.Model)
 	if err != nil {
@@ -101,7 +111,7 @@ func (h sglangHost) Open(s engine.Spec) (sglangengine.Pool, error) {
 	}
 	return sglangengine.Pool{
 		Kernel: k, Chip: chip, Model: facts, Args: args,
-		PreModelLoadGiB: in.Chip.MemoryGiB - sglangContextOverheadGiB,
+		PreModelLoadGiB: in.Chip.MemoryGiB - overhead,
 		ContextLen:      ctx, VocabSize: in.Model.Global.VocabSize,
 		// The catalog carries no tokenizer. The simulator assigns each request its output and ends
 		// it at the script's end (engine.Request.Output), so the end-of-sequence id is one no script
@@ -115,7 +125,7 @@ func newSGLangEngine(spec engine.Spec, data *load.Data) (engine.Engine, error) {
 	return sglangengine.FactoryFor(sglangHost{data: data}).New(spec)
 }
 
-// sglangEngineRelease is the SGLang release this binary runs, as blis-sglang records it.
+// sglangEngineRelease is the SGLang release this binary runs, as the SGLang engine records it.
 func sglangEngineRelease() (kind, version, commit string) {
 	return engineKindSGLang, blissglang.Upstream.Version, blissglang.Upstream.Commit
 }
@@ -123,6 +133,26 @@ func sglangEngineRelease() (kind, version, commit string) {
 // sglangRealScenario is the SGLang scenario file a run reads its engine from, set once the run's
 // host-side state has been adopted from the scenario's vLLM-form twin (adoptSGLangTwin).
 var sglangRealScenario string
+
+// sglangSpeculation is what the first pool of the run's SGLang scenario states of speculative
+// decoding, read by adoptSGLangTwin: the algorithm, and the draft width (speculative_num_draft_tokens
+// less the verified token, else speculative_num_steps; zero when the block states neither).
+var sglangSpeculation struct {
+	Algorithm string
+	Drafts    int
+}
+
+// sglangSpeculationRefusal is the refusal for an acceptance flag on an SGLang scenario that
+// speculates: the host resolves acceptance from the vLLM-form speculative block the twin
+// carries, which states no drafts, so it cannot resolve this scenario's (inference-sim/inference-sim#2355).
+func sglangSpeculationRefusal(flag string) error {
+	drafts := ""
+	if sglangSpeculation.Drafts > 0 {
+		drafts = fmt.Sprintf(", %d drafts", sglangSpeculation.Drafts)
+	}
+	return fmt.Errorf("--%s: scenario %q speculates through the SGLang engine (speculative_algorithm %s%s), and the host cannot yet resolve an SGLang scenario's acceptance (inference-sim/inference-sim#2355)",
+		flag, kernelScenario, sglangSpeculation.Algorithm, drafts)
+}
 
 // engineScenarioPath is the scenario file the engine factory reads: the SGLang scenario when the
 // run adopted one, else the run's scenario.
@@ -135,7 +165,7 @@ func engineScenarioPath() string {
 
 // adoptSGLangTwin points the run's host-side adoption at a twin of the SGLang scenario. The host
 // still takes a deployment's model, hardware, parallelism, the simulated KV store and the host
-// overheads from blis-vllm's adapter, which decodes only a vLLM engine block. The twin is the same
+// overheads from the vLLM engine's adapter, which decodes only a vLLM engine block. The twin is the same
 // scenario with engine {kind: vllm, version: 0.33.0} and an engine block holding what the adapter
 // requires, max_model_len (the SGLang block's context_length). The engine itself is built from the
 // SGLang scenario (engineScenarioPath), so SGLang's scheduler, KV pool and step pricing decide every
@@ -147,6 +177,7 @@ func adoptSGLangTwin() error {
 		return nil
 	}
 	real := filepath.Join(kernelScenarioDir, kernelScenario)
+	sglangSpeculation.Algorithm, sglangSpeculation.Drafts = "", 0
 	raw, err := os.ReadFile(real)
 	if err != nil {
 		return err
@@ -165,15 +196,18 @@ func adoptSGLangTwin() error {
 		}
 		switch doc["kind"] {
 		case "Scenario":
-			doc["engine"] = map[string]any{"kind": "vllm", "version": "0.33.0"}
+			doc["engine"] = map[string]any{"kind": "vllm"}
 		case "Deployment":
 			pools, _ := doc["pools"].([]any)
-			for _, p := range pools {
+			for i, p := range pools {
 				pm, _ := p.(map[string]any)
 				blk, _ := pm["engine"].(map[string]any)
+				if i == 0 {
+					recordSGLangSpeculation(blk)
+				}
 				ctx, ok := blk["context_length"]
 				if !ok {
-					return fmt.Errorf("scenario %s: the SGLang engine block must state context_length: the catalog graph carries no context window (inference-sim/blis-sglang#49)", real)
+					return fmt.Errorf("scenario %s: the SGLang engine block must state context_length: the catalog graph carries no context window (inference-sim/inference-sim#2344)", real)
 				}
 				// The adapter needs a block size for a sparse-MLA model; the twin states SGLang's
 				// page_size when the block does, else 64, the page SGLang resolves for DSA models.
@@ -228,6 +262,20 @@ func adoptSGLangTwin() error {
 	return nil
 }
 
+// recordSGLangSpeculation records the speculative settings of the first pool's SGLang engine block.
+func recordSGLangSpeculation(blk map[string]any) {
+	alg, _ := blk["speculative_algorithm"].(string)
+	if alg == "" {
+		return
+	}
+	sglangSpeculation.Algorithm = alg
+	if n, ok := blk["speculative_num_draft_tokens"].(int); ok && n > 1 {
+		sglangSpeculation.Drafts = n - 1
+	} else if n, ok := blk["speculative_num_steps"].(int); ok {
+		sglangSpeculation.Drafts = n
+	}
+}
+
 // sglangKernels are the kernels the SGLang engines of the run opened, by pool index. The Result's
 // resolutions and kernel provenance are read from them, so they state what SGLang's rules resolved
 // and what its kernel priced, not what the host's vLLM-form twin resolved.
@@ -270,22 +318,22 @@ func (s *sglangKernelSet) get(pool int) *latencykernel.Kernel {
 }
 
 // sglangTwinSubstitutions are the named gaps between an SGLang run and its scenario that remain
-// while the host adopts its side of the deployment through blis-vllm's adapter (adoptSGLangTwin).
+// while the host adopts its side of the deployment through the vLLM engine's adapter (adoptSGLangTwin).
 // They are stated in the Result beside the pool's kernel evidence, so a point that carries them is
 // not read as priced end to end by SGLang's host.
 func sglangTwinSubstitutions() []sim.Substitution {
 	return []sim.Substitution{
 		{Setting: "host_side_facts", Stated: "the SGLang engine block", Priced: "a vLLM-form twin of the scenario",
-			Reason: "the host takes the model, hardware, parallelism and request-bounding facts through blis-vllm's adapter, which decodes only a vLLM engine block; the engine itself, its KV pool and its step pricing are SGLang's (inference-sim/blis-sglang#49)"},
+			Reason: "the host takes the model, hardware, parallelism and request-bounding facts through the vLLM engine's adapter, which decodes only a vLLM engine block; the engine itself, its KV pool and its step pricing are SGLang's (inference-sim/inference-sim#2344)"},
 		{Setting: "host_overheads", Stated: "SGLang's API-server and detokenizer path", Priced: "the registry's engine-independent host-overhead coefficients",
-			Reason: "post_decode_fixed_overhead and output_token_processing_time are read from the registry's cost-model-host-overheads set, measured under vLLM's server; no SGLang-specific measurement exists (inference-sim/blis-sglang#49)"},
+			Reason: "post_decode_fixed_overhead and output_token_processing_time are read from the registry's cost-model-host-overheads set, measured under vLLM's server; no SGLang-specific measurement exists (inference-sim/inference-sim#2344)"},
 	}
 }
 
 // planSubstitutions are the overrides the engine's lowering stated, as machine-readable substitutions on the
-// point: a setting the engine resolved that the cost model prices as something else (blis-sglang's
+// point: a setting the engine resolved that the cost model prices as something else (the SGLang engine's
 // Lowered.Overrides, which the kernel reports in its resolution). A grade reads this list, not the
-// assumptions' text, as it does for blis-vllm's pool substitutions.
+// assumptions' text, as it does for the vLLM engine's pool substitutions.
 func planSubstitutions(overrides []kernel.Override) []sim.Substitution {
 	out := make([]sim.Substitution, 0, len(overrides))
 	for _, o := range overrides {
@@ -295,7 +343,7 @@ func planSubstitutions(overrides []kernel.Override) []sim.Substitution {
 }
 
 // sglangProvenance is a pool's kernel evidence as the Result records it, from the pool's SGLang
-// kernel (the same reading blis-vllm's adapter makes of its own).
+// kernel (the same reading the vLLM engine's adapter makes of its own).
 func sglangProvenance(k *latencykernel.Kernel) sim.KernelPoolProvenance {
 	p := sim.KernelPoolProvenance{
 		MethodCounts:        map[vocab.Method]int{},

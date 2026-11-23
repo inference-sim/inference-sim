@@ -1,0 +1,77 @@
+// Moved from inference-sim/sim/kernelmodel/prefill_backoff_test.go at ca532abca209af41425c007974a5f3ef336f5981.
+
+package kernelmodel
+
+import (
+	"testing"
+
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/core/engineconfig"
+)
+
+// NIXL's _prefill_backoff (nixl/base_scheduler.py:385-398 at v0.31.0): 1 for a Mamba-state
+// model, K-1 for multi-module MTP drafting K, and 0 for every other drafter -- DSpark included,
+// whose num_prefill_lookahead_tokens is 1 (config/vllm.py:657-678).
+func TestPrefillBackoffOf(t *testing.T) {
+	recurrent := &model.Graph{LayerKinds: []model.LayerKind{{Nodes: []model.Node{{Op: model.OpRecurrentUpdate}}}}}
+	attention := &model.Graph{LayerKinds: []model.LayerKind{{Nodes: []model.Node{{Op: model.OpGEMM}}}}}
+	drafter := func(layers int) *model.Graph {
+		g := *attention
+		g.Speculator = &model.Speculator{Stack: model.Stack{Pattern: []string{"draft"}, Repeat: layers}}
+		return &g
+	}
+	spec := func(method string, k int) *engineconfig.Speculative {
+		return &engineconfig.Speculative{Method: method, NumSpecTokens: k}
+	}
+	for _, tc := range []struct {
+		name string
+		g    *model.Graph
+		sp   *engineconfig.Speculative
+		want int
+	}{
+		{"attention, no drafter", attention, nil, 0},
+		{"recurrent state", recurrent, nil, 1},
+		{"DSpark K=5 over 3 draft layers", drafter(3), spec("dspark", 5), 0},
+		{"single-module MTP K=3", drafter(1), spec("mtp", 3), 0},
+		{"multi-module MTP K=3 over 3 layers", drafter(3), spec("mtp", 3), 2},
+		{"multi-module MTP K=2 over 3 layers", drafter(3), spec("mtp", 2), 1},
+		{"MTP K=1", drafter(3), spec("mtp", 1), 0},
+	} {
+		if got := prefillBackoffOf(tc.g, tc.sp); got != tc.want {
+			t.Errorf("%s: backoff %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+// An MTP drafter's layer count is its speculator stack's layers, which the engine's prefill
+// lookahead turns on (use_multi_module_mtp, vllm/config/speculative.py:1982-1988@5df63a72); a
+// pool that drafts otherwise, or a graph without a speculator, has none.
+func TestMTPDraftLayersOf(t *testing.T) {
+	attention := &model.Graph{LayerKinds: []model.LayerKind{{Nodes: []model.Node{{Op: model.OpGEMM}}}}}
+	drafter := func(pattern []string, repeat int) *model.Graph {
+		g := *attention
+		g.Speculator = &model.Speculator{Stack: model.Stack{Pattern: pattern, Repeat: repeat}}
+		return &g
+	}
+	spec := func(method string) *engineconfig.Speculative {
+		return &engineconfig.Speculative{Method: method, NumSpecTokens: 2}
+	}
+	for _, tc := range []struct {
+		name string
+		g    *model.Graph
+		sp   *engineconfig.Speculative
+		want int
+	}{
+		{"one MTP module", drafter([]string{"mtp"}, 1), spec("mtp"), 1},
+		{"three modules, repeated", drafter([]string{"mtp"}, 3), spec("mtp"), 3},
+		{"two kinds, twice", drafter([]string{"mtp_a", "mtp_b"}, 2), spec("mtp"), 4},
+		{"DSpark's stages", drafter([]string{"dspark_0", "dspark_1", "dspark_2"}, 1), spec("dspark"), 0},
+		{"no drafter", drafter([]string{"mtp"}, 3), nil, 0},
+		{"a graph without a speculator", attention, spec("mtp"), 0},
+	} {
+		if got := mtpDraftLayersOf(tc.g, tc.sp); got != tc.want {
+			t.Errorf("%s: %d layers, want %d", tc.name, got, tc.want)
+		}
+	}
+}

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 	"github.com/spf13/cobra"
 )
 
@@ -48,7 +48,7 @@ func runCatalogLeg(t *testing.T, leg, env string) (stdout, stderr string, err er
 
 // TestRunCmd_CatalogLocation is SIM-6 at the CLI boundary: `--catalog` and `BLIS_CATALOG` each
 // locate the catalog for a real `blis run`, and a run with neither reads the copy embedded in
-// the pinned blis-substrate, never a working-directory default, and records it as embedded.
+// the pinned the substrate, never a working-directory default, and records it as embedded.
 //
 // Each leg runs in a re-exec subprocess so the real cobra tree executes and a
 // logrus.Fatalf surfaces as exit status 1.

@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -16,12 +16,15 @@ import (
 //
 // With pools of unequal tensor parallelism the cause is vLLM's, which the engine reproduces and BLIS
 // does not override: the p2p tier's connect handshake compares the run config, and the run config
-// names the tensor-parallel size unless the KV layout is parallelism-agnostic. The layout is not
-// agnostic under the V2 model runner, or for an MLA or hybrid model, or with a sliding window or
-// several KV cache groups (offloading/config.py, is_parallelism_agnostic, vLLM v0.33.0). The peer
-// connect is then rejected ("config fingerprint mismatch") and vLLM goes on without the prefill
-// engine's KV, so no WRITE is priced because none is made. It is not a missing NIC cost: where the
-// handshake succeeds, the WRITE is priced over the NIC whatever the tensor parallelism of either pool.
+// names the tensor-parallel size unless the KV layout is parallelism-agnostic or replicated. At
+// vLLM 0.34.0+0fda86a35419 only kv_connector_extra_config.canonical_layout makes a layout agnostic
+// (not modelled), and only an MLA model on a tensor-parallel-only pool is replicated
+// (offloading/config.py). The peer connect is then rejected ("config fingerprint mismatch",
+// tiering/p2p/session/session.py _on_connect) and vLLM goes on without the prefill engine's KV, so no
+// WRITE is priced because none is made. vLLM does not refuse the deployment: it warns at start-up that
+// secondary-tier KV is only valid between engines of one parallel configuration (tiering/spec.py).
+// It is not a missing NIC cost: where the handshake succeeds, the WRITE is priced over the NIC
+// whatever the tensor parallelism of either pool.
 func warnP2PHandoffsWithoutWrite(pd *cluster.PDMetrics, dep *deployment.Deployment) {
 	if pd == nil || pd.P2PHandoffsWithoutWrite == 0 {
 		return
@@ -30,10 +33,10 @@ func warnP2PHandoffsWithoutWrite(pd *cluster.PDMetrics, dep *deployment.Deployme
 		"held those prompts already or recomputed them", pd.P2PHandoffsWithoutWrite, pd.P2PHandoffs)
 	if unequal, p, d := unequalP2PPools(dep); unequal {
 		msg += fmt.Sprintf(". The prefill pool is tp %d and the decode pool tp %d: vLLM's p2p connect handshake compares "+
-			"the tensor-parallel size unless the KV layout is parallelism-agnostic (not under the V2 model runner, nor "+
-			"for an MLA or hybrid model), and then rejects the peer (config fingerprint mismatch), so the decode "+
-			"engine recomputes the prompt. Give both pools one tensor parallelism, or a parallelism-agnostic layout "+
-			"(inference-sim#2214)", p, d)
+			"the tensor-parallel size unless the KV layout is parallelism-agnostic (canonical_layout, not modelled) or "+
+			"replicated (an MLA model on tensor-parallel-only pools), and otherwise rejects the peer (config fingerprint "+
+			"mismatch), so the decode engine recomputes the prompt. Give both pools one tensor parallelism, or use an MLA "+
+			"model on tensor-parallel-only pools (inference-sim#2214)", p, d)
 	}
 	logrus.Warn(msg)
 }

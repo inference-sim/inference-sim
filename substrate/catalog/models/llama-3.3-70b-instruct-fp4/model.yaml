@@ -1,0 +1,41 @@
+name: llama-3.3-70b-instruct-fp4
+# config.json states no quantization: ModelOpt states it in hf_quant_config.json, which vLLM
+# reads and the deriver does not. The layout is in each shard's safetensors header, which the
+# deriver reads (SUB-15): every linear in the decoder layers is
+# NVFP4 (U8 weights with an F8_E4M3 scale per 16 values), and the embedding, norms and lm_head
+# are BF16. The headers are fetched by range request and not
+# committed; each is pinned here by the SHA-256 of its header bytes. The card's licences are the
+# NVIDIA Open Model License and the Llama 3.3 Community License, neither on the allow-list, so
+# only the config's hash and the derived graph are committed (X12).
+source:
+  provider: huggingface
+  repo: nvidia/Llama-3.3-70B-Instruct-FP4
+  revision: f792b707002f2c613e0729c6b37bbcedc4efa94e
+  retrieved: 2026-11-16
+licence:
+  id: LicenseRef-nvidia-open-model-license
+  evidence: https://huggingface.co/nvidia/Llama-3.3-70B-Instruct-FP4/raw/f792b707002f2c613e0729c6b37bbcedc4efa94e/README.md
+config:
+  sha256: e7cbee89103cc488ef55c142c2a2a376ea00ce67b49c3ae9282d944107d97c33
+shard_index:
+  path: model.safetensors.index.json
+  sha256: ce9278eebd8b608480455059b7d5abcad9f2d0b594221faf0e1a5d8bc6728bff
+headers:
+  - path: model-00001-of-00009.safetensors
+    sha256: 317325b7fed26c5dd08ad4e513d7aa497a0e944c51cd802bfad8efb0bc755a38
+  - path: model-00002-of-00009.safetensors
+    sha256: 9b3957fa03814deb540d9bc9ed48f6ff13d83b51c4dcf9eefb2f0ebc3ba01162
+  - path: model-00003-of-00009.safetensors
+    sha256: ce7ff62bf08f98873533984682cf1482bb50e104533f1d345279adda1884f60b
+  - path: model-00004-of-00009.safetensors
+    sha256: 3a6768bfad4bf9fc632fce16c722d21b1889436b0ca1bdb8121075603460cbe8
+  - path: model-00005-of-00009.safetensors
+    sha256: 20e14f5fb6c8c4cf439b80dee48a8a512321a2536e55f2424ed1711c63e67686
+  - path: model-00006-of-00009.safetensors
+    sha256: 8fb961baf621fddd75fcefc3fd050b07f4662c2bc6ae27af7db8d5b0ae1700dc
+  - path: model-00007-of-00009.safetensors
+    sha256: c3b0e5d5642143400d4796a09eda7b85f6bbb2e11523625a6ab461d635b8b4a3
+  - path: model-00008-of-00009.safetensors
+    sha256: d588406261061b854dbde6da8f51a36adb0ecce531eac84a77f1e402f5b21073
+  - path: model-00009-of-00009.safetensors
+    sha256: 32ec870d42174e7db04d9de14021331b15831d51284f60599bb11098eba916c6

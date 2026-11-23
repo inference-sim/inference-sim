@@ -3,7 +3,7 @@ package workload
 import (
 	"fmt"
 
-	tracespec "github.com/inference-sim/blis-substrate/contracts/spec/trace"
+	tracespec "github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
 
 	"github.com/inference-sim/inference-sim/sim"
 )

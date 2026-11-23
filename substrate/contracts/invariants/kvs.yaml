@@ -1,0 +1,200 @@
+# The KVS invariants: blis-kvstore (BLIS target design §5).
+#
+# One record per invariant, in the format of design §13.1. This file is the source of truth:
+# the design's appendix, each repository's AGENTS.md section, the pull-request checklist and
+# the release plan's status table are generated from it (go run ./tools/invariants render).
+# Edit a record here, never a rendered copy. contracts/invariants/doc.go describes every field.
+- id: KVS-1
+  section: §5
+  statement: >-
+    Each store package models one release of its store. Its Upstream record names that release and its
+    commit, every ported file names that release, and no file names another.
+  scope:
+  - blis-kvstore
+  checks:
+  - repo: blis-kvstore
+    check: >-
+      The provenance test from contracts/harness, as for VLM-2
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 5
+- id: KVS-2
+  section: §5
+  statement: >-
+    The repository imports only packages under contracts/. No engine module imports it. No store
+    decision exists in another repository: the substrate and inference-sim hold none, and an engine
+    repository holds only the connector and its adapter (X2, X3).
+  scope:
+  - blis-kvstore
+  - blis-sglang
+  - blis-vllm
+  - inference-sim
+  checks:
+  - repo: blis-kvstore
+    check: >-
+      An import test: the repository imports only packages under contracts/
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      The import test of X3: no engine module imports blis-kvstore
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      The import test of X3: no engine module imports blis-kvstore
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      A test that every kvstore.Store the simulator builds comes from blis-kvstore
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      The provenance case of X3 that refuses a file derived from a store path other than the adapter
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      The provenance case of X3 that refuses a file derived from a store path other than the adapter
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 5
+- id: KVS-3
+  section: §5
+  statement: >-
+    A store package's decisions match its store's own code at the pinned release, call by call, at
+    kvstore.Store. The oracle runs the store's own code and every service it calls that makes a decision
+    BLIS models, such as the Mooncake store's master or LMCache's controller, in a locked environment.
+    It replaces only their clocks and the transport that carries bytes, each listed in its manifest
+    (FID-1, FID-2). Its traces are of the two kinds of §7.6: recorded traces are the calls that each
+    engine's oracle records into the store package (FID-12), and direct traces come from a driver this
+    repository writes. A recorded trace changes only as FID-3 allows.
+  scope:
+  - blis-kvstore
+  checks:
+  - repo: blis-kvstore
+    check: >-
+      The store oracle, with check_mocks.py, check_lock.py and check_goldens.py from contracts/harness
+    runs: pull_request
+    status: new
+  - repo: blis-kvstore
+    check: >-
+      A surface-list check that every store marked modelled names recorded and direct traces
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 5
+- id: KVS-4
+  section: §5
+  statement: >-
+    For each store, the release that each engine's oracle lock pins equals the release its store package
+    models. An engine's surface item that reaches a store records that release. While an engine's lock
+    pins another release, every item of that engine that reaches the store is refused by name, with a
+    message that names both releases, and the other engine's items are unaffected.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      A build check that imports both engines and blis-kvstore and compares each engine's surface.json
+      record with the store package's Upstream record
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      A refusal test with a mismatched release
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 5
+- id: KVS-5
+  section: §5
+  statement: >-
+    Each store package publishes a surface.json that lists every eviction policy, storage backend,
+    placement strategy and replication mode its pinned release can select, each with a status (X9). The
+    list's header names each file and function its generator parses at the pinned release.
+  scope:
+  - blis-kvstore
+  checks:
+  - repo: blis-kvstore
+    check: >-
+      A generator that parses the named sites, with an unlisted branch as its known-bad input
+    runs: pull_request
+    status: new
+  - repo: blis-kvstore
+    check: >-
+      A check that fails when a named site does not exist at the pinned release
+    runs: pull_request
+    status: new
+  - repo: blis-kvstore
+    check: >-
+      A check that every item has a status
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 5
+- id: KVS-6
+  section: §5
+  statement: >-
+    No clock reads and no goroutines. A lease or timeout runs on the simulated time passed in, and the
+    store's own next event is reported through Next (§6.5), as for VLM-5.
+  scope:
+  - blis-kvstore
+  checks:
+  - repo: blis-kvstore
+    check: >-
+      A syntax-tree test that the repository reads no clock and starts no goroutine
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 5
+- id: KVS-7
+  section: §5
+  statement: >-
+    Each store package's fields.json classifies every setting its pinned release reads, from the engine
+    process (configuration passed through the connector, environment variables, configuration files) and
+    from the stores block, under the rules of VLM-3. An engine's field list marks each setting the store
+    package reads, and cites that package's entry instead of classifying it twice.
+  scope:
+  - blis-kvstore
+  - inference-sim
+  checks:
+  - repo: blis-kvstore
+    check: >-
+      The field-list completeness check of VLM-3, run against the store's own configuration parsing at the
+      pinned release
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      A check that every setting an engine marks as read by a store package has an entry in that package's
+      list
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 5

@@ -1,0 +1,9 @@
+name: minimax-m2.5
+source:
+  provider: huggingface
+  repo: MiniMaxAI/MiniMax-M2.5
+  revision: f710177d938eff80b684d42c5aa84b382612f21f
+  retrieved: 2026-09-30
+licence:
+  id: LicenseRef-modified-mit
+  evidence: https://huggingface.co/MiniMaxAI/MiniMax-M2.5/raw/f710177d938eff80b684d42c5aa84b382612f21f/README.md

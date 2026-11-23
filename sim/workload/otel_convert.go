@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
 )
 
 // OTelConvertOptions configures OTel-trace → TraceRecord conversion.

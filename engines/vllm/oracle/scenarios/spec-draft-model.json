@@ -1,0 +1,143 @@
+{
+ "name": "spec-draft-model",
+ "description": "draft_model K=2 (one draft slot, lookahead K) with chunked prefill and a long-prefill cap.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 32,
+  "block_size": 4,
+  "num_blocks": 60,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 8,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "speculative": {
+   "method": "draft_model",
+   "num_speculative_tokens": 2,
+   "draft": "llama-eagle"
+  }
+ },
+ "requests": [
+  {
+   "id": "x",
+   "arrival_step": 0,
+   "prompt": [
+    16975,
+    19056,
+    12172,
+    15110,
+    9645,
+    14757,
+    12280,
+    8534,
+    4642,
+    34821,
+    14019,
+    19311,
+    1965,
+    28285,
+    8277,
+    39873,
+    946,
+    18078,
+    9615,
+    5568,
+    17200,
+    29562,
+    28624,
+    9143,
+    16824,
+    23314,
+    15338,
+    31902,
+    36026,
+    36972
+   ],
+   "output": [
+    28153,
+    23869,
+    28169,
+    20563,
+    7692,
+    22675,
+    38973,
+    17229,
+    29385,
+    36322
+   ],
+   "accepted": [
+    2,
+    2,
+    1,
+    0,
+    2,
+    1
+   ]
+  },
+  {
+   "id": "y",
+   "arrival_step": 0,
+   "prompt": [
+    8838,
+    28861,
+    29059,
+    35126,
+    11576,
+    19223,
+    13280,
+    11758,
+    34256
+   ],
+   "output": [
+    23348,
+    16602,
+    24322,
+    30112,
+    17155,
+    39682,
+    18360
+   ],
+   "accepted": [
+    0,
+    1,
+    2,
+    2
+   ]
+  },
+  {
+   "id": "z",
+   "arrival_step": 2,
+   "prompt": [
+    25937,
+    8571,
+    37828,
+    32169,
+    36047,
+    15431,
+    37052,
+    15446,
+    12745,
+    24016,
+    8592,
+    4803,
+    28206,
+    30386,
+    25539,
+    143,
+    27808
+   ],
+   "output": [
+    2832,
+    14740,
+    9290,
+    32639,
+    29172
+   ],
+   "accepted": [
+    1,
+    0,
+    2
+   ]
+  }
+ ],
+ "max_steps": 400
+}

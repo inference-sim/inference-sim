@@ -1,0 +1,33 @@
+{
+  "description": "The KV-transfer and KV-store clients SGLang v0.5.23 drives, each pinned to the version SGLang's own requirements or CI resolve, with the source of the pin. None is installed in the oracle's lock yet. A store package that SGLang calls runs as code under test at this pin, together with every service it calls that makes a decision BLIS models (design §7.3, FID-12); only its clock and the transport that carries its bytes may be replaced, each listed in oracle/mocks.json. It is never an outside service: that kind covers only a service that makes no decision BLIS models, such as the tokenizer. Until a client is installed in the lock at this pin, a scenario that selects it is refused by name, citing its issue. The Mooncake store client and LMCache are deferred to after M4 by the maintainer (inference-sim/inference-sim#2443, inference-sim/inference-sim#2444). oracle/check_peers.py fails when the lock pins one of these packages at any other version. Citations are sgl-project/sglang paths at 297e54fd105e974cdf401e5b4d20253a22c16f90.",
+  "peers": [
+    {
+      "name": "mooncake-transfer-engine-cuda13",
+      "import": "mooncake",
+      "version": "0.3.13.post1",
+      "status": "refused by name until after M4 (inference-sim/inference-sim#2443); when modelled, the store client and its master run as code under test, and only the transfer engine's byte path is replaced (transport)",
+      "source": "SGLang pins it: docker/Dockerfile:22 (ARG MOONCAKE_VERSION=0.3.13.post1), installed at docker/Dockerfile:470-472 as mooncake-transfer-engine-cuda13==${MOONCAKE_VERSION}; CI installs the same pin (scripts/ci/cuda/ci_install_dependency.sh:814-816)."
+    },
+    {
+      "name": "nixl",
+      "import": "nixl",
+      "version": "1.3.0",
+      "status": "refused by name until installed in the lock at this pin; it carries bytes, so the oracle replaces its byte path as transport (design §7.3, the native KV route table)",
+      "source": "SGLang's CI pins it: scripts/ci/cuda/ci_install_dependency.sh:815 (NIXL_VERSION=\"1.3.0\"), installed at :842 as nixl==${NIXL_VERSION} with nixl-cu13==${NIXL_VERSION}. docker/Dockerfile:518 installs nixl and nixl-cu13 with no version."
+    },
+    {
+      "name": "nixl-cu13",
+      "import": "nixl",
+      "version": "1.3.0",
+      "status": "as nixl",
+      "source": "The CUDA 13 binary the nixl package pairs with, at the same CI pin: scripts/ci/cuda/ci_install_dependency.sh:815-818,842."
+    },
+    {
+      "name": "lmcache",
+      "import": "lmcache",
+      "version": "0.5.6",
+      "status": "refused by name until after M4 (inference-sim/inference-sim#2444); when modelled, LMCache and its controller run as code under test (FID-12)",
+      "source": "SGLang installs no LMCache in its image and pins none. Its XPU CI installs \"lmcache>=0.3.9\" (.github/workflows/pr-test-xpu.yml:169, .github/workflows/nightly-test-intel-wheel.yml:104). On the tag's commit date, 2026-10-28T22:22:02-07:00, the newest release that specifier selects is 0.5.6 (PyPI upload 2026-10-15T03:39:41Z); the next upload, 0.5.7rc2 (2026-10-27), is a pre-release, which pip does not select by default."
+    }
+  ]
+}

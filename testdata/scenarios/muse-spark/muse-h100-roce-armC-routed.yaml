@@ -4,7 +4,7 @@
 # Run it with --num-instances 2 or more: the nodes hold two replicas.
 kind: Scenario
 name: muse-h100-roce-armC-routed
-engine: {kind: vllm, version: "0.33.0"}
+engine: {kind: vllm}
 model: muse-spark-open-816b-a42b-nvfp4
 acceptance:
   value:
@@ -30,6 +30,7 @@ pools:
       max_num_batched_tokens: 8192
       max_model_len: 262144
       enable_prefix_caching: true
+      enable_scale_out: true
       gpu_memory_utilization: 0.9
       async_scheduling: true
       moe_backend: marlin

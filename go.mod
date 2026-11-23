@@ -4,19 +4,18 @@ go 1.27.2
 
 require (
 	github.com/go-logr/logr v1.4.4
-	github.com/inference-sim/blis-sglang v0.5.23-blis.1.0.20261118162946-03d72d6fc3bf
-	github.com/inference-sim/blis-substrate v0.15.1-0.20261118162118-b6748ca9d757
-	github.com/inference-sim/blis-vllm v0.33.0-blis.1.0.20261118171935-af87ac53acaf
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/mod v0.41.0
+	gonum.org/v1/gonum v0.17.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.37.1
 	k8s.io/apimachinery v0.37.1
 	pgregory.net/rapid v1.2.0
+	sigs.k8s.io/controller-runtime v0.25.2
 	sigs.k8s.io/yaml v1.6.0
 )
 
@@ -120,7 +119,6 @@ require (
 	k8s.io/streaming v0.37.1 // indirect
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.36.0 // indirect
-	sigs.k8s.io/controller-runtime v0.25.2 // indirect
 	sigs.k8s.io/gateway-api-inference-extension v1.6.2 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
@@ -129,10 +127,5 @@ require (
 
 // The one permitted replace (design X11): the llm-d router fork keeps upstream's module path, so
 // a replace is the only way to substitute it (.github/agent-prompts/llm-d-router-fork.md). A release
-// names a -blis.N tag, and this one names router fork commit d98de1a5, built on v1.0.0-blis.5.
-replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.5.0.20261118163949-601ff6e9d37d
-
-// blis-vllm's plain tag v0.32.0 predates the -blis.N rule (design §14.1) and would outrank every
-// -blis.N tag in version selection; the main module's exclude keeps any requirement from
-// selecting it (release plan §3.3).
-exclude github.com/inference-sim/blis-vllm v0.32.0
+// names a -blis.N tag; this one names v1.0.0-blis.6, the merge of inference-sim/llm-d-router#26.
+replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.6

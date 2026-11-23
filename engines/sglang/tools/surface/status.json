@@ -1,0 +1,2270 @@
+{
+ "items": {
+  "allocator:BaseTokenToKVPoolAllocator": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "allocator:DSV4NPUTokenToKVPoolAllocator": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_allocator.py:104@297e54fd",
+   "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
+  },
+  "allocator:DeepSeekV4HiSparseTokenToKVPoolAllocator": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "allocator:FloatMultiEndedAllocator": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "allocator:HiSparseTokenToKVPoolAllocator": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "allocator:MambaSlotAllocator": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "allocator:MultiEndedAllocator": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "allocator:NPUPagedTokenToKVPoolAllocator": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/npu/allocator_npu.py:15@297e54fd",
+   "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
+  },
+  "allocator:PageInterleavePoolAllocator": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "allocator:PagedTokenToKVPoolAllocator": {
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/direct/paged-allocator-reuse.trace.json",
+    "core/cache/testdata/golden-pools/direct/paged-allocator-sorted.trace.json"
+   ]
+  },
+  "allocator:PureSWATokenToKVPoolAllocator": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "allocator:SWATokenToKVPoolAllocator": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "allocator:TokenToKVPoolAllocator": {
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/direct/token-allocator-reuse.trace.json",
+    "core/cache/testdata/golden-pools/direct/token-allocator-sorted.trace.json"
+   ]
+  },
+  "allocator:UnifiedMambaSWATokenToKVPoolAllocator": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "allocator:UnifiedMambaSlotAllocator": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "allocator:UnifiedMambaTokenToKVPoolAllocator": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "allocator:UnifiedSWAAllocatorBase": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "allocator:UnifiedSWATokenToKVPoolAllocator": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "drafter_arch:BailingMoeForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:DeepseekV3ForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:DeepseekV4ForCausalLMDSpark": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2454"
+  },
+  "drafter_arch:DeepseekV4ForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:Ernie4_5_MoeForCausalLMMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:ExaoneMoEForCausalLMMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:GigaChat35ForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:Glm4MoeForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:Glm4MoeLiteForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:Glm5NextForConditionalGenerationNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:GlmMoeDsaForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:GlmOcrForConditionalGenerationNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:HYV3ForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:HYV4ForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:InklingForConditionalGenerationMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:LongcatFlashForCausalLMNextN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:MiMoMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:MiMoV2MTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:NemotronHForCausalLMMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:Qwen3MoeForCausalLMMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:Qwen3NextForCausalLMMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:Qwen3_5ForCausalLMMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:Qwen4ExpForCausalLMMTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "drafter_arch:Step3p5MTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "engine_setting:SGLANG_CLIP_MAX_NEW_TOKENS_ESTIMATION": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "engine_setting:SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "engine_setting:SGLANG_HICACHE_NIXL_BACKEND_PLUGIN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2453"
+  },
+  "engine_setting:SGLANG_INIT_NEW_TOKEN_RATIO": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "engine_setting:SGLANG_MAX_NEW_TOKENS_LIMIT": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "engine_setting:SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "engine_setting:SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "engine_setting:SGLANG_RETRACT_DECODE_STEPS": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "engine_setting:allow_auto_truncate": {
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+    "core/sched/testdata/golden-sched/truncate-a.trace.json",
+    "core/sched/testdata/golden-sched/truncate-loose.trace.json"
+   ]
+  },
+  "engine_setting:chunked_prefill_size": {
+   "status": "modelled",
+   "evidence": [
+    "config/testdata/serverargs.json",
+    "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+   ]
+  },
+  "engine_setting:context_length": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "engine_setting:disable_overlap_schedule": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "engine_setting:kv_events_config": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "engine_setting:max_prefill_tokens": {
+   "status": "modelled",
+   "evidence": [
+    "config/testdata/serverargs.json",
+    "core/sched/testdata/golden-sched/max-prefill-tokens-250.trace.json",
+    "core/sched/testdata/golden-sched/max-prefill-tokens.trace.json"
+   ]
+  },
+  "engine_setting:max_running_requests": {
+   "status": "modelled",
+   "evidence": [
+    "config/testdata/serverargs.json",
+    "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+   ]
+  },
+  "engine_setting:mem_fraction_static": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "engine_setting:page_size": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "engine_setting:schedule_conservativeness": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "eviction_policy:fifo": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "eviction_policy:filo": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "eviction_policy:lfu": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "eviction_policy:lru": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "eviction_policy:mru": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "eviction_policy:priority": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "eviction_policy:slru": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "eviction_policy:tlru": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "extension_point:SRTPlatform.get_full_graph_backend_cls": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:SRTPlatform.get_graph_runner_cls": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:SRTPlatform.get_kv_pool_cls": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:SRTPlatform.get_paged_allocator_cls": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:SRTPlatform.get_piecewise_backend_cls": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:SRTPlatform.get_speculative_graph_runner_cls": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:SRTPlatform.get_speculative_worker_cls": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_attention_backend_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_chunked_prefix_cache_attention_backend": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_deterministic_attention_backend_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_disagg_transfer_backend_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_draft_attention_backend_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_fp4_gemm_runner_backend_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_fp8_gemm_runner_backend_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_grammar_backend_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_linear_attn_kernel_backend_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_load_format_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_moe_runner_backend_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_mxfp8_moe_runner_backend_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_quantization_method_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_radix_eviction_policy_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_radix_supported_deterministic_attention_backend_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_rl_on_policy_target_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:register_algorithm": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:register_publisher": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:register_radix_cache_backend": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:register_resolution_hook": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:register_tree_core_backend": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "framework:BaseKVBootstrapServer": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
+  },
+  "framework:BaseKVManager": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
+  },
+  "framework:BaseKVReceiver": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
+  },
+  "framework:BaseKVSender": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
+  },
+  "framework:BasePrefixCache": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "framework:BaseTokenToKVPoolAllocator": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "framework:HiCacheController": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "framework:HiCacheStorage": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "framework:HostKVCache": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "framework:HybridCacheController": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2360"
+  },
+  "framework:KVCache": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "framework:L2TransferEngine": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "framework:LayerDoneCounter": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "framework:ReqToTokenPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "framework:UnifiedCacheLinker": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "hicache_option:disaggregation_decode_retraction_backup=cpu_tensor": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2352"
+  },
+  "hicache_option:disaggregation_decode_retraction_backup=host_pool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2352"
+  },
+  "hicache_option:disaggregation_decode_retraction_backup=none": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2352"
+  },
+  "hicache_option:hicache_host_memory_mode=buffer_only": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "hicache_option:hicache_host_memory_mode=cache": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "hicache_option:hicache_io_backend=direct": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "hicache_option:hicache_io_backend=kernel": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "hicache_option:hicache_io_backend=kernel_ascend": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/arg_groups/fields/memory.py:128@297e54fd",
+   "why": "the Ascend NPU I/O kernel"
+  },
+  "hicache_option:hicache_mem_layout=layer_first": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "hicache_option:hicache_mem_layout=page_first": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "hicache_option:hicache_mem_layout=page_first_direct": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "hicache_option:hicache_mem_layout=page_first_kv_split": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "hicache_option:hicache_mem_layout=page_head": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "hicache_option:hicache_storage_prefetch_policy=best_effort": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "hicache_option:hicache_storage_prefetch_policy=timeout": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "hicache_option:hicache_storage_prefetch_policy=wait_complete": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "hicache_option:hicache_write_policy=write_back": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "hicache_option:hicache_write_policy=write_through": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "hicache_option:hicache_write_policy=write_through_selective": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "hicache_storage:aibrix": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
+  },
+  "hicache_storage:dynamic": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "hicache_storage:eic": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
+  },
+  "hicache_storage:file": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "hicache_storage:hf3fs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "hicache_storage:mooncake": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2443"
+  },
+  "hicache_storage:mori": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
+  },
+  "hicache_storage:nixl": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "hicache_storage:npu_memcache": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/mem_cache/storage/backend_factory.py:244@297e54fd",
+   "why": "the Ascend NPU memcache store (npu_memcache_store)"
+  },
+  "hicache_storage:seaweedfs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "hicache_storage:shm": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "hicache_storage:sim": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "hicache_storage:simm": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
+  },
+  "hicache_storage:tensorcast": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
+  },
+  "host_pool:AsymmetricMHATokenToKVPoolHost": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "host_pool:DSAIndexerPoolHost": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "host_pool:DeepSeekV4PagedHostPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2360"
+  },
+  "host_pool:DeepSeekV4StateHostPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2360"
+  },
+  "host_pool:HiSparseMHATokenToKVPoolHost": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "host_pool:HostKVCache": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "host_pool:MHATokenToKOnlyPoolHost": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "host_pool:MHATokenToKVPoolHost": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "host_pool:MHATokenToKVPoolMXFP8Host": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "host_pool:MLATokenToKVPoolHost": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "host_pool:MambaPoolHost": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "host_pool:MiniMaxM3Nvfp4IndexKPoolHost": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "host_pool:MiniMaxM3Nvfp4MainKVPoolHost": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "host_pool:QSAIndexerPoolHost": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "host_pool:UnifiedPageEnvelopeHostPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "kv_event_format:default": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_format:dynamo": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_granularity:page_size": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_hash:_NAMESPACE_SEED_TAG": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_hash:compute_node_event_hash_values": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_hash:compute_node_hash_values": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_hash:get_hash_str": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_hash:get_storage_hash_str": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_hash:hash_str_to_int64": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_hash:kv_event_namespace_seed": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_hash:namespaced_block_hash": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_hash:storage_namespace_seed": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_medium:CPU_PINNED": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_medium:DISK": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_medium:EXTERNAL": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_medium:GPU": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_merge:BlockRemoved": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_merge:BlockStored": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_publisher:null": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_publisher:zmq": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_type:AllBlocksCleared": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_type:BlockRemoved": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_event_type:BlockStored": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "kv_pool:BaseSWAKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:DSATokenToKVPool": {
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/direct/pool-sizing.trace.json"
+   ]
+  },
+  "kv_pool:DSV4NPUTokenToKVPool": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_memory_pool.py:258@297e54fd",
+   "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
+  },
+  "kv_pool:DeepSeekV4IndexerPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:DeepSeekV4SingleKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:DeepSeekV4TokenToKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:DeepSeekV4UniformFP8KVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:HiSparseC4DevicePool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:HiSparseDSATokenToKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:HiSparseMHAMainPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:HybridLinearKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:KVCache": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:LayerSplitDSATokenToKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:MHATokenToKOnlyPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:MHATokenToKVPool": {
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/direct/pool-sizing.trace.json"
+   ]
+  },
+  "kv_pool:MHATokenToKVPoolFP4": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:MHATokenToKVPoolMXFP8": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:MLATokenToKVPool": {
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/direct/pool-sizing.trace.json"
+   ]
+  },
+  "kv_pool:MLATokenToKVPoolFP4": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:MambaPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:MiniMaxM3Nvfp4IndexKPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:MiniMaxM3Nvfp4KVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:MiniMaxM3Nvfp4MainKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:MiniMaxSparseKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:NPUDeepSeekV4IndexerPool": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_memory_pool.py:177@297e54fd",
+   "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
+  },
+  "kv_pool:NPUDeepSeekV4SingleKVPool": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_memory_pool.py:40@297e54fd",
+   "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
+  },
+  "kv_pool:NPUMHATokenToKOnlyPool": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/npu/memory_pool_npu.py:496@297e54fd",
+   "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
+  },
+  "kv_pool:NPUMHATokenToKVPool": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/npu/memory_pool_npu.py:88@297e54fd",
+   "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
+  },
+  "kv_pool:NPUMLATokenToKVPool": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/npu/memory_pool_npu.py:629@297e54fd",
+   "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
+  },
+  "kv_pool:NPUMiniMaxSparseKVPool": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/npu/memory_pool_npu.py:603@297e54fd",
+   "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
+  },
+  "kv_pool:NoOpMHATokenToKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:PageInterleaveDSATokenToKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:PageInterleaveMHATokenToKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:PageInterleaveMLATokenToKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:PageMajorMHATokenToKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:QSATokenToKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:SWAKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:UnifiedDraftKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:UnifiedDraftMambaPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:UnifiedDraftSWAKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:UnifiedHybridLinearKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:UnifiedKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:UnifiedMHATokenToKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:UnifiedMLATokenToKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:UnifiedMambaPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:UnifiedSWAKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:_DummyKVCache": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/mlx/model_runner_stub.py:43@297e54fd",
+   "why": "an Apple MLX class (hardware_backend/mlx); every target chip is CUDA"
+  },
+  "memory_budget:mm_reservation_gb": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "memory_budget:rest_memory": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "memory_budget:returned": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "memory_budget:slack_gb": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "metric_family:sglang:backup_bandwidth": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:backup_pgs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:backuped_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:cache_hit_rate": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:cached_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:context_len": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:cuda_graph_passes_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:decode_deferred_kv_release_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:decode_deferred_kv_release_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:decode_sum_seq_lens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:dp_attention_pairs_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:dp_attention_steps_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:dp_attention_sync_wait_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:dp_attention_token_imbalance_ratio": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:dp_attention_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:dp_cooperation_forward_execution_seconds_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:dp_cooperation_realtime_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:e2e_request_latency_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_cache_entries": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_cache_evictions_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_cache_hit_files_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_cache_hit_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_cache_size_mb": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_cache_total_files_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_cache_total_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_dp_pending_requests": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_mm_items_per_batch": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_mm_items_per_request": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_model_forward_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_preprocess_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_queue_wait_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_request_e2e_latency_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_requests_received_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_requests_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:encoder_transfer_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:eplb_balancedness": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:eplb_gpu_physical_count": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:estimated_flops_per_gpu_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:estimated_read_bytes_per_gpu_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:estimated_write_bytes_per_gpu_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:evicted_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:eviction_duration_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:failed_session_recoveries_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:forward_execution_seconds_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:full_token_usage": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:func_latency_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:fwd_occupancy": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:gen_throughput": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:generation_tokens_histogram": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:generation_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:get_loads_duration_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:grammar_compilation_time_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:grammar_ebnf_size": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:grammar_schema_count": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:grammar_tree_traversal_time_avg": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:grammar_tree_traversal_time_max": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:graph_memory_usage_gb": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:hicache_backup_bytes_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:hicache_backup_dropped_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:hicache_backup_duration_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:hicache_backup_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:hicache_dropped_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:hicache_host_mamba_total_states": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:hicache_host_mamba_used_states": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:hicache_host_total_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:hicache_host_used_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:hicache_prefetch_aux_alloc_failed_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:http_requests_active": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:http_requests_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:http_responses_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:inter_token_latency_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:is_cuda_graph": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:kv_available_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:kv_cache_memory_usage_gb": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:kv_evictable_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:kv_transfer_alloc_ms": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:kv_transfer_bootstrap_ms": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:kv_transfer_latency_ms": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:kv_transfer_speed_gb_s": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:kv_transfer_total_mb": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:kv_used_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:load_back_bytes_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:load_back_duration_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:load_back_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:lora_pool_slots_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:lora_pool_slots_used": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:lora_pool_utilization": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:mamba_available_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:mamba_evictable_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:mamba_usage": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:mamba_used_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:max_running_requests_under_SLO": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:max_total_num_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:max_total_num_tokens_swa": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:new_token_ratio": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_aborted_requests_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_bootstrap_failed_reqs_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_decode_deferred_kv_release_reqs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_decode_host_receive_queue_reqs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_decode_host_receive_reqs_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_decode_prealloc_queue_reqs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_decode_transfer_queue_reqs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_grammar_aborted_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_grammar_cache_hit_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_grammar_queue_reqs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_grammar_timeout_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_grammar_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_pages": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_paused_reqs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_prefill_bootstrap_queue_reqs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_prefill_inflight_queue_reqs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_prefill_retries_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_queue_reqs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_requests_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_retracted_input_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_retracted_output_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_retracted_reqs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_retracted_requests_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_running_reqs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_so_requests_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_streaming_sessions": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_transfer_failed_reqs_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_unique_running_routing_keys": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:num_used_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:page_size": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:pending_prealloc_token_usage": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:per_stage_req_latency_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:prealloc_full_token_usage": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:prealloc_swa_token_usage": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:prefetch_bandwidth": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:prefetch_pgs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:prefetched_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:prefill_delayer_outcomes_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:prefill_delayer_wait_forward_passes": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:prefill_delayer_wait_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:prefill_effective_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:process_cpu_seconds_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:prompt_tokens_histogram": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:prompt_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:queue_time_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:realtime_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:request_time_per_output_token_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:routing_key_all_req_count": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:routing_key_running_req_count": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:routing_keys_active": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:scheduler_idle_seconds_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:scheduler_process_cpu_seconds_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:scheduler_stage_seconds_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:spec_accept_length": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:spec_accept_rate": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:spec_block_accept_length": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:spec_cap_length": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:spec_num_draft_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:spec_num_steps": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:spec_verify_calls_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:startup_available_gpu_memory_gb": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:startup_cuda_graph_time_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:startup_latency_breakdown_seconds_max": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:startup_time_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:storage_prefetch_deferred_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:storage_prefetch_hit_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:storage_prefetch_unfulfilled_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:streaming_session_held_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:swa_available_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:swa_evictable_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:swa_token_usage": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:swa_used_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:time_to_first_token_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:token_usage": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:uncached_prompt_tokens_histogram": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:utilization": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:weight_load_duration_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:weight_memory_usage_gb": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "moe_a2a_backend:ascend_fuseep": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/layers/moe/utils.py:42@297e54fd",
+   "why": "an Ascend NPU all-to-all backend"
+  },
+  "moe_a2a_backend:ascend_tp": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/layers/moe/utils.py:43@297e54fd",
+   "why": "an Ascend NPU all-to-all backend"
+  },
+  "moe_a2a_backend:customized": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "moe_a2a_backend:deepep": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
+  },
+  "moe_a2a_backend:deepep_v2": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
+  },
+  "moe_a2a_backend:flashinfer": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
+  },
+  "moe_a2a_backend:flashinfer_megamoe": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
+  },
+  "moe_a2a_backend:megamoe": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
+  },
+  "moe_a2a_backend:mooncake": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2450"
+  },
+  "moe_a2a_backend:mori": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
+  },
+  "moe_a2a_backend:nixl": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
+  },
+  "moe_a2a_backend:none": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "moe_a2a_backend:pplx": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
+  },
+  "nixl_plugin:3FS": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "nixl_plugin:GDS": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "nixl_plugin:GDS_MT": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "nixl_plugin:OBJ": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "nixl_plugin:POSIX": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "overlap_depth:result_queue": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "overlap_disabler:disable_overlap_for_batch": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "overlap_disabler:need_grammar_sync": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "overlap_switch:enable_overlap": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "overlap_switch:enable_overlap_mlx": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "pd_allocation_policy:early": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
+  },
+  "pd_allocation_policy:prefill_complete": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
+  },
+  "req_pool:DSV4NPUReqToTokenPool": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_req_to_token_pool.py:122@297e54fd",
+   "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
+  },
+  "req_pool:DecodeReqToTokenPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "req_pool:HybridMambaDecodeReqToTokenPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "req_pool:HybridReqToTokenPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "req_pool:MlxAuxiliaryStateReqToTokenPool": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/mlx/kv_cache/auxiliary_state.py:218@297e54fd",
+   "why": "an Apple MLX class (hardware_backend/mlx); every target chip is CUDA"
+  },
+  "req_pool:ReqToTokenPool": {
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-fid5/recorded/tiny.trace.json.gz"
+   ]
+  },
+  "req_pool:UnifiedHybridReqToTokenPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "retraction_policy:length": {
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+    "core/sched/testdata/golden-sched/retract1.trace.json",
+    "core/sched/testdata/golden-sched/retract16.trace.json"
+   ]
+  },
+  "retraction_policy:priority": {
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/retract-priority.trace.json",
+    "core/sched/testdata/golden-sched/retract-priority-lof.trace.json",
+    "core/sched/testdata/golden-sched/retract-priority-page16.trace.json"
+   ]
+  },
+  "schedule_policy:dfs-weight": {
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/dfs-a.trace.json",
+    "core/sched/testdata/golden-sched/dfs-heavy.trace.json"
+   ]
+  },
+  "schedule_policy:fcfs": {
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/chunked-retract.trace.json",
+    "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
+   ]
+  },
+  "schedule_policy:hrrn": {
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/heavy-hrrn.trace.json"
+   ]
+  },
+  "schedule_policy:lof": {
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/heavy-lof.trace.json",
+    "core/sched/testdata/golden-sched/nocache-lof.trace.json"
+   ]
+  },
+  "schedule_policy:lpm": {
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/heavy-lpm.trace.json",
+    "core/sched/testdata/golden-sched/retract-lpm.trace.json"
+   ]
+  },
+  "schedule_policy:priority": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "schedule_policy:random": {
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/random-a.trace.json",
+    "core/sched/testdata/golden-sched/random-basic.trace.json"
+   ]
+  },
+  "schedule_policy:routing-key": {
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/routing-a.trace.json",
+    "core/sched/testdata/golden-sched/routing-basic.trace.json"
+   ]
+  },
+  "schedule_policy:shortest-prefill-first": {
+   "status": "modelled",
+   "evidence": [
+    "core/sched/testdata/golden-sched/heavy-spf.trace.json"
+   ]
+  },
+  "scheduler_loop:event_loop_normal": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "scheduler_loop:event_loop_normal_disagg_decode": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2352"
+  },
+  "scheduler_loop:event_loop_normal_disagg_prefill": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
+  },
+  "scheduler_loop:event_loop_overlap": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "scheduler_loop:event_loop_overlap_disagg_decode": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2352"
+  },
+  "scheduler_loop:event_loop_overlap_disagg_prefill": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
+  },
+  "scheduler_loop:event_loop_overlap_mlx": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "scheduler_loop:event_loop_pdmux": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "scheduler_loop:event_loop_pp": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2456"
+  },
+  "scheduler_loop:event_loop_pp_disagg_decode": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2358"
+  },
+  "scheduler_loop:event_loop_pp_disagg_prefill": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2358"
+  },
+  "server_args_group:device": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:disagg": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:exec.comm": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:exec.deterministic": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:exec.dllm": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:exec.features": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:exec.graph": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:exec.kernel": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:exec.mamba": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:exec.moe": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:exec.offload": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:exec.overlap": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:lora": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:memory": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:mm": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:model": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:observability": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:parallel": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:schedule": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:serving": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "server_args_group:spec": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2344"
+  },
+  "spec_algo:DFLASH": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "spec_algo:DSPARK": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2454"
+  },
+  "spec_algo:EAGLE": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2355"
+  },
+  "spec_algo:EAGLE3": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2355"
+  },
+  "spec_algo:FROZEN_KV_MTP": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "spec_algo:NEXTN": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2355"
+  },
+  "spec_algo:NGRAM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "spec_algo:STANDALONE": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "spec_algo:UNO": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "spec_running_requests:_handle_dflash": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "spec_running_requests:_handle_dspark": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2454"
+  },
+  "spec_running_requests:_handle_eagle_family": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2355"
+  },
+  "spec_running_requests:_handle_frozen_kv_mtp": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "spec_running_requests:_handle_ngram": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "spec_worker:DFlashWorkerV2": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "spec_worker:DSparkWorkerV2": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2454"
+  },
+  "spec_worker:EAGLEWorkerV2": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2355"
+  },
+  "spec_worker:FrozenKVMTPWorkerV2": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "spec_worker:MultiLayerEagleWorkerV2": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2355"
+  },
+  "spec_worker:NGRAMWorker": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "spec_worker:StandaloneWorkerV2": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "spec_worker:UnoWorkerV2": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "transfer_backend:ascend": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/disaggregation/utils.py:685@297e54fd",
+   "why": "the Ascend NPU transfer engine"
+  },
+  "transfer_backend:fake": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
+  },
+  "transfer_backend:mooncake": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2446"
+  },
+  "transfer_backend:mooncake_tcp": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2446"
+  },
+  "transfer_backend:mori": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2353"
+  },
+  "transfer_backend:nixl": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2353"
+  },
+  "transformers_fallback:TransformersEmbeddingModel": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersForSequenceClassification": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMoEEmbeddingModel": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMoEForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMoEForSequenceClassification": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalEmbeddingModel": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalForSequenceClassification": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalMoEEmbeddingModel": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalMoEForCausalLM": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:TransformersMultiModalMoEForSequenceClassification": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "transformers_fallback:auto": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2286"
+  },
+  "tree_attachment:init_cache_linker": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "tree_attachment:init_hicache": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "tree_cache:BasePrefixCache": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "tree_cache:FlexKVRadixCache": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
+  },
+  "tree_cache:LMCacheUnifiedRadixCache": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2444"
+  },
+  "tree_cache:PureSWARadixCache": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "tree_cache:RadixCache": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "tree_cache:UnifiedRadixCache": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "tree_cache_backend:flexkv": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
+  },
+  "tree_component:AUXILIARY_SWA": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "tree_component:C128": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/mem_cache/registry.py:172@297e54fd",
+   "why": "the C128 sidecar component is built only from the Ascend NPU DeepSeek-V4 request pool"
+  },
+  "tree_component:FULL": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "tree_component:MAMBA": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "tree_component:SWA": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "tree_core:python": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "tree_core:rust": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "tree_core_divergence:namespaced-keys": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2345"
+  },
+  "tree_core_divergence:namespaced-keys-dynamo": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2345"
+  },
+  "unified_cache_linker:dynamic": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "unified_cache_linker:mooncake": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2443"
+  },
+  "unified_cache_linker:mori": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
+  }
+ }
+}

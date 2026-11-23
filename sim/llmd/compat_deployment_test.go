@@ -2,19 +2,17 @@ package llmd
 
 import (
 	"fmt"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/env"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/env"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 
-	"github.com/inference-sim/blis-vllm/compat/contract"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
-	_ "github.com/inference-sim/blis-vllm/compat/kv"   // the KV store the engine is built with
-	_ "github.com/inference-sim/blis-vllm/compat/lora" // the adapter registry it is built with
+	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 
-	"github.com/inference-sim/blis-vllm/core/placement"
+	"github.com/inference-sim/inference-sim/internal/vllmtest"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -39,12 +37,12 @@ func instanceEndpoint(id cluster.InstanceID) plan.Endpoint {
 // deployment needs.
 func setPDPrice(d *cluster.DeploymentConfig, ticks func(tokens int64) int64) {
 	d.InstanceEndpoint = instanceEndpoint
-	d.NewEngine = compatEngineFactoryWith(d.DPLockstepRanks, ticks)
+	d.NewEngine = compatEngineFactoryWith(isDisaggregated(*d), ticks)
 }
 
-// This package's tests build every instance's engine as `blis run` builds a 0.29/0.31 one: the
-// compatibility engine behind engine.Engine (blis-vllm compat/contract), driven by a
-// sim.EngineDriver. A test describes the engine with compat's own configuration
+// This package's tests build every instance's engine as `blis run` builds a vLLM one: the
+// v0.33.0 engine (internal/vllmtest, which builds engines/vllm/core/vllm) behind engine.Engine,
+// driven by a sim.EngineDriver. A test describes the engine with its own configuration
 // (cengine.SimConfig, which test files may name); the helpers below are sim/cluster's test
 // helpers of the same names (compat_deployment_test.go there), which a test file there cannot
 // export.
@@ -81,25 +79,35 @@ func engineConfigIn(c sim.InstanceConfig) cengine.SimConfig {
 // unless the test set an engine factory of its own.
 func newCluster(d cluster.DeploymentConfig, src cluster.RequestSource, onRequestDone func(*sim.Request, int64) []*sim.Request) *cluster.ClusterSimulator {
 	if d.NewEngine == nil {
-		d.NewEngine = compatEngineFactory(d.DPLockstepRanks)
+		d.NewEngine = compatEngineFactory(isDisaggregated(d))
 	}
+	// As cmd states it for a P/D deployment: the v0.33.0 engine needs the prefill leg to hold an output.
+	d.PDPrefillSamplesFirstToken = d.PDPrefillSamplesFirstToken || isDisaggregated(d)
 	return cluster.NewClusterSimulator(d, src, onRequestDone)
 }
 
 // compatEngineFactory builds each instance's engine as cmd's compatEngineFactory does: one
-// compat/contract.Engine per instance, or one DPGroup per run of lockstepRanks instances, whose
+// engine.Engine per instance, or one DPGroup per run of lockstepRanks instances, whose
 // rank views the instances drive, rank 0's driver stepping the group.
-func compatEngineFactory(lockstepRanks int) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
-	return compatEngineFactoryWith(lockstepRanks, pdTicks)
+func compatEngineFactory(pd bool) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
+	return compatEngineFactoryWith(pd, pdTicks)
 }
 
 // compatEngineFactoryWith is compatEngineFactory with the price each driver's Environment gives a
 // handoff.
-func compatEngineFactoryWith(lockstepRanks int, ticks func(tokens int64) int64) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
+func compatEngineFactoryWith(pd bool, ticks func(tokens int64) int64) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
+	return compatEngineFactoryStating(pd, ticks, "enable_scale_out: true\n")
+}
+
+// compatEngineFactoryStating is compatEngineFactoryWith with engine-block lines (vLLM setting
+// names) the engines are built with. The default states enable_scale_out, which a router config
+// with a render token-producer needs of the engines it routes to (inference-sim#2129); a test of
+// the engines without it passes none.
+func compatEngineFactoryStating(pd bool, ticks func(tokens int64) int64, extra string) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
 	driver := func(eng engine.Engine, cfg cengine.SimConfig) (*sim.EngineDriver, error) {
 		var pull env.Environment = testutil.FixedPull(cfg.BlockSizeTokens, func(tokens int64, _, _ plan.Endpoint) int64 { return ticks(tokens) })
-		dcfg := sim.EngineDriverConfig{Horizon: cfg.Horizon, ResumeGapFromLastToken: true,
-			ScrapeEngineMetrics: true, ApplyAtStepStart: true, Environment: pull}
+		dcfg := sim.EngineDriverConfig{Horizon: cfg.Horizon,
+			Environment: pull}
 		if m := cfg.LatencyModel; m != nil {
 			dcfg.PostDecodeFixedOverhead = m.PostDecodeFixedOverhead()
 			dcfg.OutputTokenProcessingTime = m.OutputTokenProcessingTime()
@@ -110,58 +118,35 @@ func compatEngineFactoryWith(lockstepRanks int, ticks func(tokens int64) int64) 
 		}
 		return sim.NewEngineDriver(eng, dcfg), nil
 	}
-	var group *contract.DPGroup
-	var leader *sim.EngineDriver
 	return func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
 		cfg := engineConfigIn(ic)
-		if lockstepRanks <= 1 {
-			eng, err := contract.New(fmt.Sprintf("instance_%d", index), cfg)
-			if err != nil {
-				return nil, err
-			}
-			// Instance N sits on node N of its pool, so the end of a pull the decode engine
-			// states for itself is its own node.
-			if cfg.GPU != "" {
-				if err := eng.SetPlacement(placement.Placement{Hardware: cfg.GPU, Fabric: "test-fabric", Tensor: max(cfg.TP, 1),
-					Data: max(cfg.DP, 1), Nodes: index + 1, Node: index}); err != nil {
-					return nil, err
-				}
-			}
-			return driver(eng, cfg)
-		}
-		k := index % lockstepRanks
-		if k == 0 {
-			ids := make([]string, lockstepRanks)
-			for j := range ids {
-				ids[j] = fmt.Sprintf("instance_%d", index+j)
-			}
-			g, err := contract.NewDPGroup(ids, cfg)
-			if err != nil {
-				return nil, err
-			}
-			group = g
-		}
-		if group == nil {
-			return nil, fmt.Errorf("data-parallel rank %d of instance %d was built before its rank 0", k, index)
-		}
-		d, err := driver(group.View(k), cfg)
+		eng, err := vllmtest.Engine(cfg, vllmtest.Options{Connector: pd, Index: index, Extra: extra})
 		if err != nil {
 			return nil, err
 		}
-		if k == 0 {
-			leader = d
-		}
-		d.JoinGroup(leader, k)
-		return d, nil
+		return driver(eng, cfg)
 	}
 }
 
 // newCompatInstance builds one instance whose engine is the compatibility engine behind the
 // contract (as a cluster builds each of its instances).
 func newCompatInstance(id cluster.InstanceID, ic sim.InstanceConfig) *cluster.InstanceSimulator {
-	drv, err := compatEngineFactory(0)(0, ic)
+	drv, err := compatEngineFactory(false)(0, ic)
 	if err != nil {
 		panic(fmt.Sprintf("newCompatInstance(%s): %v", id, err))
 	}
 	return cluster.NewEngineInstance(id, ic, drv)
+}
+
+// isDisaggregated is whether d runs prefill and decode pools: their engines carry the P/D connector.
+func isDisaggregated(d cluster.DeploymentConfig) bool {
+	return d.PrefillInstances+d.DecodeInstances > 0
+}
+
+// skipRetiredEngine marks a test whose premise is behaviour or introspection of the retired
+// compatibility engine that the v0.33.0 engine, now the only engine, does not share. Each needs
+// restating against the engine before it can run again.
+func skipRetiredEngine(t *testing.T, why string) {
+	t.Helper()
+	t.Skip("premise is retired compatibility-engine behaviour: " + why)
 }

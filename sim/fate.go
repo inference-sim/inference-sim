@@ -61,7 +61,7 @@ func IsValidFate(f Fate) bool {
 	return false
 }
 
-// The reasons a request is dropped, named as blis-substrate contracts/spec/result's
+// The reasons a request is dropped, named as the substrate contracts/spec/result's
 // DropReason names them. Each comment names the INV-1 bucket the request lands in.
 const (
 	DropAdmission       = "admission_rejected"     // an admission check refused it (rejected)

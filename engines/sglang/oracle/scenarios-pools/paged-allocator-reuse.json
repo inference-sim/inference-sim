@@ -1,0 +1,330 @@
+{
+ "description": "Page size 4: freed pages go to the front of the free list, a free's pages ascending, a free_segment's in its own order; a free group releases its frees' pages before its segments'; alloc_extend fills a prefix's partial page, then whole pages, then a tail page, request by request; alloc_decode takes a page only for a token that starts one; an extend too large for the free pages fails.",
+ "model": "none: the driver builds SGLang's pools and allocators from the sequence's pools block",
+ "seed": 0,
+ "page_size": 4,
+ "pools": [
+  {
+   "as": "kv",
+   "class": "MHATokenToKVPool",
+   "args": {
+    "size": 32,
+    "page_size": 4,
+    "dtype": {
+     "dtype": "bfloat16"
+    },
+    "head_num": 2,
+    "head_dim": 16,
+    "layer_num": 2,
+    "enable_memory_saver": false
+   }
+  },
+  {
+   "as": "a",
+   "class": "PagedTokenToKVPoolAllocator",
+   "kvcache": "kv",
+   "args": {
+    "size": 32,
+    "page_size": 4,
+    "dtype": {
+     "dtype": "bfloat16"
+    },
+    "need_sort": false
+   }
+  }
+ ],
+ "calls": [
+  {
+   "on": "a",
+   "m": "alloc",
+   "args": {
+    "need_size": 8
+   },
+   "as": "x"
+  },
+  {
+   "on": "a",
+   "m": "alloc",
+   "args": {
+    "need_size": 8
+   },
+   "as": "y"
+  },
+  {
+   "on": "a",
+   "m": "free",
+   "args": {
+    "free_index": {
+     "value": [
+      "y",
+      0,
+      8
+     ]
+    }
+   }
+  },
+  {
+   "on": "a",
+   "m": "free_segment",
+   "args": {
+    "free_index": {
+     "value": [
+      "x",
+      0,
+      4
+     ]
+    },
+    "start_pos": 0
+   }
+  },
+  {
+   "on": "a",
+   "m": "available_size"
+  },
+  {
+   "on": "a",
+   "m": "alloc",
+   "args": {
+    "need_size": 12
+   },
+   "as": "z"
+  },
+  {
+   "on": "a",
+   "m": "free_group_begin"
+  },
+  {
+   "on": "a",
+   "m": "free",
+   "args": {
+    "free_index": {
+     "value": [
+      "z",
+      5,
+      7
+     ]
+    }
+   }
+  },
+  {
+   "on": "a",
+   "m": "free_segment",
+   "args": {
+    "free_index": {
+     "value": [
+      "z",
+      8,
+      12
+     ]
+    },
+    "start_pos": 8
+   }
+  },
+  {
+   "on": "a",
+   "m": "free",
+   "args": {
+    "free_index": {
+     "value": [
+      "x",
+      4,
+      8
+     ]
+    }
+   }
+  },
+  {
+   "on": "a",
+   "m": "available_size"
+  },
+  {
+   "on": "a",
+   "m": "free_group_end"
+  },
+  {
+   "on": "a",
+   "m": "available_size"
+  },
+  {
+   "on": "a",
+   "m": "alloc_extend",
+   "args": {
+    "prefix_lens": {
+     "tensor": [
+      0,
+      3,
+      8
+     ]
+    },
+    "prefix_lens_cpu": {
+     "tensor": [
+      0,
+      3,
+      8
+     ]
+    },
+    "seq_lens": {
+     "tensor": [
+      6,
+      9,
+      8
+     ]
+    },
+    "seq_lens_cpu": {
+     "tensor": [
+      6,
+      9,
+      8
+     ]
+    },
+    "last_loc": {
+     "tensor": [
+      -1,
+      6,
+      35
+     ]
+    },
+    "extend_num_tokens": 12
+   },
+   "as": "e"
+  },
+  {
+   "on": "a",
+   "m": "available_size"
+  },
+  {
+   "on": "a",
+   "m": "alloc_decode",
+   "args": {
+    "seq_lens": {
+     "tensor": [
+      5,
+      10,
+      9
+     ]
+    },
+    "seq_lens_cpu": {
+     "tensor": [
+      5,
+      10,
+      9
+     ]
+    },
+    "last_loc": {
+     "tensor": [
+      0,
+      9,
+      35
+     ]
+    }
+   }
+  },
+  {
+   "on": "a",
+   "m": "available_size"
+  },
+  {
+   "on": "a",
+   "m": "alloc_extend",
+   "args": {
+    "prefix_lens": {
+     "tensor": [
+      0
+     ]
+    },
+    "prefix_lens_cpu": {
+     "tensor": [
+      0
+     ]
+    },
+    "seq_lens": {
+     "tensor": [
+      40
+     ]
+    },
+    "seq_lens_cpu": {
+     "tensor": [
+      40
+     ]
+    },
+    "last_loc": {
+     "tensor": [
+      -1
+     ]
+    },
+    "extend_num_tokens": 40
+   }
+  },
+  {
+   "on": "a",
+   "m": "free_segments",
+   "args": {
+    "segments": [
+     [
+      {
+       "value": [
+        "e",
+        0,
+        6
+       ]
+      },
+      0
+     ],
+     [
+      {
+       "tensor": []
+      },
+      8
+     ],
+     [
+      {
+       "value": [
+        "z",
+        0,
+        4
+       ]
+      },
+      8
+     ]
+    ]
+   }
+  },
+  {
+   "on": "a",
+   "m": "available_size"
+  },
+  {
+   "on": "a",
+   "m": "max_new_tokens_for_memory",
+   "args": {
+    "input_tokens": 9,
+    "max_new_tokens": 30,
+    "token_capacity": 32,
+    "sliding_window_size": null,
+    "chunk_size": 64
+   }
+  },
+  {
+   "on": "a",
+   "m": "alloc",
+   "args": {
+    "need_size": 64
+   }
+  },
+  {
+   "on": "a",
+   "m": "clear"
+  },
+  {
+   "on": "a",
+   "m": "available_size"
+  },
+  {
+   "on": "a",
+   "m": "alloc",
+   "args": {
+    "need_size": 4
+   }
+  }
+ ]
+}

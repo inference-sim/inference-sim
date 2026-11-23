@@ -12,13 +12,13 @@ go build -o blis main.go
 go test ./...
 
 # Install linter (one-time setup)
-go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 
 # Lint
 golangci-lint run ./...
 ```
 
-All three must pass before submitting a PR. CI uses golangci-lint v2.9.0 (see `.github/workflows/ci.yml`).
+All three must pass before submitting a PR. CI uses golangci-lint v2.14.0 (see `.github/workflows/ci.yml`).
 
 ## Your First Contribution
 
@@ -80,7 +80,7 @@ Run: `go test ./cmd -run TestResult_RowSLOClass -v`. It passes, so prove it can 
 
 ### Step 4: Add a member of your own
 
-To state a new value on every row, follow the same path: set the field on the request, copy it into `RequestFact` in `noteFacts`, state it in `requestRows`, and add the member to `RequestRow` in blis-substrate `contracts/spec/result`. The last is a substrate change, released and repinned in `go.mod` ([cross-repo changes](.github/agent-prompts/cross-repo-changes.md)).
+To state a new value on every row, follow the same path: set the field on the request, copy it into `RequestFact` in `noteFacts`, state it in `requestRows`, and add the member to `RequestRow` in `substrate/contracts/spec/result` and regenerate the JSON Schemas (`cd substrate && go run ./tools/schemagen`). The substrate is a directory of this module, so the schema change and the simulator change are one pull request.
 
 ### Step 5: Verify
 
@@ -231,34 +231,29 @@ BLIS has four extension types. Identify which type your change is, then follow t
 
 ### Adding a New Model to the Catalog
 
-A model runs **if and only if it is in the catalog** (NS-6), and the catalog itself must be **located explicitly** — `--catalog <path>` or the `BLIS_CATALOG` environment variable, with no default and no search path (S4). BLIS reads the model's `config.json` from `<catalog>/models/<short-name>/config.json` and never downloads one at run time, so an uncatalogued model is refused rather than fetched-and-cached. The catalog is the [`blis-catalog`](https://github.com/inference-sim/blis-catalog) repository (there is no in-repo `model_configs/` tree), so the catalog entry is the load-bearing step:
+A model runs **if and only if it is in the catalog** (NS-6). The catalog is `substrate/catalog/` in this repository, embedded in the binary; `--catalog <dir>` or `BLIS_CATALOG` replaces it whole for one run. BLIS resolves a model from `<catalog>/models/<short-name>/graph.yaml` and never reads a `config.json` at run time or downloads one, so an uncatalogued model is refused naming that path.
 
-1. **Commit the model's HuggingFace `config.json` at `models/<short-name>/config.json` in a `blis-catalog` checkout** (`<short-name>` is the part of the model id after the `/`, lowercased). Without it, `blis run` refuses the model. Point BLIS at your checkout with `--catalog <clone-root>` (or `export BLIS_CATALOG=$PWD/blis-catalog`).
+1. **Add the entry** under `substrate/catalog/models/<short-name>/` (`<short-name>` is the part of the model id after the `/`, lowercased): the vendor `config.json`, a `model.yaml` stating its source (provider, repo, revision, retrieval date and licence with evidence; never commit third-party data beyond the config), and the `graph.yaml` derived from it.
+2. **Derive the graph, never write it by hand:** `cd substrate/catalog && python3 scripts/derive_graph.py --model <short-name>` (needs `pip install -r scripts/requirements-dev.txt`). `--check` re-derives every graph and fails on a hand edit; it is a CI gate.
+3. **Validate:** `cd substrate && go run ./validate/cmd/validate-catalog catalog`.
+4. **A scenario** that deploys the model (`examplescenarios/` and `testdata/kernel/` hold examples) names the coefficient sets that price it; the sets live in `substrate/registry/`. `blis schema scenario` prints the document and `blis fields --scenario <file> --scenarios <dir>` the engine settings it may state.
 
-**That is the whole procedure — `defaults.yaml` needs no edit at all.** As of #1768 it holds no
-per-model entry of any kind: the `defaults:` block (`GPU` / `tensor_parallelism` / `hf_repo`) is
-deleted; the deployment is stated by the run's scenario. Two consequences for a contributor:
+`defaults.yaml` needs no edit and carries only the `lora:` block and `version`: it is decoded into a fixed struct with strict field checking (R10), so an added top-level key such as `defaults:` is a parse error.
 
-1. **Do not add a `defaults:` block back.** `defaults.yaml` is decoded into a fixed struct
-   (`cmd.Config`) with strict field checking (R10), so an unrecognized top-level key is a parse
-   error rather than an inert extra — a file carrying `defaults:` fails to load with
-   `field defaults not found in type cmd.Config`.
-2. **Provenance goes in the commit, not the YAML.** The retired `hf_repo` field recorded where a
-   committed `config.json` came from; say that in the commit message or PR instead (the
-   `blis-catalog` repository records it per model in `models/<name>/model.yaml`).
+### Adding an engine setting
 
-`defaults.yaml` carries only the `lora:` block and `version`. Latency needs nothing here either:
-the model is priced by `blis-latency-kernel` from its catalog graph and the `blis-registry`
-coefficient sets a scenario names, so a new model also needs its `graph.yaml` in the catalog and
-a scenario that deploys it.
+An engine's configuration fields are listed by `blis fields`: every field and environment variable of the modelled release, each with a status (`modelled` with evidence, `inert`, or `not_modelled` citing an open issue). Each engine generates its list from the upstream source and a hand-written status file; `engines/vllm/README.md` and `engines/sglang/fields/README.md` give the generator commands, and CI regenerates and compares them. Edit the status file, regenerate, and commit both; never edit `fields.json` or `surface.json` by hand. A setting the engine models changes behaviour only through the engine's code and is proven against the upstream project's own classes (the oracle jobs).
+
+### Testing the substrate, engines and tools
+
+`go test ./...` covers every Go package, including `substrate/`, `engines/` and `tools/`. Beyond it, CI runs: the catalog and registry validators and the deriver's Python tests (`substrate/catalog`, `substrate/registry`), the cost model's mutation check (`go test -run TestGuardedPropertiesKillTheirMutants ./substrate/kernel/`), each engine's checks against its upstream source (field list, surface list, rule pack) and the oracle jobs that compare its decisions with the upstream's own classes. The job list is `.github/workflows/ci.yml`; which jobs a pull request runs follows `scripts/ci-changes.sh`.
 
 ### Policy Template (lightest — ~3 files)
 
-1. Implement the interface in the repository that owns the policy (see [extension recipes](.github/agent-prompts/extension-recipes.md)): admission and routing in llm-d-router, the instance scheduler and its priority in blis-vllm (`core/sched`)
-2. Register in `sim/bundle.go` (valid names map + `IsValid*` function)
-3. Add `case` to factory function
-4. Add behavioral tests (`TestMyPolicy_Scenario_Behavior`)
-5. Update the README (not CLAUDE.md — it holds pointers, per its charter)
+1. Implement the interface in the repository that owns the policy (see [extension recipes](.github/agent-prompts/extension-recipes.md)): admission and routing in the llm-d router fork, the instance scheduler and its priority in `engines/vllm/core/sched`
+2. Select it by name where that repository selects its policies, as the recipe for it describes (`sim/bundle.go` holds only the priority policy's name and the control-loop settings, not a registry of policies)
+3. Add behavioral tests (`TestMyPolicy_Scenario_Behavior`)
+4. Update the README (not CLAUDE.md — it holds pointers, per its charter)
 
 ### Subsystem Module (heaviest — new interface + integration)
 

@@ -40,6 +40,9 @@ type renderedMetrics struct {
 }
 
 func (m *modelServers) serve(r *http.Request) (*http.Response, error) {
+	if r.Method == http.MethodPost && isScaleOutPath(r.URL.Path) && !m.g.servesRender(r.URL.Host) {
+		return respond(r, http.StatusForbidden, "application/json", scaleOutDisabled), nil
+	}
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/metrics":
 		inst := m.g.instanceAt(r.URL.Host)
@@ -61,6 +64,32 @@ func (m *modelServers) serve(r *http.Request) (*http.Response, error) {
 	default:
 		return respond(r, http.StatusNotFound, "text/plain", []byte("not served by the simulated model server\n")), nil
 	}
+}
+
+// scaleOutDisabled is vLLM's answer to a render or derender call when the server runs without
+// --enable-scale-out: HTTP 403 with this ErrorResponse (register_scale_out_api_routers,
+// vllm/entrypoints/scale_out/factories.py).
+var scaleOutDisabled = []byte(`{"error":{"message":"Scale-out endpoints are disabled. Restart vllm serve with --enable-scale-out to enable them.","type":"PermissionDeniedError","param":null,"code":403}}`)
+
+// isScaleOutPath is whether vLLM gates path behind --enable-scale-out among the routes the
+// router calls: the render and derender routes.
+func isScaleOutPath(path string) bool {
+	return strings.HasSuffix(path, "/render") || strings.HasSuffix(path, "/derender")
+}
+
+// servesRender is whether the model server at host answers render calls. A host that is one of
+// the instances is answered by that instance's engine. Any other host (a render URL the router
+// config names) stands for the model servers: it serves them when every instance's engine does.
+func (g *Gateway) servesRender(host string) bool {
+	if inst := g.instanceAt(host); inst != nil {
+		return inst.ServesRender()
+	}
+	for _, ep := range g.endpoints {
+		if !ep.inst.ServesRender() {
+			return false
+		}
+	}
+	return true
 }
 
 // renderCompletions answers vLLM's /v1/completions/render for a token-ID prompt: the rendered

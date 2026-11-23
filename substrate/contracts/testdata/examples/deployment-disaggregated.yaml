@@ -1,0 +1,31 @@
+kind: Deployment
+name: 1p3d-ep8
+pools:
+  - role: prefill
+    nodes: 1
+    parallel:
+      tp: 1
+      pp: 1
+      dp: 8
+      dp_local: 8
+      enable_expert_parallel: true
+    engine:
+      all2all_backend: deepep_high_throughput
+      max_num_batched_tokens: 16384
+  - role: decode
+    nodes: 3
+    parallel:
+      tp: 1
+      pp: 1
+      dp: 8
+      dp_local: 8
+      enable_expert_parallel: true
+    engine:
+      all2all_backend: deepep_low_latency
+      max_num_seqs: 512
+offload:
+  tiers:
+    - tier: cpu_dram
+      bytes: 549755813888
+pd_transfer:
+  connector: NixlConnector

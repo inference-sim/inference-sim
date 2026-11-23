@@ -8,8 +8,8 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
+	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/trace"
@@ -409,12 +409,13 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 		}
 		simCfg := config.resolveConfigForRole(role)
 		tpDegree := max(simCfg.TP, 1) // R3: TP unset (0) means one GPU per instance
+		gpus := simCfg.GPUFootprint() // the whole parallel group the instance's engine runs (#2260)
 
 		if cs.placement != nil {
 			// NodePools path: placement determines GPU type (authoritative).
 			// Pass "" as gpuType so PlacementManager selects any available pool
 			// (the pool's gpu_type is the authoritative source, not the CLI --gpu flag).
-			nodeID, gpuIDs, matchedGPUType, err := cs.placement.PlaceInstance(id, config.Model, "", tpDegree)
+			nodeID, gpuIDs, matchedGPUType, err := cs.placement.PlaceInstance(id, config.Model, "", gpus)
 			if err != nil {
 				// No capacity — defer construction until NodeReadyEvent.
 				// Pass "" as gpuType (any pool) to match AddPending's placement semantics.
@@ -427,7 +428,7 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 				if unplacedFirstErr == nil {
 					unplacedFirstErr = err
 				}
-				cs.placement.AddPending(id, config.Model, "", tpDegree, simCfg)
+				cs.placement.AddPendingAt(id, config.Model, "", tpDegree, gpus, simCfg, 0)
 				continue
 			}
 			// Placement succeeded: use pool's GPU type (SC-004: pool-authoritative, not CLI flag).
@@ -1719,7 +1720,7 @@ func (c *ClusterSimulator) gpuInventory() GPUInventory {
 		switch inst.State {
 		case sim.InstanceStateLoading, sim.InstanceStateWarmingUp, sim.InstanceStateActive, sim.InstanceStateDraining:
 			if inst.GPU() != "" {
-				usedByGPUType[inst.GPU()] += inst.TPDegree
+				usedByGPUType[inst.GPU()] += inst.gpusHeld()
 				if inst.TPDegree > 0 {
 					seenVariants[VariantSpec{GPUType: inst.GPU(), TPDegree: inst.TPDegree}] = struct{}{}
 				}

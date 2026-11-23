@@ -1,0 +1,94 @@
+{
+ "name": "t3-async-mtp",
+ "description": "Async scheduling with an MTP drafter (K=2, one nextn layer, the deepseek-v4-pro dashboard layout): the AsyncScheduler's placeholder drafts through the batch queue.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 64,
+  "block_size": 4,
+  "num_blocks": 80,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "async_scheduling": true,
+  "speculative": {
+   "method": "mtp",
+   "num_speculative_tokens": 2,
+   "draft": "mtp-1"
+  }
+ },
+ "requests": [
+  {
+   "id": "a",
+   "arrival_step": 0,
+   "prompt": [
+    4502,
+    18751,
+    27868,
+    26388,
+    25127,
+    2167,
+    8458,
+    3963,
+    16334,
+    25035
+   ],
+   "output": [
+    14828,
+    15574,
+    21451,
+    12539,
+    25944,
+    6979,
+    3175,
+    16086,
+    1028,
+    29372
+   ],
+   "accepted": [
+    1,
+    1,
+    2,
+    0,
+    2,
+    1,
+    1,
+    2,
+    0,
+    2
+   ]
+  },
+  {
+   "id": "b",
+   "arrival_step": 1,
+   "prompt": [
+    28382,
+    27921,
+    1953,
+    3101,
+    2881,
+    11931,
+    27477
+   ],
+   "output": [
+    5640,
+    24216,
+    26608,
+    22045,
+    28078,
+    10197,
+    8343,
+    19955
+   ],
+   "accepted": [
+    0,
+    2,
+    0,
+    2,
+    2,
+    0,
+    1,
+    2
+   ]
+  }
+ ]
+}

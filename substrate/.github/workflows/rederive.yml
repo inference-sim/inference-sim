@@ -1,0 +1,191 @@
+name: rederive
+
+# The re-derivation gates, with the data present.
+#
+# `validate.yml`'s derivation-tests job runs validator/ without the AISimulate sweeps, so
+# test_generated_from_aisimulate.py and test_writers_are_idempotent.py skip there: a pull
+# request that hand-edits a fitted value, or changes a writer, was caught only if its
+# author ran them locally (https://github.com/inference-sim/blis-registry/issues/36). This job checks out AISimulate
+# at the commit every committed value re-derives at and runs the whole suite
+# (scripts/rederive.sh), so a value that its own fitter no longer produces fails.
+#
+# The InferenceX CollectiveX run bodies the GB200 / H200-EP16 DeepEP entries cite, and the
+# OperatorX response the Marlin NVFP4 entries cite, are fetched from the public API and checked
+# against pinned digests of the points the fits read (scripts/fetch_cited_inferencex.py);
+# they are third-party data, so they are fetched, never committed (X12, D6). The tests whose
+# cited bodies the API no longer serves skip, and are on .github/quarantine.yaml with an
+# owning issue and an expiry; rederive.sh fails on any other skip (X16, X25).
+#
+# It runs nightly on the full data (SUB-4, SUB-8), on every pull request that changes the
+# registry's coefficients, scripts or tests, and by hand. The checkout is ~135 MB and the
+# gates take ~7 minutes (four pytest processes at once, REDERIVE_JOBS), which a pull request
+# touching those paths pays. It is a gate: its
+# trigger paths are declared below and in .github/gates.yaml, and the nightly status page
+# shows it failing when its last real run is more than seven days old (X16).
+#
+# gate-paths: registry/coefficients/**, registry/scripts/**, registry/validator/**, .github/workflows/rederive.yml, .github/quarantine.yaml
+
+on:
+  pull_request:
+    # The full set judges a pull request whose base is main, the pull request that merges. A stacked
+    # layer (any other base) runs ci-light.yml. Retargeting a pull request to main is a change of
+    # its base branch, which GitHub reports as the activity type `edited` (not a default type), so
+    # `edited` is listed: without it the retarget starts no run. ready_for_review is listed so a
+    # draft marked ready is judged too. A new run for the same ref cancels the one in progress.
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+    paths:
+      - registry/coefficients/**
+      - registry/scripts/**
+      - registry/validator/**
+      - .github/workflows/rederive.yml
+      - .github/quarantine.yaml
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run per head. A push, or a retarget that follows it, can deliver two events for the same
+# commit; the newer run replaces the older one, and the older one's check run concludes
+# `cancelled`. The path gate reads each check run at its newest attempt and refuses a newest
+# attempt that was cancelled, so a cancelled run is never a pass (tools/prcheck/pathgates.go).
+# Nightly and manual runs are never cancelled.
+concurrency:
+  group: rederive-${{ github.event_name }}-${{ github.ref }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  rederive:
+    # Skipped for an edit of the title or body that leaves the base alone: the run in progress (or
+    # finished) for this head stays the newest attempt that counts (tools/prcheck/pathgates.go).
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GOTOOLCHAIN: local
+      # The AISimulate commit the committed values re-derive at. Pinned by SHA because the
+      # repository's history moves; bump it deliberately, together with the diff the
+      # writers produce at the new commit (registry/scripts/rederive.sh lists every writer).
+      # The repository is ai-dynamo/aisim since its rename (f85518b3); the package moved from
+      # python/aisimulate/src/aisimulate_core to python/aisim/src/aisim_core with it.
+      AISIMULATE_SHA: 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18
+      # A second AISimulate commit, for one table: dsv4_hca_attn_module_perf, the FlashMLA sparse
+      # decode kernel measured alone, which AISimulate retired at e8cbe2dc. Its successor times
+      # the whole attention module, a different boundary (VAL-9), so the DeepSeek-V4.1 writers
+      # read the kernel rows here (fit_deepseek_v41_h200.py KERNEL_DATA_SHA) and every other
+      # table at AISIMULATE_SHA.
+      AISIMULATE_DSV4_KERNEL_SHA: 2f0f4cd8606d580567b253d02f3d699fe36db865
+      # A third AISimulate commit (the repository is now ai-dynamo/aisim), for one family: the
+      # GLM-5.3 attention-module table scripts/fit_glm53_attention.py fits, which the main pin
+      # predates. TEMPORARY: it folds into AISIMULATE_SHA at the AISimulate re-pin.
+      AISIM_GLM53_SHA: 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18
+      # The InferenceX commit validator/testdata/inferencex/curves.json pins the golden acceptance
+      # curves at (scripts/refresh_inferencex_curves.py moves both together).
+      INFERENCEX_SHA: e63beeeee981b5f7bd055685a32cc38ad30c7fdb
+      # The engine release's kernel-implementation table the trtllm-gen lane is keyed by
+      # (emit_attention_trtllm_gen.py), and the GLM-5.3 sparse-MLA entries are keyed by
+      # (fit_glm53_attention.py), and the moe.grouped_gemm builds (fit_hopper_fp8_grouped_ramp.py).
+      # TEMPORARY: the pushed head of inference-sim/blis-vllm#217 (on #154), until a blis-vllm release publishes the table.
+      BLIS_VLLM_SHA: 63fbe3b7103f91404f6ccaeb8d681109c8dc52f5
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The whole aisim_core package (~250 MB): the sweeps under systems/, the model
+      # configs fit_deepseek_v41_h200.py asserts geometry from, and the sdk/ source
+      # emit_memory.py reads NVIDIA's activation table out of. A narrower checkout once
+      # left sdk/ out and failed the memory writer.
+      - name: Check out AISimulate (pinned, the aisim_core package only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ai-dynamo/aisim
+          ref: ${{ env.AISIMULATE_SHA }}
+          path: aisimulate
+          fetch-depth: 1
+          sparse-checkout: |
+            python/aisim/src/aisim_core
+
+      # Before the rename, so the old package path.
+      - name: Check out AISimulate at the DeepSeek-V4 kernel pin (the FlashMLA sparse table only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ai-dynamo/aisim
+          ref: ${{ env.AISIMULATE_DSV4_KERNEL_SHA }}
+          path: aisimulate-dsv4-kernel
+          fetch-depth: 1
+          sparse-checkout: |
+            python/aisimulate/src/aisimulate_core/systems/data/h100_sxm/sparse_attention/vllm/0.25.0
+            python/aisimulate/src/aisimulate_core/systems/data/h200_sxm/sparse_attention/vllm/0.25.0
+
+      - name: Check out aisim at the GLM-5.3 pin (the h200 GLM-5.3 attention module and DSA context table only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ai-dynamo/aisim
+          ref: ${{ env.AISIM_GLM53_SHA }}
+          path: aisim-glm53
+          fetch-depth: 1
+          sparse-checkout: |
+            python/aisim/src/aisim_core/systems/data/h200_sxm/glm53_attention
+            python/aisim/src/aisim_core/systems/data/h200_sxm/sparse_attention/vllm/0.30.0
+
+      - name: Check out blis-vllm's kernel_impls.json (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: inference-sim/blis-vllm
+          ref: ${{ env.BLIS_VLLM_SHA }}
+          path: blis-vllm
+          fetch-depth: 1
+          sparse-checkout: |
+            kernel_impls.json
+          sparse-checkout-cone-mode: false
+
+      - name: Check out InferenceX (pinned to the vendored commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: SemiAnalysisAI/InferenceX
+          ref: ${{ env.INFERENCEX_SHA }}
+          path: inferencex
+          fetch-depth: 1
+          sparse-checkout: |
+            inferencex-e2e/infx/golden_al_distribution
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: registry/scripts/requirements-fit.txt
+
+      - name: Install the fitters' dependencies
+        run: pip install --require-hashes -r registry/scripts/requirements-fit.txt
+
+      # tools/prcheck reads the skips against the quarantine list.
+      - uses: ./.github/actions/go-toolchain
+
+      # Fails, naming the run, if a pinned body is no longer served or differs from its hash.
+      - name: Fetch the cited CollectiveX run bodies and the OperatorX response (digest-pinned)
+        working-directory: registry
+        run: python -I scripts/fetch_cited_inferencex.py "$RUNNER_TEMP/collectivex"
+
+      - name: Run every gate with the data present
+        env:
+          AISIMULATE_DATA: ${{ github.workspace }}/aisimulate/python/aisim/src/aisim_core/systems/data
+          AISIMULATE_DSV4_KERNEL_DATA: ${{ github.workspace }}/aisimulate-dsv4-kernel/python/aisimulate/src/aisimulate_core/systems/data
+          BLIS_CATALOG: ${{ github.workspace }}/catalog
+          BLIS_KERNEL_IMPLS: ${{ github.workspace }}/blis-vllm/kernel_impls.json
+          # The all-reduce sweeps are in the main pin since 6fdf6fb6 (the h100/h200 0.31.0 files
+          # are byte-identical to the earlier all-reduce pin's); rederive.sh still names the
+          # variable, so it points at the same tree.
+          AISIMULATE_ALLREDUCE_DATA: ${{ github.workspace }}/aisimulate/python/aisim/src/aisim_core/systems/data
+          AISIM_GLM53_DATA: ${{ github.workspace }}/aisim-glm53/python/aisim/src/aisim_core/systems/data
+          INFERENCEX_GOLDEN: ${{ github.workspace }}/inferencex/inferencex-e2e/infx/golden_al_distribution
+          COLLECTIVEX_DATA: ${{ runner.temp }}/collectivex
+          OPERATORX_DATA: ${{ runner.temp }}/collectivex
+          # The hosted runner has four cores and the tests are single-threaded subprocess runs of
+          # the writers: four pytest processes at once, each a disjoint share of the collected
+          # tests (tools/shard; rederive.sh checks each share before it runs it). The longest
+          # single test (relane_attention_swa.py, ~5 min) is now the floor, not the sum.
+          REDERIVE_JOBS: "4"
+        working-directory: registry
+        run: scripts/rederive.sh

@@ -1,0 +1,235 @@
+package kernelmodel
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/core/rulepack/v0_33"
+	"github.com/inference-sim/inference-sim/engines/vllm/internal/testgz"
+)
+
+// captureOracleCase is one row of core/lower/testdata/vllm_lower.json "capture": a deployment's
+// stated batch limits, cudagraph mode and capture knobs, and what vLLM's own
+// VllmConfig._set_cudagraph_sizes (vllm/config/vllm.py@5df63a72, run by oracle/lower/extract.py)
+// resolves them to.
+type captureOracleCase struct {
+	Case struct {
+		Name        string `json:"name"`
+		Mode        string `json:"mode"`
+		MaxSeqs     int    `json:"max_num_seqs"`
+		MaxBatched  int    `json:"max_num_batched_tokens"`
+		MaxCapture  *int   `json:"max_capture"`
+		Sizes       []int  `json:"sizes"`
+		SpecTokens  int    `json:"spec_tokens"`
+		Eager       bool   `json:"enforce_eager"`
+		Blackwell   bool   `json:"blackwell"`
+		Performance string `json:"performance_mode"`
+	} `json:"case"`
+	Resolved struct {
+		Max   int     `json:"max"`
+		Sizes []int   `json:"sizes"`
+		Error *string `json:"error"`
+	} `json:"resolved"`
+}
+
+func loadCaptureOracle(t *testing.T) []captureOracleCase {
+	t.Helper()
+	raw, err := testgz.ReadFile(filepath.Join("..", "..", "core", "lower", "testdata", "vllm_lower.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Commit  string              `json:"commit"`
+		Capture []captureOracleCase `json:"capture"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	if f.Commit != "4ba787ec9959e566d3b587a796dff07673324da5" {
+		t.Fatalf("the oracle file is for commit %s, not the pinned release", f.Commit)
+	}
+	return f.Capture
+}
+
+var engineLine = regexp.MustCompile(`(?m)^( +)(max_num_batched_tokens|max_num_seqs|compilation_config): .*\n`)
+
+// openCapture opens a committed fixture at vLLM 0.32.0 on a chip with the case's batch limits,
+// cudagraph mode and capture knobs written into its engine block, and returns the kernel. A
+// case with speculation uses the GLM-5 MTP fixture, the rest the gpt-oss one.
+func openCapture(t *testing.T, c captureOracleCase, hardware string) *latencykernel.Kernel {
+	t.Helper()
+	path := filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", "gpt-oss-120b-h200-fp4-vllm-tp4.yaml")
+	if c.Case.SpecTokens > 0 {
+		path = filepath.Join("..", "..", "testdata", "scenarios", "glm-5-h200-tp8-mtp3.yaml")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	if n := len(engineLine.FindAllString(body, -1)); n != 3 {
+		t.Fatalf("fixture states %d of max_num_batched_tokens, max_num_seqs, compilation_config, want 3", n)
+	}
+	body = engineLine.ReplaceAllString(body, "")
+	indent := "      "
+	add := fmt.Sprintf("%smax_num_batched_tokens: %d\n%smax_num_seqs: %d\n%scompilation_config: {cudagraph_mode: %s}\n",
+		indent, c.Case.MaxBatched, indent, c.Case.MaxSeqs, indent, c.Case.Mode)
+	if c.Case.MaxCapture != nil {
+		add += fmt.Sprintf("%smax_cudagraph_capture_size: %d\n", indent, *c.Case.MaxCapture)
+	}
+	if c.Case.Sizes != nil {
+		sizes, _ := json.Marshal(c.Case.Sizes)
+		add += fmt.Sprintf("%scudagraph_capture_sizes: %s\n", indent, sizes)
+	}
+	body = strings.Replace(body, "      gpu_memory_utilization:", add+"      gpu_memory_utilization:", 1)
+	if c.Case.SpecTokens > 0 {
+		if !strings.Contains(body, "num_speculative_tokens: 3") {
+			t.Fatal("the GLM-5 MTP fixture states no num_speculative_tokens: 3 to replace")
+		}
+		body = strings.Replace(body, "num_speculative_tokens: 3", fmt.Sprintf("num_speculative_tokens: %d", c.Case.SpecTokens), 1)
+	}
+	body = strings.Replace(body, "hardware: h200", "hardware: "+hardware, 1)
+	r := repos()
+	r.Scenarios = t.TempDir()
+	if err := os.WriteFile(filepath.Join(r.Scenarios, "v.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Open("v.yaml", r)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, add)
+	}
+	k, ok := m.Kernel().(*latencykernel.Kernel)
+	if !ok {
+		t.Fatalf("the kernel is a %T", m.Kernel())
+	}
+	return k
+}
+
+// headDerivedCapture is testdata/capture_head_derived.json: the maximum vLLM main head
+// (0fda86a) resolves for the oracle cases that state neither max_cudagraph_capture_size nor
+// cudagraph_capture_sizes. The oracle was recorded at v0.33.0, where that default is one shared
+// token ladder; at the head it is a prefill token grid plus a decode request grid per platform,
+// so the recorded maximum is stale for the cases listed. The file is derived from the head's
+// source by running its own resolver (testdata/derive_capture_head.py, which names the harness),
+// and the oracle was not re-run: a maintainer re-records the oracle at the head and deletes it.
+func headDerivedCapture(t *testing.T) map[string]int {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("testdata", "capture_head_derived.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Derivation string `json:"derivation"`
+		Commit     string `json:"vllm_commit"`
+		Cases      map[string]struct {
+			Max int `json:"max"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	if f.Derivation != "derived from source, oracle not re-run" || f.Commit != "0fda86a35419c9c70dbfada224c838c10fbb62ad" {
+		t.Fatalf("capture_head_derived.json is %q at %s", f.Derivation, f.Commit)
+	}
+	out := map[string]int{}
+	for n, c := range f.Cases {
+		out[n] = c.Max
+	}
+	return out
+}
+
+// The kernel's CUDA graph capture ceiling is vLLM's own for every configuration the oracle holds
+// that an engine block can state, on a Hopper part (h200) and a data-center Blackwell part
+// (b200). The value class: max_cudagraph_capture_size stated as 2048, as 2, off the stride
+// (1000, which vLLM truncates to 992), equal to max_num_batched_tokens, and in [8, 256), where
+// vLLM's capture stride is 8 (64, 100 which it truncates to 96, and 128), and cudagraph_mode
+// and cudagraph_capture_sizes as stated; or neither stated, where the expectation is
+// headDerivedCapture's, the head's platform split (a prefill token grid and a decode request
+// grid, 8192 and max_num_seqs on Blackwell, one shared ladder to 512 elsewhere).
+func TestKernelCaptureTokensAreVLLMs(t *testing.T) {
+	cases := loadCaptureOracle(t)
+	if len(cases) < 40 {
+		t.Fatalf("only %d oracle capture cases", len(cases))
+	}
+	var checked, stated2048, stated2, off, small int
+	derived := headDerivedCapture(t)
+	usedDerived := 0
+	for _, c := range cases {
+		switch {
+		case c.Resolved.Error != nil:
+			// vLLM refuses these at start-up; the kernel's refusals are engineconfig's, tested there.
+			continue
+		case c.Case.Eager:
+			// enforce_eager is not an engine key; the kernel has no field to set it.
+			continue
+		case c.Case.MaxBatched <= 0:
+			// The engine block states max_num_batched_tokens or the kernel substitutes its own default.
+			continue
+		case c.Case.Performance == "interactivity":
+			// performance_mode is not an engine key.
+			continue
+		}
+		hw := "h200"
+		if c.Case.Blackwell {
+			hw = "b200"
+		}
+		t.Run(c.Case.Name, func(t *testing.T) {
+			k := openCapture(t, c, hw)
+			got := k.CaptureTokens()
+			want := c.Resolved.Max
+			if d, ok := derived[c.Case.Name]; ok {
+				want = d
+				usedDerived++
+			}
+			if got != want {
+				t.Errorf("CaptureTokens %d, vLLM resolves max_cudagraph_capture_size %d", got, want)
+			}
+			// The sizes behind the maximum, through the rules pack the kernel calls, for a
+			// deployment that states the maximum or the sizes. Where it states neither, vLLM
+			// also appends max_num_seqs (and, with speculation, the uniform decode sizes),
+			// which the pack does not model and the kernel does not price, so only the
+			// maximum is compared there.
+			if c.Case.SpecTokens > 0 || c.Case.Mode == "NONE" || (c.Case.MaxCapture == nil && c.Case.Sizes == nil) {
+				return
+			}
+			in := enginefacts.CUDAGraphCaptureInput{Mode: c.Case.Mode, MaxNumBatchedTokens: c.Case.MaxBatched,
+				MaxCaptureSize: c.Case.MaxCapture, CaptureSizes: c.Case.Sizes}
+			p, _, err := v0_33.Pack().CUDAGraphCaptureSizes(in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.Max != c.Resolved.Max || !slices.Equal(p.Sizes, c.Resolved.Sizes) {
+				t.Errorf("the v0_33 pack gives max %d sizes %v; vLLM max %d sizes %v", p.Max, p.Sizes, c.Resolved.Max, c.Resolved.Sizes)
+			}
+		})
+		checked++
+		if m := c.Case.MaxCapture; m != nil && c.Case.SpecTokens == 0 && c.Case.Sizes == nil {
+			switch *m {
+			case 2048:
+				stated2048++
+			case 2:
+				stated2++
+			case 1000:
+				off++
+			case 64, 100, 128:
+				small++
+			}
+		}
+	}
+	if usedDerived != len(derived) {
+		t.Errorf("%d head-derived cases, %d used: the derived file names a case the oracle no longer holds", len(derived), usedDerived)
+	}
+	// 64, 100 and 128 are three values on two parts.
+	if checked < 40 || stated2048 < 2 || stated2 < 2 || off < 2 || small < 6 {
+		t.Errorf("checked %d cases (2048: %d, 2: %d, 1000: %d, 64/100/128: %d); the stated values must run on both parts", checked, stated2048, stated2, off, small)
+	}
+}

@@ -8,7 +8,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/trace"
 	"gopkg.in/yaml.v3"
 )
 

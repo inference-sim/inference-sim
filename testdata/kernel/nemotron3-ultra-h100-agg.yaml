@@ -17,7 +17,6 @@ kind: Scenario
 name: nemotron3-ultra-h100-agg
 engine:
   kind: vllm
-  version: "0.33.0"
 
 model: nemotron-3-ultra-550b-a55b-nvfp4
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
@@ -50,12 +49,7 @@ pools:
       enable_expert_parallel: false
     engine:
       kv_cache_dtype: fp8
-      # A hybrid stack's recurrent state. The report does not state the mode. "none" sizes
-      # state per sequence rather than per position; it is the config default, but the
-      # engine runs "align" for a hybrid model whenever prefix caching is on
-      # (vllm/model_executor/models/config.py:640-642 at v0.31.0), so this is a choice held
-      # fixed, not the engine's effective default.
-      mamba_cache_mode: none
+      # A hybrid stack's recurrent state. Whether it is cached follows enable_prefix_caching.
       block_size: 16
       max_num_batched_tokens: 8192
       max_num_seqs: 256

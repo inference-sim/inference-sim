@@ -81,7 +81,7 @@ def fixture_catalog() -> Path:
     """A catalog holding only the packaging lines this test reads.
 
     This repository carries no catalog, so the test states what the real entries say:
-    gb200-nvl72 and gb300 fix 4 per tray and 72 per rack (blis-substrate catalog/hardware/),
+    gb200-nvl72 and gb300 fix 4 per tray and 72 per rack (the substrate catalog/hardware/),
     and h200 fixes neither.
     """
     root = Path(tempfile.mkdtemp(prefix="gen-catalog-")) / "hardware"
@@ -124,9 +124,9 @@ def main() -> int:
     ck("precision fp4 is written as quantization nvfp4, bf16 as none",
        engine(sweep(precision="fp4"), "quantization") == "nvfp4"
        and engine(sweep(precision="bf16"), "quantization") is None)
-    ck("the scenario names engine {kind: vllm, version: 0.33.0}, and no engine_version",
-       re.search(r'^engine:\n  kind: vllm\n  version: "0.33.0"$', text(sweep()), re.M) is not None
-       and "engine_version" not in text(sweep()))
+    ck("the scenario names engine {kind: vllm}, and no version or engine_version",
+       re.search(r'^engine:\n  kind: vllm\n\n', text(sweep()), re.M) is not None
+       and "engine_version" not in text(sweep()) and "version:" not in text(sweep()))
     full = sweep("deepseek-v4-pro", stated={"block_size": 256, "gpu_memory_utilization": 0.9,
                                             "enable_prefix_caching": True,
                                             "speculative_method": "mtp",

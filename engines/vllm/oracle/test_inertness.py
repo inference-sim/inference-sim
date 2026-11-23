@@ -1,0 +1,380 @@
+# Original to blis-vllm.
+"""Negative controls for oracle/inertness.py: the harness must find a field that is NOT inert, a read it
+was not told about, a stale read, and a variable the source does name.
+
+Run: VLLM_SOURCE=<pinned vLLM checkout> python3 -I oracle/test_inertness.py   (ORACLE_MODEL etc. as oracle/README.md)
+"""
+
+import copy
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(HERE)
+ROOT = os.environ.get("VLLM_SOURCE")
+# A proof is held to the release it records. VLLM_SOURCE is the checkout of the oracle's recordings
+# (internal/upstream OracleCommit); VLLM_SOURCE_ENGINE, when set, is the one of the commit the engine
+# models (Commit), for the proofs reviewed there.
+SOURCES = [p for p in (ROOT, os.environ.get("VLLM_SOURCE_ENGINE")) if p]
+
+
+def load():
+    spec = importlib.util.spec_from_file_location("inertness", os.path.join(HERE, "inertness.py"))
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def proof(name):
+    with open(os.path.join(HERE, "inertness", name + ".json"), encoding="utf-8") as f:
+        return json.load(f)
+
+
+def root_for(spec):
+    """The checkout of the release the proof records; a proof with no checkout to hold it to fails."""
+    seen = []
+    for path in SOURCES:
+        head = subprocess.run(["git", "-C", path, "rev-parse", "HEAD"], check=True, capture_output=True,
+                              text=True).stdout.strip()
+        if head in spec["release"]:
+            return path
+        seen.append(head)
+    raise AssertionError("proof for %s records release %r; the checkouts given are at %s"
+                         % (spec.get("field"), spec["release"], seen))
+
+
+def read_in(spec, path):
+    """The proof's own `at` for the read in path: the line moves with the release, the file does not."""
+    (at,) = [rd["at"] for rd in spec["readers"] if rd["at"].startswith(path + ":")]
+    return at
+
+
+@unittest.skipUnless(ROOT, "VLLM_SOURCE is unset")
+class Controls(unittest.TestCase):
+    def setUp(self):
+        self.h = load()
+
+    def test_a_field_that_changes_the_schedule_is_not_inert(self):
+        # enable_chunked_prefill off makes a waiting request whose prompt does not fit the budget wait
+        # (vllm/v1/core/sched/scheduler.py:1161): the scheduler's decisions differ across the probes.
+        scenario = {"name": "chunked-prefill-control", "config": {
+            "max_num_seqs": 4, "max_num_batched_tokens": 64, "block_size": 4, "num_blocks": 120, "max_model_len": 64,
+            "long_prefill_token_threshold": 0, "enable_prefix_caching": False, "scheduling_policy": "fcfs"},
+            "requests": [{"id": "c0", "arrival_step": 0, "prompt": list(range(100, 140)), "output": [7, 8, 9]},
+                         {"id": "c1", "arrival_step": 0, "prompt": list(range(200, 240)), "output": [7, 8]},
+                         {"id": "c2", "arrival_step": 0, "prompt": list(range(300, 330)), "output": [7, 8]}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "chunked-prefill-control.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(scenario, f)
+            spec = {"field": "enable_chunked_prefill", "release": "x", "readers": [],
+                    "probes": [{"label": "on", "value": True}, {"label": "off", "value": False}],
+                    "runs": [{"id": "sched", "kind": "scheduler", "apply": {"scheduler_config": "enable_chunked_prefill"},
+                              "scenarios": [path]}]}
+            r = self.h.evaluate(ROOT, spec)
+        self.assertEqual(r["verdict"], "not_inert")
+        self.assertTrue([p for p in r["problems"] if "decisions of run sched differ" in p], r["problems"])
+
+    def config_spec(self, observe, compare):
+        # max_num_batched_tokens 4096 instead of 2048 changes the encoder cache size and the compile ranges
+        # the resolved config holds, and, unless it is listed, nothing the observed values name.
+        return {"field": "max_num_batched_tokens", "release": "x", "readers": [],
+                "probes": [{"label": "2048", "value": 2048}, {"label": "4096", "value": 4096}],
+                "runs": [{"id": "config", "kind": "config", "apply": {"engine_args": "max_num_batched_tokens"},
+                          "observe": observe, "compare": compare, "echo": "scheduler_config.max_num_batched_tokens"}]}
+
+    @staticmethod
+    def run_problems(r):
+        return [p for p in r["problems"] if "differ" in p or "resolves differently" in p]
+
+    def test_a_config_run_sees_a_resolved_value_it_was_not_told_to_watch(self):
+        watched = ["scheduler_config.max_num_seqs"]
+        blind = self.h.evaluate(ROOT, self.config_spec(watched, []))
+        self.assertEqual(self.run_problems(blind), [], "the control needs a value outside the watched list that changes")
+        r = self.h.evaluate(ROOT, self.config_spec(watched, ["scheduler_config", "compilation_config"]))
+        self.assertEqual(r["verdict"], "not_inert")
+        self.assertTrue([p for p in r["problems"] if "config run config: " in p and "scheduler_config.encoder_cache_size" in p
+                         and "resolves differently" in p], r["problems"])
+        self.assertTrue([p for p in r["problems"] if "decisions of run config differ" in p], r["problems"])
+
+    def test_a_config_run_sees_a_watched_value_change(self):
+        r = self.h.evaluate(ROOT, self.config_spec(["scheduler_config.max_num_seqs", "scheduler_config.encoder_cache_size"], []))
+        self.assertEqual(r["verdict"], "not_inert")
+        self.assertTrue([p for p in r["problems"] if "decisions of run config differ" in p], r["problems"])
+
+    def test_an_output_processor_run_sees_what_it_hands_back_to_the_engine(self):
+        # The probe is the step at which the script aborts request a; the processor hands the abort back to
+        # the engine core, which is engine-facing, so the run must report it.
+        script = copy.deepcopy([r for r in proof("stream_interval")["runs"] if r["id"] == "outputproc"][0]["script"])
+        spec = {"field": "stream_interval", "release": "x", "readers": [],
+                "probes": [{"label": "abort at 3", "value": 3}, {"label": "abort at 7", "value": 7}],
+                "runs": [{"id": "outputproc", "kind": "outputproc", "apply": {"abort_step": ["a"]}, "script": script}]}
+        r = self.h.evaluate(ROOT, spec)
+        self.assertEqual(r["verdict"], "not_inert")
+        self.assertTrue([p for p in r["problems"] if "decisions of run outputproc differ" in p], r["problems"])
+
+    def handshake_spec(self, field, probes, expect_port=True, **extra):
+        base = {"data_parallel_size": 2, "data_parallel_size_local": 1, "data_parallel_address": "10.0.0.1"}
+        base.pop(field, None)
+        run = {"id": "launch", "kind": "handshake", "entry": "launch_core_engines", "apply": {"engine_args": field},
+               "base": base, "echo": field, "expect_port": expect_port, **extra}
+        return {"field": field, "release": "x", "readers": [], "probes": [{"label": str(v), "value": v} for v in probes],
+                "runs": [run]}
+
+    def test_a_handshake_run_sees_a_field_that_changes_how_the_cores_are_started(self):
+        # data_parallel_size_local 1 against 2 changes how many engine cores the front end starts itself and
+        # whether they handshake over a local socket: engine-facing, so the run must report it.
+        r = self.h.evaluate(ROOT, self.handshake_spec("data_parallel_size_local", [1, 2], expect_port=False,
+                                                      ignore=["parallel_config.data_parallel_master_port",
+                                                              "parallel_config._data_parallel_master_port_list"]))
+        self.assertEqual(r["verdict"], "not_inert")
+        self.assertTrue([p for p in r["problems"] if "decisions of run launch differ" in p], r["problems"])
+
+    def test_a_handshake_run_requires_the_endpoint_to_carry_the_stated_port(self):
+        # A run that claims to probe a port through data_parallel_size_local finds an endpoint that does not
+        # carry the stated value, and says so instead of passing.
+        r = self.h.evaluate(ROOT, self.handshake_spec("data_parallel_size_local", [1, 1],
+                                                      ignore=["parallel_config.data_parallel_master_port",
+                                                              "parallel_config._data_parallel_master_port_list"]))
+        self.assertTrue([p for p in r["problems"] if "does not carry the stated port" in p], r["problems"])
+
+    def test_a_handshake_run_ignores_only_the_paths_it_is_told_to(self):
+        # The config draws free ports for the data-parallel master at random: without "ignore" two probes of
+        # the rpc port differ in them, and the run says so rather than passing.
+        r = self.h.evaluate(ROOT, self.handshake_spec("data_parallel_rpc_port", [29550, 13345]))
+        self.assertEqual(r["verdict"], "not_inert")
+        self.assertTrue([p for p in r["problems"] if "decisions of run launch differ" in p], r["problems"])
+
+    def test_a_disposition_the_harness_does_not_check_is_refused(self):
+        spec = copy.deepcopy(proof("stream_interval"))
+        spec["runs"] = []
+        # The reader is the proof's own async_llm.py read, at whatever line the pinned release has it.
+        readers = [rd for rd in spec["readers"] if rd["at"].startswith("vllm/v1/engine/async_llm.py:")]
+        self.assertEqual(len(readers), 1, [rd["at"] for rd in spec["readers"]])
+        readers[0]["disposition"] = {"kind": "gpu_replaced"}
+        r = self.h.evaluate(ROOT, spec)
+        want = "%s: unknown disposition 'gpu_replaced'" % readers[0]["at"]
+        self.assertTrue([p for p in r["problems"] if want in p], r["problems"])
+
+    def test_a_file_that_names_the_field_and_the_proof_does_not_list_fails(self):
+        spec = copy.deepcopy(proof("stream_interval"))
+        spec["runs"] = []
+        spec["named_in"]["vllm"].remove("vllm/sampling_params.py")
+        spec["named_in"]["rust"].remove("rust/src/cmd/src/cli.rs")
+        spec["named_in"]["rust"].append("rust/src/cmd/src/not_a_file.rs")
+        r = self.h.evaluate(ROOT, spec)
+        for want in ("vllm/sampling_params.py names the field and the proof does not list it",
+                     "rust/src/cmd/src/cli.rs names the field and the proof does not list it",
+                     "rust/src/cmd/src/not_a_file.rs is listed in named_in and does not name the field"):
+            self.assertTrue([p for p in r["problems"] if want in p], r["problems"])
+
+    def test_a_variable_the_source_names_is_not_unread(self):
+        spec = {"kind": "unread", "release": "x", "names": ["VLLM_MXFP4_EMULATION_DEQUANT_AT_LOAD"]}
+        r = self.h.evaluate_unread(ROOT, spec)
+        self.assertEqual(r["verdict"], "not_inert")
+        self.assertIn("vllm/envs.py", r["problems"][0])
+
+    def test_a_named_site_the_proof_does_not_list_fails(self):
+        spec = copy.deepcopy(proof("HF_HUB_CACHE"))
+        dropped = spec["sites"]["HF_HUB_CACHE"].pop()
+        r = self.h.evaluate_named(root_for(spec), spec)
+        self.assertEqual(r["verdict"], "not_inert")
+        want = "HF_HUB_CACHE is named at %s:%d and the proof does not list it" % (dropped["file"], dropped["line"])
+        self.assertIn(want, r["problems"])
+
+    def test_a_named_site_the_source_does_not_hold_fails(self):
+        spec = copy.deepcopy(proof("HF_HUB_CACHE"))
+        spec["sites"]["HF_HUB_CACHE"].append(
+            {"file": "vllm/envs.py", "line": 1, "text": "HF_HUB_CACHE", "role": "load"})
+        r = self.h.evaluate_named(root_for(spec), spec)
+        self.assertIn("HF_HUB_CACHE is listed at vllm/envs.py:1 and is not named there", r["problems"])
+
+    def test_a_named_site_with_the_wrong_role_fails(self):
+        spec = copy.deepcopy(proof("HF_HUB_CACHE"))
+        for site in spec["sites"]["HF_HUB_CACHE"]:
+            if site["role"] == "test":
+                site["role"] = "load"
+        r = self.h.evaluate_named(root_for(spec), spec)
+        self.assertTrue([p for p in r["problems"] if "is listed as load code and follows a #[cfg(test)] line" in p],
+                        r["problems"])
+        spec = copy.deepcopy(proof("HF_HUB_CACHE"))
+        for site in spec["sites"]["HF_HUB_CACHE"]:
+            if site["role"] == "load":
+                site["role"] = "test"
+        r = self.h.evaluate_named(root_for(spec), spec)
+        self.assertTrue([p for p in r["problems"] if "is listed as test code and does not follow" in p], r["problems"])
+
+    def test_a_named_site_whose_line_changed_fails(self):
+        spec = copy.deepcopy(proof("HF_HUB_CACHE"))
+        spec["sites"]["HF_HUB_CACHE"][0]["text"] = "something else"
+        r = self.h.evaluate_named(root_for(spec), spec)
+        self.assertTrue([p for p in r["problems"] if "the proof lists 'something else'" in p], r["problems"])
+
+    def test_a_read_with_no_disposition_fails(self):
+        spec = copy.deepcopy(proof("stream_interval"))
+        spec["runs"] = []
+        dropped = spec["readers"][0]["at"]
+        self.assertTrue(dropped.startswith("vllm/engine/arg_utils.py:"), dropped)
+        spec["readers"] = spec["readers"][1:]
+        r = self.h.evaluate(ROOT, spec)
+        self.assertTrue([p for p in r["problems"] if "has no disposition: " + dropped in p], r["problems"])
+
+    def test_a_listed_read_that_is_not_in_the_source_fails(self):
+        spec = copy.deepcopy(proof("stream_interval"))
+        spec["runs"] = []
+        spec["readers"].append({"at": "vllm/engine/arg_utils.py:1", "disposition": {"kind": "run", "run": "config"}})
+        r = self.h.evaluate(ROOT, spec)
+        self.assertTrue([p for p in r["problems"] if "is not in the source: vllm/engine/arg_utils.py:1" in p], r["problems"])
+
+    def test_a_run_disposition_no_run_executed_fails(self):
+        spec = copy.deepcopy(proof("stream_interval"))
+        spec["runs"] = []
+        r = self.h.evaluate(ROOT, spec)
+        self.assertTrue([p for p in r["problems"] if "did not execute it" in p], r["problems"])
+
+    def test_a_pass_through_that_is_not_one_fails(self):
+        spec = copy.deepcopy(proof("stream_interval"))
+        spec["runs"] = []
+        at = read_in(spec, "vllm/v1/engine/async_llm.py")
+        for rd in spec["readers"]:
+            if rd["at"] == at:
+                rd["disposition"]["callee"] = "SomethingElse"
+        r = self.h.evaluate(ROOT, spec)
+        self.assertTrue([p for p in r["problems"] if at + " is not a keyword" in p], r["problems"])
+
+    def test_a_reviewed_read_the_source_no_longer_holds_fails(self):
+        spec = copy.deepcopy(proof("stream_interval"))
+        spec["runs"] = []
+        for rd in spec["readers"]:
+            if rd.get("reviewed") and rd.get("expr", "").startswith("if self.stream_interval >"):
+                rd["expr"] = "if self.stream_interval > 2:"
+        r = self.h.evaluate(ROOT, spec)
+        self.assertTrue([p for p in r["problems"] if "no longer holds" in p], r["problems"])
+
+
+    def test_a_run_disposition_names_the_run_that_executed_the_line(self):
+        # The arg_utils.py read is executed by the config run (EngineArgs.create_engine_config) and by no other
+        # run. A proof that names the outputproc run for it must fail, though the config run came first:
+        # coverage is per run, not the sum of the runs so far.
+        spec = copy.deepcopy(proof("stream_interval"))
+        spec["runs"] = [r for r in spec["runs"] if r["id"] in ("config", "outputproc")]
+        at = read_in(spec, "vllm/engine/arg_utils.py")
+        for rd in spec["readers"]:
+            if rd["at"] == at:
+                rd["disposition"]["run"] = "outputproc"
+        r = self.h.evaluate(ROOT, spec)
+        self.assertTrue([p for p in r["problems"]
+                         if at + " is marked run in outputproc and that run did not execute it" in p], r["problems"])
+        got = [rd for rd in r["readers"] if rd["at"] == at][0]
+        self.assertEqual(got["ran_in"], ["config"])
+
+
+class CoverageMatching(unittest.TestCase):
+    """Coverage names a file by its path inside vLLM and matches the executed file by that path's suffix:
+    CI installs vLLM from a wheel, so the code that runs is under site-packages, not under the checkout."""
+
+    SRC = "def read(x):\n    y = x + 1\n    return y\n"
+
+    def run_module(self, path, cov):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(self.SRC)
+        spec = importlib.util.spec_from_file_location("covered_module", path)
+        assert spec is not None and spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        with cov:
+            mod.read(1)
+
+    def test_a_module_run_from_site_packages_counts_for_the_checkouts_path(self):
+        h = load()
+        with tempfile.TemporaryDirectory() as tmp:
+            checkout = os.path.join(tmp, "checkout")  # the path the proof's vllm_root names; nothing runs from it
+            installed = os.path.join(tmp, "venv", "lib", "python3.12", "site-packages", "vllm", "v1", "engine", "tiny.py")
+            cov = h.Coverage(checkout, ["vllm/v1/engine/tiny.py"])
+            self.run_module(installed, cov)
+            self.assertTrue(cov.ran("vllm/v1/engine/tiny.py:2", 2), cov.hit)
+
+    def test_a_module_run_from_the_checkout_counts(self):
+        h = load()
+        with tempfile.TemporaryDirectory() as tmp:
+            checkout = os.path.join(tmp, "checkout")
+            cov = h.Coverage(checkout, ["vllm/v1/engine/tiny.py"])
+            self.run_module(os.path.join(checkout, "vllm", "v1", "engine", "tiny.py"), cov)
+            self.assertTrue(cov.ran("vllm/v1/engine/tiny.py:2", 2), cov.hit)
+
+    def test_a_file_whose_directory_only_ends_in_the_same_letters_does_not_count(self):
+        h = load()
+        with tempfile.TemporaryDirectory() as tmp:
+            other = os.path.join(tmp, "site-packages", "notvllm", "v1", "engine", "tiny.py")
+            cov = h.Coverage(os.path.join(tmp, "checkout"), ["vllm/v1/engine/tiny.py"])
+            self.run_module(other, cov)
+            self.assertFalse(cov.ran("vllm/v1/engine/tiny.py:2", 2), cov.hit)
+
+    def test_reset_forgets_the_earlier_run(self):
+        h = load()
+        with tempfile.TemporaryDirectory() as tmp:
+            cov = h.Coverage(tmp, ["vllm/v1/engine/tiny.py"])
+            self.run_module(os.path.join(tmp, "site-packages", "vllm", "v1", "engine", "tiny.py"), cov)
+            self.assertTrue(cov.ran("vllm/v1/engine/tiny.py:2", 2))
+            cov.reset()
+            self.assertFalse(cov.ran("vllm/v1/engine/tiny.py:2", 2))
+
+
+class HostIndependence(unittest.TestCase):
+    """A proof's hashes are computed on whatever runner the job lands on, so they must not carry a value that
+    the runner's CPU decides: vLLM's CPU platform resolves cache_config.mamba_ssm_cache_dtype to float32 on a
+    CPU with AVX512-BF16 and leaves it auto on one without (vllm/platforms/cpu.py), and CI's runners are of both
+    kinds (the proof's hashes failed on a runner without it)."""
+
+    def test_a_handshake_run_hashes_the_same_config_on_a_cpu_with_and_without_avx512_bf16(self):
+        import dataclasses
+        h = load()
+
+        @dataclasses.dataclass
+        class Cache:
+            block_size: int = 16
+            mamba_ssm_cache_dtype: str = "auto"
+
+        @dataclasses.dataclass
+        class Section:
+            max_num_seqs: int = 128
+            data_parallel_rpc_port: int = 29550
+
+        class Cfg:
+            def __init__(self, dtype):
+                self.parallel_config = Section()
+                self.scheduler_config = Section()
+                self.cache_config = Cache(mamba_ssm_cache_dtype=dtype)
+
+        runs = [r for r in proof("data_parallel_rpc_port")["runs"] if r["kind"] == "handshake"]
+        self.assertTrue(runs)
+        for run in runs:
+            with self.subTest(run=run["id"]):
+                with_bf16 = h.handshake_config(Cfg("float32"), "data_parallel_rpc_port", run.get("ignore", []))
+                without = h.handshake_config(Cfg("auto"), "data_parallel_rpc_port", run.get("ignore", []))
+                self.assertEqual(h.digest(with_bf16), h.digest(without))
+
+
+class CommittedProofs(unittest.TestCase):
+    @unittest.skipUnless(ROOT, "VLLM_SOURCE is unset")
+    def test_every_committed_proof_is_what_the_harness_computes_now(self):
+        h = load()
+        d = os.path.join(HERE, "inertness")
+        for fn in sorted(os.listdir(d)):
+            if fn.endswith(".json"):
+                with self.subTest(proof=fn):
+                    path = os.path.join(d, fn)
+                    with open(path, encoding="utf-8") as f:
+                        spec = json.load(f)
+                    self.assertEqual(h.main([root_for(spec), path, "--check"]), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,171 @@
+# Original to blis-vllm.
+"""Mutation sweep for the tier-1 rules (core/rulepack/v0_33): apply one mutant at a time to a scratch copy
+of the module, run the rule's unit tests and its MatchSource checks against the pinned vLLM source,
+and report whether each is caught.
+
+Each mutant breaks one clause of a rule a supported row of docs/feature-matrix.md names, or one
+piece of the data, rule or parser that v0.32.0 added over v0.31.0 (the 0.32.0 pack's commit), so
+those mutants exist and run in CI rather than only on a contributor's machine. The mutant IDs are
+C1-C28; D1-D11 are oracle/mutate_t3.py's.
+
+Usage: python3 oracle/mutate_rules.py <blis-vllm checkout> <scratch dir> <vLLM v0.33.0 source> [C1,...]
+Exits non-zero if the unmutated module fails, or a mutant survives or breaks the build without a
+test failure.
+"""
+import os
+import shutil
+import subprocess
+import sys
+
+PACK = "core/rulepack/v0_33/pack.go"
+SOURCE = "core/rulepack/v0_33/source_test.go"
+
+DCP = "TestDCPDividesTP"
+BIND = "TestMoEEPBackendBindsPassthrough"
+MLA = "TestMLAPrefillBackendKnown"
+
+# (id, the clause it breaks, file, exact old text, new text, the tests that must catch it)
+MUTANTS = [
+    # dcp-divides-tp (vllm/config/parallel.py:590-599@5df63a72).
+    ("C1", "dcp-divides-tp: with pcp off, tp % dcp must be 0", PACK,
+     "case pcp == 1 && tp%dcp != 0:", "case pcp == 1 && tp%dcp != 0 && false:", DCP),
+    ("C2", "dcp-divides-tp: the modulus is tp by dcp, not dcp by tp", PACK,
+     "case pcp == 1 && tp%dcp != 0:", "case pcp == 1 && dcp%tp != 0:", DCP),
+    ("C3", "dcp-divides-tp: with pcp on, dcp may span the pcp axis", PACK,
+     "case pcp > 1 && dcp != 1 && dcp != pcp && dcp != tp*pcp:",
+     "case pcp > 1 && dcp != 1 && dcp != tp*pcp:", DCP),
+    ("C4", "dcp-divides-tp: with pcp on, dcp may span tp x pcp", PACK,
+     "case pcp > 1 && dcp != 1 && dcp != pcp && dcp != tp*pcp:",
+     "case pcp > 1 && dcp != 1 && dcp != pcp:", DCP),
+    ("C5", "dcp-divides-tp: an unstated dcp is one, not zero", PACK,
+     "tp, pcp, dcp := pl.TP, max(pl.PCP, 1), max(pl.DCP, 1)",
+     "tp, pcp, dcp := pl.TP, max(pl.PCP, 1), max(pl.DCP, 0)", DCP),
+    # The data v0.32.0 changed (vllm/config/parallel.py:44-59, cache.py:39-63, kernel.py:122-169@5df63a72).
+    ("C6", "all2all_backend gains passthrough", PACK,
+     '"mori_low_latency", "moonep", "nixl_ep", "passthrough"),',
+     '"mori_low_latency", "moonep", "nixl_ep"),',
+     "TestAll2AllBackendMembership|TestAll2AllBackendsMatchSource"),
+    ("C7", "passthrough joins the sequence-parallel MoE subset", PACK,
+     '"mori_high_throughput", "mori_low_latency", "nixl_ep", "passthrough"),',
+     '"mori_high_throughput", "mori_low_latency", "nixl_ep"),',
+     "TestSPMoEBackendMembership|TestSPMoEBackendsMatchSource"),
+    ("C8", "the cache dtypes gain ultraquant_4bit", PACK,
+     '"ultraquant_4bit", "int4_per_token_head",', '"int4_per_token_head",',
+     "TestSmallVocabularies|TestCacheDTypesMatchSource"),
+    ("C9", "a stated mamba_cache_mode is no longer refused", PACK,
+     'if e.MambaCacheMode != "" {', 'if e.MambaCacheMode != "" && false {',
+     "TestMambaCacheModeIsRefused"),
+    ("C10", "the MoE backends gain aiter_mega_moe", PACK,
+     '"aiter", "aiter_mega_moe", "aiter_triton_mxfp4_bf16",', '"aiter", "aiter_triton_mxfp4_bf16",',
+     "TestMoEBackendsMatchSource"),
+    ("C11", "MEGA_MOE_BACKENDS is NATIVE | FLASHINFER_MOE_EP", PACK,
+     '\t\t\t"flashinfer_moe_ep_mega_deep_gemm"),', '\t\t\t"flashinfer_moe_ep_mega_deep_gemm", "aiter_mega_moe"),',
+     "TestMoEBackendsMatchSource"),
+    # The new rule moe-ep-backend-binds-passthrough (vllm/config/kernel.py:194-227@5df63a72).
+    ("C12", "moe-ep-backend-binds-passthrough: both FlashInfer MoE-EP backends communicate themselves", PACK,
+     'selfCommunicating := moe == "flashinfer_moe_ep_cutedsl" || moe == "flashinfer_moe_ep_mega_deep_gemm"',
+     'selfCommunicating := moe == "flashinfer_moe_ep_cutedsl"', BIND),
+    ("C13", "moe-ep-backend-binds-passthrough: an EP megakernel refuses another explicit backend", PACK,
+     "case selfCommunicating && a2a != \"passthrough\" && a2a != p.DefaultAll2AllBackend:",
+     "case selfCommunicating && a2a != \"passthrough\" && a2a != p.DefaultAll2AllBackend && false:", BIND),
+    ("C14", "moe-ep-backend-binds-passthrough: the default backend is rebound, not refused", PACK,
+     "case selfCommunicating && a2a != \"passthrough\" && a2a != p.DefaultAll2AllBackend:",
+     "case selfCommunicating && a2a != \"passthrough\":", BIND),
+    ("C15", "moe-ep-backend-binds-passthrough: passthrough is refused beside any other MoE backend", PACK,
+     'case !selfCommunicating && e.All2AllBackend == "passthrough":',
+     'case !selfCommunicating && e.All2AllBackend == "passthrough" && moe != "":', BIND),
+    ("C16", "moe-ep-backend-binds-passthrough: the binding reads the backend after the pplx/naive rename", PACK,
+     "a2a := p.EffectiveAll2AllBackend(e.All2AllBackend)", "a2a := e.All2AllBackend", BIND),
+    # The parser: MEGA_MOE_BACKENDS' module constants, and the sequence-parallel variable.
+    ("C17", "the source check resolves FLASHINFER_MOE_EP_BACKENDS through its module constants", SOURCE,
+     "\t\tconstants[m[1]] = m[2]\n", "\t\tconstants[m[1]] = m[1]\n", "TestMoEBackendsMatchSource"),
+    ("C18", "DeepSeek-V4 narrows the data-parallel route of sequence parallelism to pp 1", SOURCE,
+     "c.DataParallelRouteNeedsPipelineParallelOne = dpOnlyAtPP1",
+     "c.DataParallelRouteNeedsPipelineParallelOne = dpOnlyAtPP1 && false", "TestModelSequenceParallelRulesMatchSource"),
+    ("C19", "both DeepSeek-V4 releases keep the mega-MoE-or-dp clause", PACK,
+     "enginefacts.ArchDeepseekV4: pack.SequenceParallelCondition{ExpertParallel: true,\n"
+     "\t\t\t\tTensorParallelAboveOne: true, MegaMoEOrDataParallelAboveOne: true,\n"
+     "\t\t\t\tDataParallelRouteNeedsPipelineParallelOne: true},",
+     "enginefacts.ArchDeepseekV4: pack.SequenceParallelCondition{ExpertParallel: true,\n"
+     "\t\t\t\tTensorParallelAboveOne: true},", "TestModelSequenceParallelRulesMatchSource"),
+    # mla-prefill-backend-known (vllm/config/attention.py:195-201@5df63a72; the members are
+    # MLAPrefillBackendEnum's, vllm/v1/attention/backends/mla/prefill/registry.py:37-65).
+    ("C20", "mla-prefill-backend-known: the rule fires", PACK,
+     "case e.MLAPrefillBackend == \"\" || known[name]:", "case true:", MLA),
+    ("C21", "mla-prefill-backend-known: the name is upper-cased before the lookup", PACK,
+     "name := strings.ToUpper(e.MLAPrefillBackend)", "name := e.MLAPrefillBackend", MLA),
+    ("C22", "mla-prefill-backend-known: an unstated backend is the engine's own choice", PACK,
+     "case e.MLAPrefillBackend == \"\" || known[name]:", "case known[name]:", MLA),
+    ("C23", "mla-prefill-backend-known: an unknown name warns, since a plugin may register it", PACK,
+     "out.RuleWarnf(\"mla-prefill-backend-known\",", "out.RuleErrorf(\"mla-prefill-backend-known\",", MLA),
+    ("C24", "MLAPrefillBackendEnum: every member is accepted", PACK,
+     "\"ROCM_AITER_FA\", \"CPU\", \"ZEN_CPU\", \"CUSTOM\"}", "\"ROCM_AITER_FA\", \"CPU\", \"CUSTOM\"}",
+     "TestMLAPrefillBackendsMatchSource"),
+    ("C25", "MLAPrefillBackendEnum: no name it lacks is accepted", PACK,
+     "\"ROCM_AITER_FA\", \"CPU\", \"ZEN_CPU\", \"CUSTOM\"}", "\"ROCM_AITER_FA\", \"CPU\", \"ZEN_CPU\", \"CUSTOM\", \"TRTLLM\"}",
+     "TestMLAPrefillBackendsMatchSource"),
+    # A plugin can register only a Python identifier (registry.py:85-86@5df63a72), so a name that
+    # is not one is refused, not warned.
+    ("C26", "mla-prefill-backend-known: a name no plugin can register is an error", PACK,
+     "case !pythonIdentifier(name):", "case false:", MLA),
+    ("C27", "pythonIdentifier: a leading digit is not an identifier", PACK,
+     "case r >= '0' && r <= '9' && i > 0:", "case r >= '0' && r <= '9' && i >= 0:", "TestPythonIdentifier|" + MLA),
+    ("C28", "pythonIdentifier: punctuation is not an identifier", PACK,
+     "case r == '_', r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z':",
+     "case r == '_', r == '-', r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z':", "TestPythonIdentifier|" + MLA),
+]
+
+TESTS = "|".join(sorted({t for m in MUTANTS for t in m[5].split("|")}))
+
+
+def run(scratch: str, vllm: str, tests: str) -> subprocess.CompletedProcess:
+    env = dict(os.environ, VLLM_SOURCE=vllm, VLLM_SOURCE_REQUIRED="1")
+    return subprocess.run(["go", "test", "-count=1", "-run", tests, "./core/rulepack/v0_33/"],
+                          cwd=scratch, capture_output=True, text=True, env=env)
+
+
+def copy(src: str, scratch: str) -> None:
+    if os.path.exists(scratch):
+        shutil.rmtree(scratch)
+    shutil.copytree(src, scratch, ignore=shutil.ignore_patterns(".git", "vllm-source", "oracle-model", "out"))
+
+
+def main() -> int:
+    src, scratch, vllm = sys.argv[1], sys.argv[2], os.path.abspath(sys.argv[3])
+    only = set(sys.argv[4].split(",")) if len(sys.argv) > 4 else None
+    # The unmutated module must pass the same tests, with the source checks on, or a "caught"
+    # below would mean nothing.
+    copy(src, scratch)
+    r = run(scratch, vllm, TESTS)
+    if r.returncode != 0:
+        print(f"BASELINE the unmutated rules fail {TESTS}:\n{(r.stdout + r.stderr)[-2000:]}")
+        return 1
+    print(f"BASELINE passes {TESTS} against {vllm}")
+    bad = 0
+    for mid, row, path, old, new, tests in MUTANTS:
+        if only and mid not in only:
+            continue
+        copy(src, scratch)
+        target = os.path.join(scratch, path)
+        text = open(target).read()
+        if text.count(old) != 1:
+            print(f"BROKEN   {mid} {row}: the mutation site is not unique in {path}")
+            bad += 1
+            continue
+        open(target, "w").write(text.replace(old, new, 1))
+        r = run(scratch, vllm, tests)
+        out = r.stdout + r.stderr
+        if r.returncode == 0:
+            print(f"SURVIVED {mid} {row}")
+            bad += 1
+        elif "build failed" in out or "[setup failed]" in out:
+            print(f"BROKEN   {mid} {row}: the mutant does not compile")
+            bad += 1
+        else:
+            print(f"CAUGHT   {mid} {row}")
+    shutil.rmtree(scratch, ignore_errors=True)
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -11,12 +11,12 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 )
 
 // The small input files a Result holds whole, so --from-result needs none of them passed again
-// (blis-substrate#154, DEV-7, SIM-10): the router files the deployment names, and each
+// (inference-sim/inference-sim#2467, DEV-7, SIM-10): the router files the deployment names, and each
 // configuration file an option names. A trace or a corpus is bulk data: its option records its
 // sha256 only, and a reproduction takes it from the command line again (Principle 6).
 

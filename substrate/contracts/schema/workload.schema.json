@@ -1,0 +1,577 @@
+{
+  "$defs": {
+    "trace.SLODimTargets": {
+      "additionalProperties": false,
+      "properties": {
+        "e2e_ms": {
+          "type": "number"
+        },
+        "itl_ms": {
+          "type": "number"
+        },
+        "ttft_ms": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "workload.ActiveWindow": {
+      "additionalProperties": false,
+      "properties": {
+        "arrival": {
+          "$ref": "#/$defs/workload.ArrivalSpec"
+        },
+        "end_us": {
+          "type": "integer"
+        },
+        "input_distribution": {
+          "$ref": "#/$defs/workload.DistSpec"
+        },
+        "output_distribution": {
+          "$ref": "#/$defs/workload.DistSpec"
+        },
+        "start_us": {
+          "type": "integer"
+        },
+        "trace_rate": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "end_us",
+        "start_us"
+      ],
+      "type": "object"
+    },
+    "workload.ArrivalSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "cv": {
+          "type": "number"
+        },
+        "process": {
+          "enum": [
+            "poisson",
+            "gamma",
+            "weibull",
+            "constant"
+          ],
+          "type": "string"
+        },
+        "scale": {
+          "type": "number"
+        },
+        "shape": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "process"
+      ],
+      "type": "object"
+    },
+    "workload.ClientSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {
+          "type": "string"
+        },
+        "arrival": {
+          "$ref": "#/$defs/workload.ArrivalSpec"
+        },
+        "closed_loop": {
+          "type": "boolean"
+        },
+        "concurrency": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "input_distribution": {
+          "$ref": "#/$defs/workload.DistSpec"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/workload.LifecycleSpec"
+        },
+        "model": {
+          "type": "string"
+        },
+        "multimodal": {
+          "$ref": "#/$defs/workload.MultimodalSpec"
+        },
+        "network": {
+          "$ref": "#/$defs/workload.NetworkSpec"
+        },
+        "output_distribution": {
+          "$ref": "#/$defs/workload.DistSpec"
+        },
+        "prefix_group": {
+          "type": "string"
+        },
+        "prefix_length": {
+          "type": "integer"
+        },
+        "rate_fraction": {
+          "type": "number"
+        },
+        "reasoning": {
+          "$ref": "#/$defs/workload.ReasoningSpec"
+        },
+        "slo_class": {
+          "enum": [
+            "",
+            "critical",
+            "standard",
+            "sheddable",
+            "batch",
+            "background"
+          ],
+          "type": "string"
+        },
+        "slo_target_us": {
+          "type": "integer"
+        },
+        "streaming": {
+          "type": "boolean"
+        },
+        "tenant_id": {
+          "type": "string"
+        },
+        "think_time_us": {
+          "type": "integer"
+        },
+        "timeout": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "input_distribution",
+        "output_distribution"
+      ],
+      "type": "object"
+    },
+    "workload.CohortSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {
+          "type": "string"
+        },
+        "arrival": {
+          "$ref": "#/$defs/workload.ArrivalSpec"
+        },
+        "closed_loop": {
+          "type": "boolean"
+        },
+        "diurnal": {
+          "$ref": "#/$defs/workload.DiurnalSpec"
+        },
+        "drain": {
+          "$ref": "#/$defs/workload.DrainSpec"
+        },
+        "id": {
+          "type": "string"
+        },
+        "input_distribution": {
+          "$ref": "#/$defs/workload.DistSpec"
+        },
+        "model": {
+          "type": "string"
+        },
+        "multimodal": {
+          "$ref": "#/$defs/workload.MultimodalSpec"
+        },
+        "network": {
+          "$ref": "#/$defs/workload.NetworkSpec"
+        },
+        "output_distribution": {
+          "$ref": "#/$defs/workload.DistSpec"
+        },
+        "population": {
+          "type": "integer"
+        },
+        "prefix_group": {
+          "type": "string"
+        },
+        "prefix_length": {
+          "type": "integer"
+        },
+        "prefix_sharing": {
+          "enum": [
+            "shared",
+            "per_member"
+          ],
+          "type": "string"
+        },
+        "rate_fraction": {
+          "type": "number"
+        },
+        "reasoning": {
+          "$ref": "#/$defs/workload.ReasoningSpec"
+        },
+        "slo_class": {
+          "enum": [
+            "",
+            "critical",
+            "standard",
+            "sheddable",
+            "batch",
+            "background"
+          ],
+          "type": "string"
+        },
+        "slo_target_us": {
+          "type": "integer"
+        },
+        "spike": {
+          "$ref": "#/$defs/workload.SpikeSpec"
+        },
+        "streaming": {
+          "type": "boolean"
+        },
+        "tenant_id": {
+          "type": "string"
+        },
+        "timeout": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "arrival",
+        "id",
+        "input_distribution",
+        "output_distribution",
+        "population",
+        "rate_fraction"
+      ],
+      "type": "object"
+    },
+    "workload.DistSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "type": {
+          "enum": [
+            "gaussian",
+            "exponential",
+            "pareto_lognormal",
+            "lognormal",
+            "empirical",
+            "constant"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "workload.DiurnalSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "peak_hour": {
+          "type": "integer"
+        },
+        "peak_to_trough_ratio": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "peak_hour",
+        "peak_to_trough_ratio"
+      ],
+      "type": "object"
+    },
+    "workload.DrainSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "ramp_duration_us": {
+          "type": "integer"
+        },
+        "start_time_us": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ramp_duration_us",
+        "start_time_us"
+      ],
+      "type": "object"
+    },
+    "workload.InferencePerfSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "shared_prefix": {
+          "$ref": "#/$defs/workload.SharedPrefixSpec"
+        },
+        "stages": {
+          "items": {
+            "$ref": "#/$defs/workload.StageSpec"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "shared_prefix",
+        "stages"
+      ],
+      "type": "object"
+    },
+    "workload.LifecycleSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "windows": {
+          "items": {
+            "$ref": "#/$defs/workload.ActiveWindow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "windows"
+      ],
+      "type": "object"
+    },
+    "workload.MultiTurnSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "context_growth": {
+          "type": "string"
+        },
+        "max_rounds": {
+          "type": "integer"
+        },
+        "single_session": {
+          "type": "boolean"
+        },
+        "think_time_us": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_rounds",
+        "think_time_us"
+      ],
+      "type": "object"
+    },
+    "workload.MultimodalSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "audio_count_distribution": {
+          "$ref": "#/$defs/workload.DistSpec"
+        },
+        "audio_distribution": {
+          "$ref": "#/$defs/workload.DistSpec"
+        },
+        "image_count_distribution": {
+          "$ref": "#/$defs/workload.DistSpec"
+        },
+        "image_distribution": {
+          "$ref": "#/$defs/workload.DistSpec"
+        },
+        "text_distribution": {
+          "$ref": "#/$defs/workload.DistSpec"
+        },
+        "video_count_distribution": {
+          "$ref": "#/$defs/workload.DistSpec"
+        },
+        "video_distribution": {
+          "$ref": "#/$defs/workload.DistSpec"
+        }
+      },
+      "required": [
+        "audio_count_distribution",
+        "audio_distribution",
+        "image_count_distribution",
+        "image_distribution",
+        "text_distribution",
+        "video_count_distribution",
+        "video_distribution"
+      ],
+      "type": "object"
+    },
+    "workload.NetworkSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "bandwidth_mbps": {
+          "type": "number"
+        },
+        "rtt_ms": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rtt_ms"
+      ],
+      "type": "object"
+    },
+    "workload.ReasoningSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "multi_turn": {
+          "$ref": "#/$defs/workload.MultiTurnSpec"
+        },
+        "reason_ratio_distribution": {
+          "$ref": "#/$defs/workload.DistSpec"
+        }
+      },
+      "required": [
+        "reason_ratio_distribution"
+      ],
+      "type": "object"
+    },
+    "workload.ServeGenDataSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "drain_timeout_secs": {
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        },
+        "window_duration_secs": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "workload.SharedPrefixSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "enable_multi_turn_chat": {
+          "type": "boolean"
+        },
+        "num_unique_system_prompts": {
+          "type": "integer"
+        },
+        "num_users_per_system_prompt": {
+          "type": "integer"
+        },
+        "output_len": {
+          "type": "integer"
+        },
+        "question_len": {
+          "type": "integer"
+        },
+        "system_prompt_len": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "num_unique_system_prompts",
+        "num_users_per_system_prompt",
+        "output_len",
+        "question_len",
+        "system_prompt_len"
+      ],
+      "type": "object"
+    },
+    "workload.Spec": {
+      "additionalProperties": false,
+      "properties": {
+        "aggregate_rate": {
+          "type": "number"
+        },
+        "category": {
+          "enum": [
+            "language",
+            "multimodal",
+            "reasoning"
+          ],
+          "type": "string"
+        },
+        "clients": {
+          "items": {
+            "$ref": "#/$defs/workload.ClientSpec"
+          },
+          "type": "array"
+        },
+        "cohorts": {
+          "items": {
+            "$ref": "#/$defs/workload.CohortSpec"
+          },
+          "type": "array"
+        },
+        "goodput_slo_targets": {
+          "additionalProperties": {
+            "$ref": "#/$defs/trace.SLODimTargets"
+          },
+          "type": "object"
+        },
+        "horizon": {
+          "type": "integer"
+        },
+        "inference_perf": {
+          "$ref": "#/$defs/workload.InferencePerfSpec"
+        },
+        "num_requests": {
+          "type": "integer"
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "servegen_data": {
+          "$ref": "#/$defs/workload.ServeGenDataSpec"
+        },
+        "version": {
+          "const": "2"
+        }
+      },
+      "required": [
+        "seed",
+        "version"
+      ],
+      "type": "object"
+    },
+    "workload.SpikeSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_us": {
+          "type": "integer"
+        },
+        "start_time_us": {
+          "type": "integer"
+        },
+        "trace_rate": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "duration_us",
+        "start_time_us"
+      ],
+      "type": "object"
+    },
+    "workload.StageSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "duration": {
+          "type": "integer"
+        },
+        "rate": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "duration",
+        "rate"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://inference-sim.github.io/blis-substrate/schema/workload.schema.json",
+  "$ref": "#/$defs/workload.Spec",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The workload generator specification blis run --workload-spec reads and blis convert writes. Generated from the Go types by tools/schemagen; the Go validators are the definition.",
+  "title": "workload"
+}

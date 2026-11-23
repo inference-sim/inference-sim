@@ -1,0 +1,2 @@
+# Findings of tools/pyrules/pyrules.py that are not restated rules, one per line, each with
+# its reason after " # ". The list only shrinks: an entry that no longer occurs fails (X15).

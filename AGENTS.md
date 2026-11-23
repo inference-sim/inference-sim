@@ -189,6 +189,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: In every repository, the change class in the pull-request template, and a check that the outputs that moved match the declared class
 - **DEV-13** (new; target ci by M2) A request's sampled output length is written by the workload generator and read only by the trace writer, by replay, and by the engine's stop check, where it acts as an end-of-sequence token at that position.
   - `new`, pull_request: A field-access lint in inference-sim and each engine repository that refuses any read of the sampled length outside these declared sites and tests, with a known-bad input (X18)
+- **VAL-8** (partial; target ci by M2) A lookup matches a coefficient only for the exact kernel implementation that runs.
+  - `ci`, pull_request: A simulator-package test: every registry entry that states a kernel implementation is selected by a byte-gate run or has its kernel hash in an engine's kernel_impls.json copy under registry/inputs, which each engine's test holds to the table it embeds (`internal/val8: TestEveryKeyedEntryIsSelectedOrPublished`)
 - **COV-1** (partial; target ci by M1) One scorer produces every number, and it lives only in accuracy-dashboard: no other repository compares a simulation with a measured end-to-end benchmark.
   - `new`, pull_request: A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to compute an error
 - **COV-12** (partial; target ci by M3) The scored simulation receives the requests the measured run sent: the same requests, in the same order, with the same prompt lengths, output lengths and shared prefixes.

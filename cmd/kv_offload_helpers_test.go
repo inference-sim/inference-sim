@@ -5,12 +5,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 
-	"github.com/inference-sim/blis-vllm/compat/build"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/build"
 )
 
-// The KV offload configuration is resolved by blis-vllm's compat/build (#2021 E3), and its unit
+// The KV offload configuration is resolved by the engine's build package (engines/vllm/core/build; #2021 E3), and its unit
 // tests moved there. These helpers, copied unchanged, build resolved configs for the tests that
 // stay here: the trace-header round trip and the replay reconciliation, which are
 // inference-sim's own.
