@@ -1,0 +1,79 @@
+# The runner pods' network (README.md). Ingress is denied whole: a runner only dials out. Egress is
+# denied except DNS and HTTPS/HTTP to public addresses; the EgressFirewall below narrows that to the
+# hosts CI reads. Nothing in the cluster's own networks is reachable: not the API server, not the
+# agent runners' namespace, not the node or cloud metadata addresses.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: blis-ci
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-and-public-web
+  namespace: blis-ci
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - {protocol: UDP, port: 5353}
+        - {protocol: TCP, port: 5353}
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+      ports:
+        - {protocol: TCP, port: 443}
+        - {protocol: TCP, port: 80}
+---
+# OVN-Kubernetes (OpenShift) applies the rules in order; the last denies every other address. The
+# list is what the jobs on these runners fetch:
+#   the runner itself and actions: GitHub, its API, its archive, release and object stores, the
+#     Actions service, results, cache and artifact endpoints (the last on Azure blob storage)
+#   Go: the module proxy and checksum database, and the toolchain download (setup-go)
+#   Python: PyPI, its file host, and the PyTorch CPU wheel index (the vLLM oracle's lock)
+#   the oracles' model configurations: Hugging Face (configuration files only, no weights)
+#   Node, for the github-script parse test (setup-node)
+# README.md says how to confirm the list from a run's egress log before enabling the variables.
+apiVersion: k8s.ovn.org/v1
+kind: EgressFirewall
+metadata:
+  name: default
+  namespace: blis-ci
+spec:
+  egress:
+    - {type: Allow, to: {dnsName: github.com}}
+    - {type: Allow, to: {dnsName: api.github.com}}
+    - {type: Allow, to: {dnsName: codeload.github.com}}
+    - {type: Allow, to: {dnsName: "*.githubusercontent.com"}}
+    - {type: Allow, to: {dnsName: "*.actions.githubusercontent.com"}}
+    - {type: Allow, to: {dnsName: "*.blob.core.windows.net"}}
+    - {type: Allow, to: {dnsName: proxy.golang.org}}
+    - {type: Allow, to: {dnsName: sum.golang.org}}
+    - {type: Allow, to: {dnsName: storage.googleapis.com}}
+    - {type: Allow, to: {dnsName: go.dev}}
+    - {type: Allow, to: {dnsName: dl.google.com}}
+    - {type: Allow, to: {dnsName: pypi.org}}
+    - {type: Allow, to: {dnsName: files.pythonhosted.org}}
+    - {type: Allow, to: {dnsName: download.pytorch.org}}
+    - {type: Allow, to: {dnsName: huggingface.co}}
+    - {type: Allow, to: {dnsName: "*.hf.co"}}
+    - {type: Allow, to: {dnsName: nodejs.org}}
+    - {type: Deny, to: {cidrSelector: 0.0.0.0/0}}

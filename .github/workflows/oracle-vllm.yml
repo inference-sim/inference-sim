@@ -8,7 +8,9 @@ name: oracle-vllm
 # (mutation-vllm.yml) and the real-tracer oracle (oracle-traces-vllm.yml) are separate and manual.
 #
 # Needs the network (the pinned vLLM source, the helper model's config files, the hash-locked wheels) and so
-# runs on GitHub-hosted Linux only; a skipped step or test is a failure (X16), never a pass.
+# runs on ephemeral Linux runners: hosted, or the self-hosted oracle scale set the repository variable
+# CI_RUNS_ON_ORACLE names (k8s/ci), never for a pull request from a fork. A skipped step or test is a
+# failure (X16), never a pass.
 
 on:
   workflow_call:
@@ -29,7 +31,7 @@ jobs:
   # oracles. Every committed golden is re-derived from vLLM here on every run. The seeded fuzz corpora are the
   # jobs below this one; the mutation sweeps are mutation.yml's.
   oracle-scenarios:
-    runs-on: ubuntu-latest
+    runs-on: ${{ !github.event.pull_request.head.repo.fork && vars.CI_RUNS_ON_ORACLE || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -353,15 +355,10 @@ jobs:
   # now, and the harness finds a field that is not inert, a read it was not told about and a variable the source
   # names (oracle/test_inertness.py). The negative controls run vLLM several times each and take minutes, so the
   # tests of the file are shared out by name (cksum mod 3, listed by unittest so a test added later is in a shard);
-  # each job checks that unittest ran exactly the tests it was given.
+  # the three shards run side by side in one job, and each checks that unittest ran exactly the tests it was given.
   oracle-inertness:
-    name: oracle-inertness (shard ${{ matrix.shard }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ !github.event.pull_request.head.repo.fork && vars.CI_RUNS_ON_ORACLE || 'ubuntu-latest' }}
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2]
     env:
       SHARDS: 3
     steps:
@@ -378,7 +375,6 @@ jobs:
           VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
           VLLM_SOURCE: ${{ github.workspace }}/engines/vllm/vllm-source
           VLLM_SOURCE_ENGINE: ${{ github.workspace }}/engines/vllm/vllm-engine-source
-          SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
           python3 -I - > "$RUNNER_TEMP/all.txt" <<'PY'
@@ -398,31 +394,41 @@ jobs:
           # The shard of a test is cksum(name) mod SHARDS (the rule scripts/ci-shard.sh uses): the shards
           # are disjoint and cover the list by construction, and a test added later lands in exactly one.
           test "$(wc -l < "$RUNNER_TEMP/all.txt")" -ge 10
-          while IFS= read -r name; do
-            h="$(printf '%s' "$name" | cksum | cut -d' ' -f1)"
-            if [ $((h % SHARDS)) -eq "$SHARD" ]; then printf '%s\n' "$name"; fi
-          done < "$RUNNER_TEMP/all.txt" > "$RUNNER_TEMP/mine.txt"
-          n="$(wc -l < "$RUNNER_TEMP/mine.txt" | tr -d ' ')"
-          test "$n" -ge 1
-          echo "shard $SHARD of $SHARDS runs $n of $(wc -l < "$RUNNER_TEMP/all.txt") tests"
-          cat "$RUNNER_TEMP/mine.txt"
-          # shellcheck disable=SC2046
-          python -I oracle/test_inertness.py -v --durations 20 $(cat "$RUNNER_TEMP/mine.txt") 2>&1 | tee "$RUNNER_TEMP/inertness.log"
-          grep -q "^Ran $n tests\? in" "$RUNNER_TEMP/inertness.log"
+          # ci-parallel.sh runs each shard in a shell of its own, which does not inherit set -e.
+          # shellcheck disable=SC2153 # SHARDS is the job's env
+          shard() {
+            set -euo pipefail
+            local SHARD="$1" out="$RUNNER_TEMP/shard-$1"
+            mkdir -p "$out"
+            while IFS= read -r name; do
+              h="$(printf '%s' "$name" | cksum | cut -d' ' -f1)"
+              if [ $((h % SHARDS)) -eq "$SHARD" ]; then printf '%s\n' "$name"; fi
+            done < "$RUNNER_TEMP/all.txt" > "$out/mine.txt"
+            n="$(wc -l < "$out/mine.txt" | tr -d ' ')"
+            test "$n" -ge 1
+            echo "shard $SHARD of $SHARDS runs $n of $(wc -l < "$RUNNER_TEMP/all.txt") tests"
+            cat "$out/mine.txt"
+            # shellcheck disable=SC2046
+            python -I oracle/test_inertness.py -v --durations 20 $(cat "$out/mine.txt") 2>&1 | tee "$out/inertness.log"
+            grep -q "^Ran $n tests\? in" "$out/inertness.log"
+          }
+          export -f shard
+          # shellcheck disable=SC2016
+          ../../scripts/ci-parallel.sh "$SHARDS" 'shard "$1"'
 
   # The seeded fuzz corpora (tier 2: 4000 scenarios; tier 3: 1000, DP: 1000; the connector: 3300; the
   # offloading connector: 2600), each from fixed seeds and run through vLLM, then through blis-vllm, which must
   # match at zero mismatches. A corpus is cached, keyed on the generators, seeds, runners, mock, lock and vLLM
-  # pin, and regenerated when any of them changes; a miss costs minutes, so each corpus has its own job and
-  # they run side by side.
+  # pin, and regenerated when any of them changes; a miss costs minutes, so the corpora are split over two jobs
+  # that run side by side, each restoring or generating its own.
   oracle-fuzz:
-    name: oracle-fuzz (${{ matrix.corpus }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    name: oracle-fuzz (${{ matrix.corpora }})
+    runs-on: ${{ !github.event.pull_request.head.repo.fork && vars.CI_RUNS_ON_ORACLE || 'ubuntu-latest' }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        corpus: [t2, mamba, t3, connector, offloading, multi]
+        corpora: ["t2 mamba multi", "t3 connector offloading"]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: env
@@ -432,24 +438,24 @@ jobs:
         uses: ./.github/actions/oracle-fuzz-vllm
         with:
           python-version: ${{ steps.env.outputs.python-version }}
-          corpora: ${{ matrix.corpus }}
+          corpora: ${{ matrix.corpora }}
       # The property and metamorphic tests (#2021 B8) run over fixed seeds in Go alone; their
       # verbose results go into the artifact beside the provenance.
       - name: property and metamorphic tests
-        if: matrix.corpus == 't2'
+        if: contains(matrix.corpora, 't2')
         run: |
           set -o pipefail
           mkdir -p oracle/out
           go test -v -count=1 -run 'TestPropertiesHoldOnRandomScenarios|TestMoreKVNeverAddsPreemptionsOneAtATime|TestLargerBudgetNeverDelaysALoneRequestsFirstToken' ./core/sched/ | tee oracle/out/property-results.txt
       - name: blis-vllm against vLLM (differential + fuzz)
-        if: matrix.corpus == 't2'
+        if: contains(matrix.corpora, 't2')
         env:
           BLIS_VLLM_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz
         run: |
           set -o pipefail
           go test -v -count=1 -run 'TestDifferentialAgainstVLLM|TestFuzzCorpusAgainstVLLM' ./core/sched/ | tee oracle/out/diff-results.txt
       - name: blis-vllm against vLLM (hybrid Mamba fuzz)
-        if: matrix.corpus == 'mamba'
+        if: contains(matrix.corpora, 'mamba')
         env:
           BLIS_VLLM_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-mamba
         run: |
@@ -459,7 +465,7 @@ jobs:
       # Tier 5: every exact vllm:* family, after every step, against vLLM's own Prometheus
       # logger on the same scenarios and fuzz seeds.
       - name: blis-vllm's metrics against vLLM's (scenarios + fuzz)
-        if: matrix.corpus == 't2'
+        if: contains(matrix.corpora, 't2')
         env:
           BLIS_VLLM_METRICS_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz
         run: |
@@ -467,7 +473,7 @@ jobs:
           go test -v -count=1 -run 'TestMetricsAgainstVLLM|TestMetricsFuzzCorpusAgainstVLLM' ./core/metrics/ | tee oracle/out/metrics-results.txt
       # Tier 3: blis-vllm's core/engine against the EngineCore traces of the 1000 fuzz seeds, and the DP loop's.
       - name: blis-vllm's EngineCore against vLLM's (scenarios + fuzz)
-        if: matrix.corpus == 't3'
+        if: contains(matrix.corpora, 't3')
         env:
           BLIS_VLLM_T3_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-t3
           BLIS_VLLM_DP_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-t3-dp
@@ -476,7 +482,7 @@ jobs:
           mkdir -p oracle/out
           go test -v -count=1 -run 'TestEngineCoreAgainstVLLM|TestEngineCoreFuzzCorpusAgainstVLLM|TestDPAgainstVLLM|TestDPAsyncAgainstVLLM|TestDPNixlAgainstVLLM|TestDPFuzzCorpusAgainstVLLM' ./core/engine/ | tee oracle/out/engine-results.txt
       - name: blis-vllm's NIXL connector against vLLM's (scenarios + fuzz)
-        if: matrix.corpus == 'connector'
+        if: contains(matrix.corpora, 'connector')
         env:
           BLIS_VLLM_CONNECTOR_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-connector
         run: |
@@ -484,7 +490,7 @@ jobs:
           mkdir -p oracle/out
           go test -v -count=1 -run 'TestNIXLAgainstVLLM|TestNIXLFuzzCorpusAgainstVLLM' ./core/connector/nixl/ | tee oracle/out/connector-results.txt
       - name: blis-vllm's OffloadingConnector against vLLM's (scenarios + fuzz)
-        if: matrix.corpus == 'offloading'
+        if: contains(matrix.corpora, 'offloading')
         env:
           BLIS_VLLM_OFFLOAD_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-offloading
         run: |
@@ -494,7 +500,7 @@ jobs:
       # Tier 4: vLLM's real MultiConnector over its NIXL and offloading children, both orders, on 3000 fuzz seeds
       # (1000 with hybrid KV cache groups, 1000 with async scheduling).
       - name: blis-vllm's MultiConnector against vLLM's (scenarios + fuzz)
-        if: matrix.corpus == 'multi'
+        if: contains(matrix.corpora, 'multi')
         env:
           BLIS_VLLM_MULTI_FUZZ_DIR: ${{ github.workspace }}/engines/vllm/oracle/out/fuzz-multi
         run: |
@@ -504,7 +510,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: oracle-fuzz-${{ matrix.corpus }}
+          name: oracle-fuzz-${{ strategy.job-index }}
           path: |
             engines/vllm/oracle/out/*-results.txt
             engines/vllm/oracle/out/fuzz-cache.json

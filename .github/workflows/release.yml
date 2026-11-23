@@ -62,5 +62,7 @@ jobs:
             GO_VERSION=${{ steps.gomod.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # A scope of its own, so the release image's layers neither evict nor are evicted by
+          # another workflow's buildx cache.
+          cache-from: type=gha,scope=release-blis
+          cache-to: type=gha,mode=max,scope=release-blis

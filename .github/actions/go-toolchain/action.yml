@@ -45,6 +45,9 @@ runs:
       with:
         go-version: ${{ steps.read.outputs.number }}
         check-latest: false
+        # setup-go's own cache (the module and build caches, keyed on go.sum) would duplicate the
+        # build cache below and ci.yml's, and fill the repository's cache quota.
+        cache: false
     - shell: bash
       env:
         WANT: ${{ steps.read.outputs.version }}

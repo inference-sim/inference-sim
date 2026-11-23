@@ -1,0 +1,28 @@
+# The namespace the CI scale sets' runner pods run in (README.md). The GitHub App credentials ARC
+# needs are a secret here that only the controller reads: a runner pod mounts no secret but its own
+# one-job registration, has no service account token, and cannot reach the API server
+# (network.yaml), so it cannot read them.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: blis-ci
+  labels:
+    blis.ci/role: ci-runners
+---
+# Requests for every runner both scale sets can start at once: blis-ci-large 3 x 16 CPU / 32 GiB
+# and blis-ci-oracle 6 x 4 CPU / 16 GiB, so 72 CPU and 192 GiB, with a little memory to spare.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: blis-ci
+  namespace: blis-ci
+spec:
+  hard:
+    requests.cpu: "72"
+    requests.memory: 200Gi
+    limits.cpu: "72"
+    limits.memory: 300Gi
+    pods: "12"
+    secrets: "24"
+    services: "0"
+    persistentvolumeclaims: "0"

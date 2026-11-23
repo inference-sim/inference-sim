@@ -190,3 +190,7 @@ pod name with `--ephemeral` and `--disableupdate`, and runs `Runner.Listener`.
 After one job the runner deregisters and the process exits; the kubelet starts a
 fresh container, which registers again. There is no init container and no
 persistent runner home — `/tmp` is the only volume.
+
+## CI runner scale sets
+
+The runners that execute pull request CI on the cluster are separate from these: their own namespace, nodes and network policy, no credentials. See `k8s/ci/README.md`.

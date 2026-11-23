@@ -1,0 +1,69 @@
+# Seconds each test of ./engines/vllm/vllmengine took under go test -race -count=1, recorded
+# once on one machine (18 CPUs), for the tests that took at least a second. Only the ratios
+# matter: scripts/ci-shard.sh (CI_SHARD_DURATIONS) deals these tests longest first onto
+# vllm-race's five shards, and hashes every test not named here. A stale or missing line
+# moves a test between shards, never out of the run. Re-record with:
+#   go test -race -count=1 -json ./engines/vllm/vllmengine, keeping each top-level test's Elapsed
+TestAConnectorOptionTierThatIsNotP2PIsRefused	7.6
+TestADecodePoolInheritingMultiConnectorWithoutATierIsRefusedByName	5.1
+TestADeploymentStatesDPSyncInterval	5.2
+TestADeploymentVLLMRefusesAtStartupIsRefusedWithVLLMsMessage	5.3
+TestAHostStatesTheMultiConnectorOrderInItsEngineBlock	5.1
+TestAMultiConnectorScenarioBuildsBothPoolsAndRunsItsPair	12.9
+TestAP2PHandoffDeploymentBuildsBothPoolsPeered	10.2
+TestAP2PTierStatedInTheConnectorOptionsBuildsAPeeredEngine	5.1
+TestAPDPairWithTheHybridManagerOffRuns	6.0
+TestAPDPoolRunsTheDeploymentsConnector	2.6
+TestAPipelinedCPUTierIsSizedFromRankZero	5.1
+TestAPrefillPoolOffloadsWhileTheDecodePoolRunsNixlAlone	10.2
+TestARunPricingTheTRTLLMLaneOnB200ProducesValidSelectedEntries	5.2
+TestASkippingBatchIsPricedWithoutTheProposingPasses	2.5
+TestAStatedEngineSettingIsNeverReplaced	2.5
+TestAStatedKVCacheMemoryBytesBeyondTheDeviceIsRefused	2.7
+TestAStatedKVCacheMemoryBytesSizesThePoolWhateverTheUtilization	13.9
+TestATierBelowTheCPUTierIsAnFSTierPricedOnItsDevice	5.1
+TestATierBelowTheCPUTierItCannotRunIsRefused	2.5
+TestATierOnAnObjectStoreIsAnObjTier	5.1
+TestAdaptiveVerificationPricesTheTrimmedVerify	5.3
+TestAdaptiveVerificationRecipeRunsEndToEnd	8.1
+TestAnAllWindowModelSizesItsPoolFromItsGroupsPages	15.8
+TestAnEngineBuildsFromAnUnstatedDeploymentWithOneSetOfValues	5.1
+TestAnOffloadJobMovesEachGroupsLayers	2.5
+TestAnOffloadTransferMovesThePoolsBytes	5.1
+TestAnUnstatedBlockSizeResolvesAtThePin	5.1
+TestAnUnstatedMaxModelLenIsTheGraphsContextWindow	5.2
+TestCompleteReadsAGivenAliasNodeAsTheMappingItNames	2.6
+TestDashboardDataParallelDeploymentsAreNotRefused	10.2
+TestDashboardDeploymentsKVEventsAreIndexable	8.4
+TestDashboardDrafterBlocksBuild	5.3
+TestDeepSeekKVLayersAreVLLMsModules	9.1
+TestDeepSeekKVLayersGroupAsVLLMDoes	10.8
+TestDeepSeekV4ProEngineReportsVLLMsStartupKVFigure	5.9
+TestDenseDataParallelLocalCadenceIsRefusedByName	10.7
+TestDisablingTheHybridManagerOnDeepSeekIsVLLMsOwnStartupFailure	11.4
+TestDisablingTheHybridManagerUnifiesTheKVGroups	13.7
+TestEngineDisclosesWhatLanguageModelOnlyLeavesUnpriced	15.7
+TestEngineStatesStepFLOPsAndPeak	5.3
+TestEngineStatesWhetherItsServerAnswersRenderCalls	7.8
+TestEnginesGivenOneDataShareItsReport	7.7
+TestEveryNotModelledFieldIsRefusedOrExplained	2.6
+TestKVEventsPublisherDefaultFollowsEnableKVCacheEvents	10.3
+TestMuseSparkArmDOffload	18.6
+TestMuseSparkOnHopperWithDataParallelismIsRefused	7.7
+TestMuseSparkPDPoolsRunThroughTheEngine	10.3
+TestOffloadMappingBlocksPerChunk	2.6
+TestOneBuildOpensItsDataOnce	5.1
+TestOneBuildWritesOneReport	2.6
+TestOnlySyntheticRejectionSamplingIsRefused	22.9
+TestOverlayRootsAreRefusedWithoutTheHostsData	5.1
+TestPrepareStatesMambaModelOnlyForARecurrentModel	5.1
+TestPrepareStatesTheMTPDrafterLayers	5.2
+TestRecordSelectedFlagsExtrapolationFromOneOfTwoKernels	33.4
+TestRecordSelectedRegistersEachPricingKernel	43.5
+TestRootsAreRefusedBesideTheHostsData	12.7
+TestSWABoundedReplayOffRunsTheUnboundedLayout	10.7
+TestTheEngineRefusesAMambaCacheModeTheReleaseDoesNotHave	7.7
+TestTheEngineRefusesUseTRTLLMAttentionWhateverItsValue	10.2
+TestTheH200RecipeBuildsWithEachOfItsThreeSettings	21.3
+TestTheH200RecipeIsRefusedWhereVLLMRefusesIt	13.2
+TestTheShippedMultiConnectorScenarioBuildsAndOffloadsItsCacheableGroup	7.9

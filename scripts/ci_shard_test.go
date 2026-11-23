@@ -167,6 +167,60 @@ func TestCIShardAssignmentIsStableUnderAdditions(t *testing.T) {
 	}
 }
 
+// CI_SHARD_SOLO gives each named test a shard of its own (the last ones), and CI_SHARD_DURATIONS
+// deals the recorded tests longest first onto the least-loaded shard; the rest are hashed over the
+// remaining shards, so the shards still partition the tests and the proof accepts them.
+func TestCIShardSoloAndDurationRulesPartitionTheTests(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs go test on a generated module")
+	}
+	names := fixtureNames(12)
+	dir := shardFixture(t, names)
+	durations := filepath.Join(t.TempDir(), "durations.tsv")
+	// TestCase99 is stale (no such test) and is ignored; TestCase03 is solo, so its entry is not used.
+	body := "# name\tseconds\nTestCase00\t10\nTestCase01\t9\nTestCase02\t8\nTestCase04\t7\nTestCase03\t100\nTestCase99\t50\n"
+	if err := os.WriteFile(durations, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CI_SHARD_SOLO", "TestCase03 TestCase07")
+	t.Setenv("CI_SHARD_DURATIONS", durations)
+	evidence := t.TempDir()
+	assigned := map[int][]string{}
+	for i := 1; i <= 5; i++ {
+		shardDir := filepath.Join(evidence, fmt.Sprint(i))
+		if code, out := runShard(t, dir, shardDir, i, 5); code != 0 {
+			t.Fatalf("shard %d of 5 exited %d\n%s", i, code, out)
+		}
+		assigned[i] = readLines(t, filepath.Join(shardDir, "assigned.txt"))
+	}
+	if got := strings.Join(assigned[4], " "); got != "TestCase03" {
+		t.Errorf("shard 4 owns %q, want the first solo test alone", got)
+	}
+	if got := strings.Join(assigned[5], " "); got != "TestCase07" {
+		t.Errorf("shard 5 owns %q, want the second solo test alone", got)
+	}
+	// Longest first onto the least-loaded of shards 1..3: 00 (10) to 1, 01 (9) to 2, 02 (8) to 3,
+	// 04 (7) to 3 (load 8, the least).
+	for name, want := range map[string]int{"TestCase00": 1, "TestCase01": 2, "TestCase02": 3, "TestCase04": 3} {
+		if !contains(assigned[want], name) {
+			t.Errorf("%s is not in shard %d (%v)", name, want, assigned)
+		}
+	}
+	if code, out := runVerify(t, 5, evidence); code != 0 {
+		t.Errorf("the proof rejected a correct run (exit %d)\n%s", code, out)
+	}
+
+	t.Setenv("CI_SHARD_DURATIONS", "")
+	t.Setenv("CI_SHARD_SOLO", "TestNoSuchTest")
+	if code, out := runShard(t, dir, filepath.Join(t.TempDir(), "e"), 1, 2); code == 0 {
+		t.Errorf("a solo name the package does not declare passed\n%s", out)
+	}
+	t.Setenv("CI_SHARD_SOLO", "TestCase01 TestCase02")
+	if code, out := runShard(t, dir, filepath.Join(t.TempDir(), "e"), 1, 2); code == 0 {
+		t.Errorf("two solo tests in two shards passed\n%s", out)
+	}
+}
+
 // A failing test fails its shard, and a package without tests is not a pass.
 func TestCIShardFailsWhenATestFailsOrThereAreNone(t *testing.T) {
 	if testing.Short() {

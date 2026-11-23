@@ -1,0 +1,48 @@
+# gha-runner-scale-set values for blis-ci-oracle: 4 CPU, 16 GiB pods for the vLLM and SGLang
+# oracles (the engines' own Python code on CPU, in their locked environments). A job comes here
+# when the repository variable CI_RUNS_ON_ORACLE is blis-ci-oracle, and never for a pull request
+# from a fork (README.md).
+githubConfigUrl: https://github.com/inference-sim/inference-sim
+githubConfigSecret: blis-ci-github-app
+runnerScaleSetName: blis-ci-oracle
+minRunners: 0
+maxRunners: 6
+# No container mode: no Docker daemon, no Kubernetes mode, no privileged sidecar.
+template:
+  spec:
+    # A runner needs no access to the Kubernetes API.
+    automountServiceAccountToken: false
+    enableServiceLinks: false
+    restartPolicy: Never
+    nodeSelector:
+      blis.ci/pool: ci
+    tolerations:
+      - {key: blis.ci/dedicated, operator: Equal, value: ci, effect: NoSchedule}
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroup: 1001
+      seccompProfile: {type: RuntimeDefault}
+    containers:
+      - name: runner
+        # k8s/ci/runner.Dockerfile, built and pushed; set the digest that push printed.
+        image: REGISTRY/blis-ci-runner@sha256:DIGEST
+        command: ["/home/runner/run.sh"]
+        resources:
+          # The CPU limit equals the request: Go reads it (GOMAXPROCS follows the cgroup limit), so a
+          # test that sizes its workers by the CPUs sees 4, not the node's.
+          # ephemeral-storage counts the work volume, the home directory (the Go build cache, the
+          # oracle venvs) and the logs.
+          requests: {cpu: "4", memory: 16Gi, ephemeral-storage: 20Gi}
+          limits: {cpu: "4", memory: 16Gi, ephemeral-storage: 60Gi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities: {drop: [ALL]}
+        volumeMounts:
+          - {name: work, mountPath: /home/runner/_work}
+    volumes:
+      # The checkout, the Go and Python caches and the tool cache live here and go with the pod.
+      - name: work
+        emptyDir: {sizeLimit: 40Gi}

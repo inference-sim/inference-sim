@@ -154,6 +154,10 @@ classify() {
     testdata/recurrent/*)                 mark cmd ;;
     testdata/goldendataset.json)          mark cluster llmd root ;;
     testdata/README.md)                   mark other ;;
+    # cmd/cluster_matrix_test.go reads (and with -update-matrix writes) the support matrix; no
+    # test opens another file under docs/, and `structure` (every change) checks their links.
+    docs/support-matrix.tsv|docs/support-matrix.md) mark cmd ;;
+    docs/*)                               hit=1 ;;
     README.md|CONTRIBUTING.md)
                                           mark core cluster cmd scripts stack ;;
     AGENTS.md)                            mark core cluster cmd scripts stack workload other ;;
@@ -172,6 +176,8 @@ classify() {
     .github/workflows/oracle-vllm.yml|.github/workflows/oracle-traces-vllm.yml|.github/workflows/mutation-vllm.yml|\
     .github/actions/oracle-env-vllm/*|.github/actions/oracle-fuzz-vllm/*)
                                           mark vllm scripts actionlint ;;
+    # The recorded race durations only move tests between vllm-race's shards.
+    .github/ci-durations/vllmengine-race.tsv) mark vllm ;;
     .github/workflows/oracle-sglang.yml|.github/workflows/mutation-sglang.yml|\
     .github/actions/oracle-env-sglang/*)
                                           mark sglang scripts actionlint ;;
