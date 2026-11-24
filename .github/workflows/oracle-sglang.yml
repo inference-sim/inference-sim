@@ -427,9 +427,10 @@ jobs:
           for s in oracle/scenarios-metrics/*.json; do
             python -I oracle/run_metrics.py sglang-source "$s" "shard-out/oracle-traces-metrics/$(basename "$s" .json).trace.json"
           done
-      # Every job writes at least one trace, and uploading nothing is an error.
+      # The hosted resolve job only checks; it writes no trace, so it uploads none. Every other job
+      # (resolve-cache-hicache among them) writes at least one, and uploading nothing is an error.
       - name: upload the job's traces
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.name != 'resolve' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: oracle-shard-${{ matrix.name }}
