@@ -2,7 +2,8 @@
 # denied except DNS and HTTPS/HTTP to public addresses. The EgressFirewall below is meant to narrow
 # that to the hosts CI reads, but this cluster rejects its wildcard rules, so it is not in force
 # (README.md, Egress). Nothing in the cluster's own networks is reachable from a runner: not the API
-# server, not other namespaces, not the node or cloud metadata addresses. All of them cover every pod
+# server, not other namespaces, not the node or cloud metadata addresses, not the hosting
+# organization's intranet (9.0.0.0/8, public addresses). All of them cover every pod
 # in blis; allow-arc-api-server adds the API server for the ARC controller and its listeners only.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -41,6 +42,9 @@ spec:
               - 100.64.0.0/10
               - 169.254.0.0/16
               - 127.0.0.0/8
+              # The hosting organization's intranet is on public addresses in 9.0.0.0/8, so the
+              # private ranges above do not cover it. Nothing CI fetches is in it.
+              - 9.0.0.0/8
       ports:
         - {protocol: TCP, port: 443}
         - {protocol: TCP, port: 80}

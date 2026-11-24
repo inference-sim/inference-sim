@@ -55,7 +55,8 @@ group can, if the scale sets move to the organization.
   its `GITHUB_TOKEN` is read-only (ci.yml and oracle-vllm.yml declare `permissions: {contents:
   read}`), and no checkout keeps it on disk (`persist-credentials: false`).
 - **Egress.** `network.yaml` denies all ingress, and denies egress except DNS and ports 80/443 to
-  public addresses. The EgressFirewall then narrows egress to the hosts CI fetches from: GitHub and
+  public addresses, less the hosting organization's intranet: it uses public addresses
+  (`9.0.0.0/8`), so the private-range exceptions alone would leave it reachable. The EgressFirewall then narrows egress to the hosts CI fetches from: GitHub and
   its Actions endpoints, the Go proxy and checksum database, the Go and Node downloads, PyPI, the
   PyTorch CPU index, and Hugging Face (configuration files only). Image pulls are the node's, not
   the pod's, so they are not on the list. The rules name hosts, some by wildcard
@@ -64,7 +65,7 @@ group can, if the scale sets move to the organization.
   `dnsName` rules (`kubectl -n blis get egressfirewall default` reports *EgressFirewall Rules not
   correctly applied*), so until an egress proxy with a domain allow-list, which the pods are only
   allowed to reach, replaces the EgressFirewall, egress is what `network.yaml` allows: any public
-  address on ports 80 and 443.
+  address outside the intranet range on ports 80 and 443.
 - **Limits.** Every runner pod has CPU, memory and ephemeral-storage limits (`values-*.yaml`), and
   every job that can run on a scale set has a `timeout-minutes`, so one run cannot hold the cluster.
   `namespace.yaml` caps the namespace at 73 CPU and 200 GiB of requests, the most both sets can
@@ -81,7 +82,7 @@ The first is a precondition of enabling the scale sets; the others are accepted.
    before runs on the cluster unread. Mitigation: setup step 0 before the variables are set, and
    reading every fork's diff, `.github/` first, before approving its run.
 2. **Exfiltration over the open egress.** Until the egress proxy exists (Egress, above), a job can
-   send anything it holds to any public host on ports 80 and 443. What it holds is the pull
+   send anything it holds to any public host outside the intranet range on ports 80 and 443. What it holds is the pull
    request's own code, public sources and data, and the job's GitHub tokens: the read-only
    `GITHUB_TOKEN`, which no checkout writes to disk but a pull request that edits a workflow can pass
    to a step of its own, and the
