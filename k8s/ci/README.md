@@ -1,22 +1,37 @@
 # CI runner scale sets
 
-Two ARC (`gha-runner-scale-set`) scale sets that run CI's slowest jobs on the cluster instead of on
-GitHub-hosted runners. They run pull request code, so they hold nothing that grants access to the cluster and reach nothing
+Three ARC (`gha-runner-scale-set`) scale sets that run CI's jobs on the cluster instead of on
+GitHub-hosted runners: the slowest on pods sized for them, and the rest on pods the size of a hosted
+runner, so CI leaves the account's limit of 20 hosted jobs at once. They run pull request code, so they hold nothing that grants access to the cluster and reach nothing
 in it (Isolation, below). What an approved run can still do, and how each risk is kept small, is under Risks.
 
 | Scale set | Pod | Max pods | Jobs |
 |---|---|---|---|
 | `blis-ci-large` | 16 CPU, 32 GiB (limit 48 GiB) | 3 | ci.yml: `substrate kernel`, `cmd cluster matrix`, `vllm-race (kernelmodel-census)`, `vllm-race (vllmengine-5)` |
-| `blis-ci-oracle` | 4 CPU, 16 GiB | 6 | oracle-vllm.yml: scenarios, inertness, 2 fuzz jobs (oracle-sglang.yml can use it, but ci.yml runs it hosted) |
+| `blis-ci-oracle` | 4 CPU, 16 GiB | 18 | oracle-vllm.yml: scenarios, inertness, 2 fuzz jobs; oracle-sglang.yml: the 14 `oracle-run` jobs, one case at a time as hosted |
+| `blis-ci-small` | 4 CPU, 16 GiB (request 8 GiB), with jq | 20 | ci.yml: every other job but `changes`, `required` and `cache-warm`'s arm64 entry (build, lint, the `test` entries and shards, the substrate and vLLM checks but `substrate-registry`, `selected-deps`, `actionlint`, `claude-md-size`) |
 
 `ci.yml`'s `changes` job decides once where the heavy jobs run, and every job reads its outputs
-(`runner-large`, `runner-oracle`, and `large-workers` for the worker counts only the larger pods can
-afford, `BLIS_PERTURBATION_WORKERS` and `BLIS_CLUSTER_MATRIX_WORKERS`).
+(`runner-large`, `runner-oracle`, `runner-small`, and `large-workers` for the worker counts only the
+larger pods can afford, `BLIS_PERTURBATION_WORKERS` and `BLIS_CLUSTER_MATRIX_WORKERS`). A dispatch of
+`ci.yml` can name a scale set for its default jobs with the `runner_small` input, which tries
+`blis-ci-small` on one run before `CI_RUNS_ON_SMALL` sends every run there.
 
 A job goes to a scale set whenever its variable is set, whoever opened the pull request: a fork's
 pull request runs where this repository's own branches run. With the variables unset, everything
-runs hosted as before. The gate jobs (`changes`, `required`), `byte gate arm64`, `release.yml` and
-the fast jobs stay hosted. No required check changes name.
+runs hosted as before. The gate jobs (`changes`, `required`), `cache-warm`'s arm64 entry, `byte gate arm64`,
+`release.yml`, `substrate-registry` (its tests start setup-python's Python with an empty environment, which
+finds its shared library only on a hosted image), the SGLang oracle's `oracle-checks`, `fields`, `treecore-diff` (it needs `rustup`) and
+`oracle` jobs, and the other workflows (`gofmt`, `private-names`, `blis`, `golden-change` and the agent workflows) stay
+hosted. No required check changes name.
+
+`blis-ci-small` has what the jobs there need that `buildpack-deps` lacks: `jq`, which its `tools`
+init container downloads at a pinned version and checksum. CI sets `REQUIRE_JQ`, so a pod without it
+fails the scripts package's jq tests instead of skipping them; Node and Python come from
+`setup-node` and `setup-python`, as on a hosted runner. It has no `zstd`, so `actions/cache` compresses
+with gzip there, and the compression method is part of an entry's version: a pod never restores an
+entry a hosted runner saved. So `cache-warm` saves the Go build cache on `blis-ci-small` when
+`CI_RUNS_ON_SMALL` is set, where the jobs that read it run.
 
 What keeps a fork's code off the cluster until someone has read it is approval, not routing: the
 repository's Actions setting *Require approval for all external contributors* (setup step 0) holds
@@ -68,8 +83,8 @@ group can, if the scale sets move to the organization.
   address outside the intranet range on ports 80 and 443.
 - **Limits.** Every runner pod has CPU, memory and ephemeral-storage limits (`values-*.yaml`), and
   every job that can run on a scale set has a `timeout-minutes`, so one run cannot hold the cluster.
-  `namespace.yaml` caps the namespace at 73 CPU and 200 GiB of requests, the most both sets can
-  start plus the controller and listeners, whose requests and limits come from its LimitRange.
+  `namespace.yaml` caps the namespace at 201 CPU and 552 GiB of requests, the most the three sets
+  can start plus the controller and listeners, whose requests and limits come from its LimitRange.
 
 ## Risks
 
@@ -99,10 +114,11 @@ The first is a precondition of enabling the scale sets; the others are accepted.
    the variable and re-run; the `required` check makes a stuck job block merges only once it is
    part of the `main` ruleset (setup step 5).
 5. **Memory on a pod with many CPUs.** The SGLang oracle can fork several cases at once
-   (`ORACLE_JOBS` above 1, unused today: ci.yml runs it hosted, one case at a time). Each child
-   imports SGLang and torch afresh, so `oracle/forkpool.py` caps the children at the fewest of the
-   pod's CPU limit and the children its memory limit holds at 4 GiB each (`ORACLE_CHILD_MIB`). The
-   4 GiB is an estimate: measure a child's peak memory before running the oracle on a scale set.
+   (`ORACLE_JOBS` above 1, oracle-sglang.yml's `parallel` input, unused today: ci.yml runs its
+   `oracle-run` jobs on `blis-ci-oracle` pods, the size of a hosted runner, one case at a time). Each
+   child imports SGLang and torch afresh, so `oracle/forkpool.py` caps the children at the fewest of
+   the pod's CPU limit and the children its memory limit holds at 4 GiB each (`ORACLE_CHILD_MIB`).
+   The 4 GiB is an estimate: measure a child's peak memory before turning `parallel` on.
 6. **Smaller points.** The root filesystem is writable (`readOnlyRootFilesystem` unset): the
    job's tools write outside the two volumes, and the pod and all it wrote go when the job ends.
    The API server's addresses in `allow-arc-api-server` are this cluster's; on a cluster where they
@@ -152,7 +168,7 @@ The first is a precondition of enabling the scale sets; the others are accepted.
 4. **Scale sets.**
 
    ```bash
-   for s in large oracle; do
+   for s in large oracle small; do
      helm install blis-ci-$s -n blis -f k8s/ci/values-$s.yaml \
        --set controllerServiceAccount.name=arc-blis-gha-rs-controller \
        --set controllerServiceAccount.namespace=blis \
@@ -160,10 +176,14 @@ The first is a precondition of enabling the scale sets; the others are accepted.
    done
    ```
 
+   An installed scale set takes a changed values file with `helm upgrade` and the same flags. Apply
+   `namespace.yaml` first, and both before merging a workflow change that sends a scale set more
+   jobs: the variable already routes them, so they start when the change merges.
+
    On OpenShift, let the runner service accounts run as uid 1001:
 
    ```bash
-   for s in large oracle; do
+   for s in large oracle small; do
      oc adm policy add-scc-to-user nonroot-v2 -z blis-ci-$s-gha-rs-no-permission -n blis
    done
    ```
@@ -175,6 +195,13 @@ The first is a precondition of enabling the scale sets; the others are accepted.
    ```bash
    gh variable set CI_RUNS_ON_LARGE --body blis-ci-large
    gh variable set CI_RUNS_ON_ORACLE --body blis-ci-oracle
+   gh variable set CI_RUNS_ON_SMALL --body blis-ci-small
+   ```
+
+   Before setting `CI_RUNS_ON_SMALL`, try the scale set on one run, which uses it and nothing else:
+
+   ```bash
+   gh workflow run ci.yml --ref <branch> -f runner_small=blis-ci-small
    ```
 
 6. **Confirm the egress list.** For the first run, set the EgressFirewall's last rule to `Allow` and
@@ -207,3 +234,10 @@ adds about 1.8 GB on `main` (vLLM about 1.0 GB, SGLang about 0.8 GB). The budget
 | SGLang source, fuzz corpora, tools | about 0.5 GB |
 
 That is about 5 GB, which leaves the other half for open pull requests' own entries.
+
+Two jobs keep a cold cache from costing a pod run its whole setup from PyPI, which the cluster
+reaches slowly (about 160 kB/s, against 8 to 40 MB/s from the Actions cache). `cache-warm-oracle`
+(ci.yml, on every push to `main`) keeps both oracle environments in `main`'s scope, which every pull
+request reads; a pull request's own entries are its alone. And oracle-sglang.yml's `oracle-env` job
+builds the SGLang environment once a run when the entry is missing (a changed lock, say), before
+the 14 `oracle-run` jobs restore it.

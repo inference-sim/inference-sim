@@ -3,13 +3,15 @@
 # mounts no secret but its own one-job registration, has no service account token, and cannot reach
 # the API server (network.yaml), so it cannot read them. The quota covers every pod in blis.
 #
-# Requests for every runner both scale sets can start at once: blis-ci-large 3 x 16 CPU / 32 GiB
-# and blis-ci-oracle 6 x 4 CPU / 16 GiB, so 72 CPU and 192 GiB, plus the ARC controller and the two
-# listeners it starts here (README.md setup step 3), which take the LimitRange's defaults below.
+# Requests for every runner the three scale sets can start at once: blis-ci-large 3 x 16 CPU /
+# 32 GiB, blis-ci-oracle 18 x 4 CPU / 16 GiB and blis-ci-small 20 x 4 CPU / 8 GiB, so 200 CPU and
+# 544 GiB, plus the ARC controller and the three listeners it starts here (README.md setup step 3),
+# which take the LimitRange's defaults below. Limits: the same CPU, and 3 x 48 + 18 x 16 + 20 x 16 =
+# 752 GiB of memory. Pods: 41 runners, the controller and 3 listeners, 45.
 #
-# Secrets: the three Helm releases (arc-blis, blis-ci-large, blis-ci-oracle) keep up to 10 revision
-# secrets each (Helm's default history), 30; the GitHub credential, 1; the two listeners' configs,
-# 2; one registration secret per runner, 3 + 6 = 9. That is 42; the quota leaves 6 spare.
+# Secrets: the four Helm releases (arc-blis and the three scale sets) keep up to 10 revision
+# secrets each (Helm's default history), 40; the GitHub credential, 1; the three listeners'
+# configs, 3; one registration secret per runner, 41. That is 85; the quota leaves 7 spare.
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -17,12 +19,12 @@ metadata:
   namespace: blis
 spec:
   hard:
-    requests.cpu: "73"
-    requests.memory: 200Gi
-    limits.cpu: "74"
-    limits.memory: 300Gi
-    pods: "15"
-    secrets: "48"
+    requests.cpu: "201"
+    requests.memory: 552Gi
+    limits.cpu: "202"
+    limits.memory: 800Gi
+    pods: "48"
+    secrets: "92"
     services: "0"
     persistentvolumeclaims: "0"
 ---
