@@ -24,7 +24,9 @@ name: Deliver — Verify
 #
 # SECURITY: the only checkout into the WORKSPACE is the DEFAULT BRANCH, so scripts/ and
 # .archon-version always come from trusted code. The PR's code never EXECUTES on the self-hosted
-# runner — ci.yml runs it on ephemeral hosted runners instead. Since #1715 the qa-review answerer
+# runner. ci.yml runs it on ephemeral runners instead: hosted, or one-job pods on the cluster
+# (k8s/ci), which hold no secrets and cannot reach the cluster's own networks. Since
+# #1715 the qa-review answerer
 # (and since #1716 the adjudicator that replaces it on a re-verify)
 # must READ the PR head, so it is checked out into an ephemeral `--detach` worktree under
 # $RUNNER_TEMP and the agents run with `--no-exec`, which drops their `go` build/test tool: the PR's

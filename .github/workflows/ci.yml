@@ -38,6 +38,12 @@ concurrency:
   group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Read-only token for every job, whatever the repository default: jobs on the scale sets get no
+# write credential (actions/checkout persists the token). Nothing here needs more: upload-artifact
+# and the cache use the runtime token, and the oracle workflows declare the same.
+permissions:
+  contents: read
+
 env:
   # One module-cache directory for every job and for cache-warm. Go keys a compiled package by
   # the directory its source is read from, so a build cache saved with the modules in one
@@ -76,10 +82,14 @@ jobs:
       substrate: ${{ steps.groups.outputs.substrate }}
       vllm: ${{ steps.groups.outputs.vllm }}
       sglang: ${{ steps.groups.outputs.sglang }}
+      runner-large: ${{ steps.runners.outputs.large }}
+      runner-oracle: ${{ steps.runners.outputs.oracle }}
+      large-workers: ${{ steps.runners.outputs.large-workers }}
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           # A pull request's checkout is a merge commit; its first parent is the base.
           fetch-depth: 2
 
@@ -105,6 +115,25 @@ jobs:
           cat groups.txt
           cat groups.txt >> "$GITHUB_OUTPUT"
 
+      # Where the heavy jobs run, decided once for every job that reads it. A job marked large (or an
+      # oracle job) runs on the self-hosted scale set CI_RUNS_ON_LARGE (CI_RUNS_ON_ORACLE) names
+      # (k8s/ci) whenever that variable is set, for a fork's pull request too: a maintainer approves
+      # every outside contributor's workflow run before it starts, and the pods' isolation (k8s/ci)
+      # protects the cluster. The worker counts only the large pods can afford come from the same
+      # decision, so a hosted job never gets them.
+      - name: Runners the heavy jobs use
+        id: runners
+        env:
+          LARGE: ${{ vars.CI_RUNS_ON_LARGE }}
+          ORACLE: ${{ vars.CI_RUNS_ON_ORACLE }}
+        run: |
+          set -euo pipefail
+          for v in "$LARGE" "$ORACLE"; do
+            [[ "$v" =~ ^[A-Za-z0-9._-]*$ ]] || { echo "a CI_RUNS_ON_* variable is not a runner label: $v"; exit 1; }
+          done
+          { echo "large=$LARGE"; echo "oracle=$ORACLE"; echo "large-workers=${LARGE:+6}"; } >> "$GITHUB_OUTPUT"
+          echo "large jobs: ${LARGE:-ubuntu-latest}; oracle jobs: ${ORACLE:-ubuntu-latest}"
+
   build:
     name: "build"
     needs: changes
@@ -119,6 +148,8 @@ jobs:
       - name: Checkout code
         if: needs.changes.outputs.build == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         if: needs.changes.outputs.build == 'true'
@@ -148,13 +179,18 @@ jobs:
     # under a matrix template would not report the name a ruleset waits for, and a job-level
     # "if" cannot read the matrix. A skipped entry costs seconds on a runner.
     if: ${{ !cancelled() }}
-    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
+    # An entry marked large runs where the changes job decided (runner-large): the self-hosted CI
+    # scale set CI_RUNS_ON_LARGE names (k8s/ci) when it is set, else hosted. The
+    # worker counts below read the same decision (large-workers), so a hosted runner never gets the
+    # larger setting.
+    runs-on: ${{ matrix.runner || (matrix.large && needs.changes.outputs.runner-large) || 'ubuntu-latest' }}
     # The longest entry (substrate) has a 30m go test timeout.
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        # flag: the ci-changes.sh group that turns the entry on.
+        # flag: the ci-changes.sh group that turns the entry on. exclude: packages the entry's
+        # patterns match that another entry runs instead (a slow one, on a runner of its own).
         include:
           - name: "cluster (heavy)"
             packages: "./sim/cluster"
@@ -225,10 +261,20 @@ jobs:
           # path classes in scripts/ci-changes.sh). New entries, so no existing required name moves.
           - name: "substrate"
             packages: "./substrate/..."
+            exclude: "./substrate/kernel"
             timeout: "30m"
             flag: substrate
+          # The cost model's tests are most of substrate's time, and its perturbation tests are
+          # memory bound: on the large runner they use more workers (BLIS_PERTURBATION_WORKERS).
+          - name: "substrate kernel"
+            packages: "./substrate/kernel"
+            timeout: "30m"
+            flag: substrate
+            large: true
+          # The kernel model's tests run as three shards of their own (test-shards, kernelmodel).
           - name: "engine vllm"
             packages: "./engines/vllm/..."
+            exclude: "./engines/vllm/core/kernelmodel"
             timeout: "25m"
             flag: vllm
           - name: "engine sglang"
@@ -249,6 +295,8 @@ jobs:
       - name: Checkout code
         if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # The upstream sources the merged trees' tests read. An absent source is a failure, not a
       # skip (X16): the tests run with *_SOURCE_REQUIRED=1 below. The commits are pinned.
@@ -256,6 +304,7 @@ jobs:
         if: steps.gate.outputs.run == 'true' && matrix.flag == 'substrate'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           repository: vllm-project/vllm
           ref: db9527a46873454610df6dbedf79a36d6bf1a7f6 # v0.31.0
           path: upstream/vllm
@@ -267,6 +316,7 @@ jobs:
         if: steps.gate.outputs.run == 'true' && matrix.flag == 'substrate'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           repository: ai-dynamo/aiperf
           ref: be53bf2953d30e46c500e6a80fc1f8b6f84bc718 # v0.12.0
           path: upstream/aiperf
@@ -277,6 +327,7 @@ jobs:
         if: steps.gate.outputs.run == 'true' && matrix.flag == 'vllm'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           repository: vllm-project/vllm
           ref: 0fda86a35419c9c70dbfada224c838c10fbb62ad
           path: upstream/vllm
@@ -318,7 +369,17 @@ jobs:
           VLLM_SOURCE_REQUIRED: ${{ (matrix.flag == 'substrate' || matrix.flag == 'vllm') && '1' || '' }}
           AIPERF_SOURCE: ${{ matrix.flag == 'substrate' && format('{0}/upstream/aiperf/src/aiperf', github.workspace) || '' }}
           AIPERF_SOURCE_REQUIRED: ${{ matrix.flag == 'substrate' && '1' || '' }}
-        run: go test -v -timeout ${{ matrix.timeout }} ${{ matrix.packages }}
+          # Read only by substrate/kernel's perturbation tests; unset, they use two workers.
+          BLIS_PERTURBATION_WORKERS: ${{ (matrix.large && needs.changes.outputs.large-workers) || '' }}
+          PACKAGES: ${{ matrix.packages }}
+          EXCLUDE: ${{ matrix.exclude }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2086
+          if [ -z "$EXCLUDE" ]; then pkgs="$(go list $PACKAGES)"; else pkgs="$(go list $PACKAGES | grep -vxF -f <(go list $EXCLUDE))"; fi
+          test -n "$pkgs"
+          # shellcheck disable=SC2086
+          go test -v -timeout ${{ matrix.timeout }} $pkgs
 
   # The packages that dominate the wall clock are split by test name into parallel shards
   # (scripts/ci-shard.sh): a test belongs to the shard cksum(name) mod N picks, so the shards
@@ -327,11 +388,14 @@ jobs:
   # (scripts/ci-shard-verify.sh).
   # The salt in an entry (scripts/ci-shard.sh, CI_SHARD_SALT) only spreads the few slow tests of a
   # package over its shards; the partition is exact for any salt.
+  # CI_SHARD_SOLO (an entry's solo) gives a test a shard of its own, the last; the other tests are
+  # hashed over the rest, so cmd's salt still spreads them over shards 1 to 4. A large entry runs
+  # on the self-hosted scale set, as in the test job.
   test-shards:
     needs: changes
     name: test (${{ matrix.name }}, ${{ matrix.packages }}, ${{ matrix.timeout }})
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (matrix.large && needs.changes.outputs.runner-large) || 'ubuntu-latest' }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -339,10 +403,16 @@ jobs:
         include:
           - { name: "workload shard 1/2", group: workload, packages: "./sim/workload", timeout: "10m", salt: "s5:", flag: workload, shard: 1, shards: 2 }
           - { name: "workload shard 2/2", group: workload, packages: "./sim/workload", timeout: "10m", salt: "s5:", flag: workload, shard: 2, shards: 2 }
-          - { name: "cmd shard 1/4", group: cmd, packages: "./cmd", timeout: "15m", salt: "s8:", flag: cmd, shard: 1, shards: 4 }
-          - { name: "cmd shard 2/4", group: cmd, packages: "./cmd", timeout: "15m", salt: "s8:", flag: cmd, shard: 2, shards: 4 }
-          - { name: "cmd shard 3/4", group: cmd, packages: "./cmd", timeout: "15m", salt: "s8:", flag: cmd, shard: 3, shards: 4 }
-          - { name: "cmd shard 4/4", group: cmd, packages: "./cmd", timeout: "15m", salt: "s8:", flag: cmd, shard: 4, shards: 4 }
+          - { name: "cmd shard 1/4", group: cmd, packages: "./cmd", timeout: "15m", salt: "s8:", flag: cmd, shard: 1, shards: 5, solo: TestClusterMatrix_EveryCellSimulatesOrIsRefusedWithItsReason }
+          - { name: "cmd shard 2/4", group: cmd, packages: "./cmd", timeout: "15m", salt: "s8:", flag: cmd, shard: 2, shards: 5, solo: TestClusterMatrix_EveryCellSimulatesOrIsRefusedWithItsReason }
+          - { name: "cmd shard 3/4", group: cmd, packages: "./cmd", timeout: "15m", salt: "s8:", flag: cmd, shard: 3, shards: 5, solo: TestClusterMatrix_EveryCellSimulatesOrIsRefusedWithItsReason }
+          - { name: "cmd shard 4/4", group: cmd, packages: "./cmd", timeout: "15m", salt: "s8:", flag: cmd, shard: 4, shards: 5, solo: TestClusterMatrix_EveryCellSimulatesOrIsRefusedWithItsReason }
+          # The support-matrix test simulates every cell on BLIS_CLUSTER_MATRIX_WORKERS workers.
+          - { name: "cmd cluster matrix", group: cmd, packages: "./cmd", timeout: "15m", salt: "s8:", flag: cmd, shard: 5, shards: 5, solo: TestClusterMatrix_EveryCellSimulatesOrIsRefusedWithItsReason, large: true }
+          # The kernel model's tests, by name (the salt spreads its slowest few over the three).
+          - { name: "kernelmodel shard 1/3", group: kernelmodel, packages: "./engines/vllm/core/kernelmodel", timeout: "15m", salt: "s47:", flag: vllm, shard: 1, shards: 3 }
+          - { name: "kernelmodel shard 2/3", group: kernelmodel, packages: "./engines/vllm/core/kernelmodel", timeout: "15m", salt: "s47:", flag: vllm, shard: 2, shards: 3 }
+          - { name: "kernelmodel shard 3/3", group: kernelmodel, packages: "./engines/vllm/core/kernelmodel", timeout: "15m", salt: "s47:", flag: vllm, shard: 3, shards: 3 }
     steps:
       - name: The change filter ran, and whether this entry's group is on
         id: gate
@@ -356,6 +426,8 @@ jobs:
       - name: Checkout code
         if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # cmd's recipe-preset test (cmd/recipe_presets_test.go) reads the vLLM recipes at the commit
       # the engine models. An absent source is a failure, not a skip (X16): VLLM_SOURCE_REQUIRED is
@@ -364,6 +436,7 @@ jobs:
         if: steps.gate.outputs.run == 'true' && matrix.group == 'cmd'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           repository: vllm-project/vllm
           ref: 0fda86a35419c9c70dbfada224c838c10fbb62ad
           path: upstream/vllm
@@ -394,6 +467,9 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         env:
           CI_SHARD_SALT: ${{ matrix.salt }}
+          CI_SHARD_SOLO: ${{ matrix.solo }}
+          # Read only by cmd's support-matrix test; unset, it uses three workers.
+          BLIS_CLUSTER_MATRIX_WORKERS: ${{ (matrix.large && needs.changes.outputs.large-workers) || '' }}
           # The heavy legs build and run a 120 MB test binary that re-executes itself; two
           # concurrent compile and test jobs instead of one per CPU keep the runner responsive.
           GOFLAGS: -modcacherw -p=2
@@ -406,7 +482,7 @@ jobs:
           # a shutdown signal", 4 to 6 minutes into compiling and running ./cmd): memory and load
           # every ten seconds, in this step's own log, which survives the kill (a later step does
           # not run after one).
-          ( while sleep 10; do echo "sample $(date +%T) $(free -m | sed -n 2p) | $(uptime)"; done ) &
+          ( while sleep 10; do echo "sample $(date +%T) $(free -m 2>/dev/null | sed -n 2p) | $(uptime)"; done ) &
           scripts/ci-shard.sh ${{ matrix.shard }} ${{ matrix.shards }} "$RUNNER_TEMP/evidence" ${{ matrix.packages }} -timeout ${{ matrix.timeout }}
 
       - name: Keep the evidence of what this shard ran
@@ -445,6 +521,8 @@ jobs:
       - name: Checkout code
         if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         if: steps.gate.outputs.run == 'true'
@@ -505,6 +583,8 @@ jobs:
       - name: Checkout code
         if: needs.changes.outputs.workload == 'true' || needs.changes.outputs.cmd == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Fetch the workload evidence
         if: needs.changes.outputs.workload == 'true'
@@ -526,7 +606,40 @@ jobs:
 
       - name: Every cmd test ran in exactly one shard
         if: needs.changes.outputs.cmd == 'true'
-        run: scripts/ci-shard-verify.sh 4 gathered/cmd
+        run: scripts/ci-shard-verify.sh 5 gathered/cmd
+
+  # The kernel model's shards, proved to have run every test of the package once.
+  test-kernelmodel:
+    needs: [changes, test-shards]
+    name: "test (engine vllm kernelmodel, ./engines/vllm/core/kernelmodel, 15m)"
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Shards passed
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          SHARDS: ${{ needs.test-shards.result }}
+        run: |
+          test "$CHANGES" = success || { echo "the change filter: $CHANGES"; exit 1; }
+          case "$SHARDS" in success|skipped) ;; *) echo "test shards: $SHARDS"; exit 1 ;; esac
+
+      - name: Checkout code
+        if: needs.changes.outputs.vllm == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Fetch the evidence
+        if: needs.changes.outputs.vllm == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: evidence-kernelmodel-*
+          path: gathered/kernelmodel
+
+      - name: Every test of the package ran in exactly one shard
+        if: needs.changes.outputs.vllm == 'true'
+        run: scripts/ci-shard-verify.sh 3 gathered/kernelmodel
 
   # The llm-d router's name is kept for the same reason (it is not a required check today, but
   # the delivery loop and people read the name).
@@ -548,6 +661,8 @@ jobs:
       - name: Checkout code
         if: needs.changes.outputs.llmd == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Fetch the evidence
         if: needs.changes.outputs.llmd == 'true'
@@ -575,6 +690,7 @@ jobs:
         if: needs.changes.outputs.lint == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       # The module targets the Go release that go.mod names (the llm-d router requires it). golangci-lint refuses a module
@@ -654,6 +770,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -699,6 +817,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -750,6 +870,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -768,6 +890,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -812,6 +936,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -886,6 +1012,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -932,6 +1060,8 @@ jobs:
       - name: Checkout code
         if: needs.changes.outputs.selected == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Fetch the other packages' evidence
         if: needs.changes.outputs.selected == 'true'
@@ -962,6 +1092,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -977,6 +1109,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Enforce the CLAUDE.md size ceiling
         run: scripts/claude-md-size.sh CLAUDE.md 40000
@@ -997,6 +1131,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -1044,6 +1180,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -1060,6 +1198,7 @@ jobs:
       - name: Check out vLLM at the engine's pinned commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           repository: vllm-project/vllm
           ref: 0fda86a35419c9c70dbfada224c838c10fbb62ad
           path: engines/vllm/vllm-source
@@ -1129,7 +1268,7 @@ jobs:
     name: vllm-race (${{ matrix.name }})
     needs: changes
     if: ${{ needs.changes.outputs.vllm == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (matrix.large && needs.changes.outputs.runner-large) || 'ubuntu-latest' }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -1137,15 +1276,23 @@ jobs:
         include:
           - name: core
             pkgs: "./engines/vllm/internal/substratedata ./engines/vllm/core/vllm ./engines/vllm/core/sched ./engines/vllm/core/engine ./engines/vllm/core/kvtransfer ./engines/vllm/core/connector/..."
-          # The package's tests, split by position in `go test -list` (test k to shard k mod 3, the
-          # list computed in the job, so a test added later runs in exactly one shard).
-          - {name: vllmengine-0, pkgs: "./engines/vllm/vllmengine", shard: "0/3"}
-          - {name: vllmengine-1, pkgs: "./engines/vllm/vllmengine", shard: "1/3"}
-          - {name: vllmengine-2, pkgs: "./engines/vllm/vllmengine", shard: "2/3"}
+          # The package's tests, split by name (scripts/ci-shard.sh): the tests with a recorded
+          # -race duration (.github/ci-durations/vllmengine-race.tsv) are dealt longest first onto
+          # the least-loaded shard, any other test is hashed, and vllm-race-vllmengine proves the
+          # five together ran every test once. TestEngineKVStartupFigureAgainstTheLoggedOne (223
+          # parallel subtests, about 15 min on a hosted runner) has shard 5 to itself
+          # (CI_SHARD_SOLO), on the large runner when there is one: its subtests use every CPU.
+          - {name: vllmengine-1, pkgs: "./engines/vllm/vllmengine", shard: 1, shards: 5}
+          - {name: vllmengine-2, pkgs: "./engines/vllm/vllmengine", shard: 2, shards: 5}
+          - {name: vllmengine-3, pkgs: "./engines/vllm/vllmengine", shard: 3, shards: 5}
+          - {name: vllmengine-4, pkgs: "./engines/vllm/vllmengine", shard: 4, shards: 5}
+          - {name: vllmengine-5, pkgs: "./engines/vllm/vllmengine", shard: 5, shards: 5, large: true}
           # The block-size census is the slowest race test; it ran as four slices before the merge.
+          # It prices the census on every CPU, so it runs on the large runner.
           - name: kernelmodel-census
             pkgs: "./engines/vllm/core/kernelmodel"
             only: "^TestBlockSizeResolutionOverTheCensusFixtures$"
+            large: true
     env:
       GOTOOLCHAIN: local
       # The union of the legs' packages. Keep the two in step: the guard step fails when a package
@@ -1160,6 +1307,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -1180,25 +1329,60 @@ jobs:
           if [ -n "$missing" ]; then echo "not under -race and not excluded:"; echo "$missing"; exit 1; fi
 
       - name: go test -race
+        if: ${{ !matrix.shard }}
         env:
           PKGS: ${{ matrix.pkgs }}
           ONLY: ${{ matrix.only }}
-          SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
           args=()
           if [ -n "$ONLY" ]; then args+=(-run "$ONLY"); fi
-          if [ -n "$SHARD" ]; then
-            i="${SHARD%/*}"; n="${SHARD#*/}"
-            # shellcheck disable=SC2086
-            all="$(go test -race -list '.*' $PKGS | grep -E '^(Test|Example|Fuzz)' | sort)"
-            sel="$(printf '%s\n' "$all" | awk -v i="$i" -v n="$n" 'NR % n == i' | paste -sd'|' -)"
-            test -n "$sel"
-            echo "shard $SHARD: $(printf '%s\n' "$sel" | tr '|' '\n' | wc -l | tr -d ' ') of $(printf '%s\n' "$all" | wc -l | tr -d ' ') tests"
-            args+=(-run "^($sel)\$")
-          fi
           # shellcheck disable=SC2086
           go test -race -count=1 -timeout 50m "${args[@]}" $PKGS
+
+      - name: go test -race, one shard
+        if: ${{ matrix.shard }}
+        env:
+          CI_SHARD_DURATIONS: .github/ci-durations/vllmengine-race.tsv
+          CI_SHARD_SOLO: TestEngineKVStartupFigureAgainstTheLoggedOne
+          CI_SHARD_LIST_FLAGS: -race
+        run: scripts/ci-shard.sh ${{ matrix.shard }} ${{ matrix.shards }} "$RUNNER_TEMP/evidence" ${{ matrix.pkgs }} -race -count=1 -timeout 50m
+
+      - name: Keep the evidence of what this shard ran
+        if: ${{ !cancelled() && matrix.shard }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-vllmengine-race-${{ matrix.shard }}
+          path: ${{ runner.temp }}/evidence
+          retention-days: 1
+          if-no-files-found: ignore
+
+  # The vllmengine race shards, proved to have run every test of the package once.
+  vllm-race-vllmengine:
+    needs: [changes, vllm-race]
+    if: ${{ !cancelled() && needs.changes.outputs.vllm == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: The race shards passed
+        env:
+          SHARDS: ${{ needs.vllm-race.result }}
+        run: |
+          test "$SHARDS" = success || { echo "vllm-race: $SHARDS"; exit 1; }
+
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Fetch the evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: evidence-vllmengine-race-*
+          path: gathered/vllmengine-race
+
+      - name: Every test of the package ran in exactly one shard
+        run: scripts/ci-shard-verify.sh 5 gathered/vllmengine-race
 
   # The oracle tiers run the engine's real source on CPU in a hash-locked Python environment and
   # compare. They need network access to the engine's repository and Hugging Face (config files
@@ -1207,17 +1391,21 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.vllm == 'true' }}
     uses: ./.github/workflows/oracle-vllm.yml
+    with:
+      runner: ${{ needs.changes.outputs.runner-oracle }}
 
   oracle-sglang:
     needs: changes
     if: ${{ needs.changes.outputs.sglang == 'true' }}
+    # Hosted until its setup on the scale set is fast: there oracle-env-sglang takes about 5.5 min,
+    # bound by the cluster's egress, so the four cluster jobs took 12 to 16 min against about 7 hosted.
     uses: ./.github/workflows/oracle-sglang.yml
 
   # The one status to require. Every job above reports success, failure or skipped; this one
   # succeeds when none failed or was cancelled and the change filter itself ran, so a skipped job
   # (its group off) is a success and a job skipped because the filter broke is not.
   required:
-    needs: [changes, build, test, test-shards, test-workload-cmd, test-llmd-shards, test-llmd, lint, stack, substrate-checks, substrate-mutants, substrate-catalog, substrate-registry, selected-deps-shards, selected-deps, actionlint, claude-md-size, vllm-checks, vllm-race, oracle-vllm, oracle-sglang]
+    needs: [changes, build, test, test-shards, test-workload-cmd, test-kernelmodel, test-llmd-shards, test-llmd, lint, stack, substrate-checks, substrate-mutants, substrate-catalog, substrate-registry, selected-deps-shards, selected-deps, actionlint, claude-md-size, vllm-checks, vllm-race, vllm-race-vllmengine, oracle-vllm, oracle-sglang]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5

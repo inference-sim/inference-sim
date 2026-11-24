@@ -26,7 +26,8 @@ Usage: python -I oracle/run_serverargs.py [--shard I/N] <sglang checkout> <cases
 
 --shard I/N runs the cases whose position in cases.json is I mod N and records {"index": I, "of": N}
 as the answer's "shard"; every case still runs in a process of its own, so a case's answer does not
-depend on the shard it ran in. compare_serverargs.py reads the shard from the answer.
+depend on the shard it ran in. compare_serverargs.py reads the shard from the answer. The cases run
+several at once (oracle/forkpool.py: ORACLE_JOBS, else the CPU count), each in its own process.
 <models dir>/<name>/ holds each model's configuration files (oracle/serverargs/fetch_models.py).
 """
 import hashlib
@@ -256,28 +257,17 @@ def main(argv) -> int:
         if k.startswith(("SGLANG_", "SGL_")):
             del os.environ[k]
     commit = subprocess.run(["git", "-C", src, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    import forkpool
+
+    cases = [case for k, case in enumerate(spec["cases"]) if shard is None or k % shard[1] == shard[0]]
+
+    def child(case):
+        stub_cuda_packages()
+        return run_case(case, spec["chips"][case["chip"]], models)
+
     results = []
-    for k, case in enumerate(spec["cases"]):
-        if shard is not None and k % shard[1] != shard[0]:
-            continue
+    for case, res in zip(cases, forkpool.run(cases, child)):
         chip = spec["chips"][case["chip"]]
-        r, w = os.pipe()
-        pid = os.fork()
-        if pid == 0:
-            os.close(r)
-            try:
-                stub_cuda_packages()
-                res = run_case(case, chip, models)
-            except BaseException as e:  # a harness failure, not a refusal
-                res = {"name": case["name"], "harness_error": "%s: %s" % (type(e).__name__, e)}
-            with os.fdopen(w, "w") as fw:
-                json.dump(res, fw)
-            os._exit(0)
-        os.close(w)
-        with os.fdopen(r) as fr:
-            data = fr.read()
-        os.waitpid(pid, 0)
-        res = json.loads(data) if data else {"name": case["name"], "harness_error": "no answer"}
         # The case's inputs travel with its answer, so the Go test reads one file.
         res["args"] = case.get("args", {})
         res["chip"] = {k: chip[k] for k in ("capability", "nvidia_smi_memory_total_mib")}

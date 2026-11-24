@@ -20,12 +20,19 @@ outputs:
 runs:
   using: composite
   steps:
+    # A self-hosted runner's tool cache starts empty, so setup-python downloads Python from GitHub's
+    # releases, which took 8 min on the CI scale sets (k8s/ci); the Actions cache restores it in
+    # seconds. Hosted runners have Python 3.12 in their image and skip this.
+    - name: Python from the Actions cache (self-hosted)
+      if: runner.environment == 'self-hosted'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ${{ runner.tool_cache }}/Python
+        key: python-toolcache-${{ runner.os }}-${{ runner.arch }}-3.12
     - id: python
       uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
       with:
         python-version: "3.12"
-        cache: pip
-        cache-dependency-path: engines/vllm/oracle/requirements-hashed.txt
     # vLLM is read from its source (for its test helpers) at internal/upstream's OracleCommit, the
     # release the oracle's recordings, fuzz corpora, field dispositions and requirements.lock are
     # for (not Commit, the one the engine models); the checkout is then checked against it, so
@@ -45,6 +52,7 @@ runs:
     - name: check out vLLM at that commit
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
+        persist-credentials: false
         repository: vllm-project/vllm
         ref: ${{ steps.pin.outputs.commit }}
         path: engines/vllm/vllm-source
@@ -57,6 +65,7 @@ runs:
       if: inputs.engine-source == 'true'
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
+        persist-credentials: false
         repository: vllm-project/vllm
         ref: ${{ steps.pin.outputs.engine-commit }}
         path: engines/vllm/vllm-engine-source
@@ -66,6 +75,24 @@ runs:
       shell: bash
       working-directory: engines/vllm
       run: test "$(git -C vllm-engine-source rev-parse HEAD)" = "${{ steps.pin.outputs.engine-commit }}"
+    # The packages are installed into a virtual environment, cached under the runner kind, the
+    # exact Python and the hash of every file that defines the lock, as oracle-env-sglang does: a
+    # changed lock, hash list or Python installs afresh, and a venv (which links to its Python by
+    # path) never moves between a hosted runner and a self-hosted one. A restored environment is
+    # not trusted: pip check, pip freeze and check_lock.py below run either way and fail unless
+    # what is installed is exactly the lock.
+    - id: envcache
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/oracle-venv-vllm
+        key: oracle-env-vllm-${{ runner.environment }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('engines/vllm/oracle/requirements.lock', 'engines/vllm/oracle/requirements-hashed.txt', 'engines/vllm/oracle/requirements-pip.txt') }}
+    - name: use the virtual environment
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ "${{ steps.envcache.outputs.cache-hit }}" != "true" ]; then python -m venv ~/oracle-venv-vllm; fi
+        echo "$HOME/oracle-venv-vllm/bin" >> "$GITHUB_PATH"
+        echo "VIRTUAL_ENV=$HOME/oracle-venv-vllm" >> "$GITHUB_ENV"
     # The whole environment is pinned (oracle/requirements.lock, every package == or a sha256
     # URL) and installed without resolving, from oracle/requirements-hashed.txt with every
     # archive's sha256 (oracle/lock.sh, X21), so neither a transitive release nor a replaced
@@ -76,8 +103,10 @@ runs:
       run: |
         set -euo pipefail
         python -I oracle/check_lock.py --hashed oracle/requirements.lock oracle/requirements-hashed.txt
-        python -m pip install --require-hashes -r oracle/requirements-pip.txt
-        pip install --require-hashes --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements-hashed.txt
+        if [ "${{ steps.envcache.outputs.cache-hit }}" != "true" ]; then
+          python -m pip install --require-hashes -r oracle/requirements-pip.txt
+          pip install --require-hashes --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements-hashed.txt
+        fi
         pip check
         pip freeze > oracle-env.lock
         python -I oracle/check_lock.py oracle/requirements.lock oracle-env.lock
