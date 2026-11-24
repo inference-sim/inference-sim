@@ -6,6 +6,10 @@
 # Requests for every runner both scale sets can start at once: blis-ci-large 3 x 16 CPU / 32 GiB
 # and blis-ci-oracle 6 x 4 CPU / 16 GiB, so 72 CPU and 192 GiB, plus the ARC controller and the two
 # listeners it starts here (README.md setup step 3), which take the LimitRange's defaults below.
+#
+# Secrets: the three Helm releases (arc-blis, blis-ci-large, blis-ci-oracle) keep up to 10 revision
+# secrets each (Helm's default history), 30; the GitHub credential, 1; the two listeners' configs,
+# 2; one registration secret per runner, 3 + 6 = 9. That is 42; the quota leaves 6 spare.
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -18,7 +22,7 @@ spec:
     limits.cpu: "74"
     limits.memory: 300Gi
     pods: "15"
-    secrets: "32"
+    secrets: "48"
     services: "0"
     persistentvolumeclaims: "0"
 ---

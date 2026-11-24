@@ -1,6 +1,7 @@
 # The runner pods' network (README.md). Ingress is denied whole: a runner only dials out. Egress is
-# denied except DNS and HTTPS/HTTP to public addresses; the EgressFirewall below narrows that to the
-# hosts CI reads. Nothing in the cluster's own networks is reachable from a runner: not the API
+# denied except DNS and HTTPS/HTTP to public addresses. The EgressFirewall below is meant to narrow
+# that to the hosts CI reads, but this cluster rejects its wildcard rules, so it is not in force
+# (README.md, Egress). Nothing in the cluster's own networks is reachable from a runner: not the API
 # server, not other namespaces, not the node or cloud metadata addresses. All of them cover every pod
 # in blis; allow-arc-api-server adds the API server for the ARC controller and its listeners only.
 apiVersion: networking.k8s.io/v1
@@ -78,7 +79,8 @@ spec:
 #   Python: PyPI, its file host, and the PyTorch CPU wheel index (the vLLM oracle's lock)
 #   the oracles' model configurations: Hugging Face (configuration files only, no weights)
 #   Node, for the github-script parse test (setup-node)
-# README.md says how to confirm the list from a run's egress log before enabling the variables.
+# README.md setup step 6 says how to confirm the list from a run's egress log. Until the cluster
+# accepts the wildcard dnsName rules (README.md, Egress), none of this is in force.
 apiVersion: k8s.ovn.org/v1
 kind: EgressFirewall
 metadata:
