@@ -302,6 +302,37 @@ func TestPrefixCacheAffinityFilterRunsOnTheInFlightLoad(t *testing.T) {
 	}
 }
 
+// TestUtilizationFilterRunsOnBLISProducedSignals: the fork's utilization-filter is hosted and runs
+// end to end on exactly the signals BLIS produces -- the EPP's in-flight load (active-requests) and
+// the engine's running requests, waiting queue and KV-cache utilization (server.go publishes all
+// three; the in-flight-load producer the fourth). A config gating on all four serves every request;
+// a condition on a metric BLIS cannot produce would be the filter's own validation, not ours, so
+// the audit here is that every metric it reads is one BLIS feeds it. It is StabilityAlpha in the
+// fork, so the config states --allow-experimental-plugins, as a scenario does in router.epp_flags
+// (#2205).
+func TestUtilizationFilterRunsOnBLISProducedSignals(t *testing.T) {
+	config := "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n" +
+		"- type: metrics-data-source\n- type: core-metrics-extractor\n- type: inflight-load-producer\n" +
+		"- type: utilization-filter\n  parameters:\n    conditions:\n" +
+		"    - {metric: active-requests, maxValue: 1000}\n" +
+		"    - {metric: running-requests, maxValue: 1000}\n" +
+		"    - {metric: waiting-queue, maxValue: 1000}\n" +
+		"    - {metric: kv-cache-utilization, maxValue: 0.99}\n" +
+		"    fallbackOnEmpty: true\n" +
+		"- type: max-score-picker\n- type: single-profile-handler\n" +
+		"dataLayer:\n  sources:\n  - pluginRef: metrics-data-source\n    extractors:\n    - pluginRef: core-metrics-extractor\n" +
+		"schedulingProfiles:\n- name: default\n  plugins:\n  - pluginRef: utilization-filter\n  - pluginRef: max-score-picker\n"
+	cs := newCluster(testDeployment(2), cluster.NewSliceRequestSource(testRequests(40, 7, 500, 0)), nil)
+	cs.SetGateway(New(Options{Model: "test-model",
+		EPPFlags: append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+config)}))
+	if err := cs.Run(); err != nil {
+		t.Fatalf("a utilization-filter on BLIS-produced signals is refused: %v", err)
+	}
+	if got := cs.AggregatedMetrics().CompletedRequests; got != 40 {
+		t.Fatalf("completed %d of 40 with the utilization-filter active (routing-rejected %d)", got, cs.RoutingRejections())
+	}
+}
+
 // TestAllow: BLIS's policy allows exactly its supported types, and gives each refused type its
 // recorded reason or the generic one.
 func TestAllow(t *testing.T) {
