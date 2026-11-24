@@ -38,6 +38,12 @@ concurrency:
   group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Read-only token for every job, whatever the repository default: jobs on the scale sets get no
+# write credential (actions/checkout persists the token). Nothing here needs more: upload-artifact
+# and the cache use the runtime token, and the oracle workflows declare the same.
+permissions:
+  contents: read
+
 env:
   # One module-cache directory for every job and for cache-warm. Go keys a compiled package by
   # the directory its source is read from, so a build cache saved with the modules in one
