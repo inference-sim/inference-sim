@@ -15,7 +15,7 @@ inputs:
   build-only:
     description: >-
       "true" only makes sure the environment is in the Actions cache: on a hit it stops after looking the entry up,
-      and on a miss it builds the environment, which the cache saves when the job ends. oracle-sglang.yml's
+      and on a miss it builds the environment (without the scenario model), which the cache saves when the job ends. oracle-sglang.yml's
       oracle-env job runs it once, so the oracle-run jobs restore one saved environment instead of each building
       its own from PyPI.
     default: "false"
@@ -145,7 +145,7 @@ runs:
     # the Hub cannot change a run.
     # The one place the revision is written; the oracle job reads it from this action's output.
     - id: model
-      if: steps.envlookup.outputs.cache-hit != 'true'
+      if: steps.envlookup.outputs.cache-hit != 'true' && inputs.build-only != 'true'
       name: fetch the scenario model's configuration at its pinned revision
       shell: bash
       working-directory: engines/sglang

@@ -122,11 +122,27 @@ jobs:
       - name: every sglang:* metric family is classified and the manifest is current
         run: go run ./cmd/metricsmanifest -sglang sglang-source -check
 
+  # Makes sure the oracle environment the oracle-run jobs use is in the Actions cache, where they
+  # run (input runner): one job builds it on a miss and saves it, so a cold cache costs one install
+  # from PyPI, not one per oracle-run job (14 on a pod took 5 min each, with a 2 min save).
+  oracle-env:
+    name: oracle-env
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/oracle-env-sglang
+        with:
+          check-resolution: "false"
+          build-only: "true"
+
   # The oracle's environment (SGL-1, FID-2): SGLang checked out at the commit provenance.go pins, the
   # locked environment installed by hash and checked against the lock (.github/actions/oracle-env),
   # the manifest check (FID-1, FID-8), and the scheduler importing from the checkout on CPU.
   #
-  # The oracle is two kinds of job. `oracle-run` is a matrix: each job builds the environment, runs
+  # The oracle is two kinds of job. `oracle-run` is a matrix: each job restores the environment oracle-env saved, runs
   # the steps its entry's `runs` names, with the parts of its sharded steps named in `parts` side
   # by side (scripts/ci-parallel.sh), and uploads the traces they wrote. `oracle`,
   # the check branch protection requires, runs when every shard has finished, puts the shards'
@@ -153,22 +169,6 @@ jobs:
   # job's checks of the parts are the same in both. Within a job, a step's per-file commands run
   # several at once (oracle/each.sh), and a sharded step's parts share the job's CPUs; hosted, one
   # at a time (ORACLE_JOBS=1).
-  # Makes sure the oracle environment the oracle-run jobs use is in the Actions cache, where they
-  # run (input runner): one job builds it on a miss and saves it, so a cold cache costs one install
-  # from PyPI, not one per oracle-run job (14 on a pod took 5 min each, with a 2 min save).
-  oracle-env:
-    name: oracle-env
-    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/oracle-env-sglang
-        with:
-          check-resolution: "false"
-          build-only: "true"
-
   oracle-run:
     name: oracle-run (${{ matrix.name }})
     needs: [oracle-checks, fields, oracle-env]

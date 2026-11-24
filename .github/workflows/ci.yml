@@ -22,7 +22,7 @@ on:
         required: false
         default: ""
       save_cache:
-        description: "Also run the cache-warm job, which saves the Go build cache for this ref (a push to main always does)."
+        description: "Also run the cache-warm jobs, which save the Go build cache and the oracle environments for this ref (a push to main always does)."
         type: boolean
         required: false
         default: false
