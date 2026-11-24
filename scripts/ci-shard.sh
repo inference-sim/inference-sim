@@ -53,6 +53,17 @@ fi
 
 mkdir -p "$out"
 
+# Fetch what the package and its tests import before listing them. CI starts from an empty module
+# cache, and the listing below would read one dropped connection to the module proxy as "no tests",
+# so a failed fetch is retried here. A failure that persists is left to the listing to report.
+delay="${CI_SHARD_FETCH_RETRY_DELAY:-10}"
+for attempt in 1 2 3; do
+  go list -deps -test "$pkg" > /dev/null && break
+  [ "$attempt" -lt 3 ] || break
+  echo "ci-shard: fetching the modules $pkg needs failed (attempt $attempt of 3); retrying in $(( attempt * delay ))s" >&2
+  sleep $(( attempt * delay ))
+done
+
 # vet is off for the listing only: the run below vets the package as every go test does.
 # Test, Example and Fuzz functions are what `go test` with no -run starts (a fuzz target runs
 # its seed corpus). Benchmarks are listed by -list but never started, so they are left out.

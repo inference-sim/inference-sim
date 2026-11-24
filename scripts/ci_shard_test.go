@@ -247,6 +247,39 @@ func TestCIShardFailsWhenATestFailsOrThereAreNone(t *testing.T) {
 	}
 }
 
+// A shard survives one failed fetch from the module proxy: the first go command it runs fails, as a
+// dropped connection would, and the shard still lists and runs its tests.
+func TestCIShardRetriesAFailedFetch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs go test on a generated module")
+	}
+	realGo, err := exec.LookPath("go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	marker := filepath.Join(bin, "failed-once")
+	fake := fmt.Sprintf("#!/usr/bin/env bash\nif [ ! -e %q ]; then : > %q; echo 'stream error: INTERNAL_ERROR' >&2; exit 1; fi\nexec %q \"$@\"\n", marker, marker, realGo)
+	if err := os.WriteFile(filepath.Join(bin, "go"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CI_SHARD_FETCH_RETRY_DELAY", "0")
+
+	names := fixtureNames(3)
+	evidence := filepath.Join(t.TempDir(), "e")
+	code, out := runShard(t, shardFixture(t, names), evidence, 1, 1)
+	if code != 0 {
+		t.Fatalf("the shard failed after one failed fetch (exit %d)\n%s", code, out)
+	}
+	if got := readLines(t, filepath.Join(evidence, "ran.txt")); len(got) != len(names) {
+		t.Errorf("ran %v, want all of %v", got, names)
+	}
+	if !strings.Contains(out, "retrying") {
+		t.Errorf("the shard did not report the retry\n%s", out)
+	}
+}
+
 // The closing proof fails on each way the evidence can be wrong.
 func TestCIShardVerifyRejectsBadEvidence(t *testing.T) {
 	if testing.Short() {
