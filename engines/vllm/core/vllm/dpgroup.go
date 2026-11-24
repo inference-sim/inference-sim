@@ -696,12 +696,14 @@ func (g *DPGroup) RecordSelected(d *load.Data) {
 	}
 }
 
-// EnableKVEvents turns on every rank's KV cache events: the group's results carry them, each
-// rank's in rank order (Complete).
+// EnableKVEvents turns on rank 0's KV cache events only. Under vLLM's internal data-parallel
+// balancer a pod is one router endpoint of rank index 0, and only rank 0's KV events reach the
+// router's precise-prefix index (sim/cluster/dp_replica.go:153-161, #2677); ranks 1..dp-1 cache
+// prefixes the router never sees. External balancing (one endpoint per rank) is refused at build
+// (cmd/engine_driver_build.go), so a live DPGroup is always internal/hybrid and rank 0 is the
+// endpoint. Enabling rank 0 alone means Complete carries only its events, with no per-event filter.
 func (g *DPGroup) EnableKVEvents() {
-	for _, r := range g.ranks {
-		r.e.EnableKVEvents()
-	}
+	g.ranks[0].e.EnableKVEvents()
 }
 
 // KVEventsRefusal is the ranks' (Engine.KVEventsRefusal): every rank runs one configuration.
