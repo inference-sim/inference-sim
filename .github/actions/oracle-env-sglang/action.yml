@@ -15,7 +15,8 @@ inputs:
   build-only:
     description: >-
       "true" only makes sure the environment is in the Actions cache: on a hit it stops after looking the entry up,
-      and on a miss it builds the environment (without the scenario model), which the cache saves when the job ends. oracle-sglang.yml's
+      and on a miss it builds the environment (without the scenario model), which the cache saves when the job
+      ends. oracle-sglang.yml's
       oracle-env job runs it once, so the oracle-run jobs restore one saved environment instead of each building
       its own from PyPI.
     default: "false"

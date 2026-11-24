@@ -142,7 +142,8 @@ jobs:
   # locked environment installed by hash and checked against the lock (.github/actions/oracle-env),
   # the manifest check (FID-1, FID-8), and the scheduler importing from the checkout on CPU.
   #
-  # The oracle is two kinds of job. `oracle-run` is a matrix: each job restores the environment oracle-env saved, runs
+  # The oracle is two kinds of job. `oracle-run` is a matrix: each job restores the environment
+  # oracle-env saved, runs
   # the steps its entry's `runs` names, with the parts of its sharded steps named in `parts` side
   # by side (scripts/ci-parallel.sh), and uploads the traces they wrote. `oracle`,
   # the check branch protection requires, runs when every shard has finished, puts the shards'
