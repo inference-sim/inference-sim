@@ -49,8 +49,10 @@ import (
 //
 // What it does not price: layer 20's KV write for the rows outside the window (the kernel prices
 // layer 20 wholly on the kept rows), the launch overhead of the replay graph against eager, a
-// request that asks for prompt logprobs (it keeps every row), and the data-parallel agreement of
-// the replay batch across ranks (a data-parallel pool prices every layer on every token, as before).
+// request that asks for prompt logprobs (it keeps every row), and the cross-rank agreement of the
+// data-parallel replay batch (every rank trims its own tail, rather than the all-reduced batch
+// sized to the largest rank, model_state.py:614-631@0fda86a3). Under DP vLLM runs the replay on
+// every rank if any does, so a data-parallel pool prices it too (StepTimesAcrossDPOfStep).
 
 const (
 	// decoderReplayTrimThreshold is CompilationConfig.decoder_replay_trim_threshold's default
@@ -96,8 +98,6 @@ func (m *Model) decoderReplayOf(release string, rl sequenceParallelRules, pl poo
 		return nil, "SWA bounded replay is off (" + hit.BoundedReplayFrom + ")", nil
 	case pl.pp > 1:
 		return nil, "pipeline parallelism: the stage holding the last KV layer must hold every layer after it", nil
-	case pl.dp > 1:
-		return nil, "data parallelism: the replay batch is agreed across ranks, which is not priced", nil
 	case pl.pcp > 1 || (e.DBO != nil && e.DBO.Enabled):
 		return nil, "prefill context parallelism or micro-batching", nil
 	case rl != nil && rl.ModelSequenceParallel(g.Global.Architecture, pl.parallel, e.MoEBackend):

@@ -189,8 +189,8 @@ func TestTheStatedReplayGraphSizesPadTheTrimmedBatch(t *testing.T) {
 }
 
 // What stops the replay is disclosed, with the reason, and prices every layer on every token: a
-// data-parallel pool, whose replay batch is agreed across ranks, and a pool that turns SWA bounded
-// replay off.
+// pool that turns SWA bounded replay off. (Data parallelism no longer stops it: vLLM runs the
+// replay on every rank if any does, so BLIS prices it too -- see TestADataParallelPoolPricesTheReplay.)
 func TestAPoolThatCannotReplayDisclosesWhy(t *testing.T) {
 	on := mustReplay(t, "")
 	if got := strings.Join(on.EngineAssumptions(), "\n"); !strings.Contains(got, "decoder_replay = on") {
@@ -200,12 +200,34 @@ func TestAPoolThatCannotReplayDisclosesWhy(t *testing.T) {
 	if got := strings.Join(no.EngineAssumptions(), "\n"); !strings.Contains(got, "decoder_replay = off: SWA bounded replay is off") {
 		t.Errorf("a pool with bounded replay off does not say why: %s", got)
 	}
-	dp, err := openReplayAt(t, 4, 2, "")
+}
+
+// A data-parallel pool prices the decoder replay: it resolves on at dp > 1 (vLLM v0.34.0 runs the
+// replay on every rank if any does, model_state.py:539-542@0fda86a3), and the DP step pricer trims
+// each rank's tail so a loaded prefill rank is priced below the same rank with the replay off
+// (#2681). The two assertions kill each half of the fix: the first fails if the dp > 1 off-case is
+// restored, the second if StepTimesAcrossDPOfStep stops applying m.replay.tail.
+func TestADataParallelPoolPricesTheReplay(t *testing.T) {
+	trimmed, err := openReplayAt(t, 1, 8, "")
 	if err != nil {
 		t.Skipf("a data-parallel V4.1 pool does not open here: %v", err)
 	}
-	if got := strings.Join(dp.EngineAssumptions(), "\n"); !strings.Contains(got, "decoder_replay = off: data parallelism") {
-		t.Errorf("a data-parallel pool does not say its replay is not priced: %s", got)
+	if got := strings.Join(trimmed.EngineAssumptions(), "\n"); !strings.Contains(got, "decoder_replay = on") {
+		t.Fatalf("a data-parallel pool does not price the replay: %s", got)
+	}
+	full, err := openReplayAt(t, 1, 8, replayOff)
+	if err != nil {
+		t.Fatalf("the replay-off baseline does not open: %v", err)
+	}
+	// One loaded prefill rank (8192 tokens, above the 128 window so it trims), the rest idle.
+	ranks := make([][]ReqShape, 8)
+	ranks[0] = []ReqShape{replayChunk(8192, 0)}
+	a := trimmed.StepTimesAcrossDPOfStep(ranks, false)
+	b := full.StepTimesAcrossDPOfStep(ranks, false)
+	t.Logf("TP1xDP8 8192-token prefill rank: replay on %d ticks, off %d ticks (%.0f%% lower)",
+		a[0], b[0], 100*float64(b[0]-a[0])/float64(b[0]))
+	if a[0] >= b[0] {
+		t.Errorf("the decoder replay does not reduce the data-parallel prefill price: with replay %d ticks, with it off %d", a[0], b[0])
 	}
 }
 

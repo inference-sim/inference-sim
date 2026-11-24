@@ -119,8 +119,11 @@ func (m *Model) StepTimesAcrossDPOfStep(ranks [][]ReqShape, skipDrafts bool) []i
 	maxTokens := 0
 	allDecode := true
 	for i, reqs := range ranks {
-		kbs[i] = kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget,
-			SkipDrafts: skipDrafts}
+		// Each rank trims its own decoder replay tail, exactly as the single-rank path does
+		// (StepTimeOfStep): under DP every rank replays if any does (model_state.py:539-542,
+		// :614-631@0fda86a3), and m.replay.tail is nil-safe, so a pool with no replay is unchanged.
+		kbs[i] = m.replay.tail(kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget,
+			SkipDrafts: skipDrafts})
 		dummy := len(reqs) == 0
 		if dummy {
 			kbs[i].PadTokens = m.pad.dummyWidth
