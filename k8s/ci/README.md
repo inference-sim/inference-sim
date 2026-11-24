@@ -9,7 +9,7 @@ in it (Isolation, below). What an approved run can still do, and how each risk i
 |---|---|---|---|
 | `blis-ci-large` | 16 CPU, 32 GiB (limit 48 GiB) | 3 | ci.yml: `substrate kernel`, `cmd cluster matrix`, `vllm-race (kernelmodel-census)`, `vllm-race (vllmengine-5)` |
 | `blis-ci-oracle` | 4 CPU, 16 GiB | 18 | oracle-vllm.yml: scenarios, inertness, 2 fuzz jobs; oracle-sglang.yml: the 14 `oracle-run` jobs, one case at a time as hosted |
-| `blis-ci-small` | 4 CPU, 16 GiB (request 8 GiB), with jq | 20 | ci.yml: every other job but `changes`, `required` and `cache-warm` (build, lint, the `test` entries and shards, the substrate and vLLM checks but `substrate-registry`, `selected-deps`, `actionlint`, `claude-md-size`) |
+| `blis-ci-small` | 4 CPU, 16 GiB (request 8 GiB), with jq | 20 | ci.yml: every other job but `changes`, `required` and `cache-warm`'s arm64 entry (build, lint, the `test` entries and shards, the substrate and vLLM checks but `substrate-registry`, `selected-deps`, `actionlint`, `claude-md-size`) |
 
 `ci.yml`'s `changes` job decides once where the heavy jobs run, and every job reads its outputs
 (`runner-large`, `runner-oracle`, `runner-small`, and `large-workers` for the worker counts only the
@@ -19,7 +19,7 @@ larger pods can afford, `BLIS_PERTURBATION_WORKERS` and `BLIS_CLUSTER_MATRIX_WOR
 
 A job goes to a scale set whenever its variable is set, whoever opened the pull request: a fork's
 pull request runs where this repository's own branches run. With the variables unset, everything
-runs hosted as before. The gate jobs (`changes`, `required`), `cache-warm`, `byte gate arm64`,
+runs hosted as before. The gate jobs (`changes`, `required`), `cache-warm`'s arm64 entry, `byte gate arm64`,
 `release.yml`, `substrate-registry` (its tests start setup-python's Python with an empty environment, which
 finds its shared library only on a hosted image), the SGLang oracle's `oracle-checks`, `fields`, `treecore-diff` (it needs `rustup`) and
 `oracle` jobs, and the other workflows (`gofmt`, `private-names`, `blis`, `golden-change` and the agent workflows) stay
@@ -28,7 +28,10 @@ hosted. No required check changes name.
 `blis-ci-small` has what the jobs there need that `buildpack-deps` lacks: `jq`, which its `tools`
 init container downloads at a pinned version and checksum. CI sets `REQUIRE_JQ`, so a pod without it
 fails the scripts package's jq tests instead of skipping them; Node and Python come from
-`setup-node` and `setup-python`, as on a hosted runner.
+`setup-node` and `setup-python`, as on a hosted runner. It has no `zstd`, so `actions/cache` compresses
+with gzip there, and the compression method is part of an entry's version: a pod never restores an
+entry a hosted runner saved. So `cache-warm` saves the Go build cache on `blis-ci-small` when
+`CI_RUNS_ON_SMALL` is set, where the jobs that read it run.
 
 What keeps a fork's code off the cluster until someone has read it is approval, not routing: the
 repository's Actions setting *Require approval for all external contributors* (setup step 0) holds
@@ -172,6 +175,10 @@ The first is a precondition of enabling the scale sets; the others are accepted.
        oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set --version <chart>
    done
    ```
+
+   An installed scale set takes a changed values file with `helm upgrade` and the same flags. Apply
+   `namespace.yaml` first, and both before merging a workflow change that sends a scale set more
+   jobs: the variable already routes them, so they start when the change merges.
 
    On OpenShift, let the runner service accounts run as uid 1001:
 

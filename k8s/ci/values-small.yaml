@@ -1,8 +1,8 @@
 # gha-runner-scale-set values for blis-ci-small: 4 CPU, 16 GiB pods, the size of a GitHub-hosted
-# runner, for every ci.yml job that is not large, an oracle or a gate (changes, required,
-# cache-warm). They take CI's jobs out of the account's limit of 20 hosted jobs at once. A job
-# comes here when the repository variable CI_RUNS_ON_SMALL is blis-ci-small, or for one run when a
-# dispatch's runner_small input names it.
+# runner, for every ci.yml job that is not large, an oracle, a gate (changes, required) or
+# cache-warm's arm64 entry. They take CI's jobs out of the account's limit of 20 hosted jobs at
+# once. A job comes here when the repository variable CI_RUNS_ON_SMALL is blis-ci-small, or for one
+# run when a dispatch's runner_small input names it.
 # The pods run pull request code, forks' included, once a maintainer approves the run (README.md).
 githubConfigUrl: https://github.com/inference-sim/inference-sim
 githubConfigSecret: blis-ci-github
@@ -44,6 +44,8 @@ template:
           - {name: home, mountPath: /runner-home}
       # The tools a hosted runner has that buildpack-deps lacks and a job here needs: jq, for the
       # scripts package's tests (REQUIRE_JQ fails them without it) and scripts/test-selected-deps.sh.
+      # zstd is not among them: without it actions/cache uses gzip, and an entry's version holds the
+      # compression method, so cache-warm saves the Go build cache here, where its readers run.
       # jq 1.7.1's static linux-amd64 build, checked against its release's sha256sum.txt:
       # https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64
       - name: tools

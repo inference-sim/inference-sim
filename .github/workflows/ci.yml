@@ -126,9 +126,9 @@ jobs:
       # every outside contributor's workflow run before it starts, and the pods' isolation (k8s/ci)
       # protects the cluster. The worker counts only the large pods can afford come from the same
       # decision, so a hosted job never gets them. Every other job but this one, required and
-      # cache-warm runs on the scale set CI_RUNS_ON_SMALL names (a dispatch's runner_small input
-      # first), whose pods are the size of a hosted runner, so the jobs leave the account's limit
-      # of 20 hosted jobs at once; with it unset they run hosted.
+      # cache-warm's arm64 entry runs on the scale set CI_RUNS_ON_SMALL names (a dispatch's
+      # runner_small input first), whose pods are the size of a hosted runner, so the jobs leave the
+      # account's limit of 20 hosted jobs at once; with it unset they run hosted.
       - name: Runners the jobs use
         id: runners
         env:
@@ -1132,15 +1132,19 @@ jobs:
   # Saves the Go build cache the other jobs restore. It runs on a push to main (every merge) and,
   # on request, on a dispatch (save_cache), so a branch can warm its own cache. Pull requests
   # never save: they would fill the repository's 10 GB cache quota with one entry per push.
+  # The all scope runs where its readers run (runner-small): the pods have no zstd, so
+  # actions/cache compresses with gzip there, and the compression method is part of an entry's
+  # version, so a pod never restores an entry a hosted runner saved.
   cache-warm:
+    needs: changes
     if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.save_cache) }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner || needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { runner: ubuntu-latest, scope: all }
+          - { scope: all }
           - { runner: ubuntu-24.04-arm, scope: bytegate }
     steps:
       - name: Checkout code
