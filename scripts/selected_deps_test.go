@@ -23,13 +23,15 @@ func TestSelectedDepsRetriesAFailedFetch(t *testing.T) {
 	}
 	bin := t.TempDir()
 	marker := filepath.Join(t.TempDir(), "prefetch-failed-once")
-	// The prefetch (`go list -deps -test github.com/llm-d/llm-d-router/...`) fails once with the
-	// proxy's stream error, then succeeds; every other `go` the script runs is answered minimally.
+	// The prefetch (`go -C "$router_dir" list -deps -test ./...`, run from the router module's own
+	// directory) fails once with the proxy's stream error, then succeeds; `list -m -f {{.Dir}}`
+	// yields the router dir it runs in, and every other `go` the script runs is answered minimally.
 	fake := `#!/usr/bin/env bash
 args="$*"
 case "$args" in
   "mod edit"*) exit 0 ;;
-  "list -deps -test "*)
+  "list -m -f {{.Dir}} "*) echo /fake/router; exit 0 ;;
+  "-C "*"list -deps -test "*)
     if [ ! -e "$FAKE_GO_MARKER" ]; then : > "$FAKE_GO_MARKER"
       echo "go: downloading: stream error: stream ID 71; INTERNAL_ERROR; received from peer" >&2; exit 1; fi
     exit 0 ;;

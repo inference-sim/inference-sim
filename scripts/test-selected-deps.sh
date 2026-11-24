@@ -91,12 +91,13 @@ export BLIS_CATALOG="${BLIS_CATALOG:-$substrate_dir/catalog}" BLIS_REGISTRY="${B
 echo "substrate data: $substrate_dir"
 
 # Prefetch the test dependencies of the WHOLE router module, not only the linked packages $pkgs:
-# TestImportsNoInferenceSimPackage loads github.com/llm-d/llm-d-router/... (with tests), including
-# coordinator/, whose llm-d-async dependency `go get -t $pkgs` never pulls, so its first download
-# would otherwise land inside the test with no retry (#2680). Retry a transient failure here;
-# leave one that persists for `go test` to report, as ci-shard.sh does. Only stdout is dropped, so
-# retry_fetch's progress and a persistent error still show.
-retry_fetch go list -deps -test github.com/llm-d/llm-d-router/... >/dev/null || true
+# TestImportsNoInferenceSimPackage loads github.com/llm-d/llm-d-router/... (with tests) from its
+# package directory, so it resolves against the router's own go.mod, including coordinator/'s
+# llm-d-async, which `go get -t $pkgs` never pulls (#2680). Prefetch from that module's directory so
+# the same modules download with retry; leave a persistent failure for `go test` to report, as
+# ci-shard.sh does. Only stdout is dropped, so retry_fetch's progress and a persistent error show.
+router_dir="$(go list -m -f '{{.Dir}}' github.com/llm-d/llm-d-router)"
+retry_fetch go -C "$router_dir" list -deps -test ./... >/dev/null || true
 
 shard="${SELECTED_DEPS_SHARD:-}"
 if [ -z "$shard" ]; then
