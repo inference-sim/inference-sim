@@ -1,12 +1,12 @@
 # CI runner scale sets
 
 Two ARC (`gha-runner-scale-set`) scale sets that run CI's slowest jobs on the cluster instead of on
-GitHub-hosted runners. They run pull request code, so they hold no credentials and reach nothing in the cluster
-(Isolation, below).
+GitHub-hosted runners. They run pull request code, so they hold nothing that grants access to the cluster and reach nothing
+in it (Isolation, below). What an approved run can still do, and how each risk is kept small, is under Risks.
 
 | Scale set | Pod | Max pods | Jobs |
 |---|---|---|---|
-| `blis-ci-large` | 16 CPU, 32 GiB (limit 48 GiB) | 3 | ci.yml: `substrate kernel`, `cmd cluster matrix`, `vllm-race (kernelmodel-census)` |
+| `blis-ci-large` | 16 CPU, 32 GiB (limit 48 GiB) | 3 | ci.yml: `substrate kernel`, `cmd cluster matrix`, `vllm-race (kernelmodel-census)`, `vllm-race (vllmengine-5)` |
 | `blis-ci-oracle` | 4 CPU, 16 GiB | 6 | oracle-vllm.yml: scenarios, inertness, 2 fuzz jobs (oracle-sglang.yml can use it, but ci.yml runs it hosted) |
 
 `ci.yml`'s `changes` job decides once where the heavy jobs run, and every job reads its outputs
@@ -47,12 +47,13 @@ group can, if the scale sets move to the organization.
   image into the home volume, and the job runs in `buildpack-deps:noble`, which has the C toolchain
   `go test -race` needs (cgo). Both are public images pinned by digest; there is nothing to build
   or push.
-- **No credentials.** A runner pod mounts no service account token and no secret except its own
-  one-job registration. The GitHub credential and the controller's service account token live in
-  the namespace, but only the controller and listener pods may reach the API server
-  (`allow-arc-api-server`), and a pull request's code runs in neither: a runner pod cannot reach the
-  API server to read them. The job's own `GITHUB_TOKEN`, which `actions/checkout` keeps in
-  `.git/config`, is read-only: ci.yml and oracle-vllm.yml declare `permissions: {contents: read}`.
+- **Nothing that grants cluster access.** A runner pod mounts no service account token and no
+  secret except its own one-job registration. The GitHub credential and the controller's service
+  account token live in the namespace, but only the controller and listener pods may reach the API
+  server (`allow-arc-api-server`), and a pull request's code runs in neither: a runner pod cannot
+  reach the API server to read them. The job does hold GitHub tokens of its own (Risks, below):
+  its `GITHUB_TOKEN` is read-only (ci.yml and oracle-vllm.yml declare `permissions: {contents:
+  read}`), and no checkout keeps it on disk (`persist-credentials: false`).
 - **Egress.** `network.yaml` denies all ingress, and denies egress except DNS and ports 80/443 to
   public addresses. The EgressFirewall then narrows egress to the hosts CI fetches from: GitHub and
   its Actions endpoints, the Go proxy and checksum database, the Go and Node downloads, PyPI, the
@@ -69,6 +70,45 @@ group can, if the scale sets move to the organization.
   `namespace.yaml` caps the namespace at 73 CPU and 200 GiB of requests, the most both sets can
   start plus the controller and listeners, whose requests and limits come from its LimitRange.
 
+## Risks
+
+What an approved run that turns out to be hostile could still do, and what keeps each risk small.
+The first is a precondition of enabling the scale sets; the others are accepted.
+
+1. **Fork code before anyone reads it.** Routing does not keep a fork's code off the cluster;
+   approval does. With *Require approval for all external contributors* off (GitHub's default
+   approves only first-time contributors), a fork pull request from anyone who has contributed
+   before runs on the cluster unread. Mitigation: setup step 0 before the variables are set, and
+   reading every fork's diff, `.github/` first, before approving its run.
+2. **Exfiltration over the open egress.** Until the egress proxy exists (Egress, above), a job can
+   send anything it holds to any public host on ports 80 and 443. What it holds is the pull
+   request's own code, public sources and data, and the job's GitHub tokens: the read-only
+   `GITHUB_TOKEN`, which no checkout writes to disk but a pull request that edits a workflow can pass
+   to a step of its own, and the
+   runner's job-scoped Actions tokens (cache and artifacts), which a process running as the
+   runner's user can read. They expire when the job ends, grant no write to the repository, and
+   cache writes from a pull request are scoped to its own ref, so `main`'s caches cannot be
+   poisoned. Nothing reachable grants access to the cluster. Mitigation: approval (1); the egress
+   proxy closes the rest.
+3. **Cluster resources.** A run can use its pod's CPU, memory and disk until its timeout, and at
+   most the scale sets' maximum pods at once, inside the namespace quota (Limits, above). It cannot
+   start pods or reach other namespaces.
+4. **Availability.** With a variable set and the cluster down, its jobs wait for a runner, up to 24
+   hours, instead of falling back to hosted (While the cluster is down, below). Mitigation: delete
+   the variable and re-run; the `required` check makes a stuck job block merges only once it is
+   part of the `main` ruleset (setup step 5).
+5. **Memory on a pod with many CPUs.** The SGLang oracle can fork several cases at once
+   (`ORACLE_JOBS` above 1, unused today: ci.yml runs it hosted, one case at a time). Each child
+   imports SGLang and torch afresh, so `oracle/forkpool.py` caps the children at the fewest of the
+   pod's CPU limit and the children its memory limit holds at 4 GiB each (`ORACLE_CHILD_MIB`). The
+   4 GiB is an estimate: measure a child's peak memory before running the oracle on a scale set.
+6. **Smaller points.** The root filesystem is writable (`readOnlyRootFilesystem` unset): the
+   job's tools write outside the two volumes, and the pod and all it wrote go when the job ends.
+   The API server's addresses in `allow-arc-api-server` are this cluster's; on a cluster where they
+   differ the policy fails closed (the controller cannot reach the API server and no runner starts),
+   it does not open anything. And `network.yaml` covers every pod in `blis`, so apply it only after
+   the credentialed agent runners have left the namespace (setup step 1).
+
 ## Setup
 
 0. **Approval.** Require approval for every outside contributor's workflow run (an admin's change;
@@ -80,7 +120,9 @@ group can, if the scale sets move to the organization.
    ```
 
 1. **Quota and network.** The `blis` namespace already exists. Move the agent runners out of it
-   first: the policies below cover every pod in `blis`.
+   first: the policies below cover every pod in `blis`, and an agent runner left there would lose
+   the API server and every host off the list (`kubectl -n blis get pods` should show only
+   `blis-ci-*` and `arc-blis-*` pods before you apply).
 
    ```bash
    kubectl apply -f k8s/ci/namespace.yaml -f k8s/ci/network.yaml
