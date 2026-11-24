@@ -31,8 +31,9 @@ group can, if the scale sets move to the organization.
 - **Approval.** Every outside contributor's workflow run waits for a maintainer's approval before
   any job starts (setup step 0). This does most of the work: the rest limits what an approved run
   that turns out to be hostile can do.
-- **Namespace.** `blis` holds the CI scale sets and nothing else (`namespace.yaml`,
-  `network.yaml`). The quota, the network policies and the EgressFirewall cover every pod in it.
+- **Namespace.** `blis` holds the CI scale sets, their ARC controller and its listeners, and nothing
+  else (`namespace.yaml`, `network.yaml`). The quota, the network policies and the EgressFirewall
+  cover every pod in it.
   The agent runners (`k8s/deployment.yaml`, `k8s/pr-review-runner.yaml`), which hold credentials,
   move to a namespace of their own first (setup step 1): in `blis` they would lose the API server
   and every host off the list.
@@ -46,22 +47,26 @@ group can, if the scale sets move to the organization.
   image into the home volume, and the job runs in `buildpack-deps:noble`, which has the C toolchain
   `go test -race` needs (cgo). Both are public images pinned by digest; there is nothing to build
   or push.
-- **No credentials.** No service account token is mounted, and no secret is mounted except the
-  runner's own one-job registration. The GitHub credential that ARC reads lives in the namespace,
-  but a pod cannot reach the API server to read it.
+- **No credentials.** A runner pod mounts no service account token and no secret except its own
+  one-job registration. The GitHub credential and the controller's service account token live in
+  the namespace, but only the controller and listener pods may reach the API server
+  (`allow-arc-api-server`), and a pull request's code runs in neither: a runner pod cannot reach the
+  API server to read them.
 - **Egress.** `network.yaml` denies all ingress, and denies egress except DNS and ports 80/443 to
   public addresses. The EgressFirewall then narrows egress to the hosts CI fetches from: GitHub and
   its Actions endpoints, the Go proxy and checksum database, the Go and Node downloads, PyPI, the
   PyTorch CPU index, and Hugging Face (configuration files only). Image pulls are the node's, not
   the pod's, so they are not on the list. The rules name hosts, some by wildcard
   (`*.blob.core.windows.net`, `*.actions.githubusercontent.com`), and several are CDN-fronted with
-  addresses that rotate. So setup step 6 confirms that the cluster's OpenShift version takes
-  wildcard `dnsName` rules and that no fetch is refused over a run. If either fails, an egress proxy
-  with a domain allow-list, which the pods are only allowed to reach, replaces the EgressFirewall.
+  addresses that rotate. **Open:** this cluster's OVN-Kubernetes rejects the four wildcard
+  `dnsName` rules (`kubectl -n blis get egressfirewall default` reports *EgressFirewall Rules not
+  correctly applied*), so until an egress proxy with a domain allow-list, which the pods are only
+  allowed to reach, replaces the EgressFirewall, egress is what `network.yaml` allows: any public
+  address on ports 80 and 443.
 - **Limits.** Every runner pod has CPU, memory and ephemeral-storage limits (`values-*.yaml`), and
   every job that can run on a scale set has a `timeout-minutes`, so one run cannot hold the cluster.
-  `namespace.yaml` caps the namespace at 72 CPU and 200 GiB of requests, the most both sets can
-  start.
+  `namespace.yaml` caps the namespace at 73 CPU and 200 GiB of requests, the most both sets can
+  start plus the controller and listeners, whose requests and limits come from its LimitRange.
 
 ## Setup
 
@@ -83,18 +88,20 @@ group can, if the scale sets move to the organization.
 2. **GitHub credential.** A GitHub App installed on this repository only, with *Administration:
    read and write* (runner registration) and nothing else (`github_app_id`,
    `github_app_installation_id`, `github_app_private_key`), or a fine-grained token with that one
-   permission. It is a secret in `blis` that only the ARC controller reads, from its own namespace:
+   permission. It is a secret in `blis` that only the ARC controller and its listeners read:
 
    ```bash
    kubectl -n blis create secret generic blis-ci-github --from-file=github_token=<token file>
    ```
 
-3. **Controller.** The ARC controller (`gha-runner-scale-set-controller`) watches `blis` from a
-   namespace of its own: it and the listeners it starts call the API server, which `network.yaml`
-   denies in `blis`. The CRDs are cluster-wide, so a cluster that already has them skips them:
+3. **Controller.** The ARC controller (`gha-runner-scale-set-controller`) runs in `blis` and
+   watches only `blis`, so the CI set-up shares no namespace with anything else. It and the
+   listeners it starts call the API server, which `allow-arc-api-server` (`network.yaml`) allows
+   for them alone; its addresses there are this cluster's (`kubectl get svc,endpoints kubernetes -n
+   default`). The CRDs are cluster-wide, so a cluster that already has them skips them:
 
    ```bash
-   helm install arc-blis -n <controller namespace> --skip-crds --set flags.watchSingleNamespace=blis \
+   helm install arc-blis -n blis --skip-crds --set flags.watchSingleNamespace=blis \
      oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller --version <chart>
    ```
 
@@ -104,7 +111,7 @@ group can, if the scale sets move to the organization.
    for s in large oracle; do
      helm install blis-ci-$s -n blis -f k8s/ci/values-$s.yaml \
        --set controllerServiceAccount.name=arc-blis-gha-rs-controller \
-       --set controllerServiceAccount.namespace=<controller namespace> \
+       --set controllerServiceAccount.namespace=blis \
        oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set --version <chart>
    done
    ```

@@ -1,7 +1,8 @@
 # The runner pods' network (README.md). Ingress is denied whole: a runner only dials out. Egress is
 # denied except DNS and HTTPS/HTTP to public addresses; the EgressFirewall below narrows that to the
-# hosts CI reads. Nothing in the cluster's own networks is reachable: not the API server, not other
-# namespaces, not the node or cloud metadata addresses. All three cover every pod in blis.
+# hosts CI reads. Nothing in the cluster's own networks is reachable from a runner: not the API
+# server, not other namespaces, not the node or cloud metadata addresses. All of them cover every pod
+# in blis; allow-arc-api-server adds the API server for the ARC controller and its listeners only.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -43,6 +44,32 @@ spec:
         - {protocol: TCP, port: 443}
         - {protocol: TCP, port: 80}
 ---
+# The ARC controller and the listeners it starts (README.md setup step 3) run in blis and call the
+# API server; the runner pods, which carry neither label, still cannot. The addresses are the
+# cluster's API server: `kubectl get svc,endpoints kubernetes -n default` (the service address, and
+# the endpoints it forwards to, which are what the policy sees).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-arc-api-server
+  namespace: blis
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/component, operator: In, values: [controller-manager, runner-scale-set-listener]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: {cidr: 172.30.0.1/32}
+      ports:
+        - {protocol: TCP, port: 443}
+    - to:
+        - ipBlock: {cidr: 192.168.98.146/32}
+        - ipBlock: {cidr: 192.168.98.147/32}
+        - ipBlock: {cidr: 192.168.98.148/32}
+      ports:
+        - {protocol: TCP, port: 6443}
+---
 # OVN-Kubernetes (OpenShift) applies the rules in order; the last denies every other address. The
 # list is what the jobs on these runners fetch:
 #   the runner itself and actions: GitHub, its API, its archive, release and object stores, the
@@ -76,4 +103,9 @@ spec:
     - {type: Allow, to: {dnsName: huggingface.co}}
     - {type: Allow, to: {dnsName: "*.hf.co"}}
     - {type: Allow, to: {dnsName: nodejs.org}}
+    # The API server's endpoints, for the controller and listeners: allow-arc-api-server above keeps
+    # every other pod from them.
+    - {type: Allow, to: {cidrSelector: 192.168.98.146/32}}
+    - {type: Allow, to: {cidrSelector: 192.168.98.147/32}}
+    - {type: Allow, to: {cidrSelector: 192.168.98.148/32}}
     - {type: Deny, to: {cidrSelector: 0.0.0.0/0}}

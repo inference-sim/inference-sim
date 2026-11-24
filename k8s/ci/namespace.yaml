@@ -1,10 +1,11 @@
 # The quota for the CI scale sets' runner pods in the blis namespace (README.md), which already
-# exists. The credentials ARC needs are a secret here that only the controller reads: a runner pod
+# exists, with the ARC controller and listeners. The credentials ARC needs are a secret here: a runner pod
 # mounts no secret but its own one-job registration, has no service account token, and cannot reach
 # the API server (network.yaml), so it cannot read them. The quota covers every pod in blis.
 #
 # Requests for every runner both scale sets can start at once: blis-ci-large 3 x 16 CPU / 32 GiB
-# and blis-ci-oracle 6 x 4 CPU / 16 GiB, so 72 CPU and 192 GiB, with a little memory to spare.
+# and blis-ci-oracle 6 x 4 CPU / 16 GiB, so 72 CPU and 192 GiB, plus the ARC controller and the two
+# listeners it starts here (README.md setup step 3), which take the LimitRange's defaults below.
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -12,11 +13,24 @@ metadata:
   namespace: blis
 spec:
   hard:
-    requests.cpu: "72"
+    requests.cpu: "73"
     requests.memory: 200Gi
-    limits.cpu: "72"
+    limits.cpu: "74"
     limits.memory: 300Gi
-    pods: "12"
-    secrets: "24"
+    pods: "15"
+    secrets: "32"
     services: "0"
     persistentvolumeclaims: "0"
+---
+# Requests and limits for a container that sets none: the ARC controller and its listeners (the
+# charts give them none). The runner pods set their own (values-*.yaml).
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: blis-ci-defaults
+  namespace: blis
+spec:
+  limits:
+    - type: Container
+      defaultRequest: {cpu: 100m, memory: 128Mi}
+      default: {cpu: 500m, memory: 512Mi}
