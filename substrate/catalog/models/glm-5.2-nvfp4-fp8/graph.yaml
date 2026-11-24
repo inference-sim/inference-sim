@@ -9,7 +9,7 @@ global:
   hidden_size: 6144
   vocab_size: 154880
   tie_word_embeddings: false
-  weight_dtype: fp8
+  weight_dtype: nvfp4
   architecture: GlmMoeDsaForCausalLM
 layer_kinds:
 - id: attn_dense_indexed
@@ -21,6 +21,10 @@ layer_kinds:
     n: 2624
     k: 6144
     tp: replicated
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 10752
@@ -28,15 +32,27 @@ layer_kinds:
     role: q_b_proj
     n: 16384
     k: 2048
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
   - op: GEMM
     role: kv_b_proj
     n: 28672
     k: 512
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
   - op: GEMM
     role: index_wq_b
     n: 4096
     k: 2048
     tp: replicated
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
   - op: GEMM
     role: index_wk_weights_proj
     n: 160
@@ -64,6 +80,10 @@ layer_kinds:
     role: o_proj
     n: 6144
     k: 16384
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -118,6 +138,10 @@ layer_kinds:
     n: 2624
     k: 6144
     tp: replicated
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 10752
@@ -125,15 +149,27 @@ layer_kinds:
     role: q_b_proj
     n: 16384
     k: 2048
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
   - op: GEMM
     role: kv_b_proj
     n: 28672
     k: 512
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
   - op: GEMM
     role: index_wq_b
     n: 4096
     k: 2048
     tp: replicated
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
   - op: GEMM
     role: index_wk_weights_proj
     n: 160
@@ -161,6 +197,10 @@ layer_kinds:
     role: o_proj
     n: 6144
     k: 16384
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -245,6 +285,10 @@ layer_kinds:
     n: 2624
     k: 6144
     tp: replicated
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 10240
@@ -252,10 +296,18 @@ layer_kinds:
     role: q_b_proj
     n: 16384
     k: 2048
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
   - op: GEMM
     role: kv_b_proj
     n: 28672
     k: 512
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
   - op: Attention
     holds_engine_kv: true
     kind: sparse_mla
@@ -269,6 +321,10 @@ layer_kinds:
     role: o_proj
     n: 6144
     k: 16384
+    weight_dtype: fp8
+    weight_scale:
+      elements: 16384
+      bytes: 4
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -357,6 +413,7 @@ layer_kinds:
     n: 2624
     k: 6144
     tp: replicated
+    weight_dtype: bf16
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 10752
@@ -364,15 +421,18 @@ layer_kinds:
     role: q_b_proj
     n: 16384
     k: 2048
+    weight_dtype: bf16
   - op: GEMM
     role: kv_b_proj
     n: 28672
     k: 512
+    weight_dtype: bf16
   - op: GEMM
     role: index_wq_b
     n: 4096
     k: 2048
     tp: replicated
+    weight_dtype: bf16
   - op: GEMM
     role: index_wk_weights_proj
     n: 160
@@ -400,6 +460,7 @@ layer_kinds:
     role: o_proj
     n: 6144
     k: 16384
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -418,11 +479,13 @@ layer_kinds:
     k: 6144
     experts: 256
     top_k: 8
+    weight_dtype: bf16
   - op: GEMM
     role: shared_gate_up
     n: 4096
     k: 6144
     tp: column
+    weight_dtype: bf16
   - op: Elementwise
     role: shared_act
     tp: sharded
@@ -432,6 +495,7 @@ layer_kinds:
     n: 6144
     k: 2048
     tp: row
+    weight_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
