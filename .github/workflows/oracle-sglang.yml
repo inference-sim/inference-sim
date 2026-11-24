@@ -14,7 +14,7 @@ name: oracle-sglang
 on:
   workflow_call:
     inputs:
-      # The scale set the oracle jobs run on (ci.yml's changes job decides it), or empty for hosted.
+      # The scale set the oracle jobs run on, or empty for hosted (ci.yml passes none, so it runs hosted).
       runner:
         type: string
         default: ""
@@ -137,8 +137,8 @@ jobs:
   #   hicache     HiCache (FID-5) and the metrics and KV events (S15)              about 4 min
   #
   # On a hosted runner (4 vCPUs) the parts side by side are slower than one part a job, so there
-  # each part is a job of its own (14 jobs). On the runner CI_RUNS_ON_ORACLE names (input runner,
-  # which ci.yml's changes job sets for this repository's own code), four jobs run every part:
+  # each part is a job of its own (14 jobs). On a scale-set runner (input runner, which ci.yml
+  # does not pass at present), four jobs run every part:
   # resolve-cache-hicache, serverargs (with refusals), lower (with tier2) and sched. Each part
   # writes the file it wrote as a job of its own (serverargs-$PART.json and so on), so the oracle
   # job's checks of the parts are the same in both. Within a job, a step's per-file commands run
