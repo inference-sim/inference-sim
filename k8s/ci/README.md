@@ -1,22 +1,33 @@
 # CI runner scale sets
 
-Two ARC (`gha-runner-scale-set`) scale sets that run CI's slowest jobs on the cluster instead of on
-GitHub-hosted runners. They run pull request code, so they hold nothing that grants access to the cluster and reach nothing
+Three ARC (`gha-runner-scale-set`) scale sets that run CI's jobs on the cluster instead of on
+GitHub-hosted runners: the slowest on pods sized for them, and the rest on pods the size of a hosted
+runner, so CI leaves the account's limit of 20 hosted jobs at once. They run pull request code, so they hold nothing that grants access to the cluster and reach nothing
 in it (Isolation, below). What an approved run can still do, and how each risk is kept small, is under Risks.
 
 | Scale set | Pod | Max pods | Jobs |
 |---|---|---|---|
 | `blis-ci-large` | 16 CPU, 32 GiB (limit 48 GiB) | 3 | ci.yml: `substrate kernel`, `cmd cluster matrix`, `vllm-race (kernelmodel-census)`, `vllm-race (vllmengine-5)` |
 | `blis-ci-oracle` | 4 CPU, 16 GiB | 6 | oracle-vllm.yml: scenarios, inertness, 2 fuzz jobs (oracle-sglang.yml can use it, but ci.yml runs it hosted) |
+| `blis-ci-small` | 4 CPU, 16 GiB (request 8 GiB), with jq | 20 | ci.yml: every other job but `changes`, `required` and `cache-warm` (build, lint, the `test` entries and shards, the substrate and vLLM checks, `selected-deps`, `actionlint`, `claude-md-size`) |
 
 `ci.yml`'s `changes` job decides once where the heavy jobs run, and every job reads its outputs
-(`runner-large`, `runner-oracle`, and `large-workers` for the worker counts only the larger pods can
-afford, `BLIS_PERTURBATION_WORKERS` and `BLIS_CLUSTER_MATRIX_WORKERS`).
+(`runner-large`, `runner-oracle`, `runner-small`, and `large-workers` for the worker counts only the
+larger pods can afford, `BLIS_PERTURBATION_WORKERS` and `BLIS_CLUSTER_MATRIX_WORKERS`). A dispatch of
+`ci.yml` can name a scale set for its default jobs with the `runner_small` input, which tries
+`blis-ci-small` on one run before `CI_RUNS_ON_SMALL` sends every run there.
 
 A job goes to a scale set whenever its variable is set, whoever opened the pull request: a fork's
 pull request runs where this repository's own branches run. With the variables unset, everything
-runs hosted as before. The gate jobs (`changes`, `required`), `byte gate arm64`, `release.yml` and
-the fast jobs stay hosted. No required check changes name.
+runs hosted as before. The gate jobs (`changes`, `required`), `cache-warm`, `byte gate arm64`,
+`release.yml`, the SGLang oracle (its environment downloads too slowly on the cluster's network) and
+the other workflows (`gofmt`, `private-names`, `blis`, `golden-change` and the agent workflows) stay
+hosted. No required check changes name.
+
+`blis-ci-small` has what the jobs there need that `buildpack-deps` lacks: `jq`, which its `tools`
+init container downloads at a pinned version and checksum. CI sets `REQUIRE_JQ`, so a pod without it
+fails the scripts package's jq tests instead of skipping them; Node and Python come from
+`setup-node` and `setup-python`, as on a hosted runner.
 
 What keeps a fork's code off the cluster until someone has read it is approval, not routing: the
 repository's Actions setting *Require approval for all external contributors* (setup step 0) holds
@@ -68,8 +79,8 @@ group can, if the scale sets move to the organization.
   address outside the intranet range on ports 80 and 443.
 - **Limits.** Every runner pod has CPU, memory and ephemeral-storage limits (`values-*.yaml`), and
   every job that can run on a scale set has a `timeout-minutes`, so one run cannot hold the cluster.
-  `namespace.yaml` caps the namespace at 73 CPU and 200 GiB of requests, the most both sets can
-  start plus the controller and listeners, whose requests and limits come from its LimitRange.
+  `namespace.yaml` caps the namespace at 153 CPU and 360 GiB of requests, the most the three sets
+  can start plus the controller and listeners, whose requests and limits come from its LimitRange.
 
 ## Risks
 
@@ -152,7 +163,7 @@ The first is a precondition of enabling the scale sets; the others are accepted.
 4. **Scale sets.**
 
    ```bash
-   for s in large oracle; do
+   for s in large oracle small; do
      helm install blis-ci-$s -n blis -f k8s/ci/values-$s.yaml \
        --set controllerServiceAccount.name=arc-blis-gha-rs-controller \
        --set controllerServiceAccount.namespace=blis \
@@ -163,7 +174,7 @@ The first is a precondition of enabling the scale sets; the others are accepted.
    On OpenShift, let the runner service accounts run as uid 1001:
 
    ```bash
-   for s in large oracle; do
+   for s in large oracle small; do
      oc adm policy add-scc-to-user nonroot-v2 -z blis-ci-$s-gha-rs-no-permission -n blis
    done
    ```
@@ -175,6 +186,13 @@ The first is a precondition of enabling the scale sets; the others are accepted.
    ```bash
    gh variable set CI_RUNS_ON_LARGE --body blis-ci-large
    gh variable set CI_RUNS_ON_ORACLE --body blis-ci-oracle
+   gh variable set CI_RUNS_ON_SMALL --body blis-ci-small
+   ```
+
+   Before setting `CI_RUNS_ON_SMALL`, try the scale set on one run, which uses it and nothing else:
+
+   ```bash
+   gh workflow run ci.yml --ref <branch> -f runner_small=blis-ci-small
    ```
 
 6. **Confirm the egress list.** For the first run, set the EgressFirewall's last rule to `Allow` and

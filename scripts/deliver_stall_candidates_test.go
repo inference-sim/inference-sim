@@ -20,9 +20,7 @@ import (
 
 func requireJq(t *testing.T) {
 	t.Helper()
-	if _, err := exec.LookPath("jq"); err != nil {
-		t.Skip("jq is not on PATH")
-	}
+	needJQ(t)
 }
 
 // candidates runs the committed filter over a `gh pr list` payload and returns the selected PR

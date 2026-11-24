@@ -26,6 +26,10 @@ on:
         type: boolean
         required: false
         default: false
+      runner_small:
+        description: "Optional: the scale set the default jobs run on for this run only, to try one before setting CI_RUNS_ON_SMALL (k8s/ci). Empty uses the variable."
+        required: false
+        default: ""
 
 # A new push to a pull request supersedes the run on the old head: nothing about the old head can
 # be required any more. Pushes to main and dispatches have unique groups and are never cancelled.
@@ -84,6 +88,7 @@ jobs:
       sglang: ${{ steps.groups.outputs.sglang }}
       runner-large: ${{ steps.runners.outputs.large }}
       runner-oracle: ${{ steps.runners.outputs.oracle }}
+      runner-small: ${{ steps.runners.outputs.small }}
       large-workers: ${{ steps.runners.outputs.large-workers }}
     steps:
       - name: Checkout code
@@ -120,26 +125,30 @@ jobs:
       # (k8s/ci) whenever that variable is set, for a fork's pull request too: a maintainer approves
       # every outside contributor's workflow run before it starts, and the pods' isolation (k8s/ci)
       # protects the cluster. The worker counts only the large pods can afford come from the same
-      # decision, so a hosted job never gets them.
-      - name: Runners the heavy jobs use
+      # decision, so a hosted job never gets them. Every other job but this one, required and
+      # cache-warm runs on the scale set CI_RUNS_ON_SMALL names (a dispatch's runner_small input
+      # first), whose pods are the size of a hosted runner, so the jobs leave the account's limit
+      # of 20 hosted jobs at once; with it unset they run hosted.
+      - name: Runners the jobs use
         id: runners
         env:
           LARGE: ${{ vars.CI_RUNS_ON_LARGE }}
           ORACLE: ${{ vars.CI_RUNS_ON_ORACLE }}
+          SMALL: ${{ inputs.runner_small || vars.CI_RUNS_ON_SMALL }}
         run: |
           set -euo pipefail
-          for v in "$LARGE" "$ORACLE"; do
+          for v in "$LARGE" "$ORACLE" "$SMALL"; do
             [[ "$v" =~ ^[A-Za-z0-9._-]*$ ]] || { echo "a CI_RUNS_ON_* variable is not a runner label: $v"; exit 1; }
           done
-          { echo "large=$LARGE"; echo "oracle=$ORACLE"; echo "large-workers=${LARGE:+6}"; } >> "$GITHUB_OUTPUT"
-          echo "large jobs: ${LARGE:-ubuntu-latest}; oracle jobs: ${ORACLE:-ubuntu-latest}"
+          { echo "large=$LARGE"; echo "oracle=$ORACLE"; echo "small=$SMALL"; echo "large-workers=${LARGE:+6}"; } >> "$GITHUB_OUTPUT"
+          echo "large jobs: ${LARGE:-ubuntu-latest}; oracle jobs: ${ORACLE:-ubuntu-latest}; other jobs: ${SMALL:-ubuntu-latest}"
 
   build:
     name: "build"
     needs: changes
     # Required check: it always reports. Its steps run when a non-test Go file or a module file changed.
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 20
     steps:
       - name: The change filter ran
@@ -183,7 +192,7 @@ jobs:
     # scale set CI_RUNS_ON_LARGE names (k8s/ci) when it is set, else hosted. The
     # worker counts below read the same decision (large-workers), so a hosted runner never gets the
     # larger setting.
-    runs-on: ${{ matrix.runner || (matrix.large && needs.changes.outputs.runner-large) || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.runner || (matrix.large && needs.changes.outputs.runner-large) || needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     # The longest entry (substrate) has a 30m go test timeout.
     timeout-minutes: 40
     strategy:
@@ -364,6 +373,7 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         env:
           REQUIRE_NODE: "1"
+          REQUIRE_JQ: "1"
           # Read only by the tests of the entries that check the sources out above; elsewhere unset.
           VLLM_SOURCE: ${{ (matrix.flag == 'substrate' || matrix.flag == 'vllm') && format('{0}/upstream/vllm', github.workspace) || '' }}
           VLLM_SOURCE_REQUIRED: ${{ (matrix.flag == 'substrate' || matrix.flag == 'vllm') && '1' || '' }}
@@ -395,7 +405,7 @@ jobs:
     needs: changes
     name: test (${{ matrix.name }}, ${{ matrix.packages }}, ${{ matrix.timeout }})
     if: ${{ !cancelled() }}
-    runs-on: ${{ (matrix.large && needs.changes.outputs.runner-large) || 'ubuntu-latest' }}
+    runs-on: ${{ (matrix.large && needs.changes.outputs.runner-large) || needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -474,6 +484,7 @@ jobs:
           # concurrent compile and test jobs instead of one per CPU keep the runner responsive.
           GOFLAGS: -modcacherw -p=2
           REQUIRE_NODE: "1"
+          REQUIRE_JQ: "1"
           # Read only by cmd's recipe-preset test; elsewhere unset.
           VLLM_SOURCE: ${{ matrix.group == 'cmd' && format('{0}/upstream/vllm', github.workspace) || '' }}
           VLLM_SOURCE_REQUIRED: ${{ matrix.group == 'cmd' && '1' || '' }}
@@ -498,7 +509,7 @@ jobs:
     needs: changes
     name: test (${{ matrix.name }}, ${{ matrix.packages }}, ${{ matrix.timeout }})
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -550,6 +561,7 @@ jobs:
         env:
           CI_SHARD_SALT: ${{ matrix.salt }}
           REQUIRE_NODE: "1"
+          REQUIRE_JQ: "1"
         run: scripts/ci-shard.sh ${{ matrix.shard }} ${{ matrix.shards }} "$RUNNER_TEMP/evidence" ${{ matrix.packages }} -timeout ${{ matrix.timeout }}
 
       - name: Keep the evidence of what this shard ran
@@ -569,7 +581,7 @@ jobs:
     needs: [changes, test-shards]
     name: "test (workload & cmd, ./sim/workload ./cmd, 10m)"
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Shards passed
@@ -613,7 +625,7 @@ jobs:
     needs: [changes, test-shards]
     name: "test (engine vllm kernelmodel, ./engines/vllm/core/kernelmodel, 15m)"
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Shards passed
@@ -647,7 +659,7 @@ jobs:
     needs: [changes, test-llmd-shards]
     name: "test (llm-d router, ./sim/llmd, 10m)"
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Shards passed
@@ -680,7 +692,7 @@ jobs:
     needs: changes
     # Required check: it always reports; the linter runs when a Go file or a module file changed.
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 20
     steps:
       - name: The change filter ran
@@ -763,7 +775,7 @@ jobs:
   stack:
     needs: changes
     if: ${{ needs.changes.outputs.stack == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 15
     env:
       GOTOOLCHAIN: local
@@ -810,7 +822,7 @@ jobs:
   substrate-checks:
     needs: changes
     if: ${{ needs.changes.outputs.substrate == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 20
     env:
       GOTOOLCHAIN: local
@@ -863,7 +875,7 @@ jobs:
   substrate-mutants:
     needs: changes
     if: ${{ needs.changes.outputs.substrate == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 40
     env:
       GOTOOLCHAIN: local
@@ -883,7 +895,7 @@ jobs:
   substrate-catalog:
     needs: changes
     if: ${{ needs.changes.outputs.substrate == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 30
     env:
       GOTOOLCHAIN: local
@@ -929,7 +941,7 @@ jobs:
   substrate-registry:
     needs: changes
     if: ${{ needs.changes.outputs.substrate == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 30
     env:
       GOTOOLCHAIN: local
@@ -999,7 +1011,7 @@ jobs:
     needs: changes
     name: selected-deps (${{ matrix.kind }} ${{ matrix.shard }}/${{ matrix.shards }})
     if: ${{ needs.changes.outputs.selected == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 25
     env:
       GOTOOLCHAIN: local
@@ -1046,7 +1058,7 @@ jobs:
   selected-deps:
     needs: [changes, selected-deps-shards]
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Shards passed
@@ -1087,7 +1099,7 @@ jobs:
   actionlint:
     needs: changes
     if: ${{ needs.changes.outputs.actionlint == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Checkout code
@@ -1104,7 +1116,7 @@ jobs:
   claude-md-size:
     needs: changes
     if: ${{ needs.changes.outputs.claudemd == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - name: Checkout code
@@ -1173,7 +1185,7 @@ jobs:
   vllm-checks:
     needs: changes
     if: ${{ needs.changes.outputs.vllm == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 40
     env:
       GOTOOLCHAIN: local
@@ -1268,7 +1280,7 @@ jobs:
     name: vllm-race (${{ matrix.name }})
     needs: changes
     if: ${{ needs.changes.outputs.vllm == 'true' }}
-    runs-on: ${{ (matrix.large && needs.changes.outputs.runner-large) || 'ubuntu-latest' }}
+    runs-on: ${{ (matrix.large && needs.changes.outputs.runner-large) || needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -1361,7 +1373,7 @@ jobs:
   vllm-race-vllmengine:
     needs: [changes, vllm-race]
     if: ${{ !cancelled() && needs.changes.outputs.vllm == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: The race shards passed
