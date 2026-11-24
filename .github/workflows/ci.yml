@@ -941,7 +941,9 @@ jobs:
   substrate-registry:
     needs: changes
     if: ${{ needs.changes.outputs.substrate == 'true' }}
-    runs-on: ${{ needs.changes.outputs.runner-small || 'ubuntu-latest' }}
+    # Hosted: its tests run setup-python's Python with an empty environment, and only a hosted image
+    # finds that Python's shared library without LD_LIBRARY_PATH (a scale-set pod fails them, 127).
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       GOTOOLCHAIN: local
@@ -1333,7 +1335,9 @@ jobs:
           # shellcheck disable=SC2086
           go list $RACE_PKGS | sort -u > "$tmp/raced"
           { printf '%s\n' $EXCLUDED; } | sort -u > "$tmp/excluded"
-          git ls-files 'engines/vllm/*.go' ':!:*_test.go' ':!:*/testdata/*' ':!:*/_inpackage/*' \
+          # Plain git ls-files and grep, not exclude pathspecs: git 2.43 (the scale sets' image) lists
+          # nothing for 'engines/vllm/*.go' ':!:*_test.go', where 2.56 (hosted) lists the files.
+          git ls-files -- engines/vllm | grep '\.go$' | grep -v -e '_test\.go$' -e '/testdata/' -e '/_inpackage/' \
             | xargs grep -lE 'go func|sync\.|atomic\.|chan ' | xargs -n1 dirname | sort -u \
             | while read -r d; do go list "./$d"; done | sort -u > "$tmp/concurrent"
           echo "packages with concurrency primitives:"; cat "$tmp/concurrent"
@@ -1409,9 +1413,13 @@ jobs:
   oracle-sglang:
     needs: changes
     if: ${{ needs.changes.outputs.sglang == 'true' }}
-    # Hosted until its setup on the scale set is fast: there oracle-env-sglang takes about 5.5 min,
-    # bound by the cluster's egress, so the four cluster jobs took 12 to 16 min against about 7 hosted.
+    # Its oracle-run jobs go where the vLLM oracle's go (runner-oracle, 4 CPU / 16 GiB pods, the
+    # size of a hosted runner), in the hosted layout, one case at a time; its other jobs stay
+    # hosted. The lock's resolution check, which asks PyPI and took about 2 min of every job's setup
+    # on the cluster, runs once, in treecore-diff.
     uses: ./.github/workflows/oracle-sglang.yml
+    with:
+      runner: ${{ needs.changes.outputs.runner-oracle }}
 
   # The one status to require. Every job above reports success, failure or skipped; this one
   # succeeds when none failed or was cancelled and the change filter itself ran, so a skipped job

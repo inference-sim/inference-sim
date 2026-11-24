@@ -8,8 +8,8 @@ in it (Isolation, below). What an approved run can still do, and how each risk i
 | Scale set | Pod | Max pods | Jobs |
 |---|---|---|---|
 | `blis-ci-large` | 16 CPU, 32 GiB (limit 48 GiB) | 3 | ci.yml: `substrate kernel`, `cmd cluster matrix`, `vllm-race (kernelmodel-census)`, `vllm-race (vllmengine-5)` |
-| `blis-ci-oracle` | 4 CPU, 16 GiB | 6 | oracle-vllm.yml: scenarios, inertness, 2 fuzz jobs (oracle-sglang.yml can use it, but ci.yml runs it hosted) |
-| `blis-ci-small` | 4 CPU, 16 GiB (request 8 GiB), with jq | 20 | ci.yml: every other job but `changes`, `required` and `cache-warm` (build, lint, the `test` entries and shards, the substrate and vLLM checks, `selected-deps`, `actionlint`, `claude-md-size`) |
+| `blis-ci-oracle` | 4 CPU, 16 GiB | 18 | oracle-vllm.yml: scenarios, inertness, 2 fuzz jobs; oracle-sglang.yml: the 14 `oracle-run` jobs, one case at a time as hosted |
+| `blis-ci-small` | 4 CPU, 16 GiB (request 8 GiB), with jq | 20 | ci.yml: every other job but `changes`, `required` and `cache-warm` (build, lint, the `test` entries and shards, the substrate and vLLM checks but `substrate-registry`, `selected-deps`, `actionlint`, `claude-md-size`) |
 
 `ci.yml`'s `changes` job decides once where the heavy jobs run, and every job reads its outputs
 (`runner-large`, `runner-oracle`, `runner-small`, and `large-workers` for the worker counts only the
@@ -20,8 +20,9 @@ larger pods can afford, `BLIS_PERTURBATION_WORKERS` and `BLIS_CLUSTER_MATRIX_WOR
 A job goes to a scale set whenever its variable is set, whoever opened the pull request: a fork's
 pull request runs where this repository's own branches run. With the variables unset, everything
 runs hosted as before. The gate jobs (`changes`, `required`), `cache-warm`, `byte gate arm64`,
-`release.yml`, the SGLang oracle (its environment downloads too slowly on the cluster's network) and
-the other workflows (`gofmt`, `private-names`, `blis`, `golden-change` and the agent workflows) stay
+`release.yml`, `substrate-registry` (its tests start setup-python's Python with an empty environment, which
+finds its shared library only on a hosted image), the SGLang oracle's `oracle-checks`, `fields`, `treecore-diff` (it needs `rustup`) and
+`oracle` jobs, and the other workflows (`gofmt`, `private-names`, `blis`, `golden-change` and the agent workflows) stay
 hosted. No required check changes name.
 
 `blis-ci-small` has what the jobs there need that `buildpack-deps` lacks: `jq`, which its `tools`
@@ -79,7 +80,7 @@ group can, if the scale sets move to the organization.
   address outside the intranet range on ports 80 and 443.
 - **Limits.** Every runner pod has CPU, memory and ephemeral-storage limits (`values-*.yaml`), and
   every job that can run on a scale set has a `timeout-minutes`, so one run cannot hold the cluster.
-  `namespace.yaml` caps the namespace at 153 CPU and 360 GiB of requests, the most the three sets
+  `namespace.yaml` caps the namespace at 201 CPU and 552 GiB of requests, the most the three sets
   can start plus the controller and listeners, whose requests and limits come from its LimitRange.
 
 ## Risks
@@ -110,10 +111,11 @@ The first is a precondition of enabling the scale sets; the others are accepted.
    the variable and re-run; the `required` check makes a stuck job block merges only once it is
    part of the `main` ruleset (setup step 5).
 5. **Memory on a pod with many CPUs.** The SGLang oracle can fork several cases at once
-   (`ORACLE_JOBS` above 1, unused today: ci.yml runs it hosted, one case at a time). Each child
-   imports SGLang and torch afresh, so `oracle/forkpool.py` caps the children at the fewest of the
-   pod's CPU limit and the children its memory limit holds at 4 GiB each (`ORACLE_CHILD_MIB`). The
-   4 GiB is an estimate: measure a child's peak memory before running the oracle on a scale set.
+   (`ORACLE_JOBS` above 1, oracle-sglang.yml's `parallel` input, unused today: ci.yml runs its
+   `oracle-run` jobs on `blis-ci-oracle` pods, the size of a hosted runner, one case at a time). Each
+   child imports SGLang and torch afresh, so `oracle/forkpool.py` caps the children at the fewest of
+   the pod's CPU limit and the children its memory limit holds at 4 GiB each (`ORACLE_CHILD_MIB`).
+   The 4 GiB is an estimate: measure a child's peak memory before turning `parallel` on.
 6. **Smaller points.** The root filesystem is writable (`readOnlyRootFilesystem` unset): the
    job's tools write outside the two volumes, and the pod and all it wrote go when the job ends.
    The API server's addresses in `allow-arc-api-server` are this cluster's; on a cluster where they

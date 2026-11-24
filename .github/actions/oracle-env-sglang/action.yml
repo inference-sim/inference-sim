@@ -5,6 +5,13 @@ description: >-
   package of oracle/requirements.lock installed from oracle/requirements-hashed.txt (every archive's
   sha256, no resolving; the step fails unless what got installed is exactly the lock), and the scenario
   model's configuration at its pinned revision in oracle-model. The caller has checked out the repository.
+inputs:
+  check-resolution:
+    description: >-
+      "true" (the default) also checks that resolving the oracle's requirements again gives exactly the lock
+      (oracle/lock.sh --check, with uv installed for it). It asks PyPI, so oracle-sglang.yml runs it in one job a
+      run, not in every job: what it checks is the same commit's files wherever it runs.
+    default: "true"
 outputs:
   python-version:
     description: The exact Python setup-python installed.
@@ -100,8 +107,10 @@ runs:
           python -m pip install --require-hashes -r oracle/requirements-pip.txt
         fi
         # uv runs lock.sh --check; it is installed outside the environment the lock describes.
-        python -m pip install --require-hashes --target "$RUNNER_TEMP/uv" -r oracle/requirements-uv.txt
-        PATH="$RUNNER_TEMP/uv/bin:$PATH" oracle/lock.sh --check
+        if [ "${{ inputs.check-resolution }}" = "true" ]; then
+          python -m pip install --require-hashes --target "$RUNNER_TEMP/uv" -r oracle/requirements-uv.txt
+          PATH="$RUNNER_TEMP/uv/bin:$PATH" oracle/lock.sh --check
+        fi
         if [ "${{ steps.envcache.outputs.cache-hit }}" != "true" ]; then
           pip install --require-hashes --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements-hashed.txt
         fi
