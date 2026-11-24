@@ -302,8 +302,25 @@ func TestKVCapacityMatchesTheEnginesLoggedFigure(t *testing.T) {
 			"the check does not distinguish the admission charge", steady)
 	}
 
+	// #2427: the end-to-end KV pool is an asserted figure, not only logged. BLIS sizes it at
+	// device-memory x gpu_memory_utilization minus the kernel's fixed-occupancy estimate; that
+	// estimate is not yet measured, so BLIS's pool sits below vLLM's logged one. Pin the current
+	// gap with a tolerance set to today's measured shortfall (~22%) plus a small margin, to be
+	// tightened toward zero as the kernel's fixed-occupancy estimate improves. A larger gap, in
+	// either direction, is a regression and fails here.
+	const poolTolerance = 0.25 // today's gap is ~0.223 (47.56 of 61.18 GiB); tighten as the kernel improves
+	blisGiB := float64(s.KVBlocks*s.KVBytesPerBlock) / (1 << 30)
+	blisTokens := capacity(s.KVBlocks)
 	t.Logf("BLIS pool %d blocks (%.2f GiB) admits %.0f tokens; vLLM's %.2f GiB admits %d",
-		s.KVBlocks, float64(s.KVBlocks*s.KVBytesPerBlock)/(1<<30), capacity(s.KVBlocks), loggedGiB, engine)
+		s.KVBlocks, blisGiB, blisTokens, loggedGiB, engine)
+	if rel := (loggedGiB - blisGiB) / loggedGiB; rel > poolTolerance || rel < -poolTolerance {
+		t.Errorf("deepseek-v4.1-flash/vllm/h200/tp8: BLIS KV pool %.2f GiB is %.1f%% from vLLM's logged "+
+			"%.2f GiB, past the %.0f%% tolerance (#2427)", blisGiB, rel*100, loggedGiB, poolTolerance*100)
+	}
+	if rel := (engine - blisTokens) / engine; rel > poolTolerance || rel < -poolTolerance {
+		t.Errorf("deepseek-v4.1-flash/vllm/h200/tp8: BLIS KV pool admits %.0f tokens, %.1f%% from vLLM's "+
+			"logged %d, past the %.0f%% tolerance (#2427)", blisTokens, rel*100, engine, poolTolerance*100)
+	}
 }
 
 // A deployment too big for its part must be reported as that, not as a defect of the simulator
