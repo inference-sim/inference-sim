@@ -3,7 +3,7 @@
 # job comes here when the repository variable CI_RUNS_ON_LARGE is blis-ci-large, and never for a
 # pull request from a fork (README.md).
 githubConfigUrl: https://github.com/inference-sim/inference-sim
-githubConfigSecret: blis-ci-github-app
+githubConfigSecret: blis-ci-github
 runnerScaleSetName: blis-ci-large
 minRunners: 0
 maxRunners: 3
@@ -14,26 +14,39 @@ template:
     automountServiceAccountToken: false
     enableServiceLinks: false
     restartPolicy: Never
-    nodeSelector:
-      blis.ci/pool: ci
-    tolerations:
-      - {key: blis.ci/dedicated, operator: Equal, value: ci, effect: NoSchedule}
     securityContext:
       runAsNonRoot: true
       runAsUser: 1001
       runAsGroup: 1001
       fsGroup: 1001
       seccompProfile: {type: RuntimeDefault}
+    # No image of our own: GitHub's runner image only supplies the runner, which this copies into
+    # the home volume, and the job runs in buildpack-deps, which has the C toolchain go test -race
+    # needs. Both are public images pinned by digest.
+    initContainers:
+      - name: runner-files
+        image: ghcr.io/actions/actions-runner:2.338.1@sha256:e275409999c37162649aa050ca573f03eab2eabcb3a1e7fcc47548de6b4f9690
+        command: ["cp", "-a", "/home/runner/.", "/runner-home/"]
+        resources:
+          requests: {cpu: "1", memory: 1Gi}
+          limits: {cpu: "1", memory: 1Gi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities: {drop: [ALL]}
+        volumeMounts:
+          - {name: home, mountPath: /runner-home}
     containers:
       - name: runner
-        # k8s/ci/runner.Dockerfile, built and pushed; set the digest that push printed.
-        image: REGISTRY/blis-ci-runner@sha256:DIGEST
+        image: docker.io/library/buildpack-deps:noble@sha256:924bf5a2e44d8ad64669df739cc3a7d331dfb0a5b41815f0ca71a4819a503e8a
         command: ["/home/runner/run.sh"]
+        workingDir: /home/runner
+        env:
+          - {name: HOME, value: /home/runner}
         resources:
           # The CPU limit equals the request: Go reads it (GOMAXPROCS follows the cgroup limit), so a
           # test that sizes its workers by the CPUs sees 16, not the node's.
-          # ephemeral-storage counts the work volume, the home directory (the Go build cache, the
-          # oracle venvs) and the logs.
+          # ephemeral-storage counts the two volumes and the logs.
           requests: {cpu: "16", memory: 32Gi, ephemeral-storage: 20Gi}
           limits: {cpu: "16", memory: 48Gi, ephemeral-storage: 100Gi}
         securityContext:
@@ -41,8 +54,12 @@ template:
           privileged: false
           capabilities: {drop: [ALL]}
         volumeMounts:
+          - {name: home, mountPath: /home/runner}
           - {name: work, mountPath: /home/runner/_work}
     volumes:
-      # The checkout, the Go and Python caches and the tool cache live here and go with the pod.
+      # The runner and the home directory (the Go build cache, the tool cache).
+      - name: home
+        emptyDir: {sizeLimit: 20Gi}
+      # The checkout. Both volumes go with the pod.
       - name: work
         emptyDir: {sizeLimit: 80Gi}

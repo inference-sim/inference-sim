@@ -1,12 +1,12 @@
 # The runner pods' network (README.md). Ingress is denied whole: a runner only dials out. Egress is
 # denied except DNS and HTTPS/HTTP to public addresses; the EgressFirewall below narrows that to the
-# hosts CI reads. Nothing in the cluster's own networks is reachable: not the API server, not the
-# agent runners' namespace, not the node or cloud metadata addresses.
+# hosts CI reads. Nothing in the cluster's own networks is reachable: not the API server, not other
+# namespaces, not the node or cloud metadata addresses. All three cover every pod in blis.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: default-deny
-  namespace: blis-ci
+  namespace: blis
 spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
@@ -15,7 +15,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-dns-and-public-web
-  namespace: blis-ci
+  namespace: blis
 spec:
   podSelector: {}
   policyTypes: [Egress]
@@ -56,7 +56,7 @@ apiVersion: k8s.ovn.org/v1
 kind: EgressFirewall
 metadata:
   name: default
-  namespace: blis-ci
+  namespace: blis
 spec:
   egress:
     - {type: Allow, to: {dnsName: github.com}}

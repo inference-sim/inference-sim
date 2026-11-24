@@ -193,4 +193,4 @@ persistent runner home — `/tmp` is the only volume.
 
 ## CI runner scale sets
 
-The runners that execute pull request CI on the cluster are separate from these: their own namespace, nodes and network policy, no credentials. See `k8s/ci/README.md`.
+The runners that execute pull request CI on the cluster are separate from these: one job per pod, a deny-by-default network policy that covers the whole `blis` namespace, no credentials. See `k8s/ci/README.md`.
