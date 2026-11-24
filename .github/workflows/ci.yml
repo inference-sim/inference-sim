@@ -1185,6 +1185,35 @@ jobs:
             ~/.cache/go-build
           key: go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
 
+  # The oracle environments the oracle scale set restores, kept in main's cache scope, which every
+  # pull request reads: a pod restores only an entry a pod saved (no zstd there, so actions/cache
+  # uses gzip), and an entry saved under a pull request is that pull request's alone. Without it a
+  # pull request's first oracle run on the cluster builds the environment from PyPI. A hit only
+  # looks the SGLang entry up; the vLLM one is restored.
+  cache-warm-oracle:
+    needs: changes
+    if: ${{ needs.changes.outputs.runner-oracle != '' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.save_cache)) }}
+    runs-on: ${{ needs.changes.outputs.runner-oracle }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [sglang, vllm]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: The SGLang oracle environment
+        if: matrix.engine == 'sglang'
+        uses: ./.github/actions/oracle-env-sglang
+        with:
+          check-resolution: "false"
+          build-only: "true"
+      - name: The vLLM oracle environment
+        if: matrix.engine == 'vllm'
+        uses: ./.github/actions/oracle-env-vllm
+
   # The vLLM engine's checks that are not its package tests (engines/vllm, the former blis-vllm
   # repository; the old job names are in the pull request that ported them). One job, run when the
   # vllm group is on. Step paths are the ones the engine had as a repository root.

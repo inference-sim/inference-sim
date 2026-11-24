@@ -234,3 +234,10 @@ adds about 1.8 GB on `main` (vLLM about 1.0 GB, SGLang about 0.8 GB). The budget
 | SGLang source, fuzz corpora, tools | about 0.5 GB |
 
 That is about 5 GB, which leaves the other half for open pull requests' own entries.
+
+Two jobs keep a cold cache from costing a pod run its whole setup from PyPI, which the cluster
+reaches slowly (about 160 kB/s, against 8 to 40 MB/s from the Actions cache). `cache-warm-oracle`
+(ci.yml, on every push to `main`) keeps both oracle environments in `main`'s scope, which every pull
+request reads; a pull request's own entries are its alone. And oracle-sglang.yml's `oracle-env` job
+builds the SGLang environment once a run when the entry is missing (a changed lock, say), before
+the 14 `oracle-run` jobs restore it.

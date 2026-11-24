@@ -153,9 +153,25 @@ jobs:
   # job's checks of the parts are the same in both. Within a job, a step's per-file commands run
   # several at once (oracle/each.sh), and a sharded step's parts share the job's CPUs; hosted, one
   # at a time (ORACLE_JOBS=1).
+  # Makes sure the oracle environment the oracle-run jobs use is in the Actions cache, where they
+  # run (input runner): one job builds it on a miss and saves it, so a cold cache costs one install
+  # from PyPI, not one per oracle-run job (14 on a pod took 5 min each, with a 2 min save).
+  oracle-env:
+    name: oracle-env
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/oracle-env-sglang
+        with:
+          check-resolution: "false"
+          build-only: "true"
+
   oracle-run:
     name: oracle-run (${{ matrix.name }})
-    needs: [oracle-checks, fields]
+    needs: [oracle-checks, fields, oracle-env]
     runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 60
     strategy:
