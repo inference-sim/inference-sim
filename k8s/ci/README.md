@@ -51,7 +51,8 @@ group can, if the scale sets move to the organization.
   one-job registration. The GitHub credential and the controller's service account token live in
   the namespace, but only the controller and listener pods may reach the API server
   (`allow-arc-api-server`), and a pull request's code runs in neither: a runner pod cannot reach the
-  API server to read them.
+  API server to read them. The job's own `GITHUB_TOKEN`, which `actions/checkout` keeps in
+  `.git/config`, is read-only: ci.yml and oracle-vllm.yml declare `permissions: {contents: read}`.
 - **Egress.** `network.yaml` denies all ingress, and denies egress except DNS and ports 80/443 to
   public addresses. The EgressFirewall then narrows egress to the hosts CI fetches from: GitHub and
   its Actions endpoints, the Go proxy and checksum database, the Go and Node downloads, PyPI, the
