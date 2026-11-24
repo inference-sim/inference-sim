@@ -1656,8 +1656,10 @@ EXPECTED_IDENTICAL = {
         "configs differ only in max_position_embeddings (196608 against 204800) and a "
         "dtype label, neither of which the cost model reads",
 
-    frozenset({"glm-5.2", "glm-5.2-fp8", "glm-5.3"}):
-        "one architecture across three GLM-5 generations. Every cost-relevant field is "
+    frozenset({"glm-5.2", "glm-5.2-fp8", "glm-5.3", "glm-5.2-nvfp4-fp8", "glm-5.3-mxfp4"}):
+        "one architecture across three GLM-5 generations, plus two quantizations of them "
+        "(glm-5.2-nvfp4-fp8 of glm-5.2 and glm-5.3-mxfp4 of glm-5.3) that differ only in "
+        "quantization_config, which the cost signature does not read. Every cost-relevant field is "
         "identical: 78 layers, hidden 6144, 256 experts at top-8, moe_intermediate 2048, "
         "3 leading dense layers, vocab 154880, the same sparse-MLA geometry, and the "
         "same indexer pattern — index_topk_freq 4 with index_skip_topk_offset 3, which "
@@ -1676,6 +1678,9 @@ EXPECTED_IDENTICAL = {
     frozenset({"glm-5", "glm-5.1-fp8"}):
         "one checkpoint geometry: GLM-5.1-FP8 is a post-trained GLM-5-FP8 whose config.json "
         "differs from GLM-5-FP8's only in transformers_version",
+    frozenset({"qwen3.8-27b", "qwen3.8-27b-int4"}):
+        "one checkpoint geometry: Qwen3.8-27B-INT4 is a quantization of Qwen3.8-27B whose "
+        "config.json differs only in quantization_config, which the cost signature does not read",
     frozenset({"deepseek-v3", "deepseek-r1-0528"}):
         "one checkpoint geometry: DeepSeek-R1-0528 is a post-trained DeepSeek-V3 whose "
         "config.json differs from V3's only in transformers_version",

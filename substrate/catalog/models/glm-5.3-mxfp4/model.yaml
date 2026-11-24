@@ -1,0 +1,10 @@
+name: glm-5.3-mxfp4
+source:
+  provider: huggingface
+  repo: RedHatAI/GLM-5.3-MXFP4
+  revision: 5883691c66da4094f3f88ef38cee8542c413c570
+  retrieved: 2026-11-24
+licence:
+  id: LicenseRef-glm-5.3
+  evidence: https://huggingface.co/RedHatAI/GLM-5.3-MXFP4/raw/5883691c66da4094f3f88ef38cee8542c413c570/README.md
+drafters: [speculator]

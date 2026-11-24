@@ -1,0 +1,10 @@
+name: qwen3.8-27b-int4
+source:
+  provider: huggingface
+  repo: RedHatAI/Qwen3.8-27B-INT4
+  revision: 71dface38d4cbfa34121f1d446d4a0fa1025f13c
+  retrieved: 2026-11-24
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/RedHatAI/Qwen3.8-27B-INT4/raw/71dface38d4cbfa34121f1d446d4a0fa1025f13c/README.md
+drafters: [speculator]
