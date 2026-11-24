@@ -28,6 +28,8 @@ mod N, each still in a process of its own, so a case's answer does not depend on
 then also holds "shard" ({"index": I, "of": N}) and "ran", the names of the cases the shard took,
 refused ones too (a refused case writes no answer, so "ran" is how a shard says it saw it).
 compare_lower.py compares each shard with the committed answers and checks the shards together.
+The cases run several at once (oracle/forkpool.py: ORACLE_JOBS, else the CPU count), each in its
+own process.
 """
 import json
 import os
@@ -134,35 +136,21 @@ def main(argv):
     if len(argv) == 4:
         with open(argv[3]) as f:
             spec["cases"] = spec["cases"] + json.load(f)["cases"]
+    import forkpool
+
+    cases = [case for k, case in enumerate(spec["cases"]) if shard is None or k % shard[1] == shard[0]]
+    ran = [case["name"] for case in cases]
+
+    def child(case):
+        import run_serverargs
+        import stubs
+
+        stubs.STUBBED = tuple(stubs.STUBBED) + run_serverargs.CUDA_STUBBED
+        stubs.install()
+        return lower_case(case, spec["chips"][case["chip"]], models)
+
     results = []
-    ran = []
-    for k, case in enumerate(spec["cases"]):
-        if shard is not None and k % shard[1] != shard[0]:
-            continue
-        ran.append(case["name"])
-        r, w = os.pipe()
-        pid = os.fork()
-        if pid == 0:
-            os.close(r)
-            try:
-                import run_serverargs
-                import stubs
-
-                stubs.STUBBED = tuple(stubs.STUBBED) + run_serverargs.CUDA_STUBBED
-                stubs.install()
-                res = lower_case(case, spec["chips"][case["chip"]], models)
-            except BaseException as e:
-                import traceback
-
-                res = {"name": case["name"], "harness_error": "%s: %s\n%s" % (type(e).__name__, e, traceback.format_exc())}
-            with os.fdopen(w, "w") as fw:
-                json.dump(res, fw)
-            os._exit(0)
-        os.close(w)
-        with os.fdopen(r) as fr:
-            data = fr.read()
-        os.waitpid(pid, 0)
-        res = json.loads(data) if data else {"name": case["name"], "harness_error": "no answer"}
+    for case, res in zip(cases, forkpool.run(cases, child)):
         if "harness_error" in res:
             print("%s: %s" % (case["name"], res["harness_error"]), file=sys.stderr)
             return 1

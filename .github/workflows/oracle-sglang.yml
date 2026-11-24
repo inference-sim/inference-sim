@@ -84,6 +84,8 @@ jobs:
         run: python -I oracle/test_inertness.py
       - name: the ServerArgs shards partition the cases and each is compared with its own
         run: python -I oracle/test_compare_serverargs.py
+      - name: the case runner keeps case order, its limit and a process per case
+        run: python -I oracle/test_forkpool.py
       - name: the refusal comparison fails on what it guards
         run: python -I oracle/test_compare_refusals.py
       # The surface list (X9, SGL-4, SGL-6, FID-5): surface.json is what tools/surface/gen_surface.py
@@ -172,8 +174,8 @@ jobs:
       - name: fetch the ServerArgs cases' model configurations at their pinned revisions
         if: contains(matrix.runs, 'serverargs') || contains(matrix.runs, 'lower')
         run: python -I oracle/serverargs/fetch_models.py oracle/serverargs/cases.json serverargs-models
-      # The cases run one at a time, each in a process of its own, so a case's answer does not depend
-      # on its shard. The shard compares its cases with the committed ones at the same positions;
+      # The cases run several at once, each in a process of its own, so a case's answer depends neither
+      # on its shard nor on the cases beside it. The shard compares its cases with the committed ones at the same positions;
       # the oracle job fails unless every shard of SERVERARGS_PARTS wrote its answers.
       - name: resolve each part's ServerArgs cases through SGLang's own pipeline
         if: ${{ !cancelled() && contains(matrix.runs, 'serverargs') }}
@@ -184,6 +186,8 @@ jobs:
           set -euo pipefail
           mkdir -p shard-out/oracle-traces
           read -r -a parts <<< "$PARTS"
+          # Each part forks its cases several at once (oracle/forkpool.py), on its share of the CPUs.
+          ORACLE_JOBS=$(( $(nproc) / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
           # shellcheck disable=SC2016
           ../../scripts/ci-parallel.sh "${#parts[@]}" 'p=($PARTS); python -I oracle/run_serverargs.py --shard "${p[$1]}/$SERVERARGS_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models > "shard-out/oracle-traces/serverargs-${p[$1]}.json"'
       - name: the committed ServerArgs answers are SGLang's own
@@ -243,6 +247,8 @@ jobs:
           set -euo pipefail
           mkdir -p shard-out/oracle-traces
           read -r -a parts <<< "$PARTS"
+          # Each part forks its cases several at once (oracle/forkpool.py), on its share of the CPUs.
+          ORACLE_JOBS=$(( $(nproc) / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
           # shellcheck disable=SC2016
           ../../scripts/ci-parallel.sh "${#parts[@]}" 'p=($PARTS); python -I oracle/lower/extract.py --shard "${p[$1]}/$LOWER_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models oracle/lower/cases.json > "shard-out/oracle-traces/lower-${p[$1]}.json"'
       - name: the committed lowering answers for each part's cases are SGLang's own
@@ -402,17 +408,32 @@ jobs:
           export ORACLE_MODEL="$PWD/oracle-model"
           mkdir -p shard-out/oracle-traces-sched
           read -r -a parts <<< "$PARTS"
-          # shellcheck disable=SC2016
-          ../../scripts/ci-parallel.sh "${#parts[@]}" '
+          # Each part runs its scenarios several at once, each in a run_sched.py process of its own,
+          # on its share of the CPUs; xargs fails the part if any scenario fails. The functions run in
+          # child shells (ci-parallel.sh, xargs), which do not inherit set -e, so each sets its own.
+          ORACLE_JOBS=$(( $(nproc) / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
+          sched_one() {
             set -euo pipefail
-            p=($PARTS)
-            i=0
+            python -I oracle/run_sched.py sglang-source "$1" "shard-out/oracle-traces-sched/$(basename "$1" .json).trace.json"
+          }
+          # The scenarios in C-locale order, as the parts were always dealt (SC2012); $1 is xargs's (SC2016).
+          # shellcheck disable=SC2012,SC2016
+          sched_part() {
+            set -euo pipefail
+            local i=0 s
+            local -a mine=()
             for s in $(ls oracle/scenarios-sched/*.json | LC_ALL=C sort); do
-              if [ $((i % SCHED_PARTS)) -eq "${p[$1]}" ]; then
-                python -I oracle/run_sched.py sglang-source "$s" "shard-out/oracle-traces-sched/$(basename "$s" .json).trace.json"
+              if [ $((i % SCHED_PARTS)) -eq "$1" ]; then
+                mine+=("$s")
               fi
               i=$((i + 1))
-            done'
+            done
+            [ "${#mine[@]}" -gt 0 ] || return 0
+            printf '%s\0' "${mine[@]}" | xargs -0 -n 1 -P "$ORACLE_JOBS" bash -c 'sched_one "$1"' _
+          }
+          export -f sched_one sched_part
+          # shellcheck disable=SC2016
+          ../../scripts/ci-parallel.sh "${#parts[@]}" 'p=($PARTS); sched_part "${p[$1]}"'
       # S15: the metrics registry and the KV-event bytes after each step (oracle/run_metrics.py).
       - name: trace the metrics and KV events
         if: ${{ !cancelled() && contains(matrix.runs, 'hicache') }}
