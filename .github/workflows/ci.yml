@@ -1348,9 +1348,9 @@ jobs:
   oracle-sglang:
     needs: changes
     if: ${{ needs.changes.outputs.sglang == 'true' }}
+    # Hosted until its setup on the scale set is fast: there oracle-env-sglang takes about 5.5 min,
+    # bound by the cluster's egress, so the four cluster jobs took 12 to 16 min against about 7 hosted.
     uses: ./.github/workflows/oracle-sglang.yml
-    with:
-      runner: ${{ needs.changes.outputs.runner-oracle }}
 
   # The one status to require. Every job above reports success, failure or skipped; this one
   # succeeds when none failed or was cancelled and the change filter itself ran, so a skipped job

@@ -7,7 +7,7 @@ GitHub-hosted runners. They run pull request code, so they hold no credentials a
 | Scale set | Pod | Max pods | Jobs |
 |---|---|---|---|
 | `blis-ci-large` | 16 CPU, 32 GiB (limit 48 GiB) | 3 | ci.yml: `substrate kernel`, `cmd cluster matrix`, `vllm-race (kernelmodel-census)` |
-| `blis-ci-oracle` | 4 CPU, 16 GiB | 6 | oracle-vllm.yml: scenarios, inertness, 2 fuzz jobs; oracle-sglang.yml: 4 `oracle-run` jobs |
+| `blis-ci-oracle` | 4 CPU, 16 GiB | 6 | oracle-vllm.yml: scenarios, inertness, 2 fuzz jobs (oracle-sglang.yml can use it, but ci.yml runs it hosted) |
 
 `ci.yml`'s `changes` job decides once where the heavy jobs run, and every job reads its outputs
 (`runner-large`, `runner-oracle`, and `large-workers` for the worker counts only the larger pods can

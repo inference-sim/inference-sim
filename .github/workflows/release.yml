@@ -62,5 +62,4 @@ jobs:
             GO_VERSION=${{ steps.gomod.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # A scope of its own, so the release image's layers neither evict nor are evicted by
-          # another workflow's buildx cache.
+          # No buildx cache: a tag's run never reads another tag's cache.

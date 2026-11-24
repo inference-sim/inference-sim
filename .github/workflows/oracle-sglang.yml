@@ -142,7 +142,8 @@ jobs:
   # resolve-cache-hicache, serverargs (with refusals), lower (with tier2) and sched. Each part
   # writes the file it wrote as a job of its own (serverargs-$PART.json and so on), so the oracle
   # job's checks of the parts are the same in both. Within a job, a step's per-file commands run
-  # several at once (oracle/each.sh), and a sharded step's parts share the job's CPUs.
+  # several at once (oracle/each.sh), and a sharded step's parts share the job's CPUs; hosted, one
+  # at a time (ORACLE_JOBS=1).
   oracle-run:
     name: oracle-run (${{ matrix.name }})
     needs: [oracle-checks, fields]
@@ -159,6 +160,9 @@ jobs:
       SCHED_PARTS: 3
       SERVERARGS_PARTS: 4
       LOWER_PARTS: 4
+      # Hosted, one case or file at a time, as each one-part job always ran them: no run has measured
+      # several SGLang processes at once on a 4 vCPU / 16 GB runner. Empty on the scale set: its CPUs.
+      ORACLE_JOBS: ${{ !inputs.runner && '1' || '' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -197,7 +201,7 @@ jobs:
           read -r -a parts <<< "$PARTS"
           # Each part forks its cases several at once (oracle/forkpool.py), on its share of the CPUs the
           # job may use (forkpool.py prints them: a pod's CPU limit, not the node's count nproc gives).
-          ORACLE_JOBS=$(( $(python -I oracle/forkpool.py) / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
+          ORACLE_JOBS=$(( ${ORACLE_JOBS:-$(python -I oracle/forkpool.py)} / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
           # shellcheck disable=SC2016
           ../../scripts/ci-parallel.sh "${#parts[@]}" 'p=($PARTS); python -I oracle/run_serverargs.py --shard "${p[$1]}/$SERVERARGS_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models > "shard-out/oracle-traces/serverargs-${p[$1]}.json"'
       - name: the committed ServerArgs answers are SGLang's own
@@ -258,7 +262,7 @@ jobs:
           read -r -a parts <<< "$PARTS"
           # Each part forks its cases several at once (oracle/forkpool.py), on its share of the CPUs the
           # job may use (forkpool.py prints them: a pod's CPU limit, not the node's count nproc gives).
-          ORACLE_JOBS=$(( $(python -I oracle/forkpool.py) / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
+          ORACLE_JOBS=$(( ${ORACLE_JOBS:-$(python -I oracle/forkpool.py)} / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
           # shellcheck disable=SC2016
           ../../scripts/ci-parallel.sh "${#parts[@]}" 'p=($PARTS); python -I oracle/lower/extract.py --shard "${p[$1]}/$LOWER_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models oracle/lower/cases.json > "shard-out/oracle-traces/lower-${p[$1]}.json"'
       - name: the committed lowering answers for each part's cases are SGLang's own
@@ -410,7 +414,7 @@ jobs:
           # of its own, on its share of the CPUs the job may use (oracle/forkpool.py prints them: a pod's
           # CPU limit, not the node's count nproc gives). sched_part runs in a child shell
           # (ci-parallel.sh), which does not inherit set -e, so it sets its own.
-          ORACLE_JOBS=$(( $(python -I oracle/forkpool.py) / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
+          ORACLE_JOBS=$(( ${ORACLE_JOBS:-$(python -I oracle/forkpool.py)} / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
           # The scenarios in C-locale order, as the parts were always dealt (SC2012); $1 is each.sh's (SC2016).
           # shellcheck disable=SC2012,SC2016
           sched_part() {
