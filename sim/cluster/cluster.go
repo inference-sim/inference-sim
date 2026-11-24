@@ -1016,7 +1016,7 @@ func (c *ClusterSimulator) Run() error {
 	// DEV-9: the requests the horizon caught take their fate from where they are, and the fates
 	// must account for every request created, in agreement with INV-1's buckets. A run that
 	// drained without reaching its horizon leaves no request without a fate.
-	if stoppedAtHorizon {
+	if stoppedAtHorizon || c.waitsPastHorizon() {
 		c.endAtHorizon()
 		c.endUnissuedRounds(c.config.Horizon)
 	} else if err := c.stalled(); err != nil {

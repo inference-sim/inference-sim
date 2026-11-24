@@ -149,6 +149,9 @@ type EngineDriver struct {
 	unserved map[string]bool
 	// pendingWake is the wake the engine last reported (0 = none).
 	pendingWake *driverWakeEvent
+	// wakePastHorizon is whether the engine's last reported wake falls after the horizon, which
+	// the driver does not schedule (WakesPastHorizon).
+	wakePastHorizon bool
 	// stage is the queue requests wait in before the engine admits them (INV-R1), nil when the
 	// engine states none; admissionPlan is the plan its shape came from, which prices a request's
 	// demand on it.
@@ -312,6 +315,12 @@ func (d *EngineDriver) inPipeline() int {
 
 // HasPendingEvents reports whether an event is queued.
 func (d *EngineDriver) HasPendingEvents() bool { return len(d.eventQueue) > 0 }
+
+// WakesPastHorizon reports whether the engine's next wake falls after the horizon. The driver
+// does not schedule such a wake, so a run whose only remaining work waits for it drains before
+// its horizon, and a host reads this to end that run at its horizon rather than as a stall
+// (#2685).
+func (d *EngineDriver) WakesPastHorizon() bool { return d.wakePastHorizon }
 
 // PeekNextEventTime is the earliest queued event's time. Callers check HasPendingEvents first.
 func (d *EngineDriver) PeekNextEventTime() int64 { return d.eventQueue[0].event.Timestamp() }
@@ -985,10 +994,16 @@ func (d *EngineDriver) notePreempted(b engine.Batch) {
 }
 
 // rearmWake follows the contract's wake protocol: an earlier instant than the pending wake
-// supersedes it, a later one or none replaces it.
+// supersedes it, a later one or none replaces it. A pending wake due at now, not yet fired, stays:
+// NextWake names only instants after now, so the engine cannot name it again, and replacing it
+// would lose the step it is for (#2685). It fires this instant, and its kick rearms.
 func (d *EngineDriver) rearmWake(now int64) {
 	at, ok := d.eng.NextWake(now)
+	d.wakePastHorizon = ok && at > d.Horizon
 	if d.pendingWake != nil {
+		if d.pendingWake.at <= now {
+			return
+		}
 		if ok && at == d.pendingWake.at {
 			return
 		}
