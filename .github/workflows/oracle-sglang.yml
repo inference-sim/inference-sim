@@ -192,8 +192,9 @@ jobs:
           set -euo pipefail
           mkdir -p shard-out/oracle-traces
           read -r -a parts <<< "$PARTS"
-          # Each part forks its cases several at once (oracle/forkpool.py), on its share of the CPUs.
-          ORACLE_JOBS=$(( $(nproc) / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
+          # Each part forks its cases several at once (oracle/forkpool.py), on its share of the CPUs the
+          # job may use (forkpool.py prints them: a pod's CPU limit, not the node's count nproc gives).
+          ORACLE_JOBS=$(( $(python -I oracle/forkpool.py) / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
           # shellcheck disable=SC2016
           ../../scripts/ci-parallel.sh "${#parts[@]}" 'p=($PARTS); python -I oracle/run_serverargs.py --shard "${p[$1]}/$SERVERARGS_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models > "shard-out/oracle-traces/serverargs-${p[$1]}.json"'
       - name: the committed ServerArgs answers are SGLang's own
@@ -253,8 +254,9 @@ jobs:
           set -euo pipefail
           mkdir -p shard-out/oracle-traces
           read -r -a parts <<< "$PARTS"
-          # Each part forks its cases several at once (oracle/forkpool.py), on its share of the CPUs.
-          ORACLE_JOBS=$(( $(nproc) / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
+          # Each part forks its cases several at once (oracle/forkpool.py), on its share of the CPUs the
+          # job may use (forkpool.py prints them: a pod's CPU limit, not the node's count nproc gives).
+          ORACLE_JOBS=$(( $(python -I oracle/forkpool.py) / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
           # shellcheck disable=SC2016
           ../../scripts/ci-parallel.sh "${#parts[@]}" 'p=($PARTS); python -I oracle/lower/extract.py --shard "${p[$1]}/$LOWER_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models oracle/lower/cases.json > "shard-out/oracle-traces/lower-${p[$1]}.json"'
       - name: the committed lowering answers for each part's cases are SGLang's own
@@ -415,9 +417,10 @@ jobs:
           mkdir -p shard-out/oracle-traces-sched
           read -r -a parts <<< "$PARTS"
           # Each part runs its scenarios several at once, each in a run_sched.py process of its own,
-          # on its share of the CPUs; xargs fails the part if any scenario fails. The functions run in
+          # on its share of the CPUs the job may use (oracle/forkpool.py prints them: a pod's CPU limit,
+          # not the node's count nproc gives); xargs fails the part if any scenario fails. The functions run in
           # child shells (ci-parallel.sh, xargs), which do not inherit set -e, so each sets its own.
-          ORACLE_JOBS=$(( $(nproc) / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
+          ORACLE_JOBS=$(( $(python -I oracle/forkpool.py) / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
           sched_one() {
             set -euo pipefail
             python -I oracle/run_sched.py sglang-source "$1" "shard-out/oracle-traces-sched/$(basename "$1" .json).trace.json"

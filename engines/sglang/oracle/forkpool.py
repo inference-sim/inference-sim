@@ -6,8 +6,13 @@ so a case's answer depends neither on the other cases nor on how many run at onc
 children run at a time; each writes its answer to a file of its own, which the parent reads once
 that child has exited, so a large answer never blocks a child on a full pipe.
 
-jobs() is ORACLE_JOBS when set (a positive integer), else the CPU count. A workflow step that runs
-several parts side by side gives each part its share of the CPUs.
+jobs() is ORACLE_JOBS when set (a positive integer), else cpus(). A workflow step that runs several
+parts side by side gives each part its share of cpus(), which `python3 -I oracle/forkpool.py` prints.
+
+cpus() is the CPUs this process may use: the fewest of its CPU affinity and its cgroup's CPU quota
+(cgroup v2 cpu.max, or v1 cpu.cfs_quota_us over cpu.cfs_period_us), rounded up. In a Kubernetes pod
+a CPU limit is a quota, not a CPU set, so os.cpu_count() and nproc report the node's CPUs: a
+4-CPU runner pod on a 64-CPU node would fork 64 SGLang children at once and run out of memory.
 
 Usage (from a harness): answers = forkpool.run(cases, child), where child(case) returns a dict that
 json can write. A child that raises, or exits without an answer, gives
@@ -20,11 +25,40 @@ import tempfile
 import traceback
 
 
+def _quota(cgroup: str):
+    """The cgroup's CPU quota in CPUs, rounded up, or None when it states none."""
+    try:
+        with open(os.path.join(cgroup, "cpu.max")) as f:
+            quota, period = f.read().split()[:2]
+        if quota != "max":
+            return -(-int(quota) // int(period))
+        return None
+    except (OSError, ValueError):
+        pass
+    try:
+        with open(os.path.join(cgroup, "cpu", "cpu.cfs_quota_us")) as f:
+            quota = int(f.read())
+        with open(os.path.join(cgroup, "cpu", "cpu.cfs_period_us")) as f:
+            period = int(f.read())
+        if quota > 0 and period > 0:
+            return -(-quota // period)
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def cpus(cgroup: str = "/sys/fs/cgroup") -> int:
+    """The CPUs this process may use: the fewest of its affinity and its cgroup's quota."""
+    n = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
+    q = _quota(cgroup)
+    return max(1, min(n, q) if q else n)
+
+
 def jobs() -> int:
-    """How many children run at once: ORACLE_JOBS, else the CPU count."""
+    """How many children run at once: ORACLE_JOBS, else cpus()."""
     v = os.environ.get("ORACLE_JOBS", "")
     if not v:
-        return os.cpu_count() or 1
+        return cpus()
     if not v.isdigit() or int(v) < 1:
         raise SystemExit("ORACLE_JOBS=%r: want a positive integer" % v)
     return int(v)
@@ -73,3 +107,7 @@ def run(cases, child, n=None):
             except (OSError, ValueError):
                 answers[i] = {"name": cases[i].get("name"), "harness_error": "no answer"}
     return answers
+
+
+if __name__ == "__main__":
+    print(cpus())

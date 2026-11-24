@@ -86,16 +86,40 @@ class ForkpoolTest(unittest.TestCase):
     def test_no_cases_is_no_answers(self):
         self.assertEqual(forkpool.run([], lambda c: {}), [])
 
-    def test_jobs_reads_oracle_jobs_or_the_cpu_count(self):
+    def test_jobs_reads_oracle_jobs_or_cpus(self):
         with mock.patch.dict(os.environ, {"ORACLE_JOBS": "3"}):
             self.assertEqual(forkpool.jobs(), 3)
         env = {k: v for k, v in os.environ.items() if k != "ORACLE_JOBS"}
-        with mock.patch.dict(os.environ, env, clear=True):
-            self.assertEqual(forkpool.jobs(), os.cpu_count() or 1)
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(forkpool, "cpus", return_value=5):
+            self.assertEqual(forkpool.jobs(), 5)
         for bad in ("0", "-1", "x", "2.5"):
             with mock.patch.dict(os.environ, {"ORACLE_JOBS": bad}):
                 with self.assertRaises(SystemExit, msg="ORACLE_JOBS=%r" % bad):
                     forkpool.jobs()
+
+    def test_cpus_is_the_cgroup_quota_not_the_nodes_count(self):
+        # A Kubernetes CPU limit is a quota: the node may have 64 CPUs and the pod 4.
+        with mock.patch.object(os, "sched_getaffinity", return_value=set(range(64)), create=True):
+            for files, want in (
+                ({"cpu.max": "400000 100000\n"}, 4),                       # cgroup v2, 4 CPUs
+                ({"cpu.max": "250000 100000\n"}, 3),                       # 2.5 CPUs, rounded up
+                ({"cpu.max": "50000 100000\n"}, 1),                        # half a CPU is one
+                ({"cpu.max": "max 100000\n"}, 64),                         # no limit
+                ({"cpu/cpu.cfs_quota_us": "200000\n", "cpu/cpu.cfs_period_us": "100000\n"}, 2),  # v1
+                ({"cpu/cpu.cfs_quota_us": "-1\n", "cpu/cpu.cfs_period_us": "100000\n"}, 64),     # v1, none
+                ({}, 64),                                                   # no cgroup files
+            ):
+                with tempfile.TemporaryDirectory() as d:
+                    for name, body in files.items():
+                        os.makedirs(os.path.dirname(os.path.join(d, name)), exist_ok=True)
+                        with open(os.path.join(d, name), "w") as f:
+                            f.write(body)
+                    self.assertEqual(forkpool.cpus(d), want, files)
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "cpu.max"), "w") as f:
+                f.write("1600000 100000\n")
+            with mock.patch.object(os, "sched_getaffinity", return_value={0, 1}, create=True):
+                self.assertEqual(forkpool.cpus(d), 2, "the affinity is fewer than the quota")
 
 
 if __name__ == "__main__":
