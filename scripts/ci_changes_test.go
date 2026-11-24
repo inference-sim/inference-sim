@@ -358,9 +358,16 @@ func TestCIChangesGroupsMatchTheWorkflow(t *testing.T) {
 			t.Errorf("group %s is printed by ci-changes.sh but is not an output of the changes job", g)
 		}
 	}
-	for o := range outputs {
-		if !contains(ciGroups, o) {
-			t.Errorf("the changes job exports %s, which ci-changes.sh does not print", o)
+	// The job's other outputs are where the heavy jobs run (its runners step), not groups.
+	runnerOutputs := []string{"runner-large", "runner-oracle", "large-workers"}
+	for o, v := range outputs {
+		switch {
+		case strings.Contains(v, "steps.groups.outputs."):
+			if !contains(ciGroups, o) {
+				t.Errorf("the changes job exports %s, which ci-changes.sh does not print", o)
+			}
+		case !contains(runnerOutputs, o):
+			t.Errorf("the changes job exports %s (%s), neither a group of ci-changes.sh nor a runner decision", o, v)
 		}
 	}
 	for name, job := range wf.Jobs {

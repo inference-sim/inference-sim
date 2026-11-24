@@ -9,11 +9,17 @@ name: oracle-vllm
 #
 # Needs the network (the pinned vLLM source, the helper model's config files, the hash-locked wheels) and so
 # runs on ephemeral Linux runners: hosted, or the self-hosted oracle scale set the repository variable
-# CI_RUNS_ON_ORACLE names (k8s/ci), never for a pull request from a fork. A skipped step or test is a
+# CI_RUNS_ON_ORACLE names (k8s/ci), as ci.yml's changes job decides (input runner: this repository's
+# own code only). A skipped step or test is a
 # failure (X16), never a pass.
 
 on:
   workflow_call:
+    inputs:
+      # The scale set the oracle jobs run on (ci.yml's changes job decides it), or empty for hosted.
+      runner:
+        type: string
+        default: ""
   workflow_dispatch:
 
 permissions:
@@ -31,7 +37,7 @@ jobs:
   # oracles. Every committed golden is re-derived from vLLM here on every run. The seeded fuzz corpora are the
   # jobs below this one; the mutation sweeps are mutation.yml's.
   oracle-scenarios:
-    runs-on: ${{ !github.event.pull_request.head.repo.fork && vars.CI_RUNS_ON_ORACLE || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -357,7 +363,7 @@ jobs:
   # tests of the file are shared out by name (cksum mod 3, listed by unittest so a test added later is in a shard);
   # the three shards run side by side in one job, and each checks that unittest ran exactly the tests it was given.
   oracle-inertness:
-    runs-on: ${{ !github.event.pull_request.head.repo.fork && vars.CI_RUNS_ON_ORACLE || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 45
     env:
       SHARDS: 3
@@ -423,7 +429,7 @@ jobs:
   # that run side by side, each restoring or generating its own.
   oracle-fuzz:
     name: oracle-fuzz (${{ matrix.corpora }})
-    runs-on: ${{ !github.event.pull_request.head.repo.fork && vars.CI_RUNS_ON_ORACLE || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
