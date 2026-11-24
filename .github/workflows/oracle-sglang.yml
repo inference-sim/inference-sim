@@ -437,7 +437,9 @@ jobs:
               fi
               i=$((i + 1))
             done
-            [ "${#mine[@]}" -gt 0 ] || return 0
+            if [ "${#mine[@]}" -eq 0 ]; then
+              return 0
+            fi
             printf '%s\0' "${mine[@]}" | xargs -0 -n 1 -P "$ORACLE_JOBS" bash -c 'sched_one "$1"' _
           }
           export -f sched_one sched_part
