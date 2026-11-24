@@ -9,6 +9,7 @@ It injects a fake opener, so nothing is fetched over the network.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import sys
 import urllib.error
 from pathlib import Path
@@ -63,8 +64,30 @@ def test_read_url_retries_a_transient_503_then_returns_the_payload():
     assert slept == [1.0]  # one backoff before the second attempt
 
 
-def test_read_url_retries_a_transport_error():
-    opener, calls = _opener([urllib.error.URLError("connection reset"), b"body"])
+def test_read_url_retries_a_connection_reset():
+    # A reset is a ConnectionResetError (an OSError), not a urllib.error.URLError.
+    opener, calls = _opener([ConnectionResetError("connection reset by peer"), b"body"])
+    assert fx.read_url("https://example/x", opener=opener, sleep=lambda _: None) == b"body"
+    assert calls["n"] == 2
+
+
+def test_read_url_retries_a_bare_remote_disconnect():
+    # urllib wraps h.request() in URLError but not h.getresponse(); a server that accepts then drops
+    # the connection raises a bare http.client.RemoteDisconnected, which must still be retried.
+    opener, calls = _opener([http.client.RemoteDisconnected("remote end closed without response"), b"body"])
+    assert fx.read_url("https://example/x", opener=opener, sleep=lambda _: None) == b"body"
+    assert calls["n"] == 2
+
+
+def test_read_url_retries_an_incomplete_read():
+    # A reset during r.read() raises http.client.IncompleteRead (an HTTPException, not an OSError).
+    opener, calls = _opener([http.client.IncompleteRead(partial=b"half"), b"body"])
+    assert fx.read_url("https://example/x", opener=opener, sleep=lambda _: None) == b"body"
+    assert calls["n"] == 2
+
+
+def test_read_url_retries_a_429():
+    opener, calls = _opener([_http_error(429), b"body"])
     assert fx.read_url("https://example/x", opener=opener, sleep=lambda _: None) == b"body"
     assert calls["n"] == 2
 
