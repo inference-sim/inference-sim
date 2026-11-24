@@ -31,7 +31,7 @@ args="$*"
 case "$args" in
   "mod edit"*) exit 0 ;;
   "list -m -f {{.Dir}} "*) echo /fake/router; exit 0 ;;
-  "-C "*"list -deps -test "*)
+  "-C /fake/router list -deps -test ./...")
     if [ ! -e "$FAKE_GO_MARKER" ]; then : > "$FAKE_GO_MARKER"
       echo "go: downloading: stream error: stream ID 71; INTERNAL_ERROR; received from peer" >&2; exit 1; fi
     exit 0 ;;
