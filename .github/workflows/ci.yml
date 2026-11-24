@@ -89,6 +89,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           # A pull request's checkout is a merge commit; its first parent is the base.
           fetch-depth: 2
 
@@ -147,6 +148,8 @@ jobs:
       - name: Checkout code
         if: needs.changes.outputs.build == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         if: needs.changes.outputs.build == 'true'
@@ -292,6 +295,8 @@ jobs:
       - name: Checkout code
         if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # The upstream sources the merged trees' tests read. An absent source is a failure, not a
       # skip (X16): the tests run with *_SOURCE_REQUIRED=1 below. The commits are pinned.
@@ -299,6 +304,7 @@ jobs:
         if: steps.gate.outputs.run == 'true' && matrix.flag == 'substrate'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           repository: vllm-project/vllm
           ref: db9527a46873454610df6dbedf79a36d6bf1a7f6 # v0.31.0
           path: upstream/vllm
@@ -310,6 +316,7 @@ jobs:
         if: steps.gate.outputs.run == 'true' && matrix.flag == 'substrate'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           repository: ai-dynamo/aiperf
           ref: be53bf2953d30e46c500e6a80fc1f8b6f84bc718 # v0.12.0
           path: upstream/aiperf
@@ -320,6 +327,7 @@ jobs:
         if: steps.gate.outputs.run == 'true' && matrix.flag == 'vllm'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           repository: vllm-project/vllm
           ref: 0fda86a35419c9c70dbfada224c838c10fbb62ad
           path: upstream/vllm
@@ -418,6 +426,8 @@ jobs:
       - name: Checkout code
         if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # cmd's recipe-preset test (cmd/recipe_presets_test.go) reads the vLLM recipes at the commit
       # the engine models. An absent source is a failure, not a skip (X16): VLLM_SOURCE_REQUIRED is
@@ -426,6 +436,7 @@ jobs:
         if: steps.gate.outputs.run == 'true' && matrix.group == 'cmd'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           repository: vllm-project/vllm
           ref: 0fda86a35419c9c70dbfada224c838c10fbb62ad
           path: upstream/vllm
@@ -510,6 +521,8 @@ jobs:
       - name: Checkout code
         if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         if: steps.gate.outputs.run == 'true'
@@ -570,6 +583,8 @@ jobs:
       - name: Checkout code
         if: needs.changes.outputs.workload == 'true' || needs.changes.outputs.cmd == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Fetch the workload evidence
         if: needs.changes.outputs.workload == 'true'
@@ -612,6 +627,8 @@ jobs:
       - name: Checkout code
         if: needs.changes.outputs.vllm == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Fetch the evidence
         if: needs.changes.outputs.vllm == 'true'
@@ -644,6 +661,8 @@ jobs:
       - name: Checkout code
         if: needs.changes.outputs.llmd == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Fetch the evidence
         if: needs.changes.outputs.llmd == 'true'
@@ -671,6 +690,7 @@ jobs:
         if: needs.changes.outputs.lint == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       # The module targets the Go release that go.mod names (the llm-d router requires it). golangci-lint refuses a module
@@ -750,6 +770,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -795,6 +817,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -846,6 +870,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -864,6 +890,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -908,6 +936,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -982,6 +1012,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -1028,6 +1060,8 @@ jobs:
       - name: Checkout code
         if: needs.changes.outputs.selected == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Fetch the other packages' evidence
         if: needs.changes.outputs.selected == 'true'
@@ -1058,6 +1092,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -1073,6 +1109,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Enforce the CLAUDE.md size ceiling
         run: scripts/claude-md-size.sh CLAUDE.md 40000
@@ -1093,6 +1131,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -1140,6 +1180,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -1156,6 +1198,7 @@ jobs:
       - name: Check out vLLM at the engine's pinned commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           repository: vllm-project/vllm
           ref: 0fda86a35419c9c70dbfada224c838c10fbb62ad
           path: engines/vllm/vllm-source
@@ -1264,6 +1307,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: ./.github/actions/go-toolchain
@@ -1327,6 +1372,8 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Fetch the evidence
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0

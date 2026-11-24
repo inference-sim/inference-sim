@@ -47,6 +47,15 @@ class EachTest(unittest.TestCase):
             with open(os.path.join(d, "done")) as f:
                 self.assertEqual(sorted(f.read().split()), ["a", "b", "c"])
 
+    def test_a_command_that_exits_255_does_not_stop_the_others(self):
+        # xargs stops starting commands after one exits 255; each.sh must not.
+        with tempfile.TemporaryDirectory() as d:
+            cmd = 'if [ "$1" = bad ]; then exit 255; fi; echo "$1" >> "$D/done"'
+            r = each([cmd, "bad", "a", "b", "c"], {"D": d, "ORACLE_JOBS": "1"})
+            self.assertNotEqual(r.returncode, 0)
+            with open(os.path.join(d, "done")) as f:
+                self.assertEqual(sorted(f.read().split()), ["a", "b", "c"])
+
     def test_no_file_runs_nothing(self):
         r = each(["exit 1"], {"ORACLE_JOBS": "2"})
         self.assertEqual(r.returncode, 0, r.stderr)

@@ -199,8 +199,9 @@ jobs:
           set -euo pipefail
           mkdir -p shard-out/oracle-traces
           read -r -a parts <<< "$PARTS"
-          # Each part forks its cases several at once (oracle/forkpool.py), on its share of the CPUs the
-          # job may use (forkpool.py prints them: a pod's CPU limit, not the node's count nproc gives).
+          # Each part forks its cases several at once (oracle/forkpool.py), on its share of the children
+          # the job can afford (forkpool.py prints it: the fewest of a pod's CPU limit, not the node's
+          # count nproc gives, and the children its memory limit holds).
           ORACLE_JOBS=$(( ${ORACLE_JOBS:-$(python -I oracle/forkpool.py)} / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
           # shellcheck disable=SC2016
           ../../scripts/ci-parallel.sh "${#parts[@]}" 'p=($PARTS); python -I oracle/run_serverargs.py --shard "${p[$1]}/$SERVERARGS_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models > "shard-out/oracle-traces/serverargs-${p[$1]}.json"'
@@ -260,8 +261,9 @@ jobs:
           set -euo pipefail
           mkdir -p shard-out/oracle-traces
           read -r -a parts <<< "$PARTS"
-          # Each part forks its cases several at once (oracle/forkpool.py), on its share of the CPUs the
-          # job may use (forkpool.py prints them: a pod's CPU limit, not the node's count nproc gives).
+          # Each part forks its cases several at once (oracle/forkpool.py), on its share of the children
+          # the job can afford (forkpool.py prints it: the fewest of a pod's CPU limit, not the node's
+          # count nproc gives, and the children its memory limit holds).
           ORACLE_JOBS=$(( ${ORACLE_JOBS:-$(python -I oracle/forkpool.py)} / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
           # shellcheck disable=SC2016
           ../../scripts/ci-parallel.sh "${#parts[@]}" 'p=($PARTS); python -I oracle/lower/extract.py --shard "${p[$1]}/$LOWER_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models oracle/lower/cases.json > "shard-out/oracle-traces/lower-${p[$1]}.json"'
@@ -411,8 +413,8 @@ jobs:
           mkdir -p shard-out/oracle-traces-sched
           read -r -a parts <<< "$PARTS"
           # Each part runs its scenarios several at once (oracle/each.sh), each in a run_sched.py process
-          # of its own, on its share of the CPUs the job may use (oracle/forkpool.py prints them: a pod's
-          # CPU limit, not the node's count nproc gives). sched_part runs in a child shell
+          # of its own, on its share of the children the job can afford (oracle/forkpool.py prints it:
+          # the fewest of a pod's CPU limit and the children its memory limit holds). sched_part runs in a child shell
           # (ci-parallel.sh), which does not inherit set -e, so it sets its own.
           ORACLE_JOBS=$(( ${ORACLE_JOBS:-$(python -I oracle/forkpool.py)} / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
           # The scenarios in C-locale order, as the parts were always dealt (SC2012); $1 is each.sh's (SC2016).

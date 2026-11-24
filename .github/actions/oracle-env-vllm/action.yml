@@ -52,6 +52,7 @@ runs:
     - name: check out vLLM at that commit
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
+        persist-credentials: false
         repository: vllm-project/vllm
         ref: ${{ steps.pin.outputs.commit }}
         path: engines/vllm/vllm-source
@@ -64,6 +65,7 @@ runs:
       if: inputs.engine-source == 'true'
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
+        persist-credentials: false
         repository: vllm-project/vllm
         ref: ${{ steps.pin.outputs.engine-commit }}
         path: engines/vllm/vllm-engine-source

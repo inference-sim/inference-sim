@@ -6,13 +6,20 @@ so a case's answer depends neither on the other cases nor on how many run at onc
 children run at a time; each writes its answer to a file of its own, which the parent reads once
 that child has exited, so a large answer never blocks a child on a full pipe.
 
-jobs() is ORACLE_JOBS when set (a positive integer), else cpus(). A workflow step that runs several
-parts side by side gives each part its share of cpus(), which `python3 -I oracle/forkpool.py` prints.
+jobs() is ORACLE_JOBS when set (a positive integer), else affordable(): the fewest of cpus() and
+mem_slots(). A workflow step that runs several parts side by side gives each part its share of
+affordable(), which `python3 -I oracle/forkpool.py` prints.
 
 cpus() is the CPUs this process may use: the fewest of its CPU affinity and its cgroup's CPU quota
 (cgroup v2 cpu.max, or v1 cpu.cfs_quota_us over cpu.cfs_period_us), rounded up. In a Kubernetes pod
 a CPU limit is a quota, not a CPU set, so os.cpu_count() and nproc report the node's CPUs: a
 4-CPU runner pod on a 64-CPU node would fork 64 SGLang children at once and run out of memory.
+
+mem_slots() is how many children the cgroup's memory limit holds (cgroup v2 memory.max, or v1
+memory.limit_in_bytes) at ORACLE_CHILD_MIB each (default CHILD_MIB), or None with no limit. Each
+child imports SGLang and torch afresh, so a pod with many CPUs and little memory would otherwise
+fork more children than it can hold. CHILD_MIB is an estimate, not a measurement: measure a
+child's peak memory before running more than one at once on a new runner.
 
 Usage (from a harness): answers = forkpool.run(cases, child), where child(case) returns a dict that
 json can write. A child that raises, or exits without an answer, gives
@@ -47,6 +54,43 @@ def _quota(cgroup: str):
     return None
 
 
+CHILD_MIB = 4096
+
+
+def _memory_limit(cgroup: str):
+    """The cgroup's memory limit in bytes, or None when it states none."""
+    for name in ("memory.max", os.path.join("memory", "memory.limit_in_bytes")):
+        try:
+            with open(os.path.join(cgroup, name)) as f:
+                v = f.read().strip()
+        except OSError:
+            continue
+        # v1 states "no limit" as a huge number, v2 as "max".
+        if v.isdigit() and int(v) < 1 << 60:
+            return int(v)
+        return None
+    return None
+
+
+def mem_slots(cgroup: str = "/sys/fs/cgroup"):
+    """How many children of ORACLE_CHILD_MIB (else CHILD_MIB) the memory limit holds, or None."""
+    limit = _memory_limit(cgroup)
+    if limit is None:
+        return None
+    v = os.environ.get("ORACLE_CHILD_MIB", "")
+    if v and (not v.isdigit() or int(v) < 1):
+        raise SystemExit("ORACLE_CHILD_MIB=%r: want a positive integer" % v)
+    per = int(v) if v else CHILD_MIB
+    return max(1, limit // (per << 20))
+
+
+def affordable(cgroup: str = "/sys/fs/cgroup") -> int:
+    """The children this process can run at once: the fewest of cpus() and mem_slots()."""
+    c = cpus(cgroup)
+    m = mem_slots(cgroup)
+    return min(c, m) if m else c
+
+
 def cpus(cgroup: str = "/sys/fs/cgroup") -> int:
     """The CPUs this process may use: the fewest of its affinity and its cgroup's quota."""
     n = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
@@ -55,10 +99,10 @@ def cpus(cgroup: str = "/sys/fs/cgroup") -> int:
 
 
 def jobs() -> int:
-    """How many children run at once: ORACLE_JOBS, else cpus()."""
+    """How many children run at once: ORACLE_JOBS, else affordable()."""
     v = os.environ.get("ORACLE_JOBS", "")
     if not v:
-        return cpus()
+        return affordable()
     if not v.isdigit() or int(v) < 1:
         raise SystemExit("ORACLE_JOBS=%r: want a positive integer" % v)
     return int(v)
@@ -110,4 +154,4 @@ def run(cases, child, n=None):
 
 
 if __name__ == "__main__":
-    print(cpus())
+    print(affordable())

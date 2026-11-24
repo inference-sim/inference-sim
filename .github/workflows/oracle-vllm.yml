@@ -40,6 +40,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - id: env
         uses: ./.github/actions/oracle-env-vllm
         with:
@@ -368,6 +370,8 @@ jobs:
       SHARDS: 3
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - id: env
         uses: ./.github/actions/oracle-env-vllm
         with:
@@ -436,6 +440,8 @@ jobs:
         corpora: ["t2 mamba multi", "t3 connector offloading"]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - id: env
         uses: ./.github/actions/oracle-env-vllm
       - uses: ./.github/actions/go-toolchain

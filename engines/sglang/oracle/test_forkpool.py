@@ -86,11 +86,11 @@ class ForkpoolTest(unittest.TestCase):
     def test_no_cases_is_no_answers(self):
         self.assertEqual(forkpool.run([], lambda c: {}), [])
 
-    def test_jobs_reads_oracle_jobs_or_cpus(self):
+    def test_jobs_reads_oracle_jobs_or_what_the_job_can_afford(self):
         with mock.patch.dict(os.environ, {"ORACLE_JOBS": "3"}):
             self.assertEqual(forkpool.jobs(), 3)
         env = {k: v for k, v in os.environ.items() if k != "ORACLE_JOBS"}
-        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(forkpool, "cpus", return_value=5):
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(forkpool, "affordable", return_value=5):
             self.assertEqual(forkpool.jobs(), 5)
         for bad in ("0", "-1", "x", "2.5"):
             with mock.patch.dict(os.environ, {"ORACLE_JOBS": bad}):
@@ -120,6 +120,36 @@ class ForkpoolTest(unittest.TestCase):
                 f.write("1600000 100000\n")
             with mock.patch.object(os, "sched_getaffinity", return_value={0, 1}, create=True):
                 self.assertEqual(forkpool.cpus(d), 2, "the affinity is fewer than the quota")
+
+
+    def test_the_memory_limit_caps_the_children(self):
+        # A pod with many CPUs and little memory forks no more children than its memory holds.
+        gib = 1 << 30
+        env = {k: v for k, v in os.environ.items() if k != "ORACLE_CHILD_MIB"}
+        with mock.patch.object(os, "sched_getaffinity", return_value=set(range(64)), create=True):
+            for files, extra, want in (
+                ({"cpu.max": "1600000 100000\n", "memory.max": "%d\n" % (16 * gib)}, {}, 4),   # 16 CPUs, 16 GiB
+                ({"cpu.max": "400000 100000\n", "memory.max": "%d\n" % (64 * gib)}, {}, 4),    # the CPUs are fewer
+                ({"cpu.max": "1600000 100000\n", "memory.max": "max\n"}, {}, 16),               # no memory limit
+                ({"cpu.max": "1600000 100000\n", "memory.max": "%d\n" % gib}, {}, 1),          # less than one child
+                ({"memory/memory.limit_in_bytes": "%d\n" % (8 * gib)}, {}, 2),                  # v1
+                ({"memory/memory.limit_in_bytes": "%d\n" % (1 << 63)}, {}, 64),                 # v1, none
+                ({"cpu.max": "1600000 100000\n", "memory.max": "%d\n" % (16 * gib)}, {"ORACLE_CHILD_MIB": "2048"}, 8),
+            ):
+                with tempfile.TemporaryDirectory() as d:
+                    for name, body in files.items():
+                        os.makedirs(os.path.dirname(os.path.join(d, name)), exist_ok=True)
+                        with open(os.path.join(d, name), "w") as f:
+                            f.write(body)
+                    with mock.patch.dict(os.environ, dict(env, **extra), clear=True):
+                        self.assertEqual(forkpool.affordable(d), want, (files, extra))
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "memory.max"), "w") as f:
+                f.write("%d\n" % (16 * gib))
+            for bad in ("0", "x", "-1"):
+                with mock.patch.dict(os.environ, {"ORACLE_CHILD_MIB": bad}):
+                    with self.assertRaises(SystemExit, msg="ORACLE_CHILD_MIB=%r" % bad):
+                        forkpool.affordable(d)
 
 
 if __name__ == "__main__":
