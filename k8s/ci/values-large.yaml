@@ -1,0 +1,67 @@
+# gha-runner-scale-set values for blis-ci-large: 16 CPU, 32 GiB pods for ci.yml's heavy Go tests
+# (the cost model's perturbation tests, cmd's support matrix, the kernel model's -race census). A
+# job comes here when the repository variable CI_RUNS_ON_LARGE is blis-ci-large.
+# The pods run pull request code, forks' included, once a maintainer approves the run (README.md).
+githubConfigUrl: https://github.com/inference-sim/inference-sim
+githubConfigSecret: blis-ci-github
+runnerScaleSetName: blis-ci-large
+minRunners: 0
+maxRunners: 3
+# No container mode: no Docker daemon, no Kubernetes mode, no privileged sidecar.
+template:
+  spec:
+    # A runner needs no access to the Kubernetes API.
+    automountServiceAccountToken: false
+    enableServiceLinks: false
+    restartPolicy: Never
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroup: 1001
+      seccompProfile: {type: RuntimeDefault}
+    # No image of our own: GitHub's runner image only supplies the runner, which this copies into
+    # the home volume, and the job runs in buildpack-deps, which has the C toolchain go test -race
+    # needs. Both are public images pinned by digest.
+    initContainers:
+      - name: runner-files
+        image: ghcr.io/actions/actions-runner:2.338.1@sha256:e275409999c37162649aa050ca573f03eab2eabcb3a1e7fcc47548de6b4f9690
+        # tar, not cp -a: the volume's root belongs to root (fsGroup), so uid 1001 cannot set its
+        # times; --no-overwrite-dir leaves that directory alone.
+        command: ["bash", "-c", "set -o pipefail; tar -C /home/runner -cf - . | tar -C /runner-home -xf - --no-overwrite-dir"]
+        resources:
+          requests: {cpu: "1", memory: 1Gi}
+          limits: {cpu: "1", memory: 1Gi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities: {drop: [ALL]}
+        volumeMounts:
+          - {name: home, mountPath: /runner-home}
+    containers:
+      - name: runner
+        image: docker.io/library/buildpack-deps:noble@sha256:924bf5a2e44d8ad64669df739cc3a7d331dfb0a5b41815f0ca71a4819a503e8a
+        command: ["/home/runner/run.sh"]
+        workingDir: /home/runner
+        env:
+          - {name: HOME, value: /home/runner}
+        resources:
+          # The CPU limit equals the request: Go reads it (GOMAXPROCS follows the cgroup limit), so a
+          # test that sizes its workers by the CPUs sees 16, not the node's.
+          # ephemeral-storage counts the two volumes and the logs.
+          requests: {cpu: "16", memory: 32Gi, ephemeral-storage: 20Gi}
+          limits: {cpu: "16", memory: 48Gi, ephemeral-storage: 100Gi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities: {drop: [ALL]}
+        volumeMounts:
+          - {name: home, mountPath: /home/runner}
+          - {name: work, mountPath: /home/runner/_work}
+    volumes:
+      # The runner and the home directory (the Go build cache, the tool cache).
+      - name: home
+        emptyDir: {sizeLimit: 20Gi}
+      # The checkout. Both volumes go with the pod.
+      - name: work
+        emptyDir: {sizeLimit: 80Gi}

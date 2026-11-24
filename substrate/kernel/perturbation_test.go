@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -111,6 +112,22 @@ func perturbationPairs(d *load.Data, only []string) []perturbationPair {
 		}
 	}
 	return pairs
+}
+
+// perturbationWorkers is how many workers the memory-bound perturbation tests use: at most two
+// by default, since each holds about 3 GB and the runners that execute them may have 16 GB, or
+// BLIS_PERTURBATION_WORKERS when it is set (ci.yml sets it only on a runner with the memory for
+// more). Never more than GOMAXPROCS. A value that is not a positive integer fails the test.
+func perturbationWorkers(t *testing.T) int {
+	t.Helper()
+	n := 2
+	if v := os.Getenv("BLIS_PERTURBATION_WORKERS"); v != "" {
+		var err error
+		if n, err = strconv.Atoi(v); err != nil || n < 1 {
+			t.Fatalf("BLIS_PERTURBATION_WORKERS=%q is not a positive integer", v)
+		}
+	}
+	return min(runtime.GOMAXPROCS(0), n)
 }
 
 // forEachPerturbationPair builds the scenarios of each pair on the given number of workers and
@@ -384,14 +401,15 @@ func TestEveryCoefficientFamilyChangesSomePriceOrIsListed(t *testing.T) {
 	// scenarios of one (model, chip) pair and prices them before it builds the next, sharing the
 	// two sets, so only a pair's scenarios per worker are held at once; a family already seen to
 	// move a price is not tried again, as in the sequential loop. A scenario that cannot be priced
-	// fails the test, the first pair in the list reported. At most two workers: each holds the
-	// kernels it builds and the collector's headroom over them, about 3 GB, and the runner that
-	// executes this test has 16 GB (the test was killed there with every CPU working).
+	// fails the test, the first pair in the list reported. Two workers by default
+	// (perturbationWorkers): each holds the kernels it builds and the collector's headroom over
+	// them, about 3 GB, and a hosted runner has 16 GB (the test was killed there with every CPU
+	// working).
 	var pricedSet, readSet sync.Map
 	var built atomic.Int64
 	pairs := perturbationPairs(d, nil)
 	errAt := make([]error, len(pairs))
-	forEachPerturbationPair(t, d, pairs, min(runtime.GOMAXPROCS(0), 2), func(pi int, cases []perturbationCase) {
+	forEachPerturbationPair(t, d, pairs, perturbationWorkers(t), func(pi int, cases []perturbationCase) {
 		built.Add(int64(len(cases)))
 		for _, s := range cases {
 			base, err := New(s.in)
@@ -514,7 +532,7 @@ func TestChangingALabelChangesNoPriceOrIsListed(t *testing.T) {
 	{
 		var bw sync.WaitGroup
 		nb := make(chan int)
-		for w := 0; w < min(runtime.GOMAXPROCS(0), 2); w++ {
+		for w, workers := 0, perturbationWorkers(t); w < workers; w++ {
 			bw.Add(1)
 			go func() {
 				defer bw.Done()
@@ -555,9 +573,9 @@ func TestChangingALabelChangesNoPriceOrIsListed(t *testing.T) {
 	failed := make([]string, len(first))
 	var wg sync.WaitGroup
 	next := make(chan int)
-	// Two workers: each prices a whole model's graph twice, and the runners that execute this
-	// test have little memory to give several at once.
-	for w := 0; w < min(runtime.GOMAXPROCS(0), 2); w++ {
+	// perturbationWorkers workers (two by default): each prices a whole model's graph twice, and a
+	// hosted runner has little memory to give several at once.
+	for w, workers := 0, perturbationWorkers(t); w < workers; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

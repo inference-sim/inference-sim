@@ -100,6 +100,11 @@ func TestCIChangesSampleChangeLists(t *testing.T) {
 		{"a workflow other than ci.yml", []string{".github/workflows/gofmt.yml"}, groupsOf("scripts actionlint structure")},
 		{"an issue template (data under .github)", []string{".github/ISSUE_TEMPLATE/bug_report.md"}, groupsOf("structure")},
 		{"the license", []string{"LICENSE"}, groupsOf("structure")},
+		{"the support matrix table", []string{"docs/support-matrix.tsv"}, groupsOf("cmd structure")},
+		{"the support matrix page", []string{"docs/support-matrix.md"}, groupsOf("cmd structure")},
+		{"another page under docs", []string{"docs/deferred.md"}, groupsOf("structure")},
+		{"a new page under docs", []string{"docs/guide/new.md"}, groupsOf("structure")},
+		{"the recorded race durations", []string{".github/ci-durations/vllmengine-race.tsv"}, groupsOf("vllm structure")},
 		{"a spec document", []string{"specs/001-infra-nodes-gpus-instances/spec.md"}, groupsOf("structure")},
 		{"the Dockerfile", []string{"Dockerfile"}, groupsOf("scripts structure")},
 		{"the size guard script", []string{"scripts/claude-md-size.sh"}, groupsOf("claudemd scripts structure")},
@@ -353,9 +358,16 @@ func TestCIChangesGroupsMatchTheWorkflow(t *testing.T) {
 			t.Errorf("group %s is printed by ci-changes.sh but is not an output of the changes job", g)
 		}
 	}
-	for o := range outputs {
-		if !contains(ciGroups, o) {
-			t.Errorf("the changes job exports %s, which ci-changes.sh does not print", o)
+	// The job's other outputs are where the heavy jobs run (its runners step), not groups.
+	runnerOutputs := []string{"runner-large", "runner-oracle", "large-workers"}
+	for o, v := range outputs {
+		switch {
+		case strings.Contains(v, "steps.groups.outputs."):
+			if !contains(ciGroups, o) {
+				t.Errorf("the changes job exports %s, which ci-changes.sh does not print", o)
+			}
+		case !contains(runnerOutputs, o):
+			t.Errorf("the changes job exports %s (%s), neither a group of ci-changes.sh nor a runner decision", o, v)
 		}
 	}
 	for name, job := range wf.Jobs {

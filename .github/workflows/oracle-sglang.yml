@@ -13,6 +13,11 @@ name: oracle-sglang
 
 on:
   workflow_call:
+    inputs:
+      # The scale set the oracle jobs run on, or empty for hosted (ci.yml passes none, so it runs hosted).
+      runner:
+        type: string
+        default: ""
   workflow_dispatch:
 
 permissions:
@@ -84,6 +89,10 @@ jobs:
         run: python -I oracle/test_inertness.py
       - name: the ServerArgs shards partition the cases and each is compared with its own
         run: python -I oracle/test_compare_serverargs.py
+      - name: the case runner keeps case order, its limit and a process per case
+        run: python -I oracle/test_forkpool.py
+      - name: the per-file runner runs every file once, within its limit, and fails if one fails
+        run: python -I oracle/test_each.py
       - name: the refusal comparison fails on what it guards
         run: python -I oracle/test_compare_refusals.py
       # The surface list (X9, SGL-4, SGL-6, FID-5): surface.json is what tools/surface/gen_surface.py
@@ -108,49 +117,52 @@ jobs:
   # locked environment installed by hash and checked against the lock (.github/actions/oracle-env),
   # the manifest check (FID-1, FID-8), and the scheduler importing from the checkout on CPU.
   #
-  # The oracle is two kinds of job. `oracle-run` is a matrix of shards: each shard builds the
-  # environment, runs its share of the oracle's runners, and uploads the traces it wrote. `oracle`,
+  # The oracle is two kinds of job. `oracle-run` is a matrix: each job builds the environment, runs
+  # the steps its entry's `runs` names, with the parts of its sharded steps named in `parts` side
+  # by side (scripts/ci-parallel.sh), and uploads the traces they wrote. `oracle`,
   # the check branch protection requires, runs when every shard has finished, puts the shards'
   # traces together and compares them with the goldens, so every golden is compared against a
   # trace written in this run exactly as before, and a scenario no shard ran fails there (X16,
   # compare_goldens.py: "the runner wrote no trace"). The shards need the cheap checks, so a push
   # that fails a one-minute check gets its verdict then, not after the oracle.
   #
-  #   shard         runs                                                         was, in one job
-  #   resolve       the mock and peer checks, the import check, the inertness proofs
-  #   serverargs-0..3  ServerArgs (T1): case k of cases.json going to shard k mod 4  about 6 min each
-  #   lower-0..3    lowering (T1), case k going to shard k mod 4; lower-0 also     about 6 min each
-  #                 runs every tier-2 scenario
-  #   sched-0/1/2   the scheduling loop (S13), scenario i going to shard i mod 3   about 11 min
-  #   cache         the cache framework's interfaces (FID-5) and the pools (SGL-6) about 3 min
-  #   hicache-metrics  HiCache (FID-5) and the metrics and KV events (S15)         about 4 min
+  #   runs        the steps                                                      one part, hosted
+  #   resolve     the mock and peer checks, the import check, the inertness proofs
+  #   serverargs  ServerArgs (T1), case k of cases.json in part k mod 4             about 6 min
+  #   refusals    SGLang's own refusals (S18)
+  #   lower       lowering (T1), case k in part k mod 4                            about 6 min
+  #   tier2       every tier-2 scenario
+  #   sched       the scheduling loop (S13), scenario i in part i mod 3            about 11 min
+  #   cache       the cache framework's interfaces (FID-5) and the pools (SGL-6)   about 3 min
+  #   hicache     HiCache (FID-5) and the metrics and KV events (S15)              about 4 min
+  #
+  # On a hosted runner (4 vCPUs) the parts side by side are slower than one part a job, so there
+  # each part is a job of its own (14 jobs). On a scale-set runner (input runner, which ci.yml
+  # does not pass at present), four jobs run every part:
+  # resolve-cache-hicache, serverargs (with refusals), lower (with tier2) and sched. Each part
+  # writes the file it wrote as a job of its own (serverargs-$PART.json and so on), so the oracle
+  # job's checks of the parts are the same in both. Within a job, a step's per-file commands run
+  # several at once (oracle/each.sh), and a sharded step's parts share the job's CPUs; hosted, one
+  # at a time (ORACLE_JOBS=1).
   oracle-run:
-    name: oracle-run (${{ matrix.group }})
+    name: oracle-run (${{ matrix.name }})
     needs: [oracle-checks, fields]
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - {group: resolve}
-          - {group: serverargs-0, part: 0}
-          - {group: serverargs-1, part: 1}
-          - {group: serverargs-2, part: 2}
-          - {group: serverargs-3, part: 3}
-          - {group: lower-0, part: 0}
-          - {group: lower-1, part: 1}
-          - {group: lower-2, part: 2}
-          - {group: lower-3, part: 3}
-          - {group: sched-0, part: 0}
-          - {group: sched-1, part: 1}
-          - {group: sched-2, part: 2}
-          - {group: cache}
-          - {group: hicache-metrics}
+        include: >-
+          ${{ fromJSON(inputs.runner
+          && '[{"name":"resolve-cache-hicache","runs":["resolve","cache","hicache"]},{"name":"serverargs","runs":["serverargs","refusals"],"parts":"0 1 2 3"},{"name":"lower","runs":["lower","tier2"],"parts":"0 1 2 3"},{"name":"sched","runs":["sched"],"parts":"0 1 2"}]'
+          || '[{"name":"resolve","runs":["resolve"]},{"name":"serverargs-0","runs":["serverargs","refusals"],"parts":"0"},{"name":"serverargs-1","runs":["serverargs"],"parts":"1"},{"name":"serverargs-2","runs":["serverargs"],"parts":"2"},{"name":"serverargs-3","runs":["serverargs"],"parts":"3"},{"name":"lower-0","runs":["lower","tier2"],"parts":"0"},{"name":"lower-1","runs":["lower"],"parts":"1"},{"name":"lower-2","runs":["lower"],"parts":"2"},{"name":"lower-3","runs":["lower"],"parts":"3"},{"name":"sched-0","runs":["sched"],"parts":"0"},{"name":"sched-1","runs":["sched"],"parts":"1"},{"name":"sched-2","runs":["sched"],"parts":"2"},{"name":"cache","runs":["cache"]},{"name":"hicache-metrics","runs":["hicache"]}]') }}
     env:
       SCHED_PARTS: 3
       SERVERARGS_PARTS: 4
       LOWER_PARTS: 4
+      # Hosted, one case or file at a time, as each one-part job always ran them: no run has measured
+      # several SGLang processes at once on a 4 vCPU / 16 GB runner. Empty on the scale set: its CPUs.
+      ORACLE_JOBS: ${{ !inputs.runner && '1' || '' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -159,13 +171,13 @@ jobs:
         uses: ./.github/actions/oracle-env-sglang
       # resolve
       - name: every replacement the harness makes is listed, and none is decision code
-        if: matrix.group == 'resolve'
+        if: contains(matrix.runs, 'resolve')
         run: python -I oracle/check_mocks.py oracle/mocks.json
       - name: a KV-transfer or KV-store client in the lock is at its peers.json pin
-        if: matrix.group == 'resolve'
+        if: contains(matrix.runs, 'resolve')
         run: python -I oracle/check_peers.py
       - name: the scheduler imports from the pinned checkout in the locked environment
-        if: matrix.group == 'resolve'
+        if: contains(matrix.runs, 'resolve')
         run: python -I oracle/run_import.py sglang-source
       # Tier 1: default resolution. Each case of oracle/serverargs/cases.json runs through SGLang's
       # own ServerArgs(...).resolve_once() on CPU with the case's CUDA chip restored (each
@@ -173,32 +185,41 @@ jobs:
       # revisions cases.json pins. The answers must equal config/testdata/serverargs.json, which the
       # Go test (config TestResolveAgainstSGLang) compares with config.Resolve field by field.
       - name: fetch the ServerArgs cases' model configurations at their pinned revisions
-        if: startsWith(matrix.group, 'serverargs-') || startsWith(matrix.group, 'lower-')
+        if: contains(matrix.runs, 'serverargs') || contains(matrix.runs, 'lower')
         run: python -I oracle/serverargs/fetch_models.py oracle/serverargs/cases.json serverargs-models
-      # The cases run one at a time, each in a process of its own, so a case's answer does not depend
-      # on its shard. The shard compares its cases with the committed ones at the same positions;
+      # The cases run several at once, each in a process of its own, so a case's answer depends neither
+      # on its shard nor on the cases beside it. The shard compares its cases with the committed ones at the same positions;
       # the oracle job fails unless every shard of SERVERARGS_PARTS wrote its answers.
-      - name: resolve this shard's ServerArgs cases through SGLang's own pipeline
-        if: startsWith(matrix.group, 'serverargs-')
+      - name: resolve each part's ServerArgs cases through SGLang's own pipeline
+        if: ${{ !cancelled() && contains(matrix.runs, 'serverargs') }}
         env:
           HF_HUB_OFFLINE: "1"
-          PART: ${{ matrix.part }}
+          PARTS: ${{ matrix.parts }}
         run: |
           set -euo pipefail
           mkdir -p shard-out/oracle-traces
-          python -I oracle/run_serverargs.py --shard "$PART/$SERVERARGS_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models > "shard-out/oracle-traces/serverargs-$PART.json"
+          read -r -a parts <<< "$PARTS"
+          # Each part forks its cases several at once (oracle/forkpool.py), on its share of the children
+          # the job can afford (forkpool.py prints it: the fewest of a pod's CPU limit, not the node's
+          # count nproc gives, and the children its memory limit holds).
+          ORACLE_JOBS=$(( ${ORACLE_JOBS:-$(python -I oracle/forkpool.py)} / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
+          # shellcheck disable=SC2016
+          ../../scripts/ci-parallel.sh "${#parts[@]}" 'p=($PARTS); python -I oracle/run_serverargs.py --shard "${p[$1]}/$SERVERARGS_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models > "shard-out/oracle-traces/serverargs-${p[$1]}.json"'
       - name: the committed ServerArgs answers are SGLang's own
-        if: startsWith(matrix.group, 'serverargs-')
+        if: ${{ !cancelled() && contains(matrix.runs, 'serverargs') }}
         env:
-          PART: ${{ matrix.part }}
-        run: python -I oracle/compare_serverargs.py config/testdata/serverargs.json "shard-out/oracle-traces/serverargs-$PART.json"
+          PARTS: ${{ matrix.parts }}
+        run: |
+          read -r -a parts <<< "$PARTS"
+          # shellcheck disable=SC2016
+          ../../scripts/ci-parallel.sh "${#parts[@]}" 'p=($PARTS); python -I oracle/compare_serverargs.py config/testdata/serverargs.json "shard-out/oracle-traces/serverargs-${p[$1]}.json"'
       # S18 (issue #2349): the refusals SGLang makes itself (schedule_policy.py:332-344, registry.py:261-271,
       # and ServerArgs.check_server_args) are run through SGLang's own code, and the messages must be
       # the ones committed in sglangengine/testdata/sglang_refusals.json, which the Go test compares
       # with the port's. A missing or stale golden fails here and in the Go test; nothing is recorded
       # by hand (BLIS_SGLANG_ALLOW_GOLDEN_UPDATE copies it from the oracle-traces artifact).
       - name: run SGLang's own refusals
-        if: matrix.group == 'serverargs-0'
+        if: ${{ !cancelled() && contains(matrix.runs, 'refusals') }}
         env:
           HF_HUB_OFFLINE: "1"
         run: |
@@ -206,12 +227,12 @@ jobs:
           mkdir -p shard-out/oracle-traces
           ORACLE_MODEL="$PWD/oracle-model" python -I oracle/run_refusals.py sglang-source oracle/refusals/cases.json > shard-out/oracle-traces/refusals.json
       - name: the committed refusals are SGLang's own
-        if: matrix.group == 'serverargs-0'
+        if: ${{ !cancelled() && contains(matrix.runs, 'refusals') }}
         run: python -I oracle/compare_refusals.py sglangengine/testdata/sglang_refusals.json shard-out/oracle-traces/refusals.json
       # T1 (issue #2350): each proof of kind observed_reads is re-run through SGLang's scheduler at the
       # field's default and probes, and the file must be what the runs give (oracle/inertness.py).
       - name: the inertness proofs are what SGLang's scheduler gives
-        if: matrix.group == 'resolve'
+        if: contains(matrix.runs, 'resolve')
         env:
           ORACLE_LOCKFILE: oracle-env.lock
           ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
@@ -219,39 +240,47 @@ jobs:
         run: |
           set -euo pipefail
           export ORACLE_MODEL="$PWD/oracle-model"
-          for p in oracle/inertness/*.json; do
-            python -I oracle/inertness.py sglang-source "$p" --check
-          done
+          # shellcheck disable=SC2016
+          oracle/each.sh 'python -I oracle/inertness.py sglang-source "$1" --check' oracle/inertness/*.json
       # Lowering: SGLang's own decode CUDA-graph, gather, attention and MoE functions, run after
       # SGLang resolves and publishes each accepted case (oracle/lower/extract.py; every
       # replacement listed in oracle/lower/replacements.json). The answers must equal
       # lower/testdata/sglang_lower.json, which the Go test (lower TestLowerAgainstSGLang) compares.
       - name: every replacement the lowering oracle makes is listed
-        if: startsWith(matrix.group, 'lower-')
+        if: ${{ !cancelled() && contains(matrix.runs, 'lower') }}
         run: python -I oracle/lower/check_replacements.py oracle/lower/extract.py oracle/lower/replacements.json
       # The cases (the ServerArgs file's, then oracle/lower/cases.json) go to the shards by position,
       # like the ServerArgs cases; each shard compares its own with the committed answers, and the
       # oracle job fails unless every shard of LOWER_PARTS ran and together they ran every case.
-      - name: lower this shard's accepted cases through SGLang's own functions
-        if: startsWith(matrix.group, 'lower-')
+      - name: lower each part's accepted cases through SGLang's own functions
+        if: ${{ !cancelled() && contains(matrix.runs, 'lower') }}
         env:
           HF_HUB_OFFLINE: "1"
-          PART: ${{ matrix.part }}
+          PARTS: ${{ matrix.parts }}
         run: |
           set -euo pipefail
           mkdir -p shard-out/oracle-traces
-          python -I oracle/lower/extract.py --shard "$PART/$LOWER_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models oracle/lower/cases.json > "shard-out/oracle-traces/lower-$PART.json"
-      - name: the committed lowering answers for this shard's cases are SGLang's own
-        if: startsWith(matrix.group, 'lower-')
+          read -r -a parts <<< "$PARTS"
+          # Each part forks its cases several at once (oracle/forkpool.py), on its share of the children
+          # the job can afford (forkpool.py prints it: the fewest of a pod's CPU limit, not the node's
+          # count nproc gives, and the children its memory limit holds).
+          ORACLE_JOBS=$(( ${ORACLE_JOBS:-$(python -I oracle/forkpool.py)} / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
+          # shellcheck disable=SC2016
+          ../../scripts/ci-parallel.sh "${#parts[@]}" 'p=($PARTS); python -I oracle/lower/extract.py --shard "${p[$1]}/$LOWER_PARTS" sglang-source oracle/serverargs/cases.json serverargs-models oracle/lower/cases.json > "shard-out/oracle-traces/lower-${p[$1]}.json"'
+      - name: the committed lowering answers for each part's cases are SGLang's own
+        if: ${{ !cancelled() && contains(matrix.runs, 'lower') }}
         env:
-          PART: ${{ matrix.part }}
-        run: python3 -I oracle/lower/compare_lower.py shard <(python3 -I oracle/goldengz.py cat lower/testdata/sglang_lower.json) "shard-out/oracle-traces/lower-$PART.json"
+          PARTS: ${{ matrix.parts }}
+        run: |
+          read -r -a parts <<< "$PARTS"
+          # shellcheck disable=SC2016
+          ../../scripts/ci-parallel.sh "${#parts[@]}" 'p=($PARTS); python3 -I oracle/lower/compare_lower.py shard <(python3 -I oracle/goldengz.py cat lower/testdata/sglang_lower.json) "shard-out/oracle-traces/lower-${p[$1]}.json"'
       # Tier 2: every scenario through SGLang's own Scheduler (run_scheduler_process), its event loop
       # unmodified. The runner fails unless every request finishes, the loop ends on the harness's
       # ShutdownReq, every forward pass was launched from SGLang's own event loop at the checkout,
       # the tree core is the Python one, and no clocked module still reads the real clock.
       - name: run every scenario through SGLang's scheduler
-        if: matrix.group == 'lower-0'
+        if: ${{ !cancelled() && contains(matrix.runs, 'tier2') }}
         env:
           ORACLE_LOCKFILE: oracle-env.lock
           ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
@@ -268,7 +297,7 @@ jobs:
       # them. Recorded: each tier-2 scenario through the scheduler, every call at the six cache
       # interfaces observed (oracle/cache_interfaces.py). Direct: the driver's own sequences.
       - name: trace the cache framework's interfaces
-        if: ${{ !cancelled() && matrix.group == 'cache' }}
+        if: ${{ !cancelled() && contains(matrix.runs, 'cache') }}
         env:
           ORACLE_LOCKFILE: oracle-env.lock
           ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
@@ -276,27 +305,23 @@ jobs:
         run: |
           set -euo pipefail
           export ORACLE_MODEL="$PWD/oracle-model"
-          o=shard-out/oracle-traces-fid5
+          export o=shard-out/oracle-traces-fid5
           mkdir -p $o/recorded $o/t2 $o/direct
-          for s in oracle/scenarios/*.json; do
-            python -I oracle/run_cache_iface.py recorded sglang-source "$s" "$o/recorded/$(basename "$s" .json).trace.json"
-          done
+          # shellcheck disable=SC2016
+          oracle/each.sh 'python -I oracle/run_cache_iface.py recorded sglang-source "$1" "$o/recorded/$(basename "$1" .json).trace.json"' oracle/scenarios/*.json
           # T2 for the radix cache: scheduler scenarios that evict (oracle/scenarios/cache).
-          for s in oracle/scenarios/cache/*.json; do
-            python -I oracle/run_cache_iface.py recorded sglang-source "$s" "$o/t2/$(basename "$s" .json).trace.json"
-          done
+          # shellcheck disable=SC2016
+          oracle/each.sh 'python -I oracle/run_cache_iface.py recorded sglang-source "$1" "$o/t2/$(basename "$1" .json).trace.json"' oracle/scenarios/cache/*.json
           # The radix cache's depth-first weight order (oracle/scenarios-dfs-order).
           mkdir -p $o/dfs
-          for s in oracle/scenarios-dfs-order/*.json; do
-            python -I oracle/run_dfs_order.py sglang-source "$s" "$o/dfs/$(basename "$s" .json).trace.json"
-          done
-          for s in oracle/scenarios-cache-iface/*.json; do
-            python -I oracle/run_cache_iface.py direct sglang-source "$s" "$o/direct/$(basename "$s" .json).trace.json"
-          done
+          # shellcheck disable=SC2016
+          oracle/each.sh 'python -I oracle/run_dfs_order.py sglang-source "$1" "$o/dfs/$(basename "$1" .json).trace.json"' oracle/scenarios-dfs-order/*.json
+          # shellcheck disable=SC2016
+          oracle/each.sh 'python -I oracle/run_cache_iface.py direct sglang-source "$1" "$o/direct/$(basename "$1" .json).trace.json"' oracle/scenarios-cache-iface/*.json
       # SGL-6: the allocators and pools alone, in orderings no scheduler makes, with each pool's
       # buffer bytes and the configurator's per-token cell (oracle/run_pools.py).
       - name: trace the allocators and pools
-        if: ${{ !cancelled() && matrix.group == 'cache' }}
+        if: ${{ !cancelled() && contains(matrix.runs, 'cache') }}
         env:
           ORACLE_LOCKFILE: oracle-env.lock
           ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
@@ -304,13 +329,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p shard-out/oracle-traces-pools/direct
-          for s in oracle/scenarios-pools/*.json; do
-            python -I oracle/run_pools.py direct sglang-source "$s" "shard-out/oracle-traces-pools/direct/$(basename "$s" .json).trace.json"
-          done
+          # shellcheck disable=SC2016
+          oracle/each.sh 'python -I oracle/run_pools.py direct sglang-source "$1" "shard-out/oracle-traces-pools/direct/$(basename "$1" .json).trace.json"' oracle/scenarios-pools/*.json
       # S48 (#94): the hybrid mamba pools, the state budget and the request-slot cap
       # (oracle/run_mamba_pools.py).
       - name: trace the hybrid mamba pools
-        if: ${{ !cancelled() && matrix.group == 'cache' }}
+        if: ${{ !cancelled() && contains(matrix.runs, 'cache') }}
         env:
           ORACLE_LOCKFILE: oracle-env.lock
           ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
@@ -318,19 +342,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p shard-out/oracle-traces-mamba-pools
-          for s in oracle/scenarios-mamba-pools/*.json; do
-            python -I oracle/run_mamba_pools.py direct sglang-source "$s" "shard-out/oracle-traces-mamba-pools/$(basename "$s" .json).trace.json"
-          done
+          # shellcheck disable=SC2016
+          oracle/each.sh 'python -I oracle/run_mamba_pools.py direct sglang-source "$1" "shard-out/oracle-traces-mamba-pools/$(basename "$1" .json).trace.json"' oracle/scenarios-mamba-pools/*.json
           mkdir -p shard-out/oracle-traces-mamba-pools/component
-          for s in oracle/scenarios-mamba-component/*.json; do
-            python -I oracle/run_mamba_component.py direct sglang-source "$s" "shard-out/oracle-traces-mamba-pools/component/$(basename "$s" .json).trace.json"
-          done
+          # shellcheck disable=SC2016
+          oracle/each.sh 'python -I oracle/run_mamba_component.py direct sglang-source "$1" "shard-out/oracle-traces-mamba-pools/component/$(basename "$1" .json).trace.json"' oracle/scenarios-mamba-component/*.json
       # FID-5 (design §7.6) for HiCache: the controller, layer counter, L2 transfer, host pool and
       # storage interfaces traced as SGLang's own classes answer them, the controller's threads and
       # device events run by the step-driven runner (oracle/step_runner.py, FID-1). Recorded: each
       # HiCache scheduler scenario; direct: the driver's own sequences (oracle/run_hicache.py).
       - name: trace the HiCache framework's interfaces
-        if: ${{ !cancelled() && matrix.group == 'hicache-metrics' }}
+        if: ${{ !cancelled() && contains(matrix.runs, 'hicache') }}
         env:
           ORACLE_LOCKFILE: oracle-env.lock
           ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
@@ -338,19 +360,17 @@ jobs:
         run: |
           set -euo pipefail
           export ORACLE_MODEL="$PWD/oracle-model"
-          o=shard-out/oracle-traces-hicache
+          export o=shard-out/oracle-traces-hicache
           mkdir -p $o/recorded $o/direct
-          for s in oracle/scenarios/hicache/recorded/*.json; do
-            python -I oracle/run_hicache.py recorded sglang-source "$s" "$o/recorded/$(basename "$s" .json).trace.json"
-          done
-          for s in oracle/scenarios/hicache/direct/*.json; do
-            python -I oracle/run_hicache.py direct sglang-source "$s" "$o/direct/$(basename "$s" .json).trace.json"
-          done
+          # shellcheck disable=SC2016
+          oracle/each.sh 'python -I oracle/run_hicache.py recorded sglang-source "$1" "$o/recorded/$(basename "$1" .json).trace.json"' oracle/scenarios/hicache/recorded/*.json
+          # shellcheck disable=SC2016
+          oracle/each.sh 'python -I oracle/run_hicache.py direct sglang-source "$1" "$o/direct/$(basename "$1" .json).trace.json"' oracle/scenarios/hicache/direct/*.json
       # FID-5 (design §7.6) for HiCache's L2 host tier: the write policies, load-back and host
       # eviction through SGLang's own scheduler (recorded) and the driver's own sequences (direct),
       # no storage backend (oracle/scenarios/hicache-l2, oracle/run_hicache.py).
       - name: trace the HiCache host tier
-        if: ${{ !cancelled() && matrix.group == 'hicache-metrics' }}
+        if: ${{ !cancelled() && contains(matrix.runs, 'hicache') }}
         env:
           ORACLE_LOCKFILE: oracle-env.lock
           ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
@@ -358,18 +378,16 @@ jobs:
         run: |
           set -euo pipefail
           export ORACLE_MODEL="$PWD/oracle-model"
-          o=shard-out/oracle-traces-hicache-l2
+          export o=shard-out/oracle-traces-hicache-l2
           mkdir -p $o/l2-recorded $o/l2-direct
-          for s in oracle/scenarios/hicache-l2/recorded/*.json; do
-            python -I oracle/run_hicache.py recorded sglang-source "$s" "$o/l2-recorded/$(basename "$s" .json).trace.json"
-          done
-          for s in oracle/scenarios/hicache-l2/direct/*.json; do
-            python -I oracle/run_hicache.py direct sglang-source "$s" "$o/l2-direct/$(basename "$s" .json).trace.json"
-          done
+          # shellcheck disable=SC2016
+          oracle/each.sh 'python -I oracle/run_hicache.py recorded sglang-source "$1" "$o/l2-recorded/$(basename "$1" .json).trace.json"' oracle/scenarios/hicache-l2/recorded/*.json
+          # shellcheck disable=SC2016
+          oracle/each.sh 'python -I oracle/run_hicache.py direct sglang-source "$1" "$o/l2-direct/$(basename "$1" .json).trace.json"' oracle/scenarios/hicache-l2/direct/*.json
       # HiCache host pools' sizing and layout refusals (oracle/run_host_pools.py): SGLang's own
       # MHA, MLA and DSA host pools, as the assembler builds them.
       - name: trace the HiCache host pools
-        if: ${{ !cancelled() && matrix.group == 'hicache-metrics' }}
+        if: ${{ !cancelled() && contains(matrix.runs, 'hicache') }}
         env:
           ORACLE_LOCKFILE: oracle-env.lock
           ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
@@ -378,32 +396,47 @@ jobs:
           set -euo pipefail
           export ORACLE_MODEL="$PWD/oracle-model"
           mkdir -p shard-out/oracle-traces-host-pools
-          for s in oracle/scenarios-host-pools/*.json; do
-            python -I oracle/run_host_pools.py direct sglang-source "$s" "shard-out/oracle-traces-host-pools/$(basename "$s" .json).trace.json"
-          done
+          # shellcheck disable=SC2016
+          oracle/each.sh 'python -I oracle/run_host_pools.py direct sglang-source "$1" "shard-out/oracle-traces-host-pools/$(basename "$1" .json).trace.json"' oracle/scenarios-host-pools/*.json
       # S13: the normal scheduling loop, with the state each step leaves (oracle/run_sched.py).
       # The scenarios, sorted by name, go to the shards in turn: shard i runs scenarios i, i+N, ...
       - name: trace the scheduling loop
-        if: ${{ !cancelled() && startsWith(matrix.group, 'sched-') }}
+        if: ${{ !cancelled() && contains(matrix.runs, 'sched') }}
         env:
           ORACLE_LOCKFILE: oracle-env.lock
           ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
           HF_HUB_OFFLINE: "1"
-          PART: ${{ matrix.part }}
+          PARTS: ${{ matrix.parts }}
         run: |
           set -euo pipefail
           export ORACLE_MODEL="$PWD/oracle-model"
           mkdir -p shard-out/oracle-traces-sched
-          i=0
-          for s in $(ls oracle/scenarios-sched/*.json | LC_ALL=C sort); do
-            if [ $((i % SCHED_PARTS)) -eq "$PART" ]; then
-              python -I oracle/run_sched.py sglang-source "$s" "shard-out/oracle-traces-sched/$(basename "$s" .json).trace.json"
-            fi
-            i=$((i + 1))
-          done
+          read -r -a parts <<< "$PARTS"
+          # Each part runs its scenarios several at once (oracle/each.sh), each in a run_sched.py process
+          # of its own, on its share of the children the job can afford (oracle/forkpool.py prints it:
+          # the fewest of a pod's CPU limit and the children its memory limit holds). sched_part runs in a child shell
+          # (ci-parallel.sh), which does not inherit set -e, so it sets its own.
+          ORACLE_JOBS=$(( ${ORACLE_JOBS:-$(python -I oracle/forkpool.py)} / ${#parts[@]} )); export ORACLE_JOBS=$(( ORACLE_JOBS > 0 ? ORACLE_JOBS : 1 ))
+          # The scenarios in C-locale order, as the parts were always dealt (SC2012); $1 is each.sh's (SC2016).
+          # shellcheck disable=SC2012,SC2016
+          sched_part() {
+            set -euo pipefail
+            local i=0 s
+            local -a mine=()
+            for s in $(ls oracle/scenarios-sched/*.json | LC_ALL=C sort); do
+              if [ $((i % SCHED_PARTS)) -eq "$1" ]; then
+                mine+=("$s")
+              fi
+              i=$((i + 1))
+            done
+            oracle/each.sh 'python -I oracle/run_sched.py sglang-source "$1" "shard-out/oracle-traces-sched/$(basename "$1" .json).trace.json"' "${mine[@]}"
+          }
+          export -f sched_part
+          # shellcheck disable=SC2016
+          ../../scripts/ci-parallel.sh "${#parts[@]}" 'p=($PARTS); sched_part "${p[$1]}"'
       # S15: the metrics registry and the KV-event bytes after each step (oracle/run_metrics.py).
       - name: trace the metrics and KV events
-        if: ${{ !cancelled() && matrix.group == 'hicache-metrics' }}
+        if: ${{ !cancelled() && contains(matrix.runs, 'hicache') }}
         env:
           ORACLE_LOCKFILE: oracle-env.lock
           ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
@@ -412,16 +445,15 @@ jobs:
           set -euo pipefail
           export ORACLE_MODEL="$PWD/oracle-model"
           mkdir -p shard-out/oracle-traces-metrics
-          for s in oracle/scenarios-metrics/*.json; do
-            python -I oracle/run_metrics.py sglang-source "$s" "shard-out/oracle-traces-metrics/$(basename "$s" .json).trace.json"
-          done
-      # The resolve shard only checks; it writes no trace, so it uploads none (every other shard
-      # writes at least one, and uploading nothing from them is still an error).
-      - name: upload the shard's traces
-        if: ${{ !cancelled() && matrix.group != 'resolve' }}
+          # shellcheck disable=SC2016
+          oracle/each.sh 'python -I oracle/run_metrics.py sglang-source "$1" "shard-out/oracle-traces-metrics/$(basename "$1" .json).trace.json"' oracle/scenarios-metrics/*.json
+      # The hosted resolve job only checks; it writes no trace, so it uploads none. Every other job
+      # (resolve-cache-hicache among them) writes at least one, and uploading nothing is an error.
+      - name: upload the job's traces
+        if: ${{ !cancelled() && matrix.name != 'resolve' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: oracle-shard-${{ matrix.group }}
+          name: oracle-shard-${{ matrix.name }}
           path: engines/sglang/shard-out/
           if-no-files-found: error
 
