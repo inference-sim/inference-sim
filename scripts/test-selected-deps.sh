@@ -21,6 +21,24 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 
+# Each CI job starts with an empty module cache (X25), so the first download of every module
+# happens here, against the module proxy. A dropped connection to it surfaces as a
+# "stream error ... INTERNAL_ERROR" and, left unretried, fails the run on a transient fault
+# (#2680). retry_fetch runs a fetch up to three times with a growing pause, like ci-shard.sh, and
+# reuses the same CI_SHARD_FETCH_RETRY_DELAY; it returns the last status so a persistent failure is
+# the caller's to handle. It keeps its own progress on stderr, so callers redirect only stdout.
+retry_fetch() {
+  local delay="${CI_SHARD_FETCH_RETRY_DELAY:-10}" attempt status=0
+  for attempt in 1 2 3; do
+    "$@" && return 0
+    status=$?
+    [ "$attempt" -lt 3 ] || return "$status"
+    echo "test-selected-deps: a module fetch failed (attempt $attempt of 3); retrying in $(( attempt * delay ))s" >&2
+    sleep $(( attempt * delay ))
+  done
+  return "$status"
+}
+
 cp "$root/go.mod" "$root/go.sum" "$scratch/"
 # A package of the main module that imports the binary's entry point, so the scratch module
 # selects exactly what the binary selects.
@@ -53,7 +71,7 @@ selected() {
 }
 before="$(selected)"
 # shellcheck disable=SC2086
-go get -t $pkgs >/dev/null
+retry_fetch go get -t $pkgs >/dev/null
 after="$(selected)"
 if [ "$before" != "$after" ]; then
   echo "ERROR: adding the test dependencies moved a BLIS module:" >&2
@@ -71,6 +89,14 @@ if [ ! -d "$substrate_dir/catalog" ]; then
 fi
 export BLIS_CATALOG="${BLIS_CATALOG:-$substrate_dir/catalog}" BLIS_REGISTRY="${BLIS_REGISTRY:-$substrate_dir/registry}"
 echo "substrate data: $substrate_dir"
+
+# Prefetch the test dependencies of the WHOLE router module, not only the linked packages $pkgs:
+# TestImportsNoInferenceSimPackage loads github.com/llm-d/llm-d-router/... (with tests), including
+# coordinator/, whose llm-d-async dependency `go get -t $pkgs` never pulls, so its first download
+# would otherwise land inside the test with no retry (#2680). Retry a transient failure here;
+# leave one that persists for `go test` to report, as ci-shard.sh does. Only stdout is dropped, so
+# retry_fetch's progress and a persistent error still show.
+retry_fetch go list -deps -test github.com/llm-d/llm-d-router/... >/dev/null || true
 
 shard="${SELECTED_DEPS_SHARD:-}"
 if [ -z "$shard" ]; then
