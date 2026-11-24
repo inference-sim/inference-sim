@@ -1,7 +1,7 @@
 # gha-runner-scale-set values for blis-ci-oracle: 4 CPU, 16 GiB pods for the vLLM and SGLang
 # oracles (the engines' own Python code on CPU, in their locked environments). A job comes here
-# when the repository variable CI_RUNS_ON_ORACLE is blis-ci-oracle, and only for this repository's
-# own code (README.md).
+# when the repository variable CI_RUNS_ON_ORACLE is blis-ci-oracle.
+# The pods run pull request code, forks' included, once a maintainer approves the run (README.md).
 githubConfigUrl: https://github.com/inference-sim/inference-sim
 githubConfigSecret: blis-ci-github
 runnerScaleSetName: blis-ci-oracle

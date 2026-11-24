@@ -110,16 +110,13 @@ jobs:
 
       # Where the heavy jobs run, decided once for every job that reads it. A job marked large (or an
       # oracle job) runs on the self-hosted scale set CI_RUNS_ON_LARGE (CI_RUNS_ON_ORACLE) names
-      # (k8s/ci) only when the run is known to be of this repository's code: not a pull request, or
-      # one whose head is in this repository. Anything else, a fork's pull request or one whose head
-      # repository was deleted (head.repo is then null), runs hosted. The worker counts only the
-      # large pods can afford come from the same decision, so a hosted job never gets them. This
-      # routes jobs; it is not the cluster's protection, which is k8s/ci's (a fork's pull request
-      # runs its own copy of this file).
+      # (k8s/ci) whenever that variable is set, for a fork's pull request too: a maintainer approves
+      # every outside contributor's workflow run before it starts, and the pods' isolation (k8s/ci)
+      # protects the cluster. The worker counts only the large pods can afford come from the same
+      # decision, so a hosted job never gets them.
       - name: Runners the heavy jobs use
         id: runners
         env:
-          SAME_REPO: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           LARGE: ${{ vars.CI_RUNS_ON_LARGE }}
           ORACLE: ${{ vars.CI_RUNS_ON_ORACLE }}
         run: |
@@ -127,7 +124,6 @@ jobs:
           for v in "$LARGE" "$ORACLE"; do
             [[ "$v" =~ ^[A-Za-z0-9._-]*$ ]] || { echo "a CI_RUNS_ON_* variable is not a runner label: $v"; exit 1; }
           done
-          if [ "$SAME_REPO" != true ]; then LARGE=; ORACLE=; fi
           { echo "large=$LARGE"; echo "oracle=$ORACLE"; echo "large-workers=${LARGE:+6}"; } >> "$GITHUB_OUTPUT"
           echo "large jobs: ${LARGE:-ubuntu-latest}; oracle jobs: ${ORACLE:-ubuntu-latest}"
 
@@ -175,7 +171,7 @@ jobs:
     # "if" cannot read the matrix. A skipped entry costs seconds on a runner.
     if: ${{ !cancelled() }}
     # An entry marked large runs where the changes job decided (runner-large): the self-hosted CI
-    # scale set CI_RUNS_ON_LARGE names (k8s/ci) for this repository's own code, else hosted. The
+    # scale set CI_RUNS_ON_LARGE names (k8s/ci) when it is set, else hosted. The
     # worker counts below read the same decision (large-workers), so a hosted runner never gets the
     # larger setting.
     runs-on: ${{ matrix.runner || (matrix.large && needs.changes.outputs.runner-large) || 'ubuntu-latest' }}

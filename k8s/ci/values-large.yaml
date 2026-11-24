@@ -1,7 +1,7 @@
 # gha-runner-scale-set values for blis-ci-large: 16 CPU, 32 GiB pods for ci.yml's heavy Go tests
 # (the cost model's perturbation tests, cmd's support matrix, the kernel model's -race census). A
-# job comes here when the repository variable CI_RUNS_ON_LARGE is blis-ci-large, and only for this
-# repository's own code (README.md).
+# job comes here when the repository variable CI_RUNS_ON_LARGE is blis-ci-large.
+# The pods run pull request code, forks' included, once a maintainer approves the run (README.md).
 githubConfigUrl: https://github.com/inference-sim/inference-sim
 githubConfigSecret: blis-ci-github
 runnerScaleSetName: blis-ci-large

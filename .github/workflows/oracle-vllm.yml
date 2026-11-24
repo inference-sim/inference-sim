@@ -9,9 +9,8 @@ name: oracle-vllm
 #
 # Needs the network (the pinned vLLM source, the helper model's config files, the hash-locked wheels) and so
 # runs on ephemeral Linux runners: hosted, or the self-hosted oracle scale set the repository variable
-# CI_RUNS_ON_ORACLE names (k8s/ci), as ci.yml's changes job decides (input runner: this repository's
-# own code only). A skipped step or test is a
-# failure (X16), never a pass.
+# CI_RUNS_ON_ORACLE names (k8s/ci), as ci.yml's changes job decides (input runner). A skipped step or
+# test is a failure (X16), never a pass.
 
 on:
   workflow_call:

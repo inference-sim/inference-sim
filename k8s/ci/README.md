@@ -11,26 +11,26 @@ GitHub-hosted runners. They run pull request code, so they hold no credentials a
 
 `ci.yml`'s `changes` job decides once where the heavy jobs run, and every job reads its outputs
 (`runner-large`, `runner-oracle`, and `large-workers` for the worker counts only the larger pods can
-afford, `BLIS_PERTURBATION_WORKERS` and `BLIS_CLUSTER_MATRIX_WORKERS`):
+afford, `BLIS_PERTURBATION_WORKERS` and `BLIS_CLUSTER_MATRIX_WORKERS`).
 
-```yaml
-SAME_REPO: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-```
+A job goes to a scale set whenever its variable is set, whoever opened the pull request: a fork's
+pull request runs where this repository's own branches run. With the variables unset, everything
+runs hosted as before. The gate jobs (`changes`, `required`), `byte gate arm64`, `release.yml` and
+the fast jobs stay hosted. No required check changes name.
 
-A job goes to a scale set only when its variable is set and the run is this repository's own code:
-not a pull request, or one whose head is in this repository. A fork's pull request, or one whose
-head repository was deleted (`head.repo` is then null), runs hosted. With the variables unset,
-everything runs hosted as before. The gate jobs (`changes`, `required`), `byte gate arm64`,
-`release.yml` and the fast jobs stay hosted. No required check changes name.
-
-This routes jobs; it does not protect the cluster. A fork's pull request runs its own copy of the
-workflows, so it can name a scale set's label in `runs-on`. What protects the cluster is the
-isolation below. So before approving a fork's workflow run, check its diff under `.github/` for a
-changed `runs-on` or `vars.` reference. A repository-level scale set cannot be limited to selected
-workflows; an organization-level runner group can, if the scale sets move to the organization.
+What keeps a fork's code off the cluster until someone has read it is approval, not routing: the
+repository's Actions setting *Require approval for all external contributors* (setup step 0) holds
+every outside contributor's workflow run until a maintainer approves it. A fork's pull request runs
+its own copy of the workflows, so it can name a scale set's label in `runs-on`. So before approving
+a fork's run, read its diff, and under `.github/` look for a changed `runs-on` or `vars.` reference.
+A repository-level scale set cannot be limited to selected workflows; an organization-level runner
+group can, if the scale sets move to the organization.
 
 ## Isolation
 
+- **Approval.** Every outside contributor's workflow run waits for a maintainer's approval before
+  any job starts (setup step 0). This does most of the work: the rest limits what an approved run
+  that turns out to be hostile can do.
 - **Namespace.** `blis` holds the CI scale sets and nothing else (`namespace.yaml`,
   `network.yaml`). The quota, the network policies and the EgressFirewall cover every pod in it.
   The agent runners (`k8s/deployment.yaml`, `k8s/pr-review-runner.yaml`), which hold credentials,
@@ -58,9 +58,20 @@ workflows; an organization-level runner group can, if the scale sets move to the
   addresses that rotate. So setup step 6 confirms that the cluster's OpenShift version takes
   wildcard `dnsName` rules and that no fetch is refused over a run. If either fails, an egress proxy
   with a domain allow-list, which the pods are only allowed to reach, replaces the EgressFirewall.
-- **Quota.** `namespace.yaml` caps requests at 72 CPU and 200 GiB, the most both sets can start.
+- **Limits.** Every runner pod has CPU, memory and ephemeral-storage limits (`values-*.yaml`), and
+  every job that can run on a scale set has a `timeout-minutes`, so one run cannot hold the cluster.
+  `namespace.yaml` caps the namespace at 72 CPU and 200 GiB of requests, the most both sets can
+  start.
 
 ## Setup
+
+0. **Approval.** Require approval for every outside contributor's workflow run (an admin's change;
+   in the settings it is Actions, General, *Require approval for all external contributors*):
+
+   ```bash
+   gh api -X PUT repos/inference-sim/inference-sim/actions/permissions/fork-pr-contributor-approval \
+     -f approval_policy=all_external_contributors
+   ```
 
 1. **Quota and network.** The `blis` namespace already exists. Move the agent runners out of it
    first: the policies below cover every pod in `blis`.
