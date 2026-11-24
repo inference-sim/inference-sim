@@ -86,6 +86,15 @@ def test_read_url_retries_an_incomplete_read():
     assert calls["n"] == 2
 
 
+def test_read_url_retries_a_wrapped_transport_error():
+    # A DNS failure or refused connect reaches us as urllib.error.URLError (an OSError subclass, but
+    # not an HTTPError), which _is_retryable treats as a transient transport error. This pins that
+    # path so narrowing the except clause to ConnectionError later would be caught here.
+    opener, calls = _opener([urllib.error.URLError(OSError("name resolution failed")), b"body"])
+    assert fx.read_url("https://example/x", opener=opener, sleep=lambda _: None) == b"body"
+    assert calls["n"] == 2
+
+
 def test_read_url_retries_a_429():
     opener, calls = _opener([_http_error(429), b"body"])
     assert fx.read_url("https://example/x", opener=opener, sleep=lambda _: None) == b"body"
