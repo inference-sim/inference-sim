@@ -20,26 +20,30 @@ moves to `inference-sim/llm-d-router` at the tag, and the PR can leave draft.
 
 ## The contract
 
-BLIS programs against one API: package `embed` of
-[blis-schemas](https://github.com/inference-sim/blis-schemas) (introduced in
-https://github.com/inference-sim/blis-schemas/issues/99), versioned by blis-schemas' own tags. `embed.Runtime` (with the
-optional `embed.RoundTripper`) is what BLIS implements; `embed.Router` and `embed.Flight` are
-what the router implements; the rest is plain data (`Request`, `Decision`, `Rejection`,
-`KVBatch`, `Requirements`, ...). The fork implements the contract with one constructor,
-`pkg/embed.New` (an `embed.Constructor`), which is the only identifier BLIS takes from the
-fork. `sim/llmd/imports_test.go` fails on any other llm-d-router import or identifier.
+BLIS programs against one API: package `blisembed` of the fork itself (imported as
+`embed "github.com/llm-d/llm-d-router/blisembed"`), versioned by the fork's own `-blis` tags.
+`embed.Runtime` (with the optional `embed.RoundTripper`) is what BLIS implements; `embed.Router`
+and `embed.Flight` are what the router implements; the rest is plain data (`Request`, `Decision`,
+`Rejection`, `KVBatch`, `Requirements`, ...). The fork implements the contract with one
+constructor, `pkg/embed.New` (an `embed.Constructor`). `sim/llmd/imports_test.go` holds BLIS to
+exactly these fork packages: every identifier of `blisembed`, `New` from `pkg/embed`, and the
+reference configurations' `FS`; it fails on any other llm-d-router import or identifier.
 
-The contract is defined in blis-schemas and changes there, never in the fork alone.
+The fork owns the contract and its conformance suite (`blisembed/embedtest`, and `pkg/embed`'s
+conformance test). It lives in the fork as of the M3.2 one-repository migration (inference-sim
+#2671); up to `v1.0.0-blis.2` it was package `embed` of blis-schemas.
 
 **Tags.** The fork tags `vX.Y.Z-blis.N`: `X.Y.Z` is the upstream release merged into
 `llm-d-r`, and `N` counts fork releases on that upstream release, from 1. Tags never move.
 
-**Compatibility.** Between two `-blis` tags with the same upstream major, `pkg/embed.New` and
-the blis-schemas `embed` package it implements change only compatibly. The fork's
-`hosting-lint.yml` enforces this with `apidiff` on `pkg/embed` against the latest `v*-blis*`
-tag, and on blis-schemas `embed` between the version that tag pinned and the one now pinned; it
-fails on an incompatible change unless the upstream major changed. A same-major upstream
-release, or a fork-only fix, therefore reaches BLIS as a `go.mod`/`go.sum` change only.
+**Compatibility.** Between two `-blis` tags with the same upstream major, `pkg/embed.New` and the
+`blisembed` contract it implements change only compatibly. The fork's `hack/embed-apidiff.sh` (run
+by `hosting-lint.yml`) enforces this: `embed-apidiff.sh fork` runs `apidiff` on `pkg/embed` against
+the latest `v*-blis*` tag reachable from HEAD, and `embed-apidiff.sh contract` on the embed
+contract between the version the tag's `go.mod` pinned and the one it pins now. Either fails on an
+incompatible change unless the upstream major changed (a contract-change review set may accept a
+break with `--accept-break <owner/repo#N>`). A same-major upstream release, or a fork-only fix,
+therefore reaches BLIS as a `go.mod`/`go.sum` change only.
 
 This page is for whoever maintains that fork and the BLIS side that hosts it.
 
@@ -59,7 +63,7 @@ decisions under a hosted runtime are the same decisions over the same inputs.
 | Map order | scheduler profile order, picker candidate order, datastore pod list, flow-control queue iteration | Under a hosted runtime: sorted, and where upstream's order is effectively random tie-breaking, a seeded shuffle of the sorted order. Under `Real`: unchanged. |
 | KV events | `pkg/kvevents/pool_hosted.go`, `preciseprefixcache/hosted.go` (new) | Under a hosted runtime the precise-prefix producer starts no ZMQ subscriber, indexer goroutine or event-pool workers; the embedder hands it event batches synchronously (`Producer.HostedIngest`, `HostedClearPod`), and speculative entries expire on the runtime's clock. |
 | Outbound HTTP | metrics data source, vLLM render backend | `hosting.Transport`: a request whose context carries a hosted runtime is served by the runtime. |
-| Embedding | `pkg/embed` (new), over `embed.go` in the fork's EPP runner package (new) and `assembleDirector` (extracted) | `pkg/embed.New` implements blis-schemas `embed`: it parses the EPP flags, configuration and manifests, builds the Director through the runner's own file-discovery assembly path (so config semantics are the runner's by construction), adapts `embed.Runtime` to `hosting.Runtime`, and answers in the contract's vocabulary (`Decision`, `Rejection.Kind`, `Requirements`, `KVBatch`). Before any plugin is instantiated it refuses every type the fork has not audited for hosting, or that the host's `Config.Allow` refuses, so an unsupported plugin's constructor never runs. |
+| Embedding | `pkg/embed` (new), over `embed.go` in the fork's EPP runner package (new) and `assembleDirector` (extracted) | `pkg/embed.New` implements the fork's `blisembed` contract: it parses the EPP flags, configuration and manifests, builds the Director through the runner's own file-discovery assembly path (so config semantics are the runner's by construction), adapts `embed.Runtime` to `hosting.Runtime`, and answers in the contract's vocabulary (`Decision`, `Rejection.Kind`, `Requirements`, `KVBatch`). Before any plugin is instantiated it refuses every type the fork has not audited for hosting, or that the host's `Config.Allow` refuses, so an unsupported plugin's constructor never runs. |
 | Guard | `hack/hosting-lint` (new), the `hosting-lint.yml` workflow (new) | The lint and the patch budget below. The lint is type-aware (go/packages, go/types) and records each accepted use individually (file, function, kind, line text), so a new use cannot replace a removed one. Besides clock, timer, deadline, goroutine and random-draw uses it tracks `sync.WaitGroup.Go`/`errgroup.Group.Go`, `clock.RealClock`, library timers (`ttlcache`), map and `sync.Map` iteration, outbound HTTP and the process-global `PickerRand`. |
 
 Everything simulator-specific lives in BLIS (`sim/llmd`): the discrete-event runtime, the
@@ -69,7 +73,7 @@ simulated model servers' HTTP surface, the OpenAI request and response bodies, t
 
 ## The hosted runtime in BLIS
 
-`sim/llmd/runtime.go` implements blis-schemas `embed.Runtime` (and `embed.RoundTripper`) on the
+`sim/llmd/runtime.go` implements the fork's `blisembed` `embed.Runtime` (and `embed.RoundTripper`) on the
 cluster's event loop:
 
 - `Now()` is a fixed epoch (2000-01-01 UTC) plus the simulation clock; time does not pass
@@ -103,7 +107,7 @@ rebase would rewrite the hashes and orphan it.
    `//blis:wallclock-ok <reason>` or regenerate the baseline (`-update`) on review.
 3. Update `upstream_base` in `hack/hosting-lint/budget.txt` to the release and run
    `go run ./hack/hosting-lint -budget`. Fix `pkg/embed` where the release moved an internal it
-   uses; its tests, the blis-schemas `embedtest` conformance run and the `apidiff` gate catch
+   uses; its tests, the fork's `blisembed/embedtest` conformance run and the `apidiff` gate catch
    what the release broke.
 4. Run the fork's tests, and BLIS's against the branch (a local `replace`). Open a PR into
    `llm-d-r`, merge it with **a merge commit**, and tag the merge `vX.Y.Z-blis.1`.
