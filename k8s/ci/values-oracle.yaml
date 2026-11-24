@@ -26,7 +26,9 @@ template:
     initContainers:
       - name: runner-files
         image: ghcr.io/actions/actions-runner:2.338.1@sha256:e275409999c37162649aa050ca573f03eab2eabcb3a1e7fcc47548de6b4f9690
-        command: ["cp", "-a", "/home/runner/.", "/runner-home/"]
+        # tar, not cp -a: the volume's root belongs to root (fsGroup), so uid 1001 cannot set its
+        # times; --no-overwrite-dir leaves that directory alone.
+        command: ["bash", "-c", "set -o pipefail; tar -C /home/runner -cf - . | tar -C /runner-home -xf - --no-overwrite-dir"]
         resources:
           requests: {cpu: "1", memory: 1Gi}
           limits: {cpu: "1", memory: 1Gi}
