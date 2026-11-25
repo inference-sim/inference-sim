@@ -186,6 +186,21 @@ func cidrOpens(t *testing.T, cidr string, except []string, ip net.IP) bool {
 	return true
 }
 
+// egressOpens reports whether an egress rule's peers reach this address: an ipBlock that holds it,
+// or no `to` at all, which means every destination.
+func egressOpens(t *testing.T, to []policyPeer, ip net.IP) bool {
+	t.Helper()
+	if len(to) == 0 {
+		return true
+	}
+	for _, peer := range to {
+		if peer.IPBlock != nil && cidrOpens(t, peer.IPBlock.CIDR, peer.IPBlock.Except, ip) {
+			return true
+		}
+	}
+	return false
+}
+
 // selects reports whether a policy selects exactly the pods with this one label.
 func selects(p k8sPolicy, key, value string) bool {
 	sel := p.Spec.PodSelector
@@ -198,19 +213,17 @@ func TestBlisPoliciesOpenLiteLLMToTheAgentsAndProxyOnly(t *testing.T) {
 	opened := map[string]bool{}
 	for _, p := range blisPolicies(t) {
 		for _, rule := range p.Spec.Egress {
-			for _, to := range rule.To {
-				if to.IPBlock == nil || !cidrOpens(t, to.IPBlock.CIDR, to.IPBlock.Except, litellmProbe) {
-					continue
-				}
-				switch {
-				case selects(p, "blis-runner", "agents"):
-					opened["agents"] = true
-				case selects(p, "app", "litellm-proxy"):
-					opened["proxy"] = true
-				default:
-					t.Errorf("NetworkPolicy %q opens %s to pods %v; only blis-runner=agents and app=litellm-proxy may reach LiteLLM",
-						p.Metadata.Name, litellmProbe, p.Spec.PodSelector.MatchLabels)
-				}
+			if !egressOpens(t, rule.To, litellmProbe) {
+				continue
+			}
+			switch {
+			case selects(p, "blis-runner", "agents"):
+				opened["agents"] = true
+			case selects(p, "app", "litellm-proxy"):
+				opened["proxy"] = true
+			default:
+				t.Errorf("NetworkPolicy %q opens %s to pods %v; only blis-runner=agents and app=litellm-proxy may reach LiteLLM",
+					p.Metadata.Name, litellmProbe, p.Spec.PodSelector.MatchLabels)
 			}
 		}
 	}
@@ -226,10 +239,8 @@ func TestBlisPoliciesCloseTheMetadataEndpoint(t *testing.T) {
 	metadata := net.ParseIP("169.254.169.254")
 	for _, p := range blisPolicies(t) {
 		for _, rule := range p.Spec.Egress {
-			for _, to := range rule.To {
-				if to.IPBlock != nil && cidrOpens(t, to.IPBlock.CIDR, to.IPBlock.Except, metadata) {
-					t.Errorf("NetworkPolicy %q opens %s to pods %v", p.Metadata.Name, metadata, p.Spec.PodSelector.MatchLabels)
-				}
+			if egressOpens(t, rule.To, metadata) {
+				t.Errorf("NetworkPolicy %q opens %s to pods %v", p.Metadata.Name, metadata, p.Spec.PodSelector.MatchLabels)
 			}
 		}
 	}
@@ -390,21 +401,25 @@ type scaleSetValues struct {
 	} `yaml:"template"`
 }
 
-// The label the policies trust is set by the agent scale sets alone, and no runner pod gets a
-// service account token (a pod that could read the API could read the LiteLLM secret).
+// The label the policies trust is set by the agent scale sets alone, each on the pool its jobs
+// name in runs-on (swapped names would put the untrusted reviewer on the pods that reach LiteLLM),
+// and no runner pod gets a service account token (a pod that could read the API could read the
+// LiteLLM secret).
 func TestScaleSetLabelsAndTokens(t *testing.T) {
-	want := map[string]string{
-		"agents/values-agents.yaml":    "agents",
-		"agents/values-pr-review.yaml": "pr-review",
+	type pool struct{ name, label string }
+	want := map[string]pool{
+		"agents/values-agents.yaml":    {agentRunsOn, "agents"},
+		"agents/values-pr-review.yaml": {"blis-ci-pr-review", "pr-review"},
 	}
 	files, err := filepath.Glob(filepath.Join("..", "k8s", "ci", "values-*.yaml"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no k8s/ci/values-*.yaml found (%v)", err)
 	}
 	for _, f := range files {
-		want["ci/"+filepath.Base(f)] = ""
+		want["ci/"+filepath.Base(f)] = pool{}
 	}
-	for f, label := range want {
+	for f, w := range want {
+		label := w.label
 		var v scaleSetValues
 		body, err := os.ReadFile(filepath.Join("..", "k8s", f))
 		if err != nil {
@@ -415,6 +430,12 @@ func TestScaleSetLabelsAndTokens(t *testing.T) {
 		}
 		if got := v.Template.Metadata.Labels["blis-runner"]; got != label {
 			t.Errorf("k8s/%s: pod label blis-runner is %q, want %q", f, got, label)
+		}
+		switch got := v.RunnerScaleSetName; {
+		case w.name != "" && got != w.name:
+			t.Errorf("k8s/%s: runnerScaleSetName is %q, want %q", f, got, w.name)
+		case w.name == "" && (got == agentRunsOn || got == "blis-ci-pr-review"):
+			t.Errorf("k8s/%s: a CI scale set takes the agent pool name %q", f, got)
 		}
 		// The policies also trust these labels (the proxy's, and allow-arc-api-server's).
 		for _, trusted := range []string{"app", "app.kubernetes.io/component"} {
