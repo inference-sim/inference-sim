@@ -121,6 +121,14 @@ class ForkpoolTest(unittest.TestCase):
             with mock.patch.object(os, "sched_getaffinity", return_value={0, 1}, create=True):
                 self.assertEqual(forkpool.cpus(d), 2, "the affinity is fewer than the quota")
 
+    def test_the_command_prints_cpus_with_the_flag_and_affordable_without(self):
+        with mock.patch.object(forkpool, "cpus", return_value=4), \
+                mock.patch.object(forkpool, "affordable", return_value=3), \
+                mock.patch("builtins.print") as out:
+            self.assertEqual(forkpool.main(["--cpus"]), 0)
+            self.assertEqual(forkpool.main([]), 0)
+            self.assertEqual([c.args for c in out.call_args_list], [(4,), (3,)])
+            self.assertEqual(forkpool.main(["--jobs"]), 2)
 
     def test_the_memory_limit_caps_the_children(self):
         # A pod with many CPUs and little memory forks no more children than its memory holds.

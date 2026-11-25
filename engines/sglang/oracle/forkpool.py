@@ -8,7 +8,7 @@ that child has exited, so a large answer never blocks a child on a full pipe.
 
 jobs() is ORACLE_JOBS when set (a positive integer), else affordable(): the fewest of cpus() and
 mem_slots(). A workflow step that runs several parts side by side gives each part its share of
-affordable(), which `python3 -I oracle/forkpool.py` prints.
+affordable(), which `python3 -I oracle/forkpool.py` prints; `--cpus` prints cpus() instead.
 
 cpus() is the CPUs this process may use: the fewest of its CPU affinity and its cgroup's CPU quota
 (cgroup v2 cpu.max, or v1 cpu.cfs_quota_us over cpu.cfs_period_us), rounded up. In a Kubernetes pod
@@ -153,5 +153,15 @@ def run(cases, child, n=None):
     return answers
 
 
+def main(argv) -> int:
+    """Print affordable(), or with --cpus, cpus(): the oracle environment sets OMP_NUM_THREADS to it
+    so torch's threads fit the pod's CPU quota rather than the node's CPUs."""
+    if argv not in ([], ["--cpus"]):
+        print("usage: forkpool.py [--cpus]", file=sys.stderr)
+        return 2
+    print(cpus() if argv else affordable())
+    return 0
+
+
 if __name__ == "__main__":
-    print(affordable())
+    sys.exit(main(sys.argv[1:]))

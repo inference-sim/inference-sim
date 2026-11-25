@@ -160,3 +160,18 @@ runs:
                           local_dir="oracle-model", allow_patterns=["*.json", "*.txt"])
         PY
         echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
+    # torch sizes its CPU threads from the CPUs it can see, which in a scale-set pod are the node's
+    # (224 on blis-ci-oracle), not the pod's quota (4): every pod was throttled in about a quarter of
+    # its CPU periods (run 45687365942). The thread count decides nothing a trace records. A caller
+    # that sets OMP_NUM_THREADS keeps its own.
+    - name: torch's threads fit the CPUs the job may use
+      if: inputs.build-only != 'true'
+      shell: bash
+      working-directory: engines/sglang
+      run: |
+        set -euo pipefail
+        if [ -z "${OMP_NUM_THREADS:-}" ]; then
+          n="$(python3 -I oracle/forkpool.py --cpus)"
+          echo "OMP_NUM_THREADS=$n" >> "$GITHUB_ENV"
+          echo "OMP_NUM_THREADS=$n"
+        fi
