@@ -1,4 +1,4 @@
-# The LiteLLM proxy for the pr-review runners (README.md), ported from k8s/pr-review-runner.yaml.
+# The LiteLLM proxy for the pr-review runners (README.md).
 # It holds the LiteLLM key, from the secret blis-litellm (keys base-url and api-key), and adds it
 # to each request it relays; a pr-review job holds only a dummy key, so the key never enters the
 # reviewer's session. The proxy is its own pod, not a sidecar, so the runner's egress can stay

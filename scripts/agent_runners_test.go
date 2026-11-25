@@ -135,6 +135,20 @@ func TestBlisPoliciesOpenLiteLLMToTheAgentsAndProxyOnly(t *testing.T) {
 	}
 }
 
+// No pod in blis may reach the cloud metadata endpoint, which hands out the node's credentials.
+func TestBlisPoliciesCloseTheMetadataEndpoint(t *testing.T) {
+	metadata := net.ParseIP("169.254.169.254")
+	for _, p := range blisPolicies(t) {
+		for _, rule := range p.Spec.Egress {
+			for _, to := range rule.To {
+				if to.IPBlock != nil && cidrOpens(t, to.IPBlock.CIDR, to.IPBlock.Except, metadata) {
+					t.Errorf("NetworkPolicy %q opens %s to pods %v", p.Metadata.Name, metadata, p.Spec.PodSelector.MatchLabels)
+				}
+			}
+		}
+	}
+}
+
 // The proxy takes connections from pr-review pods alone, and only they are given a way to it.
 func TestBlisPoliciesLetOnlyPrReviewReachTheProxy(t *testing.T) {
 	ingressRules := 0
@@ -234,7 +248,7 @@ func TestAgentJobsRunOnTheAgentRunners(t *testing.T) {
 		name, got := filepath.Base(f), 0
 		for job, j := range wf.Jobs {
 			raw := strings.Join(flattenScalars(j.RunsOn), ",")
-			if strings.Contains(raw, "self-hosted") || strings.Contains(raw, "AGENT_RUNS_ON") {
+			if strings.Contains(raw, agentRunsOn) || strings.Contains(raw, "self-hosted") {
 				got++
 				if raw != agentRunsOn {
 					t.Errorf("%s job %q: runs-on %q, want %q", name, job, raw, agentRunsOn)

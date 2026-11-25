@@ -17,7 +17,7 @@ name: PR Review (external)
 #
 # Three jobs, so the box that reads untrusted code cannot act:
 #   gate    (ubuntu-latest)         who-asked + what-PR; touches no PR content
-#   review  (pr-review-untrusted)   reads untrusted code; contents: read, NO write
+#   review  (blis-ci-pr-review)     reads untrusted code; contents: read, NO write
 #   post    (ubuntu-latest)         pull-requests: write; never reads PR code
 
 permissions:
@@ -100,10 +100,8 @@ jobs:
   review:
     needs: gate
     if: needs.gate.outputs.allowed == 'true'
-    # Dedicated untrusted pool behind the litellm-proxy, never the agent runners: the
-    # blis-ci-pr-review scale set when PR_REVIEW_RUNS_ON names it (k8s/agents), the old
-    # pr-review-untrusted runner while it is unset.
-    runs-on: ${{ vars.PR_REVIEW_RUNS_ON || 'pr-review-untrusted' }}
+    # Dedicated untrusted pool behind the litellm-proxy, never the agent runners (k8s/agents).
+    runs-on: blis-ci-pr-review
     timeout-minutes: 30
     # NO pull-requests: WRITE here. The box that reads untrusted code cannot post
     # or push; the `post` job does that. contents: read is for the trusted

@@ -294,9 +294,8 @@ jobs:
   deliver:
     needs: check-permissions
     if: needs.check-permissions.outputs.allowed == 'true'
-    # The agent runners: the blis-ci-agents scale set when AGENT_RUNS_ON names it (k8s/agents),
-    # the old self-hosted pool while it is unset.
-    runs-on: ${{ vars.AGENT_RUNS_ON || 'self-hosted' }}
+    # The agent runners, which alone may reach LiteLLM (k8s/agents).
+    runs-on: blis-ci-agents
     # Matches deliver-verify.yml's budget. This is ALIGNMENT, not a fix for anything observed:
     # #1706's lost run died at 52 minutes from runner resource pressure, well inside the old 60,
     # so a higher ceiling on its own would only have lengthened the window it could die in. What

@@ -80,7 +80,7 @@ jobs:
       #
       # THE STAND-DOWN IS BOUNDED BY THE QUIET WINDOW, and that bound is the whole point. Counting
       # every `queued` run regardless of age disabled the sweep in exactly the scenario it was
-      # built for: these phases run on `[self-hosted]`, so if the runner is offline when a phase is
+      # built for: these phases run on the agent runners (`blis-ci-agents`), so if the runner is offline when a phase is
       # dispatched the job never starts and is never reconciled — it sits `queued`, and GitHub
       # holds a queued job for up to 24 hours ("Job queue time: 24 hours", Actions limits). A dead
       # runner therefore kept `queued != 0` true and the sweep silent for a day.

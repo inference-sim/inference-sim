@@ -55,28 +55,26 @@ escaping symlinks scrubbed (`scripts/pr_review/scrub_symlinks.sh`) before any re
   `/pr-review` as a precise token (not `/blis-pr-review`, `/archon-pr-review`, or a future
   `/pr-review-*`) **and** the commenter must hold write access. Both are checked from the trusted ref.
 - **Three jobs so the box that reads untrusted code cannot act:** `gate` (ubuntu-latest, touches no PR
-  content) → `review` (`pr-review-untrusted` runner, `contents: read`, **no** `pull-requests: write`,
+  content) → `review` (`blis-ci-pr-review` runner, `contents: read`, **no** `pull-requests: write`,
   **no** `id-token: write`) → `post` (ubuntu-latest, `pull-requests: write`, never reads PR code).
   blis's `claude-code-action` is handed the job's read-only `github_token` so it takes its
   `OVERRIDE_GITHUB_TOKEN` path and **skips the OIDC exchange** — which would otherwise need
   `id-token: write` on the untrusted box and would mint the Anthropic App's *write* token (#1883).
 - **Key out of the session:** LiteLLM needs the VPN, so the runner is self-hosted — but the key lives
-  **only in a separate `litellm-proxy` pod** (`k8s/agents/litellm-proxy.yaml`; the old runner's is
-  `k8s/pr-review-runner.yaml`). The reviewer talks to the
-  `litellm-proxy` Service with a **dummy** key; the proxy injects the real one (both
+  **only in a separate `litellm-proxy` pod** (`k8s/agents/litellm-proxy.yaml`). The reviewer talks to
+  the `litellm-proxy` Service with a **dummy** key; the proxy injects the real one (both
   `Authorization: Bearer` for qa and `x-api-key` for blis). A runtime step asserts no real key is in
   the job env. (It is a separate pod, not a same-pod sidecar, so the runner's egress can be locked
   tighter than the proxy's — see below.)
-- **Egress lock — enabled, vanilla `NetworkPolicy`, no cluster-admin.** The runner pod runs under a
-  default-deny egress policy that allows only DNS (scoped to the `openshift-dns` namespace), the
-  `litellm-proxy` pod (by label), and public `:443` with every private/VPC/metadata CIDR excluded. So
-  the runner **cannot** reach LiteLLM, the metadata endpoint, or any in-cluster service except cluster
-  DNS directly; LiteLLM is reachable only *through* the proxy, which
-  pins the hostname in nginx (VPC-LB IP rotation never touches the runner's policy). The earlier
-  "vanilla policy breaks DNS" finding was a misdiagnosis: `172.21.0.10` is a ClusterIP, and Calico
-  evaluates egress post-DNAT against the real CoreDNS pod, which a `namespaceSelector` peer on ports
-  53/5353 matches — so DNS survives. Calico/`AdminNetworkPolicy`/cluster-admin are **not** required
-  (that was the open ask in #1881; this closes it).
+- **Egress lock, vanilla `NetworkPolicy`, no cluster-admin.** Every pod in `blis` is default-deny
+  (`k8s/ci/network.yaml`): egress only to DNS (scoped to the `openshift-dns` namespace) and public
+  `:80`/`:443` with every private, intranet (`9.0.0.0/8`) and metadata range excluded, and no route to
+  the API server. The pr-review pods (label `blis-runner: pr-review`) get one more path, the
+  `litellm-proxy` pod on `:4000` (`k8s/agents/network.yaml`). So the runner **cannot** reach LiteLLM,
+  the metadata endpoint or any in-cluster service but DNS and the proxy; LiteLLM is reachable only
+  *through* the proxy, whose own egress names LiteLLM's range (load-balancer address rotation never
+  touches the runner's policy). Calico evaluates egress post-DNAT against the real CoreDNS pod, which
+  the `namespaceSelector` peer on ports 53/5353 matches, so DNS survives.
 - **Output scrub:** the combined comment passes `scripts/pr_review/scrub_secrets.py` before posting —
   a last line, not the control (the control is that there is no key to leak).
 - **Advisory:** the verdict is never a required status check, so an injected review cannot block a
@@ -90,28 +88,18 @@ reviewer holds a shell on untrusted input, so a single workflow with a write-acc
 
 ## Infrastructure prerequisites (not created by the workflow)
 
-- The **`blis-ci-pr-review`** scale set (`PR_REVIEW_RUNS_ON`), the **`litellm-proxy`** pod/Service and
-  their `NetworkPolicy` objects (`k8s/agents/`), isolated from the agent pool `blis-ci-agents`. On the
-  new set-up the proxy reads the secret `blis-litellm`, sends the `base-url` host as `Host`, and admits
-  pr-review pods only (`k8s/agents/README.md`); what follows describes the old runner
-  (`k8s/pr-review-runner.yaml`, label **`pr-review-untrusted`**), used while the variable is unset.
-- The proxy's `nous-wiki-llm` secret (LiteLLM endpoint + key). **`base-url` must be a bare
-  `https://host` with no trailing slash and no path** — the proxy appends `$request_uri`, so a
-  trailing slash or path produces doubled-slash/doubled-path upstream 404s. **This proxy is pinned to
-  the current IBM LiteLLM endpoint, not a generic base-url swap:** the nginx `Host` header is
-  hardcoded to `ete-litellm.ai-models.vpc-int.res.ibm.com` (the VPC ingress routes by Host) and the
-  proxy's egress policy allows the IBM VPC (`9.0.0.0/8`) while blocking RFC1918. Pointing at a
-  different host or an RFC1918-hosted LiteLLM requires editing the `Host` header and the
-  `litellm-proxy-egress` except-list too, not just the secret.
-- A cluster whose DNS Service ClusterIP is `172.21.0.10` (the default on this ROKS cluster, used by the
-  proxy's nginx `resolver`). On a cluster with a different DNS IP, override the `LITELLM_RESOLVER` env
-  on the `litellm-proxy` container or nginx cannot resolve the upstream.
-- The standing namespace policy `allow-same-namespace` (an `Ingress` policy with `podSelector: {}`
-  that admits traffic from any pod in `blis`). The proxy's ingress reasoning assumes it: it is why
-  `litellm-proxy-ingress` is documented as recording intent rather than currently restricting callers.
-  If a fresh namespace lacks it, the new `litellm-proxy-ingress` policy instead makes the proxy
-  default-deny-ingress so ONLY the runner can reach `:4000` — stricter than described here, not weaker.
-  The workflow is inert-but-safe until these exist — it is maintainer-gated, so it cannot fire
+- The **`blis-ci-pr-review`** scale set, the **`litellm-proxy`** pod/Service and their
+  `NetworkPolicy` objects (`k8s/agents/`), isolated from the agent pool `blis-ci-agents`. Setup is in
+  `k8s/agents/README.md`.
+- The proxy's secret `blis-litellm` (keys `base-url` and `api-key`). **`base-url` must be a bare
+  `https://host` with no trailing slash and no path**: the proxy appends `$request_uri`, so a
+  trailing slash or path produces doubled-slash/doubled-path upstream 404s. The proxy sends that host
+  as `Host`. Its egress allows LiteLLM's range (`9.0.0.0/8`) on 443 alone, so a LiteLLM outside it
+  needs `k8s/agents/network.yaml` changed too, not just the secret.
+- The cluster DNS Service ClusterIP in the proxy's `LITELLM_RESOLVER` env (`172.30.0.10` here; the
+  nginx `resolver`). On a cluster with a different DNS IP, change it or nginx cannot resolve the
+  upstream.
+- The workflow is inert-but-safe until these exist: it is maintainer-gated, so it cannot fire
   accidentally.
 
 ## Residual risks we accept
@@ -120,12 +108,10 @@ reviewer holds a shell on untrusted input, so a single workflow with a write-acc
   is visible, scrubbed, and non-authoritative; a human reads it.
 - **Gateway spend.** Bounded by the LiteLLM budget on the shared key; the session's dummy key is useless
   (it only reaches the `litellm-proxy`, which overwrites it).
-- **Proxy reachable namespace-wide (old runner only).** On the new set-up the proxy admits
-  `blis-runner: pr-review` pods alone (`k8s/agents/network.yaml`). On the old runner, the proxy listens on a routable pod IP; the namespace-wide
-  `allow-same-namespace` policy lets any blis pod reach `:4000` (an `litellm-proxy-ingress` policy
-  records the runner-only intent for if that blanket policy is tightened). The credential cannot be
-  read back through the proxy — it is injected outbound only — so the exposure is use as a
-  namespace-local LiteLLM relay, which any blis pod could already obtain from `nous-wiki-llm` directly.
+- **The proxy as a relay.** The proxy admits `blis-runner: pr-review` pods alone
+  (`k8s/agents/network.yaml`), so a CI pod running a pull request's code cannot use it. A pr-review
+  job can, for the length of the job: the credential cannot be read back through the proxy (it is
+  injected outbound only), so the exposure is LiteLLM spend, bounded as above.
 - **Platform trust.** We trust `claude-code-action` and the runner image to hold; actions are
   SHA-pinnable.
 - **DNS tunnelling.** The runner must reach cluster DNS, and if CoreDNS recursively resolves external

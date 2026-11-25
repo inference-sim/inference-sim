@@ -1,7 +1,6 @@
 # gha-runner-scale-set values for blis-ci-pr-review: the `review` job of pr-review.yml, which reads an
 # untrusted pull request (forks' included) and runs none of it. It holds no LiteLLM key: it talks to
-# the litellm-proxy Service with a dummy key (litellm-proxy.yaml). A job comes here when the
-# repository variable PR_REVIEW_RUNS_ON is blis-ci-pr-review; unset, it runs on the old runner.
+# the litellm-proxy Service with a dummy key (litellm-proxy.yaml). `runs-on: blis-ci-pr-review`.
 githubConfigUrl: https://github.com/inference-sim/inference-sim
 githubConfigSecret: blis-ci-github
 runnerScaleSetName: blis-ci-pr-review
@@ -78,7 +77,7 @@ template:
           - {name: HOME, value: /home/runner}
           - {name: PATH, value: "/home/runner/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
         resources:
-          # The old runner's 2 CPU and 4 GiB, with room for the archon build (archon-build.sh) above it.
+          # 2 CPU and 4 GiB, as the runners these replace, with room for the archon build (archon-build.sh) above it.
           requests: {cpu: "2", memory: 4Gi, ephemeral-storage: 10Gi}
           limits: {cpu: "2", memory: 8Gi, ephemeral-storage: 30Gi}
         securityContext:

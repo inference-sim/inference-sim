@@ -2,17 +2,15 @@
 
 Two ARC (`gha-runner-scale-set`) scale sets for the workflows that call an LLM, in the `blis`
 namespace beside the CI scale sets (`k8s/ci/README.md`), driven by the same ARC controller. They
-replace the hand-rolled runner Deployments in `k8s/deployment.yaml` and `k8s/pr-review-runner.yaml`.
+replace the runner Deployments that ran these jobs on the old cluster.
 
 | Scale set | Pod | Max pods | Pod label | Jobs |
 |---|---|---|---|---|
 | `blis-ci-agents` | 2 CPU, 4 GiB (limit 8 GiB) | 6 | `blis-runner: agents` | `claude.yml` (`claude`, `claude-review`), `archon.yml` (`archon-review`), `deliver-implement.yml` (`deliver`), `deliver-verify.yml` (`verify`), `deliver-correct.yml` (`correct`) |
 | `blis-ci-pr-review` | 2 CPU, 4 GiB (limit 8 GiB) | 2 | `blis-runner: pr-review` | `pr-review.yml` (`review`) |
 
-Each job reads its runner from a repository variable and falls back to the old label:
-`${{ vars.AGENT_RUNS_ON || 'self-hosted' }}` and `${{ vars.PR_REVIEW_RUNS_ON || 'pr-review-untrusted' }}`.
-The gate jobs (`check-permissions`, `authorize`, `gate`, `post`, `report-status`) stay on hosted
-runners, so a comment from someone without write access never starts a pod.
+Each job names its scale set in `runs-on` (`blis-ci-agents`, `blis-ci-pr-review`). The gate
+jobs (`check-permissions`, `authorize`, `gate`, `post`, `report-status`) stay on hosted runners, so a comment from someone without write access never starts a pod.
 
 The two sets hold different things, and the pods are kept apart by that label:
 
@@ -42,9 +40,9 @@ The two sets hold different things, and the pods are kept apart by that label:
   token live in the namespace, but a runner pod mounts no service account token and cannot reach
   the API server, so it cannot read them. The proxy reads `blis-litellm` through its own env, and a
   CI pod cannot reach the proxy.
-- **One label per pool.** A scale set's only label is its name, so a `self-hosted` job can never
-  land on the pr-review pool. (The old pr-review runner also carried `self-hosted`, so a trusted
-  delivery job could be scheduled on it.)
+- **One label per pool.** A scale set's only label is its name, so an agent job can never land on
+  the pr-review pool. (The old pr-review runner also carried `self-hosted`, so a trusted delivery
+  job could be scheduled on it.)
 - **Ephemeral and unprivileged.** As the CI pods: one job per pod, uid 1001, no privilege
   escalation, every capability dropped, `RuntimeDefault` seccomp, no Docker daemon, no image of our
   own (`buildpack-deps:noble`, with `gh` and `jq` from a checksum-pinned init container).
@@ -105,19 +103,4 @@ their own (the discussion's plan, #2683).
 4. **Check the proxy** from a pr-review pod's point of view, once one runs (or run `/pr-review` on a
    pull request: its *Preflight litellm-proxy* step asks the proxy for `/v1/models`).
 
-5. **Enable**, one pool at a time:
-
-   ```bash
-   gh variable set PR_REVIEW_RUNS_ON --body blis-ci-pr-review
-   gh variable set AGENT_RUNS_ON --body blis-ci-agents
-   ```
-
-6. **Retire the old runners** once both pools have run their jobs for a while: scale the old
-   Deployments to zero, then delete them and remove `k8s/deployment.yaml`,
-   `k8s/pr-review-runner.yaml` and `k8s/secret.yaml` in a follow-up.
-
-## Rollback
-
-Delete a variable (`gh variable delete AGENT_RUNS_ON`) and its jobs go back to the old runners from
-the next run, while those still exist. A job already queued for a scale set waits for it; cancel and
-re-run it.
+The jobs take these pools as soon as the workflows naming them are on the default branch.
