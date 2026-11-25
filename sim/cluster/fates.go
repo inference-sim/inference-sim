@@ -251,6 +251,23 @@ func (c *ClusterSimulator) endAtHorizon() {
 	}
 }
 
+// waitsPastHorizon reports a run that drained before its horizon while it still holds requests
+// and an engine's next wake falls after the horizon: the engine's own rule defers the held work
+// past the end of the run, which the driver does not schedule. The horizon ends that run, giving
+// the held requests the fates their states give, as an event past the horizon would (#2685); it
+// is not a stall.
+func (c *ClusterSimulator) waitsPastHorizon() bool {
+	if len(c.fates.Held()) == 0 {
+		return false
+	}
+	for _, inst := range c.instances {
+		if inst.WakesPastHorizon() {
+			return true
+		}
+	}
+	return false
+}
+
 // stalled reports a run that ended before its horizon with requests the cluster still holds:
 // no event remained that could move them (SIM-7). Their fate is unknown, so the run has no
 // result.

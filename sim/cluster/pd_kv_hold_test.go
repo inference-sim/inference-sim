@@ -237,7 +237,6 @@ func (e *pdHandoffDropAt) Execute(cs *ClusterSimulator) {
 // (pull_scheduler.py:219-232). The cluster's own drops at transfer start run at the prefill's
 // completion, where the first two coincide (TestPrefillKVHold_UnroutableDecodeAtStartWaitsOutTheFirstLease).
 func TestPrefillKVHold_DropReleasesAsTheConnectorRuleSays(t *testing.T) {
-	skipRetiredEngine(t, "the prefill KV hold stalls the run")
 	const (
 		lease    = 3_000_000
 		transfer = 4_000_000 // the pull is still running at the drop
@@ -338,7 +337,6 @@ func TestPrefillKVHold_AmpleCapacityChangesNoLatency(t *testing.T) {
 // never exceeds its capacity, and is all released by the end of an unbounded run, leaving
 // every request conserved (INV-1) and no prefill block in use (INV-4).
 func TestPrefillKVHold_NeverLeaksAndNeverExceedsCapacity(t *testing.T) {
-	skipRetiredEngine(t, "the prefill KV hold stalls the run")
 	rapid.Check(t, func(rt *rapid.T) {
 		n := rapid.IntRange(1, 12).Draw(rt, "n")
 		cfg := holdConfig(true, rapid.Int64Range(1, 400_000).Draw(rt, "transfer"))
@@ -378,8 +376,11 @@ func TestPrefillKVHold_NeverLeaksAndNeverExceedsCapacity(t *testing.T) {
 			rt.Fatalf("after the run %d holds remain and the prefill instance uses %d blocks",
 				full.PrefillKVHeld(), usedBlocks(full.Instances()[0]))
 		}
-		if peak := full.PrefillKVHoldPeakTokens(); peak > capTokens || peak <= 0 {
-			rt.Fatalf("peak held %d tokens, capacity %d", peak, capTokens)
+		// A served request held its prefill KV for its pull; a run the engine refused whole (a
+		// prompt the pool cannot hold beside the engine's null block) holds nothing.
+		served := full.AggregatedMetrics().CompletedRequests > 0
+		if peak := full.PrefillKVHoldPeakTokens(); peak > capTokens || (served && peak <= 0) {
+			rt.Fatalf("peak held %d tokens, capacity %d (served: %v)", peak, capTokens, served)
 		}
 		if l := newClusterLedger(full); l.accounted() != n {
 			rt.Fatalf("INV-1: injected %d != accounted %d [%s]", n, l.accounted(), l)

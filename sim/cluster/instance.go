@@ -133,6 +133,12 @@ func (i *InstanceSimulator) HasPendingEvents() bool {
 	return i.drv.HasPendingEvents()
 }
 
+// WakesPastHorizon reports whether the instance's engine next asks to be woken after the
+// horizon (sim.EngineDriver.WakesPastHorizon).
+func (i *InstanceSimulator) WakesPastHorizon() bool {
+	return i.drv != nil && i.drv.WakesPastHorizon()
+}
+
 // PeekNextEventTime returns the timestamp of the earliest pending event.
 // Caller MUST check HasPendingEvents() first; panics on empty queue.
 func (i *InstanceSimulator) PeekNextEventTime() int64 {
