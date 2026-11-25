@@ -8,8 +8,6 @@ import (
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
-
-	sim "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
 )
 
 // graphResolver is the kernel's typed report of its CUDA-graph resolution
@@ -55,8 +53,9 @@ func dpPaddingOf(k kernel.Kernel, specTokens int) (dpPadding, error) {
 	return p, nil
 }
 
-// StepTimesAcrossDP prices one lockstep step of a data-parallel group, implementing
-// sim.DPStepPricer.
+// StepTimesAcrossDPOfShapes prices one lockstep step of a data-parallel group, each rank's
+// forward pass priced with the group's padding, an empty rank as the dummy batch. The shapes
+// are the caller's: under speculation a decode's Scheduled is already its verify width.
 //
 // vLLM v0.31.0 all-reduces every rank's token count before each forward
 // (coordinate_batch_across_dp, vllm/v1/worker/dp_utils.py:190-260) and, when the step runs
@@ -65,7 +64,7 @@ func dpPaddingOf(k kernel.Kernel, specTokens int) (dpPadding, error) {
 // as the minimum across ranks (:114-119), so one rank past the capture ceiling, or a mixed
 // batch under FULL_DECODE_ONLY, runs the step eagerly everywhere and nothing is padded.
 // A rank with nothing ready runs the dummy batch: a uniform decode of
-// uniform_decode_query_len tokens (vllm/v1/worker/gpu_worker.py:1376-1382) with no real
+// uniform_decode_query_len tokens (vllm/v1/worker/gpu_worker.go:1376-1382) with no real
 // tokens (num_tokens_unpadded 0), so all of it is pad, padded like any other rank.
 //
 // The experts of an attention-data-parallel group run over every rank's tokens gathered, so each
@@ -73,40 +72,13 @@ func dpPaddingOf(k kernel.Kernel, specTokens int) (dpPadding, error) {
 //
 // Pad tokens are the kernel's Batch.PadTokens: they run every GEMM, collective, MoE dispatch
 // and expert at the padded count, and no attention, logits or sampling.
-func (m *Model) StepTimesAcrossDP(batches [][]*sim.Request) []int64 {
-	kbs := make([]kernel.Batch, len(batches))
-	maxTokens := 0
-	allDecode := true
-	for i, b := range batches {
-		kbs[i] = m.batchOf(b)
-		dummy := len(kbs[i].Reqs) == 0
-		if dummy {
-			kbs[i].PadTokens = m.pad.dummyWidth
-		}
-		maxTokens = max(maxTokens, kbs[i].PaddedTokens())
-		allDecode = allDecode && (dummy || kbs[i].UniformDecode(m.pad.dummyWidth))
-	}
-	m.padDrafters(kbs)
-	padded := m.pad.ceiling > 0 && maxTokens <= m.pad.ceiling && (!m.pad.decodeOnly || allDecode)
-	groupTokens := 0
-	for i := range kbs {
-		if padded {
-			kbs[i].PadTokens += maxTokens - kbs[i].PaddedTokens()
-		}
-		groupTokens += kbs[i].PaddedTokens()
-	}
-	out := make([]int64, len(batches))
-	for i := range kbs {
-		kbs[i].GroupTokens = groupTokens
-		out[i] = max(1, ticks(m.k.StepTime(kbs[i]).NoOverlap))
-	}
-	return out
-}
-
-// StepTimesAcrossDPOfShapes is StepTimesAcrossDP for batches already in the kernel's shapes:
-// one lockstep step of a data-parallel group, each rank's forward pass priced with the group's
-// padding, an empty rank as the dummy batch. The shapes are the caller's: under speculation a
-// decode's Scheduled is already its verify width.
+//
+// This used to have a []*sim.Request-shaped sibling, StepTimesAcrossDP, which built its
+// kernel.Batch with m.batchOf directly and so never ran the decoder replay that
+// StepTimesAcrossDPOfStep applies (m.replay.tail). Nothing but its own tests ever called it --
+// the shipped path has always gone through StepTimesAcrossDPOfStep (vllmengine.go's
+// kernelPricer.StepTimesAcrossDP) -- so once #2681 made the two paths disagree it was removed
+// rather than patched to match; its tests were redirected to this path (dp_lockstep_test.go).
 func (m *Model) StepTimesAcrossDPOfShapes(ranks [][]ReqShape) []int64 {
 	return m.StepTimesAcrossDPOfStep(ranks, false)
 }
@@ -184,5 +156,3 @@ func (m *Model) padDrafters(kbs []kernel.Batch) {
 		kbs[i].DraftPaddedTokens = groupReqs * rowsPerReq
 	}
 }
-
-var _ sim.DPStepPricer = (*Model)(nil)
