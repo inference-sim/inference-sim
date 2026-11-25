@@ -91,15 +91,22 @@ func (p policyPeer) selectsPod(labels map[string]string) bool {
 type policyPort struct {
 	Protocol string `yaml:"protocol"`
 	Port     any    `yaml:"port"`
+	EndPort  int    `yaml:"endPort"`
 }
 
-// coversPort reports whether a rule's ports include this TCP port (no ports means every port).
+// coversPort reports whether a rule's ports include this TCP port: no ports or no port means
+// every port, port..endPort is a range, and a named (non-numeric) port counts as covering it,
+// since the name may resolve to it.
 func coversPort(ports []policyPort, port int) bool {
 	if len(ports) == 0 {
 		return true
 	}
 	for _, p := range ports {
-		if (p.Protocol == "" || p.Protocol == "TCP") && (p.Port == nil || p.Port == port) {
+		if p.Protocol != "" && p.Protocol != "TCP" {
+			continue
+		}
+		v, numeric := p.Port.(int)
+		if !numeric || v == port || (v <= port && port <= p.EndPort) {
 			return true
 		}
 	}
