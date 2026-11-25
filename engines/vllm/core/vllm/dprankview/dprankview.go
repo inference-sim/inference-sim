@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// Original to this repository: H1 of the DP external load-balancing RFC (inference-sim#2699).
+// Original to blis-vllm.
+// H1 of the DP external load-balancing RFC (inference-sim#2699).
 
 // Package dprankview exposes one vLLM data-parallel group as N router-visible endpoints, one per
 // rank, for external data-parallel load balancing. Each view is an engine.Engine the host can
@@ -105,11 +106,15 @@ func (v *view) EnableKVEvents()                   { v.g.EnableKVEvents() }
 func (v *view) KVEventsRefusal() error            { return v.g.KVEventsRefusal() }
 func (v *view) OffloadCachedTokens(id string) int { return v.g.OffloadCachedTokens(id) }
 
-// StepDue, LockstepSteps and LastActive are the group-step surface the sim leader drives (the
-// groupEngine it steps). They are the group's; the leader view is the one the leader driver holds.
-func (v *view) StepDue(now engine.Time) bool      { return v.g.StepDue(now) }
-func (v *view) LockstepSteps() (steps, dummy int) { return v.g.LockstepSteps() }
-func (v *view) LastActive() []bool                { return v.g.LastActive() }
+// StepDue, LockstepSteps, LastActive and LastKVEventsByRank are the group-step surface the sim
+// leader drives (the groupEngine it steps). They are the group's; the leader view is the one the
+// leader driver holds. LastKVEventsByRank lets the leader deliver each rank's KV events to that
+// rank's endpoint under external balancing (a Removed or Cleared event names no request, so it
+// cannot be placed from the batch split and must carry its producing rank from here).
+func (v *view) StepDue(now engine.Time) bool           { return v.g.StepDue(now) }
+func (v *view) LockstepSteps() (steps, dummy int)      { return v.g.LockstepSteps() }
+func (v *view) LastActive() []bool                     { return v.g.LastActive() }
+func (v *view) LastKVEventsByRank() [][]engine.KVEvent { return v.g.LastKVEventsByRank() }
 
 var (
 	_ engine.Engine  = (*view)(nil)
