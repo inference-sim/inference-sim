@@ -1,106 +1,111 @@
 {
-  "module": "",
-  "packages": [
+ "module": "",
+ "packages": [
+  {
+   "path": "github.com/inference-sim/inference-sim/cmd",
+   "name": "cmd",
+   "internal": true
+  },
+  {
+   "path": "github.com/inference-sim/inference-sim/engines/vllm/core/build",
+   "name": "build",
+   "internal": true
+  },
+  {
+   "path": "github.com/inference-sim/inference-sim/engines/vllm/core/vllm",
+   "name": "vllm",
+   "internal": true
+  },
+  {
+   "path": "github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview",
+   "name": "dprankview",
+   "internal": true,
+   "hole": true,
+   "surface": [
     {
-      "path": "github.com/inference-sim/inference-sim/cmd",
-      "name": "cmd",
-      "internal": true
-    },
-    {
-      "path": "github.com/inference-sim/inference-sim/engines/vllm/core/build",
-      "name": "build",
-      "internal": true
-    },
-    {
-      "path": "github.com/inference-sim/inference-sim/engines/vllm/core/vllm",
-      "name": "vllm",
-      "internal": true
-    },
-    {
-      "path": "github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview",
-      "name": "dprankview",
-      "internal": true,
-      "hole": true,
-      "surface": [
-        {
-          "kind": "func",
-          "name": "NewEndpointViews",
-          "sig": "(group *DPGroup) []engine.Engine"
-        }
-      ],
-      "invariants": [
-        {
-          "name": "BC-H1-1",
-          "file": "plan",
-          "hash": "evidenced: property_test",
-          "statement": "a request KV lands only on the rank that holds it"
-        },
-        {
-          "name": "BC-H1-2",
-          "file": "plan",
-          "hash": "evidenced: differential_test",
-          "statement": "leader step reproduces the collapsed timeline under the internal-equivalent assignment"
-        },
-        {
-          "name": "BC-H1-3",
-          "file": "plan",
-          "hash": "evidenced: property_test",
-          "statement": "StepDue is true whenever any rank has work, not only rank 0"
-        },
-        {
-          "name": "BC-H1-4",
-          "file": "plan",
-          "hash": "evidenced: property_test",
-          "statement": "under external every rank publishes KV events tagged to its endpoint"
-        },
-        {
-          "name": "BC-H1-5",
-          "file": "plan",
-          "hash": "evidenced: property_test",
-          "statement": "no rank view observes a step before the group clock reaches it"
-        }
-      ],
-      "allow": [
-        "github.com/inference-sim/inference-sim/engines/vllm/core/vllm",
-        "github.com/inference-sim/inference-sim/substrate/contracts/engine"
-      ]
-    },
-    {
-      "path": "github.com/inference-sim/inference-sim/sim",
-      "name": "sim",
-      "internal": true
-    },
-    {
-      "path": "github.com/inference-sim/inference-sim/sim/cluster",
-      "name": "cluster",
-      "internal": true
-    },
-    {
-      "path": "github.com/inference-sim/inference-sim/sim/llmd",
-      "name": "llmd",
-      "internal": true
-    },
-    {
-      "path": "github.com/inference-sim/inference-sim/substrate/contracts/engine",
-      "name": "engine",
-      "internal": true
+     "kind": "func",
+     "name": "NewEndpointViews",
+     "sig": "(group *DPGroup) []engine.Engine"
     }
-  ],
-  "edges": [
+   ],
+   "invariants": [
     {
-      "from": "github.com/inference-sim/inference-sim/cmd",
-      "to": "github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview",
-      "kind": "import"
+     "name": "BC-H1-1",
+     "file": "plan",
+     "hash": "evidenced: property_test",
+     "statement": "a request KV lands only on the rank that holds it"
     },
     {
-      "from": "github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview",
-      "to": "github.com/inference-sim/inference-sim/engines/vllm/core/vllm",
-      "kind": "import"
+     "name": "BC-H1-2",
+     "file": "plan",
+     "hash": "evidenced: differential_test",
+     "statement": "leader step reproduces the collapsed timeline under the internal-equivalent assignment"
     },
     {
-      "from": "github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview",
-      "to": "github.com/inference-sim/inference-sim/substrate/contracts/engine",
-      "kind": "import"
+     "name": "BC-H1-3",
+     "file": "plan",
+     "hash": "evidenced: property_test",
+     "statement": "StepDue is true whenever any rank has work, not only rank 0"
+    },
+    {
+     "name": "BC-H1-4",
+     "file": "plan",
+     "hash": "evidenced: property_test",
+     "statement": "under external every rank publishes KV events tagged to its endpoint"
+    },
+    {
+     "name": "BC-H1-5",
+     "file": "plan",
+     "hash": "evidenced: property_test",
+     "statement": "no rank view observes a step before the group clock reaches it"
     }
-  ]
+   ],
+   "allow": [
+    "github.com/inference-sim/inference-sim/engines/vllm/core/vllm",
+    "github.com/inference-sim/inference-sim/substrate/contracts/engine"
+   ]
+  },
+  {
+   "path": "github.com/inference-sim/inference-sim/sim",
+   "name": "sim",
+   "internal": true
+  },
+  {
+   "path": "github.com/inference-sim/inference-sim/sim/cluster",
+   "name": "cluster",
+   "internal": true
+  },
+  {
+   "path": "github.com/inference-sim/inference-sim/sim/llmd",
+   "name": "llmd",
+   "internal": true
+  },
+  {
+   "path": "github.com/inference-sim/inference-sim/substrate/contracts/engine",
+   "name": "engine",
+   "internal": true
+  },
+  {
+   "path": "github.com/inference-sim/inference-sim/engines/vllm/vllmengine",
+   "name": "vllmengine",
+   "internal": true
+  }
+ ],
+ "edges": [
+  {
+   "from": "github.com/inference-sim/inference-sim/engines/vllm/vllmengine",
+   "to": "github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview",
+   "kind": "import"
+  },
+  {
+   "from": "github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview",
+   "to": "github.com/inference-sim/inference-sim/engines/vllm/core/vllm",
+   "kind": "import"
+  },
+  {
+   "from": "github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview",
+   "to": "github.com/inference-sim/inference-sim/substrate/contracts/engine",
+   "kind": "import"
+  }
+ ]
 }

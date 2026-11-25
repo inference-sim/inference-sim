@@ -8,7 +8,11 @@
 # `sim` kickGroup in-flight rewrite + the `sim/cluster` N-endpoint registration and leader/
 # member wiring) and H3 (the `cmd` construction + refusal lift) modify existing packages; their
 # contracts are carried in the sub-issue bodies, and their structural delta is the new
-# cmd -> dprankview import arrow (the single permitted vLLM build site).
+# vllmengine -> dprankview import arrow. cmd builds the per-rank views at its single vLLM build
+# site, but reaches the view engine through the engine module's host facade
+# (vllmengine.DPRankViews) rather than importing dprankview directly: the host reaches the engine
+# only through engine.Engine and the host-facade packages, never the engine's other core packages
+# (TestTheHostReachesTheV032EngineOnlyThroughTheContract). cmd -> vllmengine already exists.
 
 invariant determinism {
   statement: same resolved input at the same revisions yields byte-identical Result within a fixed topology
@@ -37,10 +41,12 @@ box github.com/inference-sim/inference-sim/sim/llmd
 box github.com/inference-sim/inference-sim/cmd
 box github.com/inference-sim/inference-sim/engines/vllm/core/vllm
 box github.com/inference-sim/inference-sim/engines/vllm/core/build
+box github.com/inference-sim/inference-sim/engines/vllm/vllmengine
 box github.com/inference-sim/inference-sim/substrate/contracts/engine
 
 # H1 — the per-rank endpoint view engine over one shared DPGroup. New sub-package so the view
-# stays behind the engine contract and is imported only at cmd's single site (import rule).
+# stays behind the engine contract and is reached only through the engine's host facade
+# (vllmengine), which cmd calls at its single vLLM build site (import rule).
 hole github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview {
   surface:
     NewEndpointViews(group *DPGroup) []engine.Engine
@@ -61,4 +67,4 @@ hole github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview {
 # Declared dependencies (new edges the feature introduces).
 arrow github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview -> github.com/inference-sim/inference-sim/engines/vllm/core/vllm : import
 arrow github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview -> github.com/inference-sim/inference-sim/substrate/contracts/engine : import
-arrow github.com/inference-sim/inference-sim/cmd -> github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview : import
+arrow github.com/inference-sim/inference-sim/engines/vllm/vllmengine -> github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview : import
