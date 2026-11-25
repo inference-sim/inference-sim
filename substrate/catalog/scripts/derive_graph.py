@@ -1199,9 +1199,15 @@ def weight_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
         # checkpoint's: glm-5.2-nvfp4-fp8 puts attention at FP8 and every MLP (the routed and
         # shared experts, the bulk of the weight) at NVFP4. The global is the MLP/expert width,
         # which the experts and the dense MLP inherit; the attention group's width rides on its
-        # own nodes (ct_place_mixed_precision). A block whose groups do not name exactly one
-        # MLP/expert group is refused rather than priced at a guessed global.
+        # own nodes (ct_place_mixed_precision), which only handler_glm_moe_dsa calls. A block
+        # whose architecture has no handler that places the other groups per node, or whose
+        # groups do not name exactly one MLP/expert group, is refused rather than priced at a
+        # guessed global.
         if str(quant.get("format", "")).lower() == "mixed-precision":
+            if architecture_of(raw, model) != "GlmMoeDsaForCausalLM":
+                raise DeriveError(
+                    f"{model}: a mixed-precision compressed-tensors checkpoint, whose groups "
+                    f"only handler_glm_moe_dsa places per node")
             groups = quant.get("config_groups") or {}
             mlp = [g for g in groups.values()
                    if any(ct_matches("model.layers.0.mlp.experts", str(t))
@@ -2108,8 +2114,8 @@ def ct_place_mixed_precision(kinds: list[dict[str, Any]], stack: dict[str, Any],
                 raise DeriveError(f"{model}: the config groups price {role!r} in layer kind "
                                   f"{kind['id']!r} two ways across its layers; one node cannot "
                                   f"price both")
-            placed = answers.pop()
-            if placed is not None and placed[0] != g:
+            placed = answers.pop() or (base, False)
+            if placed[0] != g:
                 node = dict(node, weight_dtype=placed[0])
                 if placed[1]:
                     node["weight_scale"] = dict(FP8_BLOCK_SCALE)

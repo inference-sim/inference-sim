@@ -8642,6 +8642,37 @@ def test_glm_dsa_mixed_precision_prices_attention_fp8_and_the_mlp_nvfp4():
     assert next(n for n in g["head"] if n.get("role") == "lm_head")["weight_dtype"] == "bf16"
 
 
+def test_mixed_precision_format_outside_glm_dsa_is_refused_not_mispriced(tmp_path):
+    """A compressed-tensors `format: mixed-precision` block is only placed correctly by
+    ct_place_mixed_precision, which handler_glm_moe_dsa alone calls. Reusing Qwen's own
+    checkpoint (a regular pack-quantized one) with its format swapped to mixed-precision
+    pins that a different architecture (Qwen3_5ForConditionalGeneration here) is refused
+    rather than silently priced at the MLP/expert group's width -- before this guard, its
+    attention would have taken that width with no error at all."""
+    raw = config_of(MODELS / "qwen3.8-27b-int4")
+    assert raw["architectures"][0] != "GlmMoeDsaForCausalLM"
+    raw["quantization_config"]["format"] = "mixed-precision"
+    with pytest.raises(deriver().DeriveError, match="only handler_glm_moe_dsa places per node"):
+        _derive_raw(raw, tmp_path, "qwen-mixed-precision-test")
+
+
+def test_mixed_precision_block_leaves_an_untargeted_module_at_the_base_width(tmp_path):
+    """width_for returns None for a module no group targets and the ignore list does not name;
+    compressed-tensors builds that module unquantized, so it must keep the checkpoint's base
+    (BF16) width explicitly, not silently inherit the quantized global. No node in the committed
+    glm-5.2-nvfp4-fp8 hits this today (every MLP linear is in group_1's `re:.*mlp\\..*`), so this
+    narrows group_1's targets to exclude `mlp.down_proj` with a negative lookahead, putting a
+    dense layer's down-projection in neither group nor the ignore list."""
+    raw = config_of(MODELS / "glm-5.2-nvfp4-fp8")
+    raw["quantization_config"]["config_groups"]["group_1"]["targets"] = \
+        [r"re:.*mlp\.(?!down_proj).*"]
+    g = _derive_raw(raw, tmp_path, "glm-untargeted-module-test")
+    assert g["global"]["weight_dtype"] == "nvfp4"
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    down = next(n for k in kinds.values() for n in k["nodes"] if n.get("role") == "mlp_down")
+    assert down.get("weight_dtype") == "bf16", down
+
+
 @pytest.mark.parametrize("name", ["qwen3.8-27b-int4", "nemotron-3-ultra-550b-a55b-fp8-block"])
 def test_quantized_checkpoint_prices_its_ignored_lm_head_at_the_base_width(name):
     """A compressed-tensors checkpoint whose `ignore` list names lm_head builds the head
