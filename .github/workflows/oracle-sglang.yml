@@ -100,6 +100,8 @@ jobs:
         run: python -I oracle/test_compare_serverargs.py
       - name: the case runner keeps case order, its limit and a process per case
         run: python -I oracle/test_forkpool.py
+      - name: a scheduler process still running near the join timeout prints its stacks
+        run: python -I oracle/test_hang_dump.py
       - name: the per-file runner runs every file once, within its limit, and fails if one fails
         run: python -I oracle/test_each.py
       - name: the refusal comparison fails on what it guards
