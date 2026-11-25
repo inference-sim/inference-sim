@@ -379,8 +379,7 @@ func runRapid(t *rapid.T, lines []string, cfg AgentXReplayConfig, svc func(*sim.
 func TestAgentXInvariantsHoldOverRandomCorpora(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		lines := genCorpus(t)
-		cfg := genConfig(t)
-		svc := genService(t)
+		cfg, svc := boundedForMemory(genConfig(t), genService(t))
 		rj := genReject(t)
 		h := runRapid(t, lines, cfg, svc, rj)
 		checkAgentXInvariants(t, h, cfg)
@@ -398,12 +397,17 @@ func TestAgentXInvariantsHoldOverRandomCorpora(t *testing.T) {
 	}
 }
 
-// boundedForMemory limits a run to what the metamorphic tests below need. Each run keeps every
-// request it sends, and the random durations (up to 300 s) with service times as short as 1 ms
-// sent hundreds of thousands per run, which held up to 9 GB at once (the two tests below
-// were killed on a 16 GB runner). A 60 s window and a 200 ms service floor keep the
-// relations under test (a longer grace keeps completions; service times do not reorder a
-// stream) over the same shapes of corpus, with runs of a few thousand requests.
+// boundedForMemory limits a run to what the property tests need. Each run keeps every request
+// it sends, and the random durations (up to 300 s) with service times as short as 1 ms sent
+// hundreds of thousands per run, which held up to 9 GB at once (the two tests below were
+// killed on a 16 GB runner). A refused request costs no service time: the client sees it a
+// round trip (agxRefusalRoundTripUs, 1 ms) later and sends the stream's next turn, so with
+// refusals a run can send one request per lane per millisecond, about 1.5 million over 300 s.
+// TestAgentXInvariantsHoldOverRandomCorpora keeps two such runs and starved a 16 GiB runner
+// until it lost its connection to GitHub. The 60 s window caps a run at about 300,000 sends
+// (2.5 GB) whatever the refusals; the 200 ms service floor keeps served runs to a few
+// thousand. Both keep the relations under test (a longer grace keeps completions; service
+// times do not reorder a stream) over the same shapes of corpus.
 func boundedForMemory(cfg AgentXReplayConfig, svc func(*sim.Request) int64) (AgentXReplayConfig, func(*sim.Request) int64) {
 	cfg.DurationUs = min(cfg.DurationUs, 60*sec)
 	return cfg, func(r *sim.Request) int64 { return max(svc(r), 200_000) }
