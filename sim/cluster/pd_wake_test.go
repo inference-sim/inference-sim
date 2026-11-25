@@ -56,6 +56,12 @@ func TestPD_WorkDeferredPastTheHorizonEndsAtTheHorizon(t *testing.T) {
 	if err := cs.Run(); err != nil {
 		t.Fatalf("the run must end at its horizon, not stall: %v", err)
 	}
+	if !cs.Instances()[1].WakesPastHorizon() {
+		t.Fatal("premise: the decode engine must next ask to be woken past the horizon")
+	}
+	if cs.Clock() != cfg.Horizon {
+		t.Errorf("clock %d, want the horizon %d", cs.Clock(), cfg.Horizon)
+	}
 	for _, id := range []string{"b", "c"} {
 		f, ok := cs.fates.Fate(id)
 		if !ok || f.Fate != sim.FateQueuedAtHorizon || f.At != cfg.Horizon {

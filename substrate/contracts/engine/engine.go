@@ -149,7 +149,9 @@ type Planned interface {
 //     one call. An engine therefore never cancels a wake: it reports a different instant,
 //     or false, the next time it is asked.
 //   - An instant earlier than the pending wake supersedes it; a later one, or false,
-//     replaces it. A superseded wake is dropped without running.
+//     replaces it. A superseded wake is dropped without running. A pending wake due at the
+//     current instant is neither superseded nor replaced: it fires, and the simulator asks
+//     again.
 //   - When a wake fires, the simulator steps the engine at the wake instant.
 //   - An engine with unfinished work, no batch in flight, no transfer outstanding and an
 //     empty Schedule must report a wake. Otherwise nothing would ever step it again. This
