@@ -62,9 +62,12 @@ escaping symlinks scrubbed (`scripts/pr_review/scrub_symlinks.sh`) before any re
   `id-token: write` on the untrusted box and would mint the Anthropic App's *write* token (#1883).
 - **Key out of the session:** LiteLLM needs the VPN, so the runner is self-hosted — but the key lives
   **only in a separate `litellm-proxy` pod** (`k8s/agents/litellm-proxy.yaml`). The reviewer talks to
-  the `litellm-proxy` Service with a **dummy** key; the proxy injects the real one (both
-  `Authorization: Bearer` for qa and `x-api-key` for blis). A runtime step asserts no real key is in
-  the job env. (It is a separate pod, not a same-pod sidecar, so the runner's egress can be locked
+  the `litellm-proxy` Service with the proxy's **caller token** (`secrets.LITELLM_PROXY_TOKEN`, sent
+  only by the `review` job); the proxy relays a request only when it carries that token, answering
+  401 otherwise, and replaces it with the real key (both `Authorization: Bearer` for qa and
+  `x-api-key` for blis). A fork's own workflow run gets no repository secrets, so it cannot use the
+  proxy even if it names the pr-review pool. A runtime step asserts no real key is in the job env,
+  and the comment scrubber redacts the caller token by value. (It is a separate pod, not a same-pod sidecar, so the runner's egress can be locked
   tighter than the proxy's — see below.)
 - **Egress lock, vanilla `NetworkPolicy`, no cluster-admin.** Every pod in `blis` is default-deny
   (`k8s/ci/network.yaml`): egress only to DNS (scoped to the `openshift-dns` namespace) and public
@@ -91,6 +94,8 @@ reviewer holds a shell on untrusted input, so a single workflow with a write-acc
 - The **`blis-ci-pr-review`** scale set, the **`litellm-proxy`** pod/Service and their
   `NetworkPolicy` objects (`k8s/agents/`), isolated from the agent pool `blis-ci-agents`. Setup is in
   `k8s/agents/README.md`.
+- The proxy's caller token: the secret `blis-litellm-proxy-token` (key `token`) and the repository
+  secret `LITELLM_PROXY_TOKEN`, the same value. Without the repository secret the preflight fails.
 - The proxy's secret `blis-litellm` (keys `base-url` and `api-key`). **`base-url` must be a bare
   `https://host` with no trailing slash and no path**: the proxy appends the request's path, so a
   trailing slash or path produces doubled-slash/doubled-path upstream 404s. The proxy sends that host
@@ -108,8 +113,8 @@ reviewer holds a shell on untrusted input, so a single workflow with a write-acc
 
 - **A weak/odd advisory comment.** An injection could nudge the LLM to write something unhelpful. It
   is visible, scrubbed, and non-authoritative; a human reads it.
-- **Gateway spend.** Bounded by the LiteLLM budget on the shared key; the session's dummy key is useless
-  (it only reaches the `litellm-proxy`, which overwrites it).
+- **Gateway spend.** Bounded by the LiteLLM budget on the shared key; the session's caller token is
+  useless outside a pr-review pod (it only reaches the `litellm-proxy`, which overwrites it).
 - **The proxy as a relay.** The proxy admits `blis-runner: pr-review` pods alone
   (`k8s/agents/network.yaml`), so a CI pod running a pull request's code cannot use it. A pr-review
   job can, for the length of the job: the credential cannot be read back through the proxy (it is

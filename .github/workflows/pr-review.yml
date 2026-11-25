@@ -29,10 +29,10 @@ on:
     types: [created]
 
 env:
-  # The reviewer talks to the litellm-proxy Service, which injects the real key. A
-  # dummy is all this workflow ever holds (k8s/agents/litellm-proxy.yaml).
+  # The reviewer talks to the litellm-proxy Service, which injects the real key. The
+  # review job holds only the proxy's caller token, secrets.LITELLM_PROXY_TOKEN, which
+  # the proxy requires before it relays anything (k8s/agents/litellm-proxy.yaml).
   LLM_PROXY_URL: "http://litellm-proxy.blis.svc.cluster.local:4000"
-  LLM_DUMMY_KEY: "proxy-injects-the-real-key"
 
 jobs:
   gate:
@@ -128,7 +128,7 @@ jobs:
       - uses: ./.github/actions/go-toolchain
 
       # Assert the key really is absent from this job's environment (BC-3). The
-      # litellm-proxy holds it; the workflow holds only the dummy. Fails loud if a
+      # litellm-proxy holds it; the workflow holds only the caller token. Fails loud if a
       # real LiteLLM credential ever leaks into the env.
       - name: Assert no LiteLLM key in the session
         run: |
@@ -203,13 +203,29 @@ jobs:
       #      proves the WHOLE path the reviewers depend on (egress to the VPC,
       #      hostname resolution, TLS/SNI, Host routing, and key injection). This
       #      is what catches a proxy that is up but cannot reach the upstream.
+      #      It sends the caller token (from a curl config on stdin, never argv),
+      #      and the same request without it must get a 401.
       - name: Preflight litellm-proxy
+        env:
+          LLM_PROXY_TOKEN: ${{ secrets.LITELLM_PROXY_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -z "$LLM_PROXY_TOKEN" ]; then
+            echo "::error::the repository secret LITELLM_PROXY_TOKEN is not set; the litellm-proxy relays nothing without it"
+            exit 1
+          fi
           curl --fail --silent --show-error --retry 5 --retry-delay 3 \
             --retry-connrefused --max-time 10 "${LLM_PROXY_URL}/healthz"
           echo "litellm-proxy process up"
           code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --max-time 20 "${LLM_PROXY_URL}/v1/models")
+          if [ "$code" != "401" ]; then
+            echo "::error::litellm-proxy answered /v1/models without the caller token with HTTP $code, want 401"
+            exit 1
+          fi
+          echo "litellm-proxy refuses a caller without the token (401)"
+          code=$(printf 'header = "x-api-key: %s"\n' "$LLM_PROXY_TOKEN" | curl --config - \
+            --silent --output /dev/null --write-out '%{http_code}' \
             --retry 3 --retry-delay 2 --max-time 20 "${LLM_PROXY_URL}/v1/models")
           if [ "$code" != "200" ]; then
             echo "::error::litellm-proxy cannot reach the LiteLLM upstream (/v1/models -> HTTP $code)"
@@ -220,13 +236,13 @@ jobs:
       # QA-REVIEW — the committed scripts, run as workflow steps (not the agent
       # skill). answerer.py --no-exec: its code-executing `go` tool is dropped;
       # read_file/grep/list_dir stay sandboxed to the worktree. Talks to the
-      # litellm-proxy with a dummy key.
+      # litellm-proxy with its caller token.
       - name: Run qa-review
         id: qa
         continue-on-error: true # lint-ok: X22 an untrusted reviewer step: the post job publishes a failure note when its output is absent
         env:
           OPENAI_BASE_URL: ${{ env.LLM_PROXY_URL }}
-          OPENAI_API_KEY: ${{ env.LLM_DUMMY_KEY }}
+          OPENAI_API_KEY: ${{ secrets.LITELLM_PROXY_TOKEN }}
           QA_QUESTIONER_MODEL: ${{ vars.QA_QUESTIONER_MODEL || 'gcp/gemini-3.6-flash' }}
           QA_ANSWERER_MODEL: ${{ vars.QA_ANSWERER_MODEL || 'azure/gpt-5.6-sol' }}
           QA_REPO: ${{ github.repository }}
@@ -260,7 +276,7 @@ jobs:
       # BLIS — tool-restricted single session: read-only tools scoped to the
       # worktree + trusted docs, NO Bash/Edit/WebFetch/WebSearch, write confined
       # to the verdict file by a PreToolUse hook. Talks to the litellm-proxy with
-      # a dummy key.
+      # its caller token.
       - name: Run blis-pr-review
         id: blis
         continue-on-error: true # lint-ok: X22 an untrusted reviewer step: the post job publishes a failure note when its output is absent
@@ -280,7 +296,7 @@ jobs:
           # *write* token here; the token stays contents/pull-requests:read and the
           # session has no Bash/WebFetch/Agent to use or exfiltrate it.
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          anthropic_api_key: ${{ env.LLM_DUMMY_KEY }}
+          anthropic_api_key: ${{ secrets.LITELLM_PROXY_TOKEN }}
           allowed_bots: "github-actions"
           settings: |
             {
@@ -342,6 +358,9 @@ jobs:
       # Assemble ONE comment from whatever each reviewer produced (a failed/absent
       # reviewer is reported, never silently dropped), then scrub secrets.
       - name: Assemble + scrub the combined comment
+        env:
+          # scrub_secrets.py redacts this value wherever it appears.
+          LLM_PROXY_TOKEN: ${{ secrets.LITELLM_PROXY_TOKEN }}
         run: |
           set -euo pipefail
           # Freshness: if the author pushed while this job ran, the live head no

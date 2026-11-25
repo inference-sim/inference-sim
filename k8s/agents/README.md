@@ -18,9 +18,10 @@ The two sets hold different things, and the pods are kept apart by that label:
   branches). Its jobs hold `LITELLM_API_KEY` and `LITELLM_BASE_URL` in their step env and a
   `GITHUB_TOKEN` with write scopes. They call LiteLLM directly, so these pods alone may reach its
   addresses.
-- **`blis-ci-pr-review`** reads an untrusted pull request and runs none of it. It holds a dummy
-  key and a read-only token, and reaches LiteLLM only through the `litellm-proxy` pod
-  (`litellm-proxy.yaml`), which adds the real key from the secret `blis-litellm`.
+- **`blis-ci-pr-review`** reads an untrusted pull request and runs none of it. It holds the
+  proxy's caller token (`LITELLM_PROXY_TOKEN`) and a read-only token, and reaches LiteLLM only
+  through the `litellm-proxy` pod (`litellm-proxy.yaml`), which checks the caller token and adds
+  the real key from the secret `blis-litellm`.
 
 `scripts/agent_runners_test.go` checks the laws below on the manifests and workflows.
 
@@ -40,10 +41,16 @@ The two sets hold different things, and the pods are kept apart by that label:
   `/v1/messages` and its `count_tokens`, qa-review's `/chat/completions`, the preflight's
   `/v1/models`), returns 404 for any other LiteLLM route, and sends the key only to an upstream whose
   certificate verifies for the upstream's name.
+- **The proxy requires a caller token.** It relays a request only when `x-api-key` or a Bearer
+  `Authorization` carries the token from the secret `blis-litellm-proxy-token`, and answers 401
+  otherwise, without contacting LiteLLM. The repository secret `LITELLM_PROXY_TOKEN` holds the same
+  value, and only `pr-review.yml`'s `review` job references it. A fork's run gets no repository
+  secrets, so it cannot use the proxy even from a pr-review pod. The token is worth nothing outside
+  a pr-review pod, and the comment scrubber redacts it.
 - **No secret is readable from a runner.** `blis-litellm`, `blis-ci-github` and the controller's
   token live in the namespace, but a runner pod mounts no service account token and cannot reach
-  the API server, so it cannot read them. The proxy reads `blis-litellm` through its own env, and a
-  CI pod cannot reach the proxy.
+  the API server, so it cannot read them. The proxy reads `blis-litellm` and
+  `blis-litellm-proxy-token` through its own env, and a CI pod cannot reach the proxy.
 - **One label per pool.** A scale set's only label is its name, so an agent job can never land on
   the pr-review pool. (The old pr-review runner also carried `self-hosted`, so a trusted delivery
   job could be scheduled on it.)
@@ -73,9 +80,10 @@ their own (the discussion's plan, #2683).
    addresses too, or the agent jobs and the proxy lose LiteLLM.
 5. **A fork run can name an agent pool.** The label keeps a CI pod off these paths, but a job picks
    its pool by `runs-on`, and a fork's pull request runs its own copy of the workflows. So an
-   approved fork run that turns out to be hostile can name `blis-ci-pr-review` and use the proxy
-   (the inference routes alone, with the real key), or name `blis-ci-agents` and reach `9.0.0.0/8`
-   on 443. It holds no secret there: the repository secrets are not given to a fork's run. This is
+   approved fork run that turns out to be hostile can name `blis-ci-pr-review` and reach the proxy,
+   which answers 401 without the caller token (a fork's run gets no repository secrets), and the
+   public internet on 443 like any CI pod; or name `blis-ci-agents` and reach `9.0.0.0/8` on 443,
+   with no secret either. This is
    not a regression: the old runners took any job that named `self-hosted`, with no egress policy
    at all. What guards it today is approval and the approver's check for a changed `runs-on`
    (`k8s/ci/README.md`). A repository-level scale set cannot be limited to selected workflows; the
@@ -96,6 +104,16 @@ their own (the discussion's plan, #2683).
    The agent jobs use the repository secrets `LITELLM_BASE_URL` and `LITELLM_API_KEY`; set them to
    the same credential (`gh secret set`).
 
+   **Caller token.** The proxy relays only requests that carry it. Make one, store it as the
+   secret `blis-litellm-proxy-token` and as the repository secret `LITELLM_PROXY_TOKEN`, then
+   delete the file:
+
+   ```bash
+   openssl rand -hex 32 > <token file>
+   kubectl -n blis create secret generic blis-litellm-proxy-token --from-file=token=<token file>
+   gh secret set LITELLM_PROXY_TOKEN < <token file>
+   ```
+
 2. **Quota and network.** `k8s/ci/namespace.yaml` has room for these pods and the proxy's Service.
 
    ```bash
@@ -115,6 +133,7 @@ their own (the discussion's plan, #2683).
    ```
 
 4. **Check the proxy** from a pr-review pod's point of view, once one runs (or run `/pr-review` on a
-   pull request: its *Preflight litellm-proxy* step asks the proxy for `/v1/models`).
+   pull request: its *Preflight litellm-proxy* step asks the proxy for `/v1/models` without the
+   caller token, which must get 401, and with it, which must get 200).
 
 The jobs take these pools as soon as the workflows naming them are on the default branch.

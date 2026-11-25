@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -290,15 +291,34 @@ func TestBlisPoliciesLetOnlyPrReviewReachTheProxy(t *testing.T) {
 	}
 }
 
-// The proxy relays only the routes the reviewers call, forwards the path it matched, and checks
-// the upstream's certificate before it sends the key.
-func TestBlisLiteLLMProxyRoutesAndTLS(t *testing.T) {
-	var conf string
+type proxyEnvVar struct {
+	Name      string `yaml:"name"`
+	ValueFrom *struct {
+		SecretKeyRef *struct {
+			Name     string `yaml:"name"`
+			Key      string `yaml:"key"`
+			Optional *bool  `yaml:"optional"`
+		} `yaml:"secretKeyRef"`
+	} `yaml:"valueFrom"`
+}
+
+// litellmProxyManifest returns the proxy's nginx server template and its container's env.
+func litellmProxyManifest(t *testing.T) (conf string, env []proxyEnvVar) {
+	t.Helper()
 	dec := yaml.NewDecoder(strings.NewReader(readFileOrFail(t, filepath.Join("..", "k8s", "agents", "litellm-proxy.yaml"))))
 	for {
 		var doc struct {
 			Kind string            `yaml:"kind"`
 			Data map[string]string `yaml:"data"`
+			Spec struct {
+				Template struct {
+					Spec struct {
+						Containers []struct {
+							Env []proxyEnvVar `yaml:"env"`
+						} `yaml:"containers"`
+					} `yaml:"spec"`
+				} `yaml:"template"`
+			} `yaml:"spec"`
 		}
 		err := dec.Decode(&doc)
 		if errors.Is(err, io.EOF) {
@@ -307,15 +327,27 @@ func TestBlisLiteLLMProxyRoutesAndTLS(t *testing.T) {
 		if err != nil {
 			t.Fatalf("decoding k8s/agents/litellm-proxy.yaml: %v", err)
 		}
-		if doc.Kind == "ConfigMap" {
+		switch doc.Kind {
+		case "ConfigMap":
 			conf = doc.Data["default.conf.template"]
+		case "Deployment":
+			for _, c := range doc.Spec.Template.Spec.Containers {
+				env = append(env, c.Env...)
+			}
 		}
 	}
 	if conf == "" {
 		t.Fatal("no default.conf.template in the litellm-proxy ConfigMap")
 	}
+	return conf, env
+}
+
+// The proxy relays only the routes the reviewers call, forwards the path it matched, and checks
+// the upstream's certificate before it sends the key.
+func TestBlisLiteLLMProxyRoutesAndTLS(t *testing.T) {
+	conf, _ := litellmProxyManifest(t)
 	relays, catchAll := 0, false
-	for _, loc := range nginxLocations(t, conf) {
+	for _, loc := range nginxBlocks(t, conf, "location") {
 		if !strings.Contains(loc.body, "proxy_pass") {
 			if loc.args == "/" {
 				catchAll = strings.Contains(loc.body, "return 404;")
@@ -360,11 +392,72 @@ func TestBlisLiteLLMProxyRoutesAndTLS(t *testing.T) {
 	}
 }
 
-type nginxLocation struct{ args, body string }
+// The proxy relays a request only when it carries the caller token, in x-api-key or as a Bearer
+// Authorization, and takes that token from its own secret: a run without the repository secret
+// (a fork's) gets a 401 and never reaches the upstream.
+func TestBlisLiteLLMProxyRequiresTheCallerToken(t *testing.T) {
+	conf, env := litellmProxyManifest(t)
+	maps := map[string]string{}
+	for _, m := range nginxBlocks(t, conf, "map") {
+		maps[m.args] = m.body
+	}
+	for args, entries := range map[string][]string{
+		"$http_x_api_key $litellm_caller_key":                          {"default 0;", `"" 0;`, `"$LITELLM_CALLER_TOKEN" 1;`},
+		"$http_authorization $litellm_caller_bearer":                   {"default 0;", `"Bearer " 0;`, `"Bearer $LITELLM_CALLER_TOKEN" 1;`},
+		"$litellm_caller_key$litellm_caller_bearer $litellm_caller_ok": {"default 1;", "00 0;"},
+	} {
+		body, ok := maps[args]
+		if !ok {
+			t.Errorf("no `map %s` in the proxy config", args)
+			continue
+		}
+		for _, l := range strings.Split(body, "\n") {
+			if l = strings.TrimSpace(l); l != "" && !slices.Contains(entries, l) {
+				t.Errorf("map %s: unexpected entry %q", args, l)
+			}
+		}
+		for _, e := range entries {
+			if !strings.Contains(body, e) {
+				t.Errorf("map %s: missing %q", args, e)
+			}
+		}
+	}
+	gate := regexp.MustCompile(`if \(\$litellm_caller_ok = 0\) \{\s*return 401;\s*\}`)
+	relays := 0
+	for _, loc := range nginxBlocks(t, conf, "location") {
+		if !strings.Contains(loc.body, "proxy_pass") {
+			continue
+		}
+		relays++
+		if !gate.MatchString(loc.body) {
+			t.Errorf("location %q relays without checking the caller token (if ($litellm_caller_ok = 0) { return 401; })", loc.args)
+		}
+	}
+	if relays == 0 {
+		t.Error("no relaying location found")
+	}
+	found := false
+	for _, e := range env {
+		if e.Name != "LITELLM_CALLER_TOKEN" {
+			continue
+		}
+		found = true
+		ref := e.ValueFrom
+		if ref == nil || ref.SecretKeyRef == nil || ref.SecretKeyRef.Name != "blis-litellm-proxy-token" ||
+			ref.SecretKeyRef.Key != "token" || (ref.SecretKeyRef.Optional != nil && *ref.SecretKeyRef.Optional) {
+			t.Error("LITELLM_CALLER_TOKEN must come from the secret blis-litellm-proxy-token, key token, not optional")
+		}
+	}
+	if !found {
+		t.Error("the proxy container has no LITELLM_CALLER_TOKEN env")
+	}
+}
 
-// nginxLocations returns each `location <args> { <body> }` in an nginx config template, comments
-// dropped and each envsubst ${NAME} read as $NAME, with no nested blocks inside a location.
-func nginxLocations(t *testing.T, conf string) []nginxLocation {
+type nginxBlock struct{ args, body string }
+
+// nginxBlocks returns each `<directive> <args> { <body> }` in an nginx config template, comments
+// dropped and each envsubst ${NAME} read as $NAME. Blocks nested in a body stay in that body.
+func nginxBlocks(t *testing.T, conf, directive string) []nginxBlock {
 	t.Helper()
 	lines := strings.Split(conf, "\n")
 	for i, l := range lines {
@@ -373,20 +466,25 @@ func nginxLocations(t *testing.T, conf string) []nginxLocation {
 		}
 	}
 	envsubst := regexp.MustCompile(`\$\{(\w+)\}`)
-	var out []nginxLocation
-	for rest := envsubst.ReplaceAllString(strings.Join(lines, "\n"), "$$$1"); ; {
-		i := strings.Index(rest, "location ")
-		if i < 0 {
-			return out
+	head := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(directive) + `\s+([^{;]*)\{`)
+	text := envsubst.ReplaceAllString(strings.Join(lines, "\n"), "$$$1")
+	var out []nginxBlock
+	for _, m := range head.FindAllStringSubmatchIndex(text, -1) {
+		depth, i := 1, m[1]
+		for ; i < len(text) && depth > 0; i++ {
+			switch text[i] {
+			case '{':
+				depth++
+			case '}':
+				depth--
+			}
 		}
-		rest = rest[i+len("location "):]
-		open, end := strings.Index(rest, "{"), strings.Index(rest, "}")
-		if open < 0 || end < open {
-			t.Fatalf("unbalanced location block near %q", rest)
+		if depth != 0 {
+			t.Fatalf("unbalanced %s block at %q", directive, text[m[0]:m[1]])
 		}
-		out = append(out, nginxLocation{args: strings.TrimSpace(rest[:open]), body: rest[open+1 : end]})
-		rest = rest[end+1:]
+		out = append(out, nginxBlock{args: strings.TrimSpace(text[m[2]:m[3]]), body: text[m[1] : i-1]})
 	}
+	return out
 }
 
 type scaleSetValues struct {
@@ -459,8 +557,16 @@ func TestAgentJobsRunOnTheAgentRunners(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Any LiteLLM secret but the proxy's caller token, which only the reviewer holds
+	// (TestBlisProxyTokenOnlyInTheReviewJob).
+	agentSecret := regexp.MustCompile(`secrets\.LITELLM_\w+`)
 	holds := func(n yaml.Node) bool {
-		return strings.Contains(strings.Join(flattenScalars(n), "\n"), "secrets.LITELLM_")
+		for _, m := range agentSecret.FindAllString(strings.Join(flattenScalars(n), "\n"), -1) {
+			if m != "secrets.LITELLM_PROXY_TOKEN" {
+				return true
+			}
+		}
+		return false
 	}
 	for _, f := range files {
 		var wf map[string]yaml.Node
@@ -507,5 +613,51 @@ func TestAgentJobsRunOnTheAgentRunners(t *testing.T) {
 		if got != agent[name] {
 			t.Errorf("%s: %d jobs on the agent runners, want %d", name, got, agent[name])
 		}
+	}
+}
+
+// The proxy's caller token goes to pr-review.yml's review job alone: any other job holding it
+// could use the proxy from a pr-review pod, and a workflow-level reference reaches every job.
+func TestBlisProxyTokenOnlyInTheReviewJob(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", ".github", "workflows", "*.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const token = "secrets.LITELLM_PROXY_TOKEN"
+	refs := 0
+	for _, f := range files {
+		var wf map[string]yaml.Node
+		body, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := yaml.Unmarshal(body, &wf); err != nil {
+			t.Fatalf("parsing %s: %v", f, err)
+		}
+		name := filepath.Base(f)
+		for key, n := range wf {
+			if key != "jobs" && strings.Contains(strings.Join(flattenScalars(n), "\n"), token) {
+				t.Errorf("%s references %s at workflow level (%s:)", name, token, key)
+			}
+		}
+		var jobs map[string]yaml.Node
+		if n, ok := wf["jobs"]; ok {
+			if err := n.Decode(&jobs); err != nil {
+				t.Fatalf("parsing %s jobs: %v", f, err)
+			}
+		}
+		for job, n := range jobs {
+			if !strings.Contains(strings.Join(flattenScalars(n), "\n"), token) {
+				continue
+			}
+			if name != "pr-review.yml" || job != "review" {
+				t.Errorf("%s job %q references %s, which is pr-review.yml's review job's alone", name, job, token)
+				continue
+			}
+			refs++
+		}
+	}
+	if refs == 0 {
+		t.Errorf("pr-review.yml's review job does not send %s, so the proxy refuses it", token)
 	}
 }

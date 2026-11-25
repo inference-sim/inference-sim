@@ -11,8 +11,14 @@ leaves ordinary prose and code intact. It is a filter, not a guarantee; a
 determined encoding will slip past any regex, which is why it is the LAST line
 and not the only one.
 """
+import os
 import re
 import sys
+
+# Secrets the review job holds, by env var name: each value is redacted verbatim wherever it
+# appears, whatever its shape (the litellm-proxy's caller token is bare hex, which no pattern
+# below matches).
+_SECRET_ENV = ("LLM_PROXY_TOKEN",)
 
 # Each pattern replaces the secret-looking run with [REDACTED], keeping any
 # surrounding label so the comment still reads sensibly.
@@ -30,6 +36,10 @@ _PATTERNS = [
 
 
 def scrub(text: str) -> str:
+    for name in _SECRET_ENV:
+        value = os.environ.get(name, "")
+        if len(value) >= 8:
+            text = text.replace(value, "[REDACTED]")
     for pat, repl in _PATTERNS:
         text = pat.sub(repl, text)
     return text

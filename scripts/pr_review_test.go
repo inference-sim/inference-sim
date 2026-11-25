@@ -367,9 +367,11 @@ func TestPrReviewActionsArePinnedToSHA(t *testing.T) {
 func TestPrReviewKeyNeverInSession(t *testing.T) {
 	wf := prReviewWorkflow(t)
 	// The real LiteLLM key is a GitHub Actions secret used by the delivery loop;
-	// the external reviewer must NOT reference it — it uses the litellm-proxy + a dummy.
-	if strings.Contains(wf, "secrets.LITELLM_API_KEY") {
-		t.Error("pr-review.yml must NOT reference secrets.LITELLM_API_KEY; the key lives in the litellm-proxy pod")
+	// the external reviewer must NOT reference it: it uses the litellm-proxy + its caller token.
+	for _, secret := range []string{"secrets.LITELLM_API_KEY", "secrets.LITELLM_BASE_URL"} {
+		if strings.Contains(wf, secret) {
+			t.Errorf("pr-review.yml must NOT reference %s; the key and its host live in the litellm-proxy pod", secret)
+		}
 	}
 	if !strings.Contains(wf, "Assert no LiteLLM key in the session") {
 		t.Error("pr-review.yml must assert at runtime that no real LiteLLM key is in the review job env")
@@ -462,12 +464,15 @@ func TestAssembleCommentStaleWithholdsSections(t *testing.T) {
 
 func TestScrubSecretsRedactsButKeepsProse(t *testing.T) {
 	requirePython3(t)
-	in := "normal prose line\nsk-abcdef1234567890 and Bearer AbCdEf123456xyz789\nx-api-key: supersecretvalue123\nkeep this\n"
+	// The proxy's caller token is bare hex, which no pattern catches: it is redacted by value.
+	const proxyToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	t.Setenv("LLM_PROXY_TOKEN", proxyToken)
+	in := "normal prose line\nsk-abcdef1234567890 and Bearer AbCdEf123456xyz789\nx-api-key: supersecretvalue123\nthe value " + proxyToken + " here\nkeep this\n"
 	out, code := runPy(t, in, "pr_review/scrub_secrets.py")
 	if code != 0 {
 		t.Fatalf("scrub_secrets exited %d", code)
 	}
-	for _, leaked := range []string{"sk-abcdef1234567890", "AbCdEf123456xyz789", "supersecretvalue123"} {
+	for _, leaked := range []string{"sk-abcdef1234567890", "AbCdEf123456xyz789", "supersecretvalue123", proxyToken} {
 		if strings.Contains(out, leaked) {
 			t.Errorf("scrub_secrets leaked %q", leaked)
 		}
